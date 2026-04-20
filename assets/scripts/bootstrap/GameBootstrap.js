@@ -11,6 +11,7 @@ var LevelManager = require("../config/LevelManager");
 var GameManager = require("../core/GameManager");
 var StarRatingPolicy = require("../core/StarRatingPolicy");
 var LevelSelectPolicy = require("./LevelSelectPolicy");
+var RouteEditorState = require("./RouteEditorState");
 var LevelRenderer = require("../render/LevelRenderer");
 var LoadingViewController = require("../ui/LoadingViewController");
 
@@ -24,12 +25,6 @@ var BASELINE_DANGER_OFFSET_FROM_BOTTOM = BoardLayout.dangerLineY - (-BASELINE_HA
 
 function clone(data) {
   return JSON.parse(JSON.stringify(data));
-}
-
-function distancePoints(a, b) {
-  var dx = (b.x || 0) - (a.x || 0);
-  var dy = (b.y || 0) - (a.y || 0);
-  return Math.sqrt(dx * dx + dy * dy);
 }
 
 cc.Class({
@@ -1173,16 +1168,7 @@ cc.Class({
   },
 
   _createEmptyRouteEditorState: function () {
-    return {
-      enabled: false,
-      isDrawing: false,
-      dirty: false,
-      levelId: 0,
-      levelCode: "",
-      routeSequence: 1,
-      activeRouteId: null,
-      routes: []
-    };
+    return RouteEditorState.createEmptyState();
   },
 
   _syncRouteEditorButtonHosts: function () {
@@ -1216,16 +1202,7 @@ cc.Class({
   _prepareRouteEditorForLevel: function (levelConfig, levelId) {
     var levelCode = levelConfig && levelConfig.level ? levelConfig.level.code : "";
     var routes = this.routeConfigStore.getRoutesForLevel(this.routeConfig, levelId, levelCode);
-    this._routeEditorState = {
-      enabled: false,
-      isDrawing: false,
-      dirty: false,
-      levelId: Math.max(0, Math.floor(Number(levelId) || 0)),
-      levelCode: levelCode,
-      routeSequence: Math.max(1, routes.length + 1),
-      activeRouteId: routes.length > 0 ? routes[0].id : null,
-      routes: routes
-    };
+    this._routeEditorState = RouteEditorState.createStateForLevel(levelId, levelCode, routes);
   },
 
   _isRouteEditorCapturingInput: function () {
@@ -1240,62 +1217,20 @@ cc.Class({
   },
 
   _getActiveRouteEditorRoute: function () {
-    if (!this._routeEditorState || !Array.isArray(this._routeEditorState.routes)) {
-      return null;
-    }
-
-    for (var index = 0; index < this._routeEditorState.routes.length; index += 1) {
-      var route = this._routeEditorState.routes[index];
-      if (route && route.id === this._routeEditorState.activeRouteId) {
-        return route;
-      }
-    }
-
-    return null;
+    return RouteEditorState.getActiveRoute(this._routeEditorState);
   },
 
   _createRouteEditorRoute: function () {
-    var sequence = Math.max(1, Math.floor(Number(this._routeEditorState.routeSequence) || 1));
-    this._routeEditorState.routeSequence = sequence + 1;
-    return {
-      id: "route_" + sequence,
-      name: "Route " + sequence,
-      points: []
-    };
+    return RouteEditorState.createRoute(this._routeEditorState);
   },
 
   _ensureActiveRouteEditorRoute: function (autoCreate) {
-    var route = this._getActiveRouteEditorRoute();
-    if (route || !autoCreate) {
-      return route;
-    }
-
-    route = this._createRouteEditorRoute();
-    this._routeEditorState.routes.push(route);
-    this._routeEditorState.activeRouteId = route.id;
-    this._routeEditorState.dirty = true;
-    return route;
+    return RouteEditorState.ensureActiveRoute(this._routeEditorState, autoCreate);
   },
 
   _appendRouteEditorPoint: function (route, point, force) {
-    if (!route || !point) {
-      return false;
-    }
-
-    var normalizedPoint = {
-      x: Math.round(Number(point.x) || 0),
-      y: Math.round(Number(point.y) || 0)
-    };
-    var lastPoint = route.points.length > 0 ? route.points[route.points.length - 1] : null;
     var minDistance = Math.max(4, Number(this.routePointMinDistance) || 18);
-
-    if (lastPoint && distancePoints(lastPoint, normalizedPoint) < (force ? 1 : minDistance)) {
-      return false;
-    }
-
-    route.points.push(normalizedPoint);
-    this._routeEditorState.dirty = true;
-    return true;
+    return RouteEditorState.appendPoint(this._routeEditorState, route, point, minDistance, force);
   },
 
   _renderRouteEditor: function () {
@@ -1470,11 +1405,7 @@ cc.Class({
       return null;
     }
 
-    var routesToSave = this._routeEditorState.routes.filter(function (route) {
-      return route && Array.isArray(route.points) && route.points.length > 0;
-    }).map(function (route) {
-      return clone(route);
-    });
+    var routesToSave = RouteEditorState.collectRoutesForSave(this._routeEditorState);
 
     this.routeConfig = this.routeConfigStore.upsertLevelRoutes(
       this.routeConfig,
@@ -1486,17 +1417,7 @@ cc.Class({
       allowBrowserDownload: !!allowBrowserDownload
     });
     this.routeConfig = persisted.config;
-    this._routeEditorState.routes = routesToSave;
-    this._routeEditorState.dirty = false;
-    var activeRouteStillExists = routesToSave.some(function (route) {
-      return route.id === this._routeEditorState.activeRouteId;
-    }, this);
-    if (!activeRouteStillExists) {
-      this._routeEditorState.activeRouteId = routesToSave.length > 0 ? routesToSave[0].id : null;
-    }
-    if (!this._routeEditorState.activeRouteId && routesToSave.length > 0) {
-      this._routeEditorState.activeRouteId = routesToSave[0].id;
-    }
+    RouteEditorState.applySavedRoutes(this._routeEditorState, routesToSave);
     return persisted;
   },
 
