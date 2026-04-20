@@ -66,6 +66,7 @@ function attachLevelRendererSceneMethods(LevelRenderer, deps) {
   var resolveBallVisualKey = deps.resolveBallVisualKey;
   var computeShooterAngle = deps.computeShooterAngle;
   var createRouteColor = deps.createRouteColor;
+  var clamp = deps.clamp;
 LevelRenderer.prototype._renderBackground = function () {
   // Scene already has a static `bg` node; avoid drawing a second runtime background.
   var sceneBgNode = this.rootNode ? this.rootNode.getChildByName("bg") : null;

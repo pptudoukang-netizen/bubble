@@ -883,7 +883,8 @@ var LEVEL_RENDERER_SCENE_DEPS = {
   resolveIceInnerColor: resolveIceInnerColor,
   resolveBallVisualKey: resolveBallVisualKey,
   computeShooterAngle: computeShooterAngle,
-  createRouteColor: createRouteColor
+  createRouteColor: createRouteColor,
+  clamp: clamp
 };
 
 attachLevelRendererSceneMethods(LevelRenderer, LEVEL_RENDERER_SCENE_DEPS);
