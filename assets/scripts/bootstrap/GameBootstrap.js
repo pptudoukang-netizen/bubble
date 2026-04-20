@@ -10,6 +10,7 @@ var BoardLayout = require("../config/BoardLayout");
 var LevelManager = require("../config/LevelManager");
 var GameManager = require("../core/GameManager");
 var StarRatingPolicy = require("../core/StarRatingPolicy");
+var LevelSelectPolicy = require("./LevelSelectPolicy");
 var LevelRenderer = require("../render/LevelRenderer");
 var LoadingViewController = require("../ui/LoadingViewController");
 
@@ -1713,12 +1714,7 @@ cc.Class({
   },
 
   _buildSequentialLevelIds: function (maxLevelId) {
-    var result = [];
-    var safeMax = Math.max(1, Math.floor(Number(maxLevelId) || 1));
-    for (var levelId = 1; levelId <= safeMax; levelId += 1) {
-      result.push(levelId);
-    }
-    return result;
+    return LevelSelectPolicy.buildSequentialLevelIds(maxLevelId);
   },
 
   _preloadLevelConfigsInBackground: function (levelIds) {
@@ -1744,16 +1740,7 @@ cc.Class({
   },
 
   _getLevelIdFromResourcePath: function (resourcePath) {
-    if (typeof resourcePath !== "string") {
-      return 0;
-    }
-
-    var match = resourcePath.match(/level_(\d+)/i);
-    if (!match) {
-      return 0;
-    }
-
-    return Number(match[1]) || 0;
+    return LevelSelectPolicy.getLevelIdFromResourcePath(resourcePath);
   },
 
   _renderLevelSelectContent: function (levelViewPrefab, levelButtonPrefab, levelIds) {
@@ -1931,17 +1918,11 @@ cc.Class({
   },
 
   _resolveHighlightedLevelId: function (levelIds, highestUnlocked) {
-    var selectedLevelId = this.levelProgress ? Math.max(1, Number(this.levelProgress.selectedLevelId) || 1) : 1;
-    var preferredLevelId = this._currentLevelId || selectedLevelId || highestUnlocked || 1;
-    if (levelIds.indexOf(preferredLevelId) >= 0) {
-      return preferredLevelId;
-    }
-
-    if (levelIds.indexOf(highestUnlocked) >= 0) {
-      return highestUnlocked;
-    }
-
-    return levelIds.length ? levelIds[0] : 1;
+    return LevelSelectPolicy.resolveHighlightedLevelId(levelIds, {
+      currentLevelId: this._currentLevelId,
+      selectedLevelId: this.levelProgress ? this.levelProgress.selectedLevelId : 1,
+      highestUnlocked: highestUnlocked
+    });
   },
 
   _applyLevelButtonState: function (buttonNode, options) {
