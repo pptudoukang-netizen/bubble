@@ -12,6 +12,7 @@ var GameManager = require("../core/GameManager");
 var StarRatingPolicy = require("../core/StarRatingPolicy");
 var LevelSelectPolicy = require("./LevelSelectPolicy");
 var RouteEditorState = require("./RouteEditorState");
+var ResourceGateway = require("./ResourceGateway");
 var LevelRenderer = require("../render/LevelRenderer");
 var LoadingViewController = require("../ui/LoadingViewController");
 
@@ -203,6 +204,7 @@ cc.Class({
     });
     this.audioManager.configure(this._buildAudioConfig());
     this._routeEditorState = this._createEmptyRouteEditorState();
+    this.resourceGateway = this.resourceGateway || new ResourceGateway();
 
     this._createStatusOverlay();
     this._createDropTestButton();
@@ -1552,16 +1554,7 @@ cc.Class({
   },
 
   _loadPrefab: function (path) {
-    return new Promise(function (resolve, reject) {
-      cc.loader.loadRes(path, cc.Prefab, function (error, prefab) {
-        if (error) {
-          reject(new Error("Failed to load prefab `" + path + "`: " + error.message));
-          return;
-        }
-
-        resolve(prefab);
-      });
-    });
+    return this.resourceGateway.loadPrefab(path);
   },
 
   _loadAvailableLevelIds: function () {
@@ -1585,14 +1578,8 @@ cc.Class({
       return this._availableLevelIdsScanPromise;
     }
 
-    this._availableLevelIdsScanPromise = new Promise(function (resolve, reject) {
-      cc.loader.loadResDir("config/levels", cc.JsonAsset, function (error, assets, urls) {
-        if (error) {
-          reject(new Error("Failed to load level list: " + error.message));
-          return;
-        }
-
-        var sourceUrls = Array.isArray(urls) ? urls : [];
+    this._availableLevelIdsScanPromise = this.resourceGateway.loadLevelConfigResourceUrls()
+      .then(function (sourceUrls) {
         var levelIds = sourceUrls.map(this._getLevelIdFromResourcePath, this)
           .filter(function (id) {
             return Number.isInteger(id) && id > 0;
@@ -1608,9 +1595,8 @@ cc.Class({
           levelIds = [this._getStartupLevelId()];
         }
 
-        resolve(levelIds);
-      }.bind(this));
-    }.bind(this)).then(function (resolvedLevelIds) {
+        return levelIds;
+      }.bind(this)).then(function (resolvedLevelIds) {
       this._availableLevelIdsPromise = Promise.resolve(resolvedLevelIds);
       this._availableLevelIdsScanPromise = null;
 
