@@ -139,10 +139,6 @@ cc.Class({
       default: "sound/ding0",
       tooltip: "按钮/界面点击音效资源路径。"
     },
-    levelStartSfxResource: {
-      default: "sound/ding1",
-      tooltip: "进入关卡音效资源路径。"
-    },
     shotSfxResource: {
       default: "sound/ding2",
       tooltip: "发射音效资源路径。"
@@ -584,7 +580,6 @@ cc.Class({
       bgmPath: this._getGameplayBgmPath(),
       sfxMap: {
         uiClick: this.uiClickSfxResource,
-        levelStart: this.levelStartSfxResource,
         shot: this.shotSfxResource,
         win: this.winSfxResource,
         lose: this.loseSfxResource,
@@ -904,7 +899,6 @@ cc.Class({
       this._refreshRouteEditorButtons();
       this._setStatus(this._formatStatus(this.currentLevelConfig, snapshot));
       this._playGameplayBackgroundMusic();
-      this._playSfx("levelStart");
       Logger.info("Level restarted", this.currentLevelConfig.level.code);
     }.bind(this)).catch(function (error) {
       this.isRestarting = false;

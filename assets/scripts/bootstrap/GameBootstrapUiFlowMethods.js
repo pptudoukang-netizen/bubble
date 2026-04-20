@@ -81,7 +81,6 @@ module.exports = {
           this._refreshRouteEditorButtons();
           this._setStatus(this._formatStatus(levelConfig, snapshot));
           this._playGameplayBackgroundMusic();
-          this._playSfx("levelStart");
           Logger.info(successLogPrefix || "Level started", levelConfig.level.code);
         } catch (postLoadError) {
           // 渲染已完成时，后处理异常不应误判为“关卡加载失败”。
