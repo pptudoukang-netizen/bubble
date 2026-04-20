@@ -53,6 +53,7 @@ function attachLevelRendererSceneMethods(LevelRenderer, deps) {
   var getOrCreateChild = deps.getOrCreateChild;
   var buildObjectiveDisplayData = deps.buildObjectiveDisplayData;
   var buildStateText = deps.buildStateText;
+  var buildResultTexts = deps.buildResultTexts;
   var resolveWinStarRating = deps.resolveWinStarRating;
   var buildHudRenderKey = deps.buildHudRenderKey;
   var buildJarRenderKey = deps.buildJarRenderKey;

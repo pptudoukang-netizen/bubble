@@ -871,6 +871,7 @@ var LEVEL_RENDERER_SCENE_DEPS = {
   getOrCreateChild: getOrCreateChild,
   buildObjectiveDisplayData: buildObjectiveDisplayData,
   buildStateText: buildStateText,
+  buildResultTexts: buildResultTexts,
   resolveWinStarRating: resolveWinStarRating,
   buildHudRenderKey: buildHudRenderKey,
   buildJarRenderKey: buildJarRenderKey,
