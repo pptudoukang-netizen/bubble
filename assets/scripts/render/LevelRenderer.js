@@ -877,6 +877,7 @@ var LEVEL_RENDERER_SCENE_DEPS = {
   buildJarRenderKey: buildJarRenderKey,
   buildGuidePathKey: buildGuidePathKey,
   clipGuidePathToDistance: clipGuidePathToDistance,
+  pointDistance: pointDistance,
   resolveImpactBounceSpeed: resolveImpactBounceSpeed,
   getJarBaseY: getJarBaseY,
   resolveBallCode: resolveBallCode,

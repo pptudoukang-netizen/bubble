@@ -59,6 +59,7 @@ function attachLevelRendererSceneMethods(LevelRenderer, deps) {
   var buildJarRenderKey = deps.buildJarRenderKey;
   var buildGuidePathKey = deps.buildGuidePathKey;
   var clipGuidePathToDistance = deps.clipGuidePathToDistance;
+  var pointDistance = deps.pointDistance;
   var resolveImpactBounceSpeed = deps.resolveImpactBounceSpeed;
   var getJarBaseY = deps.getJarBaseY;
   var resolveBallCode = deps.resolveBallCode;
