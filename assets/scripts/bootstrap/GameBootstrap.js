@@ -9,6 +9,7 @@ var AudioManager = require("../audio/AudioManager");
 var BoardLayout = require("../config/BoardLayout");
 var LevelManager = require("../config/LevelManager");
 var GameManager = require("../core/GameManager");
+var StarRatingPolicy = require("../core/StarRatingPolicy");
 var LevelRenderer = require("../render/LevelRenderer");
 var LoadingViewController = require("../ui/LoadingViewController");
 
@@ -1905,34 +1906,7 @@ cc.Class({
   },
 
   _calculateStarRating: function (snapshot) {
-    var winStats = snapshot && snapshot.winStats ? snapshot.winStats : null;
-    var fromSnapshot = winStats ? Math.floor(Number(winStats.starRating) || 0) : 0;
-    if (fromSnapshot >= 0 && fromSnapshot <= 3) {
-      return fromSnapshot;
-    }
-
-    var scoreHeatBand = winStats ? winStats.scoreHeatBand : null;
-    if (!scoreHeatBand) {
-      return 0;
-    }
-
-    var thresholds = winStats && winStats.starThresholds ? winStats.starThresholds : {
-      star1: Math.max(0, Math.floor(Number(scoreHeatBand.min) || 0)),
-      star2: Math.max(0, Math.floor(Number(scoreHeatBand.target) || 0)),
-      star3: Math.max(0, Math.floor(Number(scoreHeatBand.max) || 0))
-    };
-    var score = Math.max(0, Math.floor(Number(winStats && winStats.totalScore) || Number(snapshot && snapshot.score) || 0));
-    var stars = 0;
-    if (thresholds.star1 > 0 && score >= thresholds.star1) {
-      stars += 1;
-    }
-    if (thresholds.star2 > 0 && score >= thresholds.star2) {
-      stars += 1;
-    }
-    if (thresholds.star3 > 0 && score >= thresholds.star3) {
-      stars += 1;
-    }
-    return stars;
+    return StarRatingPolicy.calculateStarRatingFromSnapshot(snapshot);
   },
 
   _getLevelStarCount: function (levelId) {
