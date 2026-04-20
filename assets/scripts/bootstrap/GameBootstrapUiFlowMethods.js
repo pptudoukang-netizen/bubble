@@ -68,20 +68,30 @@ module.exports = {
       var snapshot = this.gameManager.startLevel(levelConfig);
       this._lastRuntimeState = snapshot ? snapshot.state : null;
       return this.levelRenderer.renderLevel(levelConfig, snapshot).then(function () {
-        if (this._pendingRouteEditorAutoEnable) {
-          this._routeEditorState.enabled = true;
-          this._pendingRouteEditorAutoEnable = false;
+        try {
+          if (this._pendingRouteEditorAutoEnable) {
+            this._routeEditorState.enabled = true;
+            this._pendingRouteEditorAutoEnable = false;
+          }
+          this.isRestarting = false;
+          this.isSelectingLevel = false;
+          this._hideLevelSelectView();
+          this._setDropTestButtonVisible(true);
+          this._renderRouteEditor();
+          this._refreshRouteEditorButtons();
+          this._setStatus(this._formatStatus(levelConfig, snapshot));
+          this._playGameplayBackgroundMusic();
+          this._playSfx("levelStart");
+          Logger.info(successLogPrefix || "Level started", levelConfig.level.code);
+        } catch (postLoadError) {
+          // 渲染已完成时，后处理异常不应误判为“关卡加载失败”。
+          this.isRestarting = false;
+          this.isSelectingLevel = false;
+          var postLoadMessage = postLoadError && postLoadError.stack
+            ? postLoadError.stack
+            : (postLoadError && postLoadError.message ? postLoadError.message : String(postLoadError));
+          Logger.warn("Post-load UI sync failed", postLoadMessage);
         }
-        this.isRestarting = false;
-        this.isSelectingLevel = false;
-        this._hideLevelSelectView();
-        this._setDropTestButtonVisible(true);
-        this._renderRouteEditor();
-        this._refreshRouteEditorButtons();
-        this._setStatus(this._formatStatus(levelConfig, snapshot));
-        this._playGameplayBackgroundMusic();
-        this._playSfx("levelStart");
-        Logger.info(successLogPrefix || "Level started", levelConfig.level.code);
       }.bind(this));
     }.bind(this)).catch(function (error) {
       this.isRestarting = false;
@@ -89,7 +99,10 @@ module.exports = {
       this._setDropTestButtonVisible(!!this.currentLevelConfig && !this.isSelectingLevel);
       this._refreshRouteEditorButtons();
       this._setStatus(failStatusMessage || "Load level failed. Check console logs.");
-      Logger.error(error);
+      var errorMessage = error && error.stack
+        ? error.stack
+        : (error && error.message ? error.message : String(error));
+      Logger.error("Load level failed detail", errorMessage);
     }.bind(this));
   },
 
@@ -496,7 +509,7 @@ module.exports = {
   },
 
   _setDropTestButtonVisible: function (visible) {
-    if (!this._dropTestButton) {
+    if (!this._dropTestButton || !cc.isValid(this._dropTestButton)) {
       return;
     }
 
@@ -537,7 +550,7 @@ module.exports = {
   },
 
   _hideLevelSelectView: function () {
-    if (!this._levelSelectNode) {
+    if (!this._levelSelectNode || !cc.isValid(this._levelSelectNode)) {
       return;
     }
 
