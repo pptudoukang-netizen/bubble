@@ -1,0 +1,99 @@
+{
+    "schemaVersion": 1,
+    "gameMode": "glass_marble_bubble",
+    "coordinateSystem": "odd-r-hex",
+    "layoutNotes": {
+        "description": "Top-to-bottom rows. Each character represents one grid cell.",
+        "legend": {
+            ".": "empty",
+            "R": "red",
+            "G": "green",
+            "B": "blue",
+            "Y": "yellow"
+        }
+    },
+    "sharedDefaults": {
+        "collectMode": "any_with_same_color_bonus",
+        "loseConditions": [
+            {
+                "type": "reach_danger_line",
+                "value": 1
+            },
+            {
+                "type": "run_out_of_shots",
+                "value": 1
+            }
+        ],
+        "fallingRules": {
+            "maxDynamicMarbles": 10,
+            "maxBounces": 2,
+            "enableMarbleMarbleCollision": true
+        }
+    },
+    "level": {
+        "levelId": 9,
+        "code": "L009_FOUR_COLOR_BANK",
+        "difficulty": "advanced",
+        "teaches": [
+            "bank_shot_under_pressure",
+            "mixed_color_planning",
+            "split_lane_reading"
+        ],
+        "colorCount": 4,
+        "colors": [
+            "R",
+            "G",
+            "B",
+            "Y"
+        ],
+        "shotLimit": 23,
+        "targetScore": 6345,
+        "dropInterval": 5,
+        "jarCount": 4,
+        "jarColors": [
+            "R",
+            "G",
+            "B",
+            "Y"
+        ],
+        "spawnWeights": {
+            "R": 1,
+            "G": 1,
+            "B": 1,
+            "Y": 1
+        },
+        "jarRules": {
+            "rimBounce": 0.72,
+            "collectZoneScale": 1,
+            "sameColorBonus": 1.6
+        },
+        "winConditions": [
+            {
+                "type": "clear_all",
+                "value": 1
+            },
+            {
+                "type": "collect_any",
+                "value": 10
+            }
+        ],
+        "bonusObjectives": [
+            {
+                "type": "collect_color",
+                "color": "Y",
+                "value": 3
+            }
+        ],
+        "layout": [
+            "RRYRYYYR",
+            "RGGYYYBY",
+            "YBBBGGGB",
+            "BYBBGGRG",
+            "GBYBGB..",
+            "........"
+        ],
+        "designNotes": "Mixed-color pockets remain available, but the center lane is less forgiving than before.",
+        "difficultyScore": 79
+    },
+    "difficultyScaleMax": 100
+}

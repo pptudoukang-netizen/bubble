@@ -1,0 +1,95 @@
+{
+    "schemaVersion": 1,
+    "gameMode": "glass_marble_bubble",
+    "coordinateSystem": "odd-r-hex",
+    "layoutNotes": {
+        "description": "Top-to-bottom rows. Each character represents one grid cell.",
+        "legend": {
+            ".": "empty",
+            "R": "red",
+            "G": "green",
+            "B": "blue",
+            "Y": "yellow"
+        }
+    },
+    "sharedDefaults": {
+        "collectMode": "any_with_same_color_bonus",
+        "loseConditions": [
+            {
+                "type": "reach_danger_line",
+                "value": 1
+            },
+            {
+                "type": "run_out_of_shots",
+                "value": 1
+            }
+        ],
+        "fallingRules": {
+            "maxDynamicMarbles": 10,
+            "maxBounces": 2,
+            "enableMarbleMarbleCollision": true
+        }
+    },
+    "level": {
+        "levelId": 4,
+        "code": "L004_BRIDGE_DROP",
+        "difficulty": "advanced",
+        "teaches": [
+            "support_break",
+            "bridge_drop",
+            "dense_bridge_intro"
+        ],
+        "colorCount": 3,
+        "colors": [
+            "R",
+            "G",
+            "B"
+        ],
+        "shotLimit": 20,
+        "targetScore": 5580,
+        "dropInterval": 5,
+        "jarCount": 3,
+        "jarColors": [
+            "R",
+            "G",
+            "B"
+        ],
+        "spawnWeights": {
+            "R": 1,
+            "G": 1,
+            "B": 1
+        },
+        "jarRules": {
+            "rimBounce": 0.69,
+            "collectZoneScale": 1.06,
+            "sameColorBonus": 1.5
+        },
+        "winConditions": [
+            {
+                "type": "clear_all",
+                "value": 1
+            },
+            {
+                "type": "collect_any",
+                "value": 5
+            }
+        ],
+        "bonusObjectives": [
+            {
+                "type": "collect_any",
+                "value": 4
+            }
+        ],
+        "layout": [
+            "RRBGRBGG",
+            "RRBGRGGG",
+            "GBBBBBBR",
+            "GRBBBBGR",
+            "G..BB...",
+            "........"
+        ],
+        "designNotes": "A wider bridge with fewer free gaps. Players must target support cuts more deliberately.",
+        "difficultyScore": 72
+    },
+    "difficultyScaleMax": 100
+}

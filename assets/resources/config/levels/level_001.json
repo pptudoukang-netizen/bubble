@@ -1,0 +1,97 @@
+{
+    "schemaVersion": 1,
+    "gameMode": "glass_marble_bubble",
+    "coordinateSystem": "odd-r-hex",
+    "layoutNotes": {
+        "description": "Top-to-bottom rows. Each character represents one grid cell.",
+        "legend": {
+            ".": "empty",
+            "R": "red",
+            "G": "green",
+            "B": "blue",
+            "Y": "yellow"
+        }
+    },
+    "sharedDefaults": {
+        "collectMode": "any_with_same_color_bonus",
+        "loseConditions": [
+            {
+                "type": "reach_danger_line",
+                "value": 1
+            },
+            {
+                "type": "run_out_of_shots",
+                "value": 1
+            }
+        ],
+        "fallingRules": {
+            "maxDynamicMarbles": 10,
+            "maxBounces": 2,
+            "enableMarbleMarbleCollision": true
+        }
+    },
+    "level": {
+        "levelId": 1,
+        "code": "L001_TUTORIAL_STRAIGHT",
+        "difficulty": "tutorial",
+        "teaches": [
+            "basic_match_3",
+            "basic_drop",
+            "jar_collection_intro"
+        ],
+        "colorCount": 3,
+        "colors": [
+            "R",
+            "G",
+            "B"
+        ],
+        "shotLimit": 18,
+        "targetScore": 3870,
+        "dropInterval": 8,
+        "jarCount": 3,
+        "jarColors": [
+            "R",
+            "G",
+            "B"
+        ],
+        "spawnWeights": {
+            "R": 1,
+            "G": 1,
+            "B": 1
+        },
+        "jarRules": {
+            "rimBounce": 0.68,
+            "collectZoneScale": 1.12,
+            "sameColorBonus": 1.5
+        },
+        "winConditions": [
+            {
+                "type": "clear_all",
+                "value": 1
+            },
+            {
+                "type": "collect_any",
+                "value": 2
+            }
+        ],
+        "bonusObjectives": [
+            {
+                "type": "collect_any",
+                "value": 2
+            }
+        ],
+        "layout": [
+            "RRGGRBGR",
+            "RRGGRBGR",
+            "GRBBRBGR",
+            "GRBBRB..",
+            "........",
+            "........"
+        ],
+        "designNotes": "First level. Very readable blocks. Player should learn direct shots and basic collection.",
+        "aimCollisionRadius": 58,
+        "aimTunnelAssistRadius": 42,
+        "difficultyScore": 10
+    },
+    "difficultyScaleMax": 100
+}

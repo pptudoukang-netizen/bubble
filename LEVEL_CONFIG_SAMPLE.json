@@ -1,0 +1,1471 @@
+﻿{
+    "schemaVersion":  1,
+    "gameMode":  "glass_marble_bubble",
+    "coordinateSystem":  "odd-r-hex",
+    "layoutNotes":  {
+                        "description":  "Top-to-bottom rows. Each character represents one grid cell.",
+                        "legend":  {
+                                       ".":  "empty",
+                                       "R":  "red",
+                                       "G":  "green",
+                                       "B":  "blue",
+                                       "Y":  "yellow"
+                                   }
+                    },
+    "sharedDefaults":  {
+                           "collectMode":  "any_with_same_color_bonus",
+                           "loseConditions":  [
+                                                  {
+                                                      "type":  "reach_danger_line",
+                                                      "value":  1
+                                                  },
+                                                  {
+                                                      "type":  "run_out_of_shots",
+                                                      "value":  1
+                                                  }
+                                              ],
+                           "fallingRules":  {
+                                                "maxDynamicMarbles":  10,
+                                                "maxBounces":  2,
+                                                "enableMarbleMarbleCollision":  true
+                                            }
+                       },
+    "levels":  [
+                   {
+                       "levelId":  1,
+                       "code":  "L001_TUTORIAL_STRAIGHT",
+                       "difficulty":  "tutorial",
+                       "teaches":  [
+                                       "basic_match_3",
+                                       "basic_drop",
+                                       "jar_collection_intro"
+                                   ],
+                       "colorCount":  3,
+                       "colors":  [
+                                      "R",
+                                      "G",
+                                      "B"
+                                  ],
+                       "shotLimit":  18,
+                       "dropInterval":  8,
+                       "jarCount":  3,
+                       "jarColors":  [
+                                         "R",
+                                         "G",
+                                         "B"
+                                     ],
+                       "spawnWeights":  {
+                                            "R":  1,
+                                            "G":  1,
+                                            "B":  1
+                                        },
+                       "jarRules":  {
+                                        "rimBounce":  0.68,
+                                        "collectZoneScale":  1.12,
+                                        "sameColorBonus":  1.5
+                                    },
+                       "winConditions":  [
+                                             {
+                                                 "type":  "clear_all",
+                                                 "value":  1
+                                             },
+                                             {
+                                                 "type":  "collect_any",
+                                                 "value":  2
+                                             }
+                                         ],
+                       "bonusObjectives":  [
+                                               {
+                                                   "type":  "collect_any",
+                                                   "value":  2
+                                               }
+                                           ],
+                       "layout":  [
+                                      "RRGGRBGR",
+                                      "RRGGRBGR",
+                                      "GRBBRBGR",
+                                      "GRBBRB..",
+                                      "........",
+                                      "........"
+                                  ],
+                       "designNotes":  "First level. Very readable blocks. Player should learn direct shots and basic collection.",
+                       "difficultyScore":  10
+                   },
+                   {
+                       "levelId":  2,
+                       "code":  "L002_TUTORIAL_DROP",
+                       "difficulty":  "tutorial",
+                       "teaches":  [
+                                       "drop_after_match",
+                                       "collect_any_goal_preview"
+                                   ],
+                       "colorCount":  3,
+                       "colors":  [
+                                      "R",
+                                      "G",
+                                      "B"
+                                  ],
+                       "shotLimit":  19,
+                       "dropInterval":  8,
+                       "jarCount":  3,
+                       "jarColors":  [
+                                         "R",
+                                         "G",
+                                         "B"
+                                     ],
+                       "spawnWeights":  {
+                                            "R":  1,
+                                            "G":  1,
+                                            "B":  1
+                                        },
+                       "jarRules":  {
+                                        "rimBounce":  0.68,
+                                        "collectZoneScale":  1.1,
+                                        "sameColorBonus":  1.5
+                                    },
+                       "winConditions":  [
+                                             {
+                                                 "type":  "clear_all",
+                                                 "value":  1
+                                             },
+                                             {
+                                                 "type":  "collect_any",
+                                                 "value":  3
+                                             }
+                                         ],
+                       "bonusObjectives":  [
+                                               {
+                                                   "type":  "collect_any",
+                                                   "value":  3
+                                               }
+                                           ],
+                       "layout":  [
+                                      "RRGGBBBG",
+                                      "RRGGBBBG",
+                                      "BGBBGRBG",
+                                      "BGBBGRBG",
+                                      "........",
+                                      "........"
+                                  ],
+                       "designNotes":  "Adds a clearer falling reward. Blue blocks can be dropped in a satisfying early pattern.",
+                       "difficultyScore":  10
+                   },
+                   {
+                       "levelId":  3,
+                       "code":  "L003_BANK_SHOT_INTRO",
+                       "difficulty":  "advanced",
+                       "teaches":  [
+                                       "single_bank_shot",
+                                       "pocket_targeting",
+                                       "tight_structure_intro"
+                                   ],
+                       "colorCount":  3,
+                       "colors":  [
+                                      "R",
+                                      "G",
+                                      "B"
+                                  ],
+                       "shotLimit":  20,
+                       "dropInterval":  5,
+                       "jarCount":  3,
+                       "jarColors":  [
+                                         "R",
+                                         "G",
+                                         "B"
+                                     ],
+                       "spawnWeights":  {
+                                            "R":  1,
+                                            "G":  1,
+                                            "B":  1
+                                        },
+                       "jarRules":  {
+                                        "rimBounce":  0.69,
+                                        "collectZoneScale":  1.08,
+                                        "sameColorBonus":  1.5
+                                    },
+                       "winConditions":  [
+                                             {
+                                                 "type":  "clear_all",
+                                                 "value":  1
+                                             },
+                                             {
+                                                 "type":  "collect_any",
+                                                 "value":  4
+                                             }
+                                         ],
+                       "bonusObjectives":  [
+                                               {
+                                                   "type":  "collect_any",
+                                                   "value":  3
+                                               }
+                                           ],
+                       "layout":  [
+                                      "RRGRBGGB",
+                                      "RRGRGGGB",
+                                      "RBBBBBRB",
+                                      "RBGBBGRB",
+                                      "RB......",
+                                      "........"
+                                  ],
+                       "designNotes":  "The first true difficulty jump. Bounce lane remains visible, but the center cluster is denser and the collect requirement is mandatory.",
+                       "difficultyScore":  70
+                   },
+                   {
+                       "levelId":  4,
+                       "code":  "L004_BRIDGE_DROP",
+                       "difficulty":  "advanced",
+                       "teaches":  [
+                                       "support_break",
+                                       "bridge_drop",
+                                       "dense_bridge_intro"
+                                   ],
+                       "colorCount":  3,
+                       "colors":  [
+                                      "R",
+                                      "G",
+                                      "B"
+                                  ],
+                       "shotLimit":  20,
+                       "dropInterval":  5,
+                       "jarCount":  3,
+                       "jarColors":  [
+                                         "R",
+                                         "G",
+                                         "B"
+                                     ],
+                       "spawnWeights":  {
+                                            "R":  1,
+                                            "G":  1,
+                                            "B":  1
+                                        },
+                       "jarRules":  {
+                                        "rimBounce":  0.69,
+                                        "collectZoneScale":  1.06,
+                                        "sameColorBonus":  1.5
+                                    },
+                       "winConditions":  [
+                                             {
+                                                 "type":  "clear_all",
+                                                 "value":  1
+                                             },
+                                             {
+                                                 "type":  "collect_any",
+                                                 "value":  5
+                                             }
+                                         ],
+                       "bonusObjectives":  [
+                                               {
+                                                   "type":  "collect_any",
+                                                   "value":  4
+                                               }
+                                           ],
+                       "layout":  [
+                                      "RRBGRBGG",
+                                      "RRBGRGGG",
+                                      "GBBBBBBR",
+                                      "GRBBBBGR",
+                                      "G..BB...",
+                                      "........"
+                                  ],
+                       "designNotes":  "A wider bridge with fewer free gaps. Players must target support cuts more deliberately.",
+                       "difficultyScore":  72
+                   },
+                   {
+                       "levelId":  5,
+                       "code":  "L005_FIRST_COLLECTION_GOAL",
+                       "difficulty":  "advanced",
+                       "teaches":  [
+                                       "mandatory_collection_goal",
+                                       "midfield_pressure"
+                                   ],
+                       "colorCount":  3,
+                       "colors":  [
+                                      "R",
+                                      "G",
+                                      "B"
+                                  ],
+                       "shotLimit":  21,
+                       "dropInterval":  5,
+                       "jarCount":  3,
+                       "jarColors":  [
+                                         "R",
+                                         "G",
+                                         "B"
+                                     ],
+                       "spawnWeights":  {
+                                            "R":  1,
+                                            "G":  1,
+                                            "B":  1.1
+                                        },
+                       "jarRules":  {
+                                        "rimBounce":  0.7,
+                                        "collectZoneScale":  1.05,
+                                        "sameColorBonus":  1.6
+                                    },
+                       "winConditions":  [
+                                             {
+                                                 "type":  "clear_all",
+                                                 "value":  1
+                                             },
+                                             {
+                                                 "type":  "collect_any",
+                                                 "value":  6
+                                             }
+                                         ],
+                       "bonusObjectives":  [
+                                               {
+                                                   "type":  "collect_color",
+                                                   "color":  "B",
+                                                   "value":  3
+                                               }
+                                           ],
+                       "layout":  [
+                                      "BBRRGGBG",
+                                      "BBRRGGBG",
+                                      "BBBGGRBG",
+                                      "BGBBGRBG",
+                                      "BGRG....",
+                                      "........"
+                                  ],
+                       "designNotes":  "Collection becomes a real requirement while the board leaves less room for inefficient shots.",
+                       "difficultyScore":  74
+                   },
+                   {
+                       "levelId":  6,
+                       "code":  "L006_BLUE_COLLECTION",
+                       "difficulty":  "advanced",
+                       "teaches":  [
+                                       "color_specific_collect",
+                                       "blue_lane_focus"
+                                   ],
+                       "colorCount":  3,
+                       "colors":  [
+                                      "R",
+                                      "G",
+                                      "B"
+                                  ],
+                       "shotLimit":  21,
+                       "dropInterval":  5,
+                       "jarCount":  3,
+                       "jarColors":  [
+                                         "R",
+                                         "G",
+                                         "B"
+                                     ],
+                       "spawnWeights":  {
+                                            "R":  1,
+                                            "G":  1,
+                                            "B":  1.15
+                                        },
+                       "jarRules":  {
+                                        "rimBounce":  0.7,
+                                        "collectZoneScale":  1.03,
+                                        "sameColorBonus":  1.6
+                                    },
+                       "winConditions":  [
+                                             {
+                                                 "type":  "clear_all",
+                                                 "value":  1
+                                             },
+                                             {
+                                                 "type":  "collect_color",
+                                                 "color":  "B",
+                                                 "value":  7
+                                             }
+                                         ],
+                       "bonusObjectives":  [
+                                               {
+                                                   "type":  "collect_same_color_bonus_hits",
+                                                   "value":  2
+                                               }
+                                           ],
+                       "layout":  [
+                                      "RRGRBGGB",
+                                      "RRGRGGGB",
+                                      "RBBBBGRB",
+                                      "RBBBBGRB",
+                                      "RBGB....",
+                                      "........"
+                                  ],
+                       "designNotes":  "Blue collection is now attached to a tighter structure, requiring cleaner setup before the drop.",
+                       "difficultyScore":  75
+                   },
+                   {
+                       "levelId":  7,
+                       "code":  "L007_WIDE_BRIDGE",
+                       "difficulty":  "advanced",
+                       "teaches":  [
+                                       "large_drop_reward",
+                                       "long_bridge_commitment"
+                                   ],
+                       "colorCount":  3,
+                       "colors":  [
+                                      "R",
+                                      "G",
+                                      "B"
+                                  ],
+                       "shotLimit":  22,
+                       "dropInterval":  5,
+                       "jarCount":  3,
+                       "jarColors":  [
+                                         "R",
+                                         "G",
+                                         "B"
+                                     ],
+                       "spawnWeights":  {
+                                            "R":  1,
+                                            "G":  1,
+                                            "B":  1.05
+                                        },
+                       "jarRules":  {
+                                        "rimBounce":  0.71,
+                                        "collectZoneScale":  1.02,
+                                        "sameColorBonus":  1.6
+                                    },
+                       "winConditions":  [
+                                             {
+                                                 "type":  "clear_all",
+                                                 "value":  1
+                                             },
+                                             {
+                                                 "type":  "collect_any",
+                                                 "value":  8
+                                             }
+                                         ],
+                       "bonusObjectives":  [
+                                               {
+                                                   "type":  "collect_color",
+                                                   "color":  "B",
+                                                   "value":  4
+                                               }
+                                           ],
+                       "layout":  [
+                                      "RRBGRBGG",
+                                      "RRGGRGGG",
+                                      "GBBBBBBR",
+                                      "GRBBBBGR",
+                                      "GRBBB...",
+                                      "........"
+                                  ],
+                       "designNotes":  "The board rewards a big collapse, but missing the support line now costs much more.",
+                       "difficultyScore":  76
+                   },
+                   {
+                       "levelId":  8,
+                       "code":  "L008_YELLOW_INTRO",
+                       "difficulty":  "advanced",
+                       "teaches":  [
+                                       "fourth_color_intro",
+                                       "four_jars_intro",
+                                       "tighter_four_color_reading"
+                                   ],
+                       "colorCount":  4,
+                       "colors":  [
+                                      "R",
+                                      "G",
+                                      "B",
+                                      "Y"
+                                  ],
+                       "shotLimit":  23,
+                       "dropInterval":  5,
+                       "jarCount":  4,
+                       "jarColors":  [
+                                         "R",
+                                         "G",
+                                         "B",
+                                         "Y"
+                                     ],
+                       "spawnWeights":  {
+                                            "R":  1,
+                                            "G":  1,
+                                            "B":  1,
+                                            "Y":  1
+                                        },
+                       "jarRules":  {
+                                        "rimBounce":  0.72,
+                                        "collectZoneScale":  1.02,
+                                        "sameColorBonus":  1.6
+                                    },
+                       "winConditions":  [
+                                             {
+                                                 "type":  "clear_all",
+                                                 "value":  1
+                                             },
+                                             {
+                                                 "type":  "collect_any",
+                                                 "value":  9
+                                             }
+                                         ],
+                       "bonusObjectives":  [
+                                               {
+                                                   "type":  "collect_color",
+                                                   "color":  "Y",
+                                                   "value":  3
+                                               }
+                                           ],
+                       "layout":  [
+                                      "RRGGYYBY",
+                                      "RRGGYYGB",
+                                      "BBBYYYRG",
+                                      "GBBBGGYR",
+                                      "RGBGGG..",
+                                      "........"
+                                  ],
+                       "designNotes":  "Four-color reading appears in a denser arrangement with fewer free rescue angles.",
+                       "difficultyScore":  78
+                   },
+                   {
+                       "levelId":  9,
+                       "code":  "L009_FOUR_COLOR_BANK",
+                       "difficulty":  "advanced",
+                       "teaches":  [
+                                       "bank_shot_under_pressure",
+                                       "mixed_color_planning",
+                                       "split_lane_reading"
+                                   ],
+                       "colorCount":  4,
+                       "colors":  [
+                                      "R",
+                                      "G",
+                                      "B",
+                                      "Y"
+                                  ],
+                       "shotLimit":  23,
+                       "dropInterval":  5,
+                       "jarCount":  4,
+                       "jarColors":  [
+                                         "R",
+                                         "G",
+                                         "B",
+                                         "Y"
+                                     ],
+                       "spawnWeights":  {
+                                            "R":  1,
+                                            "G":  1,
+                                            "B":  1,
+                                            "Y":  1
+                                        },
+                       "jarRules":  {
+                                        "rimBounce":  0.72,
+                                        "collectZoneScale":  1.0,
+                                        "sameColorBonus":  1.6
+                                    },
+                       "winConditions":  [
+                                             {
+                                                 "type":  "clear_all",
+                                                 "value":  1
+                                             },
+                                             {
+                                                 "type":  "collect_any",
+                                                 "value":  10
+                                             }
+                                         ],
+                       "bonusObjectives":  [
+                                               {
+                                                   "type":  "collect_color",
+                                                   "color":  "Y",
+                                                   "value":  3
+                                               }
+                                           ],
+                       "layout":  [
+                                      "RRYRYYYR",
+                                      "RGGYYYBY",
+                                      "YBBBGGGB",
+                                      "BYBBGGRG",
+                                      "GBYBGB..",
+                                      "........"
+                                  ],
+                       "designNotes":  "Mixed-color pockets remain available, but the center lane is less forgiving than before.",
+                       "difficultyScore":  79
+                   },
+                   {
+                       "levelId":  10,
+                       "code":  "L010_TIGHTER_SHOTS",
+                       "difficulty":  "hard",
+                       "teaches":  [
+                                       "efficiency",
+                                       "shot_pressure_intro",
+                                       "stone_obstacle_intro"
+                                   ],
+                       "colorCount":  4,
+                       "colors":  [
+                                      "R",
+                                      "G",
+                                      "B",
+                                      "Y"
+                                  ],
+                       "shotLimit":  24,
+                       "dropInterval":  4,
+                       "jarCount":  4,
+                       "jarColors":  [
+                                         "R",
+                                         "G",
+                                         "B",
+                                         "Y"
+                                     ],
+                       "spawnWeights":  {
+                                            "R":  1,
+                                            "G":  1,
+                                            "B":  1,
+                                            "Y":  1
+                                        },
+                       "jarRules":  {
+                                        "rimBounce":  0.73,
+                                        "collectZoneScale":  0.99,
+                                        "sameColorBonus":  1.65
+                                    },
+                       "winConditions":  [
+                                             {
+                                                 "type":  "clear_all",
+                                                 "value":  1
+                                             },
+                                             {
+                                                 "type":  "collect_any",
+                                                 "value":  11
+                                             }
+                                         ],
+                       "bonusObjectives":  [
+                                               {
+                                                   "type":  "clear_with_shots_remaining",
+                                                   "value":  3
+                                               }
+                                           ],
+                       "layout":  [
+                                      "RRGGYYRG",
+                                      "RBGGYYYR",
+                                      "RBB.RGGY",
+                                      "YRBBYRGB",
+                                      "BYRBBYR.",
+                                      "........"
+                                  ],
+                       "designNotes":  "Stone obstacle is introduced as a true route blocker. The player must either route around it or plan for later removal.",
+                       "difficultyScore":  80,
+                       "specialEntities":  [
+                                               {
+                                                   "id":  "stone_01",
+                                                   "entityCategory":  "obstacle_ball",
+                                                   "entityType":  "stone",
+                                                   "row":  2,
+                                                   "col":  3
+                                               }
+                                           ]
+                   },
+                   {
+                       "levelId":  11,
+                       "code":  "L011_RED_COLLECTION",
+                       "difficulty":  "hard",
+                       "teaches":  [
+                                       "specific_color_hunt",
+                                       "suspended_cluster",
+                                       "stone_pair_pressure"
+                                   ],
+                       "colorCount":  4,
+                       "colors":  [
+                                      "R",
+                                      "G",
+                                      "B",
+                                      "Y"
+                                  ],
+                       "shotLimit":  24,
+                       "dropInterval":  4,
+                       "jarCount":  4,
+                       "jarColors":  [
+                                         "R",
+                                         "G",
+                                         "B",
+                                         "Y"
+                                     ],
+                       "spawnWeights":  {
+                                            "R":  1.1,
+                                            "G":  1,
+                                            "B":  1,
+                                            "Y":  1
+                                        },
+                       "jarRules":  {
+                                        "rimBounce":  0.73,
+                                        "collectZoneScale":  0.98,
+                                        "sameColorBonus":  1.65
+                                    },
+                       "winConditions":  [
+                                             {
+                                                 "type":  "clear_all",
+                                                 "value":  1
+                                             },
+                                             {
+                                                 "type":  "collect_color",
+                                                 "color":  "R",
+                                                 "value":  12
+                                             }
+                                         ],
+                       "bonusObjectives":  [
+                                               {
+                                                   "type":  "collect_same_color_bonus_hits",
+                                                   "value":  3
+                                               }
+                                           ],
+                       "layout":  [
+                                      "GGGBYRBB",
+                                      "GYRGBBBB",
+                                      "GRRR.BYR",
+                                      "RGRY.GBY",
+                                      "YRGRYRGB",
+                                      "........"
+                                  ],
+                       "designNotes":  "Red collection now happens around two blocking stones, pushing players to read structure instead of color alone.",
+                       "difficultyScore":  82,
+                       "specialEntities":  [
+                                               {
+                                                   "id":  "stone_01",
+                                                   "entityCategory":  "obstacle_ball",
+                                                   "entityType":  "stone",
+                                                   "row":  2,
+                                                   "col":  4
+                                               },
+                                               {
+                                                   "id":  "stone_02",
+                                                   "entityCategory":  "obstacle_ball",
+                                                   "entityType":  "stone",
+                                                   "row":  3,
+                                                   "col":  4
+                                               }
+                                           ]
+                   },
+                   {
+                       "levelId":  12,
+                       "code":  "L012_LAYERED_FOUR_COLOR",
+                       "difficulty":  "hard",
+                       "teaches":  [
+                                       "layer_breaking",
+                                       "alternating_targets",
+                                       "rainbow_skill_ball_intro"
+                                   ],
+                       "colorCount":  4,
+                       "colors":  [
+                                      "R",
+                                      "G",
+                                      "B",
+                                      "Y"
+                                  ],
+                       "shotLimit":  25,
+                       "dropInterval":  4,
+                       "jarCount":  4,
+                       "jarColors":  [
+                                         "R",
+                                         "G",
+                                         "B",
+                                         "Y"
+                                     ],
+                       "spawnWeights":  {
+                                            "R":  1,
+                                            "G":  1,
+                                            "B":  1,
+                                            "Y":  1
+                                        },
+                       "jarRules":  {
+                                        "rimBounce":  0.74,
+                                        "collectZoneScale":  0.98,
+                                        "sameColorBonus":  1.65
+                                    },
+                       "winConditions":  [
+                                             {
+                                                 "type":  "clear_all",
+                                                 "value":  1
+                                             },
+                                             {
+                                                 "type":  "collect_any",
+                                                 "value":  13
+                                             }
+                                         ],
+                       "bonusObjectives":  [
+                                               {
+                                                   "type":  "collect_color",
+                                                   "color":  "B",
+                                                   "value":  3
+                                               }
+                                           ],
+                       "layout":  [
+                                      "RRGGYYBY",
+                                      "RRGGYYGB",
+                                      "BBB.BGGG",
+                                      "GBBBGBYR",
+                                      "RGBBRGBY",
+                                      "........"
+                                  ],
+                       "designNotes":  "Rainbow skill ball appears near a constrained bridge so players can feel its value as a color fixer.",
+                       "difficultyScore":  83,
+                       "specialEntities":  [
+                                               {
+                                                   "id":  "skill_rainbow_01",
+                                                   "entityCategory":  "skill_ball",
+                                                   "entityType":  "rainbow",
+                                                   "row":  2,
+                                                   "col":  3
+                                               }
+                                           ]
+                   },
+                   {
+                       "levelId":  13,
+                       "code":  "L013_SUSPENDED_ISLANDS",
+                       "difficulty":  "hard",
+                       "teaches":  [
+                                       "multi_island_priority",
+                                       "anchor_reading",
+                                       "rainbow_skill_followup"
+                                   ],
+                       "colorCount":  4,
+                       "colors":  [
+                                      "R",
+                                      "G",
+                                      "B",
+                                      "Y"
+                                  ],
+                       "shotLimit":  25,
+                       "dropInterval":  4,
+                       "jarCount":  4,
+                       "jarColors":  [
+                                         "R",
+                                         "G",
+                                         "B",
+                                         "Y"
+                                     ],
+                       "spawnWeights":  {
+                                            "R":  1,
+                                            "G":  1,
+                                            "B":  1,
+                                            "Y":  1
+                                        },
+                       "jarRules":  {
+                                        "rimBounce":  0.74,
+                                        "collectZoneScale":  0.97,
+                                        "sameColorBonus":  1.7
+                                    },
+                       "winConditions":  [
+                                             {
+                                                 "type":  "clear_all",
+                                                 "value":  1
+                                             },
+                                             {
+                                                 "type":  "collect_any",
+                                                 "value":  14
+                                             }
+                                         ],
+                       "bonusObjectives":  [
+                                               {
+                                                   "type":  "collect_any",
+                                                   "value":  5
+                                               }
+                                           ],
+                       "layout":  [
+                                      "RBYRGBYR",
+                                      "RRB.RYYY",
+                                      "YGGBYBBB",
+                                      "BYGGBBBG",
+                                      "GBYGGBYR",
+                                      "R......."
+                                  ],
+                       "designNotes":  "Split islands create competing priorities, while the rainbow lane offers one controlled recovery path.",
+                       "difficultyScore":  84,
+                       "specialEntities":  [
+                                               {
+                                                   "id":  "skill_rainbow_01",
+                                                   "entityCategory":  "skill_ball",
+                                                   "entityType":  "rainbow",
+                                                   "row":  1,
+                                                   "col":  3
+                                               }
+                                           ]
+                   },
+                   {
+                       "levelId":  14,
+                       "code":  "L014_NARROW_SUPPORTS",
+                       "difficulty":  "hard",
+                       "teaches":  [
+                                       "precision_support_break",
+                                       "angled_cleanup",
+                                       "blast_skill_ball_intro"
+                                   ],
+                       "colorCount":  4,
+                       "colors":  [
+                                      "R",
+                                      "G",
+                                      "B",
+                                      "Y"
+                                  ],
+                       "shotLimit":  26,
+                       "dropInterval":  4,
+                       "jarCount":  4,
+                       "jarColors":  [
+                                         "R",
+                                         "G",
+                                         "B",
+                                         "Y"
+                                     ],
+                       "spawnWeights":  {
+                                            "R":  1,
+                                            "G":  1,
+                                            "B":  1.05,
+                                            "Y":  1
+                                        },
+                       "jarRules":  {
+                                        "rimBounce":  0.75,
+                                        "collectZoneScale":  0.96,
+                                        "sameColorBonus":  1.7
+                                    },
+                       "winConditions":  [
+                                             {
+                                                 "type":  "clear_all",
+                                                 "value":  1
+                                             },
+                                             {
+                                                 "type":  "collect_any",
+                                                 "value":  15
+                                             }
+                                         ],
+                       "bonusObjectives":  [
+                                               {
+                                                   "type":  "collect_color",
+                                                   "color":  "B",
+                                                   "value":  4
+                                               }
+                                           ],
+                       "layout":  [
+                                      "RYRGGYRY",
+                                      "RRYG.BYY",
+                                      "RGB.RGBY",
+                                      "YRGBYGGB",
+                                      "BYRBBYRG",
+                                      "GB......"
+                                  ],
+                       "designNotes":  "Blast skill ball enters alongside stone blockers to teach local structure breaking.",
+                       "difficultyScore":  86,
+                       "specialEntities":  [
+                                               {
+                                                   "id":  "skill_blast_01",
+                                                   "entityCategory":  "skill_ball",
+                                                   "entityType":  "blast",
+                                                   "row":  1,
+                                                   "col":  4
+                                               },
+                                               {
+                                                   "id":  "stone_01",
+                                                   "entityCategory":  "obstacle_ball",
+                                                   "entityType":  "stone",
+                                                   "row":  2,
+                                                   "col":  3
+                                               }
+                                           ]
+                   },
+                   {
+                       "levelId":  15,
+                       "code":  "L015_BALANCED_PRESSURE",
+                       "difficulty":  "hard",
+                       "teaches":  [
+                                       "symmetry_breaking",
+                                       "blue_collection_under_limit",
+                                       "blast_stone_combo"
+                                   ],
+                       "colorCount":  4,
+                       "colors":  [
+                                      "R",
+                                      "G",
+                                      "B",
+                                      "Y"
+                                  ],
+                       "shotLimit":  26,
+                       "dropInterval":  4,
+                       "jarCount":  4,
+                       "jarColors":  [
+                                         "R",
+                                         "G",
+                                         "B",
+                                         "Y"
+                                     ],
+                       "spawnWeights":  {
+                                            "R":  1,
+                                            "G":  1,
+                                            "B":  1.05,
+                                            "Y":  1
+                                        },
+                       "jarRules":  {
+                                        "rimBounce":  0.75,
+                                        "collectZoneScale":  0.95,
+                                        "sameColorBonus":  1.7
+                                    },
+                       "winConditions":  [
+                                             {
+                                                 "type":  "clear_all",
+                                                 "value":  1
+                                             },
+                                             {
+                                                 "type":  "collect_color",
+                                                 "color":  "B",
+                                                 "value":  16
+                                             }
+                                         ],
+                       "bonusObjectives":  [
+                                               {
+                                                   "type":  "clear_with_shots_remaining",
+                                                   "value":  2
+                                               }
+                                           ],
+                       "layout":  [
+                                      "RRGBYGYY",
+                                      "RYG.BGRY",
+                                      "GBB.GBBR",
+                                      "RBBY.BBY",
+                                      "YRBBYRGB",
+                                      "BYR....."
+                                  ],
+                       "designNotes":  "The board is more symmetrical, but a blast pickup and stone blocker force stronger path commitment.",
+                       "difficultyScore":  88,
+                       "specialEntities":  [
+                                               {
+                                                   "id":  "skill_blast_01",
+                                                   "entityCategory":  "skill_ball",
+                                                   "entityType":  "blast",
+                                                   "row":  2,
+                                                   "col":  3
+                                               },
+                                               {
+                                                   "id":  "stone_01",
+                                                   "entityCategory":  "obstacle_ball",
+                                                   "entityType":  "stone",
+                                                   "row":  1,
+                                                   "col":  3
+                                               },
+                                               {
+                                                   "id":  "stone_02",
+                                                   "entityCategory":  "obstacle_ball",
+                                                   "entityType":  "stone",
+                                                   "row":  3,
+                                                   "col":  4
+                                               }
+                                           ]
+                   },
+                   {
+                       "levelId":  16,
+                       "code":  "L016_YELLOW_COMPOUND",
+                       "difficulty":  "expert",
+                       "teaches":  [
+                                       "compound_goal_play",
+                                       "yellow_priority",
+                                       "ice_obstacle_intro"
+                                   ],
+                       "colorCount":  4,
+                       "colors":  [
+                                      "R",
+                                      "G",
+                                      "B",
+                                      "Y"
+                                  ],
+                       "shotLimit":  27,
+                       "dropInterval":  4,
+                       "jarCount":  4,
+                       "jarColors":  [
+                                         "R",
+                                         "G",
+                                         "B",
+                                         "Y"
+                                     ],
+                       "spawnWeights":  {
+                                            "R":  1,
+                                            "G":  1,
+                                            "B":  1,
+                                            "Y":  1.1
+                                        },
+                       "jarRules":  {
+                                        "rimBounce":  0.76,
+                                        "collectZoneScale":  0.95,
+                                        "sameColorBonus":  1.75
+                                    },
+                       "winConditions":  [
+                                             {
+                                                 "type":  "clear_all",
+                                                 "value":  1
+                                             },
+                                             {
+                                                 "type":  "collect_color",
+                                                 "color":  "Y",
+                                                 "value":  17
+                                             }
+                                         ],
+                       "bonusObjectives":  [
+                                               {
+                                                   "type":  "collect_same_color_bonus_hits",
+                                                   "value":  4
+                                               }
+                                           ],
+                       "layout":  [
+                                      "RRYYGGBY",
+                                      "RRYYGGGB",
+                                      "BYB.BYYG",
+                                      "GBBRGBYR",
+                                      "RGBBRGBY",
+                                      "YRGB...."
+                                  ],
+                       "designNotes":  "Ice obstacle is introduced as a two-step problem: thaw first, then clear the inner color.",
+                       "difficultyScore":  90,
+                       "specialEntities":  [
+                                               {
+                                                   "id":  "ice_01",
+                                                   "entityCategory":  "obstacle_ball",
+                                                   "entityType":  "ice",
+                                                   "row":  2,
+                                                   "col":  3,
+                                                   "innerColor":  "Y"
+                                               }
+                                           ]
+                   },
+                   {
+                       "levelId":  17,
+                       "code":  "L017_LONG_BRIDGE",
+                       "difficulty":  "expert",
+                       "teaches":  [
+                                       "high_value_drop",
+                                       "long_term_setup",
+                                       "blast_and_ice_combo"
+                                   ],
+                       "colorCount":  4,
+                       "colors":  [
+                                      "R",
+                                      "G",
+                                      "B",
+                                      "Y"
+                                  ],
+                       "shotLimit":  28,
+                       "dropInterval":  4,
+                       "jarCount":  4,
+                       "jarColors":  [
+                                         "R",
+                                         "G",
+                                         "B",
+                                         "Y"
+                                     ],
+                       "spawnWeights":  {
+                                            "R":  1,
+                                            "G":  1,
+                                            "B":  1,
+                                            "Y":  1
+                                        },
+                       "jarRules":  {
+                                        "rimBounce":  0.77,
+                                        "collectZoneScale":  0.94,
+                                        "sameColorBonus":  1.75
+                                    },
+                       "winConditions":  [
+                                             {
+                                                 "type":  "clear_all",
+                                                 "value":  1
+                                             },
+                                             {
+                                                 "type":  "collect_any",
+                                                 "value":  18
+                                             }
+                                         ],
+                       "bonusObjectives":  [
+                                               {
+                                                   "type":  "single_turn_drop_count",
+                                                   "value":  5
+                                               }
+                                           ],
+                       "layout":  [
+                                      "RBYRGBYY",
+                                      "RRBYRGYY",
+                                      "YGG..GGB",
+                                      "BYBGBBRG",
+                                      "GBYBBBYR",
+                                      "RGBY...."
+                                  ],
+                       "designNotes":  "A long bridge now mixes blast value with an ice delay, turning the collapse into a multi-step setup.",
+                       "difficultyScore":  92,
+                       "specialEntities":  [
+                                               {
+                                                   "id":  "skill_blast_01",
+                                                   "entityCategory":  "skill_ball",
+                                                   "entityType":  "blast",
+                                                   "row":  2,
+                                                   "col":  3
+                                               },
+                                               {
+                                                   "id":  "ice_01",
+                                                   "entityCategory":  "obstacle_ball",
+                                                   "entityType":  "ice",
+                                                   "row":  2,
+                                                   "col":  4,
+                                                   "innerColor":  "G"
+                                               }
+                                           ]
+                   },
+                   {
+                       "levelId":  18,
+                       "code":  "L018_DENSE_FOUR_COLOR",
+                       "difficulty":  "expert",
+                       "teaches":  [
+                                       "dense_board_management",
+                                       "multi_layer_cleanup",
+                                       "stone_and_ice_pressure"
+                                   ],
+                       "colorCount":  4,
+                       "colors":  [
+                                      "R",
+                                      "G",
+                                      "B",
+                                      "Y"
+                                  ],
+                       "shotLimit":  28,
+                       "dropInterval":  4,
+                       "jarCount":  4,
+                       "jarColors":  [
+                                         "R",
+                                         "G",
+                                         "B",
+                                         "Y"
+                                     ],
+                       "spawnWeights":  {
+                                            "R":  1,
+                                            "G":  1,
+                                            "B":  1,
+                                            "Y":  1
+                                        },
+                       "jarRules":  {
+                                        "rimBounce":  0.77,
+                                        "collectZoneScale":  0.93,
+                                        "sameColorBonus":  1.75
+                                    },
+                       "winConditions":  [
+                                             {
+                                                 "type":  "clear_all",
+                                                 "value":  1
+                                             },
+                                             {
+                                                 "type":  "collect_any",
+                                                 "value":  19
+                                             }
+                                         ],
+                       "bonusObjectives":  [
+                                               {
+                                                   "type":  "collect_any",
+                                                   "value":  6
+                                               }
+                                           ],
+                       "layout":  [
+                                      "RRGGYYBB",
+                                      "RBGG.BBB",
+                                      "RGG.RYYY",
+                                      "YRBBYRYB",
+                                      "BYRBBYRG",
+                                      "GBYRG..."
+                                  ],
+                       "designNotes":  "Dense reading now includes both hard and soft blockers, reducing clean direct clears.",
+                       "difficultyScore":  94,
+                       "specialEntities":  [
+                                               {
+                                                   "id":  "stone_01",
+                                                   "entityCategory":  "obstacle_ball",
+                                                   "entityType":  "stone",
+                                                   "row":  1,
+                                                   "col":  4
+                                               },
+                                               {
+                                                   "id":  "ice_01",
+                                                   "entityCategory":  "obstacle_ball",
+                                                   "entityType":  "ice",
+                                                   "row":  2,
+                                                   "col":  3,
+                                                   "innerColor":  "B"
+                                               }
+                                           ]
+                   },
+                   {
+                       "levelId":  19,
+                       "code":  "L019_TIGHT_COLLECTION",
+                       "difficulty":  "expert",
+                       "teaches":  [
+                                       "green_target_under_pressure",
+                                       "narrow_collection_window",
+                                       "late_game_obstacle_mix"
+                                   ],
+                       "colorCount":  4,
+                       "colors":  [
+                                      "R",
+                                      "G",
+                                      "B",
+                                      "Y"
+                                  ],
+                       "shotLimit":  29,
+                       "dropInterval":  3,
+                       "jarCount":  4,
+                       "jarColors":  [
+                                         "R",
+                                         "G",
+                                         "B",
+                                         "Y"
+                                     ],
+                       "spawnWeights":  {
+                                            "R":  1,
+                                            "G":  1.1,
+                                            "B":  1,
+                                            "Y":  1
+                                        },
+                       "jarRules":  {
+                                        "rimBounce":  0.78,
+                                        "collectZoneScale":  0.92,
+                                        "sameColorBonus":  1.8
+                                    },
+                       "winConditions":  [
+                                             {
+                                                 "type":  "clear_all",
+                                                 "value":  1
+                                             },
+                                             {
+                                                 "type":  "collect_color",
+                                                 "color":  "G",
+                                                 "value":  20
+                                             }
+                                         ],
+                       "bonusObjectives":  [
+                                               {
+                                                   "type":  "clear_with_shots_remaining",
+                                                   "value":  2
+                                               }
+                                           ],
+                       "layout":  [
+                                      "RRGBYYBB",
+                                      "RYR.YYBB",
+                                      "GGG.GBYR",
+                                      "RGB.RGBY",
+                                      "YRBBYRGB",
+                                      "BYRGBY.."
+                                  ],
+                       "designNotes":  "Late-game collection pressure now sits behind stone and ice blockers, with a blast pickup as the main escape hatch.",
+                       "difficultyScore":  96,
+                       "specialEntities":  [
+                                               {
+                                                   "id":  "skill_blast_01",
+                                                   "entityCategory":  "skill_ball",
+                                                   "entityType":  "blast",
+                                                   "row":  1,
+                                                   "col":  3
+                                               },
+                                               {
+                                                   "id":  "stone_01",
+                                                   "entityCategory":  "obstacle_ball",
+                                                   "entityType":  "stone",
+                                                   "row":  2,
+                                                   "col":  3
+                                               },
+                                               {
+                                                   "id":  "ice_01",
+                                                   "entityCategory":  "obstacle_ball",
+                                                   "entityType":  "ice",
+                                                   "row":  3,
+                                                   "col":  3,
+                                                   "innerColor":  "G"
+                                               }
+                                           ]
+                   },
+                   {
+                       "levelId":  20,
+                       "code":  "L020_MVP_FINALE",
+                       "difficulty":  "expert",
+                       "teaches":  [
+                                       "final_mvp_exam",
+                                       "multi_path_planning",
+                                       "rainbow_blast_stone_ice_combo"
+                                   ],
+                       "colorCount":  4,
+                       "colors":  [
+                                      "R",
+                                      "G",
+                                      "B",
+                                      "Y"
+                                  ],
+                       "shotLimit":  30,
+                       "dropInterval":  3,
+                       "jarCount":  4,
+                       "jarColors":  [
+                                         "R",
+                                         "G",
+                                         "B",
+                                         "Y"
+                                     ],
+                       "spawnWeights":  {
+                                            "R":  1,
+                                            "G":  1,
+                                            "B":  1,
+                                            "Y":  1
+                                        },
+                       "jarRules":  {
+                                        "rimBounce":  0.79,
+                                        "collectZoneScale":  0.92,
+                                        "sameColorBonus":  1.8
+                                    },
+                       "winConditions":  [
+                                             {
+                                                 "type":  "clear_all",
+                                                 "value":  1
+                                             },
+                                             {
+                                                 "type":  "collect_any",
+                                                 "value":  22
+                                             }
+                                         ],
+                       "bonusObjectives":  [
+                                               {
+                                                   "type":  "collect_color",
+                                                   "color":  "Y",
+                                                   "value":  4
+                                               }
+                                           ],
+                       "layout":  [
+                                      "RRGGYYBB",
+                                      "RRGB.YGB",
+                                      "BGG.B.BG",
+                                      "GBBR.YYR",
+                                      "RBB.RGBY",
+                                      "YRGBYRGB"
+                                  ],
+                       "designNotes":  "Final prototype board mixes every core pressure: dense colors, route blockers, skill pickups and a two-step ice target.",
+                       "difficultyScore":  98,
+                       "specialEntities":  [
+                                               {
+                                                   "id":  "skill_blast_01",
+                                                   "entityCategory":  "skill_ball",
+                                                   "entityType":  "blast",
+                                                   "row":  1,
+                                                   "col":  4
+                                               },
+                                               {
+                                                   "id":  "skill_rainbow_01",
+                                                   "entityCategory":  "skill_ball",
+                                                   "entityType":  "rainbow",
+                                                   "row":  2,
+                                                   "col":  3
+                                               },
+                                               {
+                                                   "id":  "stone_01",
+                                                   "entityCategory":  "obstacle_ball",
+                                                   "entityType":  "stone",
+                                                   "row":  2,
+                                                   "col":  5
+                                               },
+                                               {
+                                                   "id":  "stone_02",
+                                                   "entityCategory":  "obstacle_ball",
+                                                   "entityType":  "stone",
+                                                   "row":  3,
+                                                   "col":  4
+                                               },
+                                               {
+                                                   "id":  "ice_01",
+                                                   "entityCategory":  "obstacle_ball",
+                                                   "entityType":  "ice",
+                                                   "row":  4,
+                                                   "col":  3,
+                                                   "innerColor":  "Y"
+                                               }
+                                           ]
+                   }
+               ],
+    "difficultyScaleMax":  100
+}

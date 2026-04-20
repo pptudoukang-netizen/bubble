@@ -1,0 +1,115 @@
+{
+    "schemaVersion": 1,
+    "gameMode": "glass_marble_bubble",
+    "coordinateSystem": "odd-r-hex",
+    "layoutNotes": {
+        "description": "Top-to-bottom rows. Each character represents one grid cell.",
+        "legend": {
+            ".": "empty",
+            "R": "red",
+            "G": "green",
+            "B": "blue",
+            "P": "purple"
+        }
+    },
+    "sharedDefaults": {
+        "collectMode": "any_with_same_color_bonus",
+        "loseConditions": [
+            {
+                "type": "reach_danger_line",
+                "value": 1
+            },
+            {
+                "type": "run_out_of_shots",
+                "value": 1
+            }
+        ],
+        "fallingRules": {
+            "maxDynamicMarbles": 10,
+            "maxBounces": 2,
+            "enableMarbleMarbleCollision": true
+        }
+    },
+    "level": {
+        "levelId": 17,
+        "code": "L017_LONG_BRIDGE",
+        "difficulty": "expert",
+        "teaches": [
+            "high_value_drop",
+            "long_term_setup",
+            "blast_and_ice_combo"
+        ],
+        "colorCount": 4,
+        "colors": [
+            "R",
+            "G",
+            "B",
+            "P"
+        ],
+        "shotLimit": 28,
+        "targetScore": 11870,
+        "dropInterval": 4,
+        "jarCount": 4,
+        "jarColors": [
+            "R",
+            "G",
+            "B",
+            "P"
+        ],
+        "spawnWeights": {
+            "R": 1,
+            "G": 1,
+            "B": 1,
+            "P": 1
+        },
+        "jarRules": {
+            "rimBounce": 0.77,
+            "collectZoneScale": 0.94,
+            "sameColorBonus": 1.75
+        },
+        "winConditions": [
+            {
+                "type": "clear_all",
+                "value": 1
+            },
+            {
+                "type": "collect_any",
+                "value": 18
+            }
+        ],
+        "bonusObjectives": [
+            {
+                "type": "single_turn_drop_count",
+                "value": 5
+            }
+        ],
+        "layout": [
+            "RBPRGBPP",
+            "RRBPRGPP",
+            "PGG..GGB",
+            "BPBGBBRG",
+            "GBPBBBPR",
+            "RGBP...."
+        ],
+        "designNotes": "A long bridge now mixes blast value with an ice delay, turning the collapse into a multi-step setup.",
+        "difficultyScore": 92,
+        "specialEntities": [
+            {
+                "id": "skill_blast_01",
+                "entityCategory": "skill_ball",
+                "entityType": "blast",
+                "row": 2,
+                "col": 3
+            },
+            {
+                "id": "ice_01",
+                "entityCategory": "obstacle_ball",
+                "entityType": "ice",
+                "row": 2,
+                "col": 4,
+                "innerColor": "G"
+            }
+        ]
+    },
+    "difficultyScaleMax": 100
+}

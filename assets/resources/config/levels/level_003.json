@@ -1,0 +1,95 @@
+{
+    "schemaVersion": 1,
+    "gameMode": "glass_marble_bubble",
+    "coordinateSystem": "odd-r-hex",
+    "layoutNotes": {
+        "description": "Top-to-bottom rows. Each character represents one grid cell.",
+        "legend": {
+            ".": "empty",
+            "R": "red",
+            "G": "green",
+            "B": "blue",
+            "Y": "yellow"
+        }
+    },
+    "sharedDefaults": {
+        "collectMode": "any_with_same_color_bonus",
+        "loseConditions": [
+            {
+                "type": "reach_danger_line",
+                "value": 1
+            },
+            {
+                "type": "run_out_of_shots",
+                "value": 1
+            }
+        ],
+        "fallingRules": {
+            "maxDynamicMarbles": 10,
+            "maxBounces": 2,
+            "enableMarbleMarbleCollision": true
+        }
+    },
+    "level": {
+        "levelId": 3,
+        "code": "L003_BANK_SHOT_INTRO",
+        "difficulty": "advanced",
+        "teaches": [
+            "single_bank_shot",
+            "pocket_targeting",
+            "tight_structure_intro"
+        ],
+        "colorCount": 3,
+        "colors": [
+            "R",
+            "G",
+            "B"
+        ],
+        "shotLimit": 20,
+        "targetScore": 5535,
+        "dropInterval": 5,
+        "jarCount": 3,
+        "jarColors": [
+            "R",
+            "G",
+            "B"
+        ],
+        "spawnWeights": {
+            "R": 1,
+            "G": 1,
+            "B": 1
+        },
+        "jarRules": {
+            "rimBounce": 0.69,
+            "collectZoneScale": 1.08,
+            "sameColorBonus": 1.5
+        },
+        "winConditions": [
+            {
+                "type": "clear_all",
+                "value": 1
+            },
+            {
+                "type": "collect_any",
+                "value": 4
+            }
+        ],
+        "bonusObjectives": [
+            {
+                "type": "collect_any",
+                "value": 3
+            }
+        ],
+        "layout": [
+            "RRGRBGGB",
+            "RRGRGGGB",
+            "RBBBBBRB",
+            "RBGBBGRB",
+            "RB......",
+            "........"
+        ],
+        "designNotes": "The first true difficulty jump. Bounce lane remains visible, but the center cluster is denser and the collect requirement is mandatory.",
+        "difficultyScore": 70
+    },
+    "difficultyScaleMax": 100
+}

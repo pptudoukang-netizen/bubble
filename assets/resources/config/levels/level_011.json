@@ -1,0 +1,115 @@
+{
+    "schemaVersion": 1,
+    "gameMode": "glass_marble_bubble",
+    "coordinateSystem": "odd-r-hex",
+    "layoutNotes": {
+        "description": "Top-to-bottom rows. Each character represents one grid cell.",
+        "legend": {
+            ".": "empty",
+            "R": "red",
+            "G": "green",
+            "B": "blue",
+            "Y": "yellow"
+        }
+    },
+    "sharedDefaults": {
+        "collectMode": "any_with_same_color_bonus",
+        "loseConditions": [
+            {
+                "type": "reach_danger_line",
+                "value": 1
+            },
+            {
+                "type": "run_out_of_shots",
+                "value": 1
+            }
+        ],
+        "fallingRules": {
+            "maxDynamicMarbles": 10,
+            "maxBounces": 2,
+            "enableMarbleMarbleCollision": true
+        }
+    },
+    "level": {
+        "levelId": 11,
+        "code": "L011_RED_COLLECTION",
+        "difficulty": "hard",
+        "teaches": [
+            "specific_color_hunt",
+            "suspended_cluster",
+            "stone_pair_pressure"
+        ],
+        "colorCount": 4,
+        "colors": [
+            "R",
+            "G",
+            "B",
+            "Y"
+        ],
+        "shotLimit": 24,
+        "targetScore": 8460,
+        "dropInterval": 4,
+        "jarCount": 4,
+        "jarColors": [
+            "R",
+            "G",
+            "B",
+            "Y"
+        ],
+        "spawnWeights": {
+            "R": 1.1,
+            "G": 1,
+            "B": 1,
+            "Y": 1
+        },
+        "jarRules": {
+            "rimBounce": 0.73,
+            "collectZoneScale": 0.98,
+            "sameColorBonus": 1.65
+        },
+        "winConditions": [
+            {
+                "type": "clear_all",
+                "value": 1
+            },
+            {
+                "type": "collect_color",
+                "color": "R",
+                "value": 12
+            }
+        ],
+        "bonusObjectives": [
+            {
+                "type": "collect_same_color_bonus_hits",
+                "value": 3
+            }
+        ],
+        "layout": [
+            "GGGBYRBB",
+            "GYRGBBBB",
+            "GRRR.BYR",
+            "RGRY.GBY",
+            "YRGRYRGB",
+            "........"
+        ],
+        "designNotes": "Red collection now happens around two blocking stones, pushing players to read structure instead of color alone.",
+        "difficultyScore": 82,
+        "specialEntities": [
+            {
+                "id": "stone_01",
+                "entityCategory": "obstacle_ball",
+                "entityType": "stone",
+                "row": 2,
+                "col": 4
+            },
+            {
+                "id": "stone_02",
+                "entityCategory": "obstacle_ball",
+                "entityType": "stone",
+                "row": 3,
+                "col": 4
+            }
+        ]
+    },
+    "difficultyScaleMax": 100
+}

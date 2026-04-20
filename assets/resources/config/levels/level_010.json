@@ -1,0 +1,107 @@
+{
+    "schemaVersion": 1,
+    "gameMode": "glass_marble_bubble",
+    "coordinateSystem": "odd-r-hex",
+    "layoutNotes": {
+        "description": "Top-to-bottom rows. Each character represents one grid cell.",
+        "legend": {
+            ".": "empty",
+            "R": "red",
+            "G": "green",
+            "B": "blue",
+            "Y": "yellow"
+        }
+    },
+    "sharedDefaults": {
+        "collectMode": "any_with_same_color_bonus",
+        "loseConditions": [
+            {
+                "type": "reach_danger_line",
+                "value": 1
+            },
+            {
+                "type": "run_out_of_shots",
+                "value": 1
+            }
+        ],
+        "fallingRules": {
+            "maxDynamicMarbles": 10,
+            "maxBounces": 2,
+            "enableMarbleMarbleCollision": true
+        }
+    },
+    "level": {
+        "levelId": 10,
+        "code": "L010_TIGHTER_SHOTS",
+        "difficulty": "hard",
+        "teaches": [
+            "efficiency",
+            "shot_pressure_intro",
+            "stone_obstacle_intro"
+        ],
+        "colorCount": 4,
+        "colors": [
+            "R",
+            "G",
+            "B",
+            "Y"
+        ],
+        "shotLimit": 24,
+        "targetScore": 8415,
+        "dropInterval": 4,
+        "jarCount": 4,
+        "jarColors": [
+            "R",
+            "G",
+            "B",
+            "Y"
+        ],
+        "spawnWeights": {
+            "R": 1,
+            "G": 1,
+            "B": 1,
+            "Y": 1
+        },
+        "jarRules": {
+            "rimBounce": 0.73,
+            "collectZoneScale": 0.99,
+            "sameColorBonus": 1.65
+        },
+        "winConditions": [
+            {
+                "type": "clear_all",
+                "value": 1
+            },
+            {
+                "type": "collect_any",
+                "value": 11
+            }
+        ],
+        "bonusObjectives": [
+            {
+                "type": "clear_with_shots_remaining",
+                "value": 3
+            }
+        ],
+        "layout": [
+            "RRGGYYRG",
+            "RBGGYYYR",
+            "RBB.RGGY",
+            "YRBBYRGB",
+            "BYRBBYR.",
+            "........"
+        ],
+        "designNotes": "Stone obstacle is introduced as a true route blocker. The player must either route around it or plan for later removal.",
+        "difficultyScore": 80,
+        "specialEntities": [
+            {
+                "id": "stone_01",
+                "entityCategory": "obstacle_ball",
+                "entityType": "stone",
+                "row": 2,
+                "col": 3
+            }
+        ]
+    },
+    "difficultyScaleMax": 100
+}
