@@ -14,6 +14,7 @@ var LevelSelectPolicy = require("./LevelSelectPolicy");
 var RouteEditorState = require("./RouteEditorState");
 var ResourceGateway = require("./ResourceGateway");
 var LevelSelectView = require("./LevelSelectView");
+var BootstrapButtonFactory = require("./BootstrapButtonFactory");
 var LevelRenderer = require("../render/LevelRenderer");
 var LoadingViewController = require("../ui/LoadingViewController");
 
@@ -1010,53 +1011,13 @@ cc.Class({
       return;
     }
 
-    var buttonNode = new cc.Node("DropTestButton");
-    buttonNode.parent = this.node;
-    buttonNode.zIndex = 120;
-    buttonNode.setContentSize(240, 72);
-
-    var widget = buttonNode.addComponent(cc.Widget);
-    widget.isAlignBottom = true;
-    widget.isAlignRight = true;
-    widget.bottom = 24;
-    widget.right = 24;
-
-    var background = buttonNode.addComponent(cc.Graphics);
-    background.clear();
-    background.fillColor = cc.color(72, 117, 164, 220);
-    background.roundRect(-120, -36, 240, 72, 12);
-    background.fill();
-
-    var labelNode = new cc.Node("Label");
-    labelNode.parent = buttonNode;
-    labelNode.setPosition(0, 0);
-    var label = labelNode.addComponent(cc.Label);
-    label.string = "底层掉落测试";
-    label.fontSize = 28;
-    label.lineHeight = 32;
-    label.horizontalAlign = cc.Label.HorizontalAlign.CENTER;
-    label.verticalAlign = cc.Label.VerticalAlign.CENTER;
-    labelNode.color = cc.color(255, 255, 255);
-    var outline = labelNode.addComponent(cc.LabelOutline);
-    outline.color = cc.color(31, 62, 98);
-    outline.width = 2;
-
-    buttonNode.addComponent(cc.BlockInputEvents);
-    buttonNode.on(cc.Node.EventType.TOUCH_START, function (event) {
-      event.stopPropagation();
-      buttonNode.scale = 0.97;
+    var button = BootstrapButtonFactory.createDropTestButton({
+      parentNode: this.node,
+      onTap: function () {
+        this._onDropTestButtonTap();
+      }.bind(this)
     });
-    buttonNode.on(cc.Node.EventType.TOUCH_END, function (event) {
-      event.stopPropagation();
-      buttonNode.scale = 1;
-      this._onDropTestButtonTap();
-    }, this);
-    buttonNode.on(cc.Node.EventType.TOUCH_CANCEL, function (event) {
-      event.stopPropagation();
-      buttonNode.scale = 1;
-    });
-
-    this._dropTestButton = buttonNode;
+    this._dropTestButton = button ? button.node : null;
     this._setDropTestButtonVisible(false);
   },
 
@@ -1065,109 +1026,72 @@ cc.Class({
       return;
     }
 
-    this._routeEditorButtons.toggle = this._createActionButton("RouteEditorToggleButton", "路线编辑: 关", {
+    this._routeEditorButtons.toggle = BootstrapButtonFactory.createActionButton({
+      name: "RouteEditorToggleButton",
+      parentNode: this.node,
+      labelText: "路线编辑: 关",
       width: 210,
       height: 64,
       left: 24,
       bottom: 24,
       fillColor: cc.color(74, 113, 124, 220),
-      outlineColor: cc.color(26, 50, 58)
-    }, this._onRouteEditorToggleTap.bind(this));
+      outlineColor: cc.color(26, 50, 58),
+      onTap: this._onRouteEditorToggleTap.bind(this)
+    });
 
-    this._routeEditorButtons.newRoute = this._createActionButton("RouteEditorNewButton", "新路线", {
+    this._routeEditorButtons.newRoute = BootstrapButtonFactory.createActionButton({
+      name: "RouteEditorNewButton",
+      parentNode: this.node,
+      labelText: "新路线",
       width: 180,
       height: 58,
       left: 24,
       bottom: 96,
       fillColor: cc.color(84, 147, 110, 220),
-      outlineColor: cc.color(32, 73, 48)
-    }, this._onRouteEditorNewTap.bind(this));
+      outlineColor: cc.color(32, 73, 48),
+      onTap: this._onRouteEditorNewTap.bind(this)
+    });
 
-    this._routeEditorButtons.undo = this._createActionButton("RouteEditorUndoButton", "撤销点", {
+    this._routeEditorButtons.undo = BootstrapButtonFactory.createActionButton({
+      name: "RouteEditorUndoButton",
+      parentNode: this.node,
+      labelText: "撤销点",
       width: 180,
       height: 58,
       left: 24,
       bottom: 162,
       fillColor: cc.color(166, 123, 72, 220),
-      outlineColor: cc.color(97, 60, 24)
-    }, this._onRouteEditorUndoTap.bind(this));
+      outlineColor: cc.color(97, 60, 24),
+      onTap: this._onRouteEditorUndoTap.bind(this)
+    });
 
-    this._routeEditorButtons.clear = this._createActionButton("RouteEditorClearButton", "清空当前", {
+    this._routeEditorButtons.clear = BootstrapButtonFactory.createActionButton({
+      name: "RouteEditorClearButton",
+      parentNode: this.node,
+      labelText: "清空当前",
       width: 180,
       height: 58,
       left: 24,
       bottom: 228,
       fillColor: cc.color(164, 91, 91, 220),
-      outlineColor: cc.color(92, 37, 37)
-    }, this._onRouteEditorClearTap.bind(this));
+      outlineColor: cc.color(92, 37, 37),
+      onTap: this._onRouteEditorClearTap.bind(this)
+    });
 
-    this._routeEditorButtons.save = this._createActionButton("RouteEditorSaveButton", "保存路线", {
+    this._routeEditorButtons.save = BootstrapButtonFactory.createActionButton({
+      name: "RouteEditorSaveButton",
+      parentNode: this.node,
+      labelText: "保存路线",
       width: 180,
       height: 58,
       left: 24,
       bottom: 294,
       fillColor: cc.color(74, 123, 185, 220),
-      outlineColor: cc.color(30, 62, 108)
-    }, this._onRouteEditorSaveTap.bind(this));
+      outlineColor: cc.color(30, 62, 108),
+      onTap: this._onRouteEditorSaveTap.bind(this)
+    });
 
     this._refreshRouteEditorButtons();
-  },
-
-  _createActionButton: function (name, labelText, options, onTap) {
-    var width = Math.max(120, Number(options && options.width) || 180);
-    var height = Math.max(48, Number(options && options.height) || 58);
-    var buttonNode = new cc.Node(name);
-    buttonNode.parent = this.node;
-    buttonNode.zIndex = 125;
-    buttonNode.setContentSize(width, height);
-
-    var widget = buttonNode.addComponent(cc.Widget);
-    widget.isAlignBottom = true;
-    widget.isAlignLeft = true;
-    widget.left = Number(options && options.left) || 0;
-    widget.bottom = Number(options && options.bottom) || 0;
-
-    var background = buttonNode.addComponent(cc.Graphics);
-    background.clear();
-    background.fillColor = options && options.fillColor ? options.fillColor : cc.color(74, 123, 185, 220);
-    background.roundRect(-(width * 0.5), -(height * 0.5), width, height, 12);
-    background.fill();
-
-    var labelNode = new cc.Node("Label");
-    labelNode.parent = buttonNode;
-    labelNode.setPosition(0, 0);
-    var label = labelNode.addComponent(cc.Label);
-    label.string = labelText;
-    label.fontSize = 24;
-    label.lineHeight = 28;
-    label.horizontalAlign = cc.Label.HorizontalAlign.CENTER;
-    label.verticalAlign = cc.Label.VerticalAlign.CENTER;
-    labelNode.color = cc.color(255, 255, 255);
-    var outline = labelNode.addComponent(cc.LabelOutline);
-    outline.color = options && options.outlineColor ? options.outlineColor : cc.color(31, 62, 98);
-    outline.width = 2;
-
-    buttonNode.addComponent(cc.BlockInputEvents);
-    buttonNode.on(cc.Node.EventType.TOUCH_START, function (event) {
-      event.stopPropagation();
-      buttonNode.scale = 0.97;
-    });
-    buttonNode.on(cc.Node.EventType.TOUCH_END, function (event) {
-      event.stopPropagation();
-      buttonNode.scale = 1;
-      if (typeof onTap === "function") {
-        onTap();
-      }
-    });
-    buttonNode.on(cc.Node.EventType.TOUCH_CANCEL, function (event) {
-      event.stopPropagation();
-      buttonNode.scale = 1;
-    });
-
-    return {
-      node: buttonNode,
-      label: label
-    };
   },
 
   _createEmptyRouteEditorState: function () {
