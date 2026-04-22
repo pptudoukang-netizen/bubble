@@ -1,4 +1,4 @@
-"use strict";
+﻿"use strict";
 
 var DebugFlags = require("../utils/DebugFlags");
 var Logger = require("../utils/Logger");
@@ -7,6 +7,12 @@ var LevelSelectPolicy = require("./LevelSelectPolicy");
 var LevelSelectView = require("./LevelSelectView");
 var BootstrapButtonFactory = require("./BootstrapButtonFactory");
 var StarRatingPolicy = require("../core/StarRatingPolicy");
+
+var SETTING_VOLUME_STEP = 0.1;
+var SETTING_STATUS_X_ENABLED = -18;
+var SETTING_STATUS_X_DISABLED = 18;
+var SETTING_VOLUME_ICON_OPEN_PATH = "image/setting/volume_open";
+var SETTING_VOLUME_ICON_CLOSE_PATH = "image/setting/volume_close";
 
 module.exports = {
   _createStatusOverlay: function () {
@@ -41,6 +47,10 @@ module.exports = {
     }
 
     this._playSfx("uiClick");
+    if (!this._consumeStaminaForLevelEntry()) {
+      this._setStatus("Stamina is not enough. It resets to 10 at 00:00.");
+      return;
+    }
     var nextLevelId = (this.currentLevelConfig.level.levelId || 1) + 1;
     this._setStatus("Loading level_" + ("000" + nextLevelId).slice(-3) + "...");
     this._loadLevelById(nextLevelId, "Next level started", "No next level available.");
@@ -55,8 +65,582 @@ module.exports = {
     this._showLevelSelectView();
   },
 
+  _refreshPlayerResources: function () {
+    if (!this.playerResourceStore) {
+      this.playerResources = this.playerResources || {
+        stamina: 10,
+        coins: 0
+      };
+      return this.playerResources;
+    }
+
+    this.playerResources = this.playerResourceStore.load();
+    return this.playerResources;
+  },
+
+  _getCurrentStamina: function () {
+    this._refreshPlayerResources();
+    return Math.max(0, Math.floor(Number(this.playerResources && this.playerResources.stamina) || 0));
+  },
+
+  _getCurrentCoins: function () {
+    this._refreshPlayerResources();
+    return Math.max(0, Math.floor(Number(this.playerResources && this.playerResources.coins) || 0));
+  },
+
+  _consumeStaminaForLevelEntry: function () {
+    if (!this.playerResourceStore) {
+      return true;
+    }
+
+    this._refreshPlayerResources();
+    var consumeResult = this.playerResourceStore.consumeStamina(this.playerResources, 1);
+    if (!consumeResult || !consumeResult.accepted) {
+      this.playerResources = consumeResult && consumeResult.resources
+        ? consumeResult.resources
+        : (this.playerResources || { stamina: 0, coins: 0 });
+      this._updateLevelSelectTopStatus();
+      return false;
+    }
+
+    this.playerResources = consumeResult.resources;
+    this.playerResourceStore.save(this.playerResources);
+    this._updateLevelSelectTopStatus();
+    return true;
+  },
+
+  _updateLevelSelectTopStatus: function () {
+    if (!this._levelSelectNode || !cc.isValid(this._levelSelectNode)) {
+      return;
+    }
+
+    var topLayerNode = this._levelSelectNode.getChildByName("top_layer");
+    if (!topLayerNode || !topLayerNode.isValid) {
+      return;
+    }
+
+    var loveInfoNode = topLayerNode.getChildByName("love_info");
+    var goldInfoNode = topLayerNode.getChildByName("gold_info");
+    var loveNode = loveInfoNode ? loveInfoNode.getChildByName("love") : null;
+    var goldNode = goldInfoNode ? goldInfoNode.getChildByName("gold") : null;
+    var loveLabel = loveNode ? loveNode.getComponent(cc.Label) : null;
+    var goldLabel = goldNode ? goldNode.getComponent(cc.Label) : null;
+
+    if (loveLabel) {
+      loveLabel.string = String(this._getCurrentStamina());
+    }
+    if (goldLabel) {
+      goldLabel.string = String(this._getCurrentCoins());
+    }
+  },
+
+  _onLevelSelectSettingTap: function () {
+    if (!this.isSelectingLevel || this.isRestarting) {
+      return;
+    }
+
+    this._playSfx("uiClick");
+    this._showSettingView();
+  },
+
+  _ensureSettingViewPrefab: function () {
+    if (this._settingViewPrefab) {
+      return Promise.resolve(this._settingViewPrefab);
+    }
+
+    return this._loadPrefab("prefabs/ui/SettingView").then(function (prefab) {
+      this._settingViewPrefab = prefab;
+      return prefab;
+    }.bind(this));
+  },
+
+  _showSettingView: function () {
+    this._ensureSettingViewPrefab().then(function (prefab) {
+      if (!prefab) {
+        this._setStatus("Failed to load settings view.");
+        return;
+      }
+
+      var settingNode = this._settingViewNode;
+      if (!settingNode || !cc.isValid(settingNode)) {
+        settingNode = cc.instantiate(prefab);
+        if (!settingNode) {
+          this._setStatus("Failed to create settings view.");
+          return;
+        }
+        settingNode.parent = this.node;
+        settingNode.zIndex = 280;
+        settingNode.setPosition(0, 0);
+        this._settingViewNode = settingNode;
+        this._bindSettingViewActions(settingNode);
+      }
+
+      settingNode.active = true;
+      this._ensureSettingVolumeIconSprites().then(function () {
+        this._syncSettingViewFromAudioSettings(settingNode);
+      }.bind(this));
+    }.bind(this)).catch(function (error) {
+      Logger.warn("Show setting view failed", error && error.message ? error.message : error);
+      this._setStatus("Failed to load settings view.");
+    }.bind(this));
+  },
+
+  _hideSettingView: function () {
+    if (!this._settingViewNode || !cc.isValid(this._settingViewNode)) {
+      return;
+    }
+
+    this._settingViewNode.active = false;
+  },
+
+  _bindSettingViewActions: function (settingViewNode) {
+    if (!settingViewNode || !settingViewNode.isValid || settingViewNode.__settingActionBound === true) {
+      return;
+    }
+
+    settingViewNode.__settingActionBound = true;
+
+    var closeBtnNode = this._findNodeByNameRecursive(settingViewNode, "btn_close");
+    var backBtnNode = this._findNodeByNameRecursive(settingViewNode, "btn_back");
+    var recoverBtnNode = this._findNodeByNameRecursive(settingViewNode, "btn_recover");
+    var controls = this._resolveSettingControlNodes(settingViewNode);
+
+    this._bindNodeTapOnce(closeBtnNode, function () {
+      this._playSfx("uiClick");
+      this._hideSettingView();
+    }.bind(this));
+    this._bindNodeTapOnce(backBtnNode, function () {
+      this._playSfx("uiClick");
+      this._hideSettingView();
+    }.bind(this));
+    this._bindNodeTapOnce(recoverBtnNode, function () {
+      this._playSfx("uiClick");
+      this._restoreDefaultAudioSettings();
+      this._syncSettingViewFromAudioSettings(settingViewNode);
+      this._setStatus("Audio settings restored to default.");
+    }.bind(this));
+
+    if (controls) {
+      this._bindToggleChangeOnce(controls.musicToggleNode, function (isChecked) {
+        if (settingViewNode.__isSyncingSettingAudio === true || !this.audioManager) {
+          return;
+        }
+        this.audioManager.setMusicEnabled(!!isChecked);
+        this._syncSettingViewFromAudioSettings(settingViewNode);
+      }.bind(this));
+      this._bindToggleChangeOnce(controls.sfxToggleNode, function (isChecked) {
+        if (settingViewNode.__isSyncingSettingAudio === true || !this.audioManager) {
+          return;
+        }
+        this.audioManager.setSfxEnabled(!!isChecked);
+        this._syncSettingViewFromAudioSettings(settingViewNode);
+      }.bind(this));
+      this._bindToggleChangeOnce(controls.vibrationToggleNode, function (isChecked) {
+        if (settingViewNode.__isSyncingSettingAudio === true || !this.audioManager) {
+          return;
+        }
+        if (typeof this.audioManager.setVibrationEnabled === "function") {
+          this.audioManager.setVibrationEnabled(!!isChecked);
+          this._syncSettingViewFromAudioSettings(settingViewNode);
+        }
+      }.bind(this));
+
+      this._bindNodeTapOnce(controls.musicReduceButtonNode, function () {
+        this._playSfx("uiClick");
+        this._adjustSettingVolumeByStep("music", -1, settingViewNode);
+      }.bind(this));
+      this._bindNodeTapOnce(controls.musicAddButtonNode, function () {
+        this._playSfx("uiClick");
+        this._adjustSettingVolumeByStep("music", 1, settingViewNode);
+      }.bind(this));
+      this._bindNodeTapOnce(controls.sfxReduceButtonNode, function () {
+        this._playSfx("uiClick");
+        this._adjustSettingVolumeByStep("sfx", -1, settingViewNode);
+      }.bind(this));
+      this._bindNodeTapOnce(controls.sfxAddButtonNode, function () {
+        this._playSfx("uiClick");
+        this._adjustSettingVolumeByStep("sfx", 1, settingViewNode);
+      }.bind(this));
+      this._bindNodeTapOnce(controls.musicVolumeIconNode, function () {
+        this._playSfx("uiClick");
+        this._setSettingVolumeToZero("music", settingViewNode);
+      }.bind(this));
+      this._bindNodeTapOnce(controls.sfxVolumeIconNode, function () {
+        this._playSfx("uiClick");
+        this._setSettingVolumeToZero("sfx", settingViewNode);
+      }.bind(this));
+
+      this._bindSettingVolumeDragOnce(controls.musicProgressNode, controls.musicStarNode, "music", settingViewNode);
+      this._bindSettingVolumeDragOnce(controls.sfxProgressNode, controls.sfxStarNode, "sfx", settingViewNode);
+    }
+  },
+
+  _restoreDefaultAudioSettings: function () {
+    if (!this.audioManager) {
+      return;
+    }
+
+    this.audioManager.setMusicEnabled(true);
+    this.audioManager.setSfxEnabled(true);
+    this.audioManager.setMusicVolume(1);
+    this.audioManager.setSfxVolume(1);
+    if (typeof this.audioManager.setVibrationEnabled === "function") {
+      this.audioManager.setVibrationEnabled(true);
+    }
+  },
+
+  _syncSettingViewFromAudioSettings: function (settingViewNode) {
+    if (!settingViewNode || !settingViewNode.isValid || !this.audioManager) {
+      return;
+    }
+
+    var settingsSnapshot = this.audioManager.snapshot();
+    var settings = settingsSnapshot && settingsSnapshot.settings ? settingsSnapshot.settings : null;
+    if (!settings) {
+      return;
+    }
+
+    var controls = this._resolveSettingControlNodes(settingViewNode);
+    if (!controls) {
+      return;
+    }
+
+    settingViewNode.__isSyncingSettingAudio = true;
+    try {
+      var musicEnabled = settings.musicEnabled !== false;
+      var sfxEnabled = settings.sfxEnabled !== false;
+      var vibrationEnabled = settings.vibrationEnabled !== false;
+
+      this._updateSettingToggleStatusView(controls.musicToggle, controls.musicStatusNode, controls.musicStatusLabel, musicEnabled);
+      this._updateSettingToggleStatusView(controls.sfxToggle, controls.sfxStatusNode, controls.sfxStatusLabel, sfxEnabled);
+      this._updateSettingToggleStatusView(controls.vibrationToggle, controls.vibrationStatusNode, controls.vibrationStatusLabel, vibrationEnabled);
+
+      if (controls.musicProgress) {
+        var musicVolume = this._normalizeSettingVolume(settings.musicVolume);
+        controls.musicProgress.progress = musicVolume;
+        this._syncSettingVolumeStarPosition(controls.musicProgressNode, controls.musicStarNode, musicVolume);
+      }
+      if (controls.sfxProgress) {
+        var sfxVolume = this._normalizeSettingVolume(settings.sfxVolume);
+        controls.sfxProgress.progress = sfxVolume;
+        this._syncSettingVolumeStarPosition(controls.sfxProgressNode, controls.sfxStarNode, sfxVolume);
+      }
+      var musicVolumeOpen = musicEnabled && (Number(settings.musicVolume) > 0);
+      var sfxVolumeOpen = sfxEnabled && (Number(settings.sfxVolume) > 0);
+      this._updateSettingVolumeIconView(controls.musicVolumeIconSprite, musicVolumeOpen);
+      this._updateSettingVolumeIconView(controls.sfxVolumeIconSprite, sfxVolumeOpen);
+    } finally {
+      settingViewNode.__isSyncingSettingAudio = false;
+    }
+  },
+
+  _adjustSettingVolumeByStep: function (channel, stepDirection, settingViewNode) {
+    if (!this.audioManager) {
+      return;
+    }
+
+    var direction = Number(stepDirection) || 0;
+    if (direction === 0) {
+      return;
+    }
+
+    var snapshot = this.audioManager.snapshot();
+    var settings = snapshot && snapshot.settings ? snapshot.settings : null;
+    if (!settings) {
+      return;
+    }
+
+    var isMusicChannel = channel === "music";
+    var currentVolume = this._normalizeSettingVolume(isMusicChannel ? settings.musicVolume : settings.sfxVolume);
+    var targetVolume = this._normalizeSettingVolume(currentVolume + (SETTING_VOLUME_STEP * direction));
+
+    if (isMusicChannel) {
+      this.audioManager.setMusicVolume(targetVolume);
+    } else {
+      this.audioManager.setSfxVolume(targetVolume);
+    }
+
+    this._syncSettingViewFromAudioSettings(settingViewNode || this._settingViewNode);
+  },
+
+  _setSettingVolumeToZero: function (channel, settingViewNode) {
+    if (!this.audioManager) {
+      return;
+    }
+
+    if (channel === "music") {
+      this.audioManager.setMusicVolume(0);
+    } else {
+      this.audioManager.setSfxVolume(0);
+    }
+    this._syncSettingViewFromAudioSettings(settingViewNode || this._settingViewNode);
+  },
+
+  _normalizeSettingVolume: function (value) {
+    var volume = Math.max(0, Math.min(1, Number(value) || 0));
+    return Math.round(volume * 100) / 100;
+  },
+
+  _ensureSettingVolumeIconSprites: function () {
+    if (this._settingVolumeIconSprites && this._settingVolumeIconSprites.open && this._settingVolumeIconSprites.close) {
+      return Promise.resolve(this._settingVolumeIconSprites);
+    }
+    if (this._settingVolumeIconLoadPromise) {
+      return this._settingVolumeIconLoadPromise;
+    }
+
+    var loadSpriteFrame = function (path) {
+      return new Promise(function (resolve) {
+        cc.loader.loadRes(path, cc.SpriteFrame, function (error, spriteFrame) {
+          if (error) {
+            Logger.warn("Load setting icon failed", path, error && error.message ? error.message : error);
+            resolve(null);
+            return;
+          }
+          resolve(spriteFrame || null);
+        });
+      });
+    };
+
+    this._settingVolumeIconLoadPromise = Promise.all([
+      loadSpriteFrame(SETTING_VOLUME_ICON_OPEN_PATH),
+      loadSpriteFrame(SETTING_VOLUME_ICON_CLOSE_PATH)
+    ]).then(function (results) {
+      this._settingVolumeIconSprites = {
+        open: results[0] || null,
+        close: results[1] || null
+      };
+      this._settingVolumeIconLoadPromise = null;
+      return this._settingVolumeIconSprites;
+    }.bind(this)).catch(function (error) {
+      this._settingVolumeIconLoadPromise = null;
+      Logger.warn("Load setting icons failed", error && error.message ? error.message : error);
+      return {
+        open: null,
+        close: null
+      };
+    }.bind(this));
+
+    return this._settingVolumeIconLoadPromise;
+  },
+
+  _updateSettingVolumeIconView: function (spriteComponent, isVolumeOpen) {
+    if (!spriteComponent || !spriteComponent.node || !spriteComponent.node.isValid || !this._settingVolumeIconSprites) {
+      return;
+    }
+
+    var targetSpriteFrame = isVolumeOpen
+      ? this._settingVolumeIconSprites.open
+      : this._settingVolumeIconSprites.close;
+    if (!targetSpriteFrame) {
+      return;
+    }
+
+    spriteComponent.spriteFrame = targetSpriteFrame;
+  },
+
+  _updateSettingToggleStatusView: function (toggleComponent, statusNode, statusLabel, isEnabled) {
+    if (toggleComponent) {
+      toggleComponent.isChecked = !!isEnabled;
+    }
+    if (statusLabel) {
+      statusLabel.string = isEnabled ? "开" : "关";
+    }
+    if (statusNode && statusNode.isValid) {
+      statusNode.x = isEnabled ? SETTING_STATUS_X_ENABLED : SETTING_STATUS_X_DISABLED;
+    }
+  },
+
+  _bindToggleChangeOnce: function (toggleNode, onToggleChange) {
+    if (!toggleNode || !toggleNode.isValid || typeof onToggleChange !== "function" || toggleNode.__toggleChangeBound === true) {
+      return;
+    }
+
+    toggleNode.__toggleChangeBound = true;
+    toggleNode.on("toggle", function () {
+      var toggle = toggleNode.getComponent(cc.Toggle);
+      onToggleChange(!!(toggle && toggle.isChecked));
+    });
+  },
+
+  _bindSettingVolumeDragOnce: function (progressNode, starNode, channel, settingViewNode) {
+    if (!progressNode || !progressNode.isValid || !starNode || !starNode.isValid) {
+      return;
+    }
+
+    var dragFlag = "__volumeDragBound_" + channel;
+    if (progressNode[dragFlag] === true) {
+      return;
+    }
+    progressNode[dragFlag] = true;
+
+    var onDrag = function (event) {
+      if (event) {
+        event.stopPropagation();
+      }
+      this._applySettingVolumeFromTouch(channel, progressNode, settingViewNode, event);
+    }.bind(this);
+
+    starNode.on(cc.Node.EventType.TOUCH_START, onDrag);
+    starNode.on(cc.Node.EventType.TOUCH_MOVE, onDrag);
+    progressNode.on(cc.Node.EventType.TOUCH_START, onDrag);
+    progressNode.on(cc.Node.EventType.TOUCH_MOVE, onDrag);
+  },
+
+  _applySettingVolumeFromTouch: function (channel, progressNode, settingViewNode, event) {
+    if (!this.audioManager || !progressNode || !progressNode.isValid || !event || typeof event.getLocation !== "function") {
+      return;
+    }
+
+    var width = Number(progressNode.width) || 0;
+    if (width <= 0) {
+      return;
+    }
+
+    var touchLocation = event.getLocation();
+    var localPoint = progressNode.convertToNodeSpaceAR(touchLocation);
+    var volume = this._normalizeSettingVolume((localPoint.x + (width * 0.5)) / width);
+
+    if (channel === "music") {
+      this.audioManager.setMusicVolume(volume);
+    } else {
+      this.audioManager.setSfxVolume(volume);
+    }
+
+    this._syncSettingViewFromAudioSettings(settingViewNode || this._settingViewNode);
+  },
+
+  _syncSettingVolumeStarPosition: function (progressNode, starNode, progressValue) {
+    if (!progressNode || !progressNode.isValid || !starNode || !starNode.isValid) {
+      return;
+    }
+
+    var width = Number(progressNode.width) || 0;
+    if (width <= 0) {
+      return;
+    }
+
+    var volume = this._normalizeSettingVolume(progressValue);
+    var leftX = -width * 0.5;
+    var rightX = width * 0.5;
+    var targetX = leftX + (width * volume);
+    if (targetX < leftX) {
+      targetX = leftX;
+    } else if (targetX > rightX) {
+      targetX = rightX;
+    }
+    starNode.x = targetX;
+  },
+
+  _resolveSettingControlNodes: function (settingViewNode) {
+    if (!settingViewNode || !settingViewNode.isValid) {
+      return null;
+    }
+
+    var contentNode = this._findNodeByNameRecursive(settingViewNode, "ContentContainer");
+    if (!contentNode || !contentNode.isValid) {
+      return null;
+    }
+
+    var musicToggleNode = this._findNodeByNameRecursive(contentNode, "music_toggle");
+    var sfxToggleNode = this._findNodeByNameRecursive(contentNode, "sound_effect_toggle");
+    var vibrationToggleNode = this._findNodeByNameRecursive(contentNode, "shock_toggle");
+    var musicVolumeItemNode = this._findNodeByNameRecursive(contentNode, "music_volume_item");
+    var sfxVolumeItemNode = this._findNodeByNameRecursive(contentNode, "sound_effect_volume_item");
+    var musicVolumeIconNode = musicVolumeItemNode
+      ? this._findNodeByNameRecursive(musicVolumeItemNode, "music_volume_icon")
+      : null;
+    var sfxVolumeIconNode = sfxVolumeItemNode
+      ? (
+        this._findNodeByNameRecursive(sfxVolumeItemNode, "sound_effect_volume_icon") ||
+        this._findNodeByNameRecursive(sfxVolumeItemNode, "music_volume_icon")
+      )
+      : null;
+    var musicProgressNode = musicVolumeItemNode ? this._findNodeByNameRecursive(musicVolumeItemNode, "volume_progress") : null;
+    var sfxProgressNode = sfxVolumeItemNode ? this._findNodeByNameRecursive(sfxVolumeItemNode, "volume_progress") : null;
+    var musicStarNode = musicProgressNode ? this._findNodeByNameRecursive(musicProgressNode, "star") : null;
+    var sfxStarNode = sfxProgressNode ? this._findNodeByNameRecursive(sfxProgressNode, "star") : null;
+    var musicReduceButtonNode = musicVolumeItemNode ? this._findNodeByNameRecursive(musicVolumeItemNode, "reduce_btn") : null;
+    var musicAddButtonNode = musicVolumeItemNode ? this._findNodeByNameRecursive(musicVolumeItemNode, "add_btn") : null;
+    var sfxReduceButtonNode = sfxVolumeItemNode ? this._findNodeByNameRecursive(sfxVolumeItemNode, "reduce_btn") : null;
+    var sfxAddButtonNode = sfxVolumeItemNode ? this._findNodeByNameRecursive(sfxVolumeItemNode, "add_btn") : null;
+    var musicStatusNode = musicToggleNode ? this._findNodeByNameRecursive(musicToggleNode, "status") : null;
+    var sfxStatusNode = sfxToggleNode ? this._findNodeByNameRecursive(sfxToggleNode, "status") : null;
+    var vibrationStatusNode = vibrationToggleNode ? this._findNodeByNameRecursive(vibrationToggleNode, "status") : null;
+
+    return {
+      musicToggleNode: musicToggleNode,
+      sfxToggleNode: sfxToggleNode,
+      vibrationToggleNode: vibrationToggleNode,
+      musicToggle: musicToggleNode ? musicToggleNode.getComponent(cc.Toggle) : null,
+      sfxToggle: sfxToggleNode ? sfxToggleNode.getComponent(cc.Toggle) : null,
+      vibrationToggle: vibrationToggleNode ? vibrationToggleNode.getComponent(cc.Toggle) : null,
+      musicStatusNode: musicStatusNode,
+      sfxStatusNode: sfxStatusNode,
+      vibrationStatusNode: vibrationStatusNode,
+      musicVolumeIconNode: musicVolumeIconNode,
+      sfxVolumeIconNode: sfxVolumeIconNode,
+      musicVolumeIconSprite: musicVolumeIconNode ? musicVolumeIconNode.getComponent(cc.Sprite) : null,
+      sfxVolumeIconSprite: sfxVolumeIconNode ? sfxVolumeIconNode.getComponent(cc.Sprite) : null,
+      musicStatusLabel: musicStatusNode ? musicStatusNode.getComponent(cc.Label) : null,
+      sfxStatusLabel: sfxStatusNode ? sfxStatusNode.getComponent(cc.Label) : null,
+      vibrationStatusLabel: vibrationStatusNode ? vibrationStatusNode.getComponent(cc.Label) : null,
+      musicProgress: musicProgressNode ? musicProgressNode.getComponent(cc.ProgressBar) : null,
+      sfxProgress: sfxProgressNode ? sfxProgressNode.getComponent(cc.ProgressBar) : null,
+      musicProgressNode: musicProgressNode,
+      sfxProgressNode: sfxProgressNode,
+      musicStarNode: musicStarNode,
+      sfxStarNode: sfxStarNode,
+      musicReduceButtonNode: musicReduceButtonNode,
+      musicAddButtonNode: musicAddButtonNode,
+      sfxReduceButtonNode: sfxReduceButtonNode,
+      sfxAddButtonNode: sfxAddButtonNode
+    };
+  },
+
+  _findNodeByNameRecursive: function (rootNode, name) {
+    if (!rootNode || !rootNode.isValid || !name) {
+      return null;
+    }
+
+    if (rootNode.name === name) {
+      return rootNode;
+    }
+
+    var queue = rootNode.children ? rootNode.children.slice() : [];
+    while (queue.length > 0) {
+      var node = queue.shift();
+      if (!node || !node.isValid) {
+        continue;
+      }
+      if (node.name === name) {
+        return node;
+      }
+      if (node.children && node.children.length > 0) {
+        Array.prototype.push.apply(queue, node.children);
+      }
+    }
+
+    return null;
+  },
+
+  _bindNodeTapOnce: function (node, onTap) {
+    if (!node || !node.isValid || typeof onTap !== "function" || node.__tapBound === true) {
+      return;
+    }
+
+    node.__tapBound = true;
+    node.on(cc.Node.EventType.TOUCH_END, function (event) {
+      if (event) {
+        event.stopPropagation();
+      }
+      onTap();
+    });
+  },
+
   _loadLevelById: function (levelId, successLogPrefix, failStatusMessage) {
     this._persistRouteEditorIfDirty();
+    this._hideSettingView();
     this.isRestarting = true;
     this._setDropTestButtonVisible(false);
     this._lastRuntimeState = null;
@@ -83,8 +667,7 @@ module.exports = {
           this._playGameplayBackgroundMusic();
           Logger.info(successLogPrefix || "Level started", levelConfig.level.code);
         } catch (postLoadError) {
-          // 渲染已完成时，后处理异常不应误判为“关卡加载失败”。
-          this.isRestarting = false;
+          // 濠电姷鏁告慨鐑藉极閹间礁纾婚柣鎰惈缁犳壆绱掔€ｎ偒鍎ラ柛銈嗘礋閺屾盯顢曢敐鍡欘槰闂佺顑呴崐鍧楀箖濡ゅ懏鏅查幖瀛樼箖閸犳岸姊洪崫銉ユ瀻闁硅櫕锕㈠濠氭偄閾忓湱锛滃┑鈽嗗灥濞咃綁顢栭崒鐐粹拺闁告繂瀚ˉ鐐碘偓鍏夊亾闁归棿绀侀拑鐔兼煟閺冨洢鈧偓闁稿鎸搁埥澶娾枍椤撗傜凹闁逛究鍔戝畷濂告偄閸撲胶鐣鹃梻浣虹帛閸旀牞銇愰崘顔肩劦妞ゆ巻鍋撴繛灏栤偓鎰佸殨妞ゆ劑鍩勯崥瀣煕閵夘垶妾柛鏇炲暣濮婃椽宕楅梻纾嬪焻闂佺閰ｆ禍鍫曞春閳ь剚銇勯幒鎴濐仾婵炴嚪鍕╀簻妞ゆ挴鍓濈涵鍫曟煙閻熸澘顏€规洦鍋婂畷鐔煎礂閸濄儳锛涢梻鍌氬€峰ù鍥敋閺嶎厼绐楅柡宥庡幗閺呮繈鏌曢崼婵愭▓闁轰礁顑夐弻銊モ攽閸♀晜笑缂佺偓鍎抽崥瀣箞閵娿儙鐔煎传閸曨喖鐓橀梻浣虹帛閹稿宕归崜浣瑰床婵炴垯鍨圭粻锝夋煟閹邦厽缍戠痪鏉跨Ф缁辨挻鎷呴崜鍙壭﹀銈嗘处閸欏啴骞婇悙鐑樼劶鐎广儱妫楀▓銈咁渻閵堝棗绗傜紒鈧笟鈧幃鐢稿级濞嗙偓瀵岄梺闈涚墕濡稒鏅堕鍕厾鐟滅増甯為悾娲煙椤旀枻鑰挎鐐存崌楠炴帡宕卞鍡樼秾闂傚倷娴囬～澶愬磿瀹曞洨涓嶇€广儱顦悞鍨亜閹达絾顥夊ù婊堢畺濮婄粯绗熼埀顒勫焵椤掑倸浠滈柤娲诲灡閺呭爼顢涘鍛紲濡炪倖妫侀崑鎰版倿閸濄儮鍋撶憴鍕┛缂傚秮鍋撳銈忕畱濠€閬嶅焵椤掑喚娼愭繛娴嬫櫇閹广垹鈹戠€ｎ亜鐎俊銈忕到閸燁偆绮堥崘顏佸亾閻熸澘顥忛柛鐘愁殕缁轰粙寮介鐔叉嫼闂佸憡绻傜€氬嘲危濞差亝鐓曢悗锝庡墮瀛濋柧鑽ゅ仱閺屾盯寮撮妸銉т哗婵℃鎳樺娲偡闁箑娈舵繝娈垮枤閺佹悂鍩€椤掍浇澹樻い顓犲厴瀵寮撮悢椋庣獮闂佺硶鍓濋敋婵炲懏宀稿铏圭矙濞嗘儳鍓遍梺鐟版啞閹倿宕洪悙鍝勭闁挎洍鍋撶紒鈧€ｎ喗鐓忓┑鐐茬仢閸旀瑥顭?          this.isRestarting = false;
           this.isSelectingLevel = false;
           var postLoadMessage = postLoadError && postLoadError.stack
             ? postLoadError.stack
@@ -128,7 +711,7 @@ module.exports = {
     this._routeEditorButtons.toggle = BootstrapButtonFactory.createActionButton({
       name: "RouteEditorToggleButton",
       parentNode: this.node,
-      labelText: "路线编辑: 关",
+      labelText: "Route Edit: Off",
       width: 210,
       height: 64,
       left: 24,
@@ -141,7 +724,7 @@ module.exports = {
     this._routeEditorButtons.newRoute = BootstrapButtonFactory.createActionButton({
       name: "RouteEditorNewButton",
       parentNode: this.node,
-      labelText: "新路线",
+      labelText: "New Route",
       width: 180,
       height: 58,
       left: 24,
@@ -154,7 +737,7 @@ module.exports = {
     this._routeEditorButtons.undo = BootstrapButtonFactory.createActionButton({
       name: "RouteEditorUndoButton",
       parentNode: this.node,
-      labelText: "撤销点",
+      labelText: "Undo Point",
       width: 180,
       height: 58,
       left: 24,
@@ -167,7 +750,7 @@ module.exports = {
     this._routeEditorButtons.clear = BootstrapButtonFactory.createActionButton({
       name: "RouteEditorClearButton",
       parentNode: this.node,
-      labelText: "清空当前",
+      labelText: "Clear Current",
       width: 180,
       height: 58,
       left: 24,
@@ -180,7 +763,7 @@ module.exports = {
     this._routeEditorButtons.save = BootstrapButtonFactory.createActionButton({
       name: "RouteEditorSaveButton",
       parentNode: this.node,
-      labelText: "保存路线",
+      labelText: "Save Routes",
       width: 180,
       height: 58,
       left: 24,
@@ -288,8 +871,8 @@ module.exports = {
     if (this._routeEditorButtons.toggle) {
       this._routeEditorButtons.toggle.node.active = hasLevel || inLevelSelect;
       this._routeEditorButtons.toggle.label.string = inLevelSelect
-        ? ("编辑模式: " + (this._levelSelectRouteEditorMode ? "开" : "关"))
-        : ("路线编辑: " + (isEditing ? "开" : "关") + dirtyText);
+        ? ("Edit Mode: " + (this._levelSelectRouteEditorMode ? "On" : "Off"))
+        : ("Route Edit: " + (isEditing ? "On" : "Off") + dirtyText);
     }
 
     ["newRoute", "undo", "clear", "save"].forEach(function (key) {
@@ -300,15 +883,15 @@ module.exports = {
     }, this);
 
     if (this._routeEditorButtons.newRoute) {
-      this._routeEditorButtons.newRoute.label.string = "新路线";
+      this._routeEditorButtons.newRoute.label.string = "New Route";
     }
     if (this._routeEditorButtons.undo) {
       this._routeEditorButtons.undo.label.string = activeRoute && activeRoute.points.length > 0
-        ? "撤销点"
-        : "撤销点";
+        ? "Undo Point"
+        : "Undo Point";
     }
     if (this._routeEditorButtons.clear) {
-      this._routeEditorButtons.clear.label.string = "清空当前";
+      this._routeEditorButtons.clear.label.string = "Clear Current";
     }
     if (this._routeEditorButtons.save) {
       var routeCount = this._routeEditorState && Array.isArray(this._routeEditorState.routes)
@@ -316,7 +899,7 @@ module.exports = {
           return route && Array.isArray(route.points) && route.points.length > 0;
         }).length
         : 0;
-      this._routeEditorButtons.save.label.string = "保存路线(" + routeCount + ")";
+      this._routeEditorButtons.save.label.string = "Save Routes(" + routeCount + ")";
     }
   },
 
@@ -326,7 +909,7 @@ module.exports = {
     if (this._appendRouteEditorPoint(route, localPoint, true)) {
       this._renderRouteEditor();
       this._refreshRouteEditorButtons();
-      this._setStatus("路线点已记录: " + route.name + " -> (" + Math.round(localPoint.x) + ", " + Math.round(localPoint.y) + ")");
+      this._setStatus("Route point recorded: " + route.name + " -> (" + Math.round(localPoint.x) + ", " + Math.round(localPoint.y) + ")");
     }
   },
 
@@ -364,14 +947,19 @@ module.exports = {
       this._levelSelectRouteEditorMode = !this._levelSelectRouteEditorMode;
       this._pendingRouteEditorAutoEnable = false;
       this._refreshRouteEditorButtons();
-      if (this._levelSelectNode && this._levelSelectViewPrefab && this._levelButtonPrefab) {
+      if (
+        this._levelSelectNode &&
+        this._levelSelectViewPrefab &&
+        Array.isArray(this._levelMapPrefabs) &&
+        this._levelMapPrefabs.length > 0
+      ) {
         this._loadAvailableLevelIds().then(function (levelIds) {
-          this._renderLevelSelectContent(this._levelSelectViewPrefab, this._levelButtonPrefab, levelIds);
+          this._renderLevelSelectContent(this._levelSelectViewPrefab, this._levelMapPrefabs, levelIds);
         }.bind(this));
       }
       this._setStatus(this._levelSelectRouteEditorMode
-        ? "路线编辑模式已开启，请选择要编辑的关卡"
-        : "路线编辑模式已关闭，点击关卡将直接开始");
+        ? "Route editor mode enabled, select a level to edit"
+        : "Route editor mode disabled, tap level to start");
       return;
     }
 
@@ -383,7 +971,7 @@ module.exports = {
     this._routeEditorState.isDrawing = false;
     this._renderRouteEditor();
     this._refreshRouteEditorButtons();
-    this._setStatus(this._routeEditorState.enabled ? "路线编辑已开启" : "路线编辑已关闭");
+    this._setStatus(this._routeEditorState.enabled ? "Route editor enabled" : "Route editor disabled");
   },
 
   _onRouteEditorNewTap: function () {
@@ -397,7 +985,7 @@ module.exports = {
     this._routeEditorState.dirty = true;
     this._renderRouteEditor();
     this._refreshRouteEditorButtons();
-    this._setStatus("已创建新路线: " + route.name);
+    this._setStatus("New route created: " + route.name);
   },
 
   _onRouteEditorUndoTap: function () {
@@ -410,7 +998,7 @@ module.exports = {
     this._routeEditorState.dirty = true;
     this._renderRouteEditor();
     this._refreshRouteEditorButtons();
-    this._setStatus("已撤销最后一个路线点");
+    this._setStatus("Last route point removed");
   },
 
   _onRouteEditorClearTap: function () {
@@ -423,7 +1011,7 @@ module.exports = {
     this._routeEditorState.dirty = true;
     this._renderRouteEditor();
     this._refreshRouteEditorButtons();
-    this._setStatus("当前路线已清空: " + route.name);
+    this._setStatus("Current route cleared: " + route.name);
   },
 
   _persistRouteEditorIfDirty: function (allowBrowserDownload, forceSave) {
@@ -455,7 +1043,7 @@ module.exports = {
     var persisted = this._persistRouteEditorIfDirty(true, true);
     this._refreshRouteEditorButtons();
     var target = persisted ? persisted.saveResult : this.routeConfigStore.describeTarget();
-    this._setStatus("路线配置已保存: " + target.path);
+    this._setStatus("闂傚倸鍊峰ù鍥х暦閸偅鍙忕€规洖娲︽刊浼存煥閺囩偛鈧悂宕归崒鐐寸厵闁诡垳澧楅ˉ澶愭煕濮橆剛绉烘鐐寸墪鑿愭い鎺嗗亾濠碘€茬矙閺岋綁骞橀姘闂備浇顕ф鍝ョ不瀹ュ纾块柛妤冧紳濞差亜惟闁宠桨绀侀崵鎴︽⒑缁嬫寧婀板瑙勬礋瀹曟垿骞橀懜闈涙瀭闂佸憡娲﹂崢浠嬪箟濞嗘挻鍊垫繛鍫濈仢閺嬬喖鏌熼幖浣虹暫妤犵偞鍨挎慨鈧柣娆屽亾婵炲皷鏅犻弻鐔煎礂閸濄儺妲繛? " + target.path);
   },
 
   _onDropTestButtonTap: function () {
@@ -475,7 +1063,7 @@ module.exports = {
     this._lastStatusMessage = message;
 
     if (this._statusLabel) {
-      this._statusLabel.string = message;
+      statusLabel.string = isEnabled ? "开" : "关";
     }
 
     Logger.info(message);
@@ -484,8 +1072,13 @@ module.exports = {
   _formatStatus: function (levelConfig, snapshot) {
     var matched = snapshot.lastResolution ? snapshot.lastResolution.matched.length : 0;
     var floating = snapshot.lastResolution ? snapshot.lastResolution.floating.length : 0;
-    var collected = snapshot.jars ? snapshot.jars.collectedTotal : 0;
-    var objective = snapshot.jars ? snapshot.jars.objectiveTarget : 0;
+    var objectiveSnapshot = snapshot.objectives || null;
+    var collected = objectiveSnapshot
+      ? Math.max(0, Number(objectiveSnapshot.progress) || 0)
+      : (snapshot.jars ? snapshot.jars.collectedTotal : 0);
+    var objective = objectiveSnapshot
+      ? Math.max(0, Number(objectiveSnapshot.target) || 0)
+      : (snapshot.jars ? snapshot.jars.objectiveTarget : 0);
     var winStats = snapshot.winStats || {};
     var scoreHeatBand = winStats.scoreHeatBand || null;
     var scoreBandText = scoreHeatBand
@@ -521,6 +1114,7 @@ module.exports = {
     }
 
     this._persistRouteEditorIfDirty();
+    this._hideSettingView();
     this.isSelectingLevel = true;
     this.currentLevelConfig = null;
     this._lastRuntimeState = null;
@@ -529,6 +1123,8 @@ module.exports = {
     this._refreshRouteEditorButtons();
     this._setStatus("Loading level list...");
     this._refreshLevelProgress();
+    this._refreshPlayerResources();
+    this._levelSelectMapIndex = 0;
 
     Promise.all([
       this._ensureLevelSelectPrefabs(),
@@ -537,18 +1133,26 @@ module.exports = {
       var prefabs = results[0];
       var levelIds = results[1];
       this._preloadLevelConfigsInBackground(levelIds);
-      this._renderLevelSelectContent(prefabs.viewPrefab, prefabs.buttonPrefab, levelIds);
+      this._renderLevelSelectContent(prefabs.viewPrefab, prefabs.mapPrefabs, levelIds);
       this._playLevelSelectBackgroundMusic();
-      this._setStatus("请选择关卡");
+      this._setStatus("Please select a level");
     }.bind(this)).catch(function (error) {
-      this.isSelectingLevel = false;
-      this._setStatus("Load level list failed. Fallback to startup level...");
-      Logger.error(error);
-      this._loadInitialLevel();
+      this.isSelectingLevel = true;
+      this.currentLevelConfig = null;
+      this._setDropTestButtonVisible(false);
+      this._renderRouteEditor();
+      this._refreshRouteEditorButtons();
+
+      var errorMessage = error && error.stack
+        ? error.stack
+        : (error && error.message ? error.message : String(error));
+      this._setStatus("Load level list failed. Please check LevelView/LevelMap prefabs.");
+      Logger.error("Load level list failed detail", errorMessage);
     }.bind(this));
   },
 
   _hideLevelSelectView: function () {
+    this._hideSettingView();
     if (!this._levelSelectNode || !cc.isValid(this._levelSelectNode)) {
       return;
     }
@@ -557,24 +1161,69 @@ module.exports = {
   },
 
   _ensureLevelSelectPrefabs: function () {
-    if (this._levelSelectViewPrefab && this._levelButtonPrefab) {
+    if (
+      this._levelSelectViewPrefab &&
+      Array.isArray(this._levelMapPrefabs) &&
+      this._levelMapPrefabs.length > 0
+    ) {
       return Promise.resolve({
         viewPrefab: this._levelSelectViewPrefab,
-        buttonPrefab: this._levelButtonPrefab
+        mapPrefabs: this._levelMapPrefabs
       });
     }
 
     return Promise.all([
       this._loadPrefab("prefabs/ui/LevelView"),
-      this._loadPrefab("prefabs/game/Level_btn")
+      this._tryLoadFirstAvailablePrefab([
+        "prefabs/ui/LevelMap1",
+        "prefabs/ui/levelMap1",
+        "prefabs/game/LevelMap1"
+      ]),
+      this._tryLoadFirstAvailablePrefab([
+        "prefabs/ui/LevelMap2",
+        "prefabs/ui/levelMap2",
+        "prefabs/game/LevelMap2"
+      ])
     ]).then(function (prefabs) {
       this._levelSelectViewPrefab = prefabs[0];
-      this._levelButtonPrefab = prefabs[1];
+      this._levelMapPrefabs = [prefabs[1], prefabs[2]].filter(function (prefab) {
+        return !!prefab;
+      });
+      if (this._levelMapPrefabs.length === 0) {
+        Logger.warn("No level map prefabs available, LevelView will show without map content.");
+      }
       return {
         viewPrefab: this._levelSelectViewPrefab,
-        buttonPrefab: this._levelButtonPrefab
+        mapPrefabs: this._levelMapPrefabs
       };
     }.bind(this));
+  },
+
+  _tryLoadFirstAvailablePrefab: function (paths) {
+    var candidates = Array.isArray(paths) ? paths.filter(Boolean) : [];
+    if (candidates.length === 0) {
+      return Promise.resolve(null);
+    }
+
+    var index = 0;
+    var tryLoadNext = function () {
+      if (index >= candidates.length) {
+        return Promise.resolve(null);
+      }
+
+      var path = candidates[index++];
+      return this._loadPrefab(path).then(function (prefab) {
+        return prefab || null;
+      }).catch(function (error) {
+        Logger.warn("Load prefab failed, try next candidate", {
+          path: path,
+          error: error && error.message ? error.message : error
+        });
+        return tryLoadNext();
+      });
+    }.bind(this);
+
+    return tryLoadNext();
   },
 
   _loadPrefab: function (path) {
@@ -628,11 +1277,15 @@ module.exports = {
           return resolvedLevelIds;
         }
 
-        if (!this._levelSelectViewPrefab || !this._levelButtonPrefab) {
+        if (
+          !this._levelSelectViewPrefab ||
+          !Array.isArray(this._levelMapPrefabs) ||
+          this._levelMapPrefabs.length === 0
+        ) {
           return resolvedLevelIds;
         }
 
-        this._renderLevelSelectContent(this._levelSelectViewPrefab, this._levelButtonPrefab, resolvedLevelIds);
+        this._renderLevelSelectContent(this._levelSelectViewPrefab, this._levelMapPrefabs, resolvedLevelIds);
         this._preloadLevelConfigsInBackground(resolvedLevelIds);
         return resolvedLevelIds;
       }.bind(this)).catch(function (error) {
@@ -674,7 +1327,7 @@ module.exports = {
     return LevelSelectPolicy.getLevelIdFromResourcePath(resourcePath);
   },
 
-  _renderLevelSelectContent: function (levelViewPrefab, levelButtonPrefab, levelIds) {
+  _renderLevelSelectContent: function (levelViewPrefab, mapPrefabs, levelIds, forcedMapIndex) {
     this._refreshLevelProgress();
 
     var highestUnlocked = Math.max(1, Number(this.levelProgress.highestUnlockedLevel) || 1);
@@ -683,18 +1336,57 @@ module.exports = {
       hostNode: this.node,
       existingLevelSelectNode: this._levelSelectNode,
       levelViewPrefab: levelViewPrefab,
-      levelButtonPrefab: levelButtonPrefab,
+      mapPrefabs: mapPrefabs,
       levelIds: levelIds,
       levelSelectRouteEditorMode: this._levelSelectRouteEditorMode,
       highestUnlocked: highestUnlocked,
       highlightedLevelId: highlightedLevelId,
+      currentMapIndex: Number.isInteger(forcedMapIndex) ? forcedMapIndex : this._levelSelectMapIndex,
       getLevelStarCount: this._getLevelStarCount.bind(this),
       isLevelCompleted: this._isLevelCompleted.bind(this),
-      onLevelSelectTap: this._onLevelSelectTap.bind(this)
+      staminaValue: this._getCurrentStamina(),
+      coinValue: this._getCurrentCoins(),
+      onOpenSettings: this._onLevelSelectSettingTap.bind(this),
+      onLevelSelectTap: this._onLevelSelectTap.bind(this),
+      onMapIndexChange: this._onLevelSelectMapIndexChange.bind(this)
     });
     this._levelSelectNode = renderResult.levelViewNode;
+    this._levelSelectMapIndex = Number.isInteger(renderResult.currentMapIndex)
+      ? renderResult.currentMapIndex
+      : 0;
+    this._levelMapPrefabs = Array.isArray(mapPrefabs) ? mapPrefabs.slice() : [];
+    if (!renderResult || (Number(renderResult.mapCount) || 0) <= 0) {
+      Logger.warn("Level select rendered without map prefab content.");
+      this._setStatus("Level map missing. Please check LevelMap1 prefab resources.");
+    }
 
     this._refreshRouteEditorButtons();
+  },
+
+  _onLevelSelectMapIndexChange: function (nextMapIndex) {
+    if (this.isRestarting || !this.isSelectingLevel) {
+      return;
+    }
+
+    var targetMapIndex = Math.max(0, Math.floor(Number(nextMapIndex) || 0));
+    this._levelSelectMapIndex = targetMapIndex;
+
+    if (
+      !this._levelSelectViewPrefab ||
+      !Array.isArray(this._levelMapPrefabs) ||
+      this._levelMapPrefabs.length === 0
+    ) {
+      return;
+    }
+
+    this._loadAvailableLevelIds().then(function (levelIds) {
+      if (this.isRestarting || !this.isSelectingLevel) {
+        return;
+      }
+      this._renderLevelSelectContent(this._levelSelectViewPrefab, this._levelMapPrefabs, levelIds, targetMapIndex);
+    }.bind(this)).catch(function (error) {
+      Logger.warn("Switch level map failed", error && error.message ? error.message : error);
+    });
   },
 
   _refreshLevelProgress: function () {
@@ -788,8 +1480,13 @@ module.exports = {
     this._playSfx("uiClick");
     if (this._levelSelectRouteEditorMode) {
       this._pendingRouteEditorAutoEnable = true;
-      this._setStatus("加载关卡并进入路线编辑: level_" + ("000" + levelId).slice(-3));
+      this._setStatus("Loading level for route editor: level_" + ("000" + levelId).slice(-3));
       this._loadLevelById(levelId, "Route editor level loaded", "Load selected level for route editor failed.");
+      return;
+    }
+
+    if (!this._consumeStaminaForLevelEntry()) {
+      this._setStatus("Stamina is not enough. It resets to 10 at 00:00.");
       return;
     }
 

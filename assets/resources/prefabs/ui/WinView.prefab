@@ -424,8 +424,8 @@
     },
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 452,
-      "height": 494
+      "width": 720,
+      "height": 918
     },
     "_anchorPoint": {
       "__type__": "cc.Vec2",
@@ -477,7 +477,7 @@
     "_srcBlendFactor": 770,
     "_dstBlendFactor": 771,
     "_spriteFrame": {
-      "__uuid__": "45308d7e-6289-4503-8079-dd8adc3ffb84"
+      "__uuid__": "164e682c-2988-439f-b398-c4ab03ec0547"
     },
     "_type": 0,
     "_sizeMode": 2,

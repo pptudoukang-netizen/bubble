@@ -66,6 +66,10 @@ function ShooterController() {
   this.shotLimit = 0;
   this.availableColors = [];
   this.spawnWeights = {};
+  this.skillInventory = {
+    rainbow: 0,
+    blast: 0
+  };
   this.currentBall = null;
   this.nextBall = null;
   this.currentColor = null;
@@ -83,6 +87,8 @@ ShooterController.prototype.configureLevel = function (levelConfig) {
   this.shotLimit = levelConfig.level.shotLimit || 0;
   this.availableColors = (levelConfig.level.colors || []).slice();
   this.spawnWeights = Object.assign({}, levelConfig.level.spawnWeights || {});
+  this.skillInventory.rainbow = 0;
+  this.skillInventory.blast = 0;
   this.currentBall = this._pickNormalBall();
   this.nextBall = this._pickNormalBall();
   this._syncLegacyColorFields();
@@ -125,7 +131,7 @@ ShooterController.prototype.advanceQueue = function () {
   };
 };
 
-ShooterController.prototype.receiveSkillBall = function (entityType) {
+ShooterController.prototype.addSkillInventory = function (entityType, count) {
   if (entityType !== "rainbow" && entityType !== "blast") {
     return {
       accepted: false,
@@ -133,19 +139,47 @@ ShooterController.prototype.receiveSkillBall = function (entityType) {
     };
   }
 
-  if (this.nextBall && this.nextBall.ballCategory === "skill") {
+  var gained = Math.max(1, Math.floor(Number(count) || 1));
+  this.skillInventory[entityType] = Math.max(0, Math.floor(Number(this.skillInventory[entityType]) || 0)) + gained;
+  return {
+    accepted: true,
+    entityType: entityType,
+    gained: gained,
+    total: this.skillInventory[entityType]
+  };
+};
+
+ShooterController.prototype.equipSkillBall = function (entityType) {
+  if (entityType !== "rainbow" && entityType !== "blast") {
     return {
       accepted: false,
-      reason: "next_slot_occupied"
+      reason: "invalid_skill_type"
     };
   }
 
-  this.nextBall = createSkillBall(entityType);
+  var inventoryCount = Math.max(0, Math.floor(Number(this.skillInventory[entityType]) || 0));
+  if (inventoryCount <= 0) {
+    return {
+      accepted: false,
+      reason: "inventory_empty"
+    };
+  }
+
+  if (this.currentBall && this.currentBall.ballCategory === "skill") {
+    return {
+      accepted: false,
+      reason: "current_slot_occupied_by_skill"
+    };
+  }
+
+  this.skillInventory[entityType] = inventoryCount - 1;
+  this.currentBall = createSkillBall(entityType);
   this._syncLegacyColorFields();
 
   return {
     accepted: true,
-    entityType: entityType
+    entityType: entityType,
+    remaining: this.skillInventory[entityType]
   };
 };
 
@@ -160,6 +194,7 @@ ShooterController.prototype.getShooterState = function () {
   return {
     currentBall: clone(this.currentBall),
     nextBall: clone(this.nextBall),
+    skillInventory: clone(this.skillInventory),
     currentColor: this.currentColor,
     nextColor: this.nextColor,
     aim: this.getAimState(),
@@ -208,6 +243,7 @@ ShooterController.prototype.snapshot = function () {
   snapshot.shotLimit = this.shotLimit;
   snapshot.currentBall = clone(this.currentBall);
   snapshot.nextBall = clone(this.nextBall);
+  snapshot.skillInventory = clone(this.skillInventory);
   snapshot.currentColor = this.currentColor;
   snapshot.nextColor = this.nextColor;
   snapshot.origin = clone(this.origin);

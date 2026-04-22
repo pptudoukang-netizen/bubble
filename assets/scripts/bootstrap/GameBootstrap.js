@@ -4,6 +4,7 @@ var DebugFlags = require("../utils/DebugFlags");
 var Logger = require("../utils/Logger");
 var PoolManager = require("../utils/PoolManager");
 var LevelProgressStore = require("../utils/LevelProgressStore");
+var PlayerResourceStore = require("../utils/PlayerResourceStore");
 var RouteConfigStore = require("../utils/RouteConfigStore");
 var AudioManager = require("../audio/AudioManager");
 var BoardLayout = require("../config/BoardLayout");
@@ -21,11 +22,13 @@ var LoadingViewController = require("../ui/LoadingViewController");
 
 var BASELINE_HALF_WIDTH = 360;
 var BASELINE_HALF_HEIGHT = 640;
+var JAR_RAISE_FROM_BOTTOM = 70;
+var SHOOTER_RAISE_FROM_BOTTOM = 100;
 var BASELINE_SIDE_PADDING = BASELINE_HALF_WIDTH - Math.abs(BoardLayout.boardRight);
-var BASELINE_JAR_RENDER_OFFSET_FROM_BOTTOM = (BoardLayout.jarBaseY + BoardLayout.jarRenderYOffset) - (-BASELINE_HALF_HEIGHT);
+var BASELINE_JAR_RENDER_OFFSET_FROM_BOTTOM = ((BoardLayout.jarBaseY + BoardLayout.jarRenderYOffset) - (-BASELINE_HALF_HEIGHT)) + JAR_RAISE_FROM_BOTTOM;
 var BASELINE_JAR_RENDER_Y_OFFSET = Number(BoardLayout.jarRenderYOffset) || 0;
-var BASELINE_SHOOTER_OFFSET_FROM_BOTTOM = BoardLayout.shooterOrigin.y - (-BASELINE_HALF_HEIGHT);
-var BASELINE_DANGER_OFFSET_FROM_BOTTOM = BoardLayout.dangerLineY - (-BASELINE_HALF_HEIGHT);
+var BASELINE_SHOOTER_OFFSET_FROM_BOTTOM = (BoardLayout.shooterOrigin.y - (-BASELINE_HALF_HEIGHT)) + SHOOTER_RAISE_FROM_BOTTOM;
+var BASELINE_DANGER_OFFSET_FROM_BOTTOM = 460;
 
 function clone(data) {
   return JSON.parse(JSON.stringify(data));
@@ -70,6 +73,10 @@ cc.Class({
     levelSelectMaxLevelId: {
       default: 21,
       tooltip: "关卡选择界面的快速首屏数量（用于避免首次扫描资源目录阻塞展示）。"
+    },
+    inspectorStaminaValue: {
+      default: 10,
+      tooltip: "爱心体力测试值（启动时强制写入当前体力，便于测试）。"
     },
     enableStartupLoadingView: {
       default: true,
@@ -119,8 +126,12 @@ cc.Class({
       default: true,
       tooltip: "是否启用音效。"
     },
+    enableVibration: {
+      default: true,
+      tooltip: "是否启用震动反馈。"
+    },
     backgroundMusicVolume: {
-      default: 0.6,
+      default: 1,
       tooltip: "背景音乐音量（0~1）。"
     },
     soundEffectsVolume: {
@@ -171,7 +182,8 @@ cc.Class({
     this.isSelectingLevel = false;
     this._levelSelectNode = null;
     this._levelSelectViewPrefab = null;
-    this._levelButtonPrefab = null;
+    this._levelMapPrefabs = null;
+    this._levelSelectMapIndex = 0;
     this._availableLevelIdsPromise = null;
     this._availableLevelIdsScanPromise = null;
     this._dropTestButton = null;
@@ -191,12 +203,22 @@ cc.Class({
     this._levelConfigPreloadPromise = null;
     this.levelProgressStore = new LevelProgressStore();
     this.levelProgress = this.levelProgressStore.load();
+    var inspectorStamina = Math.max(0, Math.floor(Number(this.inspectorStaminaValue) || 0));
+    this.playerResourceStore = new PlayerResourceStore({
+      dailyStamina: 10
+    });
+    this.playerResources = this.playerResourceStore.load();
+    this.playerResources.stamina = inspectorStamina;
+    this.playerResourceStore.save(this.playerResources);
     this.routeConfigStore = new RouteConfigStore();
     this.routeConfig = this.routeConfigStore.load();
+    this._settingViewPrefab = null;
+    this._settingViewNode = null;
     this.audioManager = new AudioManager({
       settingsDefaults: {
         musicEnabled: this.enableBackgroundMusic,
         sfxEnabled: this.enableSoundEffects,
+        vibrationEnabled: this.enableVibration,
         musicVolume: this.backgroundMusicVolume,
         sfxVolume: this.soundEffectsVolume
       }
@@ -227,6 +249,15 @@ cc.Class({
     this.levelRenderer.setLoseActionHandlers({
       onRetryLevel: this._restartCurrentLevel.bind(this),
       onBackLevel: this._onBackToLevelTap.bind(this)
+    });
+    this.levelRenderer.setGameplayActionHandlers({
+      onBackToLevel: this._onBackToLevelTap.bind(this),
+      onUseRainbow: function () {
+        this._onUseSkillBallTap("rainbow");
+      }.bind(this),
+      onUseBlast: function () {
+        this._onUseSkillBallTap("blast");
+      }.bind(this)
     });
 
     this.gameManager.bootstrap();
@@ -557,10 +588,10 @@ cc.Class({
 
     this._startupPrefabWarmupPromise = Promise.all([
       this._ensureLevelSelectPrefabs(),
-      this._loadPrefab("prefabs/ui/HudPanel"),
+      this._loadPrefab("prefabs/ui/GameView"),
+      this._loadPrefab("prefabs/ui/SettingView"),
       this._loadPrefab("prefabs/ui/WinView"),
       this._loadPrefab("prefabs/ui/LoseView"),
-      this._loadPrefab("prefabs/ui/DangerLine"),
       this._loadPrefab("prefabs/game/ShooterPanel"),
       this._loadPrefab("prefabs/game/BubbleItem"),
       this._loadPrefab("prefabs/game/JarItem"),
@@ -667,6 +698,45 @@ cc.Class({
     this.audioManager.playSfx(name);
   },
 
+  _triggerShortVibration: function () {
+    if (!cc.sys || !cc.sys.isMobile) {
+      return;
+    }
+    if (
+      this.audioManager &&
+      this.audioManager.settings &&
+      this.audioManager.settings.vibrationEnabled === false
+    ) {
+      return;
+    }
+
+    if (typeof wx !== "undefined" && wx && typeof wx.vibrateShort === "function") {
+      try {
+        wx.vibrateShort({ type: "light" });
+        return;
+      } catch (error) {
+        // Fall through to other vibration APIs.
+      }
+    }
+
+    if (typeof navigator !== "undefined" && navigator && typeof navigator.vibrate === "function") {
+      try {
+        navigator.vibrate(20);
+        return;
+      } catch (error) {
+        // Fall through to native jsb vibration if available.
+      }
+    }
+
+    if (typeof jsb !== "undefined" && jsb && jsb.device && typeof jsb.device.vibrate === "function") {
+      try {
+        jsb.device.vibrate();
+      } catch (error) {
+        // Ignore vibration failures to avoid breaking gameplay loop.
+      }
+    }
+  },
+
   _playRuntimeAudioEvents: function (snapshot) {
     var runtimeEvents = snapshot && Array.isArray(snapshot.runtimeEvents) ? snapshot.runtimeEvents : [];
     if (!runtimeEvents.length) {
@@ -674,11 +744,18 @@ cc.Class({
     }
 
     runtimeEvents.forEach(function (event) {
-      if (!event || event.type !== "jar_rim_bounce") {
+      if (!event || typeof event.type !== "string") {
         return;
       }
 
-      this._playSfx("jarBounce");
+      if (event.type === "jar_rim_bounce") {
+        this._playSfx("jarBounce");
+        return;
+      }
+
+      if (event.type === "shot_no_drop") {
+        this._triggerShortVibration();
+      }
     }, this);
   },
 
@@ -865,6 +942,49 @@ cc.Class({
     this._setStatus(this._formatStatus(this.currentLevelConfig, snapshot));
   },
 
+  _onUseSkillBallTap: function (entityType) {
+    if (!this.currentLevelConfig || this.isRestarting || this.isSelectingLevel) {
+      return;
+    }
+
+    if (this._isTerminalState()) {
+      return;
+    }
+
+    this._playSfx("uiClick");
+    var useResult = this.gameManager.useSkillBall(entityType);
+    var snapshot = useResult && useResult.snapshot
+      ? useResult.snapshot
+      : this.gameManager.getRuntimeSnapshot();
+
+    this.levelRenderer.refreshRuntime(this.currentLevelConfig, snapshot);
+
+    if (useResult && useResult.accepted) {
+      var skillName = entityType === "rainbow" ? "彩虹球" : "炸弹球";
+      var inventory = snapshot && snapshot.shooter && snapshot.shooter.skillInventory
+        ? snapshot.shooter.skillInventory
+        : {};
+      var remaining = Math.max(0, Math.floor(Number(inventory[entityType]) || 0));
+      this._setStatus(skillName + "已装填，剩余：" + remaining);
+      return;
+    }
+
+    var reason = useResult && typeof useResult.reason === "string" ? useResult.reason : "equip_failed";
+    if (reason === "inventory_empty") {
+      this._setStatus("该道具库存不足");
+      return;
+    }
+    if (reason === "current_slot_occupied_by_skill") {
+      this._setStatus("当前炮台已装填道具球，请先发射");
+      return;
+    }
+    if (reason === "busy") {
+      this._setStatus("当前状态不可切换道具");
+      return;
+    }
+    this._setStatus("道具装填失败");
+  },
+
   _loadInitialLevel: function () {
     var startupLevelId = this._getStartupLevelId();
     this._setStatus("Loading level_" + ("000" + startupLevelId).slice(-3) + "...");
@@ -949,7 +1069,33 @@ cc.Class({
   _setDropTestButtonVisible: GameBootstrapUiFlowMethods._setDropTestButtonVisible,
   _showLevelSelectView: GameBootstrapUiFlowMethods._showLevelSelectView,
   _hideLevelSelectView: GameBootstrapUiFlowMethods._hideLevelSelectView,
+  _refreshPlayerResources: GameBootstrapUiFlowMethods._refreshPlayerResources,
+  _getCurrentStamina: GameBootstrapUiFlowMethods._getCurrentStamina,
+  _getCurrentCoins: GameBootstrapUiFlowMethods._getCurrentCoins,
+  _consumeStaminaForLevelEntry: GameBootstrapUiFlowMethods._consumeStaminaForLevelEntry,
+  _updateLevelSelectTopStatus: GameBootstrapUiFlowMethods._updateLevelSelectTopStatus,
+  _onLevelSelectSettingTap: GameBootstrapUiFlowMethods._onLevelSelectSettingTap,
+  _ensureSettingViewPrefab: GameBootstrapUiFlowMethods._ensureSettingViewPrefab,
+  _showSettingView: GameBootstrapUiFlowMethods._showSettingView,
+  _hideSettingView: GameBootstrapUiFlowMethods._hideSettingView,
+  _bindSettingViewActions: GameBootstrapUiFlowMethods._bindSettingViewActions,
+  _restoreDefaultAudioSettings: GameBootstrapUiFlowMethods._restoreDefaultAudioSettings,
+  _syncSettingViewFromAudioSettings: GameBootstrapUiFlowMethods._syncSettingViewFromAudioSettings,
+  _adjustSettingVolumeByStep: GameBootstrapUiFlowMethods._adjustSettingVolumeByStep,
+  _setSettingVolumeToZero: GameBootstrapUiFlowMethods._setSettingVolumeToZero,
+  _normalizeSettingVolume: GameBootstrapUiFlowMethods._normalizeSettingVolume,
+  _ensureSettingVolumeIconSprites: GameBootstrapUiFlowMethods._ensureSettingVolumeIconSprites,
+  _updateSettingVolumeIconView: GameBootstrapUiFlowMethods._updateSettingVolumeIconView,
+  _updateSettingToggleStatusView: GameBootstrapUiFlowMethods._updateSettingToggleStatusView,
+  _bindToggleChangeOnce: GameBootstrapUiFlowMethods._bindToggleChangeOnce,
+  _bindSettingVolumeDragOnce: GameBootstrapUiFlowMethods._bindSettingVolumeDragOnce,
+  _applySettingVolumeFromTouch: GameBootstrapUiFlowMethods._applySettingVolumeFromTouch,
+  _syncSettingVolumeStarPosition: GameBootstrapUiFlowMethods._syncSettingVolumeStarPosition,
+  _resolveSettingControlNodes: GameBootstrapUiFlowMethods._resolveSettingControlNodes,
+  _findNodeByNameRecursive: GameBootstrapUiFlowMethods._findNodeByNameRecursive,
+  _bindNodeTapOnce: GameBootstrapUiFlowMethods._bindNodeTapOnce,
   _ensureLevelSelectPrefabs: GameBootstrapUiFlowMethods._ensureLevelSelectPrefabs,
+  _tryLoadFirstAvailablePrefab: GameBootstrapUiFlowMethods._tryLoadFirstAvailablePrefab,
   _loadPrefab: GameBootstrapUiFlowMethods._loadPrefab,
   _loadAvailableLevelIds: GameBootstrapUiFlowMethods._loadAvailableLevelIds,
   _refreshAvailableLevelIdsInBackground: GameBootstrapUiFlowMethods._refreshAvailableLevelIdsInBackground,
@@ -957,6 +1103,7 @@ cc.Class({
   _preloadLevelConfigsInBackground: GameBootstrapUiFlowMethods._preloadLevelConfigsInBackground,
   _getLevelIdFromResourcePath: GameBootstrapUiFlowMethods._getLevelIdFromResourcePath,
   _renderLevelSelectContent: GameBootstrapUiFlowMethods._renderLevelSelectContent,
+  _onLevelSelectMapIndexChange: GameBootstrapUiFlowMethods._onLevelSelectMapIndexChange,
   _refreshLevelProgress: GameBootstrapUiFlowMethods._refreshLevelProgress,
   _rememberSelectedLevel: GameBootstrapUiFlowMethods._rememberSelectedLevel,
   _handleRuntimeStateTransition: GameBootstrapUiFlowMethods._handleRuntimeStateTransition,

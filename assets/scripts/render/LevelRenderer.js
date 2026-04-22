@@ -45,6 +45,7 @@ var JAR_MASK_RESOURCES = {
 };
 
 var PREFAB_PATHS = {
+  gameView: "prefabs/ui/GameView",
   hudPanel: "prefabs/ui/HudPanel",
   winView: "prefabs/ui/WinView",
   loseView: "prefabs/ui/LoseView",
@@ -66,7 +67,7 @@ var GUIDE_DOT_PULSE_SCALE_LARGE = 1.5;
 var GUIDE_DOT_PULSE_SCALE_SMALL = 0.5;
 var TEST_SLOT_RADIUS = Math.floor(BoardLayout.bubbleRadius * 0.88);
 var SHOOTER_MAX_ROTATION = 75;
-var ICE_OVERLAY_OPACITY = 150;
+var ICE_OVERLAY_OPACITY = 255;
 var REMAINING_SHOTS_OFFSET_Y = 68;
 var NEXT_SHOT_OFFSET_X = 118;
 var NEXT_SHOT_OFFSET_Y = -40;
@@ -96,6 +97,10 @@ var ROUTE_LINE_WIDTH_ACTIVE = 6;
 var ROUTE_LINE_WIDTH_IDLE = 4;
 var ROUTE_POINT_RADIUS_ACTIVE = 7;
 var ROUTE_POINT_RADIUS_IDLE = 5;
+var ICE_THAW_SHAKE_OFFSET = 7;
+var ICE_THAW_SHAKE_STEP_DURATION = 0.04;
+var ICE_COLLECT_FLY_DURATION = 0.34;
+var ICE_COLLECT_BEZIER_ARC = 120;
 
 var ROUTE_EDITOR_COLORS = [
   { r: 255, g: 195, b: 0 },
@@ -121,7 +126,7 @@ function findCollectionObjective(levelConfig) {
       continue;
     }
 
-    if (objective.type === "collect_any" || objective.type === "collect_color") {
+    if (objective.type === "collect_any" || objective.type === "collect_color" || objective.type === "collect_ice") {
       return objective;
     }
   }
@@ -132,6 +137,7 @@ function findCollectionObjective(levelConfig) {
 function buildObjectiveDisplayData(levelConfig, runtimeSnapshot) {
   var objective = findCollectionObjective(levelConfig);
   var jars = runtimeSnapshot && runtimeSnapshot.jars ? runtimeSnapshot.jars : null;
+  var objectiveSnapshot = runtimeSnapshot && runtimeSnapshot.objectives ? runtimeSnapshot.objectives : null;
 
   if (!objective) {
     return {
@@ -139,6 +145,21 @@ function buildObjectiveDisplayData(levelConfig, runtimeSnapshot) {
       progress: 0,
       target: 0,
       progressText: "-"
+    };
+  }
+
+  if (
+    objectiveSnapshot &&
+    typeof objectiveSnapshot.type === "string" &&
+    objectiveSnapshot.type === objective.type
+  ) {
+    var snapshotProgress = Math.max(0, Number(objectiveSnapshot.progress) || 0);
+    var snapshotTarget = Math.max(0, Number(objectiveSnapshot.target) || 0);
+    return {
+      iconCode: objectiveSnapshot.iconCode || null,
+      progress: snapshotProgress,
+      target: snapshotTarget,
+      progressText: snapshotTarget > 0 ? (snapshotProgress + "/" + snapshotTarget) : String(snapshotProgress)
     };
   }
 
@@ -164,6 +185,17 @@ function buildObjectiveDisplayData(levelConfig, runtimeSnapshot) {
       progress: progressColor,
       target: target,
       progressText: progressColor + "/" + target
+    };
+  }
+
+  if (objective.type === "collect_ice") {
+    var iceCollected = objectiveSnapshot ? (Number(objectiveSnapshot.iceCollectedTotal) || 0) : 0;
+    var iceProgress = target > 0 ? Math.min(iceCollected, target) : iceCollected;
+    return {
+      iconCode: "ICE",
+      progress: iceProgress,
+      target: target,
+      progressText: iceProgress + "/" + target
     };
   }
 
@@ -221,9 +253,6 @@ function buildHudRenderKey(levelConfig, runtimeSnapshot) {
   var floating = runtimeSnapshot && runtimeSnapshot.lastResolution && runtimeSnapshot.lastResolution.floating
     ? runtimeSnapshot.lastResolution.floating.length
     : 0;
-  var objectiveProgress = runtimeSnapshot && runtimeSnapshot.jars
-    ? (runtimeSnapshot.jars.objectiveProgress || 0)
-    : 0;
   var objectiveDisplay = buildObjectiveDisplayData(levelConfig, runtimeSnapshot);
 
   return [
@@ -233,7 +262,7 @@ function buildHudRenderKey(levelConfig, runtimeSnapshot) {
     runtimeSnapshot ? runtimeSnapshot.turnsUntilDrop : "",
     matched,
     floating,
-    objectiveProgress,
+    objectiveDisplay.progress || 0,
     objectiveDisplay.iconCode || "",
     objectiveDisplay.progressText || ""
   ].join("|");
@@ -448,10 +477,12 @@ function LevelRenderer(rootNode) {
   this.lastJarRenderKey = "";
   this.lastRenderedFallingCount = 0;
   this.dangerLineReady = false;
+  this.dangerLineWarningActive = false;
   this.lastGuideDotsVisible = false;
   this.lastGuidePathKey = "";
   this.guideDotNodes = [];
   this.lastImpactSeq = -1;
+  this.lastIceThawShakeSeq = -1;
   this.boardBubbleNodes = {};
   this.boardBubbleNodePool = [];
   this.boardRenderTick = 1;
@@ -468,6 +499,11 @@ function LevelRenderer(rootNode) {
   this.loseActionHandlers = {
     onRetryLevel: null,
     onBackLevel: null
+  };
+  this.gameplayActionHandlers = {
+    onBackToLevel: null,
+    onUseRainbow: null,
+    onUseBlast: null
   };
 }
 
@@ -503,6 +539,15 @@ LevelRenderer.prototype.setLoseActionHandlers = function (handlers) {
   };
 };
 
+LevelRenderer.prototype.setGameplayActionHandlers = function (handlers) {
+  handlers = handlers || {};
+  this.gameplayActionHandlers = {
+    onBackToLevel: typeof handlers.onBackToLevel === "function" ? handlers.onBackToLevel : null,
+    onUseRainbow: typeof handlers.onUseRainbow === "function" ? handlers.onUseRainbow : null,
+    onUseBlast: typeof handlers.onUseBlast === "function" ? handlers.onUseBlast : null
+  };
+};
+
 LevelRenderer.prototype._invokeWinAction = function (action) {
   var handler = null;
   if (action === "next") {
@@ -535,6 +580,23 @@ LevelRenderer.prototype._invokeLoseAction = function (action) {
   handler();
 };
 
+LevelRenderer.prototype._invokeGameplayAction = function (action) {
+  var handler = null;
+  if (action === "back") {
+    handler = this.gameplayActionHandlers.onBackToLevel;
+  } else if (action === "use_rainbow") {
+    handler = this.gameplayActionHandlers.onUseRainbow;
+  } else if (action === "use_blast") {
+    handler = this.gameplayActionHandlers.onUseBlast;
+  }
+
+  if (typeof handler !== "function") {
+    return;
+  }
+
+  handler();
+};
+
 LevelRenderer.prototype.renderLevel = function (levelConfig, runtimeSnapshot) {
   this.currentLevelConfig = levelConfig;
   this.lastBoardVersion = -1;
@@ -542,10 +604,12 @@ LevelRenderer.prototype.renderLevel = function (levelConfig, runtimeSnapshot) {
   this.lastJarRenderKey = "";
   this.lastRenderedFallingCount = 0;
   this.dangerLineReady = false;
+  this.dangerLineWarningActive = false;
   this.lastGuideDotsVisible = false;
   this.lastGuidePathKey = "";
   this.guideDotNodes = [];
   this.lastImpactSeq = -1;
+  this.lastIceThawShakeSeq = -1;
   this.boardRenderTick = 1;
   this.testSlotNodes = {};
   this.testSlotNodePool = [];
@@ -572,19 +636,22 @@ LevelRenderer.prototype.renderLevel = function (levelConfig, runtimeSnapshot) {
     clearChildren(this.layers.jarOcclusion);
     clearChildren(this.layers.jars);
     clearChildren(this.layers.hud);
+    clearChildren(this.layers.dangerLine);
     clearChildren(this.layers.overlay);
     clearChildren(this.layers.modal);
     clearChildren(this.layers.routeEditor);
     clearChildren(this.layers.shooter);
     clearChildren(this.layers.testGrid);
 
+    this._mountGameViewScaffold();
     this._renderBackground();
     this._renderHud(levelConfig, runtimeSnapshot);
+    this._renderBottomPanel(runtimeSnapshot);
     this._renderBoard(runtimeSnapshot.board);
     this._renderBottomJars(levelConfig, runtimeSnapshot);
     this._renderFallingDrops(runtimeSnapshot);
     this._renderTestGrid(runtimeSnapshot.board);
-    this._renderDangerLine();
+    this._renderDangerLine(runtimeSnapshot);
     this._renderShooter(runtimeSnapshot.shooter, runtimeSnapshot.activeProjectile, runtimeSnapshot.remainingShots);
     this._renderWinView(runtimeSnapshot);
     this._renderLoseView(runtimeSnapshot);
@@ -608,6 +675,7 @@ LevelRenderer.prototype.refreshRuntime = function (levelConfig, runtimeSnapshot)
     this.lastHudRenderKey = nextHudKey;
   }
 
+  this._renderBottomPanel(runtimeSnapshot);
   var nextJarKey = buildJarRenderKey(levelConfig, runtimeSnapshot);
   if (nextJarKey !== this.lastJarRenderKey) {
     this._renderBottomJars(levelConfig, runtimeSnapshot);
@@ -615,10 +683,9 @@ LevelRenderer.prototype.refreshRuntime = function (levelConfig, runtimeSnapshot)
   }
 
   this._renderFallingDrops(runtimeSnapshot);
+  this._playIceThawShake(runtimeSnapshot);
   this._playImpactBounce(runtimeSnapshot);
-  if (!this.dangerLineReady) {
-    this._renderDangerLine();
-  }
+  this._renderDangerLine(runtimeSnapshot);
   this._renderShooter(runtimeSnapshot.shooter, runtimeSnapshot.activeProjectile, runtimeSnapshot.remainingShots);
   this._renderWinView(runtimeSnapshot);
   this._renderLoseView(runtimeSnapshot);
@@ -632,6 +699,7 @@ LevelRenderer.prototype._ensureLayers = function () {
 
   this.layers = {
     background: this._getOrCreateLayer("BackgroundLayer", 0),
+    dangerLine: this._getOrCreateLayer("DangerLineLayer", 10),
     jars: this._getOrCreateLayer("JarLayer", 20),
     shooter: this._getOrCreateLayer("ShooterLayer", 25),
     overlay: this._getOrCreateLayer("OverlayLayer", 30),
@@ -800,8 +868,18 @@ LevelRenderer.prototype._collectCommonSpritePaths = function () {
 };
 
 LevelRenderer.prototype._collectPrefabPaths = function () {
-  return Object.keys(PREFAB_PATHS).map(function (key) {
-    return PREFAB_PATHS[key];
+  var preloadPaths = [
+    PREFAB_PATHS.gameView,
+    PREFAB_PATHS.winView,
+    PREFAB_PATHS.loseView,
+    PREFAB_PATHS.shooterPanel,
+    PREFAB_PATHS.bubbleItem,
+    PREFAB_PATHS.jarItem,
+    PREFAB_PATHS.previewBall
+  ];
+
+  return preloadPaths.filter(function (path, index, list) {
+    return !!path && list.indexOf(path) === index;
   });
 };
 
@@ -862,6 +940,10 @@ var LEVEL_RENDERER_SCENE_DEPS = {
   ROUTE_LINE_WIDTH_IDLE: ROUTE_LINE_WIDTH_IDLE,
   ROUTE_POINT_RADIUS_ACTIVE: ROUTE_POINT_RADIUS_ACTIVE,
   ROUTE_POINT_RADIUS_IDLE: ROUTE_POINT_RADIUS_IDLE,
+  ICE_THAW_SHAKE_OFFSET: ICE_THAW_SHAKE_OFFSET,
+  ICE_THAW_SHAKE_STEP_DURATION: ICE_THAW_SHAKE_STEP_DURATION,
+  ICE_COLLECT_FLY_DURATION: ICE_COLLECT_FLY_DURATION,
+  ICE_COLLECT_BEZIER_ARC: ICE_COLLECT_BEZIER_ARC,
   loadSpriteFrame: loadSpriteFrame,
   createSolidWhiteSpriteFrame: createSolidWhiteSpriteFrame,
   ensureSprite: ensureSprite,

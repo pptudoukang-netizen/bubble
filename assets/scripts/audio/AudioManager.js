@@ -151,6 +151,12 @@ AudioManager.prototype.setSfxEnabled = function (enabled) {
   return this.settings.sfxEnabled;
 };
 
+AudioManager.prototype.setVibrationEnabled = function (enabled) {
+  this.settings.vibrationEnabled = !!enabled;
+  this.store.save(this.settings);
+  return this.settings.vibrationEnabled;
+};
+
 AudioManager.prototype.setMusicVolume = function (volume) {
   this.settings.musicVolume = Math.max(0, Math.min(1, Number(volume) || 0));
   this.store.save(this.settings);

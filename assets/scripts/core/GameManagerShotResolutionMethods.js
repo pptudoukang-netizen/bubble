@@ -259,7 +259,6 @@ function createGameManagerShotResolutionMethods(deps) {
         return 0;
       }
 
-      var overflowScore = this._getScoreRule("skillOverflow");
       skillCells.sort(function (a, b) {
         var leftJar = typeof a.jarIndex === "number" ? a.jarIndex : -1;
         var rightJar = typeof b.jarIndex === "number" ? b.jarIndex : -1;
@@ -272,27 +271,17 @@ function createGameManagerShotResolutionMethods(deps) {
 
       var injectedCount = 0;
       skillCells.forEach(function (cell) {
-        var receiveResult = this.systems.shooterController.receiveSkillBall(cell.entityType);
+        var receiveResult = this.systems.shooterController.addSkillInventory(cell.entityType, 1);
         if (receiveResult && receiveResult.accepted) {
           resolution.injectedSkills.push({
             id: cell.id,
             entityType: cell.entityType,
-            status: "queued",
+            status: "stored",
+            total: receiveResult.total,
             jarIndex: typeof cell.jarIndex === "number" ? cell.jarIndex : -1
           });
           injectedCount += 1;
-          return;
         }
-
-        this.score += overflowScore;
-        resolution.scoreDelta += overflowScore;
-        resolution.injectedSkills.push({
-          id: cell.id,
-          entityType: cell.entityType,
-          status: "overflow_to_score",
-          score: overflowScore,
-          jarIndex: typeof cell.jarIndex === "number" ? cell.jarIndex : -1
-        });
       }, this);
 
       return injectedCount;
@@ -416,6 +405,9 @@ function createGameManagerShotResolutionMethods(deps) {
 
       var removedBlastCells = grid.removeCells(blastCells);
       resolution.thawed = this._thawIceCells(iceCellsToThaw, grid);
+      if (typeof this._registerIceCollection === "function") {
+        resolution.iceCollected = this._registerIceCollection(resolution.thawed);
+      }
       var floatingCells = this.systems.supportSystem.findFloatingCells(grid);
       var removedFloating = grid.removeCells(floatingCells);
       var removedAll = removedBlastCells.concat(removedFloating);
@@ -488,6 +480,15 @@ function createGameManagerShotResolutionMethods(deps) {
         this.lastResolution = this._resolveAttachment(attachedBubble);
       }
 
+      var noDropTriggered = !(
+        this.lastResolution &&
+        Array.isArray(this.lastResolution.collected) &&
+        this.lastResolution.collected.length > 0
+      );
+      if (noDropTriggered && typeof this._pushRuntimeEvent === "function") {
+        this._pushRuntimeEvent("shot_no_drop");
+      }
+
       this.activeProjectile = null;
       this.pendingProjectileFinalize = false;
 
@@ -540,6 +541,9 @@ function createGameManagerShotResolutionMethods(deps) {
       var removedMatches = grid.removeCells(matchedCells);
       var adjacentIceCells = this._findAdjacentIceCells(removedMatches, grid);
       resolution.thawed = this._thawIceCells(adjacentIceCells, grid);
+      if (typeof this._registerIceCollection === "function") {
+        resolution.iceCollected = this._registerIceCollection(resolution.thawed);
+      }
       var floatingCells = this.systems.supportSystem.findFloatingCells(grid);
       var removedFloating = grid.removeCells(floatingCells);
       var collectedCells = removedMatches.concat(removedFloating);
@@ -596,17 +600,8 @@ function createGameManagerShotResolutionMethods(deps) {
         return false;
       }
 
-      if (objective.type === "collect_any") {
-        return (Number(jarsSnapshot.collectedTotal) || 0) >= target;
-      }
-
-      if (objective.type === "collect_color") {
-        var colorCode = typeof objective.color === "string" ? objective.color : "";
-        if (!colorCode) {
-          return false;
-        }
-        var byColor = jarsSnapshot.collectedByColor || {};
-        return (Number(byColor[colorCode]) || 0) >= target;
+      if (typeof this._getPrimaryObjectiveProgressValue === "function") {
+        return this._getPrimaryObjectiveProgressValue(objective, jarsSnapshot) >= target;
       }
 
       return true;

@@ -59,6 +59,9 @@ function getObjectivePressure(level) {
     if (condition.type === "collect_color") {
       pressure += condition.value * 0.95;
     }
+    if (condition.type === "collect_ice") {
+      pressure += condition.value * 0.9;
+    }
   });
 
   return pressure;

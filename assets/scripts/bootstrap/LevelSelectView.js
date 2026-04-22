@@ -1,6 +1,10 @@
 "use strict";
 
 function createOrGetChild(parentNode, name) {
+  if (!parentNode || !parentNode.isValid) {
+    return null;
+  }
+
   var node = parentNode.getChildByName(name);
   if (!node) {
     node = new cc.Node(name);
@@ -8,6 +12,65 @@ function createOrGetChild(parentNode, name) {
   }
 
   return node;
+}
+
+function logError(message, detail) {
+  if (cc && typeof cc.error === "function") {
+    cc.error("[LevelSelectView] " + message, detail || "");
+    return;
+  }
+
+  if (typeof console !== "undefined" && typeof console.error === "function") {
+    console.error("[LevelSelectView] " + message, detail || "");
+  }
+}
+
+function instantiateNode(prefab, tag) {
+  if (!prefab) {
+    logError("Prefab missing: " + tag);
+    return null;
+  }
+
+  try {
+    return cc.instantiate(prefab);
+  } catch (error) {
+    logError("Instantiate prefab failed: " + tag, error && error.message ? error.message : error);
+    return null;
+  }
+}
+
+function parseLevelSlotIndex(name) {
+  if (typeof name !== "string") {
+    return -1;
+  }
+
+  var match = /^level(\d+)$/i.exec(name);
+  if (!match) {
+    return -1;
+  }
+
+  return Math.max(0, (Math.floor(Number(match[1]) || 0) - 1));
+}
+
+function collectLevelSlots(mapNode) {
+  if (!mapNode || !Array.isArray(mapNode.children)) {
+    return [];
+  }
+
+  var slots = mapNode.children.map(function (child) {
+    return {
+      node: child,
+      index: parseLevelSlotIndex(child && child.name)
+    };
+  }).filter(function (item) {
+    return item.index >= 0;
+  });
+
+  slots.sort(function (a, b) {
+    return a.index - b.index;
+  });
+
+  return slots;
 }
 
 function setLevelButtonStars(buttonNode, starCount) {
@@ -24,27 +87,9 @@ function setLevelButtonStars(buttonNode, starCount) {
 
 function ensureLevelCurrentHighlight(buttonNode, enabled) {
   var highlightNode = buttonNode.getChildByName("CurrentHighlight");
-  if (!enabled) {
-    if (highlightNode) {
-      highlightNode.active = false;
-    }
-    return;
+  if (highlightNode) {
+    highlightNode.active = false;
   }
-
-  if (!highlightNode) {
-    highlightNode = new cc.Node("CurrentHighlight");
-    highlightNode.parent = buttonNode;
-    highlightNode.setPosition(0, 0);
-    highlightNode.zIndex = 50;
-    var graphics = highlightNode.addComponent(cc.Graphics);
-    graphics.clear();
-    graphics.lineWidth = 5;
-    graphics.strokeColor = cc.color(255, 234, 120);
-    graphics.roundRect(-48, -50, 96, 100, 18);
-    graphics.stroke();
-  }
-
-  highlightNode.active = true;
 }
 
 function applyLevelButtonState(buttonNode, options) {
@@ -61,7 +106,6 @@ function applyLevelButtonState(buttonNode, options) {
     button.enableAutoGrayEffect = false;
   }
 
-  // 通关关卡亮色显示；未通过统一灰色，未解锁更深灰。
   if (isPassed) {
     buttonNode.color = cc.color(255, 255, 255);
     if (labelNode) {
@@ -79,14 +123,80 @@ function applyLevelButtonState(buttonNode, options) {
   ensureLevelCurrentHighlight(buttonNode, isCurrent);
 }
 
+function bindMapSwitchButton(buttonNode, levelViewNode, nextIndexResolver, onMapIndexChange) {
+  if (!buttonNode || buttonNode.__mapSwitchBound === true) {
+    return;
+  }
+
+  buttonNode.__mapSwitchBound = true;
+  buttonNode.on(cc.Node.EventType.TOUCH_END, function (event) {
+    if (event) {
+      event.stopPropagation();
+    }
+
+    var nextIndex = nextIndexResolver(levelViewNode);
+    onMapIndexChange(nextIndex);
+  });
+}
+
+function updateTopStatus(levelView, options) {
+  if (!levelView || !levelView.isValid) {
+    return;
+  }
+
+  options = options || {};
+  var staminaValue = Math.max(0, Math.floor(Number(options.staminaValue) || 0));
+  var coinValue = Math.max(0, Math.floor(Number(options.coinValue) || 0));
+  var onOpenSettings = typeof options.onOpenSettings === "function"
+    ? options.onOpenSettings
+    : function () {};
+
+  var topLayerNode = levelView.getChildByName("top_layer");
+  var loveNode = topLayerNode ? topLayerNode.getChildByName("love_info") : null;
+  var goldNode = topLayerNode ? topLayerNode.getChildByName("gold_info") : null;
+  var staminaLabelNode = loveNode ? loveNode.getChildByName("love") : null;
+  var coinLabelNode = goldNode ? goldNode.getChildByName("gold") : null;
+  var staminaLabel = staminaLabelNode ? staminaLabelNode.getComponent(cc.Label) : null;
+  var coinLabel = coinLabelNode ? coinLabelNode.getComponent(cc.Label) : null;
+
+  if (staminaLabel) {
+    staminaLabel.string = String(staminaValue);
+  }
+  if (coinLabel) {
+    coinLabel.string = String(coinValue);
+  }
+
+  var settingButtonNode = topLayerNode ? topLayerNode.getChildByName("setting_btn") : null;
+  if (!settingButtonNode || !settingButtonNode.isValid) {
+    return;
+  }
+
+  settingButtonNode.__onOpenSettings = onOpenSettings;
+  if (settingButtonNode.__settingTapBound === true) {
+    return;
+  }
+
+  settingButtonNode.__settingTapBound = true;
+  settingButtonNode.on(cc.Node.EventType.TOUCH_END, function (event) {
+    if (event) {
+      event.stopPropagation();
+    }
+
+    var tapHandler = settingButtonNode.__onOpenSettings;
+    if (typeof tapHandler === "function") {
+      tapHandler();
+    }
+  });
+}
+
 function renderLevelSelectContent(options) {
   var hostNode = options.hostNode;
   var levelViewPrefab = options.levelViewPrefab;
-  var levelButtonPrefab = options.levelButtonPrefab;
+  var mapPrefabs = Array.isArray(options.mapPrefabs) ? options.mapPrefabs.filter(Boolean) : [];
   var levelIds = Array.isArray(options.levelIds) ? options.levelIds : [];
-  var isRouteEditorMode = !!options.levelSelectRouteEditorMode;
   var highestUnlocked = Math.max(1, Number(options.highestUnlocked) || 1);
   var highlightedLevelId = Math.max(1, Number(options.highlightedLevelId) || 1);
+  var requestedMapIndex = Number.isInteger(options.currentMapIndex) ? options.currentMapIndex : null;
   var getLevelStarCount = typeof options.getLevelStarCount === "function"
     ? options.getLevelStarCount
     : function () { return 0; };
@@ -96,10 +206,37 @@ function renderLevelSelectContent(options) {
   var onLevelSelectTap = typeof options.onLevelSelectTap === "function"
     ? options.onLevelSelectTap
     : function () {};
+  var onMapIndexChange = typeof options.onMapIndexChange === "function"
+    ? options.onMapIndexChange
+    : function () {};
+  var staminaValue = Math.max(0, Math.floor(Number(options.staminaValue) || 0));
+  var coinValue = Math.max(0, Math.floor(Number(options.coinValue) || 0));
+  var onOpenSettings = typeof options.onOpenSettings === "function"
+    ? options.onOpenSettings
+    : function () {};
+
+  if (!hostNode || !hostNode.isValid) {
+    logError("Invalid host node when rendering level select.");
+    return {
+      levelViewNode: null,
+      currentMapIndex: 0,
+      mapCount: 0
+    };
+  }
 
   var levelView = options.existingLevelSelectNode;
   if (!levelView || !levelView.isValid) {
-    levelView = cc.instantiate(levelViewPrefab);
+    levelView = instantiateNode(levelViewPrefab, "LevelView");
+    if (!levelView) {
+      levelView = createOrGetChild(hostNode, "LevelViewFallback");
+    }
+    if (!levelView) {
+      return {
+        levelViewNode: null,
+        currentMapIndex: 0,
+        mapCount: 0
+      };
+    }
     levelView.parent = hostNode;
     levelView.zIndex = 160;
     levelView.setPosition(0, 0);
@@ -109,57 +246,76 @@ function renderLevelSelectContent(options) {
   }
 
   levelView.active = true;
+  updateTopStatus(levelView, {
+    staminaValue: staminaValue,
+    coinValue: coinValue,
+    onOpenSettings: onOpenSettings
+  });
 
-  var titleNode = createOrGetChild(levelView, "LevelTitle");
-  titleNode.setPosition(0, 500);
-  titleNode.color = cc.color(255, 255, 255);
-  var titleLabel = titleNode.getComponent(cc.Label) || titleNode.addComponent(cc.Label);
-  titleLabel.string = isRouteEditorMode ? "关卡选择 · 路线编辑" : "关卡选择";
-  titleLabel.fontSize = 56;
-  titleLabel.lineHeight = 60;
-  titleLabel.horizontalAlign = cc.Label.HorizontalAlign.CENTER;
-  titleLabel.verticalAlign = cc.Label.VerticalAlign.CENTER;
-  var titleOutline = titleNode.getComponent(cc.LabelOutline) || titleNode.addComponent(cc.LabelOutline);
-  titleOutline.color = cc.color(31, 62, 98);
-  titleOutline.width = 3;
+  var mapHostNode = levelView.getChildByName("map");
+  if (!mapHostNode) {
+    mapHostNode = createOrGetChild(levelView, "map");
+  }
+  if (!mapHostNode) {
+    return {
+      levelViewNode: levelView,
+      currentMapIndex: 0,
+      mapCount: 0
+    };
+  }
+  mapHostNode.removeAllChildren();
 
-  var subtitleNode = createOrGetChild(levelView, "LevelSubtitle");
-  subtitleNode.setPosition(0, 450);
-  subtitleNode.color = cc.color(235, 245, 255);
-  var subtitleLabel = subtitleNode.getComponent(cc.Label) || subtitleNode.addComponent(cc.Label);
-  subtitleLabel.string = isRouteEditorMode
-    ? "当前为路线编辑模式，点击关卡会进入该关卡的路线编辑"
-    : "点击关卡直接开始游戏";
-  subtitleLabel.fontSize = 24;
-  subtitleLabel.lineHeight = 28;
-  subtitleLabel.horizontalAlign = cc.Label.HorizontalAlign.CENTER;
-  subtitleLabel.verticalAlign = cc.Label.VerticalAlign.CENTER;
-  var subtitleOutline = subtitleNode.getComponent(cc.LabelOutline) || subtitleNode.addComponent(cc.LabelOutline);
-  subtitleOutline.color = cc.color(31, 62, 98);
-  subtitleOutline.width = 2;
+  var baseMapPrefab = mapPrefabs.length > 0 ? mapPrefabs[0] : null;
+  if (!baseMapPrefab) {
+    return {
+      levelViewNode: levelView,
+      currentMapIndex: 0,
+      mapCount: 0
+    };
+  }
 
-  var gridNode = createOrGetChild(levelView, "LevelGrid");
-  gridNode.setPosition(0, 100);
-  gridNode.removeAllChildren();
+  var slotsPerMap = 10;
+  var previewMapNode = instantiateNode(baseMapPrefab, "LevelMapPreview");
+  var previewSlots = collectLevelSlots(previewMapNode);
+  if (previewSlots.length > 0) {
+    slotsPerMap = previewSlots.length;
+  }
+  if (previewMapNode && previewMapNode.isValid) {
+    previewMapNode.destroy();
+  }
 
-  var columns = 5;
-  var spacingX = 120;
-  var spacingY = 120;
-  var startY = 260;
+  var levelPageCount = Math.max(1, Math.ceil(levelIds.length / slotsPerMap));
+  var mapCount = Math.max(1, mapPrefabs.length, levelPageCount);
+  var highlightedLevelIndex = Math.max(0, levelIds.indexOf(highlightedLevelId));
+  var highlightedMapIndex = Math.floor(highlightedLevelIndex / slotsPerMap);
+  var currentMapIndex = requestedMapIndex === null ? highlightedMapIndex : requestedMapIndex;
+  currentMapIndex = Math.max(0, Math.min(mapCount - 1, currentMapIndex));
 
-  levelIds.forEach(function (levelId, index) {
-    var buttonNode = cc.instantiate(levelButtonPrefab);
-    buttonNode.parent = gridNode;
-    buttonNode.name = "LevelBtn_" + levelId;
-    buttonNode.setScale(1);
+  var mapPrefab = mapPrefabs[Math.min(currentMapIndex, mapPrefabs.length - 1)] || baseMapPrefab;
+  var mapNode = instantiateNode(mapPrefab, "LevelMapRuntime");
+  if (!mapNode) {
+    return {
+      levelViewNode: levelView,
+      currentMapIndex: currentMapIndex,
+      mapCount: 0
+    };
+  }
+  mapNode.parent = mapHostNode;
+  mapNode.setPosition(0, 0);
+  mapNode.active = true;
 
-    var row = Math.floor(index / columns);
-    var col = index % columns;
-    var x = (col - (columns - 1) * 0.5) * spacingX;
-    var y = startY - row * spacingY;
-    buttonNode.setPosition(x, y);
+  var slots = collectLevelSlots(mapNode);
+  slots.forEach(function (slot) {
+    var slotNode = slot.node;
+    var levelIndex = currentMapIndex * slotsPerMap + slot.index;
+    if (levelIndex < 0 || levelIndex >= levelIds.length) {
+      slotNode.active = false;
+      return;
+    }
 
-    var levelLabelNode = buttonNode.getChildByName("level");
+    slotNode.active = true;
+    var levelId = levelIds[levelIndex];
+    var levelLabelNode = slotNode.getChildByName("level");
     var levelLabel = levelLabelNode ? levelLabelNode.getComponent(cc.Label) : null;
     if (levelLabel) {
       levelLabel.string = String(levelId);
@@ -169,26 +325,66 @@ function renderLevelSelectContent(options) {
     var isPassed = isLevelCompleted(levelId);
     var isUnlocked = levelId <= highestUnlocked;
     var isCurrent = levelId === highlightedLevelId;
-    applyLevelButtonState(buttonNode, {
+    applyLevelButtonState(slotNode, {
       isPassed: isPassed,
       isUnlocked: isUnlocked,
       isCurrent: isCurrent,
       starCount: starCount
     });
 
-    buttonNode.on(cc.Node.EventType.TOUCH_END, function (event) {
-      if (event) {
-        event.stopPropagation();
-      }
-      if (!isUnlocked) {
-        return;
-      }
-      onLevelSelectTap(levelId);
-    });
+    if (slotNode.__levelSelectTapBound !== true) {
+      slotNode.__levelSelectTapBound = true;
+      slotNode.on(cc.Node.EventType.TOUCH_END, function (event) {
+        if (event) {
+          event.stopPropagation();
+        }
+
+        if (!slotNode.__levelSelectUnlocked || !Number.isInteger(slotNode.__levelSelectLevelId)) {
+          return;
+        }
+
+        onLevelSelectTap(slotNode.__levelSelectLevelId);
+      });
+    }
+
+    slotNode.__levelSelectLevelId = levelId;
+    slotNode.__levelSelectUnlocked = isUnlocked;
   });
 
+  var nextMapNode = levelView.getChildByName("next_map");
+  var previousMapNode = levelView.getChildByName("previous_map");
+  var hasPrevious = currentMapIndex > 0;
+  var hasNext = currentMapIndex < mapCount - 1;
+
+  if (previousMapNode) {
+    previousMapNode.active = hasPrevious;
+    var previousButton = previousMapNode.getComponent(cc.Button);
+    if (previousButton) {
+      previousButton.interactable = hasPrevious;
+    }
+    bindMapSwitchButton(previousMapNode, levelView, function (viewNode) {
+      return (viewNode.__levelSelectCurrentMapIndex || 0) - 1;
+    }, onMapIndexChange);
+  }
+
+  if (nextMapNode) {
+    nextMapNode.active = hasNext;
+    var nextButton = nextMapNode.getComponent(cc.Button);
+    if (nextButton) {
+      nextButton.interactable = hasNext;
+    }
+    bindMapSwitchButton(nextMapNode, levelView, function (viewNode) {
+      return (viewNode.__levelSelectCurrentMapIndex || 0) + 1;
+    }, onMapIndexChange);
+  }
+
+  levelView.__levelSelectCurrentMapIndex = currentMapIndex;
+  levelView.__levelSelectMapCount = mapCount;
+
   return {
-    levelViewNode: levelView
+    levelViewNode: levelView,
+    currentMapIndex: currentMapIndex,
+    mapCount: mapCount
   };
 }
 

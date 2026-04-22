@@ -27,6 +27,7 @@ function createEmptyResolution() {
     floating: [],
     collected: [],
     thawed: [],
+    iceCollected: 0,
     injectedSkills: [],
     impact: null,
     scoreDelta: 0,
@@ -184,7 +185,7 @@ function findPrimaryCollectionObjective(levelConfig) {
     var objectives = Array.isArray(sources[sourceIndex]) ? sources[sourceIndex] : [];
     for (var objectiveIndex = 0; objectiveIndex < objectives.length; objectiveIndex += 1) {
       var objective = objectives[objectiveIndex];
-      if (objective && (objective.type === "collect_any" || objective.type === "collect_color")) {
+      if (objective && (objective.type === "collect_any" || objective.type === "collect_color" || objective.type === "collect_ice")) {
         return objective;
       }
     }
@@ -351,8 +352,10 @@ function GameManager(options) {
   this.cachedJarSnapshot = null;
   this.sameColorJarCollected = 0;
   this.sameColorJarBonusScore = 0;
+  this.iceCollectedTotal = 0;
   this.impactSequence = 0;
   this.runtimeEventSequence = 0;
+  this.pendingRuntimeEvents = [];
   this.pendingBoardAdvanceDelay = 0;
   this.scoreRules = cloneScoreRules(BASE_SCORE_RULES);
   this.scoreHeatBand = buildScoreHeatBand(null, {
@@ -407,8 +410,10 @@ GameManager.prototype.startLevel = function (levelConfig) {
   this.cachedJarSnapshot = null;
   this.sameColorJarCollected = 0;
   this.sameColorJarBonusScore = 0;
+  this.iceCollectedTotal = 0;
   this.impactSequence = 0;
   this.runtimeEventSequence = 0;
+  this.pendingRuntimeEvents = [];
   this.pendingBoardAdvanceDelay = 0;
   var scoreProfile = buildScoreRulesForLevel(levelConfig);
   this.scoreRules = scoreProfile.rules;
@@ -517,6 +522,36 @@ GameManager.prototype._resolveOutOfShotsOutcome = function () {
   this.state = "out_of_shots";
 };
 
+GameManager.prototype._pushRuntimeEvent = function (type, payload) {
+  if (typeof type !== "string" || !type) {
+    return;
+  }
+
+  this.runtimeEventSequence += 1;
+  var eventData = {
+    id: this.runtimeEventSequence,
+    type: type
+  };
+
+  if (payload && typeof payload === "object") {
+    Object.keys(payload).forEach(function (key) {
+      eventData[key] = payload[key];
+    });
+  }
+
+  this.pendingRuntimeEvents.push(eventData);
+};
+
+GameManager.prototype._drainRuntimeEvents = function () {
+  if (!Array.isArray(this.pendingRuntimeEvents) || !this.pendingRuntimeEvents.length) {
+    return [];
+  }
+
+  var drained = this.pendingRuntimeEvents.slice();
+  this.pendingRuntimeEvents.length = 0;
+  return drained;
+};
+
 GameManager.prototype._getCachedBoardSnapshot = function () {
   var grid = this.systems.bubbleGrid;
   if (!this.cachedBoardSnapshot || this.cachedBoardVersion !== grid.version) {
@@ -546,6 +581,81 @@ GameManager.prototype._getCachedJarSnapshot = function () {
     this.cachedJarSnapshotKey = key;
   }
   return this.cachedJarSnapshot;
+};
+
+GameManager.prototype._registerIceCollection = function (thawedCells) {
+  if (!Array.isArray(thawedCells) || !thawedCells.length) {
+    return 0;
+  }
+
+  var gained = thawedCells.length;
+  this.iceCollectedTotal += gained;
+  return gained;
+};
+
+GameManager.prototype._getPrimaryObjectiveProgressValue = function (objective, jarsSnapshot) {
+  if (!objective || typeof objective.type !== "string") {
+    return 0;
+  }
+
+  var jars = jarsSnapshot || this._getCachedJarSnapshot();
+  if (objective.type === "collect_any") {
+    return Math.max(0, Number(jars && jars.collectedTotal) || 0);
+  }
+
+  if (objective.type === "collect_color") {
+    var colorCode = typeof objective.color === "string" ? objective.color : "";
+    if (!colorCode) {
+      return 0;
+    }
+    var byColor = jars && jars.collectedByColor ? jars.collectedByColor : {};
+    return Math.max(0, Number(byColor[colorCode]) || 0);
+  }
+
+  if (objective.type === "collect_ice") {
+    return Math.max(0, Number(this.iceCollectedTotal) || 0);
+  }
+
+  return 0;
+};
+
+GameManager.prototype._buildPrimaryObjectiveSnapshot = function (jarsSnapshot) {
+  var objective = findPrimaryCollectionObjective(this.currentLevel);
+  if (!objective) {
+    return {
+      type: null,
+      color: null,
+      iconCode: null,
+      target: 0,
+      progress: 0,
+      rawProgress: 0,
+      progressText: "-",
+      iceCollectedTotal: Math.max(0, Number(this.iceCollectedTotal) || 0)
+    };
+  }
+
+  var target = Math.max(0, Math.floor(Number(objective.value) || 0));
+  var rawProgress = this._getPrimaryObjectiveProgressValue(objective, jarsSnapshot);
+  var progress = target > 0 ? Math.min(rawProgress, target) : rawProgress;
+  var iconCode = null;
+  if (objective.type === "collect_any") {
+    iconCode = "RAINBOW";
+  } else if (objective.type === "collect_color") {
+    iconCode = typeof objective.color === "string" ? objective.color : null;
+  } else if (objective.type === "collect_ice") {
+    iconCode = "ICE";
+  }
+
+  return {
+    type: objective.type,
+    color: typeof objective.color === "string" ? objective.color : null,
+    iconCode: iconCode,
+    target: target,
+    progress: progress,
+    rawProgress: rawProgress,
+    progressText: target > 0 ? (progress + "/" + target) : String(progress),
+    iceCollectedTotal: Math.max(0, Number(this.iceCollectedTotal) || 0)
+  };
 };
 
 GameManager.prototype.setAim = function (point, options) {
@@ -616,6 +726,44 @@ GameManager.prototype.fireShot = function () {
 
   Logger.info("Shot fired", queueResult.firedColor, "remaining", this.remainingShots, "bounce", shotPlan.wallBounceCount);
   return this.getRuntimeSnapshot();
+};
+
+GameManager.prototype.useSkillBall = function (entityType) {
+  if (this.state !== "running") {
+    return {
+      accepted: false,
+      reason: "state_invalid",
+      snapshot: this.getRuntimeSnapshot()
+    };
+  }
+
+  if (this.activeProjectile || this._isWaitingBoardAdvance()) {
+    return {
+      accepted: false,
+      reason: "busy",
+      snapshot: this.getRuntimeSnapshot()
+    };
+  }
+
+  var equipResult = this.systems.shooterController.equipSkillBall(entityType);
+  if (!equipResult || !equipResult.accepted) {
+    return {
+      accepted: false,
+      reason: equipResult && equipResult.reason ? equipResult.reason : "equip_failed",
+      snapshot: this.getRuntimeSnapshot()
+    };
+  }
+
+  if (this.isAiming) {
+    this._refreshShotPlan(true);
+  }
+
+  return {
+    accepted: true,
+    entityType: entityType,
+    remaining: equipResult.remaining,
+    snapshot: this.getRuntimeSnapshot()
+  };
 };
 
 GameManager.prototype.update = function (dt) {
@@ -693,16 +841,13 @@ GameManager.prototype.update = function (dt) {
   var fallingStep = this.systems.fallingMarbleSystem.update(dt);
   var fallingUpdated = !!(fallingStep && fallingStep.updated);
   var collectedDrops = fallingStep && Array.isArray(fallingStep.collected) ? fallingStep.collected : [];
-  var runtimeEvents = [];
+  var runtimeEvents = this._drainRuntimeEvents();
   var bounceCount = fallingStep ? Math.max(0, Math.floor(Number(fallingStep.bounced) || 0)) : 0;
 
   for (var bounceIndex = 0; bounceIndex < bounceCount; bounceIndex += 1) {
-    this.runtimeEventSequence += 1;
-    runtimeEvents.push({
-      id: this.runtimeEventSequence,
-      type: "jar_rim_bounce"
-    });
+    this._pushRuntimeEvent("jar_rim_bounce");
   }
+  runtimeEvents = runtimeEvents.concat(this._drainRuntimeEvents());
 
   if (collectedDrops.length) {
     this._injectCollectedSkillBalls(collectedDrops);
@@ -754,11 +899,28 @@ GameManager.prototype.update = function (dt) {
     return this.getRuntimeSnapshot(runtimeEvents);
   }
 
-  if (!hasProjectile && !hasFallingDrops && !hadProjectile && !hadFallingDrops && !collectedDrops.length && !boardAdvancedThisFrame) {
+  if (
+    !hasProjectile &&
+    !hasFallingDrops &&
+    !hadProjectile &&
+    !hadFallingDrops &&
+    !collectedDrops.length &&
+    !boardAdvancedThisFrame &&
+    !runtimeEvents.length
+  ) {
     return null;
   }
 
-  if (hasProjectile || hasFallingDrops || fallingUpdated || hadProjectile || hadFallingDrops || collectedDrops.length || boardAdvancedThisFrame) {
+  if (
+    hasProjectile ||
+    hasFallingDrops ||
+    fallingUpdated ||
+    hadProjectile ||
+    hadFallingDrops ||
+    collectedDrops.length ||
+    boardAdvancedThisFrame ||
+    runtimeEvents.length
+  ) {
     return this.getRuntimeSnapshot(runtimeEvents);
   }
 
@@ -847,6 +1009,7 @@ GameManager.prototype.getRuntimeSnapshot = function (runtimeEvents) {
       : fallingSystem.snapshot()
   };
   var jarsSnapshot = this._getCachedJarSnapshot();
+  var objectiveSnapshot = this._buildPrimaryObjectiveSnapshot(jarsSnapshot);
 
   var shooterSnapshot = this.systems.shooterController.getShooterState();
   var topAttachY = this.systems.bubbleGrid && typeof this.systems.bubbleGrid.getTopAttachY === "function"
@@ -876,11 +1039,12 @@ GameManager.prototype.getRuntimeSnapshot = function (runtimeEvents) {
     board: this._getCachedBoardSnapshot(),
     shooter: shooterSnapshot,
     jars: jarsSnapshot,
+    objectives: objectiveSnapshot,
     winStats: {
       totalScore: this.score,
       // 结算进度与顶部 HUD 保持同口径，避免显示不一致。
-      sameColorProgress: jarsSnapshot ? (jarsSnapshot.objectiveProgress || 0) : 0,
-      sameColorTarget: jarsSnapshot ? (jarsSnapshot.objectiveTarget || 0) : 0,
+      sameColorProgress: objectiveSnapshot ? (objectiveSnapshot.progress || 0) : 0,
+      sameColorTarget: objectiveSnapshot ? (objectiveSnapshot.target || 0) : 0,
       sameColorBonusScore: this.sameColorJarBonusScore,
       starRating: calculateStarRating(this.score, this.scoreHeatBand),
       starProgress: calculateStarProgress(this.score, this.scoreHeatBand),

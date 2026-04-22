@@ -44,6 +44,10 @@ function attachLevelRendererSceneMethods(LevelRenderer, deps) {
   var ROUTE_LINE_WIDTH_IDLE = deps.ROUTE_LINE_WIDTH_IDLE;
   var ROUTE_POINT_RADIUS_ACTIVE = deps.ROUTE_POINT_RADIUS_ACTIVE;
   var ROUTE_POINT_RADIUS_IDLE = deps.ROUTE_POINT_RADIUS_IDLE;
+  var ICE_THAW_SHAKE_OFFSET = deps.ICE_THAW_SHAKE_OFFSET;
+  var ICE_THAW_SHAKE_STEP_DURATION = deps.ICE_THAW_SHAKE_STEP_DURATION;
+  var ICE_COLLECT_FLY_DURATION = deps.ICE_COLLECT_FLY_DURATION;
+  var ICE_COLLECT_BEZIER_ARC = deps.ICE_COLLECT_BEZIER_ARC;
   var loadSpriteFrame = deps.loadSpriteFrame;
   var createSolidWhiteSpriteFrame = deps.createSolidWhiteSpriteFrame;
   var ensureSprite = deps.ensureSprite;
@@ -69,9 +73,73 @@ function attachLevelRendererSceneMethods(LevelRenderer, deps) {
   var computeShooterAngle = deps.computeShooterAngle;
   var createRouteColor = deps.createRouteColor;
   var clamp = deps.clamp;
+  var DANGER_WARNING_SHAKE_LEFT_X = -20;
+  var DANGER_WARNING_SHAKE_RIGHT_X = 18;
+  var DANGER_WARNING_SHAKE_STEP = 0.045;
+  var DANGER_NORMAL_BAND_OPACITY = 110;
+  var DANGER_WARNING_BAND_OPACITY = 215;
+  var DANGER_NORMAL_LABEL_COLOR = cc.color(255, 250, 235);
+  var DANGER_WARNING_LABEL_COLOR = cc.color(255, 236, 220);
+  var DANGER_NORMAL_OUTLINE_COLOR = cc.color(151, 86, 86);
+  var DANGER_WARNING_OUTLINE_COLOR = cc.color(148, 28, 28);
+  var DANGER_WARNING_ROW_THRESHOLD = Math.max(1, Number(BoardLayout.rowHeight) || 64);
+LevelRenderer.prototype._mountGameViewScaffold = function () {
+  if (!this.layers) {
+    return;
+  }
+
+  var gameViewNode = this.prefabFactory.instantiate(PREFAB_PATHS.gameView, null, "GameView");
+  if (!gameViewNode) {
+    return;
+  }
+
+  var mountedCount = 0;
+  mountedCount += this._moveGameViewChildToLayer(gameViewNode, "bg", this.layers.background, "bg");
+  mountedCount += this._moveGameViewChildToLayer(gameViewNode, "HudPanel", this.layers.hud, "HudPanel");
+  mountedCount += this._moveGameViewChildToLayer(gameViewNode, "DangerLine", this.layers.dangerLine, "DangerLine");
+  mountedCount += this._moveGameViewChildToLayer(gameViewNode, "BttomPanel", this.layers.hud, "BttomPanel");
+
+  gameViewNode.removeFromParent(false);
+  gameViewNode.destroy();
+
+  if (mountedCount <= 0) {
+    Logger.warn("GameView prefab mounted but required nodes are missing");
+  }
+};
+
+LevelRenderer.prototype._moveGameViewChildToLayer = function (gameViewNode, childName, targetLayer, targetName) {
+  if (!gameViewNode || !targetLayer) {
+    return 0;
+  }
+
+  var child = gameViewNode.getChildByName(childName);
+  if (!child) {
+    return 0;
+  }
+
+  child.removeFromParent(false);
+  child.name = targetName || childName;
+  child.parent = targetLayer;
+  child.active = true;
+  return 1;
+};
+
 LevelRenderer.prototype._renderBackground = function () {
+  var mountedBgNode = this.layers && this.layers.background
+    ? (this.layers.background.getChildByName("bg") || this.layers.background.getChildByName("Background"))
+    : null;
+  if (mountedBgNode) {
+    if (this.rootNode && this.rootNode.getContentSize) {
+      mountedBgNode.setContentSize(this.rootNode.getContentSize());
+      mountedBgNode.setPosition(0, 0);
+    }
+    return;
+  }
+
   // Scene already has a static `bg` node; avoid drawing a second runtime background.
-  var sceneBgNode = this.rootNode ? this.rootNode.getChildByName("bg") : null;
+  var sceneBgNode = this.rootNode
+    ? (this.rootNode.getChildByName("bg") || this.rootNode.getChildByName("Bg"))
+    : null;
   var runtimeBgNode = this.layers && this.layers.background
     ? this.layers.background.getChildByName("Background")
     : null;
@@ -123,6 +191,102 @@ LevelRenderer.prototype._renderHud = function (levelConfig, runtimeSnapshot) {
   }
 };
 
+LevelRenderer.prototype._bindBottomPanelButton = function (buttonNode, action) {
+  if (!buttonNode || buttonNode.__bottomPanelBoundAction === action) {
+    return;
+  }
+
+  buttonNode.__bottomPanelBoundAction = action;
+  buttonNode.on(cc.Node.EventType.TOUCH_START, function (event) {
+    if (event) {
+      event.stopPropagation();
+    }
+  }, this);
+  buttonNode.on(cc.Node.EventType.TOUCH_END, function (event) {
+    if (event) {
+      event.stopPropagation();
+    }
+    this._invokeGameplayAction(action);
+  }, this);
+  buttonNode.on(cc.Node.EventType.TOUCH_CANCEL, function (event) {
+    if (event) {
+      event.stopPropagation();
+    }
+  }, this);
+};
+
+LevelRenderer.prototype._setBottomPanelButtonEnabled = function (buttonNode, enabled) {
+  if (!buttonNode) {
+    return;
+  }
+
+  var button = buttonNode.getComponent(cc.Button);
+  if (button) {
+    button.interactable = !!enabled;
+  }
+  buttonNode.opacity = enabled ? 255 : 150;
+};
+
+LevelRenderer.prototype._setBottomPanelCount = function (buttonNode, count) {
+  if (!buttonNode) {
+    return;
+  }
+
+  var numBgNode = buttonNode.getChildByName("num_bg");
+  var numNode = numBgNode ? numBgNode.getChildByName("num") : null;
+  if (!numNode) {
+    return;
+  }
+
+  var label = numNode.getComponent(cc.Label);
+  if (!label) {
+    label = numNode.addComponent(cc.Label);
+  }
+  label.string = String(Math.max(0, Math.floor(Number(count) || 0)));
+};
+
+LevelRenderer.prototype._renderBottomPanel = function (runtimeSnapshot) {
+  if (!this.layers || !this.layers.hud) {
+    return;
+  }
+
+  var panel = this.layers.hud.getChildByName("BttomPanel");
+  if (!panel) {
+    return;
+  }
+
+  panel.active = true;
+  var panelWidget = panel.getComponent(cc.Widget);
+  if (panelWidget && panelWidget.updateAlignment) {
+    panelWidget.updateAlignment();
+  }
+
+  var backButtonNode = panel.getChildByName("back_btn");
+  var rainbowButtonNode = panel.getChildByName("rainbow_btn");
+  var bombButtonNode = panel.getChildByName("bomb_btn");
+
+  this._bindBottomPanelButton(backButtonNode, "back");
+  this._bindBottomPanelButton(rainbowButtonNode, "use_rainbow");
+  this._bindBottomPanelButton(bombButtonNode, "use_blast");
+
+  var skillInventory = runtimeSnapshot && runtimeSnapshot.shooter && runtimeSnapshot.shooter.skillInventory
+    ? runtimeSnapshot.shooter.skillInventory
+    : {};
+  var rainbowCount = Math.max(0, Math.floor(Number(skillInventory.rainbow) || 0));
+  var blastCount = Math.max(0, Math.floor(Number(skillInventory.blast) || 0));
+  var canUseSkill = !!(
+    runtimeSnapshot &&
+    runtimeSnapshot.state === "running" &&
+    !runtimeSnapshot.activeProjectile
+  );
+
+  this._setBottomPanelCount(rainbowButtonNode, rainbowCount);
+  this._setBottomPanelCount(bombButtonNode, blastCount);
+  this._setBottomPanelButtonEnabled(backButtonNode, true);
+  this._setBottomPanelButtonEnabled(rainbowButtonNode, canUseSkill && rainbowCount > 0);
+  this._setBottomPanelButtonEnabled(bombButtonNode, canUseSkill && blastCount > 0);
+};
+
 LevelRenderer.prototype._setHudTargetBallIcon = function (panel, iconCode) {
   var ballNode = panel ? panel.getChildByName("ball") : null;
   if (!ballNode) {
@@ -138,6 +302,21 @@ LevelRenderer.prototype._setHudTargetBallIcon = function (panel, iconCode) {
 
   ballNode.active = true;
   ensureSprite(ballNode, spriteFrame);
+};
+
+LevelRenderer.prototype._getHudTargetBallPositionInBoard = function () {
+  if (!this.layers || !this.layers.hud || !this.layers.board) {
+    return null;
+  }
+
+  var panel = this.layers.hud.getChildByName("HudPanel");
+  var ballNode = panel ? panel.getChildByName("ball") : null;
+  if (!ballNode || !ballNode.active || !ballNode.parent) {
+    return null;
+  }
+
+  var worldPos = ballNode.parent.convertToWorldSpaceAR(ballNode.getPosition());
+  return this.layers.board.convertToNodeSpaceAR(worldPos);
 };
 
 LevelRenderer.prototype._alignHudPanelToTop = function (panel) {
@@ -199,11 +378,6 @@ LevelRenderer.prototype._renderHudStarProgress = function (panel, runtimeSnapsho
 
   if (progressBar) {
     progressBar.progress = starProgress;
-    var barNode = progressBar.node.getChildByName("bar");
-    if (barNode) {
-      barNode.color = cc.color(255, 214, 87);
-      barNode.opacity = 255;
-    }
   }
 
   this._getHudStarNodes(panel).forEach(function (starNode, index) {
@@ -347,6 +521,166 @@ LevelRenderer.prototype._recycleInactiveFallingDropNodes = function (activeTick)
     }
     delete this.fallingDropNodes[dropId];
   }
+};
+
+LevelRenderer.prototype._playIceThawShake = function (runtimeSnapshot) {
+  var resolution = runtimeSnapshot && runtimeSnapshot.lastResolution ? runtimeSnapshot.lastResolution : null;
+  var impact = resolution && resolution.impact ? resolution.impact : null;
+  var thawedCells = resolution && Array.isArray(resolution.thawed) ? resolution.thawed : [];
+  if (!impact || !impact.seq || !thawedCells.length || impact.seq === this.lastIceThawShakeSeq) {
+    return;
+  }
+
+  this.lastIceThawShakeSeq = impact.seq;
+  if (!this.layers || !this.layers.board) {
+    return;
+  }
+
+  var offset = Math.max(2, Number(ICE_THAW_SHAKE_OFFSET) || 0);
+  var stepDuration = Math.max(0.02, Number(ICE_THAW_SHAKE_STEP_DURATION) || 0.04);
+  var objective = runtimeSnapshot && runtimeSnapshot.objectives ? runtimeSnapshot.objectives : null;
+  var shouldFlyToHud = !!(objective && objective.type === "collect_ice");
+  var targetBoardPos = shouldFlyToHud ? this._getHudTargetBallPositionInBoard() : null;
+  var flyDuration = Math.max(0.18, Number(ICE_COLLECT_FLY_DURATION) || 0.34);
+  var bezierArc = Math.max(40, Number(ICE_COLLECT_BEZIER_ARC) || 120);
+  var collectFlyStartDelay = shouldFlyToHud ? 0.03 : 0;
+
+  thawedCells.forEach(function (cell) {
+    if (!cell || !cell.id) {
+      return;
+    }
+
+    var bubbleNode = this.layers.board.getChildByName("Bubble_" + cell.id);
+    if (!bubbleNode) {
+      return;
+    }
+
+    if (bubbleNode.__iceThawShakeSeq === impact.seq) {
+      return;
+    }
+    bubbleNode.__iceThawShakeSeq = impact.seq;
+
+    var baseX = bubbleNode.x;
+    var baseY = bubbleNode.y;
+
+    bubbleNode.stopAllActions();
+    bubbleNode.__thawHiddenSeq = impact.seq;
+    bubbleNode.opacity = 0;
+    bubbleNode.active = false;
+
+    var fxNode = new cc.Node("IceThawFx_" + cell.id + "_" + impact.seq);
+    fxNode.parent = this.layers.board;
+    fxNode.zIndex = (bubbleNode.zIndex || 0) + 1;
+    fxNode.setPosition(baseX, baseY);
+    fxNode.setScale(1);
+    this._applyBallVisualCached(fxNode, {
+      entityCategory: "obstacle_ball",
+      entityType: "ice",
+      innerColor: cell.color || "B"
+    }, BOARD_BUBBLE_SIZE);
+
+    var revealBubble = function () {
+      if (bubbleNode && bubbleNode.__thawHiddenSeq === impact.seq) {
+        bubbleNode.active = true;
+        bubbleNode.opacity = 255;
+        bubbleNode.__thawHiddenSeq = -1;
+      }
+    };
+
+    var finishFx = function () {
+      if (fxNode && fxNode.parent) {
+        fxNode.removeFromParent(true);
+      }
+    };
+
+    var playCollectFly = function () {
+      if (!shouldFlyToHud || !targetBoardPos) {
+        finishFx();
+        return;
+      }
+
+      var endX = targetBoardPos.x;
+      var endY = targetBoardPos.y;
+      var controlY = Math.max(baseY, endY) + bezierArc;
+      var controlX = (baseX + endX) * 0.5;
+
+      fxNode.stopAllActions();
+      if (
+        fxNode.runAction &&
+        typeof cc.bezierTo === "function" &&
+        typeof cc.spawn === "function" &&
+        typeof cc.sequence === "function" &&
+        typeof cc.callFunc === "function" &&
+        typeof cc.delayTime === "function" &&
+        typeof cc.scaleTo === "function" &&
+        typeof cc.fadeTo === "function" &&
+        typeof cc.v2 === "function"
+      ) {
+        var bezier = [
+          cc.v2(controlX, controlY),
+          cc.v2(controlX, controlY),
+          cc.v2(endX, endY)
+        ];
+        var flyAction = cc.spawn(
+          cc.bezierTo(flyDuration, bezier),
+          cc.scaleTo(flyDuration, 0.38),
+          cc.fadeTo(flyDuration, 120)
+        );
+        var actionChain = [];
+        if (collectFlyStartDelay > 0) {
+          actionChain.push(cc.delayTime(collectFlyStartDelay));
+        }
+        actionChain.push(flyAction);
+        actionChain.push(cc.callFunc(function () {
+          finishFx();
+        }));
+        var sequence = cc.sequence.apply(null, actionChain);
+        fxNode.runAction(sequence);
+        return;
+      }
+
+      if (typeof cc.tween === "function") {
+        var collectTween = cc.tween(fxNode);
+        if (collectFlyStartDelay > 0) {
+          collectTween = collectTween.delay(collectFlyStartDelay);
+        }
+        collectTween
+          .to(flyDuration, {
+            x: endX,
+            y: endY,
+            scale: 0.38,
+            opacity: 120
+          }, {
+            easing: "sineIn"
+          })
+          .call(function () {
+            finishFx();
+          })
+          .start();
+        return;
+      }
+
+      finishFx();
+    };
+
+    if (typeof cc.tween !== "function") {
+      revealBubble();
+      playCollectFly();
+      return;
+    }
+
+    cc.tween(fxNode)
+      .to(stepDuration, { x: baseX - offset, y: baseY })
+      .to(stepDuration, { x: baseX + offset, y: baseY })
+      .to(stepDuration, { x: baseX - offset * 0.7, y: baseY })
+      .to(stepDuration, { x: baseX + offset * 0.7, y: baseY })
+      .to(stepDuration, { x: baseX, y: baseY })
+      .call(function () {
+        revealBubble();
+        playCollectFly();
+      })
+      .start();
+  }, this);
 };
 
 LevelRenderer.prototype._playImpactBounce = function (runtimeSnapshot) {
@@ -602,21 +936,107 @@ LevelRenderer.prototype._recycleInactiveTestSlotNodes = function (activeTick) {
   }
 };
 
-LevelRenderer.prototype._renderDangerLine = function () {
-  var node = this.layers.overlay.getChildByName("DangerLine");
-  if (!node) {
-    node = this._instantiateOrCreate(PREFAB_PATHS.dangerLine, this.layers.overlay, "DangerLine");
+LevelRenderer.prototype._evaluateDangerLineState = function (boardSnapshot) {
+  if (!boardSnapshot || !Array.isArray(boardSnapshot.cells) || boardSnapshot.cells.length <= 0) {
+    return {
+      nearDanger: false,
+      dangerReached: false
+    };
   }
 
-  node.setPosition(0, BoardLayout.dangerLineY);
+  var minGap = Number.POSITIVE_INFINITY;
+  boardSnapshot.cells.forEach(function (cell) {
+    if (!cell) {
+      return;
+    }
+
+    var cellPosition = BoardLayout.getCellPosition(
+      cell.row,
+      cell.col,
+      boardSnapshot.maxColumns,
+      boardSnapshot.dropOffsetRows
+    );
+    var bubbleBottomY = cellPosition.y - BoardLayout.bubbleRadius;
+    var gapToDanger = bubbleBottomY - BoardLayout.dangerLineY;
+    if (gapToDanger < minGap) {
+      minGap = gapToDanger;
+    }
+  });
+
+  var reached = minGap <= 0;
+  return {
+    nearDanger: minGap > 0 && minGap <= DANGER_WARNING_ROW_THRESHOLD,
+    dangerReached: reached
+  };
+};
+
+LevelRenderer.prototype._setDangerLineWarningActive = function (dangerNode, enabled) {
+  if (!dangerNode || !dangerNode.isValid) {
+    return;
+  }
+
+  var shouldEnable = !!enabled;
+  if (shouldEnable === this.dangerLineWarningActive) {
+    return;
+  }
+
+  this.dangerLineWarningActive = shouldEnable;
+  dangerNode.stopAllActions();
+
+  if (!shouldEnable) {
+    dangerNode.x = 0;
+    return;
+  }
+
+  if (typeof cc.tween === "function") {
+    cc.tween(dangerNode)
+      .to(DANGER_WARNING_SHAKE_STEP, { x: DANGER_WARNING_SHAKE_LEFT_X })
+      .to(DANGER_WARNING_SHAKE_STEP, { x: DANGER_WARNING_SHAKE_RIGHT_X })
+      .to(DANGER_WARNING_SHAKE_STEP, { x: DANGER_WARNING_SHAKE_LEFT_X * 0.7 })
+      .to(DANGER_WARNING_SHAKE_STEP, { x: DANGER_WARNING_SHAKE_RIGHT_X * 0.7 })
+      .union()
+      .repeatForever()
+      .start();
+    return;
+  }
+
+  var sequence = cc.sequence(
+    cc.moveTo(DANGER_WARNING_SHAKE_STEP, DANGER_WARNING_SHAKE_LEFT_X, dangerNode.y),
+    cc.moveTo(DANGER_WARNING_SHAKE_STEP, DANGER_WARNING_SHAKE_RIGHT_X, dangerNode.y),
+    cc.moveTo(DANGER_WARNING_SHAKE_STEP, DANGER_WARNING_SHAKE_LEFT_X * 0.7, dangerNode.y),
+    cc.moveTo(DANGER_WARNING_SHAKE_STEP, DANGER_WARNING_SHAKE_RIGHT_X * 0.7, dangerNode.y)
+  );
+  dangerNode.runAction(cc.repeatForever(sequence));
+};
+
+LevelRenderer.prototype._renderDangerLine = function (runtimeSnapshot) {
+  var node = this.layers.dangerLine.getChildByName("DangerLine");
+  if (!node) {
+    node = this._instantiateOrCreate(PREFAB_PATHS.dangerLine, this.layers.dangerLine, "DangerLine");
+  }
+
+  var dangerLineX = this.dangerLineWarningActive ? node.x : 0;
+  node.setPosition(dangerLineX, BoardLayout.dangerLineY);
 
   var band = getOrCreateChild(node, "BandBg");
-  band.opacity = 110;
+  var boardSnapshot = runtimeSnapshot && runtimeSnapshot.board ? runtimeSnapshot.board : null;
+  var dangerState = this._evaluateDangerLineState(boardSnapshot);
+  var shouldShowDangerLine = dangerState.nearDanger || dangerState.dangerReached;
+  node.active = shouldShowDangerLine;
+  if (!shouldShowDangerLine) {
+    this._setDangerLineWarningActive(node, false);
+    this.dangerLineReady = true;
+    return;
+  }
 
+  var isWarning = dangerState.nearDanger || dangerState.dangerReached;
+  band.opacity = isWarning ? DANGER_WARNING_BAND_OPACITY : DANGER_NORMAL_BAND_OPACITY;
+  band.color = isWarning ? cc.color(255, 74, 74) : cc.color(255, 255, 255);
   var labelNode = getOrCreateChild(node, "Label");
-  labelNode.color = cc.color(255, 250, 235);
+  labelNode.color = isWarning ? DANGER_WARNING_LABEL_COLOR : DANGER_NORMAL_LABEL_COLOR;
   ensureLabel(labelNode, "危险线", 38, 42);
-  ensureOutline(labelNode, cc.color(151, 86, 86), 3);
+  ensureOutline(labelNode, isWarning ? DANGER_WARNING_OUTLINE_COLOR : DANGER_NORMAL_OUTLINE_COLOR, 3);
+  this._setDangerLineWarningActive(node, isWarning);
   this.dangerLineReady = true;
 };
 

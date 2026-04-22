@@ -17,6 +17,7 @@ function createDefaultSettings(defaults) {
     version: 1,
     musicEnabled: defaults.musicEnabled !== false,
     sfxEnabled: defaults.sfxEnabled !== false,
+    vibrationEnabled: defaults.vibrationEnabled !== false,
     musicVolume: clamp01(defaults.musicVolume, 0.6),
     sfxVolume: clamp01(defaults.sfxVolume, 1)
   };
@@ -32,6 +33,7 @@ function normalizeSettings(raw, defaults) {
     version: 1,
     musicEnabled: raw.musicEnabled !== false,
     sfxEnabled: raw.sfxEnabled !== false,
+    vibrationEnabled: raw.vibrationEnabled !== false,
     musicVolume: clamp01(raw.musicVolume, fallback.musicVolume),
     sfxVolume: clamp01(raw.sfxVolume, fallback.sfxVolume)
   };

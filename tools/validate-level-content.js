@@ -9,10 +9,11 @@ var LEVEL_DIR = path.resolve(__dirname, "../assets/resources/config/levels");
 var ALLOWED_COLORS = ["R", "G", "B", "Y", "P"];
 var MAX_JAR_COUNT = 4;
 var ALLOWED_DIFFICULTY = ["tutorial", "easy", "normal", "hard", "expert", "advanced"];
-var ALLOWED_WIN_TYPES = ["clear_all", "collect_any", "collect_color"];
+var ALLOWED_WIN_TYPES = ["clear_all", "collect_any", "collect_color", "collect_ice"];
 var ALLOWED_BONUS_TYPES = [
   "collect_any",
   "collect_color",
+  "collect_ice",
   "collect_same_color_bonus_hits",
   "clear_with_shots_remaining",
   "single_turn_drop_count"
