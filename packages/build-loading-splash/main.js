@@ -5,6 +5,8 @@ const path = require('path');
 
 const PLUGIN_TAG = '[build-loading-splash]';
 const WEB_PLATFORMS = new Set(['web-mobile', 'web-desktop']);
+const WECHAT_PLATFORM_NAME = 'wechatgame';
+const MINI_GAME_PLATFORM_NAME = 'mini-game';
 const BACKGROUND_SEARCH_DIRS = [
     ['assets', 'image'],
     ['assets', 'resources', 'image'],
@@ -106,33 +108,65 @@ function copyBackgroundImage(buildDestPath, resolvedImage) {
     Editor.log(`${PLUGIN_TAG} copied ${resolvedImage.fileName} to build output`);
 }
 
+function isWeChatGameBuild(options) {
+    if (!options || typeof options !== 'object') {
+        return false;
+    }
+
+    const platform = String(options.platform || '').trim().toLowerCase();
+    const actualPlatform = String(options.actualPlatform || '').trim().toLowerCase();
+    return (
+        platform === WECHAT_PLATFORM_NAME ||
+        actualPlatform === WECHAT_PLATFORM_NAME ||
+        (platform === MINI_GAME_PLATFORM_NAME && actualPlatform === WECHAT_PLATFORM_NAME)
+    );
+}
+
+function patchWeChatProjectConfig(buildDestPath) {
+    const fixerPath = path.join(Editor.Project.path, 'tools', 'fix-wechat-project-config.js');
+    if (!fs.existsSync(fixerPath)) {
+        Editor.warn(`${PLUGIN_TAG} wechat config fixer not found: ${fixerPath}`);
+        return;
+    }
+
+    const fixerModule = require(fixerPath);
+    if (!fixerModule || typeof fixerModule.fixWeChatProjectConfig !== 'function') {
+        Editor.warn(`${PLUGIN_TAG} invalid fixer module: ${fixerPath}`);
+        return;
+    }
+
+    fixerModule.fixWeChatProjectConfig(buildDestPath);
+    Editor.log(`${PLUGIN_TAG} patched WeChat project config in ${buildDestPath}`);
+}
+
 function onBuildFinished(options, callback) {
     try {
-        if (!WEB_PLATFORMS.has(options.platform)) {
-            callback();
-            return;
+        if (WEB_PLATFORMS.has(options.platform)) {
+            const buildDestPath = options.dest;
+            const files = fs.readdirSync(buildDestPath);
+            const styleFileNames = files.filter((name) => /^style-(mobile|desktop)(\.[^.]+)?\.css$/.test(name));
+
+            if (styleFileNames.length === 0) {
+                Editor.warn(`${PLUGIN_TAG} no style css found in ${buildDestPath}`);
+                callback();
+                return;
+            }
+
+            const resolvedImage = resolveBackgroundImageSource();
+            if (!resolvedImage) {
+                callback();
+                return;
+            }
+
+            styleFileNames.forEach((fileName) => {
+                patchStyleFile(path.join(buildDestPath, fileName), resolvedImage.fileName);
+            });
+            copyBackgroundImage(buildDestPath, resolvedImage);
         }
 
-        const buildDestPath = options.dest;
-        const files = fs.readdirSync(buildDestPath);
-        const styleFileNames = files.filter((name) => /^style-(mobile|desktop)(\.[^.]+)?\.css$/.test(name));
-
-        if (styleFileNames.length === 0) {
-            Editor.warn(`${PLUGIN_TAG} no style css found in ${buildDestPath}`);
-            callback();
-            return;
+        if (isWeChatGameBuild(options)) {
+            patchWeChatProjectConfig(options.dest);
         }
-
-        const resolvedImage = resolveBackgroundImageSource();
-        if (!resolvedImage) {
-            callback();
-            return;
-        }
-
-        styleFileNames.forEach((fileName) => {
-            patchStyleFile(path.join(buildDestPath, fileName), resolvedImage.fileName);
-        });
-        copyBackgroundImage(buildDestPath, resolvedImage);
     } catch (error) {
         Editor.error(`${PLUGIN_TAG} build patch failed: ${error && error.stack ? error.stack : error}`);
     }

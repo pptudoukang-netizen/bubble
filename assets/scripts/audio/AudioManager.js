@@ -16,6 +16,16 @@ function isBrowserRuntime() {
   return !!(cc && cc.sys && cc.sys.isBrowser);
 }
 
+function isWeChatGameRuntime() {
+  return !!(
+    cc &&
+    cc.sys &&
+    typeof cc.sys.platform !== "undefined" &&
+    typeof cc.sys.WECHAT_GAME !== "undefined" &&
+    cc.sys.platform === cc.sys.WECHAT_GAME
+  );
+}
+
 function getWebAudioContext() {
   if (!hasAudioEngine()) {
     return null;
@@ -79,6 +89,8 @@ function AudioManager(options) {
   this._webAudioGestureUnlocked = false;
   this._webAudioUnlockBindingDone = false;
   this._webAudioUnlockHandler = null;
+  this._runtimeLifecycleBound = false;
+  this._innerAudioOptionApplied = false;
 }
 
 AudioManager.prototype.configure = function (options) {
@@ -86,6 +98,8 @@ AudioManager.prototype.configure = function (options) {
   this.bgmPath = typeof options.bgmPath === "string" ? options.bgmPath.trim() : this.bgmPath;
   this.sfxMap = options.sfxMap && typeof options.sfxMap === "object" ? clone(options.sfxMap) : this.sfxMap;
   this._bindWebAudioUnlockOnUserGesture();
+  this._bindRuntimeLifecycleEvents();
+  this._applyWeChatAudioOptions();
   this._tryUnlockWebAudio();
   this._applyVolumeSettings();
   return this.snapshot();
@@ -199,19 +213,17 @@ AudioManager.prototype._unbindWebAudioUnlockGesture = function () {
 };
 
 AudioManager.prototype._tryUnlockWebAudio = function () {
-  if (this._webAudioGestureUnlocked) {
-    return;
-  }
-
-  if (!isBrowserRuntime()) {
+  var audioContext = getWebAudioContext();
+  if (!audioContext || typeof audioContext.resume !== "function") {
+    // Runtime does not expose a resumable WebAudio context.
     this._webAudioGestureUnlocked = true;
     return;
   }
 
-  var audioContext = getWebAudioContext();
-  if (!audioContext || typeof audioContext.resume !== "function") {
+  if (this._webAudioGestureUnlocked && audioContext.state === "running") {
     return;
   }
+
   if (audioContext.state === "running") {
     warmupWebAudioContext(audioContext);
     this._webAudioGestureUnlocked = true;
@@ -239,6 +251,57 @@ AudioManager.prototype._tryUnlockWebAudio = function () {
     }
   } catch (error) {
     // Ignore unlock failures and let subsequent user gestures retry.
+  }
+};
+
+AudioManager.prototype._bindRuntimeLifecycleEvents = function () {
+  if (this._runtimeLifecycleBound) {
+    return;
+  }
+
+  if (cc && cc.game && typeof cc.game.on === "function") {
+    cc.game.on(cc.game.EVENT_HIDE, function () {
+      this.pauseBgm();
+    }, this);
+
+    cc.game.on(cc.game.EVENT_SHOW, function () {
+      this._tryUnlockWebAudio();
+      this.resumeBgm();
+    }, this);
+  }
+
+  if (typeof wx !== "undefined" && wx && typeof wx.onShow === "function") {
+    wx.onShow(function () {
+      this._tryUnlockWebAudio();
+      this.resumeBgm();
+    }.bind(this));
+  }
+  if (typeof wx !== "undefined" && wx && typeof wx.onHide === "function") {
+    wx.onHide(function () {
+      this.pauseBgm();
+    }.bind(this));
+  }
+
+  this._runtimeLifecycleBound = true;
+};
+
+AudioManager.prototype._applyWeChatAudioOptions = function () {
+  if (this._innerAudioOptionApplied || !isWeChatGameRuntime()) {
+    return;
+  }
+
+  if (typeof wx === "undefined" || !wx || typeof wx.setInnerAudioOption !== "function") {
+    return;
+  }
+
+  try {
+    wx.setInnerAudioOption({
+      mixWithOther: true,
+      obeyMuteSwitch: false
+    });
+    this._innerAudioOptionApplied = true;
+  } catch (error) {
+    Logger.warn("Set WeChat inner audio option failed", error && error.message ? error.message : error);
   }
 };
 
