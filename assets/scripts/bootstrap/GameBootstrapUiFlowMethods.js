@@ -51,6 +51,8 @@ module.exports = {
     this._playSfx("uiClick");
     if (!this._consumeStaminaForLevelEntry()) {
       this._setStatus("Stamina is not enough. It resets to 10 at 00:00.");
+      // 胜利页点击“下一关”时若体力不足，主动返回选关页，避免“点击无反应”的体验。
+      this._showLevelSelectView();
       return;
     }
     var nextLevelId = (this.currentLevelConfig.level.levelId || 1) + 1;
@@ -1065,7 +1067,7 @@ module.exports = {
     this._lastStatusMessage = message;
 
     if (this._statusLabel) {
-      statusLabel.string = isEnabled ? "开" : "关";
+      this._statusLabel.string = String(message || "");
     }
 
     Logger.info(message);

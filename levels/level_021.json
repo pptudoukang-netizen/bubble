@@ -47,6 +47,7 @@
                                  "Y"
                              ],
                   "shotLimit":  31,
+                  "targetScore":  12815,
                   "dropInterval":  3,
                   "jarCount":  4,
                   "jarColors":  [
@@ -129,4 +130,3 @@
               },
     "difficultyScaleMax":  100
 }
-

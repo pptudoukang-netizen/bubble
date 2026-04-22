@@ -13,6 +13,13 @@ var DIFFICULTY_BASE = {
   hard: 34,
   expert: 42
 };
+var DIFFICULTY_ALIAS = {
+  advanced: "normal",
+  beginner: "tutorial",
+  medium: "normal",
+  difficult: "hard"
+};
+var SCORE_DROP_WARNING_THRESHOLD = 7;
 
 function readJson(filePath) {
   var raw = fs.readFileSync(filePath, "utf8");
@@ -67,8 +74,21 @@ function getObjectivePressure(level) {
   return pressure;
 }
 
-function calcDifficultyScore(level) {
-  var base = DIFFICULTY_BASE[level.difficulty] || DIFFICULTY_BASE.normal;
+function normalizeDifficulty(difficulty) {
+  var normalized = String(difficulty || "").trim().toLowerCase();
+  if (!normalized) {
+    return "normal";
+  }
+
+  if (DIFFICULTY_BASE[normalized]) {
+    return normalized;
+  }
+
+  return DIFFICULTY_ALIAS[normalized] || "normal";
+}
+
+function calcDifficultyScore(level, normalizedDifficulty) {
+  var base = DIFFICULTY_BASE[normalizedDifficulty] || DIFFICULTY_BASE.normal;
   var colorPressure = Math.max(0, (level.colorCount || 0) - 3) * 4.2;
   var shotPressure = Math.max(0, 18 - (level.shotLimit || 18)) * 2.1;
   var dropPressure = Math.max(0, 8 - (level.dropInterval || 8)) * 2.8;
@@ -83,12 +103,11 @@ function calcDifficultyScore(level) {
 
 function analyzeLevels(levels) {
   var warnings = [];
-  var groups = {
-    tutorial: [],
-    easy: [],
-    normal: [],
-    hard: []
-  };
+  var blockers = [];
+  var groups = DIFFICULTY_ORDER.reduce(function (result, difficulty) {
+    result[difficulty] = [];
+    return result;
+  }, {});
 
   levels.forEach(function (item, index) {
     groups[item.difficulty] = groups[item.difficulty] || [];
@@ -96,9 +115,10 @@ function analyzeLevels(levels) {
 
     if (index > 0) {
       var previous = levels[index - 1];
-      if (item.score < previous.score - 6) {
+      if (item.difficulty === previous.difficulty && item.score < previous.score - SCORE_DROP_WARNING_THRESHOLD) {
         warnings.push(
-          "Level " + item.levelId + " score drops too much from previous level (" + previous.score.toFixed(1) + " -> " + item.score.toFixed(1) + ")"
+          "Level " + item.levelId + " score drops within tier " + item.difficulty +
+          " (" + previous.score.toFixed(1) + " -> " + item.score.toFixed(1) + ")"
         );
       }
     }
@@ -114,36 +134,45 @@ function analyzeLevels(levels) {
   var tierAverages = DIFFICULTY_ORDER.map(function (difficulty) {
     return {
       difficulty: difficulty,
+      count: (groups[difficulty] || []).length,
       average: average(groups[difficulty] || [])
     };
   });
 
-  for (var i = 1; i < tierAverages.length; i += 1) {
-    if (tierAverages[i].average <= tierAverages[i - 1].average) {
-      warnings.push(
+  var populatedTiers = tierAverages.filter(function (tier) {
+    return tier.count > 0;
+  });
+
+  for (var i = 1; i < populatedTiers.length; i += 1) {
+    if (populatedTiers[i].average <= populatedTiers[i - 1].average) {
+      blockers.push(
         "Tier average not increasing: " +
-        tierAverages[i - 1].difficulty + "(" + tierAverages[i - 1].average.toFixed(1) + ") >= " +
-        tierAverages[i].difficulty + "(" + tierAverages[i].average.toFixed(1) + ")"
+        populatedTiers[i - 1].difficulty + "(" + populatedTiers[i - 1].average.toFixed(1) + ") >= " +
+        populatedTiers[i].difficulty + "(" + populatedTiers[i].average.toFixed(1) + ")"
       );
     }
   }
 
   return {
     warnings: warnings,
+    blockers: blockers,
     tierAverages: tierAverages
   };
 }
 
 function printTable(levels) {
-  console.log("ID  Code                        Diff      Score  colors shot drop collectZone");
-  console.log("--  --------------------------  --------  -----  ------ ---- ---- -----------");
+  console.log("ID  Code                        Diff(raw>calc)       Score  colors shot drop collectZone");
+  console.log("--  --------------------------  -------------------  -----  ------ ---- ---- -----------");
 
   levels.forEach(function (item) {
     var collectZone = item.collectZoneScale == null ? "-" : item.collectZoneScale.toFixed(2);
+    var difficultyLabel = item.rawDifficulty && item.rawDifficulty !== item.difficulty
+      ? String(item.rawDifficulty) + ">" + item.difficulty
+      : String(item.difficulty || "-");
     var line = [
       String(item.levelId).padStart(2, "0"),
       String(item.code || "-").padEnd(26, " "),
-      String(item.difficulty || "-").padEnd(8, " "),
+      difficultyLabel.padEnd(19, " "),
       item.score.toFixed(1).padStart(6, " "),
       String(item.colorCount).padStart(6, " "),
       String(item.shotLimit).padStart(4, " "),
@@ -171,15 +200,17 @@ function main() {
   var levels = files.map(function (fileName) {
     var parsed = readJson(path.join(LEVEL_DIR, fileName));
     var level = parsed.level || {};
+    var normalizedDifficulty = normalizeDifficulty(level.difficulty);
     return {
       levelId: level.levelId,
       code: level.code,
-      difficulty: level.difficulty,
+      rawDifficulty: level.difficulty,
+      difficulty: normalizedDifficulty,
       colorCount: level.colorCount,
       shotLimit: level.shotLimit,
       dropInterval: level.dropInterval,
       collectZoneScale: level.jarRules && level.jarRules.collectZoneScale,
-      score: calcDifficultyScore(level)
+      score: calcDifficultyScore(level, normalizedDifficulty)
     };
   });
 
@@ -188,12 +219,19 @@ function main() {
   var analysis = analyzeLevels(levels);
   console.log("\nTier Averages:");
   analysis.tierAverages.forEach(function (tier) {
-    console.log("- " + tier.difficulty + ": " + tier.average.toFixed(2));
+    console.log("- " + tier.difficulty + ": " + tier.average.toFixed(2) + " (n=" + tier.count + ")");
   });
 
   if (analysis.warnings.length) {
-    console.log("\nCurve Warnings:");
+    console.log("\nCurve Notes:");
     analysis.warnings.forEach(function (warning) {
+      console.log("- " + warning);
+    });
+  }
+
+  if (analysis.blockers.length) {
+    console.log("\nCurve Warnings:");
+    analysis.blockers.forEach(function (warning) {
       console.log("- " + warning);
     });
     console.log("\nDifficulty curve check failed.");

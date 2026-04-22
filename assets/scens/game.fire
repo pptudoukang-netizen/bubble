@@ -1556,7 +1556,7 @@
     "routePointMinDistance": 18,
     "levelSelectMaxLevelId": 10,
     "resetLevelProgressOnStart": false,
-    "inspectorStaminaValue": 10,
+    "inspectorStaminaValue": 100,
     "enableStartupLoadingView": true,
     "loadingViewMinVisibleMs": 900,
     "startupPreloadLevelCount": 5,

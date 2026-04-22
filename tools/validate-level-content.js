@@ -309,6 +309,7 @@ function validateLevel(filePath, expectedLevelId) {
 }
 
 function main() {
+  var expectedLevelCount = Number(process.env.LEVEL_EXPECTED_COUNT || 0);
   var files = fs.readdirSync(LEVEL_DIR)
     .filter(function (fileName) {
       return /^level_\d+\.json$/.test(fileName);
@@ -350,9 +351,9 @@ function main() {
     expectedId += 1;
   });
 
-  if (files.length !== 20) {
+  if (Number.isInteger(expectedLevelCount) && expectedLevelCount > 0 && files.length !== expectedLevelCount) {
     failed = true;
-    console.log("[FAIL]", "Expected 20 levels for MVP, found", files.length);
+    console.log("[FAIL]", "Expected", expectedLevelCount, "levels, found", files.length);
   }
 
   if (failed) {

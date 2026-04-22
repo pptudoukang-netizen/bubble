@@ -1,95 +1,418 @@
-# 关卡配置规范（阶段五）
+# 关卡配置规范
 
-## 1. 目标
+## 1. 文档目标
 
-本规范用于约束 `1~20` 关的配置结构，确保：
+本文档用于总结当前版本的关卡设计规则，并约束关卡 JSON 的字段结构、难度曲线和配置口径。
 
-- 配置改动不依赖逻辑代码修改
-- 难度曲线可量化、可回归
-- 编辑目录与运行目录保持一致
+当前版本已经覆盖：
 
-## 2. 权威目录
+- 正式关卡：`1~30`
+- 示例关卡：`level_021_special_entities_example.json`
+- 特殊实体：
+  - `彩虹技能球`
+  - `炸裂技能球`
+  - `石头障碍球`
+  - `冰冻障碍球`
 
-- 运行时权威目录：`assets/resources/config/levels`
-- 编辑镜像目录：`levels`
+本文档是当前关卡配置的总说明。  
+特殊实体的单独字段说明，见：
 
-约束：所有运行配置以 `assets/resources/config/levels` 为准，修改后执行同步脚本把结果镜像到 `levels`。
+- [LEVEL_SPECIAL_ENTITIES_SPEC.md](E:\cocos_project\bubble\LEVEL_SPECIAL_ENTITIES_SPEC.md)
 
-## 3. 文件命名
+## 2. 当前关卡设计总结
 
-- 文件名：`level_001.json` ~ `level_020.json`
-- `level.levelId` 必须与文件编号一致
-- `level.code` 必须以 `Lxxx_` 开头（例如 `L010_...`）
+### 2.1 核心过关规则
 
-## 4. 核心字段约束
+当前版本的关卡默认以 `winConditions` 作为通关依据。
 
-根节点：
+统一口径：
 
-- `schemaVersion = 1`
-- `coordinateSystem = odd-r-hex`
+- 必须完成 `clear_all`
+- 同时完成本关配置的收集目标
 
-`level` 节点：
+当前正式关卡中，`winConditions` 主要采用两类组合：
 
-- `difficulty`: `tutorial | easy | normal | hard | expert | advanced`
-- `colorCount`: 必须等于 `colors.length`
-- `colors`: 仅允许 `R/G/B/Y/P`，且不可重复
-- `jarCount`: 必须等于 `jarColors.length`，且每关最多 `4`
-- `targetScore`: 必须为正整数，表示本关 3 星目标分
-- `spawnWeights`: 必须覆盖 `colors` 中所有颜色且权重 > 0
-- `layout`: 每行只允许 `.` 或 `colors` 中定义的色码
-- `winConditions`: 至少包含 `clear_all`
+- `clear_all + collect_any`
+- `clear_all + collect_color`
 
-星级判定口径：
+`bonusObjectives` 为附加挑战，不影响通关本身。
 
-- 1 星：分数达到 `targetScore * 1 / 3`
-- 2 星：分数达到 `targetScore * 2 / 3`
-- 3 星：分数达到 `targetScore`
+### 2.2 当前难度设计规则
 
-`jarRules` 建议范围：
+当前版本采用：
 
-- `rimBounce`: `[0.4, 0.95]`
-- `collectZoneScale`: `[0.7, 1.4]`
-- `sameColorBonus`: `[1, 3]`
+- 难度总分满分 `100`
+- 第 `1~2` 关为低难教学关
+- 第 `3` 关开始直接进入高强度曲线
 
-## 5. 难度曲线基线
+当前曲线：
 
-阶段五采用 5 档曲线：
+- `1~2` 关：`difficultyScore = 10`
+- `3~9` 关：`70~79`
+- `10~15` 关：`80~88`
+- `16~24` 关：`90~99`
+- `25~30` 关：`100`
 
-- `tutorial`（1~3）：教学与基础爽点
-- `easy`（4~7）：引入收集目标，保留容错
-- `normal`（8~13）：四色与路径规划
-- `hard`：保留兼容口径
-- `expert`（14~20）：复合目标与更高压力
-- `advanced`：保留兼容旧配置口径，运行时按 `normal` 处理
+### 2.3 当前球量规则
 
-瞄准参数默认档位已支持 `easy` 独立配置，不再复用 `normal`。
+当前正式关卡采用以下总球量约束：
 
-## 6. 调试与校验脚本
+- 每关玻璃球总数不少于 `30`
+- 每关玻璃球总数不大于 `60`
 
-在项目根目录执行：
+这里的“总球数”包括：
 
-```bash
-node tools/validate-level-content.js
-node tools/analyze-level-curve.js
-node tools/validate-aim-profiles.js
-node tools/validate-shot-regression.js
-```
+- `layout` 中的普通颜色球
+- `specialEntities` 中的技能球和障碍球
+
+当前 `1~30` 关实际范围：
+
+- 最少：`30`
+- 最多：`58`
+
+### 2.4 当前收集目标规则
+
+当前版本收集目标随难度递增：
+
+- 前期较低
+- 后期持续上升
+
+当前 `1~30` 关收集目标范围：
+
+- 最低：`2`
+- 最高：`32`
+
+目标类型：
+
+- `collect_any`
+- `collect_color`
+
+### 2.5 当前发射球数量规则
+
+当前版本发射球数量也采用递增设计。
+
+当前 `1~30` 关发射球数量范围：
+
+- 最低：`18`
+- 最高：`40`
 
 说明：
 
-- `validate-level-content.js`：校验结构、字段和跨字段一致性
-- `analyze-level-curve.js`：输出难度分并检查阶段内趋势
-- `validate-aim-profiles.js`：校验 `aim*` 分层参数
-- `validate-shot-regression.js`：校验关键关卡轨迹稳定样本
+- 当前配置按你的最新要求，难度越高，发射球数量也越高
+- 这套规则是当前项目的既定口径
 
-## 7. 编辑流程（建议）
+### 2.6 当前特殊实体引入节奏
 
-1. 修改 `assets/resources/config/levels/level_xxx.json`
-2. 运行内容校验和难度曲线分析
-3. 执行同步脚本：
+当前正式关卡的设计节奏如下：
 
-```bash
-node tools/sync-level-configs.js
+- `1~9` 关：无特殊实体，先强调基础结构和收集
+- `10` 关开始：引入 `石头障碍球`
+- `12` 关开始：引入 `彩虹技能球`
+- `14` 关开始：引入 `炸裂技能球`
+- `16` 关开始：引入 `冰冻障碍球`
+- `20` 关以后：进入多系统复合局面
+
+## 3. 权威文件与目录
+
+当前项目中的主要关卡文件：
+
+- 总表：
+  - [LEVEL_CONFIG_SAMPLE.json](E:\cocos_project\bubble\LEVEL_CONFIG_SAMPLE.json)
+- 单关目录：
+  - [levels](E:\cocos_project\bubble\levels)
+
+当前正式单关文件：
+
+- `level_001.json` 到 `level_030.json`
+
+当前示例文件：
+
+- `level_021_special_entities_example.json`
+
+说明：
+
+- 正式关卡以 `level_001.json ~ level_030.json` 为准
+- `level_021_special_entities_example.json` 仅作为字段示例，不计入正式关卡序列
+
+## 4. 文件命名规范
+
+- 文件名格式：`level_001.json`
+- `level.levelId` 必须和文件编号一致
+- `level.code` 必须以 `Lxxx_` 开头
+
+例如：
+
+- `level_020.json`
+- `code = "L020_MVP_FINALE"`
+
+## 5. 顶层结构规范
+
+每个单关文件采用如下结构：
+
+```json
+{
+  "schemaVersion": 1,
+  "gameMode": "glass_marble_bubble",
+  "coordinateSystem": "odd-r-hex",
+  "layoutNotes": {},
+  "sharedDefaults": {},
+  "level": {},
+  "difficultyScaleMax": 100
+}
 ```
 
-4. 再跑一次回归脚本，确认无回退
+约束：
+
+- `schemaVersion = 1`
+- `gameMode = "glass_marble_bubble"`
+- `coordinateSystem = "odd-r-hex"`
+- `difficultyScaleMax = 100`
+
+## 6. `level` 节点字段规范
+
+### 6.1 基础字段
+
+- `levelId`
+- `code`
+- `difficulty`
+- `difficultyScore`
+- `teaches`
+- `colorCount`
+- `colors`
+- `shotLimit`
+- `dropInterval`
+- `jarCount`
+- `jarColors`
+- `spawnWeights`
+- `jarRules`
+- `winConditions`
+- `bonusObjectives`
+- `layout`
+- `designNotes`
+
+### 6.2 当前 `difficulty` 可用值
+
+- `tutorial`
+- `advanced`
+- `hard`
+- `expert`
+
+说明：
+
+- 当前正式配置已不再使用 `easy` / `normal`
+- 如果后续需要补回这两个标签，必须同步更新设计文档和分析脚本
+
+### 6.3 `difficultyScore`
+
+- 范围：`1~100`
+- 当前项目中满分固定为 `100`
+- 必须与 `difficultyScaleMax` 保持一致口径
+
+### 6.4 `colorCount` 与 `colors`
+
+约束：
+
+- `colorCount` 必须等于 `colors.length`
+- 当前正式版本主要使用：
+  - `3` 色
+  - `4` 色
+
+### 6.5 `shotLimit`
+
+当前项目口径：
+
+- 随难度递增
+- 必须是正整数
+
+### 6.6 `dropInterval`
+
+说明：
+
+- 表示顶部下压节奏
+- 数值越小，压力越高
+
+当前曲线：
+
+- 低难：`8`
+- 中段：`5~4`
+- 高段：`3~2`
+
+### 6.7 `jarCount` 与 `jarColors`
+
+约束：
+
+- `jarCount` 必须等于 `jarColors.length`
+- 当前版本最多 `4`
+
+### 6.8 `spawnWeights`
+
+约束：
+
+- 必须覆盖 `colors` 中所有颜色
+- 所有权重必须大于 `0`
+
+### 6.9 `layout`
+
+约束：
+
+- 每一行必须是字符串
+- 每个字符只能是：
+  - `.`
+  - 当前 `colors` 中定义的颜色码
+- `layout` 仅用于普通颜色球和空位
+- 不要把技能球和障碍球直接写进 `layout`
+
+### 6.10 `winConditions`
+
+当前正式关卡规则：
+
+- 必须包含 `clear_all`
+- 必须再包含一个收集目标：
+  - `collect_any`
+  - 或 `collect_color`
+
+### 6.11 `bonusObjectives`
+
+只作为附加挑战使用，常见类型：
+
+- `collect_any`
+- `collect_color`
+- `collect_same_color_bonus_hits`
+- `clear_with_shots_remaining`
+- `single_turn_drop_count`
+
+## 7. 特殊实体配置规则
+
+当前推荐使用：
+
+- `specialEntities`
+
+它用于放置：
+
+- `skill_ball`
+- `obstacle_ball`
+
+当前可用实体类型：
+
+- 技能球：
+  - `rainbow`
+  - `blast`
+- 障碍球：
+  - `stone`
+  - `ice`
+
+冰冻球额外字段：
+
+- `innerColor`
+
+详细说明见：
+
+- [LEVEL_SPECIAL_ENTITIES_SPEC.md](E:\cocos_project\bubble\LEVEL_SPECIAL_ENTITIES_SPEC.md)
+
+## 8. 当前难度曲线摘要
+
+下面是当前 `1~30` 关的整体设计摘要：
+
+### 8.1 教学段
+
+- `1~2` 关
+- 低难教学
+- 球量 `30~32`
+- 发射球 `18~19`
+- 收集目标 `2~3`
+
+### 8.2 高压引入段
+
+- `3~9` 关
+- 难度分从 `70` 起跳
+- 球量 `34~38`
+- 发射球 `20~23`
+- 收集目标 `4~10`
+- 无特殊实体，以结构和收集要求提压
+
+### 8.3 中段机制引入
+
+- `10~15` 关
+- 难度分 `80~88`
+- 球量 `39~43`
+- 发射球 `24~26`
+- 收集目标 `11~16`
+- 开始引入：
+  - `stone`
+  - `rainbow`
+  - `blast`
+
+### 8.4 高段复合挑战
+
+- `16~24` 关
+- 难度分 `90~99`
+- 球量 `44~52`
+- 发射球 `27~34`
+- 收集目标 `17~26`
+- 开始引入：
+  - `ice`
+  - 技能球与障碍球混合布局
+
+### 8.5 终段满分关
+
+- `25~30` 关
+- 难度分 `100`
+- 球量 `54~58`
+- 发射球 `35~40`
+- 收集目标 `27~32`
+- 多系统复合设计
+
+## 9. 关卡设计准则
+
+当前版本建议保持以下原则：
+
+- 每关必须同时有“清屏压力”和“收集压力”
+- 难度提升不能只靠卡步数，也要靠结构和特殊实体
+- `layout` 的可读性要保留，不要因为堆密度变成纯噪音
+- 特殊实体要用于制造局面问题，而不是无意义堆数量
+
+具体建议：
+
+- `stone` 用于封路和结构阻挡
+- `ice` 用于增加“两步解题”
+- `rainbow` 用于修正颜色
+- `blast` 用于解结构和清障
+
+## 10. 配置校验建议
+
+建议加载关卡时至少检查：
+
+1. `levelId` 与文件名一致
+2. `difficultyScore` 在 `1~100`
+3. 总球数在 `30~60`
+4. `shotLimit` 为正整数
+5. `winConditions` 包含 `clear_all`
+6. `winConditions` 至少包含一个收集目标
+7. `specialEntities` 坐标不能越界
+8. `specialEntities` 不应和 `layout` 普通球重叠
+9. `ice` 类型必须带 `innerColor`
+
+## 11. 推荐编辑流程
+
+推荐顺序：
+
+1. 先确定该关的难度分和目标球量
+2. 再确定收集目标和发射球数量
+3. 再布置普通 `layout`
+4. 最后再放 `specialEntities`
+5. 修改后回查：
+   - 总球数
+   - 收集目标
+   - 发射球数量
+   - 特殊实体数量
+
+## 12. 一句话结论
+
+当前关卡配置的核心原则是：
+
+- 用 `difficultyScore` 量化难度
+- 用 `30~60` 的球量保证局面厚度
+- 用递增的收集目标和发射球数量形成统一曲线
+- 用 `specialEntities` 管理技能球与障碍球
+
+这样既能维持策划可控性，也能让程序读取结构保持清晰稳定。
