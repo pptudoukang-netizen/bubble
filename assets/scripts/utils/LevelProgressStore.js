@@ -120,6 +120,12 @@ LevelProgressStore.prototype.save = function (progress) {
   }
 };
 
+LevelProgressStore.prototype.reset = function () {
+  var defaults = createDefaultProgress();
+  this.save(defaults);
+  return clone(defaults);
+};
+
 LevelProgressStore.prototype.setSelectedLevel = function (progress, levelId) {
   var normalized = normalizeProgress(progress);
   var safeLevelId = toSafeLevelId(levelId, normalized.selectedLevelId);

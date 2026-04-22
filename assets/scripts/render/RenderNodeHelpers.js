@@ -1,8 +1,10 @@
 "use strict";
 
+var BundleLoader = require("../utils/BundleLoader");
+
 function loadSpriteFrame(path) {
   return new Promise(function (resolve, reject) {
-    cc.loader.loadRes(path, cc.SpriteFrame, function (error, asset) {
+    BundleLoader.loadRes(path, cc.SpriteFrame, function (error, asset) {
       if (error) {
         reject(new Error("Failed to load sprite frame `" + path + "`: " + error.message));
         return;

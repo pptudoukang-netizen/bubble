@@ -574,7 +574,6 @@ FallingMarbleSystem.prototype._processJarInteraction = function (drop) {
     }
 
     if (
-      drop.jarCooldown <= 0 &&
       drop.velocity.y < -45 &&
       bottomPoint.y <= zone.mouthY + zone.contactBand &&
       bottomPoint.y >= zone.mouthY - zone.edgeThickness * 1.4 &&

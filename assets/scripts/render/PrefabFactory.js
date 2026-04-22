@@ -1,10 +1,11 @@
 ﻿"use strict";
 
 var Logger = require("../utils/Logger");
+var BundleLoader = require("../utils/BundleLoader");
 
 function loadPrefab(path) {
   return new Promise(function (resolve) {
-    cc.loader.loadRes(path, cc.Prefab, function (error, prefab) {
+    BundleLoader.loadRes(path, cc.Prefab, function (error, prefab) {
       if (error) {
         resolve(null);
         return;

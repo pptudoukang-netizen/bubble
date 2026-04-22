@@ -351,8 +351,6 @@ function createGameManagerShotResolutionMethods(deps) {
 
     _resolveBlastShot: function (projectile, targetCell) {
       var resolution = createEmptyResolution();
-      resolution.scoreDelta = this._getScoreRule("blastBase");
-      this.score += this._getScoreRule("blastBase");
 
       var grid = this.systems.bubbleGrid;
       var centerCoordinate = null;
@@ -417,15 +415,11 @@ function createGameManagerShotResolutionMethods(deps) {
       this.systems.fallingMarbleSystem.registerDrops(fallingCandidates, grid);
       this.systems.jarCollectorSystem.collect([]);
 
-      var blastScore = removedBlastCells.length * this._getScoreRule("blastDrop") +
-        removedFloating.length * this._getScoreRule("floatingDrop");
-      this.score += blastScore;
 
       resolution.matched = removedBlastCells;
       resolution.floating = removedFloating;
       resolution.collected = removedAll;
       resolution.impact = this._createImpactEventFromCell(centerCoordinate);
-      resolution.scoreDelta += blastScore;
       resolution.boardCleared = grid.getCells().length === 0;
 
       Logger.info("Blast resolution", {
@@ -524,8 +518,6 @@ function createGameManagerShotResolutionMethods(deps) {
       var resolution = createEmptyResolution();
       resolution.attachedCell = attachedBubble;
       resolution.impact = this._createImpactEventFromCell(attachedBubble);
-      resolution.scoreDelta = this._getScoreRule("attachBase");
-      this.score += this._getScoreRule("attachBase");
 
       var grid = this.systems.bubbleGrid;
       var matchedCells = this.systems.matchSystem.findMatchGroup(grid, attachedBubble);
@@ -547,19 +539,15 @@ function createGameManagerShotResolutionMethods(deps) {
       var floatingCells = this.systems.supportSystem.findFloatingCells(grid);
       var removedFloating = grid.removeCells(floatingCells);
       var collectedCells = removedMatches.concat(removedFloating);
-      var comboScore = removedMatches.length * this._getScoreRule("matchedDrop") +
-        removedFloating.length * this._getScoreRule("floatingDrop");
 
       // 玩法调整：普通三消命中的珠子与断层珠统一按掉落结算。
       var fallingCandidates = collectedCells;
       this.systems.fallingMarbleSystem.registerDrops(fallingCandidates, grid);
       this.systems.jarCollectorSystem.collect([]);
 
-      this.score += comboScore;
       resolution.matched = removedMatches;
       resolution.floating = removedFloating;
       resolution.collected = collectedCells;
-      resolution.scoreDelta += comboScore;
       resolution.boardCleared = grid.getCells().length === 0;
 
       Logger.info("Resolution", {

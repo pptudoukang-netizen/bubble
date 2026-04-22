@@ -2,6 +2,7 @@
 
 var DebugFlags = require("../utils/DebugFlags");
 var Logger = require("../utils/Logger");
+var BundleLoader = require("../utils/BundleLoader");
 var PoolManager = require("../utils/PoolManager");
 var LevelProgressStore = require("../utils/LevelProgressStore");
 var PlayerResourceStore = require("../utils/PlayerResourceStore");
@@ -73,6 +74,10 @@ cc.Class({
     levelSelectMaxLevelId: {
       default: 21,
       tooltip: "关卡选择界面的快速首屏数量（用于避免首次扫描资源目录阻塞展示）。"
+    },
+    resetLevelProgressOnStart: {
+      default: false,
+      tooltip: "是否在启动时重置通关进度（最高解锁/已通关/星级）。"
     },
     inspectorStaminaValue: {
       default: 10,
@@ -165,6 +170,10 @@ cc.Class({
     jarBounceSfxResources: {
       default: "sound/ding0,sound/ding1,sound/ding2,sound/ding3,sound/ding4,sound/ding5",
       tooltip: "掉落玻璃球与缸碰撞时随机播放的音效资源列表，使用英文逗号分隔。"
+    },
+    jarCollectBottomSfxResource: {
+      default: "sound/ding0",
+      tooltip: "球落入缸底被收集时播放的音效资源路径。"
     }
   },
 
@@ -202,7 +211,9 @@ cc.Class({
     this._pendingRouteEditorAutoEnable = false;
     this._levelConfigPreloadPromise = null;
     this.levelProgressStore = new LevelProgressStore();
-    this.levelProgress = this.levelProgressStore.load();
+    this.levelProgress = this.resetLevelProgressOnStart
+      ? this.levelProgressStore.reset()
+      : this.levelProgressStore.load();
     var inspectorStamina = Math.max(0, Math.floor(Number(this.inspectorStaminaValue) || 0));
     this.playerResourceStore = new PlayerResourceStore({
       dailyStamina: 10
@@ -510,6 +521,14 @@ cc.Class({
   _runWeightedStartupTasks: function () {
     var tasks = [
       {
+        id: "resources_bundle",
+        stage: "准备资源分包...",
+        weight: 0.12,
+        run: function () {
+          return BundleLoader.ensureResourcesBundleLoaded();
+        }
+      },
+      {
         id: "warmup_prefabs",
         stage: "加载基础界面...",
         weight: 0.4,
@@ -614,7 +633,8 @@ cc.Class({
         shot: this.shotSfxResource,
         win: this.winSfxResource,
         lose: this.loseSfxResource,
-        jarBounce: this._parseAudioResourceList(this.jarBounceSfxResources)
+        jarBounce: this._parseAudioResourceList(this.jarBounceSfxResources),
+        jarCollectBottom: this.jarCollectBottomSfxResource
       }
     };
   },
@@ -750,6 +770,11 @@ cc.Class({
 
       if (event.type === "jar_rim_bounce") {
         this._playSfx("jarBounce");
+        return;
+      }
+
+      if (event.type === "jar_collect_bottom") {
+        this._playSfx("jarCollectBottom");
         return;
       }
 

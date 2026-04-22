@@ -1555,6 +1555,8 @@
     "enableLevelEditor": false,
     "routePointMinDistance": 18,
     "levelSelectMaxLevelId": 10,
+    "resetLevelProgressOnStart": false,
+    "inspectorStaminaValue": 10,
     "enableStartupLoadingView": true,
     "loadingViewMinVisibleMs": 900,
     "startupPreloadLevelCount": 5,
@@ -1576,7 +1578,8 @@
     "shotSfxResource": "sound/btn2",
     "loseSfxResource": "sound/lose",
     "winSfxResource": "sound/win1",
-    "jarBounceSfxResources": "sound/ding0,sound/ding1,sound/ding2,sound/ding3",
+    "jarBounceSfxResources": "sound/ding6,sound/ding6,sound/ding6,sound/ding6",
+    "jarCollectBottomSfxResource": "sound/ding0",
     "_id": "2fFnZYNdNLd7kBHbGKi/oB"
   }
 ]

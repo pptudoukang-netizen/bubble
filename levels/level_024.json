@@ -1,0 +1,138 @@
+{
+    "schemaVersion":  1,
+    "gameMode":  "glass_marble_bubble",
+    "coordinateSystem":  "odd-r-hex",
+    "layoutNotes":  {
+                        "description":  "Top-to-bottom rows. Each character represents one grid cell.",
+                        "legend":  {
+                                       ".":  "empty",
+                                       "R":  "red",
+                                       "G":  "green",
+                                       "B":  "blue",
+                                       "Y":  "yellow"
+                                   }
+                    },
+    "sharedDefaults":  {
+                           "collectMode":  "any_with_same_color_bonus",
+                           "loseConditions":  [
+                                                  {
+                                                      "type":  "reach_danger_line",
+                                                      "value":  1
+                                                  },
+                                                  {
+                                                      "type":  "run_out_of_shots",
+                                                      "value":  1
+                                                  }
+                                              ],
+                           "fallingRules":  {
+                                                "maxDynamicMarbles":  10,
+                                                "maxBounces":  2,
+                                                "enableMarbleMarbleCollision":  true
+                                            }
+                       },
+    "level":  {
+                  "levelId":  24,
+                  "code":  "L024_ENDGAME_EXPANSION",
+                  "difficulty":  "expert",
+                  "teaches":  [
+                                  "yellow_line_planning",
+                                  "double_stone_pressure"
+                              ],
+                  "colorCount":  4,
+                  "colors":  [
+                                 "R",
+                                 "G",
+                                 "B",
+                                 "Y"
+                             ],
+                  "shotLimit":  34,
+                  "dropInterval":  3,
+                  "jarCount":  4,
+                  "jarColors":  [
+                                    "R",
+                                    "G",
+                                    "B",
+                                    "Y"
+                                ],
+                  "spawnWeights":  {
+                                       "G":  1,
+                                       "R":  1,
+                                       "Y":  1.12,
+                                       "B":  1
+                                   },
+                  "jarRules":  {
+                                   "sameColorBonus":  1.87,
+                                   "rimBounce":  0.81,
+                                   "collectZoneScale":  0.89
+                               },
+                  "winConditions":  [
+                                        {
+                                            "type":  "clear_all",
+                                            "value":  1
+                                        },
+                                        {
+                                            "type":  "collect_color",
+                                            "color":  "Y",
+                                            "value":  26
+                                        }
+                                    ],
+                  "bonusObjectives":  [
+                                          {
+                                              "type":  "collect_same_color_bonus_hits",
+                                              "value":  6
+                                          }
+                                      ],
+                  "layout":  [
+                                 "RRGGYYBB",
+                                 "R.GYYYBB",
+                                 "RGG.RYBG",
+                                 "BBRYGG.Y",
+                                 "RBBG.GB.",
+                                 "YRGBYR..",
+                                 "RGBY.G..",
+                                 "........"
+                             ],
+                  "designNotes":  "Yellow collection is now tied to a two-step frozen lane and late stones guarding the lower route.",
+                  "difficultyScore":  99,
+                  "specialEntities":  [
+                                          {
+                                              "id":  "skill_rainbow_01",
+                                              "entityCategory":  "skill_ball",
+                                              "entityType":  "rainbow",
+                                              "row":  1,
+                                              "col":  1
+                                          },
+                                          {
+                                              "id":  "skill_blast_01",
+                                              "entityCategory":  "skill_ball",
+                                              "entityType":  "blast",
+                                              "row":  2,
+                                              "col":  3
+                                          },
+                                          {
+                                              "id":  "stone_01",
+                                              "entityCategory":  "obstacle_ball",
+                                              "entityType":  "stone",
+                                              "row":  3,
+                                              "col":  6
+                                          },
+                                          {
+                                              "id":  "ice_01",
+                                              "entityCategory":  "obstacle_ball",
+                                              "entityType":  "ice",
+                                              "row":  4,
+                                              "col":  4,
+                                              "innerColor":  "Y"
+                                          },
+                                          {
+                                              "id":  "stone_02",
+                                              "entityCategory":  "obstacle_ball",
+                                              "entityType":  "stone",
+                                              "row":  6,
+                                              "col":  4
+                                          }
+                                      ]
+              },
+    "difficultyScaleMax":  100
+}
+

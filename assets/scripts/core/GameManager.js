@@ -717,7 +717,6 @@ GameManager.prototype.fireShot = function () {
   this.remainingShots -= 1;
   this.shotsFired += 1;
   this.lastFiredColor = queueResult.firedColor;
-  this.score += this._getScoreRule("shotBase");
   this.lastResolution = createEmptyResolution();
   this.activeProjectile = buildActiveProjectile(queueResult.firedBall, shotPlan);
   this.pendingProjectileFinalize = false;
@@ -850,6 +849,9 @@ GameManager.prototype.update = function (dt) {
   runtimeEvents = runtimeEvents.concat(this._drainRuntimeEvents());
 
   if (collectedDrops.length) {
+    this._pushRuntimeEvent("jar_collect_bottom", {
+      count: collectedDrops.length
+    });
     this._injectCollectedSkillBalls(collectedDrops);
     this.systems.jarCollectorSystem.collect(collectedDrops);
     this._applyJarCollectionScore(collectedDrops);
@@ -872,6 +874,7 @@ GameManager.prototype.update = function (dt) {
       }));
     }
   }
+  runtimeEvents = runtimeEvents.concat(this._drainRuntimeEvents());
 
   var boardAdvancedThisFrame = this._updatePendingBoardAdvance(dt);
   var hasProjectile = !!this.activeProjectile;

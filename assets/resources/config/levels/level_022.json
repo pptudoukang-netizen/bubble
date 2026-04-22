@@ -1,0 +1,131 @@
+{
+    "schemaVersion":  1,
+    "gameMode":  "glass_marble_bubble",
+    "coordinateSystem":  "odd-r-hex",
+    "layoutNotes":  {
+                        "description":  "Top-to-bottom rows. Each character represents one grid cell.",
+                        "legend":  {
+                                       ".":  "empty",
+                                       "R":  "red",
+                                       "G":  "green",
+                                       "B":  "blue",
+                                       "Y":  "yellow"
+                                   }
+                    },
+    "sharedDefaults":  {
+                           "collectMode":  "any_with_same_color_bonus",
+                           "loseConditions":  [
+                                                  {
+                                                      "type":  "reach_danger_line",
+                                                      "value":  1
+                                                  },
+                                                  {
+                                                      "type":  "run_out_of_shots",
+                                                      "value":  1
+                                                  }
+                                              ],
+                           "fallingRules":  {
+                                                "maxDynamicMarbles":  10,
+                                                "maxBounces":  2,
+                                                "enableMarbleMarbleCollision":  true
+                                            }
+                       },
+    "level":  {
+                  "levelId":  22,
+                  "code":  "L022_ENDGAME_EXPANSION",
+                  "difficulty":  "expert",
+                  "teaches":  [
+                                  "blue_focus_under_mix",
+                                  "stone_gate_routing"
+                              ],
+                  "colorCount":  4,
+                  "colors":  [
+                                 "R",
+                                 "G",
+                                 "B",
+                                 "Y"
+                             ],
+                  "shotLimit":  32,
+                  "dropInterval":  3,
+                  "jarCount":  4,
+                  "jarColors":  [
+                                    "R",
+                                    "G",
+                                    "B",
+                                    "Y"
+                                ],
+                  "spawnWeights":  {
+                                       "G":  1,
+                                       "R":  1,
+                                       "Y":  1,
+                                       "B":  1.1
+                                   },
+                  "jarRules":  {
+                                   "sameColorBonus":  1.85,
+                                   "rimBounce":  0.8,
+                                   "collectZoneScale":  0.9
+                               },
+                  "winConditions":  [
+                                        {
+                                            "type":  "clear_all",
+                                            "value":  1
+                                        },
+                                        {
+                                            "type":  "collect_color",
+                                            "color":  "B",
+                                            "value":  24
+                                        }
+                                    ],
+                  "bonusObjectives":  [
+                                          {
+                                              "type":  "clear_with_shots_remaining",
+                                              "value":  3
+                                          }
+                                      ],
+                  "layout":  [
+                                 "RRGGYYBB",
+                                 "RRG.YYBB",
+                                 ".GG.YYBB",
+                                 "BBR.GGYB",
+                                 ".BB..GY.",
+                                 "YRGBYRG.",
+                                 "RGBY.GB.",
+                                 "........"
+                             ],
+                  "designNotes":  "Blue collection stage with a narrow blast entry and a frozen blue payoff.",
+                  "difficultyScore":  99,
+                  "specialEntities":  [
+                                          {
+                                              "id":  "stone_01",
+                                              "entityCategory":  "obstacle_ball",
+                                              "entityType":  "stone",
+                                              "row":  1,
+                                              "col":  3
+                                          },
+                                          {
+                                              "id":  "skill_blast_01",
+                                              "entityCategory":  "skill_ball",
+                                              "entityType":  "blast",
+                                              "row":  2,
+                                              "col":  0
+                                          },
+                                          {
+                                              "id":  "ice_01",
+                                              "entityCategory":  "obstacle_ball",
+                                              "entityType":  "ice",
+                                              "row":  4,
+                                              "col":  4,
+                                              "innerColor":  "B"
+                                          },
+                                          {
+                                              "id":  "skill_rainbow_01",
+                                              "entityCategory":  "skill_ball",
+                                              "entityType":  "rainbow",
+                                              "row":  6,
+                                              "col":  4
+                                          }
+                                      ]
+              },
+    "difficultyScaleMax":  100
+}
+

@@ -1,6 +1,7 @@
 "use strict";
 
 var Logger = require("../utils/Logger");
+var BundleLoader = require("../utils/BundleLoader");
 var AimTuningProfiles = require("./AimTuningProfiles");
 var BoardLayout = require("./BoardLayout");
 
@@ -211,7 +212,7 @@ LevelConfigLoader.prototype.loadLevelByKey = function (levelKey) {
   var resourcePath = this.resourceRoot + "/" + levelKey;
 
   return new Promise(function (resolve, reject) {
-    cc.loader.loadRes(resourcePath, cc.JsonAsset, function (error, asset) {
+    BundleLoader.loadRes(resourcePath, cc.JsonAsset, function (error, asset) {
       if (error) {
         reject(new Error("Failed to load level config `" + resourcePath + "`: " + error.message));
         return;

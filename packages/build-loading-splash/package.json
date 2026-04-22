@@ -1,0 +1,6 @@
+{
+  "name": "build-loading-splash",
+  "version": "1.0.0",
+  "description": "Customize web build splash background and hide progress bar.",
+  "main": "main.js"
+}

@@ -1,7 +1,9 @@
 "use strict";
 
+var BundleLoader = require("../utils/BundleLoader");
+
 function ResourceGateway(loader) {
-  this.loader = loader || (cc && cc.loader ? cc.loader : null);
+  this.loader = loader || BundleLoader;
 }
 
 ResourceGateway.prototype.loadPrefab = function (path) {

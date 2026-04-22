@@ -1465,6 +1465,1071 @@
                                                    "innerColor":  "Y"
                                                }
                                            ]
+                   },
+                   {
+                       "levelId":  21,
+                       "code":  "L021_ENDGAME_EXPANSION",
+                       "difficulty":  "expert",
+                       "teaches":  [
+                                       "late_dense_lane",
+                                       "blast_rainbow_combo",
+                                       "stone_ice_mix"
+                                   ],
+                       "colorCount":  4,
+                       "colors":  [
+                                      "R",
+                                      "G",
+                                      "B",
+                                      "Y"
+                                  ],
+                       "shotLimit":  31,
+                       "dropInterval":  3,
+                       "jarCount":  4,
+                       "jarColors":  [
+                                         "R",
+                                         "G",
+                                         "B",
+                                         "Y"
+                                     ],
+                       "spawnWeights":  {
+                                            "G":  1,
+                                            "R":  1,
+                                            "Y":  1,
+                                            "B":  1
+                                        },
+                       "jarRules":  {
+                                        "sameColorBonus":  1.85,
+                                        "rimBounce":  0.8,
+                                        "collectZoneScale":  0.91
+                                    },
+                       "winConditions":  [
+                                             {
+                                                 "type":  "clear_all",
+                                                 "value":  1
+                                             },
+                                             {
+                                                 "type":  "collect_any",
+                                                 "value":  23
+                                             }
+                                         ],
+                       "bonusObjectives":  [
+                                               {
+                                                   "type":  "collect_color",
+                                                   "color":  "Y",
+                                                   "value":  8
+                                               }
+                                           ],
+                       "layout":  [
+                                      "RRGGYYBB",
+                                      "R.GGYYBB",
+                                      ".GGBYYBB",
+                                      "BBR.GGY.",
+                                      ".BB.RGY.",
+                                      "YRGBYRG.",
+                                      "RGBY.GB.",
+                                      "........"
+                                  ],
+                       "designNotes":  "First post-MVP level. Dense board with all core late-game pieces but still readable routing.",
+                       "difficultyScore":  99,
+                       "specialEntities":  [
+                                               {
+                                                   "id":  "skill_blast_01",
+                                                   "entityCategory":  "skill_ball",
+                                                   "entityType":  "blast",
+                                                   "row":  1,
+                                                   "col":  1
+                                               },
+                                               {
+                                                   "id":  "skill_rainbow_01",
+                                                   "entityCategory":  "skill_ball",
+                                                   "entityType":  "rainbow",
+                                                   "row":  2,
+                                                   "col":  0
+                                               },
+                                               {
+                                                   "id":  "stone_01",
+                                                   "entityCategory":  "obstacle_ball",
+                                                   "entityType":  "stone",
+                                                   "row":  3,
+                                                   "col":  3
+                                               },
+                                               {
+                                                   "id":  "ice_01",
+                                                   "entityCategory":  "obstacle_ball",
+                                                   "entityType":  "ice",
+                                                   "row":  4,
+                                                   "col":  4,
+                                                   "innerColor":  "Y"
+                                               }
+                                           ]
+                   },
+                   {
+                       "levelId":  22,
+                       "code":  "L022_ENDGAME_EXPANSION",
+                       "difficulty":  "expert",
+                       "teaches":  [
+                                       "blue_focus_under_mix",
+                                       "stone_gate_routing"
+                                   ],
+                       "colorCount":  4,
+                       "colors":  [
+                                      "R",
+                                      "G",
+                                      "B",
+                                      "Y"
+                                  ],
+                       "shotLimit":  32,
+                       "dropInterval":  3,
+                       "jarCount":  4,
+                       "jarColors":  [
+                                         "R",
+                                         "G",
+                                         "B",
+                                         "Y"
+                                     ],
+                       "spawnWeights":  {
+                                            "G":  1,
+                                            "R":  1,
+                                            "Y":  1,
+                                            "B":  1.1
+                                        },
+                       "jarRules":  {
+                                        "sameColorBonus":  1.85,
+                                        "rimBounce":  0.8,
+                                        "collectZoneScale":  0.9
+                                    },
+                       "winConditions":  [
+                                             {
+                                                 "type":  "clear_all",
+                                                 "value":  1
+                                             },
+                                             {
+                                                 "type":  "collect_color",
+                                                 "color":  "B",
+                                                 "value":  24
+                                             }
+                                         ],
+                       "bonusObjectives":  [
+                                               {
+                                                   "type":  "clear_with_shots_remaining",
+                                                   "value":  3
+                                               }
+                                           ],
+                       "layout":  [
+                                      "RRGGYYBB",
+                                      "RRG.YYBB",
+                                      ".GG.YYBB",
+                                      "BBR.GGYB",
+                                      ".BB.RGY.",
+                                      "YRGBYRG.",
+                                      "RGBY.GB.",
+                                      "........"
+                                  ],
+                       "designNotes":  "Blue collection stage with a narrow blast entry and a frozen blue payoff.",
+                       "difficultyScore":  99,
+                       "specialEntities":  [
+                                               {
+                                                   "id":  "stone_01",
+                                                   "entityCategory":  "obstacle_ball",
+                                                   "entityType":  "stone",
+                                                   "row":  1,
+                                                   "col":  3
+                                               },
+                                               {
+                                                   "id":  "skill_blast_01",
+                                                   "entityCategory":  "skill_ball",
+                                                   "entityType":  "blast",
+                                                   "row":  2,
+                                                   "col":  0
+                                               },
+                                               {
+                                                   "id":  "ice_01",
+                                                   "entityCategory":  "obstacle_ball",
+                                                   "entityType":  "ice",
+                                                   "row":  4,
+                                                   "col":  4,
+                                                   "innerColor":  "B"
+                                               },
+                                               {
+                                                   "id":  "skill_rainbow_01",
+                                                   "entityCategory":  "skill_ball",
+                                                   "entityType":  "rainbow",
+                                                   "row":  6,
+                                                   "col":  4
+                                               }
+                                           ]
+                   },
+                   {
+                       "levelId":  23,
+                       "code":  "L023_ENDGAME_EXPANSION",
+                       "difficulty":  "expert",
+                       "teaches":  [
+                                       "multi_pickup_chain",
+                                       "blast_then_drop"
+                                   ],
+                       "colorCount":  4,
+                       "colors":  [
+                                      "R",
+                                      "G",
+                                      "B",
+                                      "Y"
+                                  ],
+                       "shotLimit":  33,
+                       "dropInterval":  3,
+                       "jarCount":  4,
+                       "jarColors":  [
+                                         "R",
+                                         "G",
+                                         "B",
+                                         "Y"
+                                     ],
+                       "spawnWeights":  {
+                                            "G":  1,
+                                            "R":  1,
+                                            "Y":  1,
+                                            "B":  1
+                                        },
+                       "jarRules":  {
+                                        "sameColorBonus":  1.86,
+                                        "rimBounce":  0.81,
+                                        "collectZoneScale":  0.9
+                                    },
+                       "winConditions":  [
+                                             {
+                                                 "type":  "clear_all",
+                                                 "value":  1
+                                             },
+                                             {
+                                                 "type":  "collect_any",
+                                                 "value":  25
+                                             }
+                                         ],
+                       "bonusObjectives":  [
+                                               {
+                                                   "type":  "single_turn_drop_count",
+                                                   "value":  8
+                                               }
+                                           ],
+                       "layout":  [
+                                      "RRGGYYBB",
+                                      "R.GGYYBB",
+                                      "YGG.YYBB",
+                                      "BBR.GGYB",
+                                      "YBBRRGG.",
+                                      "YRGBYR..",
+                                      "RGBY.G..",
+                                      "........"
+                                  ],
+                       "designNotes":  "This board pushes players to chain a pickup into a structural drop instead of spending it immediately.",
+                       "difficultyScore":  99,
+                       "specialEntities":  [
+                                               {
+                                                   "id":  "skill_blast_01",
+                                                   "entityCategory":  "skill_ball",
+                                                   "entityType":  "blast",
+                                                   "row":  1,
+                                                   "col":  1
+                                               },
+                                               {
+                                                   "id":  "skill_rainbow_01",
+                                                   "entityCategory":  "skill_ball",
+                                                   "entityType":  "rainbow",
+                                                   "row":  2,
+                                                   "col":  3
+                                               },
+                                               {
+                                                   "id":  "stone_01",
+                                                   "entityCategory":  "obstacle_ball",
+                                                   "entityType":  "stone",
+                                                   "row":  3,
+                                                   "col":  3
+                                               },
+                                               {
+                                                   "id":  "ice_01",
+                                                   "entityCategory":  "obstacle_ball",
+                                                   "entityType":  "ice",
+                                                   "row":  4,
+                                                   "col":  4,
+                                                   "innerColor":  "Y"
+                                               },
+                                               {
+                                                   "id":  "stone_02",
+                                                   "entityCategory":  "obstacle_ball",
+                                                   "entityType":  "stone",
+                                                   "row":  5,
+                                                   "col":  6
+                                               }
+                                           ]
+                   },
+                   {
+                       "levelId":  24,
+                       "code":  "L024_ENDGAME_EXPANSION",
+                       "difficulty":  "expert",
+                       "teaches":  [
+                                       "yellow_line_planning",
+                                       "double_stone_pressure"
+                                   ],
+                       "colorCount":  4,
+                       "colors":  [
+                                      "R",
+                                      "G",
+                                      "B",
+                                      "Y"
+                                  ],
+                       "shotLimit":  34,
+                       "dropInterval":  3,
+                       "jarCount":  4,
+                       "jarColors":  [
+                                         "R",
+                                         "G",
+                                         "B",
+                                         "Y"
+                                     ],
+                       "spawnWeights":  {
+                                            "G":  1,
+                                            "R":  1,
+                                            "Y":  1.12,
+                                            "B":  1
+                                        },
+                       "jarRules":  {
+                                        "sameColorBonus":  1.87,
+                                        "rimBounce":  0.81,
+                                        "collectZoneScale":  0.89
+                                    },
+                       "winConditions":  [
+                                             {
+                                                 "type":  "clear_all",
+                                                 "value":  1
+                                             },
+                                             {
+                                                 "type":  "collect_color",
+                                                 "color":  "Y",
+                                                 "value":  26
+                                             }
+                                         ],
+                       "bonusObjectives":  [
+                                               {
+                                                   "type":  "collect_same_color_bonus_hits",
+                                                   "value":  6
+                                               }
+                                           ],
+                       "layout":  [
+                                      "RRGGYYBB",
+                                      "R.GYYYBB",
+                                      "RGG.RYBG",
+                                      "BBRYGG.Y",
+                                      "RBBGRGB.",
+                                      "YRGBYR..",
+                                      "RGBY.G..",
+                                      "........"
+                                  ],
+                       "designNotes":  "Yellow collection is now tied to a two-step frozen lane and late stones guarding the lower route.",
+                       "difficultyScore":  99,
+                       "specialEntities":  [
+                                               {
+                                                   "id":  "skill_rainbow_01",
+                                                   "entityCategory":  "skill_ball",
+                                                   "entityType":  "rainbow",
+                                                   "row":  1,
+                                                   "col":  1
+                                               },
+                                               {
+                                                   "id":  "skill_blast_01",
+                                                   "entityCategory":  "skill_ball",
+                                                   "entityType":  "blast",
+                                                   "row":  2,
+                                                   "col":  3
+                                               },
+                                               {
+                                                   "id":  "stone_01",
+                                                   "entityCategory":  "obstacle_ball",
+                                                   "entityType":  "stone",
+                                                   "row":  3,
+                                                   "col":  6
+                                               },
+                                               {
+                                                   "id":  "ice_01",
+                                                   "entityCategory":  "obstacle_ball",
+                                                   "entityType":  "ice",
+                                                   "row":  4,
+                                                   "col":  4,
+                                                   "innerColor":  "Y"
+                                               },
+                                               {
+                                                   "id":  "stone_02",
+                                                   "entityCategory":  "obstacle_ball",
+                                                   "entityType":  "stone",
+                                                   "row":  6,
+                                                   "col":  4
+                                               }
+                                           ]
+                   },
+                   {
+                       "levelId":  25,
+                       "code":  "L025_ENDGAME_EXPANSION",
+                       "difficulty":  "expert",
+                       "teaches":  [
+                                       "high_density_with_skills",
+                                       "midfield_compression"
+                                   ],
+                       "colorCount":  4,
+                       "colors":  [
+                                      "R",
+                                      "G",
+                                      "B",
+                                      "Y"
+                                  ],
+                       "shotLimit":  35,
+                       "dropInterval":  3,
+                       "jarCount":  4,
+                       "jarColors":  [
+                                         "R",
+                                         "G",
+                                         "B",
+                                         "Y"
+                                     ],
+                       "spawnWeights":  {
+                                            "G":  1,
+                                            "R":  1,
+                                            "Y":  1,
+                                            "B":  1
+                                        },
+                       "jarRules":  {
+                                        "sameColorBonus":  1.88,
+                                        "rimBounce":  0.82,
+                                        "collectZoneScale":  0.89
+                                    },
+                       "winConditions":  [
+                                             {
+                                                 "type":  "clear_all",
+                                                 "value":  1
+                                             },
+                                             {
+                                                 "type":  "collect_any",
+                                                 "value":  27
+                                             }
+                                         ],
+                       "bonusObjectives":  [
+                                               {
+                                                   "type":  "clear_with_shots_remaining",
+                                                   "value":  4
+                                               }
+                                           ],
+                       "layout":  [
+                                      "RRGGYYBB",
+                                      "R.GGYYBB",
+                                      "GGG.GYBB",
+                                      "BBRRGG.R",
+                                      "GBB.RG..",
+                                      "YRGBYR..",
+                                      "RGBY.G..",
+                                      "YRGB...."
+                                  ],
+                       "designNotes":  "A denser expert board where preserving skill value matters more than simply reaching any match.",
+                       "difficultyScore":  100,
+                       "specialEntities":  [
+                                               {
+                                                   "id":  "skill_rainbow_01",
+                                                   "entityCategory":  "skill_ball",
+                                                   "entityType":  "rainbow",
+                                                   "row":  1,
+                                                   "col":  1
+                                               },
+                                               {
+                                                   "id":  "skill_blast_01",
+                                                   "entityCategory":  "skill_ball",
+                                                   "entityType":  "blast",
+                                                   "row":  2,
+                                                   "col":  3
+                                               },
+                                               {
+                                                   "id":  "stone_01",
+                                                   "entityCategory":  "obstacle_ball",
+                                                   "entityType":  "stone",
+                                                   "row":  3,
+                                                   "col":  6
+                                               },
+                                               {
+                                                   "id":  "ice_01",
+                                                   "entityCategory":  "obstacle_ball",
+                                                   "entityType":  "ice",
+                                                   "row":  4,
+                                                   "col":  4,
+                                                   "innerColor":  "B"
+                                               },
+                                               {
+                                                   "id":  "stone_02",
+                                                   "entityCategory":  "obstacle_ball",
+                                                   "entityType":  "stone",
+                                                   "row":  6,
+                                                   "col":  4
+                                               }
+                                           ]
+                   },
+                   {
+                       "levelId":  26,
+                       "code":  "L026_ENDGAME_EXPANSION",
+                       "difficulty":  "expert",
+                       "teaches":  [
+                                       "red_focus_under_frozen_gate",
+                                       "blast_rainbow_choice"
+                                   ],
+                       "colorCount":  4,
+                       "colors":  [
+                                      "R",
+                                      "G",
+                                      "B",
+                                      "Y"
+                                  ],
+                       "shotLimit":  36,
+                       "dropInterval":  2,
+                       "jarCount":  4,
+                       "jarColors":  [
+                                         "R",
+                                         "G",
+                                         "B",
+                                         "Y"
+                                     ],
+                       "spawnWeights":  {
+                                            "G":  1,
+                                            "R":  1.12,
+                                            "Y":  1,
+                                            "B":  1
+                                        },
+                       "jarRules":  {
+                                        "sameColorBonus":  1.89,
+                                        "rimBounce":  0.82,
+                                        "collectZoneScale":  0.88
+                                    },
+                       "winConditions":  [
+                                             {
+                                                 "type":  "clear_all",
+                                                 "value":  1
+                                             },
+                                             {
+                                                 "type":  "collect_color",
+                                                 "color":  "R",
+                                                 "value":  28
+                                             }
+                                         ],
+                       "bonusObjectives":  [
+                                               {
+                                                   "type":  "collect_same_color_bonus_hits",
+                                                   "value":  7
+                                               }
+                                           ],
+                       "layout":  [
+                                      "RRGGYYBB",
+                                      "RRG.YYBG",
+                                      ".GG.BYBY",
+                                      "BBRGGGBG",
+                                      "BBBYRG..",
+                                      "YRGB.R..",
+                                      "RGBY.G..",
+                                      "YRGB...."
+                                  ],
+                       "designNotes":  "Red collection is gated behind a frozen red core and forces a choice between early blast and late rainbow recovery.",
+                       "difficultyScore":  100,
+                       "specialEntities":  [
+                                               {
+                                                   "id":  "skill_blast_01",
+                                                   "entityCategory":  "skill_ball",
+                                                   "entityType":  "blast",
+                                                   "row":  1,
+                                                   "col":  3
+                                               },
+                                               {
+                                                   "id":  "stone_01",
+                                                   "entityCategory":  "obstacle_ball",
+                                                   "entityType":  "stone",
+                                                   "row":  2,
+                                                   "col":  0
+                                               },
+                                               {
+                                                   "id":  "skill_rainbow_01",
+                                                   "entityCategory":  "skill_ball",
+                                                   "entityType":  "rainbow",
+                                                   "row":  2,
+                                                   "col":  3
+                                               },
+                                               {
+                                                   "id":  "ice_01",
+                                                   "entityCategory":  "obstacle_ball",
+                                                   "entityType":  "ice",
+                                                   "row":  4,
+                                                   "col":  4,
+                                                   "innerColor":  "R"
+                                               },
+                                               {
+                                                   "id":  "stone_02",
+                                                   "entityCategory":  "obstacle_ball",
+                                                   "entityType":  "stone",
+                                                   "row":  5,
+                                                   "col":  4
+                                               }
+                                           ]
+                   },
+                   {
+                       "levelId":  27,
+                       "code":  "L027_ENDGAME_EXPANSION",
+                       "difficulty":  "expert",
+                       "teaches":  [
+                                       "multi_obstacle_stack",
+                                       "blast_priority_management"
+                                   ],
+                       "colorCount":  4,
+                       "colors":  [
+                                      "R",
+                                      "G",
+                                      "B",
+                                      "Y"
+                                  ],
+                       "shotLimit":  37,
+                       "dropInterval":  2,
+                       "jarCount":  4,
+                       "jarColors":  [
+                                         "R",
+                                         "G",
+                                         "B",
+                                         "Y"
+                                     ],
+                       "spawnWeights":  {
+                                            "G":  1,
+                                            "R":  1,
+                                            "Y":  1,
+                                            "B":  1
+                                        },
+                       "jarRules":  {
+                                        "sameColorBonus":  1.9,
+                                        "rimBounce":  0.83,
+                                        "collectZoneScale":  0.88
+                                    },
+                       "winConditions":  [
+                                             {
+                                                 "type":  "clear_all",
+                                                 "value":  1
+                                             },
+                                             {
+                                                 "type":  "collect_any",
+                                                 "value":  29
+                                             }
+                                         ],
+                       "bonusObjectives":  [
+                                               {
+                                                   "type":  "single_turn_drop_count",
+                                                   "value":  9
+                                               }
+                                           ],
+                       "layout":  [
+                                      "RRGGYYBB",
+                                      "R.GGYYBB",
+                                      "YGG.YYBR",
+                                      "BBRBGG.B",
+                                      "YBBRRG..",
+                                      "YRGB.R..",
+                                      "RGBY.G..",
+                                      "YRGBY..."
+                                  ],
+                       "designNotes":  "This level layers hard and soft blockers so that one good pickup no longer solves the whole board.",
+                       "difficultyScore":  100,
+                       "specialEntities":  [
+                                               {
+                                                   "id":  "skill_blast_01",
+                                                   "entityCategory":  "skill_ball",
+                                                   "entityType":  "blast",
+                                                   "row":  1,
+                                                   "col":  1
+                                               },
+                                               {
+                                                   "id":  "skill_rainbow_01",
+                                                   "entityCategory":  "skill_ball",
+                                                   "entityType":  "rainbow",
+                                                   "row":  2,
+                                                   "col":  3
+                                               },
+                                               {
+                                                   "id":  "stone_01",
+                                                   "entityCategory":  "obstacle_ball",
+                                                   "entityType":  "stone",
+                                                   "row":  3,
+                                                   "col":  6
+                                               },
+                                               {
+                                                   "id":  "ice_01",
+                                                   "entityCategory":  "obstacle_ball",
+                                                   "entityType":  "ice",
+                                                   "row":  4,
+                                                   "col":  4,
+                                                   "innerColor":  "G"
+                                               },
+                                               {
+                                                   "id":  "stone_02",
+                                                   "entityCategory":  "obstacle_ball",
+                                                   "entityType":  "stone",
+                                                   "row":  5,
+                                                   "col":  4
+                                               },
+                                               {
+                                                   "id":  "ice_02",
+                                                   "entityCategory":  "obstacle_ball",
+                                                   "entityType":  "ice",
+                                                   "row":  6,
+                                                   "col":  4,
+                                                   "innerColor":  "B"
+                                               }
+                                           ]
+                   },
+                   {
+                       "levelId":  28,
+                       "code":  "L028_ENDGAME_EXPANSION",
+                       "difficulty":  "expert",
+                       "teaches":  [
+                                       "green_frozen_core",
+                                       "late_double_skill_read"
+                                   ],
+                       "colorCount":  4,
+                       "colors":  [
+                                      "R",
+                                      "G",
+                                      "B",
+                                      "Y"
+                                  ],
+                       "shotLimit":  38,
+                       "dropInterval":  2,
+                       "jarCount":  4,
+                       "jarColors":  [
+                                         "R",
+                                         "G",
+                                         "B",
+                                         "Y"
+                                     ],
+                       "spawnWeights":  {
+                                            "G":  1.12,
+                                            "R":  1,
+                                            "Y":  1,
+                                            "B":  1
+                                        },
+                       "jarRules":  {
+                                        "sameColorBonus":  1.91,
+                                        "rimBounce":  0.83,
+                                        "collectZoneScale":  0.87
+                                    },
+                       "winConditions":  [
+                                             {
+                                                 "type":  "clear_all",
+                                                 "value":  1
+                                             },
+                                             {
+                                                 "type":  "collect_color",
+                                                 "color":  "G",
+                                                 "value":  30
+                                             }
+                                         ],
+                       "bonusObjectives":  [
+                                               {
+                                                   "type":  "collect_same_color_bonus_hits",
+                                                   "value":  8
+                                               }
+                                           ],
+                       "layout":  [
+                                      "RRGGYYBB",
+                                      "R.GYYYBY",
+                                      "RGG.RY.G",
+                                      "BBRYGGRY",
+                                      "RBBGRG..",
+                                      "YRGB.R..",
+                                      "RGBY.G..",
+                                      "YRGBY..."
+                                  ],
+                       "designNotes":  "Green collection becomes the main route, but frozen and stone blockers force precise sequencing.",
+                       "difficultyScore":  100,
+                       "specialEntities":  [
+                                               {
+                                                   "id":  "skill_rainbow_01",
+                                                   "entityCategory":  "skill_ball",
+                                                   "entityType":  "rainbow",
+                                                   "row":  1,
+                                                   "col":  1
+                                               },
+                                               {
+                                                   "id":  "skill_blast_01",
+                                                   "entityCategory":  "skill_ball",
+                                                   "entityType":  "blast",
+                                                   "row":  2,
+                                                   "col":  3
+                                               },
+                                               {
+                                                   "id":  "stone_01",
+                                                   "entityCategory":  "obstacle_ball",
+                                                   "entityType":  "stone",
+                                                   "row":  2,
+                                                   "col":  6
+                                               },
+                                               {
+                                                   "id":  "ice_01",
+                                                   "entityCategory":  "obstacle_ball",
+                                                   "entityType":  "ice",
+                                                   "row":  4,
+                                                   "col":  4,
+                                                   "innerColor":  "G"
+                                               },
+                                               {
+                                                   "id":  "stone_02",
+                                                   "entityCategory":  "obstacle_ball",
+                                                   "entityType":  "stone",
+                                                   "row":  5,
+                                                   "col":  4
+                                               },
+                                               {
+                                                   "id":  "ice_02",
+                                                   "entityCategory":  "obstacle_ball",
+                                                   "entityType":  "ice",
+                                                   "row":  6,
+                                                   "col":  4,
+                                                   "innerColor":  "Y"
+                                               }
+                                           ]
+                   },
+                   {
+                       "levelId":  29,
+                       "code":  "L029_ENDGAME_EXPANSION",
+                       "difficulty":  "expert",
+                       "teaches":  [
+                                       "max_density_transition",
+                                       "extended_endgame_flow"
+                                   ],
+                       "colorCount":  4,
+                       "colors":  [
+                                      "R",
+                                      "G",
+                                      "B",
+                                      "Y"
+                                  ],
+                       "shotLimit":  39,
+                       "dropInterval":  2,
+                       "jarCount":  4,
+                       "jarColors":  [
+                                         "R",
+                                         "G",
+                                         "B",
+                                         "Y"
+                                     ],
+                       "spawnWeights":  {
+                                            "G":  1,
+                                            "R":  1,
+                                            "Y":  1,
+                                            "B":  1
+                                        },
+                       "jarRules":  {
+                                        "sameColorBonus":  1.92,
+                                        "rimBounce":  0.84,
+                                        "collectZoneScale":  0.87
+                                    },
+                       "winConditions":  [
+                                             {
+                                                 "type":  "clear_all",
+                                                 "value":  1
+                                             },
+                                             {
+                                                 "type":  "collect_any",
+                                                 "value":  31
+                                             }
+                                         ],
+                       "bonusObjectives":  [
+                                               {
+                                                   "type":  "clear_with_shots_remaining",
+                                                   "value":  5
+                                               }
+                                           ],
+                       "layout":  [
+                                      "RRGGYYBB",
+                                      "R.GRYYBR",
+                                      "GGG.GY.B",
+                                      "BBRRGGGR",
+                                      "GBBBRGYB",
+                                      "YRGB.R..",
+                                      "RGBY.G..",
+                                      "YRGB...."
+                                  ],
+                       "designNotes":  "The map now behaves like a full endgame route puzzle, with little slack and many competing priorities.",
+                       "difficultyScore":  100,
+                       "specialEntities":  [
+                                               {
+                                                   "id":  "skill_blast_01",
+                                                   "entityCategory":  "skill_ball",
+                                                   "entityType":  "blast",
+                                                   "row":  1,
+                                                   "col":  1
+                                               },
+                                               {
+                                                   "id":  "skill_rainbow_01",
+                                                   "entityCategory":  "skill_ball",
+                                                   "entityType":  "rainbow",
+                                                   "row":  2,
+                                                   "col":  3
+                                               },
+                                               {
+                                                   "id":  "stone_01",
+                                                   "entityCategory":  "obstacle_ball",
+                                                   "entityType":  "stone",
+                                                   "row":  2,
+                                                   "col":  6
+                                               },
+                                               {
+                                                   "id":  "ice_01",
+                                                   "entityCategory":  "obstacle_ball",
+                                                   "entityType":  "ice",
+                                                   "row":  4,
+                                                   "col":  4,
+                                                   "innerColor":  "G"
+                                               },
+                                               {
+                                                   "id":  "stone_02",
+                                                   "entityCategory":  "obstacle_ball",
+                                                   "entityType":  "stone",
+                                                   "row":  5,
+                                                   "col":  4
+                                               },
+                                               {
+                                                   "id":  "ice_02",
+                                                   "entityCategory":  "obstacle_ball",
+                                                   "entityType":  "ice",
+                                                   "row":  6,
+                                                   "col":  4,
+                                                   "innerColor":  "B"
+                                               },
+                                               {
+                                                   "id":  "stone_03",
+                                                   "entityCategory":  "obstacle_ball",
+                                                   "entityType":  "stone",
+                                                   "row":  7,
+                                                   "col":  5
+                                               }
+                                           ]
+                   },
+                   {
+                       "levelId":  30,
+                       "code":  "L030_ENDGAME_EXPANSION",
+                       "difficulty":  "expert",
+                       "teaches":  [
+                                       "full_system_mastery",
+                                       "ultimate_combo_route"
+                                   ],
+                       "colorCount":  4,
+                       "colors":  [
+                                      "R",
+                                      "G",
+                                      "B",
+                                      "Y"
+                                  ],
+                       "shotLimit":  40,
+                       "dropInterval":  2,
+                       "jarCount":  4,
+                       "jarColors":  [
+                                         "R",
+                                         "G",
+                                         "B",
+                                         "Y"
+                                     ],
+                       "spawnWeights":  {
+                                            "G":  1,
+                                            "R":  1,
+                                            "Y":  1,
+                                            "B":  1
+                                        },
+                       "jarRules":  {
+                                        "sameColorBonus":  1.95,
+                                        "rimBounce":  0.84,
+                                        "collectZoneScale":  0.86
+                                    },
+                       "winConditions":  [
+                                             {
+                                                 "type":  "clear_all",
+                                                 "value":  1
+                                             },
+                                             {
+                                                 "type":  "collect_any",
+                                                 "value":  32
+                                             }
+                                         ],
+                       "bonusObjectives":  [
+                                               {
+                                                   "type":  "single_turn_drop_count",
+                                                   "value":  10
+                                               }
+                                           ],
+                       "layout":  [
+                                      "RRGGYYBB",
+                                      "R.GGYYBG",
+                                      "BGG.BY.Y",
+                                      "BBRGGGBG",
+                                      "BBBYRGRY",
+                                      "YRGB.R..",
+                                      "RGBY.G..",
+                                      "YRG....."
+                                  ],
+                       "designNotes":  "Final expansion level. All major systems appear together and the route should feel like a deliberate exam of the entire chapter.",
+                       "difficultyScore":  100,
+                       "specialEntities":  [
+                                               {
+                                                   "id":  "skill_blast_01",
+                                                   "entityCategory":  "skill_ball",
+                                                   "entityType":  "blast",
+                                                   "row":  1,
+                                                   "col":  1
+                                               },
+                                               {
+                                                   "id":  "skill_rainbow_01",
+                                                   "entityCategory":  "skill_ball",
+                                                   "entityType":  "rainbow",
+                                                   "row":  2,
+                                                   "col":  3
+                                               },
+                                               {
+                                                   "id":  "stone_01",
+                                                   "entityCategory":  "obstacle_ball",
+                                                   "entityType":  "stone",
+                                                   "row":  2,
+                                                   "col":  6
+                                               },
+                                               {
+                                                   "id":  "ice_01",
+                                                   "entityCategory":  "obstacle_ball",
+                                                   "entityType":  "ice",
+                                                   "row":  4,
+                                                   "col":  4,
+                                                   "innerColor":  "Y"
+                                               },
+                                               {
+                                                   "id":  "stone_02",
+                                                   "entityCategory":  "obstacle_ball",
+                                                   "entityType":  "stone",
+                                                   "row":  5,
+                                                   "col":  4
+                                               },
+                                               {
+                                                   "id":  "ice_02",
+                                                   "entityCategory":  "obstacle_ball",
+                                                   "entityType":  "ice",
+                                                   "row":  6,
+                                                   "col":  4,
+                                                   "innerColor":  "B"
+                                               },
+                                               {
+                                                   "id":  "stone_03",
+                                                   "entityCategory":  "obstacle_ball",
+                                                   "entityType":  "stone",
+                                                   "row":  7,
+                                                   "col":  3
+                                               },
+                                               {
+                                                   "id":  "skill_rainbow_02",
+                                                   "entityCategory":  "skill_ball",
+                                                   "entityType":  "rainbow",
+                                                   "row":  7,
+                                                   "col":  4
+                                               }
+                                           ]
                    }
                ],
     "difficultyScaleMax":  100

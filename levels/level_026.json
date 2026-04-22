@@ -1,0 +1,138 @@
+{
+    "schemaVersion":  1,
+    "gameMode":  "glass_marble_bubble",
+    "coordinateSystem":  "odd-r-hex",
+    "layoutNotes":  {
+                        "description":  "Top-to-bottom rows. Each character represents one grid cell.",
+                        "legend":  {
+                                       ".":  "empty",
+                                       "R":  "red",
+                                       "G":  "green",
+                                       "B":  "blue",
+                                       "Y":  "yellow"
+                                   }
+                    },
+    "sharedDefaults":  {
+                           "collectMode":  "any_with_same_color_bonus",
+                           "loseConditions":  [
+                                                  {
+                                                      "type":  "reach_danger_line",
+                                                      "value":  1
+                                                  },
+                                                  {
+                                                      "type":  "run_out_of_shots",
+                                                      "value":  1
+                                                  }
+                                              ],
+                           "fallingRules":  {
+                                                "maxDynamicMarbles":  10,
+                                                "maxBounces":  2,
+                                                "enableMarbleMarbleCollision":  true
+                                            }
+                       },
+    "level":  {
+                  "levelId":  26,
+                  "code":  "L026_ENDGAME_EXPANSION",
+                  "difficulty":  "expert",
+                  "teaches":  [
+                                  "red_focus_under_frozen_gate",
+                                  "blast_rainbow_choice"
+                              ],
+                  "colorCount":  4,
+                  "colors":  [
+                                 "R",
+                                 "G",
+                                 "B",
+                                 "Y"
+                             ],
+                  "shotLimit":  36,
+                  "dropInterval":  2,
+                  "jarCount":  4,
+                  "jarColors":  [
+                                    "R",
+                                    "G",
+                                    "B",
+                                    "Y"
+                                ],
+                  "spawnWeights":  {
+                                       "G":  1,
+                                       "R":  1.12,
+                                       "Y":  1,
+                                       "B":  1
+                                   },
+                  "jarRules":  {
+                                   "sameColorBonus":  1.89,
+                                   "rimBounce":  0.82,
+                                   "collectZoneScale":  0.88
+                               },
+                  "winConditions":  [
+                                        {
+                                            "type":  "clear_all",
+                                            "value":  1
+                                        },
+                                        {
+                                            "type":  "collect_color",
+                                            "color":  "R",
+                                            "value":  28
+                                        }
+                                    ],
+                  "bonusObjectives":  [
+                                          {
+                                              "type":  "collect_same_color_bonus_hits",
+                                              "value":  7
+                                          }
+                                      ],
+                  "layout":  [
+                                 "RRGGYYBB",
+                                 "RRG.YYBG",
+                                 ".GG.BYBY",
+                                 "BBRGGGBG",
+                                 "BBBY.G..",
+                                 "YRGB.R..",
+                                 "RGBY.G..",
+                                 "YRGB...."
+                             ],
+                  "designNotes":  "Red collection is gated behind a frozen red core and forces a choice between early blast and late rainbow recovery.",
+                  "difficultyScore":  100,
+                  "specialEntities":  [
+                                          {
+                                              "id":  "skill_blast_01",
+                                              "entityCategory":  "skill_ball",
+                                              "entityType":  "blast",
+                                              "row":  1,
+                                              "col":  3
+                                          },
+                                          {
+                                              "id":  "stone_01",
+                                              "entityCategory":  "obstacle_ball",
+                                              "entityType":  "stone",
+                                              "row":  2,
+                                              "col":  0
+                                          },
+                                          {
+                                              "id":  "skill_rainbow_01",
+                                              "entityCategory":  "skill_ball",
+                                              "entityType":  "rainbow",
+                                              "row":  2,
+                                              "col":  3
+                                          },
+                                          {
+                                              "id":  "ice_01",
+                                              "entityCategory":  "obstacle_ball",
+                                              "entityType":  "ice",
+                                              "row":  4,
+                                              "col":  4,
+                                              "innerColor":  "R"
+                                          },
+                                          {
+                                              "id":  "stone_02",
+                                              "entityCategory":  "obstacle_ball",
+                                              "entityType":  "stone",
+                                              "row":  5,
+                                              "col":  4
+                                          }
+                                      ]
+              },
+    "difficultyScaleMax":  100
+}
+

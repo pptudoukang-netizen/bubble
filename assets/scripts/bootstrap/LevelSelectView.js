@@ -1,5 +1,7 @@
 "use strict";
 
+var BundleLoader = require("../utils/BundleLoader");
+
 function createOrGetChild(parentNode, name) {
   if (!parentNode || !parentNode.isValid) {
     return null;
@@ -23,6 +25,105 @@ function logError(message, detail) {
   if (typeof console !== "undefined" && typeof console.error === "function") {
     console.error("[LevelSelectView] " + message, detail || "");
   }
+}
+
+var LEVEL_BUTTON_SKIN_PATHS = {
+  locked: "image/level_lock",
+  unlocked: "image/level_lock1"
+};
+var LEVEL_BUTTON_SIZE = cc.size(120, 120);
+
+var levelButtonSkinFrames = null;
+var levelButtonSkinLoadPromise = null;
+
+function loadSpriteFrame(path) {
+  return new Promise(function (resolve) {
+    BundleLoader.loadRes(path, cc.SpriteFrame, function (error, spriteFrame) {
+      if (error) {
+        logError("Load sprite frame failed: " + path, error && error.message ? error.message : error);
+        resolve(null);
+        return;
+      }
+
+      resolve(spriteFrame || null);
+    });
+  });
+}
+
+function ensureLevelButtonSkinFrames() {
+  if (
+    levelButtonSkinFrames &&
+    levelButtonSkinFrames.locked &&
+    levelButtonSkinFrames.unlocked
+  ) {
+    return Promise.resolve(levelButtonSkinFrames);
+  }
+
+  if (levelButtonSkinLoadPromise) {
+    return levelButtonSkinLoadPromise;
+  }
+
+  levelButtonSkinLoadPromise = Promise.all([
+    loadSpriteFrame(LEVEL_BUTTON_SKIN_PATHS.locked),
+    loadSpriteFrame(LEVEL_BUTTON_SKIN_PATHS.unlocked)
+  ]).then(function (results) {
+    levelButtonSkinFrames = {
+      locked: results[0],
+      passed: levelButtonSkinFrames && levelButtonSkinFrames.passed ? levelButtonSkinFrames.passed : null,
+      unlocked: results[1]
+    };
+    levelButtonSkinLoadPromise = null;
+    return levelButtonSkinFrames;
+  }).catch(function (error) {
+    logError("Load level button skins failed", error && error.message ? error.message : error);
+    levelButtonSkinLoadPromise = null;
+    return {
+      locked: null,
+      passed: null,
+      unlocked: null
+    };
+  });
+
+  return levelButtonSkinLoadPromise;
+}
+
+function resolveLevelButtonSkinKey(isPassed, isUnlocked) {
+  if (isPassed) {
+    return "passed";
+  }
+  if (isUnlocked) {
+    return "unlocked";
+  }
+  return "locked";
+}
+
+function applyLevelButtonSkin(buttonNode, isPassed, isUnlocked) {
+  if (!buttonNode || !buttonNode.isValid) {
+    return false;
+  }
+
+  var sprite = buttonNode.getComponent(cc.Sprite);
+  if (!sprite) {
+    return false;
+  }
+  if (cc.Sprite && cc.Sprite.SizeMode && cc.Sprite.SizeMode.CUSTOM !== undefined) {
+    sprite.sizeMode = cc.Sprite.SizeMode.CUSTOM;
+  }
+
+  var skinKey = resolveLevelButtonSkinKey(isPassed, isUnlocked);
+  if (skinKey === "passed") {
+    buttonNode.setContentSize(LEVEL_BUTTON_SIZE);
+    return true;
+  }
+  var skinFrames = levelButtonSkinFrames;
+  var skinFrame = skinFrames ? skinFrames[skinKey] : null;
+  if (!skinFrame) {
+    return false;
+  }
+
+  sprite.spriteFrame = skinFrame;
+  buttonNode.setContentSize(LEVEL_BUTTON_SIZE);
+  return true;
 }
 
 function instantiateNode(prefab, tag) {
@@ -98,6 +199,10 @@ function applyLevelButtonState(buttonNode, options) {
   var isUnlocked = !!options.isUnlocked;
   var isCurrent = !!options.isCurrent;
   var starCount = Math.max(0, Math.min(3, Math.floor(Number(options.starCount) || 0)));
+  buttonNode.__levelSelectVisualState = {
+    isPassed: isPassed,
+    isUnlocked: isUnlocked
+  };
 
   var labelNode = buttonNode.getChildByName("level");
   var button = buttonNode.getComponent(cc.Button);
@@ -105,18 +210,24 @@ function applyLevelButtonState(buttonNode, options) {
     button.interactable = isUnlocked;
     button.enableAutoGrayEffect = false;
   }
+  buttonNode.setContentSize(LEVEL_BUTTON_SIZE);
 
-  if (isPassed) {
-    buttonNode.color = cc.color(255, 255, 255);
-    if (labelNode) {
-      labelNode.color = cc.color(255, 255, 255);
-    }
-  } else {
-    var grayColor = isUnlocked ? cc.color(156, 156, 156) : cc.color(108, 108, 108);
-    buttonNode.color = grayColor;
-    if (labelNode) {
-      labelNode.color = cc.color(230, 230, 230);
-    }
+  // Keep node tint neutral and express state only with dedicated background sprites.
+  buttonNode.color = cc.color(255, 255, 255);
+  if (labelNode) {
+    labelNode.active = isUnlocked;
+    labelNode.color = cc.color(255, 255, 255);
+  }
+
+  var hasSkin = applyLevelButtonSkin(buttonNode, isPassed, isUnlocked);
+  if (!hasSkin) {
+    ensureLevelButtonSkinFrames().then(function () {
+      if (!buttonNode || !buttonNode.isValid) {
+        return;
+      }
+      var latestState = buttonNode.__levelSelectVisualState || {};
+      applyLevelButtonSkin(buttonNode, !!latestState.isPassed, !!latestState.isUnlocked);
+    });
   }
 
   setLevelButtonStars(buttonNode, isPassed ? starCount : 0);
@@ -303,6 +414,7 @@ function renderLevelSelectContent(options) {
   mapNode.parent = mapHostNode;
   mapNode.setPosition(0, 0);
   mapNode.active = true;
+  ensureLevelButtonSkinFrames();
 
   var slots = collectLevelSlots(mapNode);
   slots.forEach(function (slot) {

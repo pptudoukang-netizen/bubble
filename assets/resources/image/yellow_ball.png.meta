@@ -8,8 +8,8 @@
   "premultiplyAlpha": false,
   "genMipmaps": false,
   "packable": true,
-  "width": 72,
-  "height": 72,
+  "width": 200,
+  "height": 200,
   "platformSettings": {},
   "subMetas": {
     "yellow_ball": {

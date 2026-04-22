@@ -25,6 +25,7 @@ function attachLevelRendererSceneMethods(LevelRenderer, deps) {
   var BOARD_BUBBLE_SIZE = deps.BOARD_BUBBLE_SIZE;
   var NEXT_SHOT_BUBBLE_SIZE = deps.NEXT_SHOT_BUBBLE_SIZE;
   var JAR_RENDER_SIZE = deps.JAR_RENDER_SIZE;
+  var SCENE_BG_SPRITE_PATH = deps.SCENE_BG_SPRITE_PATH;
   var POPUP_CONTENT_CONTAINER_NAME = deps.POPUP_CONTENT_CONTAINER_NAME;
   var POPUP_OPEN_ANIM_DURATION = deps.POPUP_OPEN_ANIM_DURATION;
   var POPUP_OPEN_ANIM_FROM_SCALE = deps.POPUP_OPEN_ANIM_FROM_SCALE;
@@ -155,7 +156,7 @@ LevelRenderer.prototype._renderBackground = function () {
   }
 
   var node = this._instantiateOrCreate(null, this.layers.background, "Background");
-  var frame = this.spriteFrameCache["image/bg"];
+  var frame = this.spriteFrameCache[SCENE_BG_SPRITE_PATH];
   if (!frame) {
     return;
   }
@@ -1690,6 +1691,20 @@ LevelRenderer.prototype._renderWinView = function (runtimeSnapshot) {
     this._playWinPopupOpenAnimation(winContent, starRating);
   }
 
+  var currentLevelId = this.currentLevelConfig && this.currentLevelConfig.level
+    ? Math.max(1, Math.floor(Number(this.currentLevelConfig.level.levelId) || 1))
+    : 1;
+  var levelBgNode = winContent ? winContent.getChildByName("level_bg") : null;
+  var currentLevelNode = levelBgNode
+    ? levelBgNode.getChildByName("cur_level")
+    : (winContent ? winContent.getChildByName("cur_level") : null);
+  this._setWinValueText(currentLevelNode, "第" + currentLevelId + "关");
+
+  var closeButtonNode = winContent ? winContent.getChildByName("btn_close") : null;
+  if (!closeButtonNode && winView) {
+    closeButtonNode = winView.getChildByName("btn_close");
+  }
+  this._bindWinButton(closeButtonNode, "back");
   this._bindWinButton(winContent ? winContent.getChildByName("btn_next") : null, "next");
   this._bindWinButton(winContent ? winContent.getChildByName("btn_retry") : null, "retry");
   this._bindWinButton(winContent ? winContent.getChildByName("btn_back") : null, "back");
@@ -1780,7 +1795,7 @@ LevelRenderer.prototype._renderResultPopup = function (runtimeSnapshot) {
   popup.setPosition(0, 40);
 
   var bg = getOrCreateChild(popup, "PopupBg");
-  var frame = this.spriteFrameCache["image/bg"];
+  var frame = this.spriteFrameCache[SCENE_BG_SPRITE_PATH];
   if (frame) {
     ensureSprite(bg, frame);
     bg.setContentSize(new cc.Size(540, 320));

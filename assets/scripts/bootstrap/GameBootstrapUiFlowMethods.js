@@ -7,12 +7,14 @@ var LevelSelectPolicy = require("./LevelSelectPolicy");
 var LevelSelectView = require("./LevelSelectView");
 var BootstrapButtonFactory = require("./BootstrapButtonFactory");
 var StarRatingPolicy = require("../core/StarRatingPolicy");
+var BundleLoader = require("../utils/BundleLoader");
 
 var SETTING_VOLUME_STEP = 0.1;
 var SETTING_STATUS_X_ENABLED = -18;
 var SETTING_STATUS_X_DISABLED = 18;
 var SETTING_VOLUME_ICON_OPEN_PATH = "image/setting/volume_open";
 var SETTING_VOLUME_ICON_CLOSE_PATH = "image/setting/volume_close";
+var MAX_LEVEL_MAP_PREFAB_INDEX = 10;
 
 module.exports = {
   _createStatusOverlay: function () {
@@ -391,7 +393,7 @@ module.exports = {
 
     var loadSpriteFrame = function (path) {
       return new Promise(function (resolve) {
-        cc.loader.loadRes(path, cc.SpriteFrame, function (error, spriteFrame) {
+        BundleLoader.loadRes(path, cc.SpriteFrame, function (error, spriteFrame) {
           if (error) {
             Logger.warn("Load setting icon failed", path, error && error.message ? error.message : error);
             resolve(null);
@@ -1172,21 +1174,20 @@ module.exports = {
       });
     }
 
-    return Promise.all([
-      this._loadPrefab("prefabs/ui/LevelView"),
-      this._tryLoadFirstAvailablePrefab([
-        "prefabs/ui/LevelMap1",
-        "prefabs/ui/levelMap1",
-        "prefabs/game/LevelMap1"
-      ]),
-      this._tryLoadFirstAvailablePrefab([
-        "prefabs/ui/LevelMap2",
-        "prefabs/ui/levelMap2",
-        "prefabs/game/LevelMap2"
-      ])
-    ]).then(function (prefabs) {
+    var prefabLoadTasks = [this._loadPrefab("prefabs/ui/LevelView")];
+    for (var mapIndex = 1; mapIndex <= MAX_LEVEL_MAP_PREFAB_INDEX; mapIndex += 1) {
+      prefabLoadTasks.push(this._tryLoadFirstAvailablePrefab([
+        "prefabs/ui/LevelMap" + mapIndex,
+        "prefabs/ui/levelMap" + mapIndex,
+        "prefabs/game/LevelMap" + mapIndex
+      ], {
+        silent: true
+      }));
+    }
+
+    return Promise.all(prefabLoadTasks).then(function (prefabs) {
       this._levelSelectViewPrefab = prefabs[0];
-      this._levelMapPrefabs = [prefabs[1], prefabs[2]].filter(function (prefab) {
+      this._levelMapPrefabs = prefabs.slice(1).filter(function (prefab) {
         return !!prefab;
       });
       if (this._levelMapPrefabs.length === 0) {
@@ -1199,8 +1200,9 @@ module.exports = {
     }.bind(this));
   },
 
-  _tryLoadFirstAvailablePrefab: function (paths) {
+  _tryLoadFirstAvailablePrefab: function (paths, options) {
     var candidates = Array.isArray(paths) ? paths.filter(Boolean) : [];
+    var silent = !!(options && options.silent);
     if (candidates.length === 0) {
       return Promise.resolve(null);
     }
@@ -1215,10 +1217,12 @@ module.exports = {
       return this._loadPrefab(path).then(function (prefab) {
         return prefab || null;
       }).catch(function (error) {
-        Logger.warn("Load prefab failed, try next candidate", {
-          path: path,
-          error: error && error.message ? error.message : error
-        });
+        if (!silent) {
+          Logger.warn("Load prefab failed, try next candidate", {
+            path: path,
+            error: error && error.message ? error.message : error
+          });
+        }
         return tryLoadNext();
       });
     }.bind(this);
@@ -1368,6 +1372,7 @@ module.exports = {
       return;
     }
 
+    this._playSfx("uiClick");
     var targetMapIndex = Math.max(0, Math.floor(Number(nextMapIndex) || 0));
     this._levelSelectMapIndex = targetMapIndex;
 
