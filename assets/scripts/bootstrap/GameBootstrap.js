@@ -345,8 +345,9 @@ cc.Class({
     BoardLayout.boardLeft = -boardHalfWidth;
     BoardLayout.boardRight = boardHalfWidth;
     BoardLayout.jarLayoutWidth = width;
+    var safeAreaInsets = this._resolveSafeAreaInsetsInDesignSpace(width, height, frameWidth, frameHeight);
     // 顶部玻璃球首行：屏幕顶部往下 (130 + 球半径)。
-    BoardLayout.boardStartY = halfHeight - (130 + BoardLayout.bubbleRadius);
+    BoardLayout.boardStartY = halfHeight - (130 + BoardLayout.bubbleRadius + safeAreaInsets.top);
 
     var bottomY = -halfHeight;
     // 底部元素按“离屏幕底部固定高度”适配。
@@ -356,6 +357,88 @@ cc.Class({
       y: bottomY + BASELINE_SHOOTER_OFFSET_FROM_BOTTOM
     };
     BoardLayout.dangerLineY = bottomY + BASELINE_DANGER_OFFSET_FROM_BOTTOM;
+  },
+
+  _resolveSafeAreaInsetsInDesignSpace: function (designWidth, designHeight, frameWidth, frameHeight) {
+    var insets = {
+      top: 0,
+      bottom: 0,
+      left: 0,
+      right: 0
+    };
+
+    var safeRect = this._getSafeAreaRectFromRuntime();
+    if (!safeRect) {
+      return insets;
+    }
+
+    var safeTop = Number(safeRect.top);
+    var safeBottom = Number(safeRect.bottom);
+    var safeLeft = Number(safeRect.left);
+    var safeRight = Number(safeRect.right);
+    if (!isFinite(safeTop) || !isFinite(safeBottom) || !isFinite(safeLeft) || !isFinite(safeRight)) {
+      return insets;
+    }
+
+    var sourceWidth = Math.max(1, Number(safeRect.screenWidth) || frameWidth || 1);
+    var sourceHeight = Math.max(1, Number(safeRect.screenHeight) || frameHeight || 1);
+    var topInsetPx = Math.max(0, safeTop);
+    var leftInsetPx = Math.max(0, safeLeft);
+    var rightInsetPx = Math.max(0, sourceWidth - safeRight);
+    var bottomInsetPx = Math.max(0, sourceHeight - safeBottom);
+
+    var widthScale = Math.max(0.0001, designWidth / sourceWidth);
+    var heightScale = Math.max(0.0001, designHeight / sourceHeight);
+
+    insets.top = topInsetPx * heightScale;
+    insets.bottom = bottomInsetPx * heightScale;
+    insets.left = leftInsetPx * widthScale;
+    insets.right = rightInsetPx * widthScale;
+    return insets;
+  },
+
+  _getSafeAreaRectFromRuntime: function () {
+    if (typeof wx !== "undefined" && wx && typeof wx.getSystemInfoSync === "function") {
+      try {
+        var systemInfo = wx.getSystemInfoSync();
+        if (systemInfo && systemInfo.safeArea) {
+          return {
+            left: Number(systemInfo.safeArea.left) || 0,
+            right: Number(systemInfo.safeArea.right) || 0,
+            top: Number(systemInfo.safeArea.top) || 0,
+            bottom: Number(systemInfo.safeArea.bottom) || 0,
+            screenWidth: Number(systemInfo.screenWidth) || 0,
+            screenHeight: Number(systemInfo.screenHeight) || 0
+          };
+        }
+      } catch (error) {
+        // Fallback to engine-level API.
+      }
+    }
+
+    if (cc && cc.sys && typeof cc.sys.getSafeAreaRect === "function") {
+      try {
+        var runtimeSafeRect = cc.sys.getSafeAreaRect();
+        if (runtimeSafeRect) {
+          var rectX = Number(runtimeSafeRect.x) || 0;
+          var rectY = Number(runtimeSafeRect.y) || 0;
+          var rectWidth = Number(runtimeSafeRect.width) || 0;
+          var rectHeight = Number(runtimeSafeRect.height) || 0;
+          if (rectWidth > 0 && rectHeight > 0) {
+            return {
+              left: rectX,
+              right: rectX + rectWidth,
+              bottom: rectY + rectHeight,
+              top: rectY
+            };
+          }
+        }
+      } catch (error) {
+        // Fallback to platform-specific APIs.
+      }
+    }
+
+    return null;
   },
 
   start: function () {

@@ -89,19 +89,17 @@ LevelRenderer.prototype._mountGameViewScaffold = function () {
     return;
   }
 
-  var gameViewNode = this.prefabFactory.instantiate(PREFAB_PATHS.gameView, null, "GameView");
+  var gameViewNode = this.prefabFactory.instantiate(PREFAB_PATHS.gameView, this.layers.hud, "GameView");
   if (!gameViewNode) {
     return;
   }
+  gameViewNode.setPosition(0, 0);
+  gameViewNode.active = true;
 
   var mountedCount = 0;
   mountedCount += this._moveGameViewChildToLayer(gameViewNode, "bg", this.layers.background, "bg");
-  mountedCount += this._moveGameViewChildToLayer(gameViewNode, "HudPanel", this.layers.hud, "HudPanel");
   mountedCount += this._moveGameViewChildToLayer(gameViewNode, "DangerLine", this.layers.dangerLine, "DangerLine");
   mountedCount += this._moveGameViewChildToLayer(gameViewNode, "BttomPanel", this.layers.hud, "BttomPanel");
-
-  gameViewNode.removeFromParent(false);
-  gameViewNode.destroy();
 
   if (mountedCount <= 0) {
     Logger.warn("GameView prefab mounted but required nodes are missing");
@@ -167,13 +165,13 @@ LevelRenderer.prototype._renderBackground = function () {
 };
 
 LevelRenderer.prototype._renderHud = function (levelConfig, runtimeSnapshot) {
-  var panel = this.layers.hud.getChildByName("HudPanel");
+  var panel = this._getMountedHudPanel();
   if (!panel) {
-    panel = this._instantiateOrCreate(PREFAB_PATHS.hudPanel, this.layers.hud, "HudPanel");
+    Logger.warn("HudPanel not found in mounted GameView.");
+    return;
   }
   var objectiveDisplay = buildObjectiveDisplayData(levelConfig, runtimeSnapshot);
 
-  this._alignHudPanelToTop(panel);
   this._setHudLabel(panel, "LevelTitle", "关卡");
   this._setHudLabel(panel, "LevelValue", String(levelConfig.level.levelId));
   this._setHudLabel(panel, "ScoreTitle", "得分");
@@ -190,6 +188,24 @@ LevelRenderer.prototype._renderHud = function (levelConfig, runtimeSnapshot) {
   if (dropValueNode) {
     dropValueNode.active = false;
   }
+};
+
+LevelRenderer.prototype._getMountedHudPanel = function () {
+  if (!this.layers || !this.layers.hud) {
+    return null;
+  }
+
+  var directPanel = this.layers.hud.getChildByName("HudPanel");
+  if (directPanel) {
+    return directPanel;
+  }
+
+  var gameViewNode = this.layers.hud.getChildByName("GameView");
+  if (!gameViewNode) {
+    return null;
+  }
+
+  return gameViewNode.getChildByName("HudPanel");
 };
 
 LevelRenderer.prototype._bindBottomPanelButton = function (buttonNode, action) {
@@ -310,7 +326,7 @@ LevelRenderer.prototype._getHudTargetBallPositionInBoard = function () {
     return null;
   }
 
-  var panel = this.layers.hud.getChildByName("HudPanel");
+  var panel = this._getMountedHudPanel();
   var ballNode = panel ? panel.getChildByName("ball") : null;
   if (!ballNode || !ballNode.active || !ballNode.parent) {
     return null;
@@ -321,13 +337,8 @@ LevelRenderer.prototype._getHudTargetBallPositionInBoard = function () {
 };
 
 LevelRenderer.prototype._alignHudPanelToTop = function (panel) {
-  if (!panel || !this.rootNode) {
-    return;
-  }
-
-  var rootSize = this.rootNode.getContentSize();
-  var panelHeight = panel.getContentSize().height || 0;
-  panel.setPosition(0, rootSize.height * 0.5 - panelHeight * 0.5);
+  // Keep for backward compatibility. HudPanel positioning is now driven by GameView's SafeArea+Widget.
+  return;
 };
 
 LevelRenderer.prototype._setHudLabel = function (panel, childName, text) {
