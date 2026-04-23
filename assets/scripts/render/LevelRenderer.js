@@ -5,6 +5,7 @@ var DebugFlags = require("../utils/DebugFlags");
 var PrefabFactory = require("./PrefabFactory");
 var BoardLayout = require("../config/BoardLayout");
 var StarRatingPolicy = require("../core/StarRatingPolicy");
+var AdRewardCatalog = require("../services/AdRewardCatalog");
 var RenderNodeHelpers = require("./RenderNodeHelpers");
 var attachLevelRendererSceneMethods = require("./LevelRendererSceneMethods");
 
@@ -499,7 +500,8 @@ function LevelRenderer(rootNode) {
   };
   this.loseActionHandlers = {
     onRetryLevel: null,
-    onBackLevel: null
+    onBackLevel: null,
+    onWatchAd: null
   };
   this.gameplayActionHandlers = {
     onBackToLevel: null,
@@ -538,7 +540,8 @@ LevelRenderer.prototype.setLoseActionHandlers = function (handlers) {
   handlers = handlers || {};
   this.loseActionHandlers = {
     onRetryLevel: typeof handlers.onRetryLevel === "function" ? handlers.onRetryLevel : null,
-    onBackLevel: typeof handlers.onBackLevel === "function" ? handlers.onBackLevel : null
+    onBackLevel: typeof handlers.onBackLevel === "function" ? handlers.onBackLevel : null,
+    onWatchAd: typeof handlers.onWatchAd === "function" ? handlers.onWatchAd : null
   };
 };
 
@@ -576,6 +579,8 @@ LevelRenderer.prototype._invokeLoseAction = function (action) {
     handler = this.loseActionHandlers.onRetryLevel;
   } else if (action === "back") {
     handler = this.loseActionHandlers.onBackLevel;
+  } else if (action === "ad") {
+    handler = this.loseActionHandlers.onWatchAd;
   }
 
   if (typeof handler !== "function") {
@@ -978,6 +983,7 @@ var LEVEL_RENDERER_SCENE_DEPS = {
   resolveBallVisualKey: resolveBallVisualKey,
   computeShooterAngle: computeShooterAngle,
   createRouteColor: createRouteColor,
+  resolveLoseRewardEntry: AdRewardCatalog.resolveLoseRewardEntry,
   clamp: clamp
 };
 

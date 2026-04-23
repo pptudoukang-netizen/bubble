@@ -146,6 +146,18 @@ ShooterController.prototype.addSkillInventory = function (entityType, count) {
     };
   }
 
+  return this.addInventory(entityType, count);
+};
+
+ShooterController.prototype.addInventory = function (entityType, count) {
+  var supportedTypes = ["rainbow", "blast", "swap", "barrier_hammer"];
+  if (supportedTypes.indexOf(entityType) === -1) {
+    return {
+      accepted: false,
+      reason: "invalid_inventory_type"
+    };
+  }
+
   var gained = Math.max(1, Math.floor(Number(count) || 1));
   this.skillInventory[entityType] = Math.max(0, Math.floor(Number(this.skillInventory[entityType]) || 0)) + gained;
   return {

@@ -34,9 +34,14 @@ function createGameManagerShotResolutionMethods(deps) {
       }
 
       var jarCollectBase = this._getScoreRule("jarCollectBase");
+      var scoreBoostMultiplier = this.jarScoreBoostActive
+        ? Math.max(1, Number(this.jarScoreBoostMultiplier) || 1)
+        : 1;
+      var isScoreBoosted = scoreBoostMultiplier > 1;
       var gained = scoredDrops.reduce(function (sum, drop) {
         var base = jarCollectBase;
-        var multiplier = typeof drop.bonusMultiplier === "number" ? Math.max(1, drop.bonusMultiplier) : 1;
+        var dropMultiplier = typeof drop.bonusMultiplier === "number" ? Math.max(1, drop.bonusMultiplier) : 1;
+        var multiplier = dropMultiplier * scoreBoostMultiplier;
         return sum + Math.round(base * multiplier);
       }, 0);
       var sameColorCount = scoredDrops.reduce(function (count, drop) {
@@ -44,7 +49,8 @@ function createGameManagerShotResolutionMethods(deps) {
       }, 0);
       var bonusGained = scoredDrops.reduce(function (sum, drop) {
         var base = jarCollectBase;
-        var multiplier = typeof drop.bonusMultiplier === "number" ? Math.max(1, drop.bonusMultiplier) : 1;
+        var dropMultiplier = typeof drop.bonusMultiplier === "number" ? Math.max(1, drop.bonusMultiplier) : 1;
+        var multiplier = dropMultiplier * scoreBoostMultiplier;
         var total = Math.round(base * multiplier);
         return sum + Math.max(0, total - base);
       }, 0);
@@ -56,12 +62,22 @@ function createGameManagerShotResolutionMethods(deps) {
       if (this.lastResolution) {
         this.lastResolution.scoreDelta += gained;
       }
+      if (typeof this._pushRuntimeEvent === "function") {
+        this._pushRuntimeEvent("jar_collect_scored", {
+          count: scoredDrops.length,
+          gained: gained,
+          is_score_boosted: isScoreBoosted,
+          boost_multiplier: scoreBoostMultiplier
+        });
+      }
 
       Logger.info("Jar collect", {
         count: scoredDrops.length,
         gained: gained,
         sameColorCount: sameColorCount,
-        bonusGained: bonusGained
+        bonusGained: bonusGained,
+        isScoreBoosted: isScoreBoosted,
+        scoreBoostMultiplier: scoreBoostMultiplier
       });
 
       return gained;

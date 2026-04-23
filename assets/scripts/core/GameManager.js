@@ -86,6 +86,8 @@ var SCORE_HEAT_DIFFICULTY_ALIAS = {
 
 // 碰撞反馈播放完成后再下压，避免命中反馈与网格位移同帧造成视觉偏差。
 var BOARD_ADVANCE_AFTER_IMPACT_DELAY = 0.2;
+var DEFAULT_JAR_SCORE_BOOST_MULTIPLIER = 2;
+var DEFAULT_JAR_SCORE_BOOST_DURATION_MS = 5000;
 
 function resolveBallDisplayCode(ball) {
   if (!ball) {
@@ -370,6 +372,9 @@ function GameManager(options) {
   this.pendingRuntimeEvents = [];
   this.pendingBoardAdvanceDelay = 0;
   this.pendingBarrierHammer = false;
+  this.jarScoreBoostActive = false;
+  this.jarScoreBoostMultiplier = 1;
+  this.jarScoreBoostRemainingMs = 0;
   this.scoreRules = cloneScoreRules(BASE_SCORE_RULES);
   this.scoreHeatBand = buildScoreHeatBand(null, {
     difficulty: "normal",
@@ -429,6 +434,9 @@ GameManager.prototype.startLevel = function (levelConfig) {
   this.pendingRuntimeEvents = [];
   this.pendingBoardAdvanceDelay = 0;
   this.pendingBarrierHammer = false;
+  this.jarScoreBoostActive = false;
+  this.jarScoreBoostMultiplier = 1;
+  this.jarScoreBoostRemainingMs = 0;
   var scoreProfile = buildScoreRulesForLevel(levelConfig);
   this.scoreRules = scoreProfile.rules;
   this.scoreHeatBand = buildScoreHeatBand(levelConfig, scoreProfile);
@@ -520,6 +528,59 @@ GameManager.prototype._updatePendingBoardAdvance = function (dt) {
   }
 
   this._advanceBoardIfNeeded();
+  return true;
+};
+
+GameManager.prototype._clearJarScoreBoost = function () {
+  this.jarScoreBoostActive = false;
+  this.jarScoreBoostMultiplier = 1;
+  this.jarScoreBoostRemainingMs = 0;
+};
+
+GameManager.prototype.activateJarScoreBoost = function (options) {
+  options = options || {};
+  var multiplier = Math.max(
+    1,
+    Number(options.multiplier || options.jarScoreBoostMultiplier) || DEFAULT_JAR_SCORE_BOOST_MULTIPLIER
+  );
+  var durationMs = Math.max(
+    0,
+    Math.floor(Number(options.durationMs || options.jarScoreBoostRemainingMs) || DEFAULT_JAR_SCORE_BOOST_DURATION_MS)
+  );
+
+  if (multiplier <= 1 || durationMs <= 0) {
+    this._clearJarScoreBoost();
+    return this.getRuntimeSnapshot();
+  }
+
+  this.jarScoreBoostActive = true;
+  this.jarScoreBoostMultiplier = multiplier;
+  this.jarScoreBoostRemainingMs = durationMs;
+  this._pushRuntimeEvent("jar_score_boost_activated", {
+    boost_multiplier: multiplier,
+    remaining_ms: durationMs
+  });
+  return this.getRuntimeSnapshot(this._drainRuntimeEvents());
+};
+
+GameManager.prototype._updateJarScoreBoost = function (dt) {
+  if (!this.jarScoreBoostActive) {
+    return false;
+  }
+
+  var safeDtMs = Math.max(0, Number(dt) || 0) * 1000;
+  if (safeDtMs <= 0) {
+    return false;
+  }
+
+  var previousRemainingMs = this.jarScoreBoostRemainingMs;
+  this.jarScoreBoostRemainingMs = Math.max(0, previousRemainingMs - safeDtMs);
+  if (this.jarScoreBoostRemainingMs > 0) {
+    return this.jarScoreBoostRemainingMs !== previousRemainingMs;
+  }
+
+  this._clearJarScoreBoost();
+  this._pushRuntimeEvent("jar_score_boost_expired");
   return true;
 };
 
@@ -754,6 +815,40 @@ GameManager.prototype.fireShot = function () {
 
   Logger.info("Shot fired", queueResult.firedColor, "remaining", this.remainingShots, "bounce", shotPlan.wallBounceCount);
   return this.getRuntimeSnapshot();
+};
+
+GameManager.prototype.grantPowerupInventory = function (powerupType, count) {
+  var shooterController = this.systems && this.systems.shooterController
+    ? this.systems.shooterController
+    : null;
+  if (!shooterController || typeof shooterController.addInventory !== "function") {
+    return {
+      accepted: false,
+      reason: "inventory_system_unavailable",
+      snapshot: this.getRuntimeSnapshot()
+    };
+  }
+
+  var grantResult = shooterController.addInventory(powerupType, count);
+  if (!grantResult || !grantResult.accepted) {
+    return {
+      accepted: false,
+      reason: grantResult && grantResult.reason ? grantResult.reason : "inventory_grant_failed",
+      snapshot: this.getRuntimeSnapshot()
+    };
+  }
+
+  if (this.isAiming) {
+    this._refreshShotPlan(true);
+  }
+
+  return {
+    accepted: true,
+    powerupType: grantResult.entityType,
+    gained: grantResult.gained,
+    total: grantResult.total,
+    snapshot: this.getRuntimeSnapshot()
+  };
 };
 
 GameManager.prototype.useSkillBall = function (entityType) {
@@ -1149,6 +1244,8 @@ GameManager.prototype.update = function (dt) {
   }
   runtimeEvents = runtimeEvents.concat(this._drainRuntimeEvents());
 
+  var scoreBoostChanged = this._updateJarScoreBoost(dt);
+  runtimeEvents = runtimeEvents.concat(this._drainRuntimeEvents());
   var boardAdvancedThisFrame = this._updatePendingBoardAdvance(dt);
   var hasProjectile = !!this.activeProjectile;
   var hasFallingDrops = this.systems.fallingMarbleSystem.hasActiveDrops();
@@ -1181,6 +1278,7 @@ GameManager.prototype.update = function (dt) {
     !hadProjectile &&
     !hadFallingDrops &&
     !collectedDrops.length &&
+    !scoreBoostChanged &&
     !boardAdvancedThisFrame &&
     !runtimeEvents.length
   ) {
@@ -1194,6 +1292,7 @@ GameManager.prototype.update = function (dt) {
     hadProjectile ||
     hadFallingDrops ||
     collectedDrops.length ||
+    scoreBoostChanged ||
     boardAdvancedThisFrame ||
     runtimeEvents.length
   ) {
@@ -1312,6 +1411,9 @@ GameManager.prototype.getRuntimeSnapshot = function (runtimeEvents) {
     remainingShots: this.remainingShots,
     score: this.score,
     shotsFired: this.shotsFired,
+    jarScoreBoostActive: this.jarScoreBoostActive,
+    jarScoreBoostMultiplier: this.jarScoreBoostMultiplier,
+    jarScoreBoostRemainingMs: Math.max(0, Math.floor(Number(this.jarScoreBoostRemainingMs) || 0)),
     dropInterval: this.dropInterval,
     turnsUntilDrop: this.getTurnsUntilDrop(),
     lastFiredColor: this.lastFiredColor,

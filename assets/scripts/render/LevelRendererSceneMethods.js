@@ -73,6 +73,7 @@ function attachLevelRendererSceneMethods(LevelRenderer, deps) {
   var resolveBallVisualKey = deps.resolveBallVisualKey;
   var computeShooterAngle = deps.computeShooterAngle;
   var createRouteColor = deps.createRouteColor;
+  var resolveLoseRewardEntry = deps.resolveLoseRewardEntry;
   var clamp = deps.clamp;
   var DANGER_WARNING_SHAKE_LEFT_X = -20;
   var DANGER_WARNING_SHAKE_RIGHT_X = 18;
@@ -223,6 +224,10 @@ LevelRenderer.prototype._bindBottomPanelButton = function (buttonNode, action) {
     if (event) {
       event.stopPropagation();
     }
+    var button = buttonNode.getComponent(cc.Button);
+    if (button && !button.interactable) {
+      return;
+    }
     this._invokeGameplayAction(action);
   }, this);
   buttonNode.on(cc.Node.EventType.TOUCH_CANCEL, function (event) {
@@ -232,16 +237,18 @@ LevelRenderer.prototype._bindBottomPanelButton = function (buttonNode, action) {
   }, this);
 };
 
-LevelRenderer.prototype._setBottomPanelButtonEnabled = function (buttonNode, enabled) {
+LevelRenderer.prototype._setBottomPanelButtonEnabled = function (buttonNode, enabled, options) {
   if (!buttonNode) {
     return;
   }
 
+  var safeOptions = options && typeof options === "object" ? options : {};
+  var dimWhenDisabled = safeOptions.dimWhenDisabled !== false;
   var button = buttonNode.getComponent(cc.Button);
   if (button) {
     button.interactable = !!enabled;
   }
-  buttonNode.opacity = enabled ? 255 : 150;
+  buttonNode.opacity = (!enabled && dimWhenDisabled) ? 150 : 255;
 };
 
 LevelRenderer.prototype._setShooterChangeButtonSpin = function (buttonNode, enabled) {
@@ -328,16 +335,30 @@ LevelRenderer.prototype._renderBottomPanel = function (runtimeSnapshot) {
   var shooterSnapshot = runtimeSnapshot && runtimeSnapshot.shooter ? runtimeSnapshot.shooter : {};
   var pendingBarrierHammer = !!shooterSnapshot.pendingBarrierHammer;
   var canUsePowerup = !!shooterSnapshot.canUsePowerups;
+  var canUseRainbow = canUsePowerup && !pendingBarrierHammer && rainbowCount > 0;
+  var canUseSwap = canUsePowerup && !pendingBarrierHammer && swapCount > 0;
+  var canUseBarrierHammer = pendingBarrierHammer || (canUsePowerup && destroyCount > 0);
+  var canUseBlast = canUsePowerup && !pendingBarrierHammer && blastCount > 0;
 
   this._setBottomPanelCount(rainbowButtonNode, rainbowCount);
   this._setBottomPanelCount(changeButtonNode, swapCount);
   this._setBottomPanelCount(destroyButtonNode, destroyCount);
   this._setBottomPanelCount(bombButtonNode, blastCount);
-  this._setBottomPanelButtonEnabled(backButtonNode, true);
-  this._setBottomPanelButtonEnabled(rainbowButtonNode, canUsePowerup && !pendingBarrierHammer && rainbowCount > 0);
-  this._setBottomPanelButtonEnabled(changeButtonNode, canUsePowerup && !pendingBarrierHammer && swapCount > 0);
-  this._setBottomPanelButtonEnabled(destroyButtonNode, pendingBarrierHammer || (canUsePowerup && destroyCount > 0));
-  this._setBottomPanelButtonEnabled(bombButtonNode, canUsePowerup && !pendingBarrierHammer && blastCount > 0);
+  this._setBottomPanelButtonEnabled(backButtonNode, true, {
+    dimWhenDisabled: false
+  });
+  this._setBottomPanelButtonEnabled(rainbowButtonNode, canUseRainbow, {
+    dimWhenDisabled: rainbowCount <= 0
+  });
+  this._setBottomPanelButtonEnabled(changeButtonNode, canUseSwap, {
+    dimWhenDisabled: swapCount <= 0
+  });
+  this._setBottomPanelButtonEnabled(destroyButtonNode, canUseBarrierHammer, {
+    dimWhenDisabled: !pendingBarrierHammer && destroyCount <= 0
+  });
+  this._setBottomPanelButtonEnabled(bombButtonNode, canUseBlast, {
+    dimWhenDisabled: blastCount <= 0
+  });
 };
 
 LevelRenderer.prototype._setHudTargetBallIcon = function (panel, iconCode) {
@@ -1136,7 +1157,10 @@ LevelRenderer.prototype._renderShooter = function (shooterSnapshot, activeProjec
       changeButtonNode,
       canUsePowerup &&
       !pendingBarrierHammer &&
-      !!(shooterSnapshot.currentBall && shooterSnapshot.nextBall)
+      !!(shooterSnapshot.currentBall && shooterSnapshot.nextBall),
+      {
+        dimWhenDisabled: false
+      }
     );
   }
 
@@ -1851,6 +1875,27 @@ LevelRenderer.prototype._renderLoseView = function (runtimeSnapshot) {
     }
   }
 
+  var loseRewardEntry = typeof resolveLoseRewardEntry === "function"
+    ? resolveLoseRewardEntry(runtimeSnapshot.state)
+    : null;
+  var adButtonNode = loseContent ? loseContent.getChildByName("btn_ad") : null;
+  if (adButtonNode) {
+    adButtonNode.active = !!loseRewardEntry;
+    if (loseRewardEntry) {
+      var awardTipsNode = adButtonNode.getChildByName("award_tips");
+      var awardTipsLabel = awardTipsNode ? awardTipsNode.getComponent(cc.Label) : null;
+      if (awardTipsLabel) {
+        awardTipsLabel.string = String(loseRewardEntry.awardTips || "");
+      }
+      this._bindLoseButton(adButtonNode, "ad");
+    }
+  }
+
+  var loseCloseButtonNode = loseContent ? loseContent.getChildByName("btn_close") : null;
+  if (!loseCloseButtonNode && loseView) {
+    loseCloseButtonNode = loseView.getChildByName("btn_close");
+  }
+  this._bindLoseButton(loseCloseButtonNode, "back");
   this._bindLoseButton(loseContent ? loseContent.getChildByName("btn_retry") : null, "retry");
   this._bindLoseButton(loseContent ? loseContent.getChildByName("btn_back") : null, "back");
 };

@@ -6,9 +6,12 @@ var BundleLoader = require("../utils/BundleLoader");
 var PoolManager = require("../utils/PoolManager");
 var LevelProgressStore = require("../utils/LevelProgressStore");
 var PlayerResourceStore = require("../utils/PlayerResourceStore");
+var InventoryStore = require("../utils/InventoryStore");
+var SignInStore = require("../utils/SignInStore");
 var RouteConfigStore = require("../utils/RouteConfigStore");
 var AudioManager = require("../audio/AudioManager");
 var BoardLayout = require("../config/BoardLayout");
+var DailySignInConfig = require("../config/DailySignInConfig");
 var LevelManager = require("../config/LevelManager");
 var GameManager = require("../core/GameManager");
 var StarRatingPolicy = require("../core/StarRatingPolicy");
@@ -21,6 +24,10 @@ var GameBootstrapUiFlowMethods = require("./GameBootstrapUiFlowMethods");
 var LevelRenderer = require("../render/LevelRenderer");
 var LoadingViewController = require("../ui/LoadingViewController");
 var TipsPresenter = require("../ui/TipsPresenter");
+var AdService = require("../services/AdService");
+var TelemetryService = require("../services/TelemetryService");
+var AdRewardQuotaStore = require("../services/AdRewardQuotaStore");
+var AdRewardCatalog = require("../services/AdRewardCatalog");
 
 var BASELINE_HALF_WIDTH = 360;
 var BASELINE_HALF_HEIGHT = 640;
@@ -175,6 +182,30 @@ cc.Class({
     jarCollectBottomSfxResource: {
       default: "sound/ding0",
       tooltip: "球落入缸底被收集时播放的音效资源路径。"
+    },
+    rewardedVideoAdUnitId: {
+      default: "",
+      tooltip: "微信激励视频广告位 ID（为空时，开发环境走本地模拟）。"
+    },
+    enableMockRewardedAdOnUnsupported: {
+      default: true,
+      tooltip: "非微信环境是否使用模拟激励广告（便于开发验证）。"
+    },
+    staminaAdDailyLimit: {
+      default: 5,
+      tooltip: "看广告补体力每日上限。"
+    },
+    inventoryAdDailyLimit: {
+      default: 12,
+      tooltip: "看广告补道具每日上限。"
+    },
+    loseAdDailyLimit: {
+      default: 20,
+      tooltip: "失败页看广告领下局奖励每日上限。"
+    },
+    adRewardCooldownSeconds: {
+      default: 8,
+      tooltip: "广告奖励频控冷却秒数。"
     }
   },
 
@@ -211,6 +242,16 @@ cc.Class({
     this._levelSelectRouteEditorMode = false;
     this._pendingRouteEditorAutoEnable = false;
     this._levelConfigPreloadPromise = null;
+    this._currentAttemptId = "";
+    this._attemptSequence = 0;
+    this._trackedResultAttemptId = "";
+    this._grantedAttemptRewardKeys = {};
+    this._pendingNextRoundRewards = [];
+    this._adFlowInProgress = false;
+    this._staminaRecoveryInProgress = false;
+    this.telemetryService = new TelemetryService({
+      logger: Logger
+    });
     this.levelProgressStore = new LevelProgressStore();
     this.levelProgress = this.resetLevelProgressOnStart
       ? this.levelProgressStore.reset()
@@ -222,10 +263,46 @@ cc.Class({
     this.playerResources = this.playerResourceStore.load();
     this.playerResources.stamina = inspectorStamina;
     this.playerResourceStore.save(this.playerResources);
+    this.inventoryStore = new InventoryStore();
+    this.playerInventory = this.inventoryStore.load();
+    this.inventoryStore.save(this.playerInventory);
+    this.dailySignInConfig = clone(DailySignInConfig);
+    this.signInStore = new SignInStore({
+      cycleLength: this.dailySignInConfig.cycleLength,
+      autoPopupOnFirstLogin: this.dailySignInConfig.autoPopupOnFirstLogin
+    });
+    this.signInState = this.signInStore.load();
+    this.signInStore.save(this.signInState);
     this.routeConfigStore = new RouteConfigStore();
     this.routeConfig = this.routeConfigStore.load();
+    this.adRewardQuotaStore = new AdRewardQuotaStore({
+      rules: {
+        lose_next_round: {
+          dailyLimit: Math.max(0, Math.floor(Number(this.loseAdDailyLimit) || 0)),
+          cooldownSec: Math.max(0, Math.floor(Number(this.adRewardCooldownSeconds) || 0))
+        },
+        inventory_refill: {
+          dailyLimit: Math.max(0, Math.floor(Number(this.inventoryAdDailyLimit) || 0)),
+          cooldownSec: Math.max(0, Math.floor(Number(this.adRewardCooldownSeconds) || 0))
+        },
+        stamina_refill: {
+          dailyLimit: Math.max(0, Math.floor(Number(this.staminaAdDailyLimit) || 0)),
+          cooldownSec: Math.max(0, Math.floor(Number(this.adRewardCooldownSeconds) || 0))
+        }
+      }
+    });
+    this.adService = new AdService({
+      adUnitId: this.rewardedVideoAdUnitId,
+      logger: Logger,
+      mockEnabled: this.enableMockRewardedAdOnUnsupported !== false
+    });
     this._settingViewPrefab = null;
     this._settingViewNode = null;
+    this._signInViewPrefab = null;
+    this._signInViewNode = null;
+    this._signInButtonSpriteFrames = null;
+    this._signInButtonSpriteLoadPromise = null;
+    this._signInIconSpriteFrameCache = {};
     this.audioManager = new AudioManager({
       settingsDefaults: {
         musicEnabled: this.enableBackgroundMusic,
@@ -267,7 +344,8 @@ cc.Class({
     });
     this.levelRenderer.setLoseActionHandlers({
       onRetryLevel: this._restartCurrentLevel.bind(this),
-      onBackLevel: this._onBackToLevelTap.bind(this)
+      onBackLevel: this._onBackToLevelTap.bind(this),
+      onWatchAd: this._onLoseWatchAdTap.bind(this)
     });
     this.levelRenderer.setGameplayActionHandlers({
       onBackToLevel: this._onBackToLevelTap.bind(this),
@@ -864,6 +942,7 @@ cc.Class({
       if (!event || typeof event.type !== "string") {
         return;
       }
+      this._trackRuntimeTelemetryEvent(event, snapshot);
 
       if (event.type === "jar_rim_bounce") {
         this._playSfx("jarBounce");
@@ -938,6 +1017,35 @@ cc.Class({
     this.node.on(cc.Node.EventType.TOUCH_CANCEL, this._onAimCancel, this);
   },
 
+  _getShooterOriginPoint: function () {
+    if (
+      this.gameManager &&
+      this.gameManager.systems &&
+      this.gameManager.systems.shooterController &&
+      this.gameManager.systems.shooterController.origin
+    ) {
+      return this.gameManager.systems.shooterController.origin;
+    }
+
+    return BoardLayout && BoardLayout.shooterOrigin
+      ? BoardLayout.shooterOrigin
+      : null;
+  },
+
+  _isShotTouchPointValid: function (localPoint) {
+    if (!localPoint || typeof localPoint.y !== "number") {
+      return false;
+    }
+
+    var shooterOrigin = this._getShooterOriginPoint();
+    if (!shooterOrigin || typeof shooterOrigin.y !== "number") {
+      return true;
+    }
+
+    // 仅允许炮台发射点上方的触摸生效。
+    return localPoint.y > shooterOrigin.y;
+  },
+
   _onAimStart: function (event) {
     if (!this.currentLevelConfig || this.isRestarting || this.isSelectingLevel) {
       return;
@@ -953,6 +1061,9 @@ cc.Class({
       return;
     }
     if (this._isBarrierHammerTargeting()) {
+      return;
+    }
+    if (!this._isShotTouchPointValid(localPoint)) {
       return;
     }
 
@@ -984,6 +1095,9 @@ cc.Class({
       return;
     }
     if (this._isBarrierHammerTargeting()) {
+      return;
+    }
+    if (!this._isShotTouchPointValid(localPoint)) {
       return;
     }
 
@@ -1031,6 +1145,9 @@ cc.Class({
     }
     if (this._isBarrierHammerTargeting()) {
       this._handleBarrierHammerTargetTouch(localPoint);
+      return;
+    }
+    if (!this._isShotTouchPointValid(localPoint)) {
       return;
     }
 
@@ -1086,6 +1203,9 @@ cc.Class({
       return;
     }
 
+    this._trackTelemetry("powerup_tap", {
+      powerup_type: entityType
+    });
     this._playSfx("uiClick");
     var useResult = this.gameManager.useSkillBall(entityType);
     var snapshot = useResult && useResult.snapshot
@@ -1112,21 +1232,42 @@ cc.Class({
 
     var reason = useResult && typeof useResult.reason === "string" ? useResult.reason : "equip_failed";
     if (reason === "inventory_empty") {
+      this._trackTelemetry("powerup_fail", {
+        powerup_type: entityType,
+        reason: reason
+      });
       this._setStatusWithTip("skill_inventory_empty", null, "该道具库存不足");
+      this._tryRecoverInventoryByAd(entityType);
       return;
     }
     if (reason === "current_slot_occupied_by_skill") {
+      this._trackTelemetry("powerup_fail", {
+        powerup_type: entityType,
+        reason: reason
+      });
       this._setStatusWithTip("skill_current_slot_occupied", null, "当前炮台已装填道具球，请先发射");
       return;
     }
     if (reason === "busy") {
+      this._trackTelemetry("powerup_fail", {
+        powerup_type: entityType,
+        reason: reason
+      });
       this._setStatusWithTip("skill_busy", null, "当前状态不可切换道具");
       return;
     }
     if (reason === "targeting_active") {
+      this._trackTelemetry("powerup_fail", {
+        powerup_type: entityType,
+        reason: reason
+      });
       this._setStatusWithTip("targeting_active", null, "请先完成破障锤目标选择");
       return;
     }
+    this._trackTelemetry("powerup_fail", {
+      powerup_type: entityType,
+      reason: reason
+    });
     this._setStatusWithTip("skill_equip_failed", null, "道具装填失败");
   },
 
@@ -1139,6 +1280,9 @@ cc.Class({
       return;
     }
 
+    this._trackTelemetry("powerup_tap", {
+      powerup_type: "swap"
+    });
     this._playSfx("uiClick");
     var swapResult = this.gameManager.useSwapBall();
     var snapshot = swapResult && swapResult.snapshot
@@ -1160,21 +1304,42 @@ cc.Class({
 
     var reason = swapResult && typeof swapResult.reason === "string" ? swapResult.reason : "swap_failed";
     if (reason === "inventory_empty") {
+      this._trackTelemetry("powerup_fail", {
+        powerup_type: "swap",
+        reason: reason
+      });
       this._setStatusWithTip("swap_inventory_empty", null, "换球道具库存不足");
+      this._tryRecoverInventoryByAd("swap");
       return;
     }
     if (reason === "queue_missing") {
+      this._trackTelemetry("powerup_fail", {
+        powerup_type: "swap",
+        reason: reason
+      });
       this._setStatusWithTip("swap_queue_missing", null, "当前无法换球");
       return;
     }
     if (reason === "busy") {
+      this._trackTelemetry("powerup_fail", {
+        powerup_type: "swap",
+        reason: reason
+      });
       this._setStatusWithTip("swap_busy", null, "当前状态不可使用换球");
       return;
     }
     if (reason === "targeting_active") {
+      this._trackTelemetry("powerup_fail", {
+        powerup_type: "swap",
+        reason: reason
+      });
       this._setStatusWithTip("targeting_active", null, "请先完成破障锤目标选择");
       return;
     }
+    this._trackTelemetry("powerup_fail", {
+      powerup_type: "swap",
+      reason: reason
+    });
     this._setStatusWithTip("swap_failed", null, "换球失败");
   },
 
@@ -1187,6 +1352,9 @@ cc.Class({
       return;
     }
 
+    this._trackTelemetry("powerup_tap", {
+      powerup_type: "barrier_hammer"
+    });
     this._playSfx("uiClick");
     var isTargeting = this._isBarrierHammerTargeting();
     var hammerResult = isTargeting
@@ -1210,17 +1378,34 @@ cc.Class({
 
     var reason = hammerResult && typeof hammerResult.reason === "string" ? hammerResult.reason : "hammer_failed";
     if (reason === "no_obstacle") {
+      this._trackTelemetry("powerup_fail", {
+        powerup_type: "barrier_hammer",
+        reason: reason
+      });
       this._setStatusWithTip("hammer_no_obstacle", null, "没有需要破除的障碍");
       return;
     }
     if (reason === "inventory_empty") {
+      this._trackTelemetry("powerup_fail", {
+        powerup_type: "barrier_hammer",
+        reason: reason
+      });
       this._setStatusWithTip("hammer_inventory_empty", null, "破障锤库存不足");
+      this._tryRecoverInventoryByAd("barrier_hammer");
       return;
     }
     if (reason === "busy") {
+      this._trackTelemetry("powerup_fail", {
+        powerup_type: "barrier_hammer",
+        reason: reason
+      });
       this._setStatusWithTip("hammer_busy", null, "当前状态不可使用破障锤");
       return;
     }
+    this._trackTelemetry("powerup_fail", {
+      powerup_type: "barrier_hammer",
+      reason: reason
+    });
     this._setStatusWithTip("hammer_enable_failed", null, "破障锤启用失败");
   },
 
@@ -1245,17 +1430,34 @@ cc.Class({
 
     var reason = hammerResult && typeof hammerResult.reason === "string" ? hammerResult.reason : "hammer_failed";
     if (reason === "no_target" || reason === "target_invalid") {
+      this._trackTelemetry("powerup_fail", {
+        powerup_type: "barrier_hammer",
+        reason: reason
+      });
       this._setStatusWithTip("hammer_target_invalid", null, "请点选石头或冰冻球");
       return;
     }
     if (reason === "inventory_empty") {
+      this._trackTelemetry("powerup_fail", {
+        powerup_type: "barrier_hammer",
+        reason: reason
+      });
       this._setStatusWithTip("hammer_inventory_empty", null, "破障锤库存不足");
+      this._tryRecoverInventoryByAd("barrier_hammer");
       return;
     }
     if (reason === "busy") {
+      this._trackTelemetry("powerup_fail", {
+        powerup_type: "barrier_hammer",
+        reason: reason
+      });
       this._setStatusWithTip("hammer_busy", null, "当前状态不可使用破障锤");
       return;
     }
+    this._trackTelemetry("powerup_fail", {
+      powerup_type: "barrier_hammer",
+      reason: reason
+    });
     this._setStatusWithTip("hammer_use_failed", null, "破障锤使用失败");
   },
 
@@ -1273,6 +1475,449 @@ cc.Class({
     if (this.tipsPresenter && typeof this.tipsPresenter.showByKey === "function") {
       this.tipsPresenter.showByKey(tipKey, params, fallbackMessage);
     }
+  },
+
+  _refreshPlayerInventory: function () {
+    if (!this.inventoryStore) {
+      this.playerInventory = this.playerInventory || {
+        items: {}
+      };
+      return this.playerInventory;
+    }
+
+    this.playerInventory = this.inventoryStore.load();
+    return this.playerInventory;
+  },
+
+  _addInventoryItem: function (itemId, count) {
+    this._refreshPlayerInventory();
+    if (!this.inventoryStore || typeof this.inventoryStore.addItem !== "function") {
+      return {
+        accepted: false,
+        reason: "inventory_store_unavailable"
+      };
+    }
+
+    var addResult = this.inventoryStore.addItem(this.playerInventory, itemId, count);
+    if (!addResult || !addResult.accepted) {
+      return {
+        accepted: false,
+        reason: addResult && addResult.reason ? addResult.reason : "inventory_add_failed"
+      };
+    }
+
+    this.playerInventory = addResult.inventory;
+    this.inventoryStore.save(this.playerInventory);
+    return addResult;
+  },
+
+  _trackTelemetry: function (eventName, payload) {
+    if (!this.telemetryService || typeof this.telemetryService.track !== "function") {
+      return null;
+    }
+
+    this.telemetryService.setContext({
+      attempt_id: this._currentAttemptId || "",
+      level_id: this._currentLevelId || "",
+      level_code: this.currentLevelConfig && this.currentLevelConfig.level
+        ? this.currentLevelConfig.level.code
+        : ""
+    });
+    return this.telemetryService.track(eventName, payload);
+  },
+
+  _beginLevelAttemptTracking: function (levelConfig, snapshot) {
+    var safeLevelConfig = levelConfig && levelConfig.level ? levelConfig.level : {};
+    this._attemptSequence += 1;
+    this._currentAttemptId = [
+      "attempt",
+      String(this._attemptSequence),
+      String(safeLevelConfig.levelId || this._currentLevelId || 0),
+      Date.now().toString(36)
+    ].join("_");
+    this._trackedResultAttemptId = "";
+    this._grantedAttemptRewardKeys = {};
+
+    this._trackTelemetry("level_start", {
+      result_state: snapshot && snapshot.state ? snapshot.state : "running"
+    });
+    if (this.adService && typeof this.adService.preloadRewarded === "function") {
+      this.adService.preloadRewarded().catch(function () {
+        // Ignore preload failures and fallback to lazy show-time loading.
+      });
+    }
+  },
+
+  _trackRuntimeTelemetryEvent: function (runtimeEvent) {
+    if (!runtimeEvent || typeof runtimeEvent.type !== "string") {
+      return;
+    }
+
+    if (runtimeEvent.type === "jar_collect_scored") {
+      this._trackTelemetry("jar_collect_scored", {
+        count: Math.max(0, Math.floor(Number(runtimeEvent.count) || 0)),
+        gained: Math.max(0, Math.floor(Number(runtimeEvent.gained) || 0)),
+        is_score_boosted: !!runtimeEvent.is_score_boosted,
+        boost_multiplier: Number(runtimeEvent.boost_multiplier) || 1
+      });
+    }
+  },
+
+  _onRuntimeStateTransition: function (snapshot, previousState, currentState) {
+    if (currentState === previousState) {
+      return;
+    }
+
+    var isTerminalState = currentState === "won" ||
+      currentState === "out_of_shots" ||
+      currentState === "lost_danger" ||
+      currentState === "lost_objective";
+
+    if (currentState === "out_of_shots" || currentState === "lost_danger" || currentState === "lost_objective") {
+      var loseRewardEntry = AdRewardCatalog.resolveLoseRewardEntry(currentState);
+      if (loseRewardEntry) {
+        this._trackTelemetry("ad_entry_exposed", {
+          entry_key: loseRewardEntry.entryKey,
+          reward_type: loseRewardEntry.rewardType,
+          result_state: currentState
+        });
+      }
+    }
+
+    if (isTerminalState && this._trackedResultAttemptId !== this._currentAttemptId) {
+      this._trackedResultAttemptId = this._currentAttemptId;
+      this._trackTelemetry("level_result", {
+        result_state: currentState
+      });
+    }
+  },
+
+  _buildAttemptRewardKey: function (rewardType) {
+    return this._currentAttemptId + "|" + rewardType;
+  },
+
+  _hasGrantedAttemptReward: function (rewardType) {
+    if (!this._currentAttemptId) {
+      return false;
+    }
+    var key = this._buildAttemptRewardKey(rewardType);
+    return !!this._grantedAttemptRewardKeys[key];
+  },
+
+  _markAttemptRewardGranted: function (rewardType) {
+    if (!this._currentAttemptId) {
+      return;
+    }
+    var key = this._buildAttemptRewardKey(rewardType);
+    this._grantedAttemptRewardKeys[key] = true;
+  },
+
+  _onLoseWatchAdTap: function () {
+    if (!this.currentLevelConfig || this.isRestarting || this.isSelectingLevel) {
+      return;
+    }
+
+    var snapshot = this.gameManager.getRuntimeSnapshot();
+    var loseRewardEntry = AdRewardCatalog.resolveLoseRewardEntry(snapshot ? snapshot.state : "");
+    if (!loseRewardEntry) {
+      this._setStatus("当前失败类型暂无广告奖励");
+      return;
+    }
+
+    this._showRewardedAdForEntry(loseRewardEntry, {
+      entrySource: "lose_view",
+      trackExposure: false,
+      allowSimulatedCompletion: true,
+      onRewardGrantedMessage: "奖励已生效，正在重新开局...",
+      onRewardGranted: function () {
+        this._restartCurrentLevel();
+      }.bind(this)
+    });
+  },
+
+  _showRewardedAdForEntry: function (entry, options) {
+    options = options || {};
+    if (!entry) {
+      return Promise.resolve(false);
+    }
+
+    if (this._adFlowInProgress) {
+      this._setStatus("广告处理中，请稍候...");
+      return Promise.resolve(false);
+    }
+
+    if (!this.adService || typeof this.adService.showRewarded !== "function") {
+      this._setStatus("广告服务未就绪");
+      return Promise.resolve(false);
+    }
+
+    if (options.trackExposure !== false) {
+      this._trackTelemetry("ad_entry_exposed", {
+        entry_key: entry.entryKey,
+        reward_type: entry.rewardType,
+        entry_source: options.entrySource || entry.entryKey
+      });
+    }
+
+    var quotaResult = this.adRewardQuotaStore && typeof this.adRewardQuotaStore.canGrant === "function"
+      ? this.adRewardQuotaStore.canGrant(entry.quotaType)
+      : { allowed: true, reason: "ok", cooldownRemainingSec: 0, remainingToday: -1 };
+    if (!quotaResult.allowed) {
+      if (quotaResult.reason === "daily_limit") {
+        this._setStatus("今日奖励次数已达上限");
+      } else if (quotaResult.reason === "cooldown") {
+        this._setStatus("操作过快，请" + quotaResult.cooldownRemainingSec + "秒后重试");
+      } else {
+        this._setStatus("当前无法领取奖励");
+      }
+      return Promise.resolve(false);
+    }
+
+    if (this._hasGrantedAttemptReward(entry.rewardType)) {
+      this._setStatus("本局该奖励已领取");
+      return Promise.resolve(false);
+    }
+
+    this._adFlowInProgress = true;
+    this._trackTelemetry("ad_request", {
+      entry_key: entry.entryKey,
+      reward_type: entry.rewardType
+    });
+
+    return this.adService.showRewarded({
+      placement: options.entrySource || entry.entryKey,
+      onShow: function () {
+        this._trackTelemetry("ad_show", {
+          entry_key: entry.entryKey,
+          reward_type: entry.rewardType
+        });
+      }.bind(this)
+    }).then(function (adResult) {
+      var safeAdResult = adResult || null;
+      var usedSimulatedCompletion = false;
+      if (
+        (!safeAdResult || !safeAdResult.ok) &&
+        options.allowSimulatedCompletion === true
+      ) {
+        usedSimulatedCompletion = true;
+        safeAdResult = {
+          ok: true,
+          code: "simulated_close",
+          isCompleted: true,
+          simulated: true,
+          originalCode: adResult && adResult.code ? adResult.code : "unknown"
+        };
+      }
+
+      var isCompleted = !!(safeAdResult && safeAdResult.isCompleted);
+      this._trackTelemetry("ad_close", {
+        entry_key: entry.entryKey,
+        reward_type: entry.rewardType,
+        is_completed: isCompleted,
+        is_simulated: usedSimulatedCompletion
+      });
+
+      if (!safeAdResult || !safeAdResult.ok) {
+        this._setStatus("广告加载失败，请稍后重试");
+        return false;
+      }
+      if (!isCompleted) {
+        this._setStatus("未完整观看广告，奖励未发放");
+        return false;
+      }
+
+      var grantResult = this._grantAdEntryReward(entry, options);
+      if (!grantResult || !grantResult.accepted) {
+        this._setStatus(grantResult && grantResult.message ? grantResult.message : "奖励发放失败");
+        return false;
+      }
+
+      if (this.adRewardQuotaStore && typeof this.adRewardQuotaStore.recordGrant === "function") {
+        this.adRewardQuotaStore.recordGrant(entry.quotaType);
+      }
+      this._markAttemptRewardGranted(entry.rewardType);
+      this._trackTelemetry("ad_reward_grant", {
+        entry_key: entry.entryKey,
+        reward_type: entry.rewardType,
+        reward_value: entry.rewardValue
+      });
+
+      if (grantResult.snapshot && this.currentLevelConfig && !this.isSelectingLevel) {
+        this.levelRenderer.refreshRuntime(this.currentLevelConfig, grantResult.snapshot);
+      }
+      this._setStatus(grantResult.message || options.onRewardGrantedMessage || "奖励发放成功");
+      if (typeof options.onRewardGranted === "function") {
+        options.onRewardGranted();
+      }
+      return true;
+    }.bind(this), function () {
+      this._setStatus("广告展示失败，请稍后重试");
+      return false;
+    }.bind(this)).then(function (granted) {
+      this._adFlowInProgress = false;
+      return granted;
+    }.bind(this), function () {
+      this._adFlowInProgress = false;
+      return false;
+    }.bind(this));
+  },
+
+  _grantAdEntryReward: function (entry, options) {
+    options = options || {};
+    if (!entry) {
+      return {
+        accepted: false,
+        message: "奖励配置缺失"
+      };
+    }
+
+    if (entry.grantMode === "next_round") {
+      this._queueNextRoundReward(entry);
+      return {
+        accepted: true,
+        message: options.onRewardGrantedMessage || "奖励已解锁，下局生效"
+      };
+    }
+
+    if (entry.staminaGrant) {
+      this._refreshPlayerResources();
+      var safeGrant = Math.max(1, Math.floor(Number(entry.staminaGrant) || 1));
+      this.playerResources.stamina = Math.max(
+        0,
+        Math.floor(Number(this.playerResources.stamina) || 0)
+      ) + safeGrant;
+      if (this.playerResourceStore && typeof this.playerResourceStore.save === "function") {
+        this.playerResourceStore.save(this.playerResources);
+      }
+      this._updateLevelSelectTopStatus();
+      return {
+        accepted: true,
+        message: "体力补给成功：+" + safeGrant
+      };
+    }
+
+    if (entry.inventoryGrant) {
+      var inventoryGrant = entry.inventoryGrant;
+      var grantResult = this.gameManager.grantPowerupInventory(
+        inventoryGrant.powerupType,
+        inventoryGrant.amount
+      );
+      if (!grantResult || !grantResult.accepted) {
+        return {
+          accepted: false,
+          message: "道具补给失败"
+        };
+      }
+      return {
+        accepted: true,
+        snapshot: grantResult.snapshot,
+        message: "补给成功：" +
+          AdRewardCatalog.resolvePowerupDisplayName(inventoryGrant.powerupType) +
+          " +" + grantResult.gained
+      };
+    }
+
+    return {
+      accepted: false,
+      message: "未知奖励类型"
+    };
+  },
+
+  _queueNextRoundReward: function (entry) {
+    if (!entry || !entry.rewardType) {
+      return;
+    }
+
+    var queued = this._pendingNextRoundRewards || [];
+    var exists = queued.some(function (item) {
+      return item && item.rewardType === entry.rewardType;
+    });
+    if (exists) {
+      return;
+    }
+
+    queued.push(clone(entry));
+    this._pendingNextRoundRewards = queued;
+  },
+
+  _applyPendingNextRoundRewards: function (snapshot) {
+    var pendingRewards = Array.isArray(this._pendingNextRoundRewards)
+      ? this._pendingNextRoundRewards.slice()
+      : [];
+    if (!pendingRewards.length) {
+      return snapshot;
+    }
+
+    var appliedRewardTexts = [];
+    pendingRewards.forEach(function (rewardEntry) {
+      if (rewardEntry.jarScoreBoost) {
+        var boostResult = this.gameManager.activateJarScoreBoost({
+          multiplier: rewardEntry.jarScoreBoost.multiplier,
+          durationMs: rewardEntry.jarScoreBoost.durationMs
+        });
+        snapshot = boostResult || this.gameManager.getRuntimeSnapshot();
+        appliedRewardTexts.push("5秒入缸x2");
+        return;
+      }
+
+      if (rewardEntry.inventoryGrant) {
+        var inventoryGrant = rewardEntry.inventoryGrant;
+        var grantResult = this.gameManager.grantPowerupInventory(
+          inventoryGrant.powerupType,
+          inventoryGrant.amount
+        );
+        if (grantResult && grantResult.accepted) {
+          snapshot = grantResult.snapshot || this.gameManager.getRuntimeSnapshot();
+          appliedRewardTexts.push(
+            AdRewardCatalog.resolvePowerupDisplayName(inventoryGrant.powerupType) + " +" + grantResult.gained
+          );
+        }
+      }
+    }, this);
+
+    this._pendingNextRoundRewards = [];
+    if (appliedRewardTexts.length > 0) {
+      this._setStatus("下局奖励生效：" + appliedRewardTexts.join("，"));
+    }
+    return snapshot || this.gameManager.getRuntimeSnapshot();
+  },
+
+  _tryRecoverInventoryByAd: function (powerupType) {
+    if (!powerupType || this.isSelectingLevel || this.isRestarting || !this.currentLevelConfig) {
+      return;
+    }
+
+    var rewardEntry = AdRewardCatalog.resolveInventoryEmptyRewardEntry(powerupType);
+    if (!rewardEntry) {
+      return;
+    }
+
+    this._showRewardedAdForEntry(rewardEntry, {
+      entrySource: "inventory_empty",
+      onRewardGrantedMessage: "道具补给成功"
+    });
+  },
+
+  _tryRecoverStaminaByAd: function (onRecovered) {
+    if (this._staminaRecoveryInProgress) {
+      return;
+    }
+
+    var rewardEntry = AdRewardCatalog.resolveStaminaRecoveryEntry();
+    if (!rewardEntry) {
+      return;
+    }
+
+    this._staminaRecoveryInProgress = true;
+    this._showRewardedAdForEntry(rewardEntry, {
+      entrySource: "stamina_insufficient",
+      onRewardGrantedMessage: "体力补给成功，可继续挑战"
+    }).then(function (granted) {
+      this._staminaRecoveryInProgress = false;
+      if (granted && typeof onRecovered === "function") {
+        onRecovered();
+      }
+    }.bind(this));
   },
 
   _loadInitialLevel: function () {
@@ -1301,6 +1946,8 @@ cc.Class({
     this._setStatus("Restarting level...");
 
     var snapshot = this.gameManager.startLevel(this.currentLevelConfig);
+    snapshot = this._applyPendingNextRoundRewards(snapshot);
+    this._beginLevelAttemptTracking(this.currentLevelConfig, snapshot);
     snapshot = this.gameManager.endAim();
     this._lastRuntimeState = snapshot ? snapshot.state : null;
     this.levelRenderer.renderLevel(this.currentLevelConfig, snapshot).then(function () {
@@ -1364,6 +2011,25 @@ cc.Class({
   _getCurrentCoins: GameBootstrapUiFlowMethods._getCurrentCoins,
   _consumeStaminaForLevelEntry: GameBootstrapUiFlowMethods._consumeStaminaForLevelEntry,
   _updateLevelSelectTopStatus: GameBootstrapUiFlowMethods._updateLevelSelectTopStatus,
+  _getDailySignInConfig: GameBootstrapUiFlowMethods._getDailySignInConfig,
+  _refreshSignInState: GameBootstrapUiFlowMethods._refreshSignInState,
+  _markSignInPopupShown: GameBootstrapUiFlowMethods._markSignInPopupShown,
+  _canClaimSignInToday: GameBootstrapUiFlowMethods._canClaimSignInToday,
+  _ensureSignInEntryRedDot: GameBootstrapUiFlowMethods._ensureSignInEntryRedDot,
+  _updateSignInEntryState: GameBootstrapUiFlowMethods._updateSignInEntryState,
+  _ensureSignInViewPrefab: GameBootstrapUiFlowMethods._ensureSignInViewPrefab,
+  _ensureSignInButtonSpriteFrames: GameBootstrapUiFlowMethods._ensureSignInButtonSpriteFrames,
+  _resolveSignInRewardByDay: GameBootstrapUiFlowMethods._resolveSignInRewardByDay,
+  _resolveSignInDisplayRewardItem: GameBootstrapUiFlowMethods._resolveSignInDisplayRewardItem,
+  _ensureSignInIconSpriteFrame: GameBootstrapUiFlowMethods._ensureSignInIconSpriteFrame,
+  _resolveSignInDayUiState: GameBootstrapUiFlowMethods._resolveSignInDayUiState,
+  _bindSignInViewActions: GameBootstrapUiFlowMethods._bindSignInViewActions,
+  _renderSignInView: GameBootstrapUiFlowMethods._renderSignInView,
+  _showSignInView: GameBootstrapUiFlowMethods._showSignInView,
+  _hideSignInView: GameBootstrapUiFlowMethods._hideSignInView,
+  _grantSignInRewardItems: GameBootstrapUiFlowMethods._grantSignInRewardItems,
+  _claimTodaySignInReward: GameBootstrapUiFlowMethods._claimTodaySignInReward,
+  _maybeAutoShowSignInView: GameBootstrapUiFlowMethods._maybeAutoShowSignInView,
   _onLevelSelectSettingTap: GameBootstrapUiFlowMethods._onLevelSelectSettingTap,
   _ensureSettingViewPrefab: GameBootstrapUiFlowMethods._ensureSettingViewPrefab,
   _showSettingView: GameBootstrapUiFlowMethods._showSettingView,

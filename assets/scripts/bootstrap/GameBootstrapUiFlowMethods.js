@@ -8,6 +8,7 @@ var LevelSelectView = require("./LevelSelectView");
 var BootstrapButtonFactory = require("./BootstrapButtonFactory");
 var StarRatingPolicy = require("../core/StarRatingPolicy");
 var BundleLoader = require("../utils/BundleLoader");
+var DailySignInConfig = require("../config/DailySignInConfig");
 
 var SETTING_VOLUME_STEP = 0.1;
 var SETTING_STATUS_X_ENABLED = -18;
@@ -15,6 +16,33 @@ var SETTING_STATUS_X_DISABLED = 18;
 var SETTING_VOLUME_ICON_OPEN_PATH = "image/setting/volume_open";
 var SETTING_VOLUME_ICON_CLOSE_PATH = "image/setting/volume_close";
 var MAX_LEVEL_MAP_PREFAB_INDEX = 10;
+var SIGN_IN_PREFAB_CANDIDATES = [
+  "prefabs/ui/SignInView ",
+  "prefabs/ui/SignInView"
+];
+var SIGN_IN_BUTTON_SPRITE_PATHS = {
+  claimed: "image/btn1",
+  claimable: "image/btn2"
+};
+var SIGN_IN_ITEM_ICON_PATHS = {
+  coin: "image/props/coin",
+  swap_ball: "image/props/gift_pack",
+  rainbow_ball: "image/props/rainbow_ball",
+  blast_ball: "image/props/blast_ball",
+  barrier_hammer: "image/props/barrier_hammer"
+};
+var SIGN_IN_ITEM_DISPLAY_NAMES = {
+  coin: "金币",
+  swap_ball: "换球",
+  rainbow_ball: "彩虹球",
+  blast_ball: "炸裂球",
+  barrier_hammer: "破障锤"
+};
+var SIGN_IN_STATUS_TEXT = {
+  claimed: "已领",
+  claimable: "可领",
+  locked: "未领"
+};
 
 module.exports = {
   _createStatusOverlay: function () {
@@ -49,15 +77,22 @@ module.exports = {
     }
 
     this._playSfx("uiClick");
-    if (!this._consumeStaminaForLevelEntry()) {
-      this._setStatus("Stamina is not enough. It resets to 10 at 00:00.");
-      // 胜利页点击“下一关”时若体力不足，主动返回选关页，避免“点击无反应”的体验。
-      this._showLevelSelectView();
+    var nextLevelId = (this.currentLevelConfig.level.levelId || 1) + 1;
+    var startNextLevel = function () {
+      this._setStatus("Loading level_" + ("000" + nextLevelId).slice(-3) + "...");
+      this._loadLevelById(nextLevelId, "Next level started", "No next level available.");
+    }.bind(this);
+
+    if (!this._consumeStaminaForLevelEntry(startNextLevel)) {
+      if (!this._staminaRecoveryInProgress) {
+        this._setStatus("Stamina is not enough. It resets to 10 at 00:00.");
+        // 胜利页点击“下一关”时若体力不足，主动返回选关页，避免“点击无反应”的体验。
+        this._showLevelSelectView();
+      }
       return;
     }
-    var nextLevelId = (this.currentLevelConfig.level.levelId || 1) + 1;
-    this._setStatus("Loading level_" + ("000" + nextLevelId).slice(-3) + "...");
-    this._loadLevelById(nextLevelId, "Next level started", "No next level available.");
+
+    startNextLevel();
   },
 
   _onBackToLevelTap: function () {
@@ -92,7 +127,7 @@ module.exports = {
     return Math.max(0, Math.floor(Number(this.playerResources && this.playerResources.coins) || 0));
   },
 
-  _consumeStaminaForLevelEntry: function () {
+  _consumeStaminaForLevelEntry: function (onRecovered) {
     if (!this.playerResourceStore) {
       return true;
     }
@@ -104,6 +139,18 @@ module.exports = {
         ? consumeResult.resources
         : (this.playerResources || { stamina: 0, coins: 0 });
       this._updateLevelSelectTopStatus();
+      if (
+        typeof onRecovered === "function" &&
+        typeof this._tryRecoverStaminaByAd === "function"
+      ) {
+        this._tryRecoverStaminaByAd(function () {
+          if (!this._consumeStaminaForLevelEntry()) {
+            this._setStatus("Stamina is not enough. It resets to 10 at 00:00.");
+            return;
+          }
+          onRecovered();
+        }.bind(this));
+      }
       return false;
     }
 
@@ -136,6 +183,461 @@ module.exports = {
     if (goldLabel) {
       goldLabel.string = String(this._getCurrentCoins());
     }
+
+    this._updateSignInEntryState();
+  },
+
+  _getDailySignInConfig: function () {
+    if (this.dailySignInConfig && Array.isArray(this.dailySignInConfig.rewards)) {
+      return this.dailySignInConfig;
+    }
+    return DailySignInConfig;
+  },
+
+  _refreshSignInState: function () {
+    if (!this.signInStore || typeof this.signInStore.load !== "function") {
+      this.signInState = this.signInState || {
+        currentCycleDay: 1,
+        claimedDaysInCycle: [],
+        lastClaimDate: ""
+      };
+      return this.signInState;
+    }
+
+    this.signInState = this.signInStore.load();
+    return this.signInState;
+  },
+
+  _markSignInPopupShown: function (now) {
+    if (!this.signInStore || typeof this.signInStore.markPopupShown !== "function") {
+      return;
+    }
+
+    this._refreshSignInState();
+    var markResult = this.signInStore.markPopupShown(this.signInState, now || new Date());
+    this.signInState = markResult && markResult.state ? markResult.state : this.signInState;
+    this.signInStore.save(this.signInState);
+  },
+
+  _canClaimSignInToday: function (now) {
+    this._refreshSignInState();
+    if (this.signInStore && typeof this.signInStore.canClaimToday === "function") {
+      return this.signInStore.canClaimToday(this.signInState, now || new Date());
+    }
+
+    var todayKey = this.signInStore && typeof this.signInStore.getTodayKey === "function"
+      ? this.signInStore.getTodayKey(now || new Date())
+      : "";
+    return this.signInState.lastClaimDate !== todayKey;
+  },
+
+  _ensureSignInEntryRedDot: function (entryNode) {
+    if (!entryNode || !entryNode.isValid) {
+      return null;
+    }
+
+    var redDotNode = entryNode.getChildByName("sign_in_red_dot");
+    if (redDotNode && redDotNode.isValid) {
+      return redDotNode;
+    }
+
+    redDotNode = new cc.Node("sign_in_red_dot");
+    redDotNode.parent = entryNode;
+    redDotNode.zIndex = 20;
+    redDotNode.setPosition((entryNode.width * 0.5) - 14, (entryNode.height * 0.5) - 10);
+    var graphics = redDotNode.addComponent(cc.Graphics);
+    graphics.clear();
+    graphics.fillColor = cc.color(255, 58, 58, 255);
+    graphics.circle(0, 0, 10);
+    graphics.fill();
+
+    return redDotNode;
+  },
+
+  _updateSignInEntryState: function () {
+    if (!this._levelSelectNode || !cc.isValid(this._levelSelectNode)) {
+      return;
+    }
+
+    var topLayerNode = this._levelSelectNode.getChildByName("top_layer");
+    var goldInfoNode = topLayerNode ? topLayerNode.getChildByName("gold_info") : null;
+    if (!goldInfoNode || !goldInfoNode.isValid) {
+      return;
+    }
+
+    this._bindNodeTapOnce(goldInfoNode, function () {
+      this._playSfx("uiClick");
+      this._showSignInView({
+        markPopupShown: true
+      });
+    }.bind(this));
+
+    var redDotNode = this._ensureSignInEntryRedDot(goldInfoNode);
+    if (!redDotNode || !redDotNode.isValid) {
+      return;
+    }
+
+    redDotNode.active = this._canClaimSignInToday();
+  },
+
+  _ensureSignInViewPrefab: function () {
+    if (this._signInViewPrefab) {
+      return Promise.resolve(this._signInViewPrefab);
+    }
+
+    return this._tryLoadFirstAvailablePrefab(SIGN_IN_PREFAB_CANDIDATES, {
+      silent: true
+    }).then(function (prefab) {
+      if (!prefab) {
+        throw new Error("SignInView prefab not found.");
+      }
+      this._signInViewPrefab = prefab;
+      return prefab;
+    }.bind(this));
+  },
+
+  _ensureSignInButtonSpriteFrames: function () {
+    if (
+      this._signInButtonSpriteFrames &&
+      this._signInButtonSpriteFrames.claimed &&
+      this._signInButtonSpriteFrames.claimable
+    ) {
+      return Promise.resolve(this._signInButtonSpriteFrames);
+    }
+    if (this._signInButtonSpriteLoadPromise) {
+      return this._signInButtonSpriteLoadPromise;
+    }
+
+    var loadSpriteFrame = function (path) {
+      return new Promise(function (resolve) {
+        BundleLoader.loadRes(path, cc.SpriteFrame, function (error, spriteFrame) {
+          if (error) {
+            Logger.warn("Load sign-in sprite failed", path, error && error.message ? error.message : error);
+            resolve(null);
+            return;
+          }
+
+          resolve(spriteFrame || null);
+        });
+      });
+    };
+
+    this._signInButtonSpriteLoadPromise = Promise.all([
+      loadSpriteFrame(SIGN_IN_BUTTON_SPRITE_PATHS.claimed),
+      loadSpriteFrame(SIGN_IN_BUTTON_SPRITE_PATHS.claimable)
+    ]).then(function (results) {
+      this._signInButtonSpriteFrames = {
+        claimed: results[0] || null,
+        claimable: results[1] || null
+      };
+      this._signInButtonSpriteLoadPromise = null;
+      return this._signInButtonSpriteFrames;
+    }.bind(this)).catch(function (error) {
+      this._signInButtonSpriteLoadPromise = null;
+      Logger.warn("Load sign-in button sprites failed", error && error.message ? error.message : error);
+      return {
+        claimed: null,
+        claimable: null
+      };
+    }.bind(this));
+
+    return this._signInButtonSpriteLoadPromise;
+  },
+
+  _resolveSignInRewardByDay: function (day) {
+    var signInConfig = this._getDailySignInConfig();
+    var rewards = Array.isArray(signInConfig.rewards) ? signInConfig.rewards : [];
+    for (var i = 0; i < rewards.length; i += 1) {
+      if (Math.floor(Number(rewards[i].day) || 0) === day) {
+        return rewards[i];
+      }
+    }
+    return null;
+  },
+
+  _resolveSignInDisplayRewardItem: function (rewardEntry) {
+    var items = rewardEntry && Array.isArray(rewardEntry.items) ? rewardEntry.items : [];
+    if (!items.length) {
+      return null;
+    }
+
+    for (var i = 0; i < items.length; i += 1) {
+      if (items[i] && items[i].id !== "coin") {
+        return items[i];
+      }
+    }
+    return items[0];
+  },
+
+  _ensureSignInIconSpriteFrame: function (itemId) {
+    var safeItemId = typeof itemId === "string" && itemId ? itemId : "coin";
+    this._signInIconSpriteFrameCache = this._signInIconSpriteFrameCache || {};
+    if (this._signInIconSpriteFrameCache[safeItemId]) {
+      return Promise.resolve(this._signInIconSpriteFrameCache[safeItemId]);
+    }
+
+    var path = SIGN_IN_ITEM_ICON_PATHS[safeItemId] || SIGN_IN_ITEM_ICON_PATHS.coin;
+    return new Promise(function (resolve) {
+      BundleLoader.loadRes(path, cc.SpriteFrame, function (error, spriteFrame) {
+        if (error) {
+          Logger.warn("Load sign-in icon failed", path, error && error.message ? error.message : error);
+          resolve(null);
+          return;
+        }
+
+        this._signInIconSpriteFrameCache[safeItemId] = spriteFrame || null;
+        resolve(this._signInIconSpriteFrameCache[safeItemId]);
+      }.bind(this));
+    }.bind(this));
+  },
+
+  _resolveSignInDayUiState: function (day, state, canClaimToday) {
+    var claimedDays = state && Array.isArray(state.claimedDaysInCycle) ? state.claimedDaysInCycle : [];
+    if (claimedDays.indexOf(day) >= 0) {
+      return "claimed";
+    }
+
+    var currentCycleDay = Math.max(1, Math.floor(Number(state && state.currentCycleDay) || 1));
+    if (canClaimToday && day === currentCycleDay) {
+      return "claimable";
+    }
+
+    return "locked";
+  },
+
+  _bindSignInViewActions: function (signInViewNode) {
+    if (!signInViewNode || !signInViewNode.isValid) {
+      return;
+    }
+
+    var closeButtonNode = this._findNodeByNameRecursive(signInViewNode, "btn_close");
+    var claimButtonNode = this._findNodeByNameRecursive(signInViewNode, "btn_award");
+    var maskNode = this._findNodeByNameRecursive(signInViewNode, "mask");
+
+    this._bindNodeTapOnce(closeButtonNode, function () {
+      this._playSfx("uiClick");
+      this._hideSignInView();
+    }.bind(this));
+    this._bindNodeTapOnce(maskNode, function () {
+      this._playSfx("uiClick");
+      this._hideSignInView();
+    }.bind(this));
+    this._bindNodeTapOnce(claimButtonNode, function () {
+      this._playSfx("uiClick");
+      this._claimTodaySignInReward();
+    }.bind(this));
+  },
+
+  _renderSignInView: function () {
+    var signInViewNode = this._signInViewNode;
+    if (!signInViewNode || !signInViewNode.isValid) {
+      return;
+    }
+
+    this._refreshSignInState();
+    var canClaimToday = this._canClaimSignInToday();
+    var currentState = this.signInState || {
+      currentCycleDay: 1,
+      claimedDaysInCycle: []
+    };
+    var iconLoadTasks = [];
+
+    for (var day = 1; day <= 7; day += 1) {
+      var dayNode = this._findNodeByNameRecursive(signInViewNode, "day" + day);
+      if (!dayNode || !dayNode.isValid) {
+        continue;
+      }
+
+      var dayLabelNode = dayNode.getChildByName("day");
+      var dayLabel = dayLabelNode ? dayLabelNode.getComponent(cc.Label) : null;
+      if (dayLabel) {
+        dayLabel.string = "第" + day + "天";
+      }
+
+      var rewardEntry = this._resolveSignInRewardByDay(day);
+      var displayItem = this._resolveSignInDisplayRewardItem(rewardEntry);
+      var iconNode = dayNode.getChildByName("icon");
+      var iconSprite = iconNode ? iconNode.getComponent(cc.Sprite) : null;
+      if (iconSprite && displayItem && displayItem.id) {
+        (function (targetSprite, targetItemId) {
+          iconLoadTasks.push(this._ensureSignInIconSpriteFrame(targetItemId).then(function (spriteFrame) {
+            if (!targetSprite || !targetSprite.node || !targetSprite.node.isValid || !spriteFrame) {
+              return;
+            }
+            targetSprite.spriteFrame = spriteFrame;
+          }));
+        }.bind(this))(iconSprite, displayItem.id);
+      }
+
+      var dayState = this._resolveSignInDayUiState(day, currentState, canClaimToday);
+      var awardButtonNode = dayNode.getChildByName("award_btn");
+      var statusNode = awardButtonNode ? awardButtonNode.getChildByName("status") : null;
+      var statusLabel = statusNode ? statusNode.getComponent(cc.Label) : null;
+      if (statusLabel) {
+        statusLabel.string = SIGN_IN_STATUS_TEXT[dayState] || SIGN_IN_STATUS_TEXT.locked;
+      }
+      if (awardButtonNode && awardButtonNode.isValid) {
+        var awardButton = awardButtonNode.getComponent(cc.Button);
+        if (awardButton) {
+          awardButton.interactable = false;
+        }
+        var awardSprite = awardButtonNode.getComponent(cc.Sprite);
+        if (awardSprite && this._signInButtonSpriteFrames) {
+          awardSprite.spriteFrame = dayState === "claimed"
+            ? this._signInButtonSpriteFrames.claimed
+            : this._signInButtonSpriteFrames.claimable;
+        }
+      }
+    }
+
+    var claimButtonNode = this._findNodeByNameRecursive(signInViewNode, "btn_award");
+    if (claimButtonNode && claimButtonNode.isValid) {
+      var claimButton = claimButtonNode.getComponent(cc.Button);
+      if (claimButton) {
+        claimButton.enableAutoGrayEffect = true;
+        claimButton.interactable = canClaimToday;
+      }
+      claimButtonNode.color = canClaimToday ? cc.color(255, 255, 255, 255) : cc.color(170, 170, 170, 255);
+    }
+
+    Promise.all(iconLoadTasks).catch(function (error) {
+      Logger.warn("Render sign-in icons failed", error && error.message ? error.message : error);
+    });
+  },
+
+  _showSignInView: function (options) {
+    options = options || {};
+    if (options.markPopupShown !== false) {
+      this._markSignInPopupShown(options.now || new Date());
+    }
+
+    this._ensureSignInViewPrefab().then(function (prefab) {
+      if (!prefab) {
+        this._setStatus("签到界面加载失败");
+        return;
+      }
+
+      return this._ensureSignInButtonSpriteFrames().then(function () {
+        var signInViewNode = this._signInViewNode;
+        if (!signInViewNode || !signInViewNode.isValid) {
+          signInViewNode = cc.instantiate(prefab);
+          if (!signInViewNode) {
+            this._setStatus("签到界面创建失败");
+            return;
+          }
+          signInViewNode.parent = this.node;
+          signInViewNode.setPosition(0, 0);
+          signInViewNode.zIndex = 300;
+          this._signInViewNode = signInViewNode;
+          this._bindSignInViewActions(signInViewNode);
+        }
+
+        signInViewNode.active = true;
+        this._renderSignInView();
+      }.bind(this));
+    }.bind(this)).catch(function (error) {
+      Logger.warn("Show sign-in view failed", error && error.message ? error.message : error);
+      this._setStatus("签到界面加载失败");
+    }.bind(this));
+  },
+
+  _hideSignInView: function () {
+    if (!this._signInViewNode || !this._signInViewNode.isValid) {
+      return;
+    }
+    this._signInViewNode.active = false;
+  },
+
+  _grantSignInRewardItems: function (rewardItems) {
+    var summaryTexts = [];
+    var items = Array.isArray(rewardItems) ? rewardItems : [];
+    for (var i = 0; i < items.length; i += 1) {
+      var item = items[i] || {};
+      var itemId = typeof item.id === "string" ? item.id : "";
+      var count = Math.max(1, Math.floor(Number(item.count) || 1));
+
+      if (itemId === "coin") {
+        this._refreshPlayerResources();
+        this.playerResources.coins = Math.max(0, Math.floor(Number(this.playerResources.coins) || 0)) + count;
+        if (this.playerResourceStore && typeof this.playerResourceStore.save === "function") {
+          this.playerResourceStore.save(this.playerResources);
+        }
+        summaryTexts.push("金币 +" + count);
+        continue;
+      }
+
+      if (typeof this._addInventoryItem === "function") {
+        var addResult = this._addInventoryItem(itemId, count);
+        if (addResult && addResult.accepted) {
+          var displayName = SIGN_IN_ITEM_DISPLAY_NAMES[itemId] || itemId;
+          summaryTexts.push(displayName + " +" + addResult.gained);
+        }
+      }
+    }
+
+    return summaryTexts;
+  },
+
+  _claimTodaySignInReward: function () {
+    if (!this.signInStore || typeof this.signInStore.claimToday !== "function") {
+      this._setStatus("签到系统未就绪");
+      return;
+    }
+
+    this._refreshSignInState();
+    var now = new Date();
+    var claimResult = this.signInStore.claimToday(this.signInState, now);
+    if (!claimResult || !claimResult.accepted) {
+      if (typeof this._setStatusWithTip === "function") {
+        this._setStatusWithTip("sign_in_already_claimed", null, "今日奖励已领取");
+      } else {
+        this._setStatus("今日奖励已领取");
+      }
+      this._renderSignInView();
+      this._updateSignInEntryState();
+      return;
+    }
+
+    // 先持久化签到状态，避免异常退出造成重复领取。
+    this.signInState = claimResult.state;
+    this.signInStore.save(this.signInState);
+
+    var rewardEntry = this._resolveSignInRewardByDay(claimResult.claimedDay);
+    var rewardItems = rewardEntry && Array.isArray(rewardEntry.items) ? rewardEntry.items : [];
+    var summaryTexts = this._grantSignInRewardItems(rewardItems);
+
+    this._updateLevelSelectTopStatus();
+    this._renderSignInView();
+    this._updateSignInEntryState();
+
+    var summary = summaryTexts.length > 0 ? summaryTexts.join("，") : "奖励已发放";
+    var successMessage = "签到成功：" + summary;
+    this._setStatus(successMessage);
+    if (this.tipsPresenter && typeof this.tipsPresenter.showText === "function") {
+      this.tipsPresenter.showText(successMessage);
+    }
+  },
+
+  _maybeAutoShowSignInView: function () {
+    var signInConfig = this._getDailySignInConfig();
+    if (!signInConfig || signInConfig.autoPopupOnFirstLogin === false) {
+      return;
+    }
+    if (!this.isSelectingLevel || this.isRestarting) {
+      return;
+    }
+    if (!this.signInStore || typeof this.signInStore.shouldAutoPopupToday !== "function") {
+      return;
+    }
+
+    this._refreshSignInState();
+    if (!this.signInStore.shouldAutoPopupToday(this.signInState, new Date())) {
+      return;
+    }
+
+    this._showSignInView({
+      markPopupShown: true
+    });
   },
 
   _onLevelSelectSettingTap: function () {
@@ -654,6 +1156,12 @@ module.exports = {
       this._rememberSelectedLevel(this._currentLevelId);
       this._prepareRouteEditorForLevel(levelConfig, this._currentLevelId);
       var snapshot = this.gameManager.startLevel(levelConfig);
+      if (typeof this._applyPendingNextRoundRewards === "function") {
+        snapshot = this._applyPendingNextRoundRewards(snapshot);
+      }
+      if (typeof this._beginLevelAttemptTracking === "function") {
+        this._beginLevelAttemptTracking(levelConfig, snapshot);
+      }
       this._lastRuntimeState = snapshot ? snapshot.state : null;
       return this.levelRenderer.renderLevel(levelConfig, snapshot).then(function () {
         try {
@@ -1088,6 +1596,10 @@ module.exports = {
     var scoreBandText = scoreHeatBand
       ? [scoreHeatBand.min, scoreHeatBand.target, scoreHeatBand.max].join("/")
       : "-";
+    var boostRemainingMs = Math.max(0, Math.floor(Number(snapshot.jarScoreBoostRemainingMs) || 0));
+    var boostText = snapshot.jarScoreBoostActive
+      ? ("x" + (Number(snapshot.jarScoreBoostMultiplier) || 1) + " (" + boostRemainingMs + "ms)")
+      : "off";
 
     return [
       "Stage 3 flow ready",
@@ -1099,6 +1611,7 @@ module.exports = {
       "Current/Next: " + snapshot.shooter.currentColor + "/" + snapshot.shooter.nextColor,
       "Grid cells: " + snapshot.board.cellCount,
       "MatchDrop/FloatingDrop: " + matched + "/" + floating,
+      "JarBoost: " + boostText,
       "Collected: " + collected + (objective ? ("/" + objective) : ""),
       "Projectile: " + (snapshot.activeProjectile ? snapshot.activeProjectile.color : "none")
     ].join("\n");
@@ -1121,13 +1634,20 @@ module.exports = {
     this._hideSettingView();
     this.isSelectingLevel = true;
     this.currentLevelConfig = null;
+    this._currentLevelId = 0;
     this._lastRuntimeState = null;
+    this._currentAttemptId = "";
+    this._grantedAttemptRewardKeys = {};
     this._setDropTestButtonVisible(false);
     this._renderRouteEditor();
     this._refreshRouteEditorButtons();
     this._setStatus("Loading level list...");
     this._refreshLevelProgress();
     this._refreshPlayerResources();
+    if (typeof this._refreshPlayerInventory === "function") {
+      this._refreshPlayerInventory();
+    }
+    this._refreshSignInState();
     this._levelSelectMapIndex = 0;
 
     Promise.all([
@@ -1138,6 +1658,8 @@ module.exports = {
       var levelIds = results[1];
       this._preloadLevelConfigsInBackground(levelIds);
       this._renderLevelSelectContent(prefabs.viewPrefab, prefabs.mapPrefabs, levelIds);
+      this._updateSignInEntryState();
+      this._maybeAutoShowSignInView();
       this._playLevelSelectBackgroundMusic();
       this._setStatus("Please select a level");
     }.bind(this)).catch(function (error) {
@@ -1157,6 +1679,7 @@ module.exports = {
 
   _hideLevelSelectView: function () {
     this._hideSettingView();
+    this._hideSignInView();
     if (!this._levelSelectNode || !cc.isValid(this._levelSelectNode)) {
       return;
     }
@@ -1367,6 +1890,7 @@ module.exports = {
     }
 
     this._refreshRouteEditorButtons();
+    this._updateSignInEntryState();
   },
 
   _onLevelSelectMapIndexChange: function (nextMapIndex) {
@@ -1428,6 +1952,12 @@ module.exports = {
       (currentState === "out_of_shots" || currentState === "lost_danger" || currentState === "lost_objective")
     ) {
       this._playSfx("lose");
+    }
+    if (
+      currentState !== previousState &&
+      typeof this._onRuntimeStateTransition === "function"
+    ) {
+      this._onRuntimeStateTransition(snapshot, previousState, currentState);
     }
     this._lastRuntimeState = currentState;
   },
@@ -1492,12 +2022,18 @@ module.exports = {
       return;
     }
 
-    if (!this._consumeStaminaForLevelEntry()) {
-      this._setStatus("Stamina is not enough. It resets to 10 at 00:00.");
+    var loadSelectedLevel = function () {
+      this._setStatus("Loading level_" + ("000" + levelId).slice(-3) + "...");
+      this._loadLevelById(levelId, "Level selected", "Load selected level failed. Check console logs.");
+    }.bind(this);
+
+    if (!this._consumeStaminaForLevelEntry(loadSelectedLevel)) {
+      if (!this._staminaRecoveryInProgress) {
+        this._setStatus("Stamina is not enough. It resets to 10 at 00:00.");
+      }
       return;
     }
 
-    this._setStatus("Loading level_" + ("000" + levelId).slice(-3) + "...");
-    this._loadLevelById(levelId, "Level selected", "Load selected level failed. Check console logs.");
+    loadSelectedLevel();
   }
 };
