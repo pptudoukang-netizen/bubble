@@ -244,6 +244,34 @@ LevelRenderer.prototype._setBottomPanelButtonEnabled = function (buttonNode, ena
   buttonNode.opacity = enabled ? 255 : 150;
 };
 
+LevelRenderer.prototype._setShooterChangeButtonSpin = function (buttonNode, enabled) {
+  if (!buttonNode) {
+    return;
+  }
+
+  if (!enabled) {
+    if (buttonNode.__changeButtonSpinEnabled) {
+      buttonNode.stopAllActions();
+      buttonNode.__changeButtonSpinEnabled = false;
+      buttonNode.angle = 0;
+    }
+    return;
+  }
+
+  if (buttonNode.__changeButtonSpinEnabled) {
+    return;
+  }
+
+  buttonNode.stopAllActions();
+  buttonNode.angle = 0;
+  buttonNode.__changeButtonSpinEnabled = true;
+  buttonNode.runAction(
+    cc.repeatForever(
+      cc.rotateBy(1.6, -360)
+    )
+  );
+};
+
 LevelRenderer.prototype._setBottomPanelCount = function (buttonNode, count) {
   if (!buttonNode) {
     return;
@@ -280,10 +308,14 @@ LevelRenderer.prototype._renderBottomPanel = function (runtimeSnapshot) {
 
   var backButtonNode = panel.getChildByName("back_btn");
   var rainbowButtonNode = panel.getChildByName("rainbow_btn");
+  var changeButtonNode = panel.getChildByName("change_btn");
+  var destroyButtonNode = panel.getChildByName("destroy_btn");
   var bombButtonNode = panel.getChildByName("bomb_btn");
 
   this._bindBottomPanelButton(backButtonNode, "back");
   this._bindBottomPanelButton(rainbowButtonNode, "use_rainbow");
+  this._bindBottomPanelButton(changeButtonNode, "use_swap");
+  this._bindBottomPanelButton(destroyButtonNode, "use_barrier_hammer");
   this._bindBottomPanelButton(bombButtonNode, "use_blast");
 
   var skillInventory = runtimeSnapshot && runtimeSnapshot.shooter && runtimeSnapshot.shooter.skillInventory
@@ -291,17 +323,21 @@ LevelRenderer.prototype._renderBottomPanel = function (runtimeSnapshot) {
     : {};
   var rainbowCount = Math.max(0, Math.floor(Number(skillInventory.rainbow) || 0));
   var blastCount = Math.max(0, Math.floor(Number(skillInventory.blast) || 0));
-  var canUseSkill = !!(
-    runtimeSnapshot &&
-    runtimeSnapshot.state === "running" &&
-    !runtimeSnapshot.activeProjectile
-  );
+  var swapCount = Math.max(0, Math.floor(Number(skillInventory.swap) || 0));
+  var destroyCount = Math.max(0, Math.floor(Number(skillInventory.barrier_hammer) || 0));
+  var shooterSnapshot = runtimeSnapshot && runtimeSnapshot.shooter ? runtimeSnapshot.shooter : {};
+  var pendingBarrierHammer = !!shooterSnapshot.pendingBarrierHammer;
+  var canUsePowerup = !!shooterSnapshot.canUsePowerups;
 
   this._setBottomPanelCount(rainbowButtonNode, rainbowCount);
+  this._setBottomPanelCount(changeButtonNode, swapCount);
+  this._setBottomPanelCount(destroyButtonNode, destroyCount);
   this._setBottomPanelCount(bombButtonNode, blastCount);
   this._setBottomPanelButtonEnabled(backButtonNode, true);
-  this._setBottomPanelButtonEnabled(rainbowButtonNode, canUseSkill && rainbowCount > 0);
-  this._setBottomPanelButtonEnabled(bombButtonNode, canUseSkill && blastCount > 0);
+  this._setBottomPanelButtonEnabled(rainbowButtonNode, canUsePowerup && !pendingBarrierHammer && rainbowCount > 0);
+  this._setBottomPanelButtonEnabled(changeButtonNode, canUsePowerup && !pendingBarrierHammer && swapCount > 0);
+  this._setBottomPanelButtonEnabled(destroyButtonNode, pendingBarrierHammer || (canUsePowerup && destroyCount > 0));
+  this._setBottomPanelButtonEnabled(bombButtonNode, canUsePowerup && !pendingBarrierHammer && blastCount > 0);
 };
 
 LevelRenderer.prototype._setHudTargetBallIcon = function (panel, iconCode) {
@@ -1073,10 +1109,36 @@ LevelRenderer.prototype._renderShooter = function (shooterSnapshot, activeProjec
   fortNode.angle = shooterAngle;
 
   var trajectory = shooterSnapshot.trajectory;
+  var canUsePowerup = !!(shooterSnapshot && shooterSnapshot.canUsePowerups);
+  var pendingBarrierHammer = !!(shooterSnapshot && shooterSnapshot.pendingBarrierHammer);
+  var shooterInventory = shooterSnapshot && shooterSnapshot.skillInventory
+    ? shooterSnapshot.skillInventory
+    : {};
+  var swapCount = Math.max(0, Math.floor(Number(shooterInventory.swap) || 0));
   var currentAnchor = getOrCreateChild(shooterPanel, "CurrentBallAnchor");
   currentAnchor.setPosition(aim.origin.x, aim.origin.y);
   currentAnchor.setScale(1);
   this._applyBallVisualCached(currentAnchor, shooterSnapshot.currentBall || shooterSnapshot.currentColor, BOARD_BUBBLE_SIZE);
+
+  var changeButtonNode = shooterPanel.getChildByName("ChangeBtn");
+  var hasSwapInventory = swapCount > 0;
+  if (changeButtonNode) {
+    if (!changeButtonNode.__positionInitialized) {
+      changeButtonNode.setPosition(aim.origin.x, aim.origin.y);
+      changeButtonNode.__positionInitialized = true;
+    }
+    changeButtonNode.active = hasSwapInventory;
+  }
+  this._setShooterChangeButtonSpin(changeButtonNode, hasSwapInventory);
+  if (hasSwapInventory) {
+    this._bindBottomPanelButton(changeButtonNode, "use_swap");
+    this._setBottomPanelButtonEnabled(
+      changeButtonNode,
+      canUsePowerup &&
+      !pendingBarrierHammer &&
+      !!(shooterSnapshot.currentBall && shooterSnapshot.nextBall)
+    );
+  }
 
   var shotsValue = Math.max(0, Math.floor(Number(remainingShots) || 0));
   var remainingShotsNode = getOrCreateChild(shooterPanel, "RemainingShotsValue");

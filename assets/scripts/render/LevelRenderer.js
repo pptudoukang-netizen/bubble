@@ -504,7 +504,9 @@ function LevelRenderer(rootNode) {
   this.gameplayActionHandlers = {
     onBackToLevel: null,
     onUseRainbow: null,
-    onUseBlast: null
+    onUseBlast: null,
+    onUseSwap: null,
+    onUseBarrierHammer: null
   };
 }
 
@@ -545,7 +547,9 @@ LevelRenderer.prototype.setGameplayActionHandlers = function (handlers) {
   this.gameplayActionHandlers = {
     onBackToLevel: typeof handlers.onBackToLevel === "function" ? handlers.onBackToLevel : null,
     onUseRainbow: typeof handlers.onUseRainbow === "function" ? handlers.onUseRainbow : null,
-    onUseBlast: typeof handlers.onUseBlast === "function" ? handlers.onUseBlast : null
+    onUseBlast: typeof handlers.onUseBlast === "function" ? handlers.onUseBlast : null,
+    onUseSwap: typeof handlers.onUseSwap === "function" ? handlers.onUseSwap : null,
+    onUseBarrierHammer: typeof handlers.onUseBarrierHammer === "function" ? handlers.onUseBarrierHammer : null
   };
 };
 
@@ -589,6 +593,10 @@ LevelRenderer.prototype._invokeGameplayAction = function (action) {
     handler = this.gameplayActionHandlers.onUseRainbow;
   } else if (action === "use_blast") {
     handler = this.gameplayActionHandlers.onUseBlast;
+  } else if (action === "use_swap") {
+    handler = this.gameplayActionHandlers.onUseSwap;
+  } else if (action === "use_barrier_hammer") {
+    handler = this.gameplayActionHandlers.onUseBarrierHammer;
   }
 
   if (typeof handler !== "function") {

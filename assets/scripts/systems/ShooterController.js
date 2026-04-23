@@ -68,7 +68,9 @@ function ShooterController() {
   this.spawnWeights = {};
   this.skillInventory = {
     rainbow: 0,
-    blast: 0
+    blast: 0,
+    swap: 0,
+    barrier_hammer: 0
   };
   this.currentBall = null;
   this.nextBall = null;
@@ -89,6 +91,11 @@ ShooterController.prototype.configureLevel = function (levelConfig) {
   this.spawnWeights = Object.assign({}, levelConfig.level.spawnWeights || {});
   this.skillInventory.rainbow = 0;
   this.skillInventory.blast = 0;
+  var initialPowerups = levelConfig && levelConfig.level && levelConfig.level.initialPowerups
+    ? levelConfig.level.initialPowerups
+    : {};
+  this.skillInventory.swap = Math.max(0, Math.floor(Number(initialPowerups.swap) || 1));
+  this.skillInventory.barrier_hammer = Math.max(0, Math.floor(Number(initialPowerups.barrier_hammer) || 1));
   this.currentBall = this._pickNormalBall();
   this.nextBall = this._pickNormalBall();
   this._syncLegacyColorFields();
@@ -180,6 +187,53 @@ ShooterController.prototype.equipSkillBall = function (entityType) {
     accepted: true,
     entityType: entityType,
     remaining: this.skillInventory[entityType]
+  };
+};
+
+ShooterController.prototype.swapCurrentAndNextBall = function () {
+  var swapCount = Math.max(0, Math.floor(Number(this.skillInventory.swap) || 0));
+  if (swapCount <= 0) {
+    return {
+      accepted: false,
+      reason: "inventory_empty"
+    };
+  }
+
+  if (!this.currentBall || !this.nextBall) {
+    return {
+      accepted: false,
+      reason: "queue_missing"
+    };
+  }
+
+  var nextCurrent = clone(this.nextBall);
+  var nextPreview = clone(this.currentBall);
+  this.currentBall = nextCurrent;
+  this.nextBall = nextPreview;
+  this.skillInventory.swap = swapCount - 1;
+  this._syncLegacyColorFields();
+
+  return {
+    accepted: true,
+    remaining: this.skillInventory.swap,
+    currentBall: clone(this.currentBall),
+    nextBall: clone(this.nextBall)
+  };
+};
+
+ShooterController.prototype.consumeBarrierHammer = function () {
+  var hammerCount = Math.max(0, Math.floor(Number(this.skillInventory.barrier_hammer) || 0));
+  if (hammerCount <= 0) {
+    return {
+      accepted: false,
+      reason: "inventory_empty"
+    };
+  }
+
+  this.skillInventory.barrier_hammer = hammerCount - 1;
+  return {
+    accepted: true,
+    remaining: this.skillInventory.barrier_hammer
   };
 };
 

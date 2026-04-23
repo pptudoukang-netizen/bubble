@@ -25,6 +25,25 @@ ResourceGateway.prototype.loadPrefab = function (path) {
   });
 };
 
+ResourceGateway.prototype.loadJson = function (path) {
+  var loader = this.loader;
+  return new Promise(function (resolve, reject) {
+    if (!loader || typeof loader.loadRes !== "function") {
+      reject(new Error("Resource loader unavailable for json: " + path));
+      return;
+    }
+
+    loader.loadRes(path, cc.JsonAsset, function (error, asset) {
+      if (error) {
+        reject(new Error("Failed to load json `" + path + "`: " + error.message));
+        return;
+      }
+
+      resolve(asset && asset.json ? asset.json : null);
+    });
+  });
+};
+
 ResourceGateway.prototype.loadLevelConfigResourceUrls = function () {
   var loader = this.loader;
   return new Promise(function (resolve, reject) {

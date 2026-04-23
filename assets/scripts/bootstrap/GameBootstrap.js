@@ -20,6 +20,7 @@ var BootstrapButtonFactory = require("./BootstrapButtonFactory");
 var GameBootstrapUiFlowMethods = require("./GameBootstrapUiFlowMethods");
 var LevelRenderer = require("../render/LevelRenderer");
 var LoadingViewController = require("../ui/LoadingViewController");
+var TipsPresenter = require("../ui/TipsPresenter");
 
 var BASELINE_HALF_WIDTH = 360;
 var BASELINE_HALF_HEIGHT = 640;
@@ -237,6 +238,13 @@ cc.Class({
     this.audioManager.configure(this._buildAudioConfig());
     this._routeEditorState = this._createEmptyRouteEditorState();
     this.resourceGateway = this.resourceGateway || new ResourceGateway();
+    this.tipsPresenter = new TipsPresenter({
+      rootNode: this.node,
+      resourceGateway: this.resourceGateway
+    });
+    this.tipsPresenter.warmup().catch(function (error) {
+      Logger.warn("TipsPresenter warmup failed", error && error.message ? error.message : error);
+    });
 
     this._createStatusOverlay();
     this._createDropTestButton();
@@ -268,6 +276,12 @@ cc.Class({
       }.bind(this),
       onUseBlast: function () {
         this._onUseSkillBallTap("blast");
+      }.bind(this),
+      onUseSwap: function () {
+        this._onUseSwapBallTap();
+      }.bind(this),
+      onUseBarrierHammer: function () {
+        this._onUseBarrierHammerTap();
       }.bind(this)
     });
 
@@ -938,6 +952,9 @@ cc.Class({
     if (this._isTerminalState()) {
       return;
     }
+    if (this._isBarrierHammerTargeting()) {
+      return;
+    }
 
     var snapshot = this.gameManager.beginAim(localPoint);
     this._lastAimRefreshPoint = {
@@ -964,6 +981,9 @@ cc.Class({
       return;
     }
     if (this._isTerminalState()) {
+      return;
+    }
+    if (this._isBarrierHammerTargeting()) {
       return;
     }
 
@@ -1009,6 +1029,10 @@ cc.Class({
     if (this._isTerminalState()) {
       return;
     }
+    if (this._isBarrierHammerTargeting()) {
+      this._handleBarrierHammerTargetTouch(localPoint);
+      return;
+    }
 
     if (!this.gameManager.isAiming) {
       this.gameManager.beginAim(localPoint);
@@ -1042,6 +1066,9 @@ cc.Class({
       this._handleRouteEditorTouchCancel();
       return;
     }
+    if (this._isBarrierHammerTargeting()) {
+      return;
+    }
 
     var snapshot = this.gameManager.endAim();
     this._lastAimRefreshPoint = null;
@@ -1073,24 +1100,179 @@ cc.Class({
         ? snapshot.shooter.skillInventory
         : {};
       var remaining = Math.max(0, Math.floor(Number(inventory[entityType]) || 0));
-      this._setStatus(skillName + "已装填，剩余：" + remaining);
+      this._setStatusWithTip(
+        entityType === "rainbow" ? "skill_equip_rainbow_success" : "skill_equip_blast_success",
+        {
+          remaining: remaining
+        },
+        skillName + "已装填，剩余：" + remaining
+      );
       return;
     }
 
     var reason = useResult && typeof useResult.reason === "string" ? useResult.reason : "equip_failed";
     if (reason === "inventory_empty") {
-      this._setStatus("该道具库存不足");
+      this._setStatusWithTip("skill_inventory_empty", null, "该道具库存不足");
       return;
     }
     if (reason === "current_slot_occupied_by_skill") {
-      this._setStatus("当前炮台已装填道具球，请先发射");
+      this._setStatusWithTip("skill_current_slot_occupied", null, "当前炮台已装填道具球，请先发射");
       return;
     }
     if (reason === "busy") {
-      this._setStatus("当前状态不可切换道具");
+      this._setStatusWithTip("skill_busy", null, "当前状态不可切换道具");
       return;
     }
-    this._setStatus("道具装填失败");
+    if (reason === "targeting_active") {
+      this._setStatusWithTip("targeting_active", null, "请先完成破障锤目标选择");
+      return;
+    }
+    this._setStatusWithTip("skill_equip_failed", null, "道具装填失败");
+  },
+
+  _onUseSwapBallTap: function () {
+    if (!this.currentLevelConfig || this.isRestarting || this.isSelectingLevel) {
+      return;
+    }
+
+    if (this._isTerminalState()) {
+      return;
+    }
+
+    this._playSfx("uiClick");
+    var swapResult = this.gameManager.useSwapBall();
+    var snapshot = swapResult && swapResult.snapshot
+      ? swapResult.snapshot
+      : this.gameManager.getRuntimeSnapshot();
+
+    this.levelRenderer.refreshRuntime(this.currentLevelConfig, snapshot);
+
+    if (swapResult && swapResult.accepted) {
+      var inventory = snapshot && snapshot.shooter && snapshot.shooter.skillInventory
+        ? snapshot.shooter.skillInventory
+        : {};
+      var remaining = Math.max(0, Math.floor(Number(inventory.swap) || 0));
+      this._setStatusWithTip("swap_success", {
+        remaining: remaining
+      }, "换球成功，剩余：" + remaining);
+      return;
+    }
+
+    var reason = swapResult && typeof swapResult.reason === "string" ? swapResult.reason : "swap_failed";
+    if (reason === "inventory_empty") {
+      this._setStatusWithTip("swap_inventory_empty", null, "换球道具库存不足");
+      return;
+    }
+    if (reason === "queue_missing") {
+      this._setStatusWithTip("swap_queue_missing", null, "当前无法换球");
+      return;
+    }
+    if (reason === "busy") {
+      this._setStatusWithTip("swap_busy", null, "当前状态不可使用换球");
+      return;
+    }
+    if (reason === "targeting_active") {
+      this._setStatusWithTip("targeting_active", null, "请先完成破障锤目标选择");
+      return;
+    }
+    this._setStatusWithTip("swap_failed", null, "换球失败");
+  },
+
+  _onUseBarrierHammerTap: function () {
+    if (!this.currentLevelConfig || this.isRestarting || this.isSelectingLevel) {
+      return;
+    }
+
+    if (this._isTerminalState()) {
+      return;
+    }
+
+    this._playSfx("uiClick");
+    var isTargeting = this._isBarrierHammerTargeting();
+    var hammerResult = isTargeting
+      ? this.gameManager.cancelBarrierHammer()
+      : this.gameManager.beginBarrierHammer();
+    var snapshot = hammerResult && hammerResult.snapshot
+      ? hammerResult.snapshot
+      : this.gameManager.getRuntimeSnapshot();
+
+    this.levelRenderer.refreshRuntime(this.currentLevelConfig, snapshot);
+
+    if (isTargeting) {
+      this._setStatusWithTip("hammer_cancelled", null, "已取消破障锤");
+      return;
+    }
+
+    if (hammerResult && hammerResult.accepted) {
+      this._setStatusWithTip("hammer_ready", null, "破障锤已就绪，请点选石头或冰冻球");
+      return;
+    }
+
+    var reason = hammerResult && typeof hammerResult.reason === "string" ? hammerResult.reason : "hammer_failed";
+    if (reason === "no_obstacle") {
+      this._setStatusWithTip("hammer_no_obstacle", null, "没有需要破除的障碍");
+      return;
+    }
+    if (reason === "inventory_empty") {
+      this._setStatusWithTip("hammer_inventory_empty", null, "破障锤库存不足");
+      return;
+    }
+    if (reason === "busy") {
+      this._setStatusWithTip("hammer_busy", null, "当前状态不可使用破障锤");
+      return;
+    }
+    this._setStatusWithTip("hammer_enable_failed", null, "破障锤启用失败");
+  },
+
+  _handleBarrierHammerTargetTouch: function (localPoint) {
+    var hammerResult = this.gameManager.useBarrierHammerAt(localPoint);
+    var snapshot = hammerResult && hammerResult.snapshot
+      ? hammerResult.snapshot
+      : this.gameManager.getRuntimeSnapshot();
+
+    this.levelRenderer.refreshRuntime(this.currentLevelConfig, snapshot);
+
+    if (hammerResult && hammerResult.accepted) {
+      var inventory = snapshot && snapshot.shooter && snapshot.shooter.skillInventory
+        ? snapshot.shooter.skillInventory
+        : {};
+      var remaining = Math.max(0, Math.floor(Number(inventory.barrier_hammer) || 0));
+      this._setStatusWithTip("hammer_applied", {
+        remaining: remaining
+      }, "破障锤生效，剩余：" + remaining);
+      return;
+    }
+
+    var reason = hammerResult && typeof hammerResult.reason === "string" ? hammerResult.reason : "hammer_failed";
+    if (reason === "no_target" || reason === "target_invalid") {
+      this._setStatusWithTip("hammer_target_invalid", null, "请点选石头或冰冻球");
+      return;
+    }
+    if (reason === "inventory_empty") {
+      this._setStatusWithTip("hammer_inventory_empty", null, "破障锤库存不足");
+      return;
+    }
+    if (reason === "busy") {
+      this._setStatusWithTip("hammer_busy", null, "当前状态不可使用破障锤");
+      return;
+    }
+    this._setStatusWithTip("hammer_use_failed", null, "破障锤使用失败");
+  },
+
+  _isBarrierHammerTargeting: function () {
+    return !!(this.gameManager && this.gameManager.pendingBarrierHammer);
+  },
+
+  _setStatusWithTip: function (tipKey, params, fallbackMessage) {
+    var message = typeof fallbackMessage === "string" ? fallbackMessage : "";
+    if (this.tipsPresenter && typeof this.tipsPresenter.resolveMessage === "function") {
+      message = this.tipsPresenter.resolveMessage(tipKey, params, fallbackMessage);
+    }
+
+    this._setStatus(message);
+    if (this.tipsPresenter && typeof this.tipsPresenter.showByKey === "function") {
+      this.tipsPresenter.showByKey(tipKey, params, fallbackMessage);
+    }
   },
 
   _loadInitialLevel: function () {

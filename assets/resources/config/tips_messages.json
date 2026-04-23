@@ -1,0 +1,25 @@
+{
+  "messages": {
+    "skill_equip_rainbow_success": "彩虹球已装填，剩余：{remaining}",
+    "skill_equip_blast_success": "炸弹球已装填，剩余：{remaining}",
+    "skill_inventory_empty": "该道具库存不足",
+    "skill_current_slot_occupied": "当前炮台已装填道具球，请先发射",
+    "skill_busy": "当前状态不可切换道具",
+    "targeting_active": "请先完成破障锤目标选择",
+    "skill_equip_failed": "道具装填失败",
+    "swap_success": "换球成功，剩余：{remaining}",
+    "swap_inventory_empty": "换球道具库存不足",
+    "swap_queue_missing": "当前无法换球",
+    "swap_busy": "当前状态不可使用换球",
+    "swap_failed": "换球失败",
+    "hammer_cancelled": "已取消破障锤",
+    "hammer_ready": "破障锤已就绪，请点选石头或冰冻球",
+    "hammer_no_obstacle": "没有需要破除的障碍",
+    "hammer_inventory_empty": "破障锤库存不足",
+    "hammer_busy": "当前状态不可使用破障锤",
+    "hammer_enable_failed": "破障锤启用失败",
+    "hammer_applied": "破障锤生效，剩余：{remaining}",
+    "hammer_target_invalid": "请点选石头或冰冻球",
+    "hammer_use_failed": "破障锤使用失败"
+  }
+}

@@ -123,6 +123,18 @@ function isIceBall(cellOrBall) {
   );
 }
 
+function isStoneBall(cellOrBall) {
+  return !!(
+    cellOrBall &&
+    cellOrBall.entityCategory === "obstacle_ball" &&
+    cellOrBall.entityType === "stone"
+  );
+}
+
+function isBarrierObstacleBall(cellOrBall) {
+  return isStoneBall(cellOrBall) || isIceBall(cellOrBall);
+}
+
 function isBlastBall(ball) {
   return !!(ball && ball.entityCategory === "skill_ball" && ball.entityType === "blast");
 }
@@ -357,6 +369,7 @@ function GameManager(options) {
   this.runtimeEventSequence = 0;
   this.pendingRuntimeEvents = [];
   this.pendingBoardAdvanceDelay = 0;
+  this.pendingBarrierHammer = false;
   this.scoreRules = cloneScoreRules(BASE_SCORE_RULES);
   this.scoreHeatBand = buildScoreHeatBand(null, {
     difficulty: "normal",
@@ -415,6 +428,7 @@ GameManager.prototype.startLevel = function (levelConfig) {
   this.runtimeEventSequence = 0;
   this.pendingRuntimeEvents = [];
   this.pendingBoardAdvanceDelay = 0;
+  this.pendingBarrierHammer = false;
   var scoreProfile = buildScoreRulesForLevel(levelConfig);
   this.scoreRules = scoreProfile.rules;
   this.scoreHeatBand = buildScoreHeatBand(levelConfig, scoreProfile);
@@ -659,7 +673,12 @@ GameManager.prototype._buildPrimaryObjectiveSnapshot = function (jarsSnapshot) {
 };
 
 GameManager.prototype.setAim = function (point, options) {
-  if (this.state !== "running" || this.activeProjectile || this._isWaitingBoardAdvance()) {
+  if (
+    this.state !== "running" ||
+    this.activeProjectile ||
+    this._isWaitingBoardAdvance() ||
+    this.pendingBarrierHammer
+  ) {
     return this.getRuntimeSnapshot();
   }
 
@@ -672,7 +691,12 @@ GameManager.prototype.setAim = function (point, options) {
 };
 
 GameManager.prototype.beginAim = function (point) {
-  if (this.state !== "running" || this.activeProjectile || this._isWaitingBoardAdvance()) {
+  if (
+    this.state !== "running" ||
+    this.activeProjectile ||
+    this._isWaitingBoardAdvance() ||
+    this.pendingBarrierHammer
+  ) {
     return this.getRuntimeSnapshot();
   }
 
@@ -692,7 +716,12 @@ GameManager.prototype.endAim = function () {
 };
 
 GameManager.prototype.fireShot = function () {
-  if (this.state !== "running" || this.activeProjectile || this._isWaitingBoardAdvance()) {
+  if (
+    this.state !== "running" ||
+    this.activeProjectile ||
+    this._isWaitingBoardAdvance() ||
+    this.pendingBarrierHammer
+  ) {
     return this.getRuntimeSnapshot();
   }
 
@@ -744,6 +773,14 @@ GameManager.prototype.useSkillBall = function (entityType) {
     };
   }
 
+  if (this.pendingBarrierHammer) {
+    return {
+      accepted: false,
+      reason: "targeting_active",
+      snapshot: this.getRuntimeSnapshot()
+    };
+  }
+
   var equipResult = this.systems.shooterController.equipSkillBall(entityType);
   if (!equipResult || !equipResult.accepted) {
     return {
@@ -761,6 +798,242 @@ GameManager.prototype.useSkillBall = function (entityType) {
     accepted: true,
     entityType: entityType,
     remaining: equipResult.remaining,
+    snapshot: this.getRuntimeSnapshot()
+  };
+};
+
+GameManager.prototype.useSwapBall = function () {
+  if (this.state !== "running") {
+    return {
+      accepted: false,
+      reason: "state_invalid",
+      snapshot: this.getRuntimeSnapshot()
+    };
+  }
+
+  if (this.activeProjectile || this._isWaitingBoardAdvance()) {
+    return {
+      accepted: false,
+      reason: "busy",
+      snapshot: this.getRuntimeSnapshot()
+    };
+  }
+
+  if (this.pendingBarrierHammer) {
+    return {
+      accepted: false,
+      reason: "targeting_active",
+      snapshot: this.getRuntimeSnapshot()
+    };
+  }
+
+  var swapResult = this.systems.shooterController.swapCurrentAndNextBall();
+  if (!swapResult || !swapResult.accepted) {
+    return {
+      accepted: false,
+      reason: swapResult && swapResult.reason ? swapResult.reason : "swap_failed",
+      snapshot: this.getRuntimeSnapshot()
+    };
+  }
+
+  if (this.isAiming) {
+    this._refreshShotPlan(true);
+  }
+
+  return {
+    accepted: true,
+    remaining: swapResult.remaining,
+    snapshot: this.getRuntimeSnapshot()
+  };
+};
+
+GameManager.prototype.beginBarrierHammer = function () {
+  if (this.state !== "running") {
+    return {
+      accepted: false,
+      reason: "state_invalid",
+      snapshot: this.getRuntimeSnapshot()
+    };
+  }
+
+  if (this.activeProjectile || this._isWaitingBoardAdvance()) {
+    return {
+      accepted: false,
+      reason: "busy",
+      snapshot: this.getRuntimeSnapshot()
+    };
+  }
+
+  var hammerCount = this.systems &&
+    this.systems.shooterController &&
+    this.systems.shooterController.skillInventory
+    ? Math.max(0, Math.floor(Number(this.systems.shooterController.skillInventory.barrier_hammer) || 0))
+    : 0;
+  if (hammerCount <= 0) {
+    return {
+      accepted: false,
+      reason: "inventory_empty",
+      snapshot: this.getRuntimeSnapshot()
+    };
+  }
+
+  var hasBarrierObstacle = false;
+  var grid = this.systems && this.systems.bubbleGrid ? this.systems.bubbleGrid : null;
+  var cells = grid && typeof grid.getCells === "function" ? grid.getCells() : [];
+  for (var i = 0; i < cells.length; i += 1) {
+    if (isBarrierObstacleBall(cells[i])) {
+      hasBarrierObstacle = true;
+      break;
+    }
+  }
+
+  if (!hasBarrierObstacle) {
+    return {
+      accepted: false,
+      reason: "no_obstacle",
+      snapshot: this.getRuntimeSnapshot()
+    };
+  }
+
+  this.pendingBarrierHammer = true;
+  this.isAiming = false;
+  this.pendingShotPlan = null;
+  return {
+    accepted: true,
+    snapshot: this.getRuntimeSnapshot()
+  };
+};
+
+GameManager.prototype.cancelBarrierHammer = function () {
+  this.pendingBarrierHammer = false;
+  return {
+    accepted: true,
+    snapshot: this.getRuntimeSnapshot()
+  };
+};
+
+GameManager.prototype.useBarrierHammerAt = function (point) {
+  if (this.state !== "running") {
+    return {
+      accepted: false,
+      reason: "state_invalid",
+      snapshot: this.getRuntimeSnapshot()
+    };
+  }
+
+  if (!this.pendingBarrierHammer) {
+    return {
+      accepted: false,
+      reason: "not_targeting",
+      snapshot: this.getRuntimeSnapshot()
+    };
+  }
+
+  if (this.activeProjectile || this._isWaitingBoardAdvance()) {
+    return {
+      accepted: false,
+      reason: "busy",
+      snapshot: this.getRuntimeSnapshot()
+    };
+  }
+
+  if (!point || typeof point.x !== "number" || typeof point.y !== "number") {
+    return {
+      accepted: false,
+      reason: "invalid_point",
+      snapshot: this.getRuntimeSnapshot()
+    };
+  }
+
+  var grid = this.systems.bubbleGrid;
+  var collision = grid.findCollision(point, BoardLayout.bubbleRadius * 1.05);
+  if (!collision) {
+    return {
+      accepted: false,
+      reason: "no_target",
+      snapshot: this.getRuntimeSnapshot()
+    };
+  }
+
+  var targetCell = grid.getCell(collision.row, collision.col);
+  if (!targetCell || (!isStoneBall(targetCell) && !isIceBall(targetCell))) {
+    return {
+      accepted: false,
+      reason: "target_invalid",
+      snapshot: this.getRuntimeSnapshot()
+    };
+  }
+
+  var innerColor = null;
+  if (isIceBall(targetCell)) {
+    innerColor = resolveIceInnerColor(targetCell);
+    if (!innerColor) {
+      return {
+        accepted: false,
+        reason: "target_invalid",
+        snapshot: this.getRuntimeSnapshot()
+      };
+    }
+  }
+
+  var consumeResult = this.systems.shooterController.consumeBarrierHammer();
+  if (!consumeResult || !consumeResult.accepted) {
+    return {
+      accepted: false,
+      reason: consumeResult && consumeResult.reason ? consumeResult.reason : "inventory_empty",
+      snapshot: this.getRuntimeSnapshot()
+    };
+  }
+
+  var resolution = createEmptyResolution();
+  resolution.impact = this._createImpactEventFromCell({
+    row: targetCell.row,
+    col: targetCell.col
+  });
+
+  if (isStoneBall(targetCell)) {
+    var removedObstacle = grid.removeCells([targetCell]);
+    var floatingCells = this.systems.supportSystem.findFloatingCells(grid);
+    var removedFloating = grid.removeCells(floatingCells);
+
+    this.systems.fallingMarbleSystem.registerDrops(removedFloating, grid);
+    this.systems.jarCollectorSystem.collect([]);
+
+    resolution.matched = removedObstacle;
+    resolution.floating = removedFloating;
+    resolution.collected = removedFloating;
+    resolution.boardCleared = grid.getCells().length === 0;
+  } else {
+    var thawedCell = grid.addBubble({
+      row: targetCell.row,
+      col: targetCell.col
+    }, innerColor);
+    resolution.thawed = thawedCell ? [thawedCell] : [];
+    if (typeof this._registerIceCollection === "function") {
+      resolution.iceCollected = this._registerIceCollection(resolution.thawed);
+    }
+    resolution.boardCleared = grid.getCells().length === 0;
+    this.systems.fallingMarbleSystem.registerDrops([], grid);
+    this.systems.jarCollectorSystem.collect([]);
+  }
+
+  this.pendingBarrierHammer = false;
+  this.lastResolution = resolution;
+
+  if (this.isAiming) {
+    this._refreshShotPlan(true);
+  }
+
+  if (resolution.boardCleared) {
+    this._resolveBoardClearedOutcome();
+  }
+
+  return {
+    accepted: true,
+    removed: resolution.matched.length,
+    thawed: resolution.thawed.length,
+    floating: resolution.floating.length,
+    remaining: consumeResult.remaining,
     snapshot: this.getRuntimeSnapshot()
   };
 };
@@ -1025,6 +1298,12 @@ GameManager.prototype.getRuntimeSnapshot = function (runtimeEvents) {
     topAttachY
   );
   shooterSnapshot.isAiming = this.isAiming;
+  shooterSnapshot.pendingBarrierHammer = this.state === "running" && this.pendingBarrierHammer;
+  shooterSnapshot.canUsePowerups = !!(
+    this.state === "running" &&
+    !this.activeProjectile &&
+    !this._isWaitingBoardAdvance()
+  );
   shooterSnapshot.trajectory = this.isAiming && this.pendingShotPlan && !this.activeProjectile ? clone(this.pendingShotPlan) : null;
 
   return {
