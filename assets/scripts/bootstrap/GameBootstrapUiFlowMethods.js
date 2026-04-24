@@ -9,12 +9,15 @@ var BootstrapButtonFactory = require("./BootstrapButtonFactory");
 var StarRatingPolicy = require("../core/StarRatingPolicy");
 var BundleLoader = require("../utils/BundleLoader");
 var DailySignInConfig = require("../config/DailySignInConfig");
+var LeaderboardStore = require("../utils/LeaderboardStore");
+var RankingViewController = require("../ui/RankingViewController");
 
 var SETTING_VOLUME_STEP = 0.1;
 var SETTING_STATUS_X_ENABLED = -18;
 var SETTING_STATUS_X_DISABLED = 18;
 var SETTING_VOLUME_ICON_OPEN_PATH = "image/setting/volume_open";
 var SETTING_VOLUME_ICON_CLOSE_PATH = "image/setting/volume_close";
+var RANKING_BG_SPRITE_PATH = "image/ranking/bg";
 var MAX_LEVEL_MAP_PREFAB_INDEX = 10;
 var SIGN_IN_PREFAB_CANDIDATES = [
   "prefabs/ui/SignInView ",
@@ -185,6 +188,9 @@ module.exports = {
     }
 
     this._updateSignInEntryState();
+    if (typeof this._updateInventoryEntryState === "function") {
+      this._updateInventoryEntryState();
+    }
   },
 
   _getDailySignInConfig: function () {
@@ -638,6 +644,110 @@ module.exports = {
     this._showSignInView({
       markPopupShown: true
     });
+  },
+
+  _resolveLeaderboardPlayerName: function () {
+    try {
+      var storage = cc && cc.sys && cc.sys.localStorage ? cc.sys.localStorage : null;
+      var storedName = storage ? storage.getItem("bubble_player_name_v1") : "";
+      if (typeof storedName === "string" && storedName) {
+        return storedName;
+      }
+    } catch (error) {
+      Logger.warn("Read leaderboard player name failed", error && error.message ? error.message : error);
+    }
+
+    return "\u6211";
+  },
+
+  _refreshLeaderboardEntries: function () {
+    if (!this.leaderboardStore) {
+      this.leaderboardStore = new LeaderboardStore();
+    }
+    this._refreshLevelProgress();
+    return this.leaderboardStore.buildEntries(this.levelProgress, this._resolveLeaderboardPlayerName());
+  },
+
+  _ensureRankingBackgroundSpriteFrame: function () {
+    if (this._rankingBgSpriteFrame) {
+      return Promise.resolve(this._rankingBgSpriteFrame);
+    }
+    if (this._rankingBgSpriteFrameLoadPromise) {
+      return this._rankingBgSpriteFrameLoadPromise;
+    }
+
+    this._rankingBgSpriteFrameLoadPromise = new Promise(function (resolve) {
+      BundleLoader.loadRes(RANKING_BG_SPRITE_PATH, cc.SpriteFrame, function (error, spriteFrame) {
+        this._rankingBgSpriteFrameLoadPromise = null;
+        if (error || !spriteFrame) {
+          Logger.warn("Load ranking background failed", error && error.message ? error.message : error);
+          resolve(null);
+          return;
+        }
+
+        this._rankingBgSpriteFrame = spriteFrame;
+        resolve(spriteFrame);
+      }.bind(this));
+    }.bind(this));
+
+    return this._rankingBgSpriteFrameLoadPromise;
+  },
+
+  _onLevelSelectRankingTap: function () {
+    if (!this.isSelectingLevel || this.isRestarting) {
+      return;
+    }
+
+    this._playSfx("uiClick");
+    this._showRankingView();
+  },
+
+  _showRankingView: function () {
+    this._hideSettingView();
+    this._hideSignInView();
+    if (typeof this._hideInventoryView === "function") {
+      this._hideInventoryView();
+    }
+
+    this._ensureRankingBackgroundSpriteFrame().then(function (spriteFrame) {
+      var rankingNode = this._rankingViewNode;
+      if (!rankingNode || !cc.isValid(rankingNode)) {
+        rankingNode = RankingViewController.createViewNode(this.node);
+        rankingNode.setPosition(0, 0);
+        this._rankingViewNode = rankingNode;
+        this._rankingViewController = new RankingViewController({
+          node: rankingNode,
+          onClose: function () {
+            this._playSfx("uiClick");
+            this._hideRankingView();
+          }.bind(this)
+        });
+      }
+
+      rankingNode.active = true;
+      if (this._rankingViewController && spriteFrame) {
+        this._rankingViewController.setBackgroundSpriteFrame(spriteFrame);
+      }
+      this._renderRankingView();
+    }.bind(this)).catch(function (error) {
+      Logger.warn("Show ranking view failed", error && error.message ? error.message : error);
+      this._setStatus("\u6392\u884c\u699c\u52a0\u8f7d\u5931\u8d25");
+    }.bind(this));
+  },
+
+  _hideRankingView: function () {
+    if (!this._rankingViewNode || !cc.isValid(this._rankingViewNode)) {
+      return;
+    }
+    this._rankingViewNode.active = false;
+  },
+
+  _renderRankingView: function () {
+    if (!this._rankingViewController || !this._rankingViewNode || !cc.isValid(this._rankingViewNode)) {
+      return;
+    }
+
+    this._rankingViewController.render(this._refreshLeaderboardEntries());
   },
 
   _onLevelSelectSettingTap: function () {
@@ -1147,6 +1257,10 @@ module.exports = {
   _loadLevelById: function (levelId, successLogPrefix, failStatusMessage) {
     this._persistRouteEditorIfDirty();
     this._hideSettingView();
+    this._hideRankingView();
+    if (typeof this._hideInventoryView === "function") {
+      this._hideInventoryView();
+    }
     this.isRestarting = true;
     this._setDropTestButtonVisible(false);
     this._lastRuntimeState = null;
@@ -1156,6 +1270,9 @@ module.exports = {
       this._rememberSelectedLevel(this._currentLevelId);
       this._prepareRouteEditorForLevel(levelConfig, this._currentLevelId);
       var snapshot = this.gameManager.startLevel(levelConfig);
+      if (typeof this._applySelectedPowerupsToRuntime === "function") {
+        snapshot = this._applySelectedPowerupsToRuntime(snapshot);
+      }
       if (typeof this._applyPendingNextRoundRewards === "function") {
         snapshot = this._applyPendingNextRoundRewards(snapshot);
       }
@@ -1632,6 +1749,10 @@ module.exports = {
 
     this._persistRouteEditorIfDirty();
     this._hideSettingView();
+    this._hideRankingView();
+    if (typeof this._hideInventoryView === "function") {
+      this._hideInventoryView();
+    }
     this.isSelectingLevel = true;
     this.currentLevelConfig = null;
     this._currentLevelId = 0;
@@ -1647,6 +1768,9 @@ module.exports = {
     if (typeof this._refreshPlayerInventory === "function") {
       this._refreshPlayerInventory();
     }
+    if (typeof this._refreshSelectedPowerups === "function") {
+      this._refreshSelectedPowerups();
+    }
     this._refreshSignInState();
     this._levelSelectMapIndex = 0;
 
@@ -1659,6 +1783,9 @@ module.exports = {
       this._preloadLevelConfigsInBackground(levelIds);
       this._renderLevelSelectContent(prefabs.viewPrefab, prefabs.mapPrefabs, levelIds);
       this._updateSignInEntryState();
+      if (typeof this._updateInventoryEntryState === "function") {
+        this._updateInventoryEntryState();
+      }
       this._maybeAutoShowSignInView();
       this._playLevelSelectBackgroundMusic();
       this._setStatus("Please select a level");
@@ -1679,6 +1806,10 @@ module.exports = {
 
   _hideLevelSelectView: function () {
     this._hideSettingView();
+    this._hideRankingView();
+    if (typeof this._hideInventoryView === "function") {
+      this._hideInventoryView();
+    }
     this._hideSignInView();
     if (!this._levelSelectNode || !cc.isValid(this._levelSelectNode)) {
       return;
@@ -1876,6 +2007,7 @@ module.exports = {
       staminaValue: this._getCurrentStamina(),
       coinValue: this._getCurrentCoins(),
       onOpenSettings: this._onLevelSelectSettingTap.bind(this),
+      onOpenRanking: this._onLevelSelectRankingTap.bind(this),
       onLevelSelectTap: this._onLevelSelectTap.bind(this),
       onMapIndexChange: this._onLevelSelectMapIndexChange.bind(this)
     });
@@ -1891,6 +2023,9 @@ module.exports = {
 
     this._refreshRouteEditorButtons();
     this._updateSignInEntryState();
+    if (typeof this._updateInventoryEntryState === "function") {
+      this._updateInventoryEntryState();
+    }
   },
 
   _onLevelSelectMapIndexChange: function (nextMapIndex) {

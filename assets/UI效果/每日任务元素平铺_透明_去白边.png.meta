@@ -1,0 +1,38 @@
+{
+  "ver": "2.3.7",
+  "uuid": "a835e0a8-c973-4c1f-8b43-b22626a29f94",
+  "importer": "texture",
+  "type": "sprite",
+  "wrapMode": "clamp",
+  "filterMode": "bilinear",
+  "premultiplyAlpha": false,
+  "genMipmaps": false,
+  "packable": true,
+  "width": 2048,
+  "height": 2048,
+  "platformSettings": {},
+  "subMetas": {
+    "每日任务元素平铺_透明_去白边": {
+      "ver": "1.0.6",
+      "uuid": "499bfecb-f288-49e1-b846-1484b74baf6b",
+      "importer": "sprite-frame",
+      "rawTextureUuid": "a835e0a8-c973-4c1f-8b43-b22626a29f94",
+      "trimType": "auto",
+      "trimThreshold": 1,
+      "rotated": false,
+      "offsetX": -14,
+      "offsetY": 246,
+      "trimX": 48,
+      "trimY": 33,
+      "width": 1924,
+      "height": 1490,
+      "rawWidth": 2048,
+      "rawHeight": 2048,
+      "borderTop": 0,
+      "borderBottom": 0,
+      "borderLeft": 0,
+      "borderRight": 0,
+      "subMetas": {}
+    }
+  }
+}

@@ -469,6 +469,10 @@
 
 ## 6. 商店系统
 
+商店系统的详细实现说明、事务流程、错误码与测试清单见：
+
+- [SHOP_SYSTEM_SPEC.md](E:\cocos_project\bubble\SHOP_SYSTEM_SPEC.md)
+
 ## 6.1 设计目标
 
 商店用于让玩家用金币购买救场道具。

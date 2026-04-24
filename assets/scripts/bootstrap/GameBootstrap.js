@@ -7,6 +7,7 @@ var PoolManager = require("../utils/PoolManager");
 var LevelProgressStore = require("../utils/LevelProgressStore");
 var PlayerResourceStore = require("../utils/PlayerResourceStore");
 var InventoryStore = require("../utils/InventoryStore");
+var SelectedPowerupsStore = require("../utils/SelectedPowerupsStore");
 var SignInStore = require("../utils/SignInStore");
 var RouteConfigStore = require("../utils/RouteConfigStore");
 var AudioManager = require("../audio/AudioManager");
@@ -24,6 +25,7 @@ var GameBootstrapUiFlowMethods = require("./GameBootstrapUiFlowMethods");
 var LevelRenderer = require("../render/LevelRenderer");
 var LoadingViewController = require("../ui/LoadingViewController");
 var TipsPresenter = require("../ui/TipsPresenter");
+var InventoryViewController = require("../ui/InventoryViewController");
 var AdService = require("../services/AdService");
 var TelemetryService = require("../services/TelemetryService");
 var AdRewardQuotaStore = require("../services/AdRewardQuotaStore");
@@ -38,6 +40,21 @@ var BASELINE_JAR_RENDER_OFFSET_FROM_BOTTOM = ((BoardLayout.jarBaseY + BoardLayou
 var BASELINE_JAR_RENDER_Y_OFFSET = Number(BoardLayout.jarRenderYOffset) || 0;
 var BASELINE_SHOOTER_OFFSET_FROM_BOTTOM = (BoardLayout.shooterOrigin.y - (-BASELINE_HALF_HEIGHT)) + SHOOTER_RAISE_FROM_BOTTOM;
 var BASELINE_DANGER_OFFSET_FROM_BOTTOM = 460;
+var INVENTORY_VIEW_PREFAB_PATH = "prefabs/ui/InventoryView";
+var INVENTORY_ENTRY_ICON_PATH = "image/icon/icon_bag";
+var POWERUP_TYPE_BY_ITEM_ID = {
+  swap_ball: "swap",
+  rainbow_ball: "rainbow",
+  blast_ball: "blast",
+  barrier_hammer: "barrier_hammer"
+};
+var ITEM_ID_BY_POWERUP_TYPE = {
+  swap: "swap_ball",
+  rainbow: "rainbow_ball",
+  blast: "blast_ball",
+  barrier_hammer: "barrier_hammer"
+};
+var MAX_SELECTED_POWERUPS = 2;
 
 function clone(data) {
   return JSON.parse(JSON.stringify(data));
@@ -266,6 +283,13 @@ cc.Class({
     this.inventoryStore = new InventoryStore();
     this.playerInventory = this.inventoryStore.load();
     this.inventoryStore.save(this.playerInventory);
+    this.selectedPowerupsStore = new SelectedPowerupsStore();
+    this.selectedPowerupsState = this.selectedPowerupsStore.load();
+    this.selectedPowerupsStore.save(this.selectedPowerupsState);
+    this._inventoryViewPrefab = null;
+    this._inventoryViewNode = null;
+    this._inventoryViewController = null;
+    this._inventoryEntryIconSpriteFrame = null;
     this.dailySignInConfig = clone(DailySignInConfig);
     this.signInStore = new SignInStore({
       cycleLength: this.dailySignInConfig.cycleLength,
@@ -303,6 +327,11 @@ cc.Class({
     this._signInButtonSpriteFrames = null;
     this._signInButtonSpriteLoadPromise = null;
     this._signInIconSpriteFrameCache = {};
+    this.leaderboardStore = null;
+    this._rankingViewNode = null;
+    this._rankingViewController = null;
+    this._rankingBgSpriteFrame = null;
+    this._rankingBgSpriteFrameLoadPromise = null;
     this.audioManager = new AudioManager({
       settingsDefaults: {
         musicEnabled: this.enableBackgroundMusic,
@@ -1215,6 +1244,7 @@ cc.Class({
     this.levelRenderer.refreshRuntime(this.currentLevelConfig, snapshot);
 
     if (useResult && useResult.accepted) {
+      this._consumePersistentInventoryItemForPowerup(entityType);
       var skillName = entityType === "rainbow" ? "彩虹球" : "炸弹球";
       var inventory = snapshot && snapshot.shooter && snapshot.shooter.skillInventory
         ? snapshot.shooter.skillInventory
@@ -1292,6 +1322,7 @@ cc.Class({
     this.levelRenderer.refreshRuntime(this.currentLevelConfig, snapshot);
 
     if (swapResult && swapResult.accepted) {
+      this._consumePersistentInventoryItemForPowerup("swap");
       var inventory = snapshot && snapshot.shooter && snapshot.shooter.skillInventory
         ? snapshot.shooter.skillInventory
         : {};
@@ -1421,6 +1452,7 @@ cc.Class({
       var inventory = snapshot && snapshot.shooter && snapshot.shooter.skillInventory
         ? snapshot.shooter.skillInventory
         : {};
+      this._consumePersistentInventoryItemForPowerup("barrier_hammer");
       var remaining = Math.max(0, Math.floor(Number(inventory.barrier_hammer) || 0));
       this._setStatusWithTip("hammer_applied", {
         remaining: remaining
@@ -1509,6 +1541,276 @@ cc.Class({
     this.playerInventory = addResult.inventory;
     this.inventoryStore.save(this.playerInventory);
     return addResult;
+  },
+
+  _refreshSelectedPowerups: function () {
+    if (!this.selectedPowerupsStore || typeof this.selectedPowerupsStore.load !== "function") {
+      this.selectedPowerupsState = this.selectedPowerupsState || {
+        selectedItems: []
+      };
+      return this.selectedPowerupsState;
+    }
+
+    this.selectedPowerupsState = this.selectedPowerupsStore.load();
+    return this.selectedPowerupsState;
+  },
+
+  _saveSelectedPowerups: function (selectedItems) {
+    if (!this.selectedPowerupsStore || typeof this.selectedPowerupsStore.setSelectedItems !== "function") {
+      this.selectedPowerupsState = {
+        version: 1,
+        selectedItems: Array.isArray(selectedItems) ? selectedItems.slice(0, MAX_SELECTED_POWERUPS) : []
+      };
+      return this.selectedPowerupsState;
+    }
+
+    this.selectedPowerupsState = this.selectedPowerupsStore.setSelectedItems(selectedItems);
+    return this.selectedPowerupsState;
+  },
+
+  _getAvailableSelectedPowerupItems: function () {
+    this._refreshPlayerInventory();
+    this._refreshSelectedPowerups();
+
+    var selectedItems = this.selectedPowerupsState && Array.isArray(this.selectedPowerupsState.selectedItems)
+      ? this.selectedPowerupsState.selectedItems.slice()
+      : [];
+    var availableSelectedItems = selectedItems.filter(function (itemId, index, list) {
+      return list.indexOf(itemId) === index &&
+        POWERUP_TYPE_BY_ITEM_ID[itemId] &&
+        this.inventoryStore &&
+        this.inventoryStore.getItemCount(this.playerInventory, itemId) > 0;
+    }, this).slice(0, MAX_SELECTED_POWERUPS);
+
+    if (availableSelectedItems.length !== selectedItems.length) {
+      this._saveSelectedPowerups(availableSelectedItems);
+    }
+    return availableSelectedItems;
+  },
+
+  _applySelectedPowerupsToRuntime: function (snapshot) {
+    if (!this.gameManager || typeof this.gameManager.grantPowerupInventory !== "function") {
+      return snapshot || null;
+    }
+
+    var selectedItems = this._getAvailableSelectedPowerupItems();
+    var latestSnapshot = snapshot || this.gameManager.getRuntimeSnapshot();
+    selectedItems.forEach(function (itemId) {
+      var powerupType = POWERUP_TYPE_BY_ITEM_ID[itemId];
+      if (!powerupType) {
+        return;
+      }
+
+      var grantResult = this.gameManager.grantPowerupInventory(powerupType, 1);
+      if (grantResult && grantResult.snapshot) {
+        latestSnapshot = grantResult.snapshot;
+      }
+    }, this);
+
+    return latestSnapshot;
+  },
+
+  _consumePersistentInventoryItemForPowerup: function (powerupType) {
+    var itemId = ITEM_ID_BY_POWERUP_TYPE[powerupType];
+    if (!itemId || !this.inventoryStore || typeof this.inventoryStore.removeItem !== "function") {
+      return false;
+    }
+
+    this._refreshPlayerInventory();
+    var removeResult = this.inventoryStore.removeItem(this.playerInventory, itemId, 1);
+    if (!removeResult || !removeResult.accepted) {
+      this._getAvailableSelectedPowerupItems();
+      return false;
+    }
+
+    this.playerInventory = removeResult.inventory;
+    this.inventoryStore.save(this.playerInventory);
+    this._getAvailableSelectedPowerupItems();
+    this._renderInventoryView();
+    this._updateInventoryEntryState();
+    return true;
+  },
+
+  _ensureInventoryViewPrefab: function () {
+    if (this._inventoryViewPrefab) {
+      return Promise.resolve(this._inventoryViewPrefab);
+    }
+
+    return this._loadPrefab(INVENTORY_VIEW_PREFAB_PATH).then(function (prefab) {
+      this._inventoryViewPrefab = prefab;
+      return prefab;
+    }.bind(this));
+  },
+
+  _showInventoryView: function () {
+    this._playSfx("uiClick");
+    this._ensureInventoryViewPrefab().then(function (prefab) {
+      if (!prefab) {
+        this._setStatus("背包界面加载失败");
+        return;
+      }
+
+      var inventoryViewNode = this._inventoryViewNode;
+      if (!inventoryViewNode || !inventoryViewNode.isValid) {
+        inventoryViewNode = cc.instantiate(prefab);
+        inventoryViewNode.parent = this.node;
+        inventoryViewNode.setPosition(0, 0);
+        inventoryViewNode.zIndex = 320;
+        this._inventoryViewNode = inventoryViewNode;
+        this._inventoryViewController = new InventoryViewController({
+          node: inventoryViewNode,
+          onClose: function () {
+            this._playSfx("uiClick");
+            this._hideInventoryView();
+          }.bind(this),
+          onConfirm: this._confirmInventorySelection.bind(this),
+          onToggleItem: this._toggleInventorySelection.bind(this),
+          onSelectionLimit: function () {
+            this._setStatusWithTip("inventory_selection_limit", null, "最多携带2个道具");
+          }.bind(this)
+        });
+      }
+
+      inventoryViewNode.active = true;
+      this._renderInventoryView();
+    }.bind(this)).catch(function (error) {
+      Logger.warn("Show inventory view failed", error && error.message ? error.message : error);
+      this._setStatus("背包界面加载失败");
+    }.bind(this));
+  },
+
+  _hideInventoryView: function () {
+    if (!this._inventoryViewNode || !this._inventoryViewNode.isValid) {
+      return;
+    }
+    this._inventoryViewNode.active = false;
+  },
+
+  _confirmInventorySelection: function () {
+    this._playSfx("uiClick");
+    this._hideInventoryView();
+    this._setStatusWithTip("inventory_confirmed", null, "出战道具已保存");
+    this._updateInventoryEntryState();
+  },
+
+  _toggleInventorySelection: function (itemId) {
+    this._playSfx("uiClick");
+    this._refreshPlayerInventory();
+    this._refreshSelectedPowerups();
+
+    if (!this.inventoryStore || this.inventoryStore.getItemCount(this.playerInventory, itemId) <= 0) {
+      this._setStatusWithTip("inventory_item_empty", null, "该道具库存不足");
+      return;
+    }
+
+    var toggleResult = this.selectedPowerupsStore.toggleItem(this.selectedPowerupsState, itemId);
+    if (!toggleResult || !toggleResult.accepted) {
+      if (toggleResult && toggleResult.reason === "selection_limit") {
+        this._setStatusWithTip("inventory_selection_limit", null, "最多携带2个道具");
+      } else {
+        this._setStatusWithTip("inventory_selection_failed", null, "道具选择失败");
+      }
+      return;
+    }
+
+    this.selectedPowerupsState = toggleResult.state;
+    this.selectedPowerupsStore.save(this.selectedPowerupsState);
+    this._renderInventoryView();
+    this._updateInventoryEntryState();
+  },
+
+  _renderInventoryView: function () {
+    if (!this._inventoryViewController || !this._inventoryViewNode || !this._inventoryViewNode.isValid) {
+      return;
+    }
+
+    this._refreshPlayerInventory();
+    this._refreshSelectedPowerups();
+    this._inventoryViewController.render({
+      inventory: this.playerInventory,
+      selectedItems: this.selectedPowerupsState.selectedItems,
+      coinCount: this._getCurrentCoins()
+    });
+  },
+
+  _updateInventoryEntryState: function () {
+    if (!this._levelSelectNode || !cc.isValid(this._levelSelectNode)) {
+      return;
+    }
+
+    var entryNode = this._levelSelectNode.getChildByName("BackpackEntryButton");
+    if (!entryNode || !entryNode.isValid) {
+      entryNode = new cc.Node("BackpackEntryButton");
+      entryNode.parent = this._levelSelectNode;
+      entryNode.zIndex = 240;
+      entryNode.setContentSize(122, 122);
+      entryNode.setPosition(236, -548);
+
+      var background = entryNode.addComponent(cc.Graphics);
+      background.clear();
+      background.fillColor = cc.color(118, 55, 218, 230);
+      background.roundRect(-61, -61, 122, 122, 28);
+      background.fill();
+      background.strokeColor = cc.color(226, 174, 255, 230);
+      background.lineWidth = 4;
+      background.roundRect(-61, -61, 122, 122, 28);
+      background.stroke();
+
+      var iconNode = new cc.Node("icon");
+      iconNode.parent = entryNode;
+      iconNode.setContentSize(62, 70);
+      iconNode.setPosition(0, 18);
+      iconNode.addComponent(cc.Sprite);
+
+      var labelNode = new cc.Node("label");
+      labelNode.parent = entryNode;
+      labelNode.setContentSize(96, 32);
+      labelNode.setPosition(0, -36);
+      var label = labelNode.addComponent(cc.Label);
+      label.string = "背包";
+      label.fontSize = 26;
+      label.lineHeight = 30;
+      label.horizontalAlign = cc.Label.HorizontalAlign.CENTER;
+      label.verticalAlign = cc.Label.VerticalAlign.CENTER;
+      labelNode.color = cc.color(255, 255, 255);
+      var outline = labelNode.addComponent(cc.LabelOutline);
+      outline.color = cc.color(73, 31, 148);
+      outline.width = 3;
+
+      this._bindNodeTapOnce(entryNode, this._showInventoryView.bind(this));
+    }
+
+    this._ensureInventoryEntryIcon(entryNode);
+    var selectedItems = this._getAvailableSelectedPowerupItems();
+    entryNode.opacity = selectedItems.length > 0 ? 255 : 230;
+  },
+
+  _ensureInventoryEntryIcon: function (entryNode) {
+    if (!entryNode || !entryNode.isValid) {
+      return;
+    }
+
+    var iconNode = entryNode.getChildByName("icon");
+    var iconSprite = iconNode ? iconNode.getComponent(cc.Sprite) : null;
+    if (!iconSprite) {
+      return;
+    }
+    if (this._inventoryEntryIconSpriteFrame) {
+      iconSprite.spriteFrame = this._inventoryEntryIconSpriteFrame;
+      return;
+    }
+
+    BundleLoader.loadRes(INVENTORY_ENTRY_ICON_PATH, cc.SpriteFrame, function (error, spriteFrame) {
+      if (error || !spriteFrame) {
+        Logger.warn("Load inventory entry icon failed", error && error.message ? error.message : error);
+        return;
+      }
+
+      this._inventoryEntryIconSpriteFrame = spriteFrame;
+      if (iconSprite && iconSprite.node && iconSprite.node.isValid) {
+        iconSprite.spriteFrame = spriteFrame;
+      }
+    }.bind(this));
   },
 
   _trackTelemetry: function (eventName, payload) {
@@ -1808,6 +2110,12 @@ cc.Class({
           message: "道具补给失败"
         };
       }
+      var itemId = ITEM_ID_BY_POWERUP_TYPE[inventoryGrant.powerupType];
+      if (itemId && typeof this._addInventoryItem === "function") {
+        this._addInventoryItem(itemId, inventoryGrant.amount);
+        this._renderInventoryView();
+        this._updateInventoryEntryState();
+      }
       return {
         accepted: true,
         snapshot: grantResult.snapshot,
@@ -1946,6 +2254,9 @@ cc.Class({
     this._setStatus("Restarting level...");
 
     var snapshot = this.gameManager.startLevel(this.currentLevelConfig);
+    if (typeof this._applySelectedPowerupsToRuntime === "function") {
+      snapshot = this._applySelectedPowerupsToRuntime(snapshot);
+    }
     snapshot = this._applyPendingNextRoundRewards(snapshot);
     this._beginLevelAttemptTracking(this.currentLevelConfig, snapshot);
     snapshot = this.gameManager.endAim();
@@ -2030,6 +2341,13 @@ cc.Class({
   _grantSignInRewardItems: GameBootstrapUiFlowMethods._grantSignInRewardItems,
   _claimTodaySignInReward: GameBootstrapUiFlowMethods._claimTodaySignInReward,
   _maybeAutoShowSignInView: GameBootstrapUiFlowMethods._maybeAutoShowSignInView,
+  _resolveLeaderboardPlayerName: GameBootstrapUiFlowMethods._resolveLeaderboardPlayerName,
+  _refreshLeaderboardEntries: GameBootstrapUiFlowMethods._refreshLeaderboardEntries,
+  _ensureRankingBackgroundSpriteFrame: GameBootstrapUiFlowMethods._ensureRankingBackgroundSpriteFrame,
+  _onLevelSelectRankingTap: GameBootstrapUiFlowMethods._onLevelSelectRankingTap,
+  _showRankingView: GameBootstrapUiFlowMethods._showRankingView,
+  _hideRankingView: GameBootstrapUiFlowMethods._hideRankingView,
+  _renderRankingView: GameBootstrapUiFlowMethods._renderRankingView,
   _onLevelSelectSettingTap: GameBootstrapUiFlowMethods._onLevelSelectSettingTap,
   _ensureSettingViewPrefab: GameBootstrapUiFlowMethods._ensureSettingViewPrefab,
   _showSettingView: GameBootstrapUiFlowMethods._showSettingView,

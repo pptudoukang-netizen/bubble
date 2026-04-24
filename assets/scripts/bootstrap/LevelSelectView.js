@@ -250,6 +250,29 @@ function bindMapSwitchButton(buttonNode, levelViewNode, nextIndexResolver, onMap
   });
 }
 
+function bindNamedButtonTap(buttonNode, boundFlagName, handlerPropertyName, handler) {
+  if (!buttonNode || !buttonNode.isValid) {
+    return;
+  }
+
+  buttonNode[handlerPropertyName] = handler;
+  if (buttonNode[boundFlagName] === true) {
+    return;
+  }
+
+  buttonNode[boundFlagName] = true;
+  buttonNode.on(cc.Node.EventType.TOUCH_END, function (event) {
+    if (event) {
+      event.stopPropagation();
+    }
+
+    var tapHandler = buttonNode[handlerPropertyName];
+    if (typeof tapHandler === "function") {
+      tapHandler();
+    }
+  });
+}
+
 function updateTopStatus(levelView, options) {
   if (!levelView || !levelView.isValid) {
     return;
@@ -260,6 +283,9 @@ function updateTopStatus(levelView, options) {
   var coinValue = Math.max(0, Math.floor(Number(options.coinValue) || 0));
   var onOpenSettings = typeof options.onOpenSettings === "function"
     ? options.onOpenSettings
+    : function () {};
+  var onOpenRanking = typeof options.onOpenRanking === "function"
+    ? options.onOpenRanking
     : function () {};
 
   var topLayerNode = levelView.getChildByName("top_layer");
@@ -277,27 +303,18 @@ function updateTopStatus(levelView, options) {
     coinLabel.string = String(coinValue);
   }
 
-  var settingButtonNode = topLayerNode ? topLayerNode.getChildByName("setting_btn") : null;
-  if (!settingButtonNode || !settingButtonNode.isValid) {
-    return;
-  }
-
-  settingButtonNode.__onOpenSettings = onOpenSettings;
-  if (settingButtonNode.__settingTapBound === true) {
-    return;
-  }
-
-  settingButtonNode.__settingTapBound = true;
-  settingButtonNode.on(cc.Node.EventType.TOUCH_END, function (event) {
-    if (event) {
-      event.stopPropagation();
-    }
-
-    var tapHandler = settingButtonNode.__onOpenSettings;
-    if (typeof tapHandler === "function") {
-      tapHandler();
-    }
-  });
+  bindNamedButtonTap(
+    topLayerNode ? topLayerNode.getChildByName("setting_btn") : null,
+    "__settingTapBound",
+    "__onOpenSettings",
+    onOpenSettings
+  );
+  bindNamedButtonTap(
+    levelView.getChildByName("ranking_btn"),
+    "__rankingTapBound",
+    "__onOpenRanking",
+    onOpenRanking
+  );
 }
 
 function renderLevelSelectContent(options) {
@@ -324,6 +341,9 @@ function renderLevelSelectContent(options) {
   var coinValue = Math.max(0, Math.floor(Number(options.coinValue) || 0));
   var onOpenSettings = typeof options.onOpenSettings === "function"
     ? options.onOpenSettings
+    : function () {};
+  var onOpenRanking = typeof options.onOpenRanking === "function"
+    ? options.onOpenRanking
     : function () {};
 
   if (!hostNode || !hostNode.isValid) {
@@ -360,7 +380,8 @@ function renderLevelSelectContent(options) {
   updateTopStatus(levelView, {
     staminaValue: staminaValue,
     coinValue: coinValue,
-    onOpenSettings: onOpenSettings
+    onOpenSettings: onOpenSettings,
+    onOpenRanking: onOpenRanking
   });
 
   var mapHostNode = levelView.getChildByName("map");

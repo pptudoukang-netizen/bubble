@@ -94,8 +94,8 @@ ShooterController.prototype.configureLevel = function (levelConfig) {
   var initialPowerups = levelConfig && levelConfig.level && levelConfig.level.initialPowerups
     ? levelConfig.level.initialPowerups
     : {};
-  this.skillInventory.swap = Math.max(0, Math.floor(Number(initialPowerups.swap) || 1));
-  this.skillInventory.barrier_hammer = Math.max(0, Math.floor(Number(initialPowerups.barrier_hammer) || 1));
+  this.skillInventory.swap = Math.max(0, Math.floor(Number(initialPowerups.swap) || 0));
+  this.skillInventory.barrier_hammer = Math.max(0, Math.floor(Number(initialPowerups.barrier_hammer) || 0));
   this.currentBall = this._pickNormalBall();
   this.nextBall = this._pickNormalBall();
   this._syncLegacyColorFields();

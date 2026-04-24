@@ -1,0 +1,38 @@
+{
+  "ver": "2.3.7",
+  "uuid": "fadd7487-36cd-4f9b-9690-772792ad3fff",
+  "importer": "texture",
+  "type": "sprite",
+  "wrapMode": "clamp",
+  "filterMode": "bilinear",
+  "premultiplyAlpha": false,
+  "genMipmaps": false,
+  "packable": true,
+  "width": 1254,
+  "height": 1254,
+  "platformSettings": {},
+  "subMetas": {
+    "商城元素平铺_透明_去白边": {
+      "ver": "1.0.6",
+      "uuid": "f0532358-ea42-4896-ab7d-e2113a64674e",
+      "importer": "sprite-frame",
+      "rawTextureUuid": "fadd7487-36cd-4f9b-9690-772792ad3fff",
+      "trimType": "auto",
+      "trimThreshold": 1,
+      "rotated": false,
+      "offsetX": -4,
+      "offsetY": 3.5,
+      "trimX": 21,
+      "trimY": 26,
+      "width": 1204,
+      "height": 1195,
+      "rawWidth": 1254,
+      "rawHeight": 1254,
+      "borderTop": 0,
+      "borderBottom": 0,
+      "borderLeft": 0,
+      "borderRight": 0,
+      "subMetas": {}
+    }
+  }
+}
