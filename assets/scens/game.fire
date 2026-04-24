@@ -548,7 +548,7 @@
       "ctor": "Float64Array",
       "array": [
         0,
-        -0.787,
+        -55.668,
         0,
         0,
         0,
@@ -793,7 +793,7 @@
       "ctor": "Float64Array",
       "array": [
         17.421,
-        56,
+        1.119,
         0,
         0,
         0,
@@ -1391,8 +1391,8 @@
     },
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 199,
-      "height": 261
+      "width": 272,
+      "height": 357
     },
     "_anchorPoint": {
       "__type__": "cc.Vec2",
@@ -1403,8 +1403,8 @@
       "__type__": "TypedArray",
       "ctor": "Float64Array",
       "array": [
-        -117.724,
-        146.241,
+        -222.536,
+        238.786,
         0,
         0,
         0,
@@ -1581,6 +1581,7 @@
     "inspectorStaminaValue": 100,
     "enableStartupLoadingView": true,
     "loadingViewMinVisibleMs": 900,
+    "loadingAniMaxMoveSpeed": 50,
     "startupPreloadLevelCount": 5,
     "projectileSpeed": 1800,
     "impactBounceSpeed": 300,

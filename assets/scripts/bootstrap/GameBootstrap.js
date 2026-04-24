@@ -116,6 +116,10 @@ cc.Class({
       default: 900,
       tooltip: "资源加载界面的最短展示时长（毫秒），避免闪屏。"
     },
+    loadingAniMaxMoveSpeed: {
+      default: 20,
+      tooltip: "资源加载界面 ani 节点的最大移动速度，用于测试加载动画位移。"
+    },
     startupPreloadLevelCount: {
       default: 5,
       tooltip: "启动阶段预加载的关卡配置数量（从首关开始）。"
@@ -346,7 +350,8 @@ cc.Class({
     this.resourceGateway = this.resourceGateway || new ResourceGateway();
     this.tipsPresenter = new TipsPresenter({
       rootNode: this.node,
-      resourceGateway: this.resourceGateway
+      resourceGateway: this.resourceGateway,
+      zIndex: 600
     });
     this.tipsPresenter.warmup().catch(function (error) {
       Logger.warn("TipsPresenter warmup failed", error && error.message ? error.message : error);
@@ -650,6 +655,7 @@ cc.Class({
 
   _ensureLoadingViewController: function () {
     if (this._loadingViewController && this._loadingViewController.node && cc.isValid(this._loadingViewController.node)) {
+      this._syncLoadingViewConfig(this._loadingViewController);
       return Promise.resolve(this._loadingViewController);
     }
 
@@ -675,11 +681,22 @@ cc.Class({
       }
 
       this._loadingViewController = controller;
+      this._syncLoadingViewConfig(controller);
       if (controller.refreshLayout) {
         controller.refreshLayout();
       }
       return controller;
     }.bind(this));
+  },
+
+  _syncLoadingViewConfig: function (controller) {
+    if (!controller) {
+      return;
+    }
+
+    if (controller.setAniMaxMoveSpeed) {
+      controller.setAniMaxMoveSpeed(this.loadingAniMaxMoveSpeed);
+    }
   },
 
   _findSceneLoadingViewNode: function () {
