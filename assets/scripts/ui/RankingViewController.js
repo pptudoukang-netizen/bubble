@@ -1,20 +1,51 @@
 "use strict";
 
-var PANEL_WIDTH = 645;
-var PANEL_HEIGHT = 1008;
-var MAX_VISIBLE_ROWS = 8;
-var ROW_WIDTH = 540;
-var ROW_HEIGHT = 92;
-var ROW_GAP = 18;
-var ROW_START_Y = 264;
+var BundleLoader = require("../utils/BundleLoader");
+var Logger = require("../utils/Logger");
+
+var ROOT_WIDTH = 720;
+var ROOT_HEIGHT = 1280;
+var LIST_WIDTH = 593;
+var LIST_HEIGHT = 789;
+var ROW_WIDTH = 593;
+var ROW_HEIGHT = 143;
+var ROW_GAP = 8;
+var ROW_STRIDE = ROW_HEIGHT + ROW_GAP;
+var ROW_POOL_BUFFER = 2;
+var MIN_ROW_POOL_SIZE = 6;
+var RANKING_ITEM_PREFAB_PATH = "prefabs/ui/RankingItem";
 
 var TEXT = {
-  title: "\u597d\u53cb\u6392\u884c\u699c",
-  scoreSuffix: "\u5206",
-  levelPrefix: "\u901a\u5173 ",
-  levelSuffix: "\u5173",
-  empty: "\u6682\u65e0\u6392\u884c\u6570\u636e"
+  scoreSuffix: "",
+  levelSuffix: "\u5173"
 };
+
+var SPRITE_PATHS = {
+  rank1Badge: "image/ranking/1",
+  rank2Badge: "image/ranking/2",
+  rank3Badge: "image/ranking/3",
+  itemBg1: "image/ranking/item_bg_1",
+  itemBg2: "image/ranking/item_bg2",
+  itemBg3: "image/ranking/item_bg_3"
+};
+
+function findNodeByNameRecursive(rootNode, name) {
+  if (!rootNode || !rootNode.isValid) {
+    return null;
+  }
+  if (rootNode.name === name) {
+    return rootNode;
+  }
+
+  var children = rootNode.children || [];
+  for (var i = 0; i < children.length; i += 1) {
+    var found = findNodeByNameRecursive(children[i], name);
+    if (found) {
+      return found;
+    }
+  }
+  return null;
+}
 
 function bindTapOnce(node, onTap) {
   if (!node || !node.isValid || node.__rankingTapBound === true) {
@@ -61,277 +92,168 @@ function bindCloseAreaOnce(node, onTap) {
   });
 }
 
-function createLabel(parentNode, name, options) {
-  options = options || {};
-  var node = new cc.Node(name);
-  node.parent = parentNode;
-  node.setContentSize(Number(options.width) || 160, Number(options.height) || 40);
-  node.setPosition(Number(options.x) || 0, Number(options.y) || 0);
-  node.color = options.color || cc.color(255, 255, 255);
-
-  var label = node.addComponent(cc.Label);
-  label.string = String(options.text || "");
-  label.fontSize = Math.max(12, Math.floor(Number(options.fontSize) || 28));
-  label.lineHeight = Math.max(label.fontSize + 2, Math.floor(Number(options.lineHeight) || (label.fontSize + 4)));
-  label.horizontalAlign = options.align || cc.Label.HorizontalAlign.CENTER;
-  label.verticalAlign = cc.Label.VerticalAlign.CENTER;
-  label.overflow = options.overflow || cc.Label.Overflow.SHRINK;
-
-  if (options.outlineWidth) {
-    var outline = node.addComponent(cc.LabelOutline);
-    outline.color = options.outlineColor || cc.color(88, 28, 145);
-    outline.width = Math.max(1, Math.floor(Number(options.outlineWidth) || 1));
-  }
-
-  return {
-    node: node,
-    label: label
-  };
-}
-
-function drawRoundedRect(node, width, height, fillColor, strokeColor, lineWidth, radius) {
-  var graphics = node.addComponent(cc.Graphics);
-  graphics.clear();
-  graphics.fillColor = fillColor;
-  graphics.roundRect(-(width * 0.5), -(height * 0.5), width, height, radius);
-  graphics.fill();
-  if (strokeColor && lineWidth > 0) {
-    graphics.strokeColor = strokeColor;
-    graphics.lineWidth = lineWidth;
-    graphics.roundRect(-(width * 0.5), -(height * 0.5), width, height, radius);
-    graphics.stroke();
-  }
-  return graphics;
-}
-
-function createRootNode(parentNode) {
-  var root = new cc.Node("RankingView");
-  root.parent = parentNode || null;
-  root.zIndex = 330;
-  root.setPosition(0, 0);
-  root.setContentSize(720, 1280);
-  root.addComponent(cc.BlockInputEvents);
-
-  var mask = new cc.Node("Mask");
-  mask.parent = root;
-  mask.setContentSize(720, 1280);
-  mask.setPosition(0, 0);
-  var maskGraphics = mask.addComponent(cc.Graphics);
-  maskGraphics.clear();
-  maskGraphics.fillColor = cc.color(16, 7, 40, 150);
-  maskGraphics.rect(-360, -640, 720, 1280);
-  maskGraphics.fill();
-
-  var panel = new cc.Node("Panel");
-  panel.parent = root;
-  panel.setContentSize(PANEL_WIDTH, PANEL_HEIGHT);
-  panel.setPosition(0, -14);
-  panel.addComponent(cc.Sprite);
-
-  var title = createLabel(panel, "TitleLabel", {
-    text: TEXT.title,
-    y: 430,
-    width: 440,
-    height: 70,
-    fontSize: 42,
-    lineHeight: 48,
-    color: cc.color(255, 226, 255),
-    outlineWidth: 4,
-    outlineColor: cc.color(105, 34, 172)
+function loadSpriteFrame(path) {
+  return new Promise(function (resolve) {
+    BundleLoader.loadRes(path, cc.SpriteFrame, function (error, spriteFrame) {
+      if (error || !spriteFrame) {
+        Logger.warn("Load ranking sprite failed", path, error && error.message ? error.message : error);
+        resolve(null);
+        return;
+      }
+      resolve(spriteFrame);
+    });
   });
-  title.node.zIndex = 10;
-
-  var closeButton = new cc.Node("CloseButton");
-  closeButton.parent = panel;
-  closeButton.zIndex = 20;
-  closeButton.setContentSize(82, 82);
-  closeButton.setPosition(286, 414);
-  drawRoundedRect(closeButton, 82, 82, cc.color(181, 91, 238, 255), cc.color(255, 206, 255, 255), 5, 41);
-  createLabel(closeButton, "CloseLabel", {
-    text: "X",
-    width: 68,
-    height: 68,
-    fontSize: 44,
-    lineHeight: 48,
-    color: cc.color(255, 237, 255),
-    outlineWidth: 3,
-    outlineColor: cc.color(93, 31, 145)
-  });
-
-  var list = new cc.Node("RankList");
-  list.parent = panel;
-  list.zIndex = 10;
-  list.setContentSize(ROW_WIDTH, MAX_VISIBLE_ROWS * (ROW_HEIGHT + ROW_GAP));
-  list.setPosition(0, 0);
-
-  root.__rankingNodes = {
-    mask: mask,
-    panel: panel,
-    list: list,
-    closeButton: closeButton
-  };
-
-  return root;
 }
 
-function getRankColors(rank, isSelf) {
-  if (isSelf) {
-    return {
-      fill: cc.color(94, 46, 154, 238),
-      stroke: cc.color(255, 220, 112, 255),
-      medal: cc.color(255, 211, 84, 255)
-    };
-  }
+function resolveRankBadgeKey(rank) {
   if (rank === 1) {
-    return {
-      fill: cc.color(120, 54, 134, 238),
-      stroke: cc.color(255, 214, 115, 255),
-      medal: cc.color(255, 190, 42, 255)
-    };
+    return "rank1Badge";
   }
   if (rank === 2) {
-    return {
-      fill: cc.color(76, 70, 164, 230),
-      stroke: cc.color(197, 224, 255, 255),
-      medal: cc.color(149, 190, 255, 255)
-    };
+    return "rank2Badge";
   }
   if (rank === 3) {
-    return {
-      fill: cc.color(111, 60, 116, 230),
-      stroke: cc.color(255, 172, 102, 255),
-      medal: cc.color(226, 126, 58, 255)
-    };
+    return "rank3Badge";
   }
-  return {
-    fill: cc.color(68, 43, 138, 215),
-    stroke: cc.color(185, 126, 255, 210),
-    medal: cc.color(146, 104, 232, 255)
-  };
+  return "";
 }
 
-function createRankRow(parentNode, entry, index) {
-  var rank = Math.max(1, Math.floor(Number(entry.rank) || (index + 1)));
-  var colors = getRankColors(rank, entry.isSelf === true);
-  var row = new cc.Node("RankRow" + rank);
-  row.parent = parentNode;
-  row.setContentSize(ROW_WIDTH, ROW_HEIGHT);
-  row.setPosition(0, ROW_START_Y - (index * (ROW_HEIGHT + ROW_GAP)));
-  drawRoundedRect(row, ROW_WIDTH, ROW_HEIGHT, colors.fill, colors.stroke, rank <= 3 || entry.isSelf ? 4 : 2, 18);
+function resolveRowBgKey(rank) {
+  if (rank === 1) {
+    return "itemBg1";
+  }
+  if (rank === 2) {
+    return "itemBg2";
+  }
+  return "itemBg3";
+}
 
-  var medal = new cc.Node("RankBadge");
-  medal.parent = row;
-  medal.setContentSize(74, 74);
-  medal.setPosition(-222, 0);
-  var medalGraphics = medal.addComponent(cc.Graphics);
-  medalGraphics.clear();
-  medalGraphics.fillColor = colors.medal;
-  medalGraphics.circle(0, 0, 35);
-  medalGraphics.fill();
-  medalGraphics.strokeColor = cc.color(255, 246, 210, 240);
-  medalGraphics.lineWidth = 4;
-  medalGraphics.circle(0, 0, 35);
-  medalGraphics.stroke();
-  createLabel(medal, "RankLabel", {
-    text: String(rank),
-    width: 64,
-    height: 58,
-    fontSize: rank <= 3 ? 40 : 32,
-    lineHeight: 44,
-    color: cc.color(255, 255, 255),
-    outlineWidth: 3,
-    outlineColor: cc.color(105, 56, 29)
-  });
+function getScrollOffsetY(scrollView) {
+  if (!scrollView || typeof scrollView.getScrollOffset !== "function") {
+    return 0;
+  }
 
-  var avatar = new cc.Node("Avatar");
-  avatar.parent = row;
-  avatar.setContentSize(68, 68);
-  avatar.setPosition(-144, 0);
-  var avatarGraphics = avatar.addComponent(cc.Graphics);
-  avatarGraphics.clear();
-  avatarGraphics.fillColor = entry.isSelf ? cc.color(255, 220, 94, 255) : cc.color(255, 174, 218, 255);
-  avatarGraphics.circle(0, 0, 31);
-  avatarGraphics.fill();
-  avatarGraphics.strokeColor = cc.color(255, 250, 218, 255);
-  avatarGraphics.lineWidth = 3;
-  avatarGraphics.circle(0, 0, 31);
-  avatarGraphics.stroke();
-  createLabel(avatar, "AvatarLabel", {
-    text: String(entry.nickname || "?").charAt(0),
-    width: 58,
-    height: 58,
-    fontSize: 30,
-    lineHeight: 34,
-    color: cc.color(111, 45, 142),
-    outlineWidth: 1,
-    outlineColor: cc.color(255, 255, 255)
-  });
+  var offset = scrollView.getScrollOffset();
+  return Math.max(0, Math.floor(Number(offset && offset.y) || 0));
+}
 
-  createLabel(row, "NameLabel", {
-    text: String(entry.nickname || ""),
-    x: -64,
-    y: 16,
-    width: 190,
-    height: 36,
-    fontSize: 30,
-    lineHeight: 34,
-    align: cc.Label.HorizontalAlign.LEFT,
-    color: entry.isSelf ? cc.color(255, 246, 171) : cc.color(255, 255, 255),
-    outlineWidth: 2,
-    outlineColor: cc.color(74, 27, 122)
-  });
-
-  createLabel(row, "LevelLabel", {
-    text: TEXT.levelPrefix + Math.max(0, Math.floor(Number(entry.completedLevels) || 0)) + TEXT.levelSuffix,
-    x: -64,
-    y: -20,
-    width: 190,
-    height: 28,
-    fontSize: 22,
-    lineHeight: 26,
-    align: cc.Label.HorizontalAlign.LEFT,
-    color: cc.color(215, 196, 255)
-  });
-
-  createLabel(row, "StarLabel", {
-    text: "\u2605",
-    x: 104,
-    y: 2,
-    width: 46,
-    height: 46,
-    fontSize: 38,
-    lineHeight: 42,
-    color: cc.color(255, 222, 55),
-    outlineWidth: 2,
-    outlineColor: cc.color(161, 92, 21)
-  });
-
-  createLabel(row, "ScoreLabel", {
-    text: Math.max(0, Math.floor(Number(entry.score) || 0)) + TEXT.scoreSuffix,
-    x: 208,
-    y: 0,
-    width: 148,
-    height: 42,
-    fontSize: 30,
-    lineHeight: 34,
-    align: cc.Label.HorizontalAlign.LEFT,
-    color: cc.color(255, 255, 255),
-    outlineWidth: 2,
-    outlineColor: cc.color(74, 27, 122)
-  });
-
-  return row;
+function setSpriteFrame(sprite, spriteFrame) {
+  if (!sprite || !sprite.node || !sprite.node.isValid || !spriteFrame) {
+    return;
+  }
+  sprite.spriteFrame = spriteFrame;
+  if (cc.Sprite && cc.Sprite.SizeMode && cc.Sprite.SizeMode.CUSTOM !== undefined) {
+    sprite.sizeMode = cc.Sprite.SizeMode.CUSTOM;
+  }
 }
 
 function RankingViewController(options) {
   options = options || {};
   this.node = options.node || null;
   this.onClose = typeof options.onClose === "function" ? options.onClose : function () {};
-  this._nodes = this.node && this.node.__rankingNodes ? this.node.__rankingNodes : {};
+  this._entries = [];
+  this._rowPool = [];
+  this._rankingItemPrefab = options.rankingItemPrefab || null;
+  this._rankingItemPrefabLoadPromise = null;
+  this._spriteFrames = null;
+  this._spriteFrameLoadPromise = null;
+  this._nodes = this._resolveNodes();
   this._bindActions();
+  this.ensureSpriteFrames();
+  this.ensureRankingItemPrefab();
 }
 
-RankingViewController.createViewNode = createRootNode;
+RankingViewController.prototype._resolveNodes = function () {
+  if (!this.node || !this.node.isValid) {
+    return {};
+  }
+
+  this.node.setContentSize(ROOT_WIDTH, ROOT_HEIGHT);
+  if (!this.node.getComponent(cc.BlockInputEvents)) {
+    this.node.addComponent(cc.BlockInputEvents);
+  }
+
+  var mask = findNodeByNameRecursive(this.node, "mask");
+  var panel = findNodeByNameRecursive(this.node, "Panel");
+  var closeButton = panel ? findNodeByNameRecursive(panel, "btn_close") : null;
+  if (!mask || !panel || !closeButton) {
+    Logger.warn("RankingView prefab structure is incomplete.");
+    return {};
+  }
+
+  var scrollNodes = this._ensureScrollView(panel);
+  if (!scrollNodes) {
+    Logger.warn("RankingView listview is missing.");
+    return {};
+  }
+  var emptyLabel = findNodeByNameRecursive(panel, "empty_label");
+  if (emptyLabel) {
+    emptyLabel.active = false;
+  }
+
+  this.node.__rankingNodes = {
+    mask: mask,
+    panel: panel,
+    closeButton: closeButton,
+    scrollView: scrollNodes.scrollView,
+    viewport: scrollNodes.viewport,
+    content: scrollNodes.content,
+    emptyLabel: emptyLabel
+  };
+
+  return this.node.__rankingNodes;
+};
+
+RankingViewController.prototype._ensureScrollView = function (panel) {
+  var scrollNode = findNodeByNameRecursive(panel, "listview");
+  if (!scrollNode) {
+    return null;
+  }
+
+  var listWidth = Math.max(1, scrollNode.width || LIST_WIDTH);
+  var listHeight = Math.max(1, scrollNode.height || LIST_HEIGHT);
+  var scrollView = scrollNode.getComponent(cc.ScrollView) || scrollNode.addComponent(cc.ScrollView);
+  scrollView.horizontal = false;
+  scrollView.vertical = true;
+  scrollView.inertia = true;
+  scrollView.brake = 0.55;
+  scrollView.elastic = true;
+  scrollView.bounceDuration = 0.23;
+  scrollView.scrollEvents = [];
+
+  var viewport = scrollNode.getChildByName("view") || scrollNode.getChildByName("View") || scrollNode.getChildByName("Viewport");
+  if (!viewport) {
+    viewport = new cc.Node("view");
+    viewport.parent = scrollNode;
+  }
+  viewport.name = "view";
+  viewport.setContentSize(listWidth, listHeight);
+  viewport.setPosition(0, 0);
+  var mask = viewport.getComponent(cc.Mask) || viewport.addComponent(cc.Mask);
+  mask.type = cc.Mask.Type.RECT;
+
+  var content = viewport.getChildByName("content") || viewport.getChildByName("Content");
+  if (!content) {
+    content = new cc.Node("content");
+    content.parent = viewport;
+  }
+  content.name = "content";
+  content.setAnchorPoint(0.5, 0.5);
+  content.setContentSize(listWidth, listHeight);
+  content.setPosition(0, 0);
+
+  scrollView.content = content;
+  scrollView.node.off(cc.ScrollView.EventType.SCROLLING, this._updateVirtualRows, this);
+  scrollView.node.on(cc.ScrollView.EventType.SCROLLING, this._updateVirtualRows, this);
+  scrollView.node.off(cc.ScrollView.EventType.SCROLL_ENDED, this._updateVirtualRows, this);
+  scrollView.node.on(cc.ScrollView.EventType.SCROLL_ENDED, this._updateVirtualRows, this);
+
+  return {
+    scrollView: scrollView,
+    viewport: viewport,
+    content: content
+  };
+};
 
 RankingViewController.prototype._bindActions = function () {
   if (!this.node || !this.node.isValid) {
@@ -342,46 +264,242 @@ RankingViewController.prototype._bindActions = function () {
   bindCloseAreaOnce(this._nodes.mask, this.onClose);
 };
 
-RankingViewController.prototype.setBackgroundSpriteFrame = function (spriteFrame) {
-  var panel = this._nodes.panel;
-  var sprite = panel ? panel.getComponent(cc.Sprite) : null;
-  if (!sprite || !spriteFrame) {
+RankingViewController.prototype.ensureSpriteFrames = function () {
+  if (this._spriteFrames) {
+    return Promise.resolve(this._spriteFrames);
+  }
+  if (this._spriteFrameLoadPromise) {
+    return this._spriteFrameLoadPromise;
+  }
+
+  var keys = Object.keys(SPRITE_PATHS);
+  this._spriteFrameLoadPromise = Promise.all(keys.map(function (key) {
+    return loadSpriteFrame(SPRITE_PATHS[key]).then(function (spriteFrame) {
+      return {
+        key: key,
+        spriteFrame: spriteFrame
+      };
+    });
+  })).then(function (results) {
+    var spriteFrames = {};
+    results.forEach(function (result) {
+      spriteFrames[result.key] = result.spriteFrame;
+    });
+    this._spriteFrames = spriteFrames;
+    this._spriteFrameLoadPromise = null;
+    this._updateVirtualRows();
+    return spriteFrames;
+  }.bind(this)).catch(function (error) {
+    this._spriteFrameLoadPromise = null;
+    Logger.warn("Load ranking sprites failed", error && error.message ? error.message : error);
+    return null;
+  }.bind(this));
+
+  return this._spriteFrameLoadPromise;
+};
+
+RankingViewController.prototype.ensureRankingItemPrefab = function () {
+  if (this._rankingItemPrefab) {
+    return Promise.resolve(this._rankingItemPrefab);
+  }
+  if (this._rankingItemPrefabLoadPromise) {
+    return this._rankingItemPrefabLoadPromise;
+  }
+
+  this._rankingItemPrefabLoadPromise = new Promise(function (resolve) {
+    BundleLoader.loadRes(RANKING_ITEM_PREFAB_PATH, cc.Prefab, function (error, prefab) {
+      this._rankingItemPrefabLoadPromise = null;
+      if (error || !prefab) {
+        Logger.warn("Load ranking item prefab failed", error && error.message ? error.message : error);
+        resolve(null);
+        return;
+      }
+
+      this._rankingItemPrefab = prefab;
+      this._rebuildRowsFromPrefab();
+      this._updateVirtualRows();
+      resolve(prefab);
+    }.bind(this));
+  }.bind(this));
+
+  return this._rankingItemPrefabLoadPromise;
+};
+
+RankingViewController.prototype._rebuildRowsFromPrefab = function () {
+  if (!this._rankingItemPrefab || this._rowPool.length === 0) {
     return;
   }
 
-  sprite.spriteFrame = spriteFrame;
-  if (cc.Sprite && cc.Sprite.SizeMode && cc.Sprite.SizeMode.CUSTOM !== undefined) {
-    sprite.sizeMode = cc.Sprite.SizeMode.CUSTOM;
-  }
-  panel.setContentSize(PANEL_WIDTH, PANEL_HEIGHT);
+  this._rowPool.forEach(function (rowNode) {
+    if (rowNode && rowNode.isValid) {
+      rowNode.destroy();
+    }
+  });
+  this._rowPool = [];
+  this._ensureRowPool();
 };
 
 RankingViewController.prototype.render = function (entries) {
-  var listNode = this._nodes.list;
-  if (!listNode || !listNode.isValid) {
+  var safeEntries = Array.isArray(entries) ? entries.slice() : [];
+  this._entries = safeEntries;
+
+  var content = this._nodes.content;
+  var emptyLabel = this._nodes.emptyLabel;
+  var scrollNode = this._nodes.scrollView ? this._nodes.scrollView.node : null;
+  if (!content || !content.isValid) {
     return;
   }
 
-  listNode.removeAllChildren();
-  var safeEntries = Array.isArray(entries) ? entries.slice(0, MAX_VISIBLE_ROWS) : [];
+  if (emptyLabel) {
+    emptyLabel.active = safeEntries.length === 0;
+  }
+  if (scrollNode) {
+    scrollNode.active = safeEntries.length > 0;
+  }
   if (safeEntries.length === 0) {
-    createLabel(listNode, "EmptyLabel", {
-      text: TEXT.empty,
-      y: 60,
-      width: 430,
-      height: 50,
-      fontSize: 28,
-      lineHeight: 32,
-      color: cc.color(226, 212, 255),
-      outlineWidth: 2,
-      outlineColor: cc.color(73, 31, 148)
+    this._rowPool.forEach(function (rowNode) {
+      rowNode.active = false;
     });
     return;
   }
 
-  safeEntries.forEach(function (entry, index) {
-    createRankRow(listNode, entry, index);
-  });
+  var contentHeight = Math.max(LIST_HEIGHT, (safeEntries.length * ROW_STRIDE) - ROW_GAP);
+  content.setContentSize(LIST_WIDTH, contentHeight);
+  content.setPosition(0, Math.min(0, (LIST_HEIGHT - contentHeight) * 0.5));
+  this.ensureRankingItemPrefab().then(function () {
+    this._ensureRowPool();
+    if (this._nodes.scrollView && typeof this._nodes.scrollView.scrollToTop === "function") {
+      this._nodes.scrollView.scrollToTop(0);
+    }
+    this._updateVirtualRows();
+  }.bind(this));
+};
+
+RankingViewController.prototype._ensureRowPool = function () {
+  var content = this._nodes.content;
+  if (!content || !content.isValid || !this._rankingItemPrefab) {
+    return;
+  }
+
+  var visibleCount = Math.ceil(LIST_HEIGHT / ROW_STRIDE) + ROW_POOL_BUFFER;
+  var targetCount = Math.max(MIN_ROW_POOL_SIZE, Math.min(this._entries.length, visibleCount));
+  while (this._rowPool.length < targetCount) {
+    var row = this._createRankRow(content);
+    if (!row) {
+      return;
+    }
+    this._rowPool.push(row);
+  }
+};
+
+RankingViewController.prototype._createRankRow = function (parentNode) {
+  if (!this._rankingItemPrefab) {
+    return null;
+  }
+
+  var prefabRow = cc.instantiate(this._rankingItemPrefab);
+  prefabRow.parent = parentNode;
+  prefabRow.setContentSize(ROW_WIDTH, ROW_HEIGHT);
+  prefabRow.__rankingRow = this._cachePrefabRankRowRefs(prefabRow);
+  return prefabRow;
+};
+
+RankingViewController.prototype._cachePrefabRankRowRefs = function (row) {
+  var rankingNode = findNodeByNameRecursive(row, "ranking");
+  var rankingNumNode = findNodeByNameRecursive(row, "ranking_num");
+  var avatarNode = findNodeByNameRecursive(row, "avatar");
+  var avatarFrameNode = findNodeByNameRecursive(row, "avatar_frame");
+  var nameNode = findNodeByNameRecursive(row, "nick_name");
+  var scoreNode = findNodeByNameRecursive(row, "score");
+  var levelNode = findNodeByNameRecursive(row, "level");
+  if (!rankingNode || !rankingNumNode || !avatarNode || !avatarFrameNode || !nameNode || !scoreNode || !levelNode) {
+    Logger.warn("RankingItem prefab structure is incomplete.");
+  }
+
+  return {
+    bgSprite: row.getComponent(cc.Sprite),
+    badgeNode: rankingNode,
+    badgeSprite: rankingNode ? rankingNode.getComponent(cc.Sprite) : null,
+    rankingNumNode: rankingNumNode,
+    rankingNumLabel: rankingNumNode ? rankingNumNode.getComponent(cc.Label) : null,
+    nameLabel: nameNode ? nameNode.getComponent(cc.Label) : null,
+    scoreLabel: scoreNode ? scoreNode.getComponent(cc.Label) : null,
+    levelLabel: levelNode ? levelNode.getComponent(cc.Label) : null
+  };
+};
+
+RankingViewController.prototype._updateVirtualRows = function () {
+  if (!this._nodes || !this._nodes.content || !this._nodes.content.isValid) {
+    return;
+  }
+
+  if (!this._entries.length) {
+    return;
+  }
+
+  this._ensureRowPool();
+
+  var scrollOffsetY = getScrollOffsetY(this._nodes.scrollView);
+  var firstIndex = Math.floor(scrollOffsetY / ROW_STRIDE);
+  var maxFirstIndex = Math.max(0, this._entries.length - this._rowPool.length);
+  firstIndex = Math.max(0, Math.min(firstIndex, maxFirstIndex));
+
+  for (var poolIndex = 0; poolIndex < this._rowPool.length; poolIndex += 1) {
+    var entryIndex = firstIndex + poolIndex;
+    var row = this._rowPool[poolIndex];
+    if (entryIndex >= this._entries.length) {
+      row.active = false;
+      continue;
+    }
+
+    row.active = true;
+    row.setPosition(0, (this._nodes.content.height * 0.5) - (ROW_HEIGHT * 0.5) - (entryIndex * ROW_STRIDE));
+    this._renderRankRow(row, this._entries[entryIndex], entryIndex);
+  }
+};
+
+RankingViewController.prototype._renderRankRow = function (row, entry, index) {
+  var refs = row.__rankingRow;
+  if (!refs) {
+    return;
+  }
+
+  var rank = Math.max(1, Math.floor(Number(entry && entry.rank) || (index + 1)));
+  var score = Math.max(0, Math.floor(Number(entry && entry.score) || 0));
+  var completedLevels = Math.max(0, Math.floor(Number(entry && entry.completedLevels) || 0));
+  var nickname = String((entry && entry.nickname) || "");
+  var isSelf = !!(entry && entry.isSelf);
+  var badgeKey = resolveRankBadgeKey(rank);
+  var bgKey = resolveRowBgKey(rank);
+
+  row.name = "RankRow" + rank;
+  row.opacity = isSelf ? 255 : 245;
+  row.color = isSelf ? cc.color(255, 255, 255, 255) : cc.color(245, 238, 255, 255);
+
+  if (this._spriteFrames) {
+    setSpriteFrame(refs.bgSprite, this._spriteFrames[bgKey]);
+    setSpriteFrame(refs.badgeSprite, badgeKey ? this._spriteFrames[badgeKey] : null);
+  }
+
+  if (refs.badgeNode) {
+    refs.badgeNode.active = !!badgeKey;
+  }
+  if (refs.rankingNumNode) {
+    refs.rankingNumNode.active = !badgeKey;
+  }
+  if (refs.rankingNumLabel) {
+    refs.rankingNumLabel.string = String(rank);
+  }
+  if (refs.nameLabel) {
+    refs.nameLabel.string = nickname || "\u73a9\u5bb6";
+    refs.nameLabel.node.color = isSelf ? cc.color(255, 248, 174) : cc.color(255, 255, 255);
+  }
+  if (refs.scoreLabel) {
+    refs.scoreLabel.string = score + TEXT.scoreSuffix;
+  }
+  if (refs.levelLabel) {
+    refs.levelLabel.string = "(" + completedLevels + TEXT.levelSuffix + ")";
+  }
 };
 
 module.exports = RankingViewController;

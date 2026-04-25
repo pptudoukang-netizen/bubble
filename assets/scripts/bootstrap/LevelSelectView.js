@@ -287,6 +287,12 @@ function updateTopStatus(levelView, options) {
   var onOpenRanking = typeof options.onOpenRanking === "function"
     ? options.onOpenRanking
     : function () {};
+  var onOpenInventory = typeof options.onOpenInventory === "function"
+    ? options.onOpenInventory
+    : function () {};
+  var onOpenStarChest = typeof options.onOpenStarChest === "function"
+    ? options.onOpenStarChest
+    : function () {};
 
   var topLayerNode = levelView.getChildByName("top_layer");
   var loveNode = topLayerNode ? topLayerNode.getChildByName("love_info") : null;
@@ -303,6 +309,7 @@ function updateTopStatus(levelView, options) {
     coinLabel.string = String(coinValue);
   }
 
+  var bottomLayerNode = levelView.getChildByName("bottom_layer");
   bindNamedButtonTap(
     topLayerNode ? topLayerNode.getChildByName("setting_btn") : null,
     "__settingTapBound",
@@ -310,10 +317,22 @@ function updateTopStatus(levelView, options) {
     onOpenSettings
   );
   bindNamedButtonTap(
-    levelView.getChildByName("ranking_btn"),
+    bottomLayerNode ? bottomLayerNode.getChildByName("ranking_btn") : null,
     "__rankingTapBound",
     "__onOpenRanking",
     onOpenRanking
+  );
+  bindNamedButtonTap(
+    bottomLayerNode ? bottomLayerNode.getChildByName("backpack_btn") : null,
+    "__inventoryTapBound",
+    "__onOpenInventory",
+    onOpenInventory
+  );
+  bindNamedButtonTap(
+    bottomLayerNode ? bottomLayerNode.getChildByName("star_box_btn") : null,
+    "__starChestTapBound",
+    "__onOpenStarChest",
+    onOpenStarChest
   );
 }
 
@@ -344,6 +363,12 @@ function renderLevelSelectContent(options) {
     : function () {};
   var onOpenRanking = typeof options.onOpenRanking === "function"
     ? options.onOpenRanking
+    : function () {};
+  var onOpenInventory = typeof options.onOpenInventory === "function"
+    ? options.onOpenInventory
+    : function () {};
+  var onOpenStarChest = typeof options.onOpenStarChest === "function"
+    ? options.onOpenStarChest
     : function () {};
 
   if (!hostNode || !hostNode.isValid) {
@@ -381,7 +406,9 @@ function renderLevelSelectContent(options) {
     staminaValue: staminaValue,
     coinValue: coinValue,
     onOpenSettings: onOpenSettings,
-    onOpenRanking: onOpenRanking
+    onOpenRanking: onOpenRanking,
+    onOpenInventory: onOpenInventory,
+    onOpenStarChest: onOpenStarChest
   });
 
   var mapHostNode = levelView.getChildByName("map");

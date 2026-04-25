@@ -1,0 +1,38 @@
+{
+  "ver": "2.3.7",
+  "uuid": "df8c2bb0-9c65-4d65-bebe-742b07e618ce",
+  "importer": "texture",
+  "type": "sprite",
+  "wrapMode": "clamp",
+  "filterMode": "bilinear",
+  "premultiplyAlpha": false,
+  "genMipmaps": false,
+  "packable": true,
+  "width": 1223,
+  "height": 692,
+  "platformSettings": {},
+  "subMetas": {
+    "排行榜元素平铺_透明_去白边": {
+      "ver": "1.0.6",
+      "uuid": "f3a1d696-75d4-4bf2-9e44-7d14e798561f",
+      "importer": "sprite-frame",
+      "rawTextureUuid": "df8c2bb0-9c65-4d65-bebe-742b07e618ce",
+      "trimType": "auto",
+      "trimThreshold": 1,
+      "rotated": false,
+      "offsetX": 1.5,
+      "offsetY": -0.5,
+      "trimX": 26,
+      "trimY": 25,
+      "width": 1174,
+      "height": 643,
+      "rawWidth": 1223,
+      "rawHeight": 692,
+      "borderTop": 0,
+      "borderBottom": 0,
+      "borderLeft": 0,
+      "borderRight": 0,
+      "subMetas": {}
+    }
+  }
+}

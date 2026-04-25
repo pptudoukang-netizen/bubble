@@ -83,6 +83,40 @@ function createGameManagerShotResolutionMethods(deps) {
       return gained;
     },
 
+    _applyResolutionDropScore: function (resolution, matchedRuleKey) {
+      if (!resolution) {
+        return 0;
+      }
+
+      var matchedCount = Array.isArray(resolution.matched) ? resolution.matched.length : 0;
+      var floatingCount = Array.isArray(resolution.floating) ? resolution.floating.length : 0;
+      var matchedScore = matchedCount * this._getScoreRule(matchedRuleKey || "matchedDrop");
+      var floatingScore = floatingCount * this._getScoreRule("floatingDrop");
+      var gained = matchedScore + floatingScore;
+      if (gained <= 0) {
+        return 0;
+      }
+
+      this.score += gained;
+      resolution.scoreDelta += gained;
+
+      if (typeof this._pushRuntimeEvent === "function") {
+        this._pushRuntimeEvent("drop_score_awarded", {
+          matched: matchedCount,
+          floating: floatingCount,
+          gained: gained
+        });
+      }
+
+      Logger.info("Drop score", {
+        matched: matchedCount,
+        floating: floatingCount,
+        gained: gained
+      });
+
+      return gained;
+    },
+
     _refreshShotPlan: function (force) {
       if (this.state !== "running" || this.activeProjectile || this._isWaitingBoardAdvance()) {
         this.pendingShotPlan = null;
@@ -437,6 +471,7 @@ function createGameManagerShotResolutionMethods(deps) {
       resolution.collected = removedAll;
       resolution.impact = this._createImpactEventFromCell(centerCoordinate);
       resolution.boardCleared = grid.getCells().length === 0;
+      this._applyResolutionDropScore(resolution, "blastDrop");
 
       Logger.info("Blast resolution", {
         cleared: removedBlastCells.length,
@@ -565,6 +600,7 @@ function createGameManagerShotResolutionMethods(deps) {
       resolution.floating = removedFloating;
       resolution.collected = collectedCells;
       resolution.boardCleared = grid.getCells().length === 0;
+      this._applyResolutionDropScore(resolution, "matchedDrop");
 
       Logger.info("Resolution", {
         matched: removedMatches.length,

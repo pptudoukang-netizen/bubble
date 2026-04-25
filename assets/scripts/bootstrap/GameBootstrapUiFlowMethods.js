@@ -17,7 +17,7 @@ var SETTING_STATUS_X_ENABLED = -18;
 var SETTING_STATUS_X_DISABLED = 18;
 var SETTING_VOLUME_ICON_OPEN_PATH = "image/setting/volume_open";
 var SETTING_VOLUME_ICON_CLOSE_PATH = "image/setting/volume_close";
-var RANKING_BG_SPRITE_PATH = "image/ranking/bg";
+var RANKING_VIEW_PREFAB_PATH = "prefabs/ui/RankingView";
 var MAX_LEVEL_MAP_PREFAB_INDEX = 10;
 var SIGN_IN_PREFAB_CANDIDATES = [
   "prefabs/ui/SignInView ",
@@ -34,6 +34,11 @@ var SIGN_IN_ITEM_ICON_PATHS = {
   blast_ball: "image/props/blast_ball",
   barrier_hammer: "image/props/barrier_hammer"
 };
+var SIGN_IN_DAY_ITEM_ICON_PATHS = {
+  2: {
+    swap_ball: "image/props/change_ball"
+  }
+};
 var SIGN_IN_ITEM_DISPLAY_NAMES = {
   coin: "金币",
   swap_ball: "换球",
@@ -46,6 +51,40 @@ var SIGN_IN_STATUS_TEXT = {
   claimable: "可领",
   locked: "未领"
 };
+
+function formatRewardItems(items) {
+  return (Array.isArray(items) ? items : []).map(function (item) {
+    var itemId = item && typeof item.id === "string" ? item.id : "";
+    var count = Math.max(1, Math.floor(Number(item && item.count) || 1));
+    return (SIGN_IN_ITEM_DISPLAY_NAMES[itemId] || itemId || "奖励") + " x" + count;
+  }).join("、") || "奖励";
+}
+
+function showStatusAndTip(host, message) {
+  if (!host || typeof message !== "string" || !message) {
+    return;
+  }
+
+  host._setStatus(message);
+  if (host.tipsPresenter && typeof host.tipsPresenter.showText === "function") {
+    host.tipsPresenter.showText(message);
+  }
+}
+
+function resolveStarChestFailMessage(reason, summary) {
+  if (reason === "STAR_CHEST_DISABLED") {
+    return "星星宝箱暂未开放";
+  }
+  if (reason === "STAR_CHEST_NOT_ENOUGH_STARS") {
+    var starsPerChest = Math.max(1, Math.floor(Number(summary && summary.starsPerChest) || 15));
+    var progressStars = Math.max(0, Math.floor(Number(summary && summary.progressStars) || 0));
+    return "当前没有可领取奖励，收集星星 " + progressStars + "/" + starsPerChest;
+  }
+  if (reason === "STAR_CHEST_REWARD_POOL_EMPTY") {
+    return "当前没有可领取奖励";
+  }
+  return "领取失败，请重试";
+}
 
 module.exports = {
   _createStatusOverlay: function () {
@@ -190,6 +229,9 @@ module.exports = {
     this._updateSignInEntryState();
     if (typeof this._updateInventoryEntryState === "function") {
       this._updateInventoryEntryState();
+    }
+    if (typeof this._updateStarChestEntryState === "function") {
+      this._updateStarChestEntryState();
     }
   },
 
@@ -375,14 +417,24 @@ module.exports = {
     return items[0];
   },
 
-  _ensureSignInIconSpriteFrame: function (itemId) {
+  _resolveSignInIconPath: function (day, itemId) {
     var safeItemId = typeof itemId === "string" && itemId ? itemId : "coin";
+    var dayIconPaths = SIGN_IN_DAY_ITEM_ICON_PATHS[Math.floor(Number(day) || 0)] || null;
+    if (dayIconPaths && dayIconPaths[safeItemId]) {
+      return dayIconPaths[safeItemId];
+    }
+    return SIGN_IN_ITEM_ICON_PATHS[safeItemId] || SIGN_IN_ITEM_ICON_PATHS.coin;
+  },
+
+  _ensureSignInIconSpriteFrame: function (itemId, day) {
+    var safeItemId = typeof itemId === "string" && itemId ? itemId : "coin";
+    var path = this._resolveSignInIconPath(day, safeItemId);
+    var cacheKey = (path || "") + "|" + safeItemId;
     this._signInIconSpriteFrameCache = this._signInIconSpriteFrameCache || {};
-    if (this._signInIconSpriteFrameCache[safeItemId]) {
-      return Promise.resolve(this._signInIconSpriteFrameCache[safeItemId]);
+    if (this._signInIconSpriteFrameCache[cacheKey]) {
+      return Promise.resolve(this._signInIconSpriteFrameCache[cacheKey]);
     }
 
-    var path = SIGN_IN_ITEM_ICON_PATHS[safeItemId] || SIGN_IN_ITEM_ICON_PATHS.coin;
     return new Promise(function (resolve) {
       BundleLoader.loadRes(path, cc.SpriteFrame, function (error, spriteFrame) {
         if (error) {
@@ -391,8 +443,8 @@ module.exports = {
           return;
         }
 
-        this._signInIconSpriteFrameCache[safeItemId] = spriteFrame || null;
-        resolve(this._signInIconSpriteFrameCache[safeItemId]);
+        this._signInIconSpriteFrameCache[cacheKey] = spriteFrame || null;
+        resolve(this._signInIconSpriteFrameCache[cacheKey]);
       }.bind(this));
     }.bind(this));
   },
@@ -465,14 +517,14 @@ module.exports = {
       var iconNode = dayNode.getChildByName("icon");
       var iconSprite = iconNode ? iconNode.getComponent(cc.Sprite) : null;
       if (iconSprite && displayItem && displayItem.id) {
-        (function (targetSprite, targetItemId) {
-          iconLoadTasks.push(this._ensureSignInIconSpriteFrame(targetItemId).then(function (spriteFrame) {
+        (function (targetSprite, targetItemId, targetDay) {
+          iconLoadTasks.push(this._ensureSignInIconSpriteFrame(targetItemId, targetDay).then(function (spriteFrame) {
             if (!targetSprite || !targetSprite.node || !targetSprite.node.isValid || !spriteFrame) {
               return;
             }
             targetSprite.spriteFrame = spriteFrame;
           }));
-        }.bind(this))(iconSprite, displayItem.id);
+        }.bind(this))(iconSprite, displayItem.id, day);
       }
 
       var dayState = this._resolveSignInDayUiState(day, currentState, canClaimToday);
@@ -668,29 +720,15 @@ module.exports = {
     return this.leaderboardStore.buildEntries(this.levelProgress, this._resolveLeaderboardPlayerName());
   },
 
-  _ensureRankingBackgroundSpriteFrame: function () {
-    if (this._rankingBgSpriteFrame) {
-      return Promise.resolve(this._rankingBgSpriteFrame);
-    }
-    if (this._rankingBgSpriteFrameLoadPromise) {
-      return this._rankingBgSpriteFrameLoadPromise;
+  _ensureRankingViewPrefab: function () {
+    if (this._rankingViewPrefab) {
+      return Promise.resolve(this._rankingViewPrefab);
     }
 
-    this._rankingBgSpriteFrameLoadPromise = new Promise(function (resolve) {
-      BundleLoader.loadRes(RANKING_BG_SPRITE_PATH, cc.SpriteFrame, function (error, spriteFrame) {
-        this._rankingBgSpriteFrameLoadPromise = null;
-        if (error || !spriteFrame) {
-          Logger.warn("Load ranking background failed", error && error.message ? error.message : error);
-          resolve(null);
-          return;
-        }
-
-        this._rankingBgSpriteFrame = spriteFrame;
-        resolve(spriteFrame);
-      }.bind(this));
+    return this._loadPrefab(RANKING_VIEW_PREFAB_PATH).then(function (prefab) {
+      this._rankingViewPrefab = prefab;
+      return prefab;
     }.bind(this));
-
-    return this._rankingBgSpriteFrameLoadPromise;
   },
 
   _onLevelSelectRankingTap: function () {
@@ -709,11 +747,17 @@ module.exports = {
       this._hideInventoryView();
     }
 
-    this._ensureRankingBackgroundSpriteFrame().then(function (spriteFrame) {
+    this._ensureRankingViewPrefab().then(function (prefab) {
       var rankingNode = this._rankingViewNode;
       if (!rankingNode || !cc.isValid(rankingNode)) {
-        rankingNode = RankingViewController.createViewNode(this.node);
+        rankingNode = cc.instantiate(prefab);
+        if (!rankingNode) {
+          this._setStatus("\u6392\u884c\u699c\u521b\u5efa\u5931\u8d25");
+          return;
+        }
+        rankingNode.parent = this.node;
         rankingNode.setPosition(0, 0);
+        rankingNode.zIndex = 330;
         this._rankingViewNode = rankingNode;
         this._rankingViewController = new RankingViewController({
           node: rankingNode,
@@ -725,9 +769,6 @@ module.exports = {
       }
 
       rankingNode.active = true;
-      if (this._rankingViewController && spriteFrame) {
-        this._rankingViewController.setBackgroundSpriteFrame(spriteFrame);
-      }
       this._renderRankingView();
     }.bind(this)).catch(function (error) {
       Logger.warn("Show ranking view failed", error && error.message ? error.message : error);
@@ -748,6 +789,120 @@ module.exports = {
     }
 
     this._rankingViewController.render(this._refreshLeaderboardEntries());
+  },
+
+  _getStarChestSummary: function () {
+    this._refreshLevelProgress();
+    if (!this.starChestService || typeof this.starChestService.getChestSummary !== "function") {
+      return {
+        enabled: false,
+        progressStars: 0,
+        starsPerChest: 15,
+        openableCount: 0
+      };
+    }
+    return this.starChestService.getChestSummary(this.levelProgress);
+  },
+
+  _ensureStarChestEntryRedDot: function (entryNode) {
+    if (!entryNode || !entryNode.isValid) {
+      return null;
+    }
+
+    var redDotNode = entryNode.getChildByName("star_chest_red_dot");
+    if (redDotNode && redDotNode.isValid) {
+      return redDotNode;
+    }
+
+    redDotNode = new cc.Node("star_chest_red_dot");
+    redDotNode.parent = entryNode;
+    redDotNode.zIndex = 30;
+    redDotNode.setPosition((entryNode.width * 0.5) - 12, (entryNode.height * 0.5) - 12);
+    var graphics = redDotNode.addComponent(cc.Graphics);
+    graphics.clear();
+    graphics.fillColor = cc.color(255, 58, 58, 255);
+    graphics.circle(0, 0, 10);
+    graphics.fill();
+    return redDotNode;
+  },
+
+  _updateStarChestEntryState: function () {
+    if (!this._levelSelectNode || !cc.isValid(this._levelSelectNode)) {
+      return;
+    }
+
+    var bottomLayerNode = this._levelSelectNode.getChildByName("bottom_layer");
+    var entryNode = bottomLayerNode ? bottomLayerNode.getChildByName("star_box_btn") : null;
+    if (!entryNode || !entryNode.isValid) {
+      return;
+    }
+
+    var summary = this._getStarChestSummary();
+    var starsPerChest = Math.max(1, Math.floor(Number(summary.starsPerChest) || 15));
+    var progressStars = Math.max(0, Math.floor(Number(summary.progressStars) || 0));
+    if (Math.max(0, Math.floor(Number(summary.openableCount) || 0)) > 0) {
+      progressStars = starsPerChest;
+    }
+
+    var labelNode = entryNode.getChildByName("satr_num") || entryNode.getChildByName("star_num");
+    var label = labelNode ? labelNode.getComponent(cc.Label) : null;
+    if (label) {
+      label.string = progressStars + "/" + starsPerChest;
+    }
+
+    var button = entryNode.getComponent(cc.Button);
+    if (button) {
+      button.interactable = summary.enabled !== false;
+    }
+    entryNode.opacity = summary.enabled === false ? 150 : 255;
+
+    var redDotNode = this._ensureStarChestEntryRedDot(entryNode);
+    if (redDotNode) {
+      redDotNode.active = Math.max(0, Math.floor(Number(summary.openableCount) || 0)) > 0;
+    }
+  },
+
+  _openStarChest: function () {
+    if (!this.isSelectingLevel || this.isRestarting) {
+      return;
+    }
+    if (!this.starChestService || typeof this.starChestService.openChest !== "function") {
+      showStatusAndTip(this, "\u661f\u661f\u5b9d\u7bb1\u672a\u5c31\u7eea");
+      return;
+    }
+
+    this._playSfx("uiClick");
+    this._hideSettingView();
+    this._hideRankingView();
+    this._hideSignInView();
+    if (typeof this._hideInventoryView === "function") {
+      this._hideInventoryView();
+    }
+
+    var summary = this._getStarChestSummary();
+    this._trackTelemetry("star_chest_open_click", summary);
+    var openResult = this.starChestService.openChest(this.levelProgress, new Date());
+    if (!openResult || !openResult.accepted) {
+      var reason = openResult && openResult.reason ? openResult.reason : "STAR_CHEST_OPEN_FAILED";
+      this._trackTelemetry("star_chest_open_fail", {
+        fail_reason: reason
+      });
+      showStatusAndTip(this, resolveStarChestFailMessage(reason, summary));
+      return;
+    }
+
+    this._refreshPlayerResources();
+    if (typeof this._refreshPlayerInventory === "function") {
+      this._refreshPlayerInventory();
+    }
+    this._updateLevelSelectTopStatus();
+    if (typeof this._renderInventoryView === "function") {
+      this._renderInventoryView();
+    }
+
+    var rewardText = formatRewardItems(openResult.rewardItems);
+    var message = "\u83b7\u5f97\uff1a" + rewardText;
+    showStatusAndTip(this, message);
   },
 
   _onLevelSelectSettingTap: function () {
@@ -771,6 +926,11 @@ module.exports = {
   },
 
   _showSettingView: function () {
+    this._hideRankingView();
+    this._hideSignInView();
+    if (typeof this._hideInventoryView === "function") {
+      this._hideInventoryView();
+    }
     this._ensureSettingViewPrefab().then(function (prefab) {
       if (!prefab) {
         this._setStatus("Failed to load settings view.");
@@ -1786,6 +1946,7 @@ module.exports = {
       if (typeof this._updateInventoryEntryState === "function") {
         this._updateInventoryEntryState();
       }
+      this._updateStarChestEntryState();
       this._maybeAutoShowSignInView();
       this._playLevelSelectBackgroundMusic();
       this._setStatus("Please select a level");
@@ -2008,6 +2169,8 @@ module.exports = {
       coinValue: this._getCurrentCoins(),
       onOpenSettings: this._onLevelSelectSettingTap.bind(this),
       onOpenRanking: this._onLevelSelectRankingTap.bind(this),
+      onOpenInventory: this._showInventoryView.bind(this),
+      onOpenStarChest: this._openStarChest.bind(this),
       onLevelSelectTap: this._onLevelSelectTap.bind(this),
       onMapIndexChange: this._onLevelSelectMapIndexChange.bind(this)
     });
@@ -2026,6 +2189,7 @@ module.exports = {
     if (typeof this._updateInventoryEntryState === "function") {
       this._updateInventoryEntryState();
     }
+    this._updateStarChestEntryState();
   },
 
   _onLevelSelectMapIndexChange: function (nextMapIndex) {

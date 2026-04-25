@@ -10,6 +10,11 @@ import os
 import sys
 
 try:
+    unicode
+except NameError:
+    unicode = str
+
+try:
     import cv2
     import numpy as np
 except ImportError:

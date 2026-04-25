@@ -78,6 +78,7 @@ function attachLevelRendererSceneMethods(LevelRenderer, deps) {
   var DANGER_WARNING_SHAKE_LEFT_X = -20;
   var DANGER_WARNING_SHAKE_RIGHT_X = 18;
   var DANGER_WARNING_SHAKE_STEP = 0.045;
+  var HUD_STAR_MARKER_FALLBACK_RATIOS = [0.3 / 0.85, 0.6 / 0.85, 1];
   var DANGER_NORMAL_BAND_OPACITY = 110;
   var DANGER_WARNING_BAND_OPACITY = 215;
   var DANGER_NORMAL_LABEL_COLOR = cc.color(255, 250, 235);
@@ -175,9 +176,9 @@ LevelRenderer.prototype._renderHud = function (levelConfig, runtimeSnapshot) {
 
   this._setHudLabel(panel, "LevelTitle", "关卡");
   this._setHudLabel(panel, "LevelValue", String(levelConfig.level.levelId));
-  this._setHudLabel(panel, "ScoreTitle", "得分");
+  // this._setHudLabel(panel, "ScoreTitle", "得分");
   this._setHudLabel(panel, "ScoreValue", String(runtimeSnapshot.score));
-  this._setHudLabel(panel, "TargetTitle", "目标:");
+  // this._setHudLabel(panel, "TargetTitle", "目标:");
   this._setHudLabel(panel, "TargetValue", objectiveDisplay.progressText || "-");
   this._setHudTargetBallIcon(panel, objectiveDisplay.iconCode);
   this._renderHudStarProgress(panel, runtimeSnapshot);
@@ -439,6 +440,55 @@ LevelRenderer.prototype._setHudStarLit = function (starNode, lit) {
   starNode.opacity = lit ? 255 : 190;
 };
 
+LevelRenderer.prototype._resolveHudStarMarkerRatios = function (winStats) {
+  var thresholds = winStats && winStats.starThresholds ? winStats.starThresholds : null;
+  var star1 = Math.max(0, Number(thresholds && thresholds.star1) || 0);
+  var star2 = Math.max(0, Number(thresholds && thresholds.star2) || 0);
+  var star3 = Math.max(0, Number(thresholds && thresholds.star3) || 0);
+
+  if (star3 <= 0) {
+    return HUD_STAR_MARKER_FALLBACK_RATIOS.slice();
+  }
+
+  return [
+    clamp(star1 / star3, 0, 1),
+    clamp(star2 / star3, 0, 1),
+    1
+  ];
+};
+
+LevelRenderer.prototype._layoutHudStarMarkers = function (panel, winStats, starNodes) {
+  var progressBar = this._getHudProgressBar(panel);
+  if (!progressBar || !Array.isArray(starNodes) || !starNodes.length) {
+    return;
+  }
+
+  var progressNode = progressBar.node || null;
+  var progressSize = progressNode && progressNode.getContentSize
+    ? progressNode.getContentSize()
+    : null;
+  var totalLength = Math.max(
+    0,
+    Number(progressBar.totalLength) ||
+      (progressSize ? Number(progressSize.width) : 0) ||
+      Number(progressNode && progressNode.width) ||
+      0
+  );
+  if (totalLength <= 0) {
+    return;
+  }
+
+  var markerRatios = this._resolveHudStarMarkerRatios(winStats);
+  starNodes.forEach(function (starNode, index) {
+    if (!starNode) {
+      return;
+    }
+
+    var markerX = Math.round(totalLength * markerRatios[index] * 1000) / 1000;
+    starNode.setPosition(markerX, starNode.y || 0);
+  });
+};
+
 LevelRenderer.prototype._renderHudStarProgress = function (panel, runtimeSnapshot) {
   var progressBar = this._getHudProgressBar(panel);
   var winStats = runtimeSnapshot && runtimeSnapshot.winStats ? runtimeSnapshot.winStats : null;
@@ -449,7 +499,9 @@ LevelRenderer.prototype._renderHudStarProgress = function (panel, runtimeSnapsho
     progressBar.progress = starProgress;
   }
 
-  this._getHudStarNodes(panel).forEach(function (starNode, index) {
+  var starNodes = this._getHudStarNodes(panel);
+  this._layoutHudStarMarkers(panel, winStats, starNodes);
+  starNodes.forEach(function (starNode, index) {
     this._setHudStarLit(starNode, index < starRating);
   }, this);
 };

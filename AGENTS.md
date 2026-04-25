@@ -37,4 +37,9 @@ Before finishing, check:
 - Reuse existing patterns when possible.
 - Do not create oversized classes or catch-all utilities.
 - Do not rewrite large areas without necessity.
+- Do not add fallback logic to hide unclear requirements, broken data, missing assets, or runtime errors.
+- If a requirement is unclear, ask the user before implementing.
+- Expose real problems promptly instead of silently bypassing them.
+- Locate and fix root causes before considering compatibility or defensive behavior.
+- Only add fallback/compatibility behavior when the user explicitly requests it or the existing project pattern clearly requires it.
 - Summarize changes, impact, risks, and validation steps after modification.

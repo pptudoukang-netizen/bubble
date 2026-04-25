@@ -88,6 +88,11 @@ var SCORE_HEAT_DIFFICULTY_ALIAS = {
 var BOARD_ADVANCE_AFTER_IMPACT_DELAY = 0.2;
 var DEFAULT_JAR_SCORE_BOOST_MULTIPLIER = 2;
 var DEFAULT_JAR_SCORE_BOOST_DURATION_MS = 5000;
+var STAR_SCORE_BAND_RATIOS = {
+  min: 0.3,
+  target: 0.6,
+  max: 0.85
+};
 
 function resolveBallDisplayCode(ball) {
   if (!ball) {
@@ -327,9 +332,9 @@ function buildScoreHeatBand(levelConfig, scoreProfile) {
   }
 
   targetScore = Math.max(1, targetScore);
-  var min = Math.max(1, Math.round(targetScore / 3));
-  var target = Math.max(min, Math.round(targetScore * 2 / 3));
-  var max = Math.max(target, targetScore);
+  var min = Math.max(1, Math.round(targetScore * STAR_SCORE_BAND_RATIOS.min));
+  var target = Math.max(min, Math.round(targetScore * STAR_SCORE_BAND_RATIOS.target));
+  var max = Math.max(target, Math.round(targetScore * STAR_SCORE_BAND_RATIOS.max));
 
   return {
     min: min,

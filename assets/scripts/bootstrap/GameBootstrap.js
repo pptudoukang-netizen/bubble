@@ -7,12 +7,14 @@ var PoolManager = require("../utils/PoolManager");
 var LevelProgressStore = require("../utils/LevelProgressStore");
 var PlayerResourceStore = require("../utils/PlayerResourceStore");
 var InventoryStore = require("../utils/InventoryStore");
+var StarChestStore = require("../utils/StarChestStore");
 var SelectedPowerupsStore = require("../utils/SelectedPowerupsStore");
 var SignInStore = require("../utils/SignInStore");
 var RouteConfigStore = require("../utils/RouteConfigStore");
 var AudioManager = require("../audio/AudioManager");
 var BoardLayout = require("../config/BoardLayout");
 var DailySignInConfig = require("../config/DailySignInConfig");
+var StarChestConfig = require("../config/StarChestConfig");
 var LevelManager = require("../config/LevelManager");
 var GameManager = require("../core/GameManager");
 var StarRatingPolicy = require("../core/StarRatingPolicy");
@@ -26,6 +28,8 @@ var LevelRenderer = require("../render/LevelRenderer");
 var LoadingViewController = require("../ui/LoadingViewController");
 var TipsPresenter = require("../ui/TipsPresenter");
 var InventoryViewController = require("../ui/InventoryViewController");
+var StarChestRewardService = require("../services/StarChestRewardService");
+var StarChestService = require("../services/StarChestService");
 var AdService = require("../services/AdService");
 var TelemetryService = require("../services/TelemetryService");
 var AdRewardQuotaStore = require("../services/AdRewardQuotaStore");
@@ -41,7 +45,6 @@ var BASELINE_JAR_RENDER_Y_OFFSET = Number(BoardLayout.jarRenderYOffset) || 0;
 var BASELINE_SHOOTER_OFFSET_FROM_BOTTOM = (BoardLayout.shooterOrigin.y - (-BASELINE_HALF_HEIGHT)) + SHOOTER_RAISE_FROM_BOTTOM;
 var BASELINE_DANGER_OFFSET_FROM_BOTTOM = 460;
 var INVENTORY_VIEW_PREFAB_PATH = "prefabs/ui/InventoryView";
-var INVENTORY_ENTRY_ICON_PATH = "image/icon/icon_bag";
 var POWERUP_TYPE_BY_ITEM_ID = {
   swap_ball: "swap",
   rainbow_ball: "rainbow",
@@ -287,13 +290,38 @@ cc.Class({
     this.inventoryStore = new InventoryStore();
     this.playerInventory = this.inventoryStore.load();
     this.inventoryStore.save(this.playerInventory);
+    this.starChestConfig = clone(StarChestConfig);
+    this.starChestStore = new StarChestStore({
+      activityId: this.starChestConfig.activityId
+    });
+    this.starChestRewardService = new StarChestRewardService({
+      getResources: function () {
+        return this._refreshPlayerResources();
+      }.bind(this),
+      saveResources: function (resources) {
+        this.playerResources = resources;
+        if (!this.playerResourceStore || typeof this.playerResourceStore.save !== "function") {
+          return false;
+        }
+        this.playerResourceStore.save(this.playerResources);
+        return true;
+      }.bind(this),
+      addInventoryItem: function (itemId, count) {
+        return this._addInventoryItem(itemId, count);
+      }.bind(this)
+    });
+    this.starChestService = new StarChestService({
+      config: this.starChestConfig,
+      store: this.starChestStore,
+      rewardService: this.starChestRewardService,
+      telemetry: this.telemetryService
+    });
     this.selectedPowerupsStore = new SelectedPowerupsStore();
     this.selectedPowerupsState = this.selectedPowerupsStore.load();
     this.selectedPowerupsStore.save(this.selectedPowerupsState);
     this._inventoryViewPrefab = null;
     this._inventoryViewNode = null;
     this._inventoryViewController = null;
-    this._inventoryEntryIconSpriteFrame = null;
     this.dailySignInConfig = clone(DailySignInConfig);
     this.signInStore = new SignInStore({
       cycleLength: this.dailySignInConfig.cycleLength,
@@ -332,10 +360,9 @@ cc.Class({
     this._signInButtonSpriteLoadPromise = null;
     this._signInIconSpriteFrameCache = {};
     this.leaderboardStore = null;
+    this._rankingViewPrefab = null;
     this._rankingViewNode = null;
     this._rankingViewController = null;
-    this._rankingBgSpriteFrame = null;
-    this._rankingBgSpriteFrameLoadPromise = null;
     this.audioManager = new AudioManager({
       settingsDefaults: {
         musicEnabled: this.enableBackgroundMusic,
@@ -1661,6 +1688,9 @@ cc.Class({
 
   _showInventoryView: function () {
     this._playSfx("uiClick");
+    this._hideSettingView();
+    this._hideRankingView();
+    this._hideSignInView();
     this._ensureInventoryViewPrefab().then(function (prefab) {
       if (!prefab) {
         this._setStatus("背包界面加载失败");
@@ -1755,79 +1785,14 @@ cc.Class({
       return;
     }
 
-    var entryNode = this._levelSelectNode.getChildByName("BackpackEntryButton");
+    var bottomLayerNode = this._levelSelectNode.getChildByName("bottom_layer");
+    var entryNode = bottomLayerNode ? bottomLayerNode.getChildByName("backpack_btn") : null;
     if (!entryNode || !entryNode.isValid) {
-      entryNode = new cc.Node("BackpackEntryButton");
-      entryNode.parent = this._levelSelectNode;
-      entryNode.zIndex = 240;
-      entryNode.setContentSize(122, 122);
-      entryNode.setPosition(236, -548);
-
-      var background = entryNode.addComponent(cc.Graphics);
-      background.clear();
-      background.fillColor = cc.color(118, 55, 218, 230);
-      background.roundRect(-61, -61, 122, 122, 28);
-      background.fill();
-      background.strokeColor = cc.color(226, 174, 255, 230);
-      background.lineWidth = 4;
-      background.roundRect(-61, -61, 122, 122, 28);
-      background.stroke();
-
-      var iconNode = new cc.Node("icon");
-      iconNode.parent = entryNode;
-      iconNode.setContentSize(62, 70);
-      iconNode.setPosition(0, 18);
-      iconNode.addComponent(cc.Sprite);
-
-      var labelNode = new cc.Node("label");
-      labelNode.parent = entryNode;
-      labelNode.setContentSize(96, 32);
-      labelNode.setPosition(0, -36);
-      var label = labelNode.addComponent(cc.Label);
-      label.string = "背包";
-      label.fontSize = 26;
-      label.lineHeight = 30;
-      label.horizontalAlign = cc.Label.HorizontalAlign.CENTER;
-      label.verticalAlign = cc.Label.VerticalAlign.CENTER;
-      labelNode.color = cc.color(255, 255, 255);
-      var outline = labelNode.addComponent(cc.LabelOutline);
-      outline.color = cc.color(73, 31, 148);
-      outline.width = 3;
-
-      this._bindNodeTapOnce(entryNode, this._showInventoryView.bind(this));
+      return;
     }
 
-    this._ensureInventoryEntryIcon(entryNode);
     var selectedItems = this._getAvailableSelectedPowerupItems();
     entryNode.opacity = selectedItems.length > 0 ? 255 : 230;
-  },
-
-  _ensureInventoryEntryIcon: function (entryNode) {
-    if (!entryNode || !entryNode.isValid) {
-      return;
-    }
-
-    var iconNode = entryNode.getChildByName("icon");
-    var iconSprite = iconNode ? iconNode.getComponent(cc.Sprite) : null;
-    if (!iconSprite) {
-      return;
-    }
-    if (this._inventoryEntryIconSpriteFrame) {
-      iconSprite.spriteFrame = this._inventoryEntryIconSpriteFrame;
-      return;
-    }
-
-    BundleLoader.loadRes(INVENTORY_ENTRY_ICON_PATH, cc.SpriteFrame, function (error, spriteFrame) {
-      if (error || !spriteFrame) {
-        Logger.warn("Load inventory entry icon failed", error && error.message ? error.message : error);
-        return;
-      }
-
-      this._inventoryEntryIconSpriteFrame = spriteFrame;
-      if (iconSprite && iconSprite.node && iconSprite.node.isValid) {
-        iconSprite.spriteFrame = spriteFrame;
-      }
-    }.bind(this));
   },
 
   _trackTelemetry: function (eventName, payload) {
@@ -2349,6 +2314,7 @@ cc.Class({
   _ensureSignInButtonSpriteFrames: GameBootstrapUiFlowMethods._ensureSignInButtonSpriteFrames,
   _resolveSignInRewardByDay: GameBootstrapUiFlowMethods._resolveSignInRewardByDay,
   _resolveSignInDisplayRewardItem: GameBootstrapUiFlowMethods._resolveSignInDisplayRewardItem,
+  _resolveSignInIconPath: GameBootstrapUiFlowMethods._resolveSignInIconPath,
   _ensureSignInIconSpriteFrame: GameBootstrapUiFlowMethods._ensureSignInIconSpriteFrame,
   _resolveSignInDayUiState: GameBootstrapUiFlowMethods._resolveSignInDayUiState,
   _bindSignInViewActions: GameBootstrapUiFlowMethods._bindSignInViewActions,
@@ -2360,11 +2326,15 @@ cc.Class({
   _maybeAutoShowSignInView: GameBootstrapUiFlowMethods._maybeAutoShowSignInView,
   _resolveLeaderboardPlayerName: GameBootstrapUiFlowMethods._resolveLeaderboardPlayerName,
   _refreshLeaderboardEntries: GameBootstrapUiFlowMethods._refreshLeaderboardEntries,
-  _ensureRankingBackgroundSpriteFrame: GameBootstrapUiFlowMethods._ensureRankingBackgroundSpriteFrame,
+  _ensureRankingViewPrefab: GameBootstrapUiFlowMethods._ensureRankingViewPrefab,
   _onLevelSelectRankingTap: GameBootstrapUiFlowMethods._onLevelSelectRankingTap,
   _showRankingView: GameBootstrapUiFlowMethods._showRankingView,
   _hideRankingView: GameBootstrapUiFlowMethods._hideRankingView,
   _renderRankingView: GameBootstrapUiFlowMethods._renderRankingView,
+  _getStarChestSummary: GameBootstrapUiFlowMethods._getStarChestSummary,
+  _ensureStarChestEntryRedDot: GameBootstrapUiFlowMethods._ensureStarChestEntryRedDot,
+  _updateStarChestEntryState: GameBootstrapUiFlowMethods._updateStarChestEntryState,
+  _openStarChest: GameBootstrapUiFlowMethods._openStarChest,
   _onLevelSelectSettingTap: GameBootstrapUiFlowMethods._onLevelSelectSettingTap,
   _ensureSettingViewPrefab: GameBootstrapUiFlowMethods._ensureSettingViewPrefab,
   _showSettingView: GameBootstrapUiFlowMethods._showSettingView,
