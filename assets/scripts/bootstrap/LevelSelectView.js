@@ -273,6 +273,25 @@ function bindNamedButtonTap(buttonNode, boundFlagName, handlerPropertyName, hand
   });
 }
 
+function resolveTopLayerNode(levelView) {
+  if (!levelView || !levelView.isValid) {
+    return null;
+  }
+
+  var topLayerNode = levelView.getChildByName("top_layer");
+  if (topLayerNode && topLayerNode.isValid) {
+    return topLayerNode;
+  }
+
+  var topSafeAreaNode = levelView.getChildByName("top");
+  if (!topSafeAreaNode || !topSafeAreaNode.isValid) {
+    return null;
+  }
+
+  topLayerNode = topSafeAreaNode.getChildByName("top_layer");
+  return topLayerNode && topLayerNode.isValid ? topLayerNode : null;
+}
+
 function updateTopStatus(levelView, options) {
   if (!levelView || !levelView.isValid) {
     return;
@@ -294,7 +313,7 @@ function updateTopStatus(levelView, options) {
     ? options.onOpenStarChest
     : function () {};
 
-  var topLayerNode = levelView.getChildByName("top_layer");
+  var topLayerNode = resolveTopLayerNode(levelView);
   var loveNode = topLayerNode ? topLayerNode.getChildByName("love_info") : null;
   var goldNode = topLayerNode ? topLayerNode.getChildByName("gold_info") : null;
   var staminaLabelNode = loveNode ? loveNode.getChildByName("love") : null;

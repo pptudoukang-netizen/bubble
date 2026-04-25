@@ -87,6 +87,25 @@ function resolveStarChestFailMessage(reason, summary) {
 }
 
 module.exports = {
+  _getLevelSelectTopLayerNode: function () {
+    if (!this._levelSelectNode || !cc.isValid(this._levelSelectNode)) {
+      return null;
+    }
+
+    var topLayerNode = this._levelSelectNode.getChildByName("top_layer");
+    if (topLayerNode && topLayerNode.isValid) {
+      return topLayerNode;
+    }
+
+    var topNode = this._levelSelectNode.getChildByName("top");
+    if (!topNode || !topNode.isValid) {
+      return null;
+    }
+
+    topLayerNode = topNode.getChildByName("top_layer");
+    return topLayerNode && topLayerNode.isValid ? topLayerNode : null;
+  },
+
   _createStatusOverlay: function () {
     if (!DebugFlags.get("overlay")) {
       return;
@@ -142,8 +161,17 @@ module.exports = {
       return;
     }
 
+    var targetLevelId = 0;
+    if (this.currentLevelConfig && this.currentLevelConfig.level) {
+      targetLevelId = Math.max(1, Math.floor(Number(this.currentLevelConfig.level.levelId) || 0));
+    } else if (this._currentLevelId) {
+      targetLevelId = Math.max(1, Math.floor(Number(this._currentLevelId) || 0));
+    }
+
     this._playSfx("uiClick");
-    this._showLevelSelectView();
+    this._showLevelSelectView({
+      targetLevelId: targetLevelId
+    });
   },
 
   _refreshPlayerResources: function () {
@@ -207,7 +235,7 @@ module.exports = {
       return;
     }
 
-    var topLayerNode = this._levelSelectNode.getChildByName("top_layer");
+    var topLayerNode = this._getLevelSelectTopLayerNode();
     if (!topLayerNode || !topLayerNode.isValid) {
       return;
     }
@@ -307,7 +335,7 @@ module.exports = {
       return;
     }
 
-    var topLayerNode = this._levelSelectNode.getChildByName("top_layer");
+    var topLayerNode = this._getLevelSelectTopLayerNode();
     var goldInfoNode = topLayerNode ? topLayerNode.getChildByName("gold_info") : null;
     if (!goldInfoNode || !goldInfoNode.isValid) {
       return;
@@ -1902,9 +1930,18 @@ module.exports = {
     this._dropTestButton.active = !!(this.showDropTestButton && visible);
   },
 
-  _showLevelSelectView: function () {
+  _showLevelSelectView: function (options) {
+    options = options || {};
     if (this.isRestarting) {
       return;
+    }
+
+    var targetLevelId = Math.max(0, Math.floor(Number(options.targetLevelId) || 0));
+    if (!targetLevelId && this.currentLevelConfig && this.currentLevelConfig.level) {
+      targetLevelId = Math.max(1, Math.floor(Number(this.currentLevelConfig.level.levelId) || 0));
+    }
+    if (!targetLevelId && this._currentLevelId) {
+      targetLevelId = Math.max(1, Math.floor(Number(this._currentLevelId) || 0));
     }
 
     this._persistRouteEditorIfDirty();
@@ -1915,7 +1952,7 @@ module.exports = {
     }
     this.isSelectingLevel = true;
     this.currentLevelConfig = null;
-    this._currentLevelId = 0;
+    this._currentLevelId = targetLevelId > 0 ? targetLevelId : 0;
     this._lastRuntimeState = null;
     this._currentAttemptId = "";
     this._grantedAttemptRewardKeys = {};
@@ -1932,7 +1969,9 @@ module.exports = {
       this._refreshSelectedPowerups();
     }
     this._refreshSignInState();
-    this._levelSelectMapIndex = 0;
+    this._levelSelectMapIndex = Number.isInteger(options.forcedMapIndex)
+      ? Math.max(0, Math.floor(Number(options.forcedMapIndex) || 0))
+      : 0;
 
     Promise.all([
       this._ensureLevelSelectPrefabs(),
@@ -1941,7 +1980,13 @@ module.exports = {
       var prefabs = results[0];
       var levelIds = results[1];
       this._preloadLevelConfigsInBackground(levelIds);
-      this._renderLevelSelectContent(prefabs.viewPrefab, prefabs.mapPrefabs, levelIds);
+      var forcedMapIndex = Number.isInteger(options.forcedMapIndex)
+        ? Math.max(0, Math.floor(Number(options.forcedMapIndex) || 0))
+        : null;
+      if (forcedMapIndex === null && targetLevelId > 0) {
+        forcedMapIndex = this._resolveLevelMapIndexByLevelId(levelIds, targetLevelId, prefabs.mapPrefabs);
+      }
+      this._renderLevelSelectContent(prefabs.viewPrefab, prefabs.mapPrefabs, levelIds, forcedMapIndex);
       this._updateSignInEntryState();
       if (typeof this._updateInventoryEntryState === "function") {
         this._updateInventoryEntryState();
@@ -1963,6 +2008,46 @@ module.exports = {
       this._setStatus("Load level list failed. Please check LevelView/LevelMap prefabs.");
       Logger.error("Load level list failed detail", errorMessage);
     }.bind(this));
+  },
+
+  _resolveMapSlotsPerPage: function (mapPrefabs) {
+    var defaultSlotsPerPage = 10;
+    var prefabs = Array.isArray(mapPrefabs) ? mapPrefabs.filter(Boolean) : [];
+    if (!prefabs.length) {
+      return defaultSlotsPerPage;
+    }
+
+    var previewNode = null;
+    try {
+      previewNode = cc.instantiate(prefabs[0]);
+      if (!previewNode || !previewNode.isValid) {
+        return defaultSlotsPerPage;
+      }
+
+      var levelSlotCount = previewNode.children.filter(function (child) {
+        return !!(child && typeof child.name === "string" && /^level/i.test(child.name));
+      }).length;
+      return Math.max(1, levelSlotCount || defaultSlotsPerPage);
+    } catch (error) {
+      Logger.warn("Resolve map slots per page failed", error && error.message ? error.message : error);
+      return defaultSlotsPerPage;
+    } finally {
+      if (previewNode && previewNode.isValid) {
+        previewNode.destroy();
+      }
+    }
+  },
+
+  _resolveLevelMapIndexByLevelId: function (levelIds, levelId, mapPrefabs) {
+    var ids = Array.isArray(levelIds) ? levelIds : [];
+    var targetLevelId = Math.max(1, Math.floor(Number(levelId) || 1));
+    var levelIndex = ids.indexOf(targetLevelId);
+    if (levelIndex < 0) {
+      return 0;
+    }
+
+    var slotsPerPage = this._resolveMapSlotsPerPage(mapPrefabs);
+    return Math.max(0, Math.floor(levelIndex / Math.max(1, slotsPerPage)));
   },
 
   _hideLevelSelectView: function () {

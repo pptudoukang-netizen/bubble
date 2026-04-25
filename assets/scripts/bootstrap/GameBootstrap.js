@@ -1916,7 +1916,18 @@ cc.Class({
       onRewardGranted: function () {
         this._restartCurrentLevel();
       }.bind(this)
-    });
+    }).then(function (granted) {
+      if (granted) {
+        return;
+      }
+
+      if (this.isRestarting || this.isSelectingLevel) {
+        return;
+      }
+
+      this._setStatusWithTip("ad_reward_not_granted_back_to_level", null, "广告未发奖，返回选关页面");
+      this._onBackToLevelTap();
+    }.bind(this));
   },
 
   _showRewardedAdForEntry: function (entry, options) {
@@ -2303,6 +2314,7 @@ cc.Class({
   _getCurrentStamina: GameBootstrapUiFlowMethods._getCurrentStamina,
   _getCurrentCoins: GameBootstrapUiFlowMethods._getCurrentCoins,
   _consumeStaminaForLevelEntry: GameBootstrapUiFlowMethods._consumeStaminaForLevelEntry,
+  _getLevelSelectTopLayerNode: GameBootstrapUiFlowMethods._getLevelSelectTopLayerNode,
   _updateLevelSelectTopStatus: GameBootstrapUiFlowMethods._updateLevelSelectTopStatus,
   _getDailySignInConfig: GameBootstrapUiFlowMethods._getDailySignInConfig,
   _refreshSignInState: GameBootstrapUiFlowMethods._refreshSignInState,
@@ -2364,6 +2376,8 @@ cc.Class({
   _preloadLevelConfigsInBackground: GameBootstrapUiFlowMethods._preloadLevelConfigsInBackground,
   _getLevelIdFromResourcePath: GameBootstrapUiFlowMethods._getLevelIdFromResourcePath,
   _renderLevelSelectContent: GameBootstrapUiFlowMethods._renderLevelSelectContent,
+  _resolveMapSlotsPerPage: GameBootstrapUiFlowMethods._resolveMapSlotsPerPage,
+  _resolveLevelMapIndexByLevelId: GameBootstrapUiFlowMethods._resolveLevelMapIndexByLevelId,
   _onLevelSelectMapIndexChange: GameBootstrapUiFlowMethods._onLevelSelectMapIndexChange,
   _refreshLevelProgress: GameBootstrapUiFlowMethods._refreshLevelProgress,
   _rememberSelectedLevel: GameBootstrapUiFlowMethods._rememberSelectedLevel,

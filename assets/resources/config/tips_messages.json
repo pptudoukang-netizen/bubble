@@ -20,6 +20,7 @@
     "hammer_enable_failed": "破障锤启用失败",
     "hammer_applied": "破障锤生效，剩余：{remaining}",
     "hammer_target_invalid": "请点选石头或冰冻球",
-    "hammer_use_failed": "破障锤使用失败"
+    "hammer_use_failed": "破障锤使用失败",
+    "ad_reward_not_granted_back_to_level": "广告未发奖，返回选关页面"
   }
 }
