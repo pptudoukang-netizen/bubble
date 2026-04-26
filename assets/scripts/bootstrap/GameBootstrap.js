@@ -27,7 +27,7 @@ var GameBootstrapUiFlowMethods = require("./GameBootstrapUiFlowMethods");
 var LevelRenderer = require("../render/LevelRenderer");
 var LoadingViewController = require("../ui/LoadingViewController");
 var TipsPresenter = require("../ui/TipsPresenter");
-var InventoryViewController = require("../ui/InventoryViewController");
+var BackpackViewController = require("../ui/BackpackViewController");
 var StarChestRewardService = require("../services/StarChestRewardService");
 var StarChestService = require("../services/StarChestService");
 var AdService = require("../services/AdService");
@@ -44,7 +44,7 @@ var BASELINE_JAR_RENDER_OFFSET_FROM_BOTTOM = ((BoardLayout.jarBaseY + BoardLayou
 var BASELINE_JAR_RENDER_Y_OFFSET = Number(BoardLayout.jarRenderYOffset) || 0;
 var BASELINE_SHOOTER_OFFSET_FROM_BOTTOM = (BoardLayout.shooterOrigin.y - (-BASELINE_HALF_HEIGHT)) + SHOOTER_RAISE_FROM_BOTTOM;
 var BASELINE_DANGER_OFFSET_FROM_BOTTOM = 460;
-var INVENTORY_VIEW_PREFAB_PATH = "prefabs/ui/InventoryView";
+var INVENTORY_VIEW_PREFAB_PATH = "prefabs/ui/BackpackView";
 var POWERUP_TYPE_BY_ITEM_ID = {
   swap_ball: "swap",
   rainbow_ball: "rainbow",
@@ -57,7 +57,9 @@ var ITEM_ID_BY_POWERUP_TYPE = {
   blast: "blast_ball",
   barrier_hammer: "barrier_hammer"
 };
-var MAX_SELECTED_POWERUPS = 2;
+var MAX_SELECTED_POWERUPS = 4;
+var MAX_SELECTED_POWERUP_TOTAL_COUNT = 4;
+var INVENTORY_TOTAL_LIMIT_TIP = "关卡中最多携带" + MAX_SELECTED_POWERUP_TOTAL_COUNT + "个道具";
 
 function clone(data) {
   return JSON.parse(JSON.stringify(data));
@@ -273,6 +275,7 @@ cc.Class({
     this._pendingNextRoundRewards = [];
     this._adFlowInProgress = false;
     this._staminaRecoveryInProgress = false;
+    this._pendingLevelEntry = null;
     this.telemetryService = new TelemetryService({
       logger: Logger
     });
@@ -317,11 +320,11 @@ cc.Class({
       telemetry: this.telemetryService
     });
     this.selectedPowerupsStore = new SelectedPowerupsStore();
-    this.selectedPowerupsState = this.selectedPowerupsStore.load();
-    this.selectedPowerupsStore.save(this.selectedPowerupsState);
+    this.selectedPowerupsState = this._saveSelectedPowerups([], {});
     this._inventoryViewPrefab = null;
     this._inventoryViewNode = null;
     this._inventoryViewController = null;
+    this._inventoryViewReadOnly = true;
     this.dailySignInConfig = clone(DailySignInConfig);
     this.signInStore = new SignInStore({
       cycleLength: this.dailySignInConfig.cycleLength,
@@ -1590,6 +1593,8 @@ cc.Class({
   _refreshSelectedPowerups: function () {
     if (!this.selectedPowerupsStore || typeof this.selectedPowerupsStore.load !== "function") {
       this.selectedPowerupsState = this.selectedPowerupsState || {
+        version: 2,
+        selectedItemCounts: {},
         selectedItems: []
       };
       return this.selectedPowerupsState;
@@ -1599,17 +1604,79 @@ cc.Class({
     return this.selectedPowerupsState;
   },
 
-  _saveSelectedPowerups: function (selectedItems) {
+  _saveSelectedPowerups: function (selectedItems, selectedItemCounts) {
+    var safeSelectedItems = Array.isArray(selectedItems) ? selectedItems.slice(0, MAX_SELECTED_POWERUPS) : [];
+    var sourceCounts = selectedItemCounts && typeof selectedItemCounts === "object"
+      ? selectedItemCounts
+      : {};
+    var safeSelectedItemCounts = {};
+    safeSelectedItems.forEach(function (itemId) {
+      safeSelectedItemCounts[itemId] = Math.max(1, Math.floor(Number(sourceCounts[itemId]) || 1));
+    });
+
     if (!this.selectedPowerupsStore || typeof this.selectedPowerupsStore.setSelectedItems !== "function") {
       this.selectedPowerupsState = {
-        version: 1,
-        selectedItems: Array.isArray(selectedItems) ? selectedItems.slice(0, MAX_SELECTED_POWERUPS) : []
+        version: 2,
+        selectedItems: safeSelectedItems,
+        selectedItemCounts: safeSelectedItemCounts
       };
       return this.selectedPowerupsState;
     }
 
-    this.selectedPowerupsState = this.selectedPowerupsStore.setSelectedItems(selectedItems);
+    this.selectedPowerupsState = this.selectedPowerupsStore.setSelectedItems({
+      selectedItems: safeSelectedItems,
+      selectedItemCounts: safeSelectedItemCounts
+    });
     return this.selectedPowerupsState;
+  },
+
+  _getSelectedPowerupTotalCount: function (selectedItems, selectedItemCounts) {
+    var safeSelectedItems = Array.isArray(selectedItems) ? selectedItems : [];
+    var safeSelectedItemCounts = selectedItemCounts && typeof selectedItemCounts === "object"
+      ? selectedItemCounts
+      : {};
+
+    return safeSelectedItems.reduce(function (total, itemId) {
+      return total + Math.max(1, Math.floor(Number(safeSelectedItemCounts[itemId]) || 1));
+    }, 0);
+  },
+
+  _normalizeSelectedPowerupCountsByTotalLimit: function (selectedItems, selectedItemCounts) {
+    var normalizedItems = Array.isArray(selectedItems) ? selectedItems.slice(0, MAX_SELECTED_POWERUPS) : [];
+    if (normalizedItems.length > MAX_SELECTED_POWERUP_TOTAL_COUNT) {
+      normalizedItems = normalizedItems.slice(0, MAX_SELECTED_POWERUP_TOTAL_COUNT);
+    }
+
+    var sourceCounts = selectedItemCounts && typeof selectedItemCounts === "object"
+      ? selectedItemCounts
+      : {};
+    var normalizedCounts = {};
+    normalizedItems.forEach(function (itemId) {
+      normalizedCounts[itemId] = 1;
+    });
+
+    var assignedTotal = normalizedItems.length;
+    normalizedItems.forEach(function (itemId) {
+      if (assignedTotal >= MAX_SELECTED_POWERUP_TOTAL_COUNT) {
+        return;
+      }
+
+      var safeCount = Math.max(1, Math.floor(Number(sourceCounts[itemId]) || 1));
+      var extraRequested = Math.max(0, safeCount - 1);
+      if (extraRequested <= 0) {
+        return;
+      }
+
+      var remainingQuota = MAX_SELECTED_POWERUP_TOTAL_COUNT - assignedTotal;
+      var extraAccepted = Math.min(extraRequested, remainingQuota);
+      normalizedCounts[itemId] += extraAccepted;
+      assignedTotal += extraAccepted;
+    });
+
+    return {
+      selectedItems: normalizedItems,
+      selectedItemCounts: normalizedCounts
+    };
   },
 
   _getAvailableSelectedPowerupItems: function () {
@@ -1619,17 +1686,72 @@ cc.Class({
     var selectedItems = this.selectedPowerupsState && Array.isArray(this.selectedPowerupsState.selectedItems)
       ? this.selectedPowerupsState.selectedItems.slice()
       : [];
+    var selectedItemCounts = this.selectedPowerupsState && this.selectedPowerupsState.selectedItemCounts
+      ? this.selectedPowerupsState.selectedItemCounts
+      : {};
     var availableSelectedItems = selectedItems.filter(function (itemId, index, list) {
       return list.indexOf(itemId) === index &&
         POWERUP_TYPE_BY_ITEM_ID[itemId] &&
         this.inventoryStore &&
         this.inventoryStore.getItemCount(this.playerInventory, itemId) > 0;
     }, this).slice(0, MAX_SELECTED_POWERUPS);
+    var normalizedCounts = {};
+    availableSelectedItems.forEach(function (itemId) {
+      var inventoryCount = this.inventoryStore
+        ? this.inventoryStore.getItemCount(this.playerInventory, itemId)
+        : 0;
+      var selectedCount = Math.max(1, Math.floor(Number(selectedItemCounts[itemId]) || 1));
+      normalizedCounts[itemId] = Math.min(selectedCount, Math.max(1, inventoryCount));
+    }, this);
+    var normalizedSelection = this._normalizeSelectedPowerupCountsByTotalLimit(availableSelectedItems, normalizedCounts);
+    availableSelectedItems = normalizedSelection.selectedItems;
+    normalizedCounts = normalizedSelection.selectedItemCounts;
 
-    if (availableSelectedItems.length !== selectedItems.length) {
-      this._saveSelectedPowerups(availableSelectedItems);
+    var hasSelectionChanged = availableSelectedItems.length !== selectedItems.length;
+    if (!hasSelectionChanged) {
+      for (var i = 0; i < availableSelectedItems.length; i += 1) {
+        if (availableSelectedItems[i] !== selectedItems[i]) {
+          hasSelectionChanged = true;
+          break;
+        }
+      }
+    }
+
+    var hasCountChanged = false;
+    if (!hasSelectionChanged) {
+      Object.keys(selectedItemCounts).forEach(function (itemId) {
+        if (availableSelectedItems.indexOf(itemId) < 0) {
+          hasCountChanged = true;
+        }
+      });
+      availableSelectedItems.forEach(function (itemId) {
+        var previousCount = Math.max(1, Math.floor(Number(selectedItemCounts[itemId]) || 1));
+        if (normalizedCounts[itemId] !== previousCount) {
+          hasCountChanged = true;
+        }
+      });
+    }
+
+    if (hasSelectionChanged || hasCountChanged) {
+      this._saveSelectedPowerups(availableSelectedItems, normalizedCounts);
+    } else if (this.selectedPowerupsState) {
+      this.selectedPowerupsState.selectedItemCounts = normalizedCounts;
     }
     return availableSelectedItems;
+  },
+
+  _getSelectedPowerupLoadouts: function () {
+    var selectedItems = this._getAvailableSelectedPowerupItems();
+    var selectedItemCounts = this.selectedPowerupsState && this.selectedPowerupsState.selectedItemCounts
+      ? this.selectedPowerupsState.selectedItemCounts
+      : {};
+
+    return selectedItems.map(function (itemId) {
+      return {
+        itemId: itemId,
+        count: Math.max(1, Math.floor(Number(selectedItemCounts[itemId]) || 1))
+      };
+    });
   },
 
   _applySelectedPowerupsToRuntime: function (snapshot) {
@@ -1637,15 +1759,15 @@ cc.Class({
       return snapshot || null;
     }
 
-    var selectedItems = this._getAvailableSelectedPowerupItems();
+    var selectedLoadouts = this._getSelectedPowerupLoadouts();
     var latestSnapshot = snapshot || this.gameManager.getRuntimeSnapshot();
-    selectedItems.forEach(function (itemId) {
-      var powerupType = POWERUP_TYPE_BY_ITEM_ID[itemId];
+    selectedLoadouts.forEach(function (loadout) {
+      var powerupType = POWERUP_TYPE_BY_ITEM_ID[loadout.itemId];
       if (!powerupType) {
         return;
       }
 
-      var grantResult = this.gameManager.grantPowerupInventory(powerupType, 1);
+      var grantResult = this.gameManager.grantPowerupInventory(powerupType, loadout.count);
       if (grantResult && grantResult.snapshot) {
         latestSnapshot = grantResult.snapshot;
       }
@@ -1686,11 +1808,90 @@ cc.Class({
     }.bind(this));
   },
 
-  _showInventoryView: function () {
+  _setPendingLevelEntry: function (levelId) {
+    var safeLevelId = Math.max(1, Math.floor(Number(levelId) || 0));
+    if (safeLevelId <= 0) {
+      this._pendingLevelEntry = null;
+      return null;
+    }
+
+    this._pendingLevelEntry = {
+      levelId: safeLevelId
+    };
+    return this._pendingLevelEntry;
+  },
+
+  _clearPendingLevelEntry: function () {
+    this._pendingLevelEntry = null;
+    this._inventoryViewReadOnly = true;
+  },
+
+  _isInventorySelectionOperable: function () {
+    return !!(this._pendingLevelEntry && this._pendingLevelEntry.levelId);
+  },
+
+  _hasAvailableInventoryForLevelEntry: function () {
+    this._refreshPlayerInventory();
+    if (!this.inventoryStore || typeof this.inventoryStore.getItemCount !== "function") {
+      var rawItems = this.playerInventory && this.playerInventory.items ? this.playerInventory.items : {};
+      return Object.keys(POWERUP_TYPE_BY_ITEM_ID).some(function (itemId) {
+        return Math.max(0, Math.floor(Number(rawItems[itemId]) || 0)) > 0;
+      });
+    }
+
+    return Object.keys(POWERUP_TYPE_BY_ITEM_ID).some(function (itemId) {
+      return this.inventoryStore.getItemCount(this.playerInventory, itemId) > 0;
+    }, this);
+  },
+
+  _enterLevelFromLevelSelect: function (levelId) {
+    var safeLevelId = Math.max(1, Math.floor(Number(levelId) || 0));
+    if (safeLevelId <= 0) {
+      return false;
+    }
+
+    var loadSelectedLevel = function () {
+      this._setStatus("Loading level_" + ("000" + safeLevelId).slice(-3) + "...");
+      this._loadLevelById(safeLevelId, "Level selected", "Load selected level failed. Check console logs.");
+    }.bind(this);
+
+    if (!this._consumeStaminaForLevelEntry(loadSelectedLevel)) {
+      if (!this._staminaRecoveryInProgress) {
+        this._setStatus("Stamina is not enough. It resets to 10 at 00:00.");
+      }
+      return false;
+    }
+
+    loadSelectedLevel();
+    return true;
+  },
+
+  _startPendingLevelEntry: function () {
+    if (!this._pendingLevelEntry || !this._pendingLevelEntry.levelId) {
+      return false;
+    }
+
+    var levelId = this._pendingLevelEntry.levelId;
+    this._clearPendingLevelEntry();
+    return this._enterLevelFromLevelSelect(levelId);
+  },
+
+  _showInventoryView: function (options) {
+    options = options || {};
+    var pendingLevelId = Math.max(0, Math.floor(Number(options.entryLevelId) || 0));
+    if (pendingLevelId > 0) {
+      this._setPendingLevelEntry(pendingLevelId);
+    } else {
+      this._clearPendingLevelEntry();
+    }
+    this._inventoryViewReadOnly = !this._isInventorySelectionOperable();
+
     this._playSfx("uiClick");
     this._hideSettingView();
     this._hideRankingView();
     this._hideSignInView();
+    this._saveSelectedPowerups([], {});
+    this._updateInventoryEntryState();
     this._ensureInventoryViewPrefab().then(function (prefab) {
       if (!prefab) {
         this._setStatus("背包界面加载失败");
@@ -1704,17 +1905,18 @@ cc.Class({
         inventoryViewNode.setPosition(0, 0);
         inventoryViewNode.zIndex = 320;
         this._inventoryViewNode = inventoryViewNode;
-        this._inventoryViewController = new InventoryViewController({
+        this._inventoryViewController = new BackpackViewController({
           node: inventoryViewNode,
           onClose: function () {
             this._playSfx("uiClick");
+            this._clearPendingLevelEntry();
+            this._inventoryViewReadOnly = true;
             this._hideInventoryView();
           }.bind(this),
           onConfirm: this._confirmInventorySelection.bind(this),
           onToggleItem: this._toggleInventorySelection.bind(this),
-          onSelectionLimit: function () {
-            this._setStatusWithTip("inventory_selection_limit", null, "最多携带2个道具");
-          }.bind(this)
+          onIncreaseItemCount: this._increaseInventorySelectionCount.bind(this),
+          onDecreaseItemCount: this._decreaseInventorySelectionCount.bind(this)
         });
       }
 
@@ -1731,16 +1933,33 @@ cc.Class({
       return;
     }
     this._inventoryViewNode.active = false;
+    if (!this._isInventorySelectionOperable()) {
+      this._inventoryViewReadOnly = true;
+    }
   },
 
   _confirmInventorySelection: function () {
+    if (!this._isInventorySelectionOperable()) {
+      return;
+    }
+
     this._playSfx("uiClick");
+    if (this._pendingLevelEntry && this._pendingLevelEntry.levelId) {
+      this._hideInventoryView();
+      this._startPendingLevelEntry();
+      return;
+    }
+
     this._hideInventoryView();
     this._setStatusWithTip("inventory_confirmed", null, "出战道具已保存");
     this._updateInventoryEntryState();
   },
 
   _toggleInventorySelection: function (itemId) {
+    if (!this._isInventorySelectionOperable()) {
+      return;
+    }
+
     this._playSfx("uiClick");
     this._refreshPlayerInventory();
     this._refreshSelectedPowerups();
@@ -1750,10 +1969,25 @@ cc.Class({
       return;
     }
 
+    var selectedItems = this.selectedPowerupsState && Array.isArray(this.selectedPowerupsState.selectedItems)
+      ? this.selectedPowerupsState.selectedItems.slice()
+      : [];
+    var selectedCounts = this.selectedPowerupsState && this.selectedPowerupsState.selectedItemCounts
+      ? this.selectedPowerupsState.selectedItemCounts
+      : {};
+    var isSelected = selectedItems.indexOf(itemId) >= 0;
+    if (!isSelected) {
+      var selectedTotal = this._getSelectedPowerupTotalCount(selectedItems, selectedCounts);
+      if (selectedTotal >= MAX_SELECTED_POWERUP_TOTAL_COUNT) {
+        this._setStatusWithTip("inventory_count_limit", null, INVENTORY_TOTAL_LIMIT_TIP);
+        return;
+      }
+    }
+
     var toggleResult = this.selectedPowerupsStore.toggleItem(this.selectedPowerupsState, itemId);
     if (!toggleResult || !toggleResult.accepted) {
       if (toggleResult && toggleResult.reason === "selection_limit") {
-        this._setStatusWithTip("inventory_selection_limit", null, "最多携带2个道具");
+        this._setStatusWithTip("inventory_count_limit", null, INVENTORY_TOTAL_LIMIT_TIP);
       } else {
         this._setStatusWithTip("inventory_selection_failed", null, "道具选择失败");
       }
@@ -1766,17 +2000,111 @@ cc.Class({
     this._updateInventoryEntryState();
   },
 
+  _increaseInventorySelectionCount: function (itemId) {
+    if (!this._isInventorySelectionOperable()) {
+      return;
+    }
+
+    this._playSfx("uiClick");
+    this._refreshPlayerInventory();
+    this._refreshSelectedPowerups();
+
+    if (!this.inventoryStore || this.inventoryStore.getItemCount(this.playerInventory, itemId) <= 0) {
+      this._setStatusWithTip("inventory_item_empty", null, "该道具库存不足");
+      return;
+    }
+
+    var selectedItems = this.selectedPowerupsState && Array.isArray(this.selectedPowerupsState.selectedItems)
+      ? this.selectedPowerupsState.selectedItems.slice()
+      : [];
+    if (selectedItems.indexOf(itemId) < 0) {
+      this._setStatusWithTip("inventory_selection_failed", null, "请先选择该道具");
+      return;
+    }
+
+    var selectedCounts = this.selectedPowerupsState && this.selectedPowerupsState.selectedItemCounts
+      ? this.selectedPowerupsState.selectedItemCounts
+      : {};
+    var currentCount = Math.max(1, Math.floor(Number(selectedCounts[itemId]) || 1));
+    var inventoryCount = this.inventoryStore.getItemCount(this.playerInventory, itemId);
+    if (currentCount >= inventoryCount) {
+      this._setStatusWithTip("inventory_count_max", null, "已达到库存上限");
+      return;
+    }
+    var selectedTotal = this._getSelectedPowerupTotalCount(selectedItems, selectedCounts);
+    if (selectedTotal >= MAX_SELECTED_POWERUP_TOTAL_COUNT) {
+      this._setStatusWithTip("inventory_count_limit", null, INVENTORY_TOTAL_LIMIT_TIP);
+      return;
+    }
+
+    var nextCounts = {};
+    selectedItems.forEach(function (selectedItemId) {
+      nextCounts[selectedItemId] = Math.max(1, Math.floor(Number(selectedCounts[selectedItemId]) || 1));
+    });
+    nextCounts[itemId] = Math.min(inventoryCount, currentCount + 1);
+    this._saveSelectedPowerups(selectedItems, nextCounts);
+    this._renderInventoryView();
+    this._updateInventoryEntryState();
+  },
+
+  _decreaseInventorySelectionCount: function (itemId) {
+    if (!this._isInventorySelectionOperable()) {
+      return;
+    }
+
+    this._playSfx("uiClick");
+    this._refreshPlayerInventory();
+    this._refreshSelectedPowerups();
+
+    var selectedItems = this.selectedPowerupsState && Array.isArray(this.selectedPowerupsState.selectedItems)
+      ? this.selectedPowerupsState.selectedItems.slice()
+      : [];
+    if (selectedItems.indexOf(itemId) < 0) {
+      return;
+    }
+
+    var selectedCounts = this.selectedPowerupsState && this.selectedPowerupsState.selectedItemCounts
+      ? this.selectedPowerupsState.selectedItemCounts
+      : {};
+    var currentCount = Math.max(1, Math.floor(Number(selectedCounts[itemId]) || 1));
+    var nextCounts = {};
+    selectedItems.forEach(function (selectedItemId) {
+      nextCounts[selectedItemId] = Math.max(1, Math.floor(Number(selectedCounts[selectedItemId]) || 1));
+    });
+
+    if (currentCount <= 1) {
+      var remainingItems = selectedItems.filter(function (selectedItemId) {
+        return selectedItemId !== itemId;
+      });
+      delete nextCounts[itemId];
+      this._saveSelectedPowerups(remainingItems, nextCounts);
+      this._setStatusWithTip("inventory_item_removed", null, "已取消选择该道具");
+    } else {
+      nextCounts[itemId] = currentCount - 1;
+      this._saveSelectedPowerups(selectedItems, nextCounts);
+    }
+
+    this._renderInventoryView();
+    this._updateInventoryEntryState();
+  },
+
   _renderInventoryView: function () {
     if (!this._inventoryViewController || !this._inventoryViewNode || !this._inventoryViewNode.isValid) {
       return;
     }
 
     this._refreshPlayerInventory();
-    this._refreshSelectedPowerups();
+    var selectedItems = this._getAvailableSelectedPowerupItems();
+    var selectedItemCounts = this.selectedPowerupsState && this.selectedPowerupsState.selectedItemCounts
+      ? this.selectedPowerupsState.selectedItemCounts
+      : {};
     this._inventoryViewController.render({
       inventory: this.playerInventory,
-      selectedItems: this.selectedPowerupsState.selectedItems,
-      coinCount: this._getCurrentCoins()
+      selectedItems: selectedItems,
+      selectedItemCounts: selectedItemCounts,
+      coinCount: this._getCurrentCoins(),
+      interactionEnabled: !this._inventoryViewReadOnly,
+      useButtonEnabled: !this._inventoryViewReadOnly
     });
   },
 

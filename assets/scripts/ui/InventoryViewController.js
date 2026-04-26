@@ -22,7 +22,7 @@ var ITEM_DEFINITIONS = [
     displayName: "破障锤"
   }
 ];
-var MAX_SELECTED_POWERUPS = 2;
+var MAX_SELECTED_POWERUPS = 4;
 
 function findNodeByNameRecursive(rootNode, name) {
   if (!rootNode || !rootNode.isValid) {

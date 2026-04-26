@@ -1446,6 +1446,9 @@ module.exports = {
     this._persistRouteEditorIfDirty();
     this._hideSettingView();
     this._hideRankingView();
+    if (typeof this._clearPendingLevelEntry === "function") {
+      this._clearPendingLevelEntry();
+    }
     if (typeof this._hideInventoryView === "function") {
       this._hideInventoryView();
     }
@@ -2053,6 +2056,9 @@ module.exports = {
   _hideLevelSelectView: function () {
     this._hideSettingView();
     this._hideRankingView();
+    if (typeof this._clearPendingLevelEntry === "function") {
+      this._clearPendingLevelEntry();
+    }
     if (typeof this._hideInventoryView === "function") {
       this._hideInventoryView();
     }
@@ -2406,18 +2412,24 @@ module.exports = {
       return;
     }
 
-    var loadSelectedLevel = function () {
-      this._setStatus("Loading level_" + ("000" + levelId).slice(-3) + "...");
-      this._loadLevelById(levelId, "Level selected", "Load selected level failed. Check console logs.");
-    }.bind(this);
-
-    if (!this._consumeStaminaForLevelEntry(loadSelectedLevel)) {
-      if (!this._staminaRecoveryInProgress) {
-        this._setStatus("Stamina is not enough. It resets to 10 at 00:00.");
+    if (
+      typeof this._hasAvailableInventoryForLevelEntry === "function" &&
+      this._hasAvailableInventoryForLevelEntry()
+    ) {
+      if (typeof this._showInventoryView === "function") {
+        this._showInventoryView({
+          entryLevelId: levelId
+        });
+        return;
       }
+    }
+
+    if (typeof this._enterLevelFromLevelSelect === "function") {
+      this._enterLevelFromLevelSelect(levelId);
       return;
     }
 
-    loadSelectedLevel();
+    this._setStatus("Loading level_" + ("000" + levelId).slice(-3) + "...");
+    this._loadLevelById(levelId, "Level selected", "Load selected level failed. Check console logs.");
   }
 };
