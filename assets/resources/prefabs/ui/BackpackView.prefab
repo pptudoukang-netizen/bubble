@@ -269,7 +269,7 @@
     },
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 600,
+      "width": 652.3,
       "height": 700
     },
     "_anchorPoint": {
@@ -521,7 +521,7 @@
     },
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 548,
+      "width": 600.3,
       "height": 356
     },
     "_anchorPoint": {
@@ -610,7 +610,7 @@
       "__type__": "TypedArray",
       "ctor": "Float64Array",
       "array": [
-        -219,
+        -240.14999999999998,
         128,
         0,
         0,
@@ -1145,7 +1145,7 @@
     "_enabled": true,
     "_layoutSize": {
       "__type__": "cc.Size",
-      "width": 548,
+      "width": 600.3,
       "height": 356
     },
     "_resize": 0,
@@ -1156,11 +1156,11 @@
       "height": 40
     },
     "_N$startAxis": 0,
-    "_N$paddingLeft": 5,
+    "_N$paddingLeft": 10,
     "_N$paddingRight": 0,
     "_N$paddingTop": 0,
     "_N$paddingBottom": 0,
-    "_N$spacingX": 10,
+    "_N$spacingX": 20,
     "_N$spacingY": 10,
     "_N$verticalDirection": 1,
     "_N$horizontalDirection": 0,
@@ -1247,7 +1247,7 @@
     },
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 563,
+      "width": 500,
       "height": 123
     },
     "_anchorPoint": {
@@ -1259,7 +1259,7 @@
       "__type__": "TypedArray",
       "ctor": "Float64Array",
       "array": [
-        -3,
+        -2.9999999999999716,
         -204,
         0,
         0,
@@ -1336,7 +1336,7 @@
       "__type__": "TypedArray",
       "ctor": "Float64Array",
       "array": [
-        -221.5,
+        -180,
         1.5,
         0,
         0,
@@ -1844,8 +1844,8 @@
     "alignMode": 1,
     "_target": null,
     "_alignFlags": 45,
-    "_left": 15.500000000000021,
-    "_right": 21.49999999999999,
+    "_left": 73.15,
+    "_right": 79.14999999999996,
     "_top": 492.5,
     "_bottom": 84.5,
     "_verticalCenter": 0,
@@ -1870,7 +1870,7 @@
     "_enabled": true,
     "_layoutSize": {
       "__type__": "cc.Size",
-      "width": 563,
+      "width": 500,
       "height": 123
     },
     "_resize": 0,
@@ -1881,11 +1881,11 @@
       "height": 40
     },
     "_N$startAxis": 0,
-    "_N$paddingLeft": 10,
+    "_N$paddingLeft": 20,
     "_N$paddingRight": 0,
     "_N$paddingTop": 10,
     "_N$paddingBottom": 0,
-    "_N$spacingX": 10,
+    "_N$spacingX": 20,
     "_N$spacingY": 10,
     "_N$verticalDirection": 1,
     "_N$horizontalDirection": 0,
@@ -2459,7 +2459,7 @@
     "_spriteFrame": {
       "__uuid__": "39688315-a5de-4230-ae14-4f2e355cca38"
     },
-    "_type": 1,
+    "_type": 0,
     "_sizeMode": 0,
     "_fillType": 0,
     "_fillCenter": {
