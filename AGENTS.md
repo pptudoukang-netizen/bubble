@@ -1,45 +1,67 @@
 # AGENTS.md
 
-## Goal
-Write code that is readable, maintainable, testable, and consistent with the existing project.
+## 严格模式总原则
 
-## Core Rules
-- Prefer clarity over brevity.
-- Follow existing project patterns before introducing new ones.
-- Keep changes minimal and scoped to the task.
-- Avoid unrelated refactors.
-- One function should do one thing.
-- One module/class should have one clear responsibility.
-- Avoid magic numbers; extract constants.
-- Avoid vague names like helper, manager, util, common unless truly justified.
-- Reduce nesting with early returns.
-- Do not hide complex logic in one-liners.
-- Handle errors explicitly; do not silently ignore them.
-- Add comments only when they explain why, not what.
-- Avoid duplicated logic, but do not over-abstract prematurely.
-- Keep external dependencies minimal.
-- Do not introduce global hidden state.
-- Prefer pure logic extraction before large structural refactors.
-- Any performance optimization must be justified by a real bottleneck.
+本项目使用 Fail-Fast 严格模式。
 
-## Review Checklist
-Before finishing, check:
-- Is the naming accurate?
-- Is the responsibility clear?
-- Is there any unnecessary coupling?
-- Is there any hidden side effect?
-- Is error handling adequate?
-- Is the change easy to review?
-- Does it match the existing project style?
+优先级：
+1. 业务正确性
+2. 可维护性
+3. 可测试性
+4. 可运行性
 
-## AI Agent Behavior
-- Understand the requirement and boundaries first.
-- Reuse existing patterns when possible.
-- Do not create oversized classes or catch-all utilities.
-- Do not rewrite large areas without necessity.
-- Do not add fallback logic to hide unclear requirements, broken data, missing assets, or runtime errors.
-- If a requirement is unclear, ask the user before implementing.
-- Expose real problems promptly instead of silently bypassing them.
-- Locate and fix root causes before considering compatibility or defensive behavior.
-- Only add fallback/compatibility behavior when the user explicitly requests it or the existing project pattern clearly requires it.
-- Summarize changes, impact, risks, and validation steps after modification.
+目标：
+- 优先暴露问题，而不是隐藏问题
+- 优先保证业务正确性，而不是表面可运行
+- 禁止为了“看起来更健壮”而添加兜底逻辑
+
+## 禁止行为
+
+除非任务明确要求，否则禁止：
+
+- 写 fallback / 兜底逻辑
+- 写默认值兜底
+- 写静默失败逻辑
+- 写 try-catch 吞异常
+- 写空判断后直接 return
+- 写 mock 数据兜底
+- 写兼容旧逻辑的临时分支
+- 写“不确定时使用默认配置”
+- 写 `|| []`
+- 写 `|| ''`
+- 写 `?? defaultValue`
+- 写 `catch (e) { return ... }`
+
+## 异常处理规则
+
+- 异常必须向上抛出
+- 不允许吞异常
+- 不允许只打印日志后继续执行
+- 不允许返回空数组、空对象、false、0 来掩盖错误
+- 发现非法状态时直接抛错
+
+## 数据规则
+
+- 必填字段缺失时直接报错
+- 配置缺失时直接报错
+- 接口返回结构不符合预期时直接报错
+- 类型不匹配时直接报错
+- 不允许自动补全缺失数据
+
+## 修改代码前必须做
+
+1. 先阅读相关上下文代码
+2. 找到真实调用链
+3. 明确问题根因
+4. 只修改必要代码
+5. 不做无关重构
+6. 不添加额外兜底
+
+## 输出要求
+
+每次修改完成后说明：
+
+- 修改了哪些文件
+- 为什么这样改
+- 是否存在兜底逻辑
+- 如果存在，必须说明是用户明确要求的

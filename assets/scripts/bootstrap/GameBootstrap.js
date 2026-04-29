@@ -669,7 +669,9 @@ cc.Class({
       }
       this._loadingViewController.setProgress(1, true);
       this._loadingViewController.setStage("准备进入关卡...");
-      return this._loadingViewController.playOut();
+      return this._loadingViewController.waitForProgressComplete().then(function () {
+        return this._loadingViewController.playOut();
+      }.bind(this));
     }.bind(this)).then(function () {
       this._showLevelSelectView();
     }.bind(this)).catch(function (error) {

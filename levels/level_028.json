@@ -47,7 +47,7 @@
                              ],
                   "shotLimit":  38,
                   "targetScore":  15800,
-                  "dropInterval":  2,
+                  "dropInterval":  3,
                   "jarCount":  4,
                   "jarColors":  [
                                     "R",
@@ -56,7 +56,7 @@
                                     "Y"
                                 ],
                   "spawnWeights":  {
-                                       "G":  1.12,
+                                       "G":  1.65,
                                        "R":  1,
                                        "Y":  1,
                                        "B":  1

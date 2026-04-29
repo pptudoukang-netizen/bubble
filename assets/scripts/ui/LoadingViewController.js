@@ -6,6 +6,7 @@ var VIEW_FADE_OUT_DURATION = 0.16;
 var SPINNER_ROTATE_DURATION = 0.72;
 var PROGRESS_MIN_DURATION = 0.08;
 var PROGRESS_MAX_DURATION = 0.32;
+var PROGRESS_COMPLETE_MIN_SECONDS = 2;
 var ANI_SPEED_REFRESH_INTERVAL = 1;
 var ANI_MIN_MOVE_SPEED = 40;
 var DEFAULT_ANI_MAX_MOVE_SPEED = 50;
@@ -72,6 +73,8 @@ var LoadingViewController = cc.Class({
     this._targetProgress = 0;
     this._displayProgress = 0;
     this._progressAnim = null;
+    this._progressTimelineStartedAt = 0;
+    this._progressCompleteWaiters = [];
     this._aniMaxMoveSpeed = DEFAULT_ANI_MAX_MOVE_SPEED;
     this._aniMoveSpeed = 0;
     this._aniSpeedElapsed = 0;
@@ -115,6 +118,7 @@ var LoadingViewController = cc.Class({
       this._displayProgress = this._progressAnim.to;
       this._progressAnim = null;
       this._syncProgressVisual(this._displayProgress);
+      this._resolveProgressCompleteWaitersIfReady();
     }
   },
 
@@ -156,6 +160,17 @@ var LoadingViewController = cc.Class({
     this._applyProgress(!!immediate);
   },
 
+  waitForProgressComplete: function () {
+    this.setProgress(1, false);
+    if (this._isProgressComplete()) {
+      return Promise.resolve();
+    }
+
+    return new Promise(function (resolve) {
+      this._progressCompleteWaiters.push(resolve);
+    }.bind(this));
+  },
+
   setAniMaxMoveSpeed: function (speed) {
     this._aniMaxMoveSpeed = Math.max(0, Number(speed) || 0);
     this._aniMoveSpeed = this._resolveAniMoveSpeed();
@@ -165,6 +180,7 @@ var LoadingViewController = cc.Class({
     this.refreshLayout();
     this.node.active = true;
     this.node.opacity = 255;
+    this._progressTimelineStartedAt = Date.now();
     if (this._panelNode) {
       this._panelNode.scale = 1;
     }
@@ -294,10 +310,17 @@ var LoadingViewController = cc.Class({
   _applyProgress: function () {
     var immediate = arguments.length > 0 ? !!arguments[0] : false;
     var next = this._targetProgress;
+    if (next > 0 && this._progressTimelineStartedAt <= 0) {
+      this._progressTimelineStartedAt = Date.now();
+    }
+    if (immediate && next >= 1 && this._getProgressCompleteRemainingSeconds() > 0) {
+      immediate = false;
+    }
     if (immediate) {
       this._progressAnim = null;
       this._displayProgress = next;
       this._syncProgressVisual(this._displayProgress);
+      this._resolveProgressCompleteWaitersIfReady();
       return;
     }
 
@@ -307,16 +330,43 @@ var LoadingViewController = cc.Class({
       this._progressAnim = null;
       this._displayProgress = next;
       this._syncProgressVisual(this._displayProgress);
+      this._resolveProgressCompleteWaitersIfReady();
       return;
     }
 
     var duration = Math.min(PROGRESS_MAX_DURATION, Math.max(PROGRESS_MIN_DURATION, delta * 0.55));
+    if (next >= 1) {
+      duration = Math.max(duration, this._getProgressCompleteRemainingSeconds());
+    }
     this._progressAnim = {
       from: from,
       to: next,
       elapsed: 0,
       duration: duration
     };
+  },
+
+  _getProgressCompleteRemainingSeconds: function () {
+    if (this._progressTimelineStartedAt <= 0) {
+      return PROGRESS_COMPLETE_MIN_SECONDS;
+    }
+    var elapsedSeconds = (Date.now() - this._progressTimelineStartedAt) / 1000;
+    return Math.max(0, PROGRESS_COMPLETE_MIN_SECONDS - elapsedSeconds);
+  },
+
+  _isProgressComplete: function () {
+    return this._displayProgress >= 1 && !this._progressAnim;
+  },
+
+  _resolveProgressCompleteWaitersIfReady: function () {
+    if (!this._isProgressComplete() || this._progressCompleteWaiters.length <= 0) {
+      return;
+    }
+
+    while (this._progressCompleteWaiters.length > 0) {
+      var resolve = this._progressCompleteWaiters.shift();
+      resolve();
+    }
   },
 
   _syncProgressVisual: function (value) {
