@@ -1,0 +1,1 @@
+module.exports = [1,["43885f27-9acc-4b16-8c3d-3da9a88727a"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"inventory_available_badge","rect":[2,2,44,44],"offset":[0,0],"originalSize":[48,48],"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

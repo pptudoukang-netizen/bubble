@@ -8,6 +8,7 @@ var LevelProgressStore = require("../utils/LevelProgressStore");
 var PlayerResourceStore = require("../utils/PlayerResourceStore");
 var InventoryStore = require("../utils/InventoryStore");
 var StarChestStore = require("../utils/StarChestStore");
+var GameCircleWelfareStore = require("../utils/GameCircleWelfareStore");
 var SelectedPowerupsStore = require("../utils/SelectedPowerupsStore");
 var SignInStore = require("../utils/SignInStore");
 var RouteConfigStore = require("../utils/RouteConfigStore");
@@ -15,6 +16,7 @@ var AudioManager = require("../audio/AudioManager");
 var BoardLayout = require("../config/BoardLayout");
 var DailySignInConfig = require("../config/DailySignInConfig");
 var StarChestConfig = require("../config/StarChestConfig");
+var GameCircleWelfareConfig = require("../config/GameCircleWelfareConfig");
 var LevelManager = require("../config/LevelManager");
 var GameManager = require("../core/GameManager");
 var StarRatingPolicy = require("../core/StarRatingPolicy");
@@ -30,6 +32,8 @@ var TipsPresenter = require("../ui/TipsPresenter");
 var BackpackViewController = require("../ui/BackpackViewController");
 var StarChestRewardService = require("../services/StarChestRewardService");
 var StarChestService = require("../services/StarChestService");
+var GameCircleButtonAdapter = require("../services/GameCircleButtonAdapter");
+var GameCircleWelfareService = require("../services/GameCircleWelfareService");
 var AdService = require("../services/AdService");
 var TelemetryService = require("../services/TelemetryService");
 var AdRewardQuotaStore = require("../services/AdRewardQuotaStore");
@@ -319,6 +323,18 @@ cc.Class({
       rewardService: this.starChestRewardService,
       telemetry: this.telemetryService
     });
+    this.gameCircleWelfareConfig = clone(GameCircleWelfareConfig);
+    this.gameCircleWelfareStore = new GameCircleWelfareStore({
+      activityId: this.gameCircleWelfareConfig.activityId
+    });
+    this.gameCircleButtonAdapter = new GameCircleButtonAdapter();
+    this.gameCircleWelfareService = new GameCircleWelfareService({
+      config: this.gameCircleWelfareConfig,
+      store: this.gameCircleWelfareStore,
+      rewardService: this.starChestRewardService,
+      platformClient: this.gameCircleButtonAdapter,
+      telemetry: this.telemetryService
+    });
     this.selectedPowerupsStore = new SelectedPowerupsStore();
     this.selectedPowerupsState = this._saveSelectedPowerups([], {});
     this._inventoryViewPrefab = null;
@@ -357,6 +373,9 @@ cc.Class({
     });
     this._settingViewPrefab = null;
     this._settingViewNode = null;
+    this._awardViewPrefab = null;
+    this._awardViewNode = null;
+    this._awardItemIconSpriteFrameCache = {};
     this._signInViewPrefab = null;
     this._signInViewNode = null;
     this._signInButtonSpriteFrames = null;
@@ -366,6 +385,11 @@ cc.Class({
     this._rankingViewPrefab = null;
     this._rankingViewNode = null;
     this._rankingViewController = null;
+    this._gameCircleWelfareViewPrefab = null;
+    this._gameCircleWelfareViewNode = null;
+    this._gameCircleWelfareViewController = null;
+    this._gameCircleEntrySpriteFrame = null;
+    this._gameCircleEntrySpriteFramePromise = null;
     this.audioManager = new AudioManager({
       settingsDefaults: {
         musicEnabled: this.enableBackgroundMusic,
@@ -437,6 +461,7 @@ cc.Class({
       gameManager: this.gameManager,
       levelRenderer: this.levelRenderer,
       audioManager: this.audioManager,
+      gameCircleWelfareService: this.gameCircleWelfareService,
       routeConfigStore: this.routeConfigStore,
       routeEditor: {
         getState: function () {
@@ -2663,6 +2688,13 @@ cc.Class({
   _renderSignInView: GameBootstrapUiFlowMethods._renderSignInView,
   _showSignInView: GameBootstrapUiFlowMethods._showSignInView,
   _hideSignInView: GameBootstrapUiFlowMethods._hideSignInView,
+  _ensureAwardViewPrefab: GameBootstrapUiFlowMethods._ensureAwardViewPrefab,
+  _ensureAwardItemIconSpriteFrame: GameBootstrapUiFlowMethods._ensureAwardItemIconSpriteFrame,
+  _resolveAwardViewNodes: GameBootstrapUiFlowMethods._resolveAwardViewNodes,
+  _bindAwardViewActions: GameBootstrapUiFlowMethods._bindAwardViewActions,
+  _renderAwardView: GameBootstrapUiFlowMethods._renderAwardView,
+  _showAwardViewForRewardItems: GameBootstrapUiFlowMethods._showAwardViewForRewardItems,
+  _hideAwardView: GameBootstrapUiFlowMethods._hideAwardView,
   _grantSignInRewardItems: GameBootstrapUiFlowMethods._grantSignInRewardItems,
   _claimTodaySignInReward: GameBootstrapUiFlowMethods._claimTodaySignInReward,
   _maybeAutoShowSignInView: GameBootstrapUiFlowMethods._maybeAutoShowSignInView,
@@ -2677,6 +2709,19 @@ cc.Class({
   _ensureStarChestEntryRedDot: GameBootstrapUiFlowMethods._ensureStarChestEntryRedDot,
   _updateStarChestEntryState: GameBootstrapUiFlowMethods._updateStarChestEntryState,
   _openStarChest: GameBootstrapUiFlowMethods._openStarChest,
+  _ensureGameCircleEntryRedDot: GameBootstrapUiFlowMethods._ensureGameCircleEntryRedDot,
+  _ensureGameCircleEntrySpriteFrame: GameBootstrapUiFlowMethods._ensureGameCircleEntrySpriteFrame,
+  _ensureGameCircleEntryButton: GameBootstrapUiFlowMethods._ensureGameCircleEntryButton,
+  _updateGameCircleEntryState: GameBootstrapUiFlowMethods._updateGameCircleEntryState,
+  _ensureGameCircleWelfareViewPrefab: GameBootstrapUiFlowMethods._ensureGameCircleWelfareViewPrefab,
+  _showGameCircleWelfareView: GameBootstrapUiFlowMethods._showGameCircleWelfareView,
+  _hideGameCircleWelfareView: GameBootstrapUiFlowMethods._hideGameCircleWelfareView,
+  _renderGameCircleWelfareView: GameBootstrapUiFlowMethods._renderGameCircleWelfareView,
+  _refreshGameCircleWelfareProgress: GameBootstrapUiFlowMethods._refreshGameCircleWelfareProgress,
+  _claimGameCircleWelfareTask: GameBootstrapUiFlowMethods._claimGameCircleWelfareTask,
+  _resolveNativeButtonRectForNode: GameBootstrapUiFlowMethods._resolveNativeButtonRectForNode,
+  _syncGameCircleNativeButtons: GameBootstrapUiFlowMethods._syncGameCircleNativeButtons,
+  _openGameCircleFromWelfare: GameBootstrapUiFlowMethods._openGameCircleFromWelfare,
   _onLevelSelectSettingTap: GameBootstrapUiFlowMethods._onLevelSelectSettingTap,
   _ensureSettingViewPrefab: GameBootstrapUiFlowMethods._ensureSettingViewPrefab,
   _showSettingView: GameBootstrapUiFlowMethods._showSettingView,

@@ -1,0 +1,1 @@
+module.exports = [1,["12FSfzN2BNao7e7x2blASR"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"blast_ball","rect":[3,0,97,100],"offset":[1.5,0],"originalSize":[100,100],"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

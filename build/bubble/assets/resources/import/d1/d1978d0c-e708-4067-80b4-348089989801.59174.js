@@ -1,0 +1,1 @@
+module.exports = [1,["c1lbZwhKFHe4m4fp6V3Tmb"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"avatar_frame","rect":[0,0,109,114],"offset":[0,0],"originalSize":[109,114],"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

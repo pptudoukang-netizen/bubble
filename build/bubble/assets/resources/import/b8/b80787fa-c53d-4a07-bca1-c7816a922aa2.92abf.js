@@ -1,0 +1,1 @@
+module.exports = [1,["b1/VZCPlZDLY/rdyoMIv9S"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"inventory_coin_bar","rect":[5,5,200,60],"offset":[0,0],"originalSize":[210,70],"capInsets":[40,26,40,26]}],[0],0,[0],[0],[0]];

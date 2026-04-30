@@ -1,0 +1,1 @@
+module.exports = [1,["a1N+iDEB9ON65QjdHYs8ml"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"inventory_icon_glow","rect":[8,8,108,96],"offset":[0,0],"originalSize":[124,112],"capInsets":[30,30,30,30]}],[0],0,[0],[0],[0]];

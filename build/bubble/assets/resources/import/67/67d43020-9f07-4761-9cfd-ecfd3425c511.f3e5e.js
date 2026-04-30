@@ -1,0 +1,1 @@
+module.exports = [1,["fe1scbk3NHA4LsucDJ0zp/"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"inventory_title_plate","rect":[14,14,352,94],"offset":[0,-2],"originalSize":[380,118],"capInsets":[60,40,60,40]}],[0],0,[0],[0],[0]];

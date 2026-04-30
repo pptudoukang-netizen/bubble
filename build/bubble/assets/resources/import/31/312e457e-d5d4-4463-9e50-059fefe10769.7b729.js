@@ -1,0 +1,1 @@
+module.exports = [1,["e8WlFU8rRDeZbCv/i2hzYc"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"aixing","rect":[0,0,148,142],"offset":[0,0],"originalSize":[148,142],"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

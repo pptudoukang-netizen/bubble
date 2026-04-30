@@ -1,0 +1,1 @@
+module.exports = [1,["4e3nGGIYRLYJyPgc7q5kjS"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"white_point","rect":[0,0,8,8],"offset":[0,0],"originalSize":[8,8],"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

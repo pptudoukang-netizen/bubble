@@ -1,0 +1,1 @@
+module.exports = [1,["1c26ZSWgRJ5YyCt+NZCRkO"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"inventory_sparkle","rect":[0,0,54,54],"offset":[0,0],"originalSize":[54,54],"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

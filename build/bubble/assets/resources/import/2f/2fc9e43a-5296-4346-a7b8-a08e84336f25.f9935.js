@@ -1,0 +1,1 @@
+module.exports = [1,0,0,[["cc.AudioClip",["_name","_native","duration"],0]],[[0,0,1,2,4]],[[0,"game_bg",".mp3",183.024],-1],0,0,[],[],[]];

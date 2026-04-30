@@ -1,0 +1,1 @@
+module.exports = [1,["cbOw9MuRRDzbIPQxc+A/NF"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"inventory_confirm_button","rect":[5,4,410,85],"offset":[0,0.5],"originalSize":[420,94],"capInsets":[70,38,70,38]}],[0],0,[0],[0],[0]];

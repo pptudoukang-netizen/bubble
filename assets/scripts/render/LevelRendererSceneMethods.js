@@ -192,6 +192,39 @@ LevelRenderer.prototype._renderHud = function (levelConfig, runtimeSnapshot) {
   }
 };
 
+LevelRenderer.prototype._renderJarScoreBoostTimer = function (runtimeSnapshot) {
+  if (!this.layers || !this.layers.hud) {
+    throw new Error("HUD layer is missing when rendering jar score boost timer.");
+  }
+
+  var gameViewNode = this.layers.hud.getChildByName("GameView");
+  if (!gameViewNode || !gameViewNode.isValid) {
+    throw new Error("GameView node is missing when rendering jar score boost timer.");
+  }
+
+  var timerNode = gameViewNode.getChildByName("timer");
+  if (!timerNode || !timerNode.isValid) {
+    throw new Error("GameView.timer node is missing.");
+  }
+
+  var timerLabel = timerNode.getComponent(cc.Label);
+  if (!timerLabel) {
+    throw new Error("GameView.timer label component is missing.");
+  }
+
+  var boostActive = !!(runtimeSnapshot && runtimeSnapshot.jarScoreBoostActive);
+  var remainingMs = Math.max(0, Math.floor(Number(runtimeSnapshot && runtimeSnapshot.jarScoreBoostRemainingMs) || 0));
+  if (!boostActive) {
+    timerNode.active = false;
+    timerLabel.string = "0";
+    return;
+  }
+
+  var remainingSeconds = Math.max(1, Math.ceil(remainingMs / 1000));
+  timerNode.active = true;
+  timerLabel.string = String(remainingSeconds);
+};
+
 LevelRenderer.prototype._getMountedHudPanel = function () {
   if (!this.layers || !this.layers.hud) {
     return null;

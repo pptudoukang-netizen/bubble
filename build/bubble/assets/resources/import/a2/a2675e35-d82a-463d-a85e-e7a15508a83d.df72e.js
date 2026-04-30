@@ -1,0 +1,1 @@
+module.exports = [1,["390nKIzORADZZxdCIwhBqD"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"hammer","rect":[1,1,122,125],"offset":[-1,-0.5],"originalSize":[126,126],"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

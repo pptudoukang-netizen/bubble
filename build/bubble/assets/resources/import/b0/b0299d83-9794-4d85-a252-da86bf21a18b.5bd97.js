@@ -1,0 +1,1 @@
+module.exports = [1,["37yDo9C3dLYIwpm4WD4s3V"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"ice_ball","rect":[0,0,200,200],"offset":[0,0],"originalSize":[200,200],"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

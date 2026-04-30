@@ -1,0 +1,1 @@
+module.exports = [1,["60PaaasKNBV69tvhppIbzV"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"treasure_chest","rect":[3,15,97,85],"offset":[1.5,-7.5],"originalSize":[100,100],"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

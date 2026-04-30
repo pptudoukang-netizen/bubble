@@ -1,0 +1,1 @@
+module.exports = [1,["76CaJ4p4JL0Yb7qHb6uEp/"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"stone_ball","rect":[0,0,72,72],"offset":[0,0],"originalSize":[72,72],"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

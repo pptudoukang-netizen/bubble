@@ -1,0 +1,1 @@
+module.exports = [1,["a6h90FJoZDkYWbnYJRLFWX"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"popular_badge","rect":[0,0,131,119],"offset":[0,0],"originalSize":[131,119],"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

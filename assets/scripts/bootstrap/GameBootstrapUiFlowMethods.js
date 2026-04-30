@@ -1,4 +1,4 @@
-﻿"use strict";
+"use strict";
 
 var DebugFlags = require("../utils/DebugFlags");
 var Logger = require("../utils/Logger");
@@ -11,6 +11,7 @@ var BundleLoader = require("../utils/BundleLoader");
 var DailySignInConfig = require("../config/DailySignInConfig");
 var LeaderboardStore = require("../utils/LeaderboardStore");
 var RankingViewController = require("../ui/RankingViewController");
+var GameCircleWelfareViewController = require("../ui/GameCircleWelfareViewController");
 
 var SETTING_VOLUME_STEP = 0.1;
 var SETTING_STATUS_X_ENABLED = -18;
@@ -18,6 +19,8 @@ var SETTING_STATUS_X_DISABLED = 18;
 var SETTING_VOLUME_ICON_OPEN_PATH = "image/setting/volume_open";
 var SETTING_VOLUME_ICON_CLOSE_PATH = "image/setting/volume_close";
 var RANKING_VIEW_PREFAB_PATH = "prefabs/ui/RankingView";
+var GAME_CIRCLE_WELFARE_VIEW_PREFAB_PATH = "prefabs/ui/GamingCircleView";
+var GAME_CIRCLE_ENTRY_ICON_PATH = "image/gaming_circle/jump";
 var MAX_LEVEL_MAP_PREFAB_INDEX = 10;
 var SIGN_IN_PREFAB_CANDIDATES = [
   "prefabs/ui/SignInView ",
@@ -29,6 +32,7 @@ var SIGN_IN_BUTTON_SPRITE_PATHS = {
 };
 var SIGN_IN_ITEM_ICON_PATHS = {
   coin: "image/props/coin",
+  stamina: "image/props/treasure_chest",
   swap_ball: "image/props/gift_pack",
   rainbow_ball: "image/props/rainbow_ball",
   blast_ball: "image/props/blast_ball",
@@ -41,6 +45,24 @@ var SIGN_IN_DAY_ITEM_ICON_PATHS = {
 };
 var SIGN_IN_ITEM_DISPLAY_NAMES = {
   coin: "金币",
+  stamina: "体力",
+  swap_ball: "换球",
+  rainbow_ball: "彩虹球",
+  blast_ball: "炸裂球",
+  barrier_hammer: "破障锤"
+};
+var AWARD_VIEW_PREFAB_PATH = "prefabs/ui/AwardView";
+var AWARD_ITEM_ICON_PATHS = {
+  coin: "image/props/coin",
+  stamina: "image/props/treasure_chest",
+  swap_ball: "image/props/gift_pack",
+  rainbow_ball: "image/props/rainbow_ball",
+  blast_ball: "image/props/blast_ball",
+  barrier_hammer: "image/props/barrier_hammer"
+};
+var AWARD_ITEM_DISPLAY_NAMES = {
+  coin: "金币",
+  stamina: "体力",
   swap_ball: "换球",
   rainbow_ball: "彩虹球",
   blast_ball: "炸裂球",
@@ -51,6 +73,7 @@ var SIGN_IN_STATUS_TEXT = {
   claimable: "可领",
   locked: "未领"
 };
+var hasOwn = Object.prototype.hasOwnProperty;
 
 function formatRewardItems(items) {
   return (Array.isArray(items) ? items : []).map(function (item) {
@@ -71,6 +94,18 @@ function showStatusAndTip(host, message) {
   }
 }
 
+function hideGameCircleWelfareViewNode(host) {
+  if (!host) {
+    return;
+  }
+  if (host.gameCircleButtonAdapter && typeof host.gameCircleButtonAdapter.hideAllButtons === "function") {
+    host.gameCircleButtonAdapter.hideAllButtons();
+  }
+  if (host._gameCircleWelfareViewNode && cc.isValid(host._gameCircleWelfareViewNode)) {
+    host._gameCircleWelfareViewNode.active = false;
+  }
+}
+
 function resolveStarChestFailMessage(reason, summary) {
   if (reason === "STAR_CHEST_DISABLED") {
     return "星星宝箱暂未开放";
@@ -84,6 +119,56 @@ function resolveStarChestFailMessage(reason, summary) {
     return "当前没有可领取奖励";
   }
   return "领取失败，请重试";
+}
+
+function resolveGameCircleFailMessage(error) {
+  var message = error && error.message ? error.message : String(error);
+  if (message === "GAME_CIRCLE_DATA_NOT_REFRESHED") {
+    return "请先刷新游戏圈进度";
+  }
+  if (message === "GAME_CIRCLE_TASK_NOT_COMPLETE") {
+    return "任务尚未完成";
+  }
+  if (message === "GAME_CIRCLE_TASK_ALREADY_CLAIMED") {
+    return "奖励已领取";
+  }
+  if (message.indexOf("wx.getGameClubData is unavailable") >= 0) {
+    return "游戏圈数据仅微信小游戏环境可刷新";
+  }
+  if (message.indexOf("wx.createGameClubButton is unavailable") >= 0) {
+    return "游戏圈入口仅微信小游戏环境可用";
+  }
+  return "游戏圈福利操作失败，请重试";
+}
+
+function normalizeAwardPopupItems(items) {
+  if (!Array.isArray(items) || items.length === 0) {
+    throw new Error("Award popup requires non-empty reward items.");
+  }
+
+  return items.map(function (item, index) {
+    if (!item || typeof item !== "object") {
+      throw new Error("Invalid reward item at index " + index + ".");
+    }
+
+    if (typeof item.id !== "string" || !item.id) {
+      throw new Error("Reward item id is required at index " + index + ".");
+    }
+
+    if (!hasOwn.call(AWARD_ITEM_DISPLAY_NAMES, item.id)) {
+      throw new Error("Unsupported reward item id: " + item.id);
+    }
+
+    var count = Number(item.count);
+    if (!Number.isInteger(count) || count <= 0) {
+      throw new Error("Reward item count must be a positive integer for id: " + item.id);
+    }
+
+    return {
+      id: item.id,
+      count: count
+    };
+  });
 }
 
 module.exports = {
@@ -260,6 +345,9 @@ module.exports = {
     }
     if (typeof this._updateStarChestEntryState === "function") {
       this._updateStarChestEntryState();
+    }
+    if (typeof this._updateGameCircleEntryState === "function") {
+      this._updateGameCircleEntryState();
     }
   },
 
@@ -596,6 +684,7 @@ module.exports = {
     if (options.markPopupShown !== false) {
       this._markSignInPopupShown(options.now || new Date());
     }
+    this._hideAwardView();
 
     this._ensureSignInViewPrefab().then(function (prefab) {
       if (!prefab) {
@@ -632,6 +721,180 @@ module.exports = {
       return;
     }
     this._signInViewNode.active = false;
+  },
+
+  _ensureAwardViewPrefab: function () {
+    if (this._awardViewPrefab) {
+      return Promise.resolve(this._awardViewPrefab);
+    }
+
+    return this._loadPrefab(AWARD_VIEW_PREFAB_PATH).then(function (prefab) {
+      if (!prefab) {
+        throw new Error("AwardView prefab load returned empty.");
+      }
+      this._awardViewPrefab = prefab;
+      return prefab;
+    }.bind(this));
+  },
+
+  _ensureAwardItemIconSpriteFrame: function (itemId) {
+    if (!hasOwn.call(AWARD_ITEM_ICON_PATHS, itemId)) {
+      throw new Error("Unsupported award icon item id: " + itemId);
+    }
+
+    this._awardItemIconSpriteFrameCache = this._awardItemIconSpriteFrameCache || {};
+    if (this._awardItemIconSpriteFrameCache[itemId]) {
+      return Promise.resolve(this._awardItemIconSpriteFrameCache[itemId]);
+    }
+
+    var path = AWARD_ITEM_ICON_PATHS[itemId];
+    return new Promise(function (resolve, reject) {
+      BundleLoader.loadRes(path, cc.SpriteFrame, function (error, spriteFrame) {
+        if (error) {
+          reject(new Error("Load award icon failed: " + path + ", " + (error.message || error)));
+          return;
+        }
+        if (!spriteFrame) {
+          reject(new Error("Award icon sprite frame is empty: " + path));
+          return;
+        }
+
+        this._awardItemIconSpriteFrameCache[itemId] = spriteFrame;
+        resolve(spriteFrame);
+      }.bind(this));
+    }.bind(this));
+  },
+
+  _resolveAwardViewNodes: function (awardViewNode) {
+    if (!awardViewNode || !awardViewNode.isValid) {
+      throw new Error("AwardView node is invalid.");
+    }
+
+    var panelNode = this._findNodeByNameRecursive(awardViewNode, "Panel");
+    var maskNode = this._findNodeByNameRecursive(awardViewNode, "mask");
+    var closeButtonNode = this._findNodeByNameRecursive(awardViewNode, "btn_close");
+    var confirmButtonNode = this._findNodeByNameRecursive(awardViewNode, "sure_btn");
+    var awardListNode = this._findNodeByNameRecursive(awardViewNode, "award_list");
+    var itemTemplateNode = awardListNode ? awardListNode.getChildByName("award_item") : null;
+    var layout = awardListNode ? awardListNode.getComponent(cc.Layout) : null;
+
+    if (!panelNode || !maskNode || !closeButtonNode || !confirmButtonNode || !awardListNode || !itemTemplateNode || !layout) {
+      throw new Error("AwardView prefab structure is incomplete.");
+    }
+
+    return {
+      panelNode: panelNode,
+      maskNode: maskNode,
+      closeButtonNode: closeButtonNode,
+      confirmButtonNode: confirmButtonNode,
+      awardListNode: awardListNode,
+      itemTemplateNode: itemTemplateNode,
+      listLayout: layout
+    };
+  },
+
+  _bindAwardViewActions: function (awardViewNode) {
+    var nodes = this._resolveAwardViewNodes(awardViewNode);
+    this._bindNodeTapOnce(nodes.closeButtonNode, function () {
+      this._playSfx("uiClick");
+      this._hideAwardView();
+    }.bind(this));
+    this._bindNodeTapOnce(nodes.maskNode, function () {
+      this._playSfx("uiClick");
+      this._hideAwardView();
+    }.bind(this));
+    this._bindNodeTapOnce(nodes.confirmButtonNode, function () {
+      this._playSfx("uiClick");
+      this._hideAwardView();
+    }.bind(this));
+  },
+
+  _renderAwardView: function (rewardItems) {
+    var normalizedItems = normalizeAwardPopupItems(rewardItems);
+    var nodes = this._resolveAwardViewNodes(this._awardViewNode);
+    var awardListNode = nodes.awardListNode;
+    var itemTemplateNode = nodes.itemTemplateNode;
+
+    for (var childIndex = awardListNode.children.length - 1; childIndex >= 0; childIndex -= 1) {
+      var child = awardListNode.children[childIndex];
+      if (!child || !child.isValid || child === itemTemplateNode) {
+        continue;
+      }
+      child.destroy();
+    }
+
+    var iconTasks = [];
+    for (var i = 0; i < normalizedItems.length; i += 1) {
+      var rewardItem = normalizedItems[i];
+      var itemNode = i === 0 ? itemTemplateNode : cc.instantiate(itemTemplateNode);
+      if (i > 0) {
+        itemNode.parent = awardListNode;
+      }
+      itemNode.active = true;
+
+      var iconNode = itemNode.getChildByName("icon");
+      var iconSprite = iconNode ? iconNode.getComponent(cc.Sprite) : null;
+      var nameNode = itemNode.getChildByName("name");
+      var nameLabel = nameNode ? nameNode.getComponent(cc.Label) : null;
+      var numNode = itemNode.getChildByName("num");
+      var numLabel = numNode ? numNode.getComponent(cc.Label) : null;
+      if (!iconSprite || !nameLabel || !numLabel) {
+        throw new Error("Award item node structure is incomplete.");
+      }
+
+      nameLabel.string = AWARD_ITEM_DISPLAY_NAMES[rewardItem.id];
+      numLabel.string = "x" + rewardItem.count;
+
+      (function (targetSprite, itemId) {
+        iconTasks.push(this._ensureAwardItemIconSpriteFrame(itemId).then(function (spriteFrame) {
+          if (!targetSprite || !targetSprite.node || !targetSprite.node.isValid) {
+            throw new Error("Award icon node invalid while rendering.");
+          }
+          targetSprite.spriteFrame = spriteFrame;
+        }));
+      }.bind(this))(iconSprite, rewardItem.id);
+    }
+
+    nodes.listLayout.updateLayout();
+    return Promise.all(iconTasks);
+  },
+
+  _showAwardViewForRewardItems: function (rewardItems) {
+    var normalizedItems = normalizeAwardPopupItems(rewardItems);
+    return this._ensureAwardViewPrefab().then(function (prefab) {
+      var awardViewNode = this._awardViewNode;
+      if (!awardViewNode || !cc.isValid(awardViewNode)) {
+        awardViewNode = cc.instantiate(prefab);
+        if (!awardViewNode || !awardViewNode.isValid) {
+          throw new Error("Create AwardView node failed.");
+        }
+        awardViewNode.parent = this.node;
+        awardViewNode.zIndex = 360;
+        awardViewNode.setPosition(0, 0);
+        this._awardViewNode = awardViewNode;
+        this._bindAwardViewActions(awardViewNode);
+      }
+
+      awardViewNode.active = true;
+      return this._renderAwardView(normalizedItems);
+    }.bind(this));
+  },
+
+  _hideAwardView: function () {
+    if (!this._awardViewNode || !this._awardViewNode.isValid) {
+      return;
+    }
+    this._awardViewNode.active = false;
+    if (
+      this._gameCircleWelfareViewNode &&
+      cc.isValid(this._gameCircleWelfareViewNode) &&
+      this._gameCircleWelfareViewNode.active &&
+      this._gameCircleWelfareViewController
+    ) {
+      this._renderGameCircleWelfareView().catch(function (error) {
+        Logger.error("Restore game circle welfare view after award close failed", error && error.message ? error.message : error);
+      });
+    }
   },
 
   _grantSignInRewardItems: function (rewardItems) {
@@ -699,9 +962,10 @@ module.exports = {
     var summary = summaryTexts.length > 0 ? summaryTexts.join("，") : "奖励已发放";
     var successMessage = "签到成功：" + summary;
     this._setStatus(successMessage);
-    if (this.tipsPresenter && typeof this.tipsPresenter.showText === "function") {
-      this.tipsPresenter.showText(successMessage);
-    }
+    this._showAwardViewForRewardItems(rewardItems).catch(function (error) {
+      Logger.error("Show sign-in award view failed", error && error.message ? error.message : error);
+      this._setStatus("签到奖励弹窗加载失败");
+    }.bind(this));
   },
 
   _maybeAutoShowSignInView: function () {
@@ -769,8 +1033,10 @@ module.exports = {
   },
 
   _showRankingView: function () {
+    this._hideAwardView();
     this._hideSettingView();
     this._hideSignInView();
+    hideGameCircleWelfareViewNode(this);
     if (typeof this._hideInventoryView === "function") {
       this._hideInventoryView();
     }
@@ -903,6 +1169,7 @@ module.exports = {
     this._hideSettingView();
     this._hideRankingView();
     this._hideSignInView();
+    hideGameCircleWelfareViewNode(this);
     if (typeof this._hideInventoryView === "function") {
       this._hideInventoryView();
     }
@@ -930,7 +1197,377 @@ module.exports = {
 
     var rewardText = formatRewardItems(openResult.rewardItems);
     var message = "\u83b7\u5f97\uff1a" + rewardText;
-    showStatusAndTip(this, message);
+    this._setStatus(message);
+    this._showAwardViewForRewardItems(openResult.rewardItems).catch(function (error) {
+      Logger.error("Show star chest award view failed", error && error.message ? error.message : error);
+      this._setStatus("宝箱奖励弹窗加载失败");
+    }.bind(this));
+  },
+
+  _ensureGameCircleEntryRedDot: function (entryNode) {
+    if (!entryNode || !entryNode.isValid) {
+      return null;
+    }
+
+    var redDotNode = entryNode.getChildByName("game_circle_red_dot");
+    if (redDotNode && redDotNode.isValid) {
+      return redDotNode;
+    }
+
+    redDotNode = new cc.Node("game_circle_red_dot");
+    redDotNode.parent = entryNode;
+    redDotNode.zIndex = 30;
+    redDotNode.setPosition((entryNode.width * 0.5) - 12, (entryNode.height * 0.5) - 12);
+    var graphics = redDotNode.addComponent(cc.Graphics);
+    graphics.clear();
+    graphics.fillColor = cc.color(255, 58, 58, 255);
+    graphics.circle(0, 0, 10);
+    graphics.fill();
+    return redDotNode;
+  },
+
+  _ensureGameCircleEntrySpriteFrame: function () {
+    if (this._gameCircleEntrySpriteFrame) {
+      return Promise.resolve(this._gameCircleEntrySpriteFrame);
+    }
+    if (this._gameCircleEntrySpriteFramePromise) {
+      return this._gameCircleEntrySpriteFramePromise;
+    }
+
+    this._gameCircleEntrySpriteFramePromise = new Promise(function (resolve, reject) {
+      BundleLoader.loadRes(GAME_CIRCLE_ENTRY_ICON_PATH, cc.SpriteFrame, function (error, spriteFrame) {
+        if (error) {
+          reject(new Error("Load game circle entry icon failed: " + GAME_CIRCLE_ENTRY_ICON_PATH + ", " + error.message));
+          return;
+        }
+        if (!spriteFrame) {
+          reject(new Error("Game circle entry icon sprite frame is empty."));
+          return;
+        }
+        this._gameCircleEntrySpriteFrame = spriteFrame;
+        this._gameCircleEntrySpriteFramePromise = null;
+        resolve(spriteFrame);
+      }.bind(this));
+    }.bind(this)).catch(function (error) {
+      this._gameCircleEntrySpriteFramePromise = null;
+      throw error;
+    }.bind(this));
+
+    return this._gameCircleEntrySpriteFramePromise;
+  },
+
+  _ensureGameCircleEntryButton: function () {
+    if (!this._levelSelectNode || !cc.isValid(this._levelSelectNode)) {
+      return null;
+    }
+    if (!this.gameCircleWelfareConfig || this.gameCircleWelfareConfig.enabled !== true) {
+      return null;
+    }
+
+    var bottomLayerNode = this._levelSelectNode.getChildByName("bottom_layer");
+    if (!bottomLayerNode || !bottomLayerNode.isValid) {
+      throw new Error("LevelView prefab is missing bottom_layer for game_circle_btn.");
+    }
+
+    var entryNode = bottomLayerNode.getChildByName("game_circle_btn");
+    if (!entryNode || !entryNode.isValid) {
+      throw new Error("LevelView prefab is missing required game_circle_btn.");
+    }
+    entryNode.active = true;
+
+    var sprite = entryNode.getComponent(cc.Sprite);
+    if (!sprite) {
+      throw new Error("game_circle_btn is missing cc.Sprite.");
+    }
+    var button = entryNode.getComponent(cc.Button);
+    if (!button) {
+      throw new Error("game_circle_btn is missing cc.Button.");
+    }
+    button.interactable = true;
+    button.enableAutoGrayEffect = false;
+
+    this._bindNodeTapOnce(entryNode, function () {
+      this._playSfx("uiClick");
+      this._showGameCircleWelfareView();
+    }.bind(this));
+
+    this._ensureGameCircleEntrySpriteFrame().then(function (spriteFrame) {
+      if (!entryNode || !entryNode.isValid) {
+        throw new Error("game_circle_btn became invalid while loading icon.");
+      }
+      sprite.spriteFrame = spriteFrame;
+      if (cc.Sprite && cc.Sprite.SizeMode && cc.Sprite.SizeMode.CUSTOM !== undefined) {
+        sprite.sizeMode = cc.Sprite.SizeMode.CUSTOM;
+      }
+    }).catch(function (error) {
+      Logger.error("Game circle entry icon load failed", error && error.message ? error.message : error);
+      showStatusAndTip(this, "游戏圈入口图标加载失败");
+    }.bind(this));
+
+    this._updateGameCircleEntryState();
+    return entryNode;
+  },
+
+  _updateGameCircleEntryState: function () {
+    if (!this._levelSelectNode || !cc.isValid(this._levelSelectNode)) {
+      return;
+    }
+    if (!this.gameCircleWelfareService || typeof this.gameCircleWelfareService.getSummary !== "function") {
+      return;
+    }
+
+    var bottomLayerNode = this._levelSelectNode.getChildByName("bottom_layer");
+    var entryNode = bottomLayerNode ? bottomLayerNode.getChildByName("game_circle_btn") : null;
+    if (!entryNode || !entryNode.isValid) {
+      return;
+    }
+
+    var summary = this.gameCircleWelfareService.getSummary(new Date());
+    var redDotNode = this._ensureGameCircleEntryRedDot(entryNode);
+    if (redDotNode) {
+      redDotNode.active = summary.hasClaimableReward === true;
+    }
+  },
+
+  _ensureGameCircleWelfareViewPrefab: function () {
+    if (this._gameCircleWelfareViewPrefab) {
+      return Promise.resolve(this._gameCircleWelfareViewPrefab);
+    }
+
+    return this._loadPrefab(GAME_CIRCLE_WELFARE_VIEW_PREFAB_PATH).then(function (prefab) {
+      if (!prefab) {
+        throw new Error("GamingCircleView prefab load returned empty.");
+      }
+      this._gameCircleWelfareViewPrefab = prefab;
+      return prefab;
+    }.bind(this));
+  },
+
+  _showGameCircleWelfareView: function () {
+    if (!this.isSelectingLevel || this.isRestarting) {
+      return;
+    }
+    if (!this.gameCircleWelfareService || typeof this.gameCircleWelfareService.getSummary !== "function") {
+      showStatusAndTip(this, "游戏圈福利未就绪");
+      return;
+    }
+
+    this._hideAwardView();
+    this._hideSettingView();
+    this._hideRankingView();
+    this._hideSignInView();
+    hideGameCircleWelfareViewNode(this);
+    if (typeof this._hideInventoryView === "function") {
+      this._hideInventoryView();
+    }
+
+    this._trackTelemetry("game_circle_welfare_open", {
+      activity_id: this.gameCircleWelfareConfig.activityId
+    });
+
+    this._ensureGameCircleWelfareViewPrefab().then(function (prefab) {
+      var viewNode = this._gameCircleWelfareViewNode;
+      if (!viewNode || !cc.isValid(viewNode)) {
+        viewNode = cc.instantiate(prefab);
+        if (!viewNode || !viewNode.isValid) {
+          throw new Error("Create GamingCircleView node failed.");
+        }
+        viewNode.parent = this.node;
+        viewNode.zIndex = 350;
+        viewNode.setPosition(0, 0);
+        this._gameCircleWelfareViewNode = viewNode;
+        this._gameCircleWelfareViewController = new GameCircleWelfareViewController({
+          node: viewNode,
+          onClose: function () {
+            this._playSfx("uiClick");
+            hideGameCircleWelfareViewNode(this);
+          }.bind(this),
+          onRefresh: function () {
+            this._playSfx("uiClick");
+            this._refreshGameCircleWelfareProgress();
+          }.bind(this),
+          onClaim: function (taskId) {
+            this._playSfx("uiClick");
+            this._claimGameCircleWelfareTask(taskId);
+          }.bind(this),
+          onOpenGameCircle: function () {
+            this._playSfx("uiClick");
+            this._openGameCircleFromWelfare("panel_cocos_button");
+          }.bind(this),
+          onSyncNativeButtons: function (buttonState) {
+            this._syncGameCircleNativeButtons(buttonState);
+          }.bind(this)
+        });
+      }
+
+      viewNode.active = true;
+      return this._renderGameCircleWelfareView();
+    }.bind(this)).catch(function (error) {
+      Logger.error("Show game circle welfare view failed", error && error.message ? error.message : error);
+      showStatusAndTip(this, "游戏圈福利加载失败");
+    }.bind(this));
+  },
+
+  _hideGameCircleWelfareView: function () {
+    if (this.gameCircleButtonAdapter && typeof this.gameCircleButtonAdapter.hideAllButtons === "function") {
+      this.gameCircleButtonAdapter.hideAllButtons();
+    }
+    if (!this._gameCircleWelfareViewNode || !cc.isValid(this._gameCircleWelfareViewNode)) {
+      return;
+    }
+    this._gameCircleWelfareViewNode.active = false;
+  },
+
+  _renderGameCircleWelfareView: function () {
+    if (!this._gameCircleWelfareViewController || !this.gameCircleWelfareService) {
+      return Promise.reject(new Error("Game circle welfare view controller is not ready."));
+    }
+    if (this.gameCircleButtonAdapter && typeof this.gameCircleButtonAdapter.hideAllButtons === "function") {
+      this.gameCircleButtonAdapter.hideAllButtons();
+    }
+    var summary = this.gameCircleWelfareService.getSummary(new Date());
+    this._updateGameCircleEntryState();
+    return this._gameCircleWelfareViewController.render(summary).catch(function (error) {
+      Logger.error("Render game circle welfare view failed", error && error.message ? error.message : error);
+      showStatusAndTip(this, "游戏圈福利刷新失败");
+      throw error;
+    }.bind(this));
+  },
+
+  _refreshGameCircleWelfareProgress: function () {
+    if (!this.gameCircleWelfareService || typeof this.gameCircleWelfareService.refreshMetrics !== "function") {
+      showStatusAndTip(this, "游戏圈福利未就绪");
+      return;
+    }
+    this.gameCircleWelfareService.refreshMetrics(new Date()).then(function () {
+      this._updateGameCircleEntryState();
+      return this._renderGameCircleWelfareView();
+    }.bind(this)).then(function () {
+      showStatusAndTip(this, "游戏圈进度已刷新");
+    }.bind(this)).catch(function (error) {
+      Logger.error("Refresh game circle welfare progress failed", error && error.message ? error.message : error);
+      showStatusAndTip(this, resolveGameCircleFailMessage(error));
+    }.bind(this));
+  },
+
+  _claimGameCircleWelfareTask: function (taskId) {
+    if (!this.gameCircleWelfareService || typeof this.gameCircleWelfareService.claimTask !== "function") {
+      showStatusAndTip(this, "游戏圈福利未就绪");
+      return;
+    }
+    try {
+      var claimResult = this.gameCircleWelfareService.claimTask(taskId, new Date());
+      this._refreshPlayerResources();
+      if (typeof this._refreshPlayerInventory === "function") {
+        this._refreshPlayerInventory();
+      }
+      this._updateLevelSelectTopStatus();
+      if (typeof this._renderInventoryView === "function") {
+        this._renderInventoryView();
+      }
+      this._updateGameCircleEntryState();
+      this._renderGameCircleWelfareView();
+      if (this.gameCircleButtonAdapter && typeof this.gameCircleButtonAdapter.hideAllButtons === "function") {
+        this.gameCircleButtonAdapter.hideAllButtons();
+      }
+      showStatusAndTip(this, "游戏圈奖励领取成功");
+      this._showAwardViewForRewardItems(claimResult.rewardItems).catch(function (error) {
+        Logger.error("Show game circle award view failed", error && error.message ? error.message : error);
+        showStatusAndTip(this, "游戏圈奖励弹窗加载失败");
+      }.bind(this));
+    } catch (error) {
+      this._trackTelemetry("game_circle_reward_claim_fail", {
+        activity_id: this.gameCircleWelfareConfig.activityId,
+        task_id: taskId,
+        reason: error && error.message ? error.message : String(error)
+      });
+      Logger.error("Claim game circle welfare task failed", error && error.message ? error.message : error);
+      showStatusAndTip(this, resolveGameCircleFailMessage(error));
+    }
+  },
+
+  _resolveNativeButtonRectForNode: function (node) {
+    if (!node || !node.isValid) {
+      throw new Error("Cannot resolve native button rect from invalid node.");
+    }
+    if (typeof node.getBoundingBoxToWorld !== "function") {
+      throw new Error("Node cannot provide world bounding box for native button.");
+    }
+    var box = node.getBoundingBoxToWorld();
+    var winSize = cc.winSize;
+    var frameSize = cc.view.getFrameSize();
+    if (!winSize || !frameSize || winSize.width <= 0 || winSize.height <= 0) {
+      throw new Error("Invalid view size when resolving native game circle button rect.");
+    }
+    return {
+      left: box.x / winSize.width * frameSize.width,
+      top: (winSize.height - box.y - box.height) / winSize.height * frameSize.height,
+      width: box.width / winSize.width * frameSize.width,
+      height: box.height / winSize.height * frameSize.height
+    };
+  },
+
+  _syncGameCircleNativeButtons: function (buttonState) {
+    if (!this.gameCircleButtonAdapter || typeof this.gameCircleButtonAdapter.hideAllButtons !== "function") {
+      return;
+    }
+    this.gameCircleButtonAdapter.hideAllButtons();
+    if (!this._gameCircleWelfareViewNode || !cc.isValid(this._gameCircleWelfareViewNode) || !this._gameCircleWelfareViewNode.active) {
+      return;
+    }
+    if (!this.gameCircleButtonAdapter.isSupported()) {
+      return;
+    }
+
+    var entry = this.gameCircleWelfareConfig.entry;
+    if (buttonState && buttonState.circleButtonNode && buttonState.circleButtonNode.isValid) {
+      this.gameCircleButtonAdapter.showButton(
+        "panel_entry",
+        this._resolveNativeButtonRectForNode(buttonState.circleButtonNode),
+        entry,
+        function () {
+          this._trackTelemetry("game_circle_entry_click", {
+            activity_id: this.gameCircleWelfareConfig.activityId,
+            source: "panel_entry",
+            openlink: entry.openlink
+          });
+        }.bind(this)
+      );
+    }
+
+    var taskButtons = buttonState && Array.isArray(buttonState.taskButtons)
+      ? buttonState.taskButtons
+      : [];
+    taskButtons.forEach(function (taskButton) {
+      if (!taskButton || taskButton.action !== "open" || !taskButton.goButtonNode || !taskButton.goButtonNode.isValid) {
+        return;
+      }
+      this.gameCircleButtonAdapter.showButton(
+        "task_" + taskButton.taskId,
+        this._resolveNativeButtonRectForNode(taskButton.goButtonNode),
+        entry,
+        function () {
+          this._trackTelemetry("game_circle_entry_click", {
+            activity_id: this.gameCircleWelfareConfig.activityId,
+            source: "task_" + taskButton.taskId,
+            openlink: entry.openlink
+          });
+        }.bind(this)
+      );
+    }, this);
+  },
+
+  _openGameCircleFromWelfare: function (source) {
+    if (!this.gameCircleButtonAdapter || !this.gameCircleButtonAdapter.isSupported()) {
+      showStatusAndTip(this, "游戏圈入口仅微信小游戏环境可用");
+      return;
+    }
+    this._trackTelemetry("game_circle_entry_click", {
+      activity_id: this.gameCircleWelfareConfig.activityId,
+      source: source,
+      openlink: this.gameCircleWelfareConfig.entry.openlink
+    });
+    showStatusAndTip(this, "请点击游戏圈入口进入");
   },
 
   _onLevelSelectSettingTap: function () {
@@ -954,8 +1591,10 @@ module.exports = {
   },
 
   _showSettingView: function () {
+    this._hideAwardView();
     this._hideRankingView();
     this._hideSignInView();
+    hideGameCircleWelfareViewNode(this);
     if (typeof this._hideInventoryView === "function") {
       this._hideInventoryView();
     }
@@ -1444,8 +2083,10 @@ module.exports = {
 
   _loadLevelById: function (levelId, successLogPrefix, failStatusMessage) {
     this._persistRouteEditorIfDirty();
+    this._hideAwardView();
     this._hideSettingView();
     this._hideRankingView();
+    hideGameCircleWelfareViewNode(this);
     if (typeof this._clearPendingLevelEntry === "function") {
       this._clearPendingLevelEntry();
     }
@@ -1948,8 +2589,10 @@ module.exports = {
     }
 
     this._persistRouteEditorIfDirty();
+    this._hideAwardView();
     this._hideSettingView();
     this._hideRankingView();
+    hideGameCircleWelfareViewNode(this);
     if (typeof this._hideInventoryView === "function") {
       this._hideInventoryView();
     }
@@ -1995,6 +2638,9 @@ module.exports = {
         this._updateInventoryEntryState();
       }
       this._updateStarChestEntryState();
+      if (typeof this._ensureGameCircleEntryButton === "function") {
+        this._ensureGameCircleEntryButton();
+      }
       this._maybeAutoShowSignInView();
       this._playLevelSelectBackgroundMusic();
       this._setStatus("Please select a level");
@@ -2054,8 +2700,10 @@ module.exports = {
   },
 
   _hideLevelSelectView: function () {
+    this._hideAwardView();
     this._hideSettingView();
     this._hideRankingView();
+    hideGameCircleWelfareViewNode(this);
     if (typeof this._clearPendingLevelEntry === "function") {
       this._clearPendingLevelEntry();
     }
@@ -2281,6 +2929,9 @@ module.exports = {
       this._updateInventoryEntryState();
     }
     this._updateStarChestEntryState();
+    if (typeof this._ensureGameCircleEntryButton === "function") {
+      this._ensureGameCircleEntryButton();
+    }
   },
 
   _onLevelSelectMapIndexChange: function (nextMapIndex) {

@@ -1,0 +1,1 @@
+module.exports = [1,["593DK5XaVEvb6uH6+g7GXL"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"btn_recover","rect":[0,0,203,76],"offset":[0,0],"originalSize":[203,76],"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

@@ -660,6 +660,7 @@ LevelRenderer.prototype.renderLevel = function (levelConfig, runtimeSnapshot) {
     this._mountGameViewScaffold();
     this._renderBackground();
     this._renderHud(levelConfig, runtimeSnapshot);
+    this._renderJarScoreBoostTimer(runtimeSnapshot);
     this._renderBottomPanel(runtimeSnapshot);
     this._renderBoard(runtimeSnapshot.board);
     this._renderBottomJars(levelConfig, runtimeSnapshot);
@@ -688,6 +689,7 @@ LevelRenderer.prototype.refreshRuntime = function (levelConfig, runtimeSnapshot)
     this._renderHud(levelConfig, runtimeSnapshot);
     this.lastHudRenderKey = nextHudKey;
   }
+  this._renderJarScoreBoostTimer(runtimeSnapshot);
 
   this._renderBottomPanel(runtimeSnapshot);
   var nextJarKey = buildJarRenderKey(levelConfig, runtimeSnapshot);
