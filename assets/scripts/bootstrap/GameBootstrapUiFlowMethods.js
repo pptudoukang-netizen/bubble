@@ -1,4 +1,4 @@
-"use strict";
+﻿"use strict";
 
 var DebugFlags = require("../utils/DebugFlags");
 var Logger = require("../utils/Logger");
@@ -20,7 +20,6 @@ var SETTING_VOLUME_ICON_OPEN_PATH = "image/setting/volume_open";
 var SETTING_VOLUME_ICON_CLOSE_PATH = "image/setting/volume_close";
 var RANKING_VIEW_PREFAB_PATH = "prefabs/ui/RankingView";
 var GAME_CIRCLE_WELFARE_VIEW_PREFAB_PATH = "prefabs/ui/GamingCircleView";
-var GAME_CIRCLE_ENTRY_ICON_PATH = "image/gaming_circle/jump";
 var MAX_LEVEL_MAP_PREFAB_INDEX = 10;
 var SIGN_IN_PREFAB_CANDIDATES = [
   "prefabs/ui/SignInView ",
@@ -1226,36 +1225,6 @@ module.exports = {
     return redDotNode;
   },
 
-  _ensureGameCircleEntrySpriteFrame: function () {
-    if (this._gameCircleEntrySpriteFrame) {
-      return Promise.resolve(this._gameCircleEntrySpriteFrame);
-    }
-    if (this._gameCircleEntrySpriteFramePromise) {
-      return this._gameCircleEntrySpriteFramePromise;
-    }
-
-    this._gameCircleEntrySpriteFramePromise = new Promise(function (resolve, reject) {
-      BundleLoader.loadRes(GAME_CIRCLE_ENTRY_ICON_PATH, cc.SpriteFrame, function (error, spriteFrame) {
-        if (error) {
-          reject(new Error("Load game circle entry icon failed: " + GAME_CIRCLE_ENTRY_ICON_PATH + ", " + error.message));
-          return;
-        }
-        if (!spriteFrame) {
-          reject(new Error("Game circle entry icon sprite frame is empty."));
-          return;
-        }
-        this._gameCircleEntrySpriteFrame = spriteFrame;
-        this._gameCircleEntrySpriteFramePromise = null;
-        resolve(spriteFrame);
-      }.bind(this));
-    }.bind(this)).catch(function (error) {
-      this._gameCircleEntrySpriteFramePromise = null;
-      throw error;
-    }.bind(this));
-
-    return this._gameCircleEntrySpriteFramePromise;
-  },
-
   _ensureGameCircleEntryButton: function () {
     if (!this._levelSelectNode || !cc.isValid(this._levelSelectNode)) {
       return null;
@@ -1279,6 +1248,9 @@ module.exports = {
     if (!sprite) {
       throw new Error("game_circle_btn is missing cc.Sprite.");
     }
+    if (!sprite.spriteFrame) {
+      throw new Error("game_circle_btn is missing prefab spriteFrame.");
+    }
     var button = entryNode.getComponent(cc.Button);
     if (!button) {
       throw new Error("game_circle_btn is missing cc.Button.");
@@ -1289,19 +1261,6 @@ module.exports = {
     this._bindNodeTapOnce(entryNode, function () {
       this._playSfx("uiClick");
       this._showGameCircleWelfareView();
-    }.bind(this));
-
-    this._ensureGameCircleEntrySpriteFrame().then(function (spriteFrame) {
-      if (!entryNode || !entryNode.isValid) {
-        throw new Error("game_circle_btn became invalid while loading icon.");
-      }
-      sprite.spriteFrame = spriteFrame;
-      if (cc.Sprite && cc.Sprite.SizeMode && cc.Sprite.SizeMode.CUSTOM !== undefined) {
-        sprite.sizeMode = cc.Sprite.SizeMode.CUSTOM;
-      }
-    }).catch(function (error) {
-      Logger.error("Game circle entry icon load failed", error && error.message ? error.message : error);
-      showStatusAndTip(this, "游戏圈入口图标加载失败");
     }.bind(this));
 
     this._updateGameCircleEntryState();

@@ -91,9 +91,7 @@ function ensureDescription(config) {
     return;
   }
 
-  if (typeof config.description !== "string" || !config.description.trim()) {
-    config.description = DEFAULT_DESCRIPTION;
-  }
+  config.description = DEFAULT_DESCRIPTION;
 }
 
 function resolveOutputDir() {
