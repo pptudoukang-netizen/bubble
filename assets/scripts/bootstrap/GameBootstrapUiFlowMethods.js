@@ -12,6 +12,8 @@ var DailySignInConfig = require("../config/DailySignInConfig");
 var LeaderboardStore = require("../utils/LeaderboardStore");
 var RankingViewController = require("../ui/RankingViewController");
 var GameCircleWelfareViewController = require("../ui/GameCircleWelfareViewController");
+var ShopViewController = require("../ui/ShopViewController");
+var BuyViewController = require("../ui/BuyViewController");
 
 var SETTING_VOLUME_STEP = 0.1;
 var SETTING_STATUS_X_ENABLED = -18;
@@ -20,6 +22,8 @@ var SETTING_VOLUME_ICON_OPEN_PATH = "image/setting/volume_open";
 var SETTING_VOLUME_ICON_CLOSE_PATH = "image/setting/volume_close";
 var RANKING_VIEW_PREFAB_PATH = "prefabs/ui/RankingView";
 var GAME_CIRCLE_WELFARE_VIEW_PREFAB_PATH = "prefabs/ui/GamingCircleView";
+var SHOP_VIEW_PREFAB_PATH = "prefabs/ui/ShopView";
+var BUY_VIEW_PREFAB_PATH = "prefabs/ui/BuyView";
 var MAX_LEVEL_MAP_PREFAB_INDEX = 10;
 var SIGN_IN_PREFAB_CANDIDATES = [
   "prefabs/ui/SignInView ",
@@ -281,6 +285,84 @@ module.exports = {
     return Math.max(0, Math.floor(Number(this.playerResources && this.playerResources.coins) || 0));
   },
 
+  _spendCoinsForShop: function (amount, reason) {
+    var cost = Math.floor(Number(amount));
+    if (!Number.isInteger(cost) || cost <= 0) {
+      throw new Error("Shop coin spend amount must be a positive integer.");
+    }
+    if (reason !== "buy_powerup") {
+      throw new Error("Shop coin spend reason must be buy_powerup.");
+    }
+    this._refreshPlayerResources();
+    var currentCoins = Math.floor(Number(this.playerResources.coins));
+    if (!Number.isInteger(currentCoins) || currentCoins < 0) {
+      throw new Error("Player coin balance is invalid.");
+    }
+    if (currentCoins < cost) {
+      return {
+        accepted: false,
+        reason: "SHOP_COIN_NOT_ENOUGH"
+      };
+    }
+    this.playerResources.coins = currentCoins - cost;
+    this.playerResourceStore.save(this.playerResources);
+    this._updateLevelSelectTopStatus();
+    return {
+      accepted: true,
+      cost: cost,
+      coinBefore: currentCoins,
+      coinAfter: this.playerResources.coins
+    };
+  },
+
+  _refundCoinsForShop: function (amount, reason) {
+    var refund = Math.floor(Number(amount));
+    if (!Number.isInteger(refund) || refund <= 0) {
+      throw new Error("Shop coin refund amount must be a positive integer.");
+    }
+    if (reason !== "shop_purchase_rollback") {
+      throw new Error("Shop coin refund reason must be shop_purchase_rollback.");
+    }
+    this._refreshPlayerResources();
+    var currentCoins = Math.floor(Number(this.playerResources.coins));
+    if (!Number.isInteger(currentCoins) || currentCoins < 0) {
+      throw new Error("Player coin balance is invalid.");
+    }
+    this.playerResources.coins = currentCoins + refund;
+    this.playerResourceStore.save(this.playerResources);
+    this._updateLevelSelectTopStatus();
+    return {
+      accepted: true,
+      refund: refund,
+      coinBefore: currentCoins,
+      coinAfter: this.playerResources.coins
+    };
+  },
+
+  _addStaminaForShop: function (count, reason) {
+    var amount = Math.floor(Number(count));
+    if (!Number.isInteger(amount) || amount <= 0) {
+      throw new Error("Shop stamina grant count must be a positive integer.");
+    }
+    if (reason !== "shop_purchase") {
+      throw new Error("Shop stamina grant reason must be shop_purchase.");
+    }
+    this._refreshPlayerResources();
+    var currentStamina = Math.floor(Number(this.playerResources.stamina));
+    if (!Number.isInteger(currentStamina) || currentStamina < 0) {
+      throw new Error("Player stamina value is invalid.");
+    }
+    this.playerResources.stamina = currentStamina + amount;
+    this.playerResourceStore.save(this.playerResources);
+    this._updateLevelSelectTopStatus();
+    return {
+      accepted: true,
+      itemId: "stamina",
+      gained: amount,
+      total: this.playerResources.stamina
+    };
+  },
+
   _consumeStaminaForLevelEntry: function (onRecovered) {
     if (!this.playerResourceStore) {
       return true;
@@ -422,20 +504,24 @@ module.exports = {
       return;
     }
 
-    var topLayerNode = this._getLevelSelectTopLayerNode();
-    var goldInfoNode = topLayerNode ? topLayerNode.getChildByName("gold_info") : null;
-    if (!goldInfoNode || !goldInfoNode.isValid) {
-      return;
+    var bottomLayerNode = this._levelSelectNode.getChildByName("bottom_layer");
+    if (!bottomLayerNode || !bottomLayerNode.isValid) {
+      throw new Error("LevelView bottom_layer is required for sign-in entry.");
     }
 
-    this._bindNodeTapOnce(goldInfoNode, function () {
+    var signButtonNode = bottomLayerNode.getChildByName("sign_btn");
+    if (!signButtonNode || !signButtonNode.isValid) {
+      throw new Error("LevelView bottom_layer requires sign_btn.");
+    }
+
+    this._bindNodeTapOnce(signButtonNode, function () {
       this._playSfx("uiClick");
       this._showSignInView({
         markPopupShown: true
       });
     }.bind(this));
 
-    var redDotNode = this._ensureSignInEntryRedDot(goldInfoNode);
+    var redDotNode = this._ensureSignInEntryRedDot(signButtonNode);
     if (!redDotNode || !redDotNode.isValid) {
       return;
     }
@@ -684,6 +770,7 @@ module.exports = {
       this._markSignInPopupShown(options.now || new Date());
     }
     this._hideAwardView();
+    this._hideShopView();
 
     this._ensureSignInViewPrefab().then(function (prefab) {
       if (!prefab) {
@@ -1035,6 +1122,7 @@ module.exports = {
     this._hideAwardView();
     this._hideSettingView();
     this._hideSignInView();
+    this._hideShopView();
     hideGameCircleWelfareViewNode(this);
     if (typeof this._hideInventoryView === "function") {
       this._hideInventoryView();
@@ -1084,6 +1172,239 @@ module.exports = {
     this._rankingViewController.render(this._refreshLeaderboardEntries());
   },
 
+  _ensureShopViewPrefab: function () {
+    if (this._shopViewPrefab) {
+      return Promise.resolve(this._shopViewPrefab);
+    }
+
+    return this._loadPrefab(SHOP_VIEW_PREFAB_PATH).then(function (prefab) {
+      this._shopViewPrefab = prefab;
+      return prefab;
+    }.bind(this));
+  },
+
+  _ensureBuyViewPrefab: function () {
+    if (this._buyViewPrefab) {
+      return Promise.resolve(this._buyViewPrefab);
+    }
+
+    return this._loadPrefab(BUY_VIEW_PREFAB_PATH).then(function (prefab) {
+      this._buyViewPrefab = prefab;
+      return prefab;
+    }.bind(this));
+  },
+
+  _onLevelSelectShopTap: function () {
+    if (!this.isSelectingLevel || this.isRestarting) {
+      return;
+    }
+
+    this._playSfx("uiClick");
+    this._showShopView();
+  },
+
+  _showShopView: function () {
+    this._hideAwardView();
+    this._hideSettingView();
+    this._hideRankingView();
+    this._hideSignInView();
+    hideGameCircleWelfareViewNode(this);
+    if (typeof this._hideInventoryView === "function") {
+      this._hideInventoryView();
+    }
+
+    this._ensureShopViewPrefab().then(function (prefab) {
+      var shopNode = this._shopViewNode;
+      if (!shopNode || !cc.isValid(shopNode)) {
+        shopNode = cc.instantiate(prefab);
+        if (!shopNode) {
+          throw new Error("Instantiate ShopView prefab failed.");
+        }
+        shopNode.parent = this.node;
+        shopNode.setPosition(0, 0);
+        shopNode.zIndex = 335;
+        this._shopViewNode = shopNode;
+        this._shopViewController = new ShopViewController({
+          node: shopNode,
+          onClose: function () {
+            this._playSfx("uiClick");
+            this._hideShopView();
+          }.bind(this),
+          onSelectGoods: function (skuId) {
+            this._onShopGoodsTap(skuId);
+          }.bind(this)
+        });
+      }
+
+      shopNode.active = true;
+      if (this.telemetryService && typeof this.telemetryService.track === "function") {
+        this.telemetryService.track("shop_view_open", {});
+      }
+      return this._renderShopView();
+    }.bind(this)).catch(function (error) {
+      Logger.error("Show shop view failed", error && error.stack ? error.stack : error);
+      showStatusAndTip(this, "商城加载失败");
+    }.bind(this));
+  },
+
+  _hideShopView: function () {
+    this._hideBuyView();
+    if (!this._shopViewNode || !cc.isValid(this._shopViewNode)) {
+      return;
+    }
+    this._shopViewNode.active = false;
+  },
+
+  _buildShopPurchaseState: function () {
+    if (!this.shopConfigService || !this.shopStateService) {
+      throw new Error("Shop services are not initialized.");
+    }
+    this.shopStateService.ensureDailyReset();
+    var remainingBySkuId = {};
+    this.shopConfigService.getSortedGoodsList().forEach(function (goods) {
+      remainingBySkuId[goods.skuId] = this.shopStateService.getRemainingCount(goods.skuId);
+    }, this);
+    return {
+      remainingBySkuId: remainingBySkuId
+    };
+  },
+
+  _renderShopView: function () {
+    if (!this._shopViewController || !this._shopViewNode || !cc.isValid(this._shopViewNode)) {
+      return;
+    }
+    return this._shopViewController.render({
+      goodsList: this.shopConfigService.getSortedGoodsList(),
+      purchaseState: this._buildShopPurchaseState(),
+      coinCount: this._getCurrentCoins()
+    }).catch(function (error) {
+      Logger.error("Render shop view failed", error && error.stack ? error.stack : error);
+      showStatusAndTip(this, "商城刷新失败");
+      return false;
+    }.bind(this));
+  },
+
+  _renderBuyView: function (goods, remaining) {
+    if (!this._buyViewController || !this._buyViewNode || !cc.isValid(this._buyViewNode)) {
+      return Promise.resolve();
+    }
+    return this._buyViewController.render({
+      goods: goods,
+      remaining: remaining,
+      coinCount: this._getCurrentCoins()
+    }).catch(function (error) {
+      Logger.error("Render buy view failed", error && error.stack ? error.stack : error);
+      showStatusAndTip(this, "购买弹窗刷新失败");
+      return false;
+    }.bind(this));
+  },
+
+  _onShopGoodsTap: function (skuId) {
+    if (!this.shopPurchaseService || !this.shopConfigService || !this.shopStateService) {
+      throw new Error("Shop services are not initialized.");
+    }
+    if (this.telemetryService && typeof this.telemetryService.track === "function") {
+      this.telemetryService.track("shop_item_click", {
+        skuId: skuId
+      });
+    }
+    var goods = this.shopConfigService.findGoodsBySkuId(skuId);
+    if (!goods) {
+      showStatusAndTip(this, "商品不存在");
+      return;
+    }
+    if (goods.enabled !== true) {
+      showStatusAndTip(this, "商品已下架");
+      return;
+    }
+    var remaining = this.shopStateService.getRemainingCount(skuId);
+    if (remaining <= 0) {
+      showStatusAndTip(this, "今日售罄");
+      this._renderShopView();
+      return;
+    }
+    this._showBuyView(skuId, goods, remaining);
+  },
+
+  _showBuyView: function (skuId, goods, remaining) {
+    this._ensureBuyViewPrefab().then(function (prefab) {
+      var buyNode = this._buyViewNode;
+      if (!buyNode || !cc.isValid(buyNode)) {
+        buyNode = cc.instantiate(prefab);
+        if (!buyNode) {
+          throw new Error("Instantiate BuyView prefab failed.");
+        }
+        buyNode.parent = this.node;
+        buyNode.setPosition(0, 0);
+        buyNode.zIndex = 345;
+        this._buyViewNode = buyNode;
+        this._buyViewController = new BuyViewController({
+          node: buyNode,
+          onClose: function () {
+            this._playSfx("uiClick");
+            this._hideBuyView();
+          }.bind(this),
+          onConfirm: function (quantity) {
+            this._confirmShopPurchase(quantity);
+          }.bind(this)
+        });
+      }
+
+      this._buyViewSkuId = skuId;
+      buyNode.active = true;
+      return this._renderBuyView(goods, remaining);
+    }.bind(this)).catch(function (error) {
+      Logger.error("Show buy view failed", error && error.stack ? error.stack : error);
+      showStatusAndTip(this, "购买弹窗加载失败");
+    }.bind(this));
+  },
+
+  _hideBuyView: function () {
+    this._buyViewSkuId = "";
+    if (!this._buyViewNode || !cc.isValid(this._buyViewNode)) {
+      return;
+    }
+    this._buyViewNode.active = false;
+  },
+
+  _confirmShopPurchase: function (quantity) {
+    if (!this._buyViewSkuId) {
+      throw new Error("BuyView skuId is missing.");
+    }
+    var result = this.shopPurchaseService.purchase(this._buyViewSkuId, quantity);
+    if (!result.accepted) {
+      showStatusAndTip(this, this._resolveShopPurchaseFailMessage(result.reason));
+      this._renderShopView();
+      return;
+    }
+
+    this._refreshPlayerResources();
+    this._refreshPlayerInventory();
+    this._updateLevelSelectTopStatus();
+    this._renderShopView();
+    this._hideBuyView();
+    showStatusAndTip(this, "获得" + result.goods.displayName + " +" + result.itemCount);
+  },
+
+  _resolveShopPurchaseFailMessage: function (reason) {
+    if (reason === "SHOP_GOODS_NOT_FOUND") {
+      return "商品不存在";
+    }
+    if (reason === "SHOP_GOODS_DISABLED") {
+      return "商品已下架";
+    }
+    if (reason === "SHOP_DAILY_LIMIT_REACHED") {
+      return "今日售罄";
+    }
+    if (reason === "SHOP_COIN_NOT_ENOUGH") {
+      return "金币不足";
+    }
+    if (reason === "SHOP_INVENTORY_ADD_FAILED") {
+      return "发放道具失败，金币已回滚";
+    }
+    return "购买失败";
+  },
+
   _getStarChestSummary: function () {
     this._refreshLevelProgress();
     if (!this.starChestService || typeof this.starChestService.getChestSummary !== "function") {
@@ -1124,8 +1445,8 @@ module.exports = {
       return;
     }
 
-    var bottomLayerNode = this._levelSelectNode.getChildByName("bottom_layer");
-    var entryNode = bottomLayerNode ? bottomLayerNode.getChildByName("star_box_btn") : null;
+    var topLayerNode = this._getLevelSelectTopLayerNode();
+    var entryNode = topLayerNode ? topLayerNode.getChildByName("star_box_btn") : null;
     if (!entryNode || !entryNode.isValid) {
       return;
     }
@@ -1155,6 +1476,26 @@ module.exports = {
     }
   },
 
+  _ensureShopEntryButton: function () {
+    if (!this._levelSelectNode || !cc.isValid(this._levelSelectNode)) {
+      return;
+    }
+
+    var bottomLayerNode = this._levelSelectNode.getChildByName("bottom_layer");
+    if (!bottomLayerNode || !bottomLayerNode.isValid) {
+      throw new Error("LevelView bottom_layer is required for shop entry.");
+    }
+
+    var entryNode = bottomLayerNode.getChildByName("shop_btn");
+    if (!entryNode || !entryNode.isValid) {
+      throw new Error("LevelView bottom_layer requires shop_btn.");
+    }
+
+    this._bindNodeTapOnce(entryNode, function () {
+      this._onLevelSelectShopTap();
+    }.bind(this));
+  },
+
   _openStarChest: function () {
     if (!this.isSelectingLevel || this.isRestarting) {
       return;
@@ -1168,6 +1509,7 @@ module.exports = {
     this._hideSettingView();
     this._hideRankingView();
     this._hideSignInView();
+    this._hideShopView();
     hideGameCircleWelfareViewNode(this);
     if (typeof this._hideInventoryView === "function") {
       this._hideInventoryView();
@@ -1315,6 +1657,7 @@ module.exports = {
     this._hideSettingView();
     this._hideRankingView();
     this._hideSignInView();
+    this._hideShopView();
     hideGameCircleWelfareViewNode(this);
     if (typeof this._hideInventoryView === "function") {
       this._hideInventoryView();
@@ -1553,6 +1896,7 @@ module.exports = {
     this._hideAwardView();
     this._hideRankingView();
     this._hideSignInView();
+    this._hideShopView();
     hideGameCircleWelfareViewNode(this);
     if (typeof this._hideInventoryView === "function") {
       this._hideInventoryView();
@@ -2045,6 +2389,7 @@ module.exports = {
     this._hideAwardView();
     this._hideSettingView();
     this._hideRankingView();
+    this._hideShopView();
     hideGameCircleWelfareViewNode(this);
     if (typeof this._clearPendingLevelEntry === "function") {
       this._clearPendingLevelEntry();
@@ -2597,6 +2942,7 @@ module.exports = {
         this._updateInventoryEntryState();
       }
       this._updateStarChestEntryState();
+      this._ensureShopEntryButton();
       if (typeof this._ensureGameCircleEntryButton === "function") {
         this._ensureGameCircleEntryButton();
       }
@@ -2662,6 +3008,7 @@ module.exports = {
     this._hideAwardView();
     this._hideSettingView();
     this._hideRankingView();
+    this._hideShopView();
     hideGameCircleWelfareViewNode(this);
     if (typeof this._clearPendingLevelEntry === "function") {
       this._clearPendingLevelEntry();
@@ -2869,6 +3216,7 @@ module.exports = {
       onOpenRanking: this._onLevelSelectRankingTap.bind(this),
       onOpenInventory: this._showInventoryView.bind(this),
       onOpenStarChest: this._openStarChest.bind(this),
+      onOpenShop: this._onLevelSelectShopTap.bind(this),
       onLevelSelectTap: this._onLevelSelectTap.bind(this),
       onMapIndexChange: this._onLevelSelectMapIndexChange.bind(this)
     });
@@ -2888,6 +3236,7 @@ module.exports = {
       this._updateInventoryEntryState();
     }
     this._updateStarChestEntryState();
+    this._ensureShopEntryButton();
     if (typeof this._ensureGameCircleEntryButton === "function") {
       this._ensureGameCircleEntryButton();
     }

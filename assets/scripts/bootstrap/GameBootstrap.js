@@ -8,6 +8,7 @@ var LevelProgressStore = require("../utils/LevelProgressStore");
 var PlayerResourceStore = require("../utils/PlayerResourceStore");
 var InventoryStore = require("../utils/InventoryStore");
 var StarChestStore = require("../utils/StarChestStore");
+var ShopStateStore = require("../utils/ShopStateStore");
 var GameCircleWelfareStore = require("../utils/GameCircleWelfareStore");
 var SelectedPowerupsStore = require("../utils/SelectedPowerupsStore");
 var SignInStore = require("../utils/SignInStore");
@@ -17,6 +18,8 @@ var BoardLayout = require("../config/BoardLayout");
 var DailySignInConfig = require("../config/DailySignInConfig");
 var StarChestConfig = require("../config/StarChestConfig");
 var GameCircleWelfareConfig = require("../config/GameCircleWelfareConfig");
+var ShopGoodsConfig = require("../config/ShopGoodsConfig");
+var ShopRulesConfig = require("../config/ShopRulesConfig");
 var LevelManager = require("../config/LevelManager");
 var GameManager = require("../core/GameManager");
 var StarRatingPolicy = require("../core/StarRatingPolicy");
@@ -34,6 +37,9 @@ var StarChestRewardService = require("../services/StarChestRewardService");
 var StarChestService = require("../services/StarChestService");
 var GameCircleButtonAdapter = require("../services/GameCircleButtonAdapter");
 var GameCircleWelfareService = require("../services/GameCircleWelfareService");
+var ShopConfigService = require("../services/ShopConfigService");
+var ShopStateService = require("../services/ShopStateService");
+var ShopPurchaseService = require("../services/ShopPurchaseService");
 var AdService = require("../services/AdService");
 var TelemetryService = require("../services/TelemetryService");
 var AdRewardQuotaStore = require("../services/AdRewardQuotaStore");
@@ -335,12 +341,48 @@ cc.Class({
       platformClient: this.gameCircleButtonAdapter,
       telemetry: this.telemetryService
     });
+    this.shopConfigService = new ShopConfigService({
+      goodsConfig: clone(ShopGoodsConfig),
+      rulesConfig: clone(ShopRulesConfig)
+    });
+    this.shopStateStore = new ShopStateStore();
+    this.shopStateService = new ShopStateService({
+      store: this.shopStateStore,
+      configService: this.shopConfigService
+    });
+    this.shopPurchaseService = new ShopPurchaseService({
+      configService: this.shopConfigService,
+      stateService: this.shopStateService,
+      getCoinBalance: function () {
+        return this._getCurrentCoins();
+      }.bind(this),
+      spendCoin: function (amount, reason) {
+        return this._spendCoinsForShop(amount, reason);
+      }.bind(this),
+      refundCoin: function (amount, reason) {
+        return this._refundCoinsForShop(amount, reason);
+      }.bind(this),
+      addInventoryItem: function (itemId, count, reason) {
+        if (itemId === "stamina") {
+          return this._addStaminaForShop(count, reason);
+        }
+        return this._addInventoryItem(itemId, count);
+      }.bind(this),
+      telemetry: this.telemetryService
+    });
     this.selectedPowerupsStore = new SelectedPowerupsStore();
     this.selectedPowerupsState = this._saveSelectedPowerups([], {});
     this._inventoryViewPrefab = null;
     this._inventoryViewNode = null;
     this._inventoryViewController = null;
     this._inventoryViewReadOnly = true;
+    this._shopViewPrefab = null;
+    this._shopViewNode = null;
+    this._shopViewController = null;
+    this._buyViewPrefab = null;
+    this._buyViewNode = null;
+    this._buyViewController = null;
+    this._buyViewSkuId = "";
     this.dailySignInConfig = clone(DailySignInConfig);
     this.signInStore = new SignInStore({
       cycleLength: this.dailySignInConfig.cycleLength,
@@ -1917,6 +1959,7 @@ cc.Class({
     this._hideSettingView();
     this._hideRankingView();
     this._hideSignInView();
+    this._hideShopView();
     this._saveSelectedPowerups([], {});
     this._updateInventoryEntryState();
     this._ensureInventoryViewPrefab().then(function (prefab) {
@@ -2668,6 +2711,9 @@ cc.Class({
   _refreshPlayerResources: GameBootstrapUiFlowMethods._refreshPlayerResources,
   _getCurrentStamina: GameBootstrapUiFlowMethods._getCurrentStamina,
   _getCurrentCoins: GameBootstrapUiFlowMethods._getCurrentCoins,
+  _spendCoinsForShop: GameBootstrapUiFlowMethods._spendCoinsForShop,
+  _refundCoinsForShop: GameBootstrapUiFlowMethods._refundCoinsForShop,
+  _addStaminaForShop: GameBootstrapUiFlowMethods._addStaminaForShop,
   _consumeStaminaForLevelEntry: GameBootstrapUiFlowMethods._consumeStaminaForLevelEntry,
   _getLevelSelectTopLayerNode: GameBootstrapUiFlowMethods._getLevelSelectTopLayerNode,
   _updateLevelSelectTopStatus: GameBootstrapUiFlowMethods._updateLevelSelectTopStatus,
@@ -2705,9 +2751,23 @@ cc.Class({
   _showRankingView: GameBootstrapUiFlowMethods._showRankingView,
   _hideRankingView: GameBootstrapUiFlowMethods._hideRankingView,
   _renderRankingView: GameBootstrapUiFlowMethods._renderRankingView,
+  _ensureShopViewPrefab: GameBootstrapUiFlowMethods._ensureShopViewPrefab,
+  _ensureBuyViewPrefab: GameBootstrapUiFlowMethods._ensureBuyViewPrefab,
+  _onLevelSelectShopTap: GameBootstrapUiFlowMethods._onLevelSelectShopTap,
+  _showShopView: GameBootstrapUiFlowMethods._showShopView,
+  _hideShopView: GameBootstrapUiFlowMethods._hideShopView,
+  _buildShopPurchaseState: GameBootstrapUiFlowMethods._buildShopPurchaseState,
+  _renderShopView: GameBootstrapUiFlowMethods._renderShopView,
+  _onShopGoodsTap: GameBootstrapUiFlowMethods._onShopGoodsTap,
+  _showBuyView: GameBootstrapUiFlowMethods._showBuyView,
+  _renderBuyView: GameBootstrapUiFlowMethods._renderBuyView,
+  _hideBuyView: GameBootstrapUiFlowMethods._hideBuyView,
+  _confirmShopPurchase: GameBootstrapUiFlowMethods._confirmShopPurchase,
+  _resolveShopPurchaseFailMessage: GameBootstrapUiFlowMethods._resolveShopPurchaseFailMessage,
   _getStarChestSummary: GameBootstrapUiFlowMethods._getStarChestSummary,
   _ensureStarChestEntryRedDot: GameBootstrapUiFlowMethods._ensureStarChestEntryRedDot,
   _updateStarChestEntryState: GameBootstrapUiFlowMethods._updateStarChestEntryState,
+  _ensureShopEntryButton: GameBootstrapUiFlowMethods._ensureShopEntryButton,
   _openStarChest: GameBootstrapUiFlowMethods._openStarChest,
   _ensureGameCircleEntryRedDot: GameBootstrapUiFlowMethods._ensureGameCircleEntryRedDot,
   _ensureGameCircleEntrySpriteFrame: GameBootstrapUiFlowMethods._ensureGameCircleEntrySpriteFrame,

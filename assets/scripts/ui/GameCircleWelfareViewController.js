@@ -53,31 +53,45 @@ function findNodeByNameRecursive(rootNode, name) {
   return null;
 }
 
-function ensureButtonLabel(buttonNode) {
+function removeRuntimeButtonLabel(buttonNode) {
   if (!buttonNode || !buttonNode.isValid) {
-    throw new Error("Button node is required for game circle welfare label.");
+    throw new Error("Button node is required for game circle welfare runtime label cleanup.");
   }
   var labelNode = buttonNode.getChildByName("runtime_label");
-  if (!labelNode) {
-    labelNode = new cc.Node("runtime_label");
-    labelNode.parent = buttonNode;
-    labelNode.setPosition(0, 0);
-    labelNode.zIndex = 10;
-    var label = labelNode.addComponent(cc.Label);
-    label.fontSize = 22;
-    label.lineHeight = 24;
-    label.horizontalAlign = cc.Label.HorizontalAlign.CENTER;
-    label.verticalAlign = cc.Label.VerticalAlign.CENTER;
-    labelNode.color = cc.color(255, 255, 255);
-    var outline = labelNode.addComponent(cc.LabelOutline);
-    outline.color = cc.color(74, 80, 137);
-    outline.width = 2;
+  if (labelNode) {
+    labelNode.destroy();
   }
-  var component = labelNode.getComponent(cc.Label);
-  if (!component) {
-    throw new Error("Game circle welfare runtime button label component is missing.");
+}
+
+function ensureOriginalButtonVisual(buttonNode) {
+  if (!buttonNode || !buttonNode.isValid) {
+    throw new Error("Button node is required for game circle welfare visual state.");
   }
-  return component;
+  if (!buttonNode.color) {
+    throw new Error("Button node color is required for game circle welfare visual state.");
+  }
+  if (!buttonNode.__gameCircleOriginalVisual) {
+    buttonNode.__gameCircleOriginalVisual = {
+      opacity: buttonNode.opacity,
+      color: cc.color(buttonNode.color.r, buttonNode.color.g, buttonNode.color.b)
+    };
+  }
+  return buttonNode.__gameCircleOriginalVisual;
+}
+
+function applyTaskButtonCompletedVisual(buttonNode, completed) {
+  var originalVisual = ensureOriginalButtonVisual(buttonNode);
+  if (completed) {
+    buttonNode.opacity = Math.min(originalVisual.opacity, 170);
+    buttonNode.color = cc.color(150, 150, 150);
+  } else {
+    buttonNode.opacity = originalVisual.opacity;
+    buttonNode.color = cc.color(
+      originalVisual.color.r,
+      originalVisual.color.g,
+      originalVisual.color.b
+    );
+  }
 }
 
 function GameCircleWelfareViewController(options) {
@@ -148,7 +162,7 @@ GameCircleWelfareViewController.prototype._bindActions = function () {
   this.nodes.closeButtonNode.__gameCircleCloseHandler = this.onClose;
   this.nodes.maskNode.__gameCircleCloseHandler = this.onClose;
   this.nodes.circleButtonNode.__gameCircleOpenHandler = this.onOpenGameCircle;
-  ensureButtonLabel(this.nodes.circleButtonNode).string = "进入游戏圈";
+  removeRuntimeButtonLabel(this.nodes.circleButtonNode);
 };
 
 GameCircleWelfareViewController.prototype._loadRewardIcon = function (itemId) {
@@ -204,14 +218,8 @@ GameCircleWelfareViewController.prototype._resolveTaskNodes = function (taskItem
 };
 
 GameCircleWelfareViewController.prototype._resolveAction = function (task) {
-  if (task.claimed) {
-    return "claimed";
-  }
-  if (task.claimable) {
-    return "claim";
-  }
-  if (!task.refreshedToday) {
-    return "refresh";
+  if (task.complete || task.claimed) {
+    return "completed";
   }
   return "open";
 };
@@ -230,27 +238,17 @@ GameCircleWelfareViewController.prototype._renderTask = function (taskItemNode, 
   nodes.numLabel.string = "x" + rewardItem.count;
 
   var action = this._resolveAction(task);
-  var buttonLabel = ensureButtonLabel(nodes.goButtonNode);
+  removeRuntimeButtonLabel(nodes.goButtonNode);
   var button = nodes.goButtonNode.getComponent(cc.Button);
   if (!button) {
     throw new Error("GamingCircleView go_btn is missing cc.Button.");
   }
-  nodes.goButtonNode.opacity = action === "claimed" ? 170 : 255;
-  button.interactable = action !== "claimed";
+  applyTaskButtonCompletedVisual(nodes.goButtonNode, action === "completed");
+  button.interactable = action !== "completed";
 
-  if (action === "claimed") {
-    buttonLabel.string = "已领取";
+  if (action === "completed") {
     nodes.goButtonNode.__gameCircleTaskHandler = null;
-  } else if (action === "claim") {
-    buttonLabel.string = "领取";
-    nodes.goButtonNode.__gameCircleTaskHandler = function () {
-      this.onClaim(task.taskId);
-    }.bind(this);
-  } else if (action === "refresh") {
-    buttonLabel.string = "刷新";
-    nodes.goButtonNode.__gameCircleTaskHandler = this.onRefresh;
   } else {
-    buttonLabel.string = "去完成";
     nodes.goButtonNode.__gameCircleTaskHandler = this.onOpenGameCircle;
   }
   bindTapWithDynamicHandler(nodes.goButtonNode, "__gameCircleTaskHandler");

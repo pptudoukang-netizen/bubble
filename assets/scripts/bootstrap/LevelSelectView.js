@@ -32,9 +32,15 @@ var LEVEL_BUTTON_SKIN_PATHS = {
   unlocked: "image/level_lock1"
 };
 var LEVEL_BUTTON_SIZE = cc.size(120, 120);
+var RUN_ANIMATION_RESOURCE_PATH = "animation/run_ani";
+var RUN_ANIMATION_NODE_NAME = "run_ani";
+var RUN_ANIMATION_POSITION = cc.v2(0, 80);
+var RUN_ANIMATION_SCALE = 0.5;
 
 var levelButtonSkinFrames = null;
 var levelButtonSkinLoadPromise = null;
+var runAnimationClip = null;
+var runAnimationClipLoadPromise = null;
 
 function loadSpriteFrame(path) {
   return new Promise(function (resolve) {
@@ -85,6 +91,65 @@ function ensureLevelButtonSkinFrames() {
   });
 
   return levelButtonSkinLoadPromise;
+}
+
+function ensureRunAnimationClip() {
+  if (runAnimationClip) {
+    return Promise.resolve(runAnimationClip);
+  }
+
+  if (runAnimationClipLoadPromise) {
+    return runAnimationClipLoadPromise;
+  }
+
+  runAnimationClipLoadPromise = new Promise(function (resolve, reject) {
+    BundleLoader.loadRes(RUN_ANIMATION_RESOURCE_PATH, cc.AnimationClip, function (error, clip) {
+      if (error) {
+        reject(new Error("Load run animation clip failed: " + error.message));
+        return;
+      }
+
+      if (!clip) {
+        reject(new Error("Run animation clip is missing: " + RUN_ANIMATION_RESOURCE_PATH));
+        return;
+      }
+
+      resolve(clip);
+    });
+  }).then(function (clip) {
+    runAnimationClip = clip;
+    runAnimationClipLoadPromise = null;
+    return runAnimationClip;
+  }, function (error) {
+    runAnimationClipLoadPromise = null;
+    throw error;
+  });
+
+  return runAnimationClipLoadPromise;
+}
+
+function attachRunAnimationToLevelSlot(slotNode) {
+  if (!slotNode || !slotNode.isValid) {
+    throw new Error("Run animation target slot is invalid.");
+  }
+
+  return ensureRunAnimationClip().then(function (clip) {
+    if (!slotNode || !slotNode.isValid) {
+      throw new Error("Run animation target slot was destroyed before attachment.");
+    }
+
+    var runNode = new cc.Node(RUN_ANIMATION_NODE_NAME);
+    runNode.parent = slotNode;
+    runNode.setPosition(RUN_ANIMATION_POSITION);
+    runNode.setScale(RUN_ANIMATION_SCALE);
+    runNode.addComponent(cc.Sprite);
+
+    clip.wrapMode = cc.WrapMode.Loop;
+    var animation = runNode.addComponent(cc.Animation);
+    animation.addClip(clip, RUN_ANIMATION_NODE_NAME);
+    animation.play(RUN_ANIMATION_NODE_NAME);
+    return runNode;
+  });
 }
 
 function resolveLevelButtonSkinKey(isPassed, isUnlocked) {
@@ -312,6 +377,9 @@ function updateTopStatus(levelView, options) {
   var onOpenStarChest = typeof options.onOpenStarChest === "function"
     ? options.onOpenStarChest
     : function () {};
+  var onOpenShop = typeof options.onOpenShop === "function"
+    ? options.onOpenShop
+    : function () {};
 
   var topLayerNode = resolveTopLayerNode(levelView);
   var loveNode = topLayerNode ? topLayerNode.getChildByName("love_info") : null;
@@ -336,6 +404,12 @@ function updateTopStatus(levelView, options) {
     onOpenSettings
   );
   bindNamedButtonTap(
+    loveNode,
+    "__loveShopTapBound",
+    "__onOpenShop",
+    onOpenShop
+  );
+  bindNamedButtonTap(
     bottomLayerNode ? bottomLayerNode.getChildByName("ranking_btn") : null,
     "__rankingTapBound",
     "__onOpenRanking",
@@ -348,10 +422,16 @@ function updateTopStatus(levelView, options) {
     onOpenInventory
   );
   bindNamedButtonTap(
-    bottomLayerNode ? bottomLayerNode.getChildByName("star_box_btn") : null,
+    topLayerNode ? topLayerNode.getChildByName("star_box_btn") : null,
     "__starChestTapBound",
     "__onOpenStarChest",
     onOpenStarChest
+  );
+  bindNamedButtonTap(
+    bottomLayerNode ? bottomLayerNode.getChildByName("shop_btn") : null,
+    "__shopTapBound",
+    "__onOpenShop",
+    onOpenShop
   );
 }
 
@@ -388,6 +468,9 @@ function renderLevelSelectContent(options) {
     : function () {};
   var onOpenStarChest = typeof options.onOpenStarChest === "function"
     ? options.onOpenStarChest
+    : function () {};
+  var onOpenShop = typeof options.onOpenShop === "function"
+    ? options.onOpenShop
     : function () {};
 
   if (!hostNode || !hostNode.isValid) {
@@ -427,7 +510,8 @@ function renderLevelSelectContent(options) {
     onOpenSettings: onOpenSettings,
     onOpenRanking: onOpenRanking,
     onOpenInventory: onOpenInventory,
-    onOpenStarChest: onOpenStarChest
+    onOpenStarChest: onOpenStarChest,
+    onOpenShop: onOpenShop
   });
 
   var mapHostNode = levelView.getChildByName("map");
@@ -464,6 +548,12 @@ function renderLevelSelectContent(options) {
 
   var levelPageCount = Math.max(1, Math.ceil(levelIds.length / slotsPerMap));
   var mapCount = Math.max(1, mapPrefabs.length, levelPageCount);
+  var lastUnlockableLevelId = 0;
+  levelIds.forEach(function (levelId) {
+    if (levelId <= highestUnlocked && levelId > lastUnlockableLevelId) {
+      lastUnlockableLevelId = levelId;
+    }
+  });
   var highlightedLevelIndex = Math.max(0, levelIds.indexOf(highlightedLevelId));
   var highlightedMapIndex = Math.floor(highlightedLevelIndex / slotsPerMap);
   var currentMapIndex = requestedMapIndex === null ? highlightedMapIndex : requestedMapIndex;
@@ -484,6 +574,7 @@ function renderLevelSelectContent(options) {
   ensureLevelButtonSkinFrames();
 
   var slots = collectLevelSlots(mapNode);
+  var runAnimationTargetSlot = null;
   slots.forEach(function (slot) {
     var slotNode = slot.node;
     var levelIndex = currentMapIndex * slotsPerMap + slot.index;
@@ -504,6 +595,9 @@ function renderLevelSelectContent(options) {
     var isPassed = isLevelCompleted(levelId);
     var isUnlocked = levelId <= highestUnlocked;
     var isCurrent = levelId === highlightedLevelId;
+    if (levelId === lastUnlockableLevelId) {
+      runAnimationTargetSlot = slotNode;
+    }
     applyLevelButtonState(slotNode, {
       isPassed: isPassed,
       isUnlocked: isUnlocked,
@@ -529,6 +623,9 @@ function renderLevelSelectContent(options) {
     slotNode.__levelSelectLevelId = levelId;
     slotNode.__levelSelectUnlocked = isUnlocked;
   });
+  if (runAnimationTargetSlot) {
+    attachRunAnimationToLevelSlot(runAnimationTargetSlot);
+  }
 
   var nextMapNode = levelView.getChildByName("next_map");
   var previousMapNode = levelView.getChildByName("previous_map");

@@ -8,6 +8,8 @@ var DESIGN_HEIGHT = 1280;
 var RANK_MESSAGE_SOURCE = "bubble_friend_rank";
 var RANK_MASK_COLOR = cc.color(21, 15, 48, 180);
 var RANK_INSTALL_SCHEDULER_KEY = "wechat_rank_install";
+var rankPrivacyAuthorizationPending = false;
+var rankPrivacyAuthorizationCallbacks = [];
 
 function assertWxApi(name) {
   if (typeof wx === "undefined" || !wx || typeof wx[name] !== "function") {
@@ -65,8 +67,11 @@ function normalizeRankState(rawState) {
 function loadRankState() {
   var storage = assertStorage();
   var rawText = storage.getItem(RANK_STATE_KEY);
-  if (rawText === null) {
+  if (rawText === null || typeof rawText === "undefined" || rawText === "") {
     return createInitialRankState();
+  }
+  if (typeof rawText !== "string") {
+    throw new Error("Invalid stored rank state text.");
   }
   return normalizeRankState(JSON.parse(rawText));
 }
@@ -120,7 +125,7 @@ function resolveAttemptKey(host, levelId) {
   throw new Error("Rank upload requires current attempt id.");
 }
 
-function submitLevelWin(host, snapshot) {
+function submitLevelWinAfterPrivacyAuthorization(host, snapshot) {
   if (!host || typeof host !== "object") {
     throw new Error("Rank upload requires GameBootstrap host.");
   }
@@ -152,6 +157,12 @@ function submitLevelWin(host, snapshot) {
       value: buildTotalScoreValue(state.totalScore, state.maxPassedLevel)
     }
   ]);
+}
+
+function submitLevelWin(host, snapshot) {
+  requireRankPrivacyAuthorization(function () {
+    submitLevelWinAfterPrivacyAuthorization(host, snapshot);
+  });
 }
 
 function walkNodes(node, visitor) {
@@ -313,13 +324,7 @@ function ensureRankLayer() {
 
   layer.__rankTexture = texture;
   layer.__rankSprite = sprite;
-  createTouchableNode("WechatFriendRankProgressTab", panel, -105, 326, 190, 70, function () {
-    showRankLayer("progress");
-  });
-  createTouchableNode("WechatFriendRankTotalTab", panel, 105, 326, 190, 70, function () {
-    showRankLayer("total");
-  });
-  createTouchableNode("WechatFriendRankClose", panel, 282, 438, 96, 96, hideRankLayer);
+  createTouchableNode("WechatFriendRankClose", panel, 286.735, 418.221, 104, 106, hideRankLayer);
   layer.on(cc.Node.EventType.TOUCH_MOVE, function (event) {
     var delta = event.getDelta();
     var scrollDelta = -delta.y;
@@ -348,29 +353,74 @@ function refreshSharedCanvasTexture(layer) {
   layer.__rankTexture.handleLoadedTexture();
 }
 
-function showRankLayer(rankType) {
+function startRankLayerTextureRefresh(layer) {
+  if (!layer || !layer.isValid) {
+    throw new Error("Rank layer is invalid when starting shared canvas refresh.");
+  }
+  layer.stopAllActions();
+  layer.runAction(cc.repeatForever(cc.sequence(
+    cc.delayTime(0.12),
+    cc.callFunc(function () {
+      if (layer.active !== true) {
+        return;
+      }
+      refreshSharedCanvasTexture(layer);
+      hideLocalRankingView();
+    })
+  )));
+}
+
+function requireRankPrivacyAuthorization(onAuthorized) {
+  if (typeof onAuthorized !== "function") {
+    throw new Error("Rank privacy authorization requires success callback.");
+  }
+  rankPrivacyAuthorizationCallbacks.push(onAuthorized);
+  if (rankPrivacyAuthorizationPending === true) {
+    return;
+  }
+  rankPrivacyAuthorizationPending = true;
+  assertWxApi("requirePrivacyAuthorize")({
+    success: function () {
+      rankPrivacyAuthorizationPending = false;
+      var callbacks = rankPrivacyAuthorizationCallbacks.slice();
+      rankPrivacyAuthorizationCallbacks.length = 0;
+      callbacks.forEach(function (callback) {
+        callback();
+      });
+    },
+    fail: function (error) {
+      rankPrivacyAuthorizationPending = false;
+      rankPrivacyAuthorizationCallbacks.length = 0;
+      throw new Error("wx.requirePrivacyAuthorize failed before using friend rank APIs: " + JSON.stringify(error));
+    }
+  });
+}
+
+function openRankLayer(rankType) {
   var messageType = rankType === "total" ? "show_total_rank" : "show_progress_rank";
   var layer = ensureRankLayer();
   layer.active = true;
-  assertWxApi("getOpenDataContext")().postMessage({
+  var openDataContext = assertWxApi("getOpenDataContext")();
+  openDataContext.postMessage({
     source: RANK_MESSAGE_SOURCE,
     type: messageType
   });
   hideLocalRankingView();
-  layer.stopAllActions();
-  layer.runAction(cc.repeat(cc.sequence(
-    cc.delayTime(0.12),
-    cc.callFunc(function () {
-      refreshSharedCanvasTexture(layer);
-      hideLocalRankingView();
-    })
-  ), 12));
+  refreshSharedCanvasTexture(layer);
+  startRankLayerTextureRefresh(layer);
+}
+
+function showRankLayer(rankType) {
+  requireRankPrivacyAuthorization(function () {
+    openRankLayer(rankType);
+  });
 }
 
 function hideRankLayer() {
   var scene = cc.director.getScene();
   var layer = findNodeByName(scene, "WechatFriendRankLayer");
   if (layer !== null) {
+    layer.stopAllActions();
     layer.active = false;
   }
   assertWxApi("getOpenDataContext")().postMessage({
@@ -396,19 +446,37 @@ function patchBootstrapHost(host) {
     };
     host.__wechatRankPatched = true;
   }
+  if (host.__wechatRankLevelSelectTapPatched !== true) {
+    if (typeof host._onLevelSelectRankingTap !== "function") {
+      throw new Error("GameBootstrap._onLevelSelectRankingTap is required for rank button patch.");
+    }
+    host._onLevelSelectRankingTap = function () {
+      if (!this.isSelectingLevel || this.isRestarting) {
+        return;
+      }
+      if (typeof this._playSfx === "function") {
+        this._playSfx("uiClick");
+      }
+      if (typeof this._hideRankingView === "function") {
+        this._hideRankingView();
+      }
+      showRankLayer("total");
+    };
+    host.__wechatRankLevelSelectTapPatched = true;
+  }
 }
 
-function bindRankingButton() {
+function syncRankingButtonHandler(host) {
+  if (!host || typeof host._onLevelSelectRankingTap !== "function") {
+    throw new Error("GameBootstrap host is required when syncing rank button handler.");
+  }
   var scene = cc.director.getScene();
   if (!scene) {
     throw new Error("Scene is required when binding rank button.");
   }
   var rankButton = findNodeByName(scene, "ranking_btn");
-  if (rankButton !== null && rankButton.__wechatRankTapBound !== true) {
-    rankButton.__wechatRankTapBound = true;
-    rankButton.on(cc.Node.EventType.TOUCH_END, function () {
-      showRankLayer("progress");
-    });
+  if (rankButton !== null && rankButton.__rankingTapBound === true) {
+    rankButton.__onOpenRanking = host._onLevelSelectRankingTap.bind(host);
   }
 }
 
@@ -430,8 +498,8 @@ function install() {
     var nextHost = findBootstrapHost();
     if (nextHost !== null) {
       patchBootstrapHost(nextHost);
+      syncRankingButtonHandler(nextHost);
     }
-    bindRankingButton();
   }, schedulerTarget, 0.5, cc.macro.REPEAT_FOREVER, 0, false, RANK_INSTALL_SCHEDULER_KEY);
 }
 

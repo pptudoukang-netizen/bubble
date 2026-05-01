@@ -5,16 +5,53 @@ var TOTAL_SCORE_KEY = "total_score";
 var CANVAS_WIDTH = 720;
 var CANVAS_HEIGHT = 1280;
 var RANK_MESSAGE_SOURCE = "bubble_friend_rank";
-var ROW_HEIGHT = 126;
-var ROW_GAP = 12;
-var ROW_LEFT = 76;
-var ROW_WIDTH = 568;
-var ROW_TOP = 382;
-var MAX_VISIBLE_ROWS = 6;
+
+var PANEL_X = 37.5;
+var PANEL_Y = 150;
+var PANEL_WIDTH = 645;
+var PANEL_HEIGHT = 1008;
+var CLOSE_X = 594.735;
+var CLOSE_Y = 182.779;
+var CLOSE_WIDTH = 104;
+var CLOSE_HEIGHT = 106;
+var LIST_X = 61.5;
+var LIST_Y = 345.5;
+var LIST_WIDTH = 593;
+var LIST_HEIGHT = 789;
+var ROW_WIDTH = 593;
+var ROW_HEIGHT = 143;
+var ROW_GAP = 8;
 var ROW_STRIDE = ROW_HEIGHT + ROW_GAP;
+var ROW_POOL_BUFFER = 2;
+
+var ROW_CENTER_X = LIST_X + (ROW_WIDTH * 0.5);
+var RANK_BADGE_X = ROW_CENTER_X - 229.138;
+var RANK_BADGE_Y = 5.864;
+var RANK_NUM_X = ROW_CENTER_X - 227.064;
+var RANK_NUM_Y = 20.369;
+var AVATAR_X = ROW_CENTER_X - 144.262;
+var NAME_X = ROW_CENTER_X - 87.519;
+var SCORE_X = ROW_CENTER_X + 194.669;
+var LEVEL_X = ROW_CENTER_X + 280.898;
+
+var IMAGE_PATHS = {
+  panelBg: "bubble/image/ranking/bg.png",
+  closeButton: "bubble/image/ranking/btn_close.png",
+  rank1Badge: "bubble/image/ranking/1.png",
+  rank2Badge: "bubble/image/ranking/2.png",
+  rank3Badge: "bubble/image/ranking/3.png",
+  avatar: "bubble/image/ranking/avatar.png",
+  avatarFrame: "bubble/image/ranking/avatar_frame.png",
+  itemBg1: "bubble/image/ranking/item_bg_1.png",
+  itemBg2: "bubble/image/ranking/item_bg2.png",
+  itemBg3: "bubble/image/ranking/item_bg_3.png"
+};
 
 if (typeof wx === "undefined" || !wx) {
   throw new Error("Open data rank renderer requires wx.");
+}
+if (typeof wx.createImage !== "function") {
+  throw new Error("Open data rank renderer requires wx.createImage.");
 }
 
 var sharedCanvas = wx.getSharedCanvas();
@@ -29,97 +66,114 @@ if (!context) {
   throw new Error("Open data rank renderer requires 2d context.");
 }
 
-var currentRankType = "progress";
+var currentRankType = "total";
 var currentEntries = [];
 var currentScrollOffset = 0;
-
-function drawRoundRect(ctx, x, y, width, height, radius) {
-  ctx.beginPath();
-  ctx.moveTo(x + radius, y);
-  ctx.lineTo(x + width - radius, y);
-  ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
-  ctx.lineTo(x + width, y + height - radius);
-  ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
-  ctx.lineTo(x + radius, y + height);
-  ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
-  ctx.lineTo(x, y + radius);
-  ctx.quadraticCurveTo(x, y, x + radius, y);
-  ctx.closePath();
-}
-
-function fillRoundRect(ctx, x, y, width, height, radius, color) {
-  drawRoundRect(ctx, x, y, width, height, radius);
-  ctx.fillStyle = color;
-  ctx.fill();
-}
-
-function strokeRoundRect(ctx, x, y, width, height, radius, color, lineWidth) {
-  drawRoundRect(ctx, x, y, width, height, radius);
-  ctx.strokeStyle = color;
-  ctx.lineWidth = lineWidth;
-  ctx.stroke();
-}
+var currentEmptyText = "点击排行榜查看好友数据";
+var currentViewMode = "empty";
+var currentRequestRankType = "";
+var rankImages = {};
 
 function clearCanvas() {
   context.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 }
 
-function drawShell(activeType) {
-  clearCanvas();
-
-  fillRoundRect(context, 44, 148, 632, 962, 34, "#6b42c9");
-  strokeRoundRect(context, 44, 148, 632, 962, 34, "#ffe187", 6);
-  fillRoundRect(context, 68, 178, 584, 898, 26, "#8f62e5");
-  fillRoundRect(context, 104, 212, 512, 76, 38, "#fff1a8");
-  context.fillStyle = "#7a3fd4";
-  context.font = "bold 38px sans-serif";
-  context.textAlign = "center";
-  context.textBaseline = "middle";
-  context.fillText("好友排行榜", 360, 250);
-
-  context.fillStyle = "#fff1a8";
-  context.beginPath();
-  context.arc(638, 206, 31, 0, Math.PI * 2);
-  context.fill();
-  context.strokeStyle = "#7a3fd4";
-  context.lineWidth = 6;
-  context.beginPath();
-  context.moveTo(626, 194);
-  context.lineTo(650, 218);
-  context.moveTo(650, 194);
-  context.lineTo(626, 218);
-  context.stroke();
-
-  drawTab(170, 310, 210, 68, "关卡排行", activeType === "progress");
-  drawTab(400, 310, 210, 68, "总分排行", activeType === "total");
+function requestRepaint() {
+  if (currentViewMode === "entries") {
+    drawEntries(currentEntries, currentRankType);
+    return;
+  }
+  if (currentViewMode === "loading") {
+    drawLoading(currentRankType);
+    return;
+  }
+  drawEmpty(currentRankType, currentEmptyText);
 }
 
-function drawTab(x, y, width, height, text, active) {
-  fillRoundRect(context, x, y, width, height, 28, active ? "#ffdf5c" : "#7048c4");
-  strokeRoundRect(context, x, y, width, height, 28, active ? "#fff5bb" : "#a989ef", 4);
-  context.fillStyle = active ? "#7c3f2f" : "#eadfff";
-  context.font = "bold 28px sans-serif";
+function loadRankImage(key, path) {
+  var image = wx.createImage();
+  var asset = {
+    image: image,
+    loaded: false,
+    path: path
+  };
+  image.onload = function () {
+    asset.loaded = true;
+    requestRepaint();
+  };
+  image.onerror = function (error) {
+    throw new Error("Load open data rank image failed: " + path + ", " + JSON.stringify(error));
+  };
+  image.src = path;
+  rankImages[key] = asset;
+}
+
+function loadRankImages() {
+  Object.keys(IMAGE_PATHS).forEach(function (key) {
+    loadRankImage(key, IMAGE_PATHS[key]);
+  });
+}
+
+function drawImageAsset(key, x, y, width, height) {
+  var asset = rankImages[key];
+  if (!asset || asset.loaded !== true) {
+    return false;
+  }
+  context.drawImage(asset.image, x, y, width, height);
+  return true;
+}
+
+function drawRankingShell() {
+  clearCanvas();
+  drawImageAsset("panelBg", PANEL_X, PANEL_Y, PANEL_WIDTH, PANEL_HEIGHT);
+  drawImageAsset("closeButton", CLOSE_X, CLOSE_Y, CLOSE_WIDTH, CLOSE_HEIGHT);
+}
+
+function drawCenteredStatus(text) {
+  context.save();
+  context.fillStyle = "#ffffff";
+  context.font = "bold 32px Arial";
   context.textAlign = "center";
   context.textBaseline = "middle";
-  context.fillText(text, x + width / 2, y + height / 2 + 1);
+  context.fillText(text, CANVAS_WIDTH * 0.5, LIST_Y + (LIST_HEIGHT * 0.5));
+  context.restore();
 }
 
 function drawLoading(activeType) {
-  drawShell(activeType);
-  context.fillStyle = "#fff7d6";
-  context.font = "30px sans-serif";
-  context.textAlign = "center";
-  context.textBaseline = "middle";
-  context.fillText("好友数据读取中...", 360, 648);
+  currentViewMode = "loading";
+  currentRankType = activeType;
+  drawRankingShell();
+  drawCenteredStatus("好友数据读取中...");
 }
 
 function drawEmpty(activeType, text) {
-  drawShell(activeType);
-  context.fillStyle = "#fff7d6";
-  context.font = "30px sans-serif";
-  context.textAlign = "center";
-  context.textBaseline = "middle";
-  context.fillText(text, 360, 648);
+  currentViewMode = "empty";
+  currentRankType = activeType;
+  currentEmptyText = text;
+  drawRankingShell();
+  drawCenteredStatus(text);
+}
+
+function isPrivacyAgreementScopeError(error) {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+  if (Number(error.errno) === 112) {
+    return true;
+  }
+  if (typeof error.errMsg !== "string") {
+    return false;
+  }
+  return error.errMsg.indexOf("api scope is not declared in the privacy agreement") !== -1;
+}
+
+function drawFriendCloudStorageFail(rankType, error) {
+  if (isPrivacyAgreementScopeError(error)) {
+    drawEmpty(rankType, "隐私指引未声明微信朋友关系");
+    throw new Error("wx.getFriendCloudStorage privacy scope is not declared. Configure WeChat MP privacy agreement for 微信朋友关系: " + JSON.stringify(error));
+  }
+  drawEmpty(rankType, "网络异常，无法读取好友数据");
+  throw new Error("wx.getFriendCloudStorage failed: " + JSON.stringify(error));
 }
 
 function findKeyValue(kvDataList, key) {
@@ -162,21 +216,29 @@ function toRequiredInteger(value, fieldName) {
 }
 
 function buildProgressEntry(user, rankValue) {
+  var completedLevels = toRequiredInteger(rankValue.maxPassedLevel, "maxPassedLevel");
+  var score = toRequiredInteger(rankValue.totalScoreSnapshot, "totalScoreSnapshot");
   return {
     nickname: String(user.nickname),
     avatarUrl: String(user.avatarUrl),
-    primary: toRequiredInteger(rankValue.maxPassedLevel, "maxPassedLevel"),
-    secondary: toRequiredInteger(rankValue.totalScoreSnapshot, "totalScoreSnapshot"),
+    score: score,
+    completedLevels: completedLevels,
+    primary: completedLevels,
+    secondary: score,
     updatedAt: toRequiredInteger(rankValue.updatedAt, "updatedAt")
   };
 }
 
 function buildTotalEntry(user, rankValue) {
+  var score = toRequiredInteger(rankValue.score, "score");
+  var completedLevels = toRequiredInteger(rankValue.passedLevel, "passedLevel");
   return {
     nickname: String(user.nickname),
     avatarUrl: String(user.avatarUrl),
-    primary: toRequiredInteger(rankValue.score, "score"),
-    secondary: toRequiredInteger(rankValue.passedLevel, "passedLevel"),
+    score: score,
+    completedLevels: completedLevels,
+    primary: score,
+    secondary: completedLevels,
     updatedAt: toRequiredInteger(rankValue.updatedAt, "updatedAt")
   };
 }
@@ -218,89 +280,122 @@ function buildEntries(friendData, rankType) {
   return entries;
 }
 
-function drawAvatar(entry, x, y) {
-  context.fillStyle = "#ffeaa8";
-  context.beginPath();
-  context.arc(x, y, 38, 0, Math.PI * 2);
-  context.fill();
-  context.fillStyle = "#7c4acb";
-  context.font = "bold 28px sans-serif";
-  context.textAlign = "center";
-  context.textBaseline = "middle";
-  context.fillText(entry.nickname.charAt(0), x, y + 1);
+function resolveRankBadgeKey(rank) {
+  if (rank === 1) {
+    return "rank1Badge";
+  }
+  if (rank === 2) {
+    return "rank2Badge";
+  }
+  if (rank === 3) {
+    return "rank3Badge";
+  }
+  return "";
 }
 
-function drawRankBadge(rank, x, y) {
-  var colors = ["#ffd85c", "#d8ecff", "#ffc287"];
-  var color = rank <= 3 ? colors[rank - 1] : "#efe4ff";
-  context.fillStyle = color;
-  context.beginPath();
-  context.arc(x, y, 30, 0, Math.PI * 2);
-  context.fill();
-  context.fillStyle = "#7440bc";
-  context.font = "bold 26px sans-serif";
-  context.textAlign = "center";
-  context.textBaseline = "middle";
-  context.fillText(String(rank), x, y + 1);
+function resolveRowBgKey(rank) {
+  if (rank === 1) {
+    return "itemBg1";
+  }
+  if (rank === 2) {
+    return "itemBg2";
+  }
+  return "itemBg3";
 }
 
-function drawRow(entry, index, rankType) {
-  var y = ROW_TOP + index * (ROW_HEIGHT + ROW_GAP);
-  var palette = index === 0 ? "#7f56df" : index === 1 ? "#7650d0" : "#6d49c4";
-  fillRoundRect(context, ROW_LEFT, y, ROW_WIDTH, ROW_HEIGHT, 22, palette);
-  strokeRoundRect(context, ROW_LEFT, y, ROW_WIDTH, ROW_HEIGHT, 22, "rgba(255, 236, 160, 0.46)", 3);
-  drawRankBadge(entry.rank, ROW_LEFT + 48, y + ROW_HEIGHT / 2);
-  drawAvatar(entry, ROW_LEFT + 114, y + ROW_HEIGHT / 2);
+function fitText(text, maxWidth) {
+  var result = text;
+  while (result.length > 0 && context.measureText(result).width > maxWidth) {
+    result = result.slice(0, result.length - 1);
+  }
+  if (result.length !== text.length && result.length > 1) {
+    result = result.slice(0, result.length - 1) + "...";
+  }
+  return result;
+}
 
-  context.textAlign = "left";
+function drawAvatar(x, y) {
+  context.save();
+  context.beginPath();
+  context.arc(x, y, 40, 0, Math.PI * 2);
+  context.clip();
+  drawImageAsset("avatar", x - 40, y - 40, 80, 80);
+  context.restore();
+  drawImageAsset("avatarFrame", x - 40, y - 40, 80, 80);
+}
+
+function drawRank(entry, rowCenterY) {
+  var rank = entry.rank;
+  var badgeKey = resolveRankBadgeKey(rank);
+  if (badgeKey) {
+    drawImageAsset(badgeKey, RANK_BADGE_X - 37.2, rowCenterY - RANK_BADGE_Y - 46.4, 74.4, 92.8);
+    return;
+  }
+  context.save();
+  context.fillStyle = "#ffffff";
+  context.font = "bold 36px Arial";
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  context.fillText(String(rank), RANK_NUM_X, rowCenterY - RANK_NUM_Y);
+  context.restore();
+}
+
+function drawRow(entry, index) {
+  var y = LIST_Y + (index * ROW_STRIDE);
+  var rowCenterY = y + (ROW_HEIGHT * 0.5);
+  drawImageAsset(resolveRowBgKey(entry.rank), LIST_X, y, ROW_WIDTH, ROW_HEIGHT);
+  drawRank(entry, rowCenterY);
+  drawAvatar(AVATAR_X, rowCenterY);
+
+  context.save();
   context.textBaseline = "middle";
   context.fillStyle = "#ffffff";
-  context.font = "bold 28px sans-serif";
-  var nickname = entry.nickname.length > 8 ? entry.nickname.slice(0, 8) : entry.nickname;
-  context.fillText(nickname, ROW_LEFT + 168, y + 45);
-  context.font = "24px sans-serif";
-  context.fillStyle = "#eadfff";
-  var subText = rankType === "total" ? "最高 " + entry.secondary + " 关" : "总分 " + entry.secondary;
-  context.fillText(subText, ROW_LEFT + 168, y + 84);
+  context.font = "36px Arial";
+  context.textAlign = "left";
+  context.fillText(fitText(entry.nickname, 210), NAME_X, rowCenterY);
 
   context.textAlign = "right";
-  context.fillStyle = "#fff196";
-  context.font = "bold 34px sans-serif";
-  var primaryText = rankType === "total" ? String(entry.primary) : entry.primary + "关";
-  context.fillText(primaryText, ROW_LEFT + ROW_WIDTH - 28, y + ROW_HEIGHT / 2 + 2);
+  context.fillText(String(entry.score), SCORE_X, rowCenterY);
+  context.font = "30px Arial";
+  context.fillText("(" + entry.completedLevels + "关)", LEVEL_X, rowCenterY);
+  context.restore();
 }
 
 function drawEntries(entries, rankType) {
-  drawShell(rankType);
+  currentViewMode = "entries";
+  currentRankType = rankType;
+  drawRankingShell();
   if (entries.length === 0) {
     drawEmpty(rankType, "暂无好友排行数据");
     return;
   }
-  var maxOffset = Math.max(0, (entries.length * ROW_STRIDE) - (MAX_VISIBLE_ROWS * ROW_STRIDE));
+  var maxOffset = Math.max(0, (entries.length * ROW_STRIDE) - LIST_HEIGHT + ROW_GAP);
   if (currentScrollOffset > maxOffset) {
     currentScrollOffset = maxOffset;
   }
   context.save();
   context.beginPath();
-  context.rect(ROW_LEFT - 8, ROW_TOP - 8, ROW_WIDTH + 16, (MAX_VISIBLE_ROWS * ROW_STRIDE) + 8);
+  context.rect(LIST_X, LIST_Y, LIST_WIDTH, LIST_HEIGHT);
   context.clip();
   var firstIndex = Math.floor(currentScrollOffset / ROW_STRIDE);
-  var offsetInRow = currentScrollOffset - firstIndex * ROW_STRIDE;
-  var drawCount = MAX_VISIBLE_ROWS + 1;
+  var offsetInRow = currentScrollOffset - (firstIndex * ROW_STRIDE);
+  var drawCount = Math.ceil(LIST_HEIGHT / ROW_STRIDE) + ROW_POOL_BUFFER;
+  context.translate(0, -offsetInRow);
   for (var index = 0; index < drawCount; index += 1) {
     var entryIndex = firstIndex + index;
     if (entryIndex < entries.length) {
-      context.save();
-      context.translate(0, -offsetInRow);
-      drawRow(entries[entryIndex], index, rankType);
-      context.restore();
+      drawRow(entries[entryIndex], index);
     }
   }
   context.restore();
 }
 
 function requestRank(rankType) {
+  if (currentViewMode === "loading" && currentRequestRankType === rankType) {
+    return;
+  }
   currentRankType = rankType;
+  currentRequestRankType = rankType;
   currentScrollOffset = 0;
   drawLoading(rankType);
   var key = rankType === "total" ? TOTAL_SCORE_KEY : MAX_PASS_LEVEL_KEY;
@@ -311,11 +406,12 @@ function requestRank(rankType) {
         throw new Error("wx.getFriendCloudStorage returned invalid data.");
       }
       currentEntries = buildEntries(result.data, rankType);
+      currentRequestRankType = "";
       drawEntries(currentEntries, rankType);
     },
     fail: function (error) {
-      drawEmpty(rankType, "网络异常，无法读取好友数据");
-      throw new Error("wx.getFriendCloudStorage failed: " + JSON.stringify(error));
+      currentRequestRankType = "";
+      drawFriendCloudStorageFail(rankType, error);
     }
   });
 }
@@ -329,7 +425,7 @@ function scrollRank(deltaY) {
   if (!Number.isFinite(numberValue)) {
     throw new Error("Rank scroll deltaY must be numeric.");
   }
-  var maxOffset = Math.max(0, (currentEntries.length * ROW_STRIDE) - (MAX_VISIBLE_ROWS * ROW_STRIDE));
+  var maxOffset = Math.max(0, (currentEntries.length * ROW_STRIDE) - LIST_HEIGHT + ROW_GAP);
   currentScrollOffset = Math.max(0, Math.min(maxOffset, currentScrollOffset + numberValue));
   drawEntries(currentEntries, currentRankType);
 }
@@ -374,4 +470,5 @@ wx.onMessage(function (message) {
   }
 });
 
-drawEmpty(currentRankType, "点击排行榜查看好友数据");
+loadRankImages();
+drawEmpty(currentRankType, currentEmptyText);
