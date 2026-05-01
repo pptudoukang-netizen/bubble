@@ -193,10 +193,19 @@ function parseRankValue(value, key) {
   if (value === null) {
     return null;
   }
-  if (typeof value !== "string" || !value) {
+  if (typeof value !== "string") {
     throw new Error("Friend rank value is invalid for key: " + key + ".");
   }
-  var parsed = JSON.parse(value);
+  var normalizedValue = value.trim();
+  if (!normalizedValue) {
+    throw new Error("Friend rank value is empty for key: " + key + ".");
+  }
+  var parsed = null;
+  try {
+    parsed = JSON.parse(normalizedValue);
+  } catch (error) {
+    throw new Error("Friend rank JSON parse failed for key: " + key + ", value: " + normalizedValue + ", error: " + error.message);
+  }
   if (!parsed || typeof parsed !== "object") {
     throw new Error("Friend rank JSON is invalid for key: " + key + ".");
   }

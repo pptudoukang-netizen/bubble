@@ -449,9 +449,6 @@ cc.Class({
       resourceGateway: this.resourceGateway,
       zIndex: 600
     });
-    this.tipsPresenter.warmup().catch(function (error) {
-      Logger.warn("TipsPresenter warmup failed", error && error.message ? error.message : error);
-    });
 
     this._createStatusOverlay();
     this._createDropTestButton();
@@ -465,9 +462,6 @@ cc.Class({
       levelManager: this.levelManager
     });
     this.levelRenderer = new LevelRenderer(this.node);
-    this.levelRenderer.warmupSharedAssets().catch(function (error) {
-      Logger.warn("Shared renderer warmup failed", error && error.message ? error.message : error);
-    });
     this.levelRenderer.setWinActionHandlers({
       onNextLevel: this._onNextLevelTap.bind(this),
       onRetryLevel: this._restartCurrentLevel.bind(this)
@@ -843,53 +837,25 @@ cc.Class({
       {
         id: "resources_bundle",
         stage: "准备资源分包...",
-        weight: 0.12,
+        weight: 0.3,
         run: function () {
           return BundleLoader.ensureResourcesBundleLoaded();
         }
       },
       {
-        id: "warmup_prefabs",
-        stage: "加载基础界面...",
-        weight: 0.4,
+        id: "level_select_prefabs",
+        stage: "加载选关界面...",
+        weight: 0.45,
         run: function () {
           return this._preloadStartupPrefabs();
         }.bind(this)
       },
       {
-        id: "level_index",
-        stage: "加载关卡列表...",
-        weight: 0.28,
-        run: function () {
-          return this._loadAvailableLevelIds().then(function (levelIds) {
-            this._startupResolvedLevelIds = Array.isArray(levelIds) ? levelIds.slice() : [];
-          }.bind(this));
-        }.bind(this)
-      },
-      {
         id: "level_configs",
-        stage: "初始化关卡配置...",
-        weight: 0.22,
+        stage: "初始化首关配置...",
+        weight: 0.25,
         run: function () {
           return this._preloadStartupLevelConfigs();
-        }.bind(this)
-      },
-      {
-        id: "renderer_warmup",
-        stage: "初始化棋盘资源...",
-        weight: 0.1,
-        run: function () {
-          return this.levelRenderer.warmupSharedAssets().catch(function (error) {
-            Logger.warn("Renderer warmup during loading failed", error && error.message ? error.message : error);
-          });
-        }.bind(this)
-      },
-      {
-        id: "audio_warmup",
-        stage: "初始化音频资源...",
-        weight: 0.08,
-        run: function () {
-          return this._preloadStartupAudio();
         }.bind(this)
       }
     ];
@@ -925,17 +891,7 @@ cc.Class({
       return this._startupPrefabWarmupPromise;
     }
 
-    this._startupPrefabWarmupPromise = Promise.all([
-      this._ensureLevelSelectPrefabs(),
-      this._loadPrefab("prefabs/ui/GameView"),
-      this._loadPrefab("prefabs/ui/SettingView"),
-      this._loadPrefab("prefabs/ui/WinView"),
-      this._loadPrefab("prefabs/ui/LoseView"),
-      this._loadPrefab("prefabs/game/ShooterPanel"),
-      this._loadPrefab("prefabs/game/BubbleItem"),
-      this._loadPrefab("prefabs/game/JarItem"),
-      this._loadPrefab("prefabs/game/PreviewBall")
-    ]).then(function () {
+    this._startupPrefabWarmupPromise = this._ensureLevelSelectPrefabs().then(function () {
       return null;
     }).catch(function (error) {
       this._startupPrefabWarmupPromise = null;

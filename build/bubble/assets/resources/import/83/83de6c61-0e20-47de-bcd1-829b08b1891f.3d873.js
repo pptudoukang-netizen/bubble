@@ -1,1 +1,0 @@
-module.exports = [1,["16DsFNKjpPgKJr9eEmV3r0"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"inventory_item_card","rect":[6,5,226,214],"offset":[0,0],"originalSize":[238,224],"capInsets":[34,34,34,34]}],[0],0,[0],[0],[0]];

@@ -1580,7 +1580,7 @@
     "resetLevelProgressOnStart": false,
     "inspectorStaminaValue": 100,
     "enableStartupLoadingView": true,
-    "loadingViewMinVisibleMs": 900,
+    "loadingViewMinVisibleMs": 300,
     "loadingAniMaxMoveSpeed": 50,
     "startupPreloadLevelCount": 5,
     "projectileSpeed": 1800,

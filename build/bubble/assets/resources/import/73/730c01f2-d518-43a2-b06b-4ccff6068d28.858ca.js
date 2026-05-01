@@ -1,1 +1,0 @@
-module.exports = [1,["77QSwb0qhO9o272cHkvI1j"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"inventory_equipped_strip","rect":[5,5,420,64],"offset":[0,0],"originalSize":[430,74],"capInsets":[40,28,40,28]}],[0],0,[0],[0],[0]];

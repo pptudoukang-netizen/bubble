@@ -1,1 +1,0 @@
-module.exports = [1,["83rn8pYQtI8bUSQUklH/kj"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"level_btn","rect":[0,1,80,81],"offset":[-2,-0.5],"originalSize":[84,82],"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

@@ -1,1 +1,0 @@
-module.exports = [1,["04/sKq0k1EELsHd+74aG1P"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"purple_btn","rect":[0,0,255,79],"offset":[0,0],"originalSize":[255,79],"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

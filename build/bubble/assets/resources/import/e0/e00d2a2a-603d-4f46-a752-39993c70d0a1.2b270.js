@@ -1,1 +1,0 @@
-module.exports = [1,["811Y5TFnVNAZ+wKDXCJ0wP"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"inventory_panel","rect":[0,7,646,947],"offset":[0,-3.5],"originalSize":[646,954],"capInsets":[90,90,90,90]}],[0],0,[0],[0],[0]];
