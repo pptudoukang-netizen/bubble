@@ -94,6 +94,45 @@ function applyTaskButtonCompletedVisual(buttonNode, completed) {
   }
 }
 
+function setNodeVisible(node, visible) {
+  if (!node || !node.isValid) {
+    throw new Error("Cannot set visibility on invalid game circle welfare node.");
+  }
+  node.active = visible === true;
+}
+
+function applyReceiveButtonVisual(buttonNode, claimed) {
+  var originalVisual = ensureOriginalButtonVisual(buttonNode);
+  if (claimed) {
+    buttonNode.opacity = Math.min(originalVisual.opacity, 170);
+    buttonNode.color = cc.color(150, 150, 150);
+    return;
+  }
+  buttonNode.opacity = originalVisual.opacity;
+  buttonNode.color = cc.color(
+    originalVisual.color.r,
+    originalVisual.color.g,
+    originalVisual.color.b
+  );
+}
+
+function ensureButtonComponent(buttonNode, nodeName) {
+  if (!buttonNode || !buttonNode.isValid) {
+    throw new Error("Invalid game circle welfare button node: " + nodeName);
+  }
+  var button = buttonNode.getComponent(cc.Button);
+  if (!button) {
+    throw new Error("GamingCircleView " + nodeName + " is missing cc.Button.");
+  }
+  return button;
+}
+
+function pushMissingTaskItemPart(missingParts, partName, value) {
+  if (!value) {
+    missingParts.push(partName);
+  }
+}
+
 function GameCircleWelfareViewController(options) {
   options = options || {};
   if (!options.node || !options.node.isValid) {
@@ -190,36 +229,59 @@ GameCircleWelfareViewController.prototype._loadRewardIcon = function (itemId) {
 };
 
 GameCircleWelfareViewController.prototype._resolveTaskNodes = function (taskItemNode) {
+  if (!taskItemNode || !taskItemNode.isValid) {
+    throw new Error("GamingCircleView task item node is invalid.");
+  }
+  var taskItemName = taskItemNode.name;
   var goButtonNode = taskItemNode.getChildByName("go_btn");
+  var receiveButtonNode = taskItemNode.getChildByName("receive_btn");
   var taskNameNode = taskItemNode.getChildByName("task_name");
   var describeNode = taskItemNode.getChildByName("describe");
   var progressValueNode = taskItemNode.getChildByName("progress_value");
   var progressBarNode = taskItemNode.getChildByName("progressBar");
   var numNode = taskItemNode.getChildByName("num");
   var awardIconNode = taskItemNode.getChildByName("award_icon");
+  var receiveTextNode = receiveButtonNode ? receiveButtonNode.getChildByName("receive") : null;
   var taskNameLabel = taskNameNode ? taskNameNode.getComponent(cc.Label) : null;
   var describeLabel = describeNode ? describeNode.getComponent(cc.Label) : null;
   var progressValueLabel = progressValueNode ? progressValueNode.getComponent(cc.Label) : null;
   var progressBar = progressBarNode ? progressBarNode.getComponent(cc.ProgressBar) : null;
   var numLabel = numNode ? numNode.getComponent(cc.Label) : null;
   var awardIconSprite = awardIconNode ? awardIconNode.getComponent(cc.Sprite) : null;
-  if (!goButtonNode || !taskNameLabel || !describeLabel || !progressValueLabel || !progressBar || !numLabel || !awardIconSprite) {
-    throw new Error("GamingCircleView task item structure is incomplete.");
+  var receiveTextLabel = receiveTextNode ? receiveTextNode.getComponent(cc.Label) : null;
+  var missingParts = [];
+  console.log("receiveButtonNode:" + receiveButtonNode);
+  pushMissingTaskItemPart(missingParts, taskItemName + ".go_btn node", goButtonNode);
+  pushMissingTaskItemPart(missingParts, taskItemName + ".receive_btn node", receiveButtonNode);
+  pushMissingTaskItemPart(missingParts, taskItemName + ".task_name cc.Label", taskNameLabel);
+  pushMissingTaskItemPart(missingParts, taskItemName + ".describe cc.Label", describeLabel);
+  pushMissingTaskItemPart(missingParts, taskItemName + ".progress_value cc.Label", progressValueLabel);
+  pushMissingTaskItemPart(missingParts, taskItemName + ".progressBar cc.ProgressBar", progressBar);
+  pushMissingTaskItemPart(missingParts, taskItemName + ".num cc.Label", numLabel);
+  pushMissingTaskItemPart(missingParts, taskItemName + ".award_icon cc.Sprite", awardIconSprite);
+  pushMissingTaskItemPart(missingParts, taskItemName + ".receive_btn.receive cc.Label", receiveTextLabel);
+  if (missingParts.length > 0) {
+    throw new Error("GamingCircleView task item structure is incomplete: " + missingParts.join(", "));
   }
   return {
     goButtonNode: goButtonNode,
+    receiveButtonNode: receiveButtonNode,
     taskNameLabel: taskNameLabel,
     describeLabel: describeLabel,
     progressValueLabel: progressValueLabel,
     progressBar: progressBar,
     numLabel: numLabel,
-    awardIconSprite: awardIconSprite
+    awardIconSprite: awardIconSprite,
+    receiveTextLabel: receiveTextLabel
   };
 };
 
 GameCircleWelfareViewController.prototype._resolveAction = function (task) {
-  if (task.complete || task.claimed) {
-    return "completed";
+  if (task.claimed) {
+    return "claimed";
+  }
+  if (task.claimable) {
+    return "claim";
   }
   return "open";
 };
@@ -239,19 +301,30 @@ GameCircleWelfareViewController.prototype._renderTask = function (taskItemNode, 
 
   var action = this._resolveAction(task);
   removeRuntimeButtonLabel(nodes.goButtonNode);
-  var button = nodes.goButtonNode.getComponent(cc.Button);
-  if (!button) {
-    throw new Error("GamingCircleView go_btn is missing cc.Button.");
-  }
-  applyTaskButtonCompletedVisual(nodes.goButtonNode, action === "completed");
-  button.interactable = action !== "completed";
+  removeRuntimeButtonLabel(nodes.receiveButtonNode);
+  var goButton = ensureButtonComponent(nodes.goButtonNode, "go_btn");
+  var receiveButton = ensureButtonComponent(nodes.receiveButtonNode, "receive_btn");
 
-  if (action === "completed") {
-    nodes.goButtonNode.__gameCircleTaskHandler = null;
-  } else {
+  setNodeVisible(nodes.goButtonNode, action === "open");
+  setNodeVisible(nodes.receiveButtonNode, action === "claim" || action === "claimed");
+  applyTaskButtonCompletedVisual(nodes.goButtonNode, false);
+  applyReceiveButtonVisual(nodes.receiveButtonNode, action === "claimed");
+  goButton.interactable = action === "open";
+  receiveButton.interactable = action === "claim";
+  nodes.receiveTextLabel.string = action === "claimed" ? "已领" : "领取";
+
+  if (action === "open") {
     nodes.goButtonNode.__gameCircleTaskHandler = this.onOpenGameCircle;
+  } else {
+    nodes.goButtonNode.__gameCircleTaskHandler = null;
   }
+  nodes.receiveButtonNode.__gameCircleClaimHandler = action === "claim"
+    ? function () {
+      this.onClaim(task.taskId);
+    }.bind(this)
+    : null;
   bindTapWithDynamicHandler(nodes.goButtonNode, "__gameCircleTaskHandler");
+  bindTapWithDynamicHandler(nodes.receiveButtonNode, "__gameCircleClaimHandler");
 
   return this._loadRewardIcon(rewardItem.id).then(function (spriteFrame) {
     if (!nodes.awardIconSprite || !nodes.awardIconSprite.node || !nodes.awardIconSprite.node.isValid) {
@@ -261,7 +334,7 @@ GameCircleWelfareViewController.prototype._renderTask = function (taskItemNode, 
     return {
       taskId: task.taskId,
       action: action,
-      goButtonNode: nodes.goButtonNode
+      goButtonNode: action === "open" ? nodes.goButtonNode : null
     };
   });
 };

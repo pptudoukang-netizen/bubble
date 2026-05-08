@@ -242,14 +242,7 @@ FallingMarbleSystem.prototype.registerDrops = function (cells, grid) {
     return this.lastDrops;
   }
 
-  var availableSlots = Math.max(0, this.maxDynamicMarbles - this.activeDrops.length);
-  if (availableSlots <= 0) {
-    return this.lastDrops;
-  }
-
-  var accepted = cells.slice(0, availableSlots);
-
-  this.lastDrops = accepted.map(function (cell, index) {
+  this.lastDrops = cells.map(function (cell, index) {
     var start = grid.getCellPosition(cell.row, cell.col);
     var direction = index % 2 === 0 ? -1 : 1;
     var spread = 1 + (index % 4) * 0.18;

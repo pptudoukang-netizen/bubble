@@ -1,0 +1,1 @@
+module.exports = [1,["east+ZNTZO96lEnlnnmf9E"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"warhammer","rect":[0,0,137,167],"offset":[0,0],"originalSize":[137,167],"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

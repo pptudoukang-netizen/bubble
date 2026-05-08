@@ -28,6 +28,15 @@ var SPRITE_PATHS = {
   itemBg2: "image/ranking/item_bg2",
   itemBg3: "image/ranking/item_bg_3"
 };
+var AVATAR_SPRITE_FRAME_CACHE = {};
+var AVATAR_LOAD_PROMISES = {};
+
+function createSpriteFrameFromImage(image) {
+  var texture = new cc.Texture2D();
+  texture.initWithElement(image);
+  texture.handleLoadedTexture();
+  return new cc.SpriteFrame(texture);
+}
 
 function findNodeByNameRecursive(rootNode, name) {
   if (!rootNode || !rootNode.isValid) {
@@ -145,6 +154,70 @@ function setSpriteFrame(sprite, spriteFrame) {
   if (cc.Sprite && cc.Sprite.SizeMode && cc.Sprite.SizeMode.CUSTOM !== undefined) {
     sprite.sizeMode = cc.Sprite.SizeMode.CUSTOM;
   }
+}
+
+function setSpriteRemoteImage(sprite, imageUrl) {
+  if (!sprite || !sprite.node || !sprite.node.isValid) {
+    throw new Error("Ranking avatar sprite is required.");
+  }
+  if (typeof imageUrl !== "string" || !imageUrl) {
+    return;
+  }
+
+  var targetNode = sprite.node;
+  targetNode.__rankingAvatarUrl = imageUrl;
+  if (AVATAR_SPRITE_FRAME_CACHE[imageUrl]) {
+    if (!targetNode.isValid || targetNode.__rankingAvatarUrl !== imageUrl) {
+      return;
+    }
+    sprite.spriteFrame = AVATAR_SPRITE_FRAME_CACHE[imageUrl];
+    if (cc.Sprite && cc.Sprite.SizeMode && cc.Sprite.SizeMode.CUSTOM !== undefined) {
+      sprite.sizeMode = cc.Sprite.SizeMode.CUSTOM;
+    }
+    return;
+  }
+
+  if (!AVATAR_LOAD_PROMISES[imageUrl]) {
+    AVATAR_LOAD_PROMISES[imageUrl] = new Promise(function (resolve, reject) {
+      cc.assetManager.loadRemote(imageUrl, { ext: ".png" }, function (error, imageAsset) {
+        if (error || !imageAsset) {
+          delete AVATAR_LOAD_PROMISES[imageUrl];
+          reject(new Error("Load ranking avatar failed: " + imageUrl));
+          return;
+        }
+
+        var spriteFrame = null;
+        if (imageAsset instanceof cc.SpriteFrame) {
+          spriteFrame = imageAsset;
+        } else if (imageAsset instanceof cc.Texture2D) {
+          spriteFrame = new cc.SpriteFrame(imageAsset);
+        } else if (imageAsset._texture instanceof cc.Texture2D) {
+          spriteFrame = new cc.SpriteFrame(imageAsset._texture);
+        } else if (imageAsset._nativeAsset) {
+          spriteFrame = createSpriteFrameFromImage(imageAsset._nativeAsset);
+        }
+        if (!spriteFrame) {
+          delete AVATAR_LOAD_PROMISES[imageUrl];
+          reject(new Error("Unsupported ranking avatar asset: " + imageUrl));
+          return;
+        }
+
+        AVATAR_SPRITE_FRAME_CACHE[imageUrl] = spriteFrame;
+        delete AVATAR_LOAD_PROMISES[imageUrl];
+        resolve(spriteFrame);
+      });
+    });
+  }
+
+  AVATAR_LOAD_PROMISES[imageUrl].then(function (spriteFrame) {
+    if (!targetNode.isValid || targetNode.__rankingAvatarUrl !== imageUrl) {
+      return;
+    }
+    sprite.spriteFrame = spriteFrame;
+    if (cc.Sprite && cc.Sprite.SizeMode && cc.Sprite.SizeMode.CUSTOM !== undefined) {
+      sprite.sizeMode = cc.Sprite.SizeMode.CUSTOM;
+    }
+  });
 }
 
 function RankingViewController(options) {
@@ -420,6 +493,7 @@ RankingViewController.prototype._cachePrefabRankRowRefs = function (row) {
     bgSprite: row.getComponent(cc.Sprite),
     badgeNode: rankingNode,
     badgeSprite: rankingNode ? rankingNode.getComponent(cc.Sprite) : null,
+    avatarSprite: avatarNode ? avatarNode.getComponent(cc.Sprite) : null,
     rankingNumNode: rankingNumNode,
     rankingNumLabel: rankingNumNode ? rankingNumNode.getComponent(cc.Label) : null,
     nameLabel: nameNode ? nameNode.getComponent(cc.Label) : null,
@@ -468,6 +542,7 @@ RankingViewController.prototype._renderRankRow = function (row, entry, index) {
   var score = Math.max(0, Math.floor(Number(entry && entry.score) || 0));
   var completedLevels = Math.max(0, Math.floor(Number(entry && entry.completedLevels) || 0));
   var nickname = String((entry && entry.nickname) || "");
+  var avatarUrl = entry && typeof entry.avatarUrl === "string" ? entry.avatarUrl : "";
   var isSelf = !!(entry && entry.isSelf);
   var badgeKey = resolveRankBadgeKey(rank);
   var bgKey = resolveRowBgKey(rank);
@@ -480,6 +555,7 @@ RankingViewController.prototype._renderRankRow = function (row, entry, index) {
     setSpriteFrame(refs.bgSprite, this._spriteFrames[bgKey]);
     setSpriteFrame(refs.badgeSprite, badgeKey ? this._spriteFrames[badgeKey] : null);
   }
+  setSpriteRemoteImage(refs.avatarSprite, avatarUrl);
 
   if (refs.badgeNode) {
     refs.badgeNode.active = !!badgeKey;

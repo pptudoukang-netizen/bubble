@@ -4,10 +4,15 @@ var Logger = require("../utils/Logger");
 var BundleLoader = require("../utils/BundleLoader");
 
 function loadPrefab(path) {
-  return new Promise(function (resolve) {
+  return new Promise(function (resolve, reject) {
     BundleLoader.loadRes(path, cc.Prefab, function (error, prefab) {
       if (error) {
-        resolve(null);
+        reject(new Error("Load prefab failed `" + path + "`: " + error.message));
+        return;
+      }
+
+      if (!prefab) {
+        reject(new Error("Load prefab returned empty asset: " + path));
         return;
       }
 
@@ -34,12 +39,8 @@ PrefabFactory.prototype.load = function (path) {
 
   return loadPrefab(path).then(function (prefab) {
     this._resolvedCache[path] = prefab;
-    if (prefab) {
-      this._prefabCache[path] = prefab;
-      Logger.info("Prefab ready", path);
-    } else {
-      Logger.warn("Prefab missing, fallback to runtime nodes", path);
-    }
+    this._prefabCache[path] = prefab;
+    Logger.info("Prefab ready", path);
 
     return prefab;
   }.bind(this));

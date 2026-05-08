@@ -61,9 +61,49 @@ function buildCreateOptions(rect, entry) {
   return options;
 }
 
+function stringifyForError(data) {
+  var text = JSON.stringify(data);
+  if (text.length > 800) {
+    return text.slice(0, 800);
+  }
+  return text;
+}
+
+function resolveCloudDataListPayload(result) {
+  if (!result || typeof result !== "object") {
+    throw new Error("Game circle cloud function result must be an object.");
+  }
+  if (Array.isArray(result.dataList)) {
+    return {
+      dataList: result.dataList
+    };
+  }
+  if (
+    result.gameCircleData &&
+    result.gameCircleData.data &&
+    Array.isArray(result.gameCircleData.data.dataList)
+  ) {
+    return {
+      dataList: result.gameCircleData.data.dataList
+    };
+  }
+  if (
+    result.data &&
+    typeof result.data === "object" &&
+    Array.isArray(result.data.dataList)
+  ) {
+    return {
+      dataList: result.data.dataList
+    };
+  }
+  throw new Error("Game circle cloud function result missing dataList; result=" + stringifyForError(result));
+}
+
 function GameCircleButtonAdapter(options) {
   options = options || {};
   this.platform = resolvePlatform(options.platform);
+  this.cloud = options.cloud || null;
+  this.cloudInitialized = false;
   this.buttons = {};
   this.tapHandlers = {};
 }
@@ -126,6 +166,61 @@ GameCircleButtonAdapter.prototype.hideAllButtons = function () {
   }, this);
 };
 
+GameCircleButtonAdapter.prototype._resolveCloudFunctionName = function () {
+  if (!this.cloud || typeof this.cloud !== "object") {
+    throw new Error("Game circle cloud config is required for encrypted data.");
+  }
+  if (typeof this.cloud.functionName !== "string" || !this.cloud.functionName) {
+    throw new Error("Game circle cloud functionName is required.");
+  }
+  return this.cloud.functionName;
+};
+
+GameCircleButtonAdapter.prototype._ensureCloudReady = function () {
+  if (!this.platform || !this.platform.cloud) {
+    return Promise.reject(new Error("wx.cloud is unavailable for game circle data decryption."));
+  }
+  if (typeof this.platform.cloud.callFunction !== "function") {
+    return Promise.reject(new Error("wx.cloud.callFunction is unavailable for game circle data decryption."));
+  }
+  if (typeof this.platform.cloud.CloudID !== "function") {
+    return Promise.reject(new Error("wx.cloud.CloudID is unavailable for game circle data decryption."));
+  }
+  if (!this.cloud || typeof this.cloud.envId !== "string" || !this.cloud.envId) {
+    return Promise.reject(new Error("Game circle cloud envId is required."));
+  }
+  if (!this.cloudInitialized && typeof this.platform.cloud.init === "function") {
+    this.platform.cloud.init({
+      env: this.cloud.envId
+    });
+    this.cloudInitialized = true;
+  }
+  return Promise.resolve(true);
+};
+
+GameCircleButtonAdapter.prototype._decryptGameClubDataByCloud = function (response) {
+  if (!response || typeof response !== "object") {
+    return Promise.reject(new Error("Game circle encrypted response must be an object."));
+  }
+  if (typeof response.cloudID !== "string" || !response.cloudID) {
+    return Promise.reject(new Error("Game circle encrypted response missing cloudID."));
+  }
+  var functionName = this._resolveCloudFunctionName();
+  return this._ensureCloudReady().then(function () {
+    return this.platform.cloud.callFunction({
+      name: functionName,
+      data: {
+        gameCircleData: this.platform.cloud.CloudID(response.cloudID)
+      }
+    });
+  }.bind(this)).then(function (cloudResponse) {
+    if (!cloudResponse || typeof cloudResponse !== "object" || !cloudResponse.result) {
+      throw new Error("Game circle cloud function returned empty result.");
+    }
+    return resolveCloudDataListPayload(cloudResponse.result);
+  });
+};
+
 GameCircleButtonAdapter.prototype.getGameClubData = function (dataTypeList) {
   if (!this.canGetGameClubData()) {
     return Promise.reject(new Error("wx.getGameClubData is unavailable."));
@@ -138,10 +233,20 @@ GameCircleButtonAdapter.prototype.getGameClubData = function (dataTypeList) {
     this.platform.getGameClubData({
       dataTypeList: dataTypeList,
       success: function (response) {
+        if (response && typeof response === "object" && response.code !== undefined && Number(response.code) !== 0) {
+          reject(new Error(response.message || response.errMsg || "wx.getGameClubData returned non-zero code."));
+          return;
+        }
+        if (response && typeof response === "object" && response.cloudID) {
+          this._decryptGameClubDataByCloud(response).then(resolve).catch(reject);
+          return;
+        }
         resolve(response);
-      },
+      }.bind(this),
       fail: function (error) {
-        var message = error && error.errorMessage ? error.errorMessage : "wx.getGameClubData failed.";
+        var message = error && (error.errorMessage || error.errMsg || error.message)
+          ? (error.errorMessage || error.errMsg || error.message)
+          : "wx.getGameClubData failed.";
         reject(new Error(message));
       }
     });

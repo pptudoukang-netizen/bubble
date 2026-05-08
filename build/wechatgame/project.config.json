@@ -31,11 +31,5 @@
       "list": []
     }
   },
-  "simulatorPluginLibVersion": {},
-  "packOptions": {
-    "ignore": [],
-    "include": []
-  },
-  "isGameTourist": false,
-  "editorSetting": {}
+  "cloudfunctionRoot": "cloudfunctions/"
 }

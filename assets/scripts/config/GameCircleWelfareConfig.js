@@ -9,6 +9,10 @@ module.exports = {
     openlink: "",
     showRedDotWhenRewardClaimable: true
   },
+  cloud: {
+    envId: "cloud1-d7gqettx3e9249ca1",
+    functionName: "getGameCircleData"
+  },
   dataTypes: {
     joinTime: 1,
     todayLikePostCount: 4,

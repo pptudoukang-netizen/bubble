@@ -221,7 +221,7 @@ cc.Class({
     },
     rewardedVideoAdUnitId: {
       default: "",
-      tooltip: "微信激励视频广告位 ID（为空时，开发环境走本地模拟）。"
+      tooltip: "微信激励视频广告位 ID。为空表示缺少广告配置：失败页隐藏 vido_icon，点击 btn_ad 直接发放下局奖励并重开。"
     },
     enableMockRewardedAdOnUnsupported: {
       default: true,
@@ -333,7 +333,9 @@ cc.Class({
     this.gameCircleWelfareStore = new GameCircleWelfareStore({
       activityId: this.gameCircleWelfareConfig.activityId
     });
-    this.gameCircleButtonAdapter = new GameCircleButtonAdapter();
+    this.gameCircleButtonAdapter = new GameCircleButtonAdapter({
+      cloud: this.gameCircleWelfareConfig.cloud
+    });
     this.gameCircleWelfareService = new GameCircleWelfareService({
       config: this.gameCircleWelfareConfig,
       store: this.gameCircleWelfareStore,
@@ -423,6 +425,7 @@ cc.Class({
     this._signInButtonSpriteFrames = null;
     this._signInButtonSpriteLoadPromise = null;
     this._signInIconSpriteFrameCache = {};
+    this._signInAdClaimInProgress = false;
     this.leaderboardStore = null;
     this._rankingViewPrefab = null;
     this._rankingViewNode = null;
@@ -432,6 +435,8 @@ cc.Class({
     this._gameCircleWelfareViewController = null;
     this._gameCircleEntrySpriteFrame = null;
     this._gameCircleEntrySpriteFramePromise = null;
+    this._pendingGameCircleWelfareRefreshOnShow = false;
+    this._gameCircleWelfareReturnShowHandler = null;
     this.audioManager = new AudioManager({
       settingsDefaults: {
         musicEnabled: this.enableBackgroundMusic,
@@ -462,6 +467,9 @@ cc.Class({
       levelManager: this.levelManager
     });
     this.levelRenderer = new LevelRenderer(this.node);
+    this.levelRenderer.setLoseAdPresentation({
+      showVideoIcon: this._hasRewardedVideoAdConfig()
+    });
     this.levelRenderer.setWinActionHandlers({
       onNextLevel: this._onNextLevelTap.bind(this),
       onRetryLevel: this._restartCurrentLevel.bind(this)
@@ -668,6 +676,7 @@ cc.Class({
       this._resizeCallback = this._handleViewResize.bind(this);
       cc.view.setResizeCallback(this._resizeCallback);
     }
+    this._bindGameCircleWelfareReturnRefresh();
   },
 
   onDisable: function () {
@@ -675,9 +684,11 @@ cc.Class({
       cc.view.setResizeCallback(null);
     }
     this._resizeCallback = null;
+    this._unbindGameCircleWelfareReturnRefresh();
   },
 
   onDestroy: function () {
+    this._unbindGameCircleWelfareReturnRefresh();
     if (this.audioManager) {
       this.audioManager.stopBgm();
       this.audioManager.stopAllSfx();
@@ -706,8 +717,13 @@ cc.Class({
     }
 
     if (!this.enableStartupLoadingView) {
-      this._showLevelSelectView();
-      this._startupFlowPromise = Promise.resolve();
+      this._startupFlowPromise = this._runWeightedStartupTasks().then(function () {
+        this._showLevelSelectView();
+      }.bind(this)).catch(function (error) {
+        Logger.error("Startup resource loading failed", error && error.stack ? error.stack : error);
+        this._setStatus("Startup resource loading failed. Check console logs.");
+        throw error;
+      }.bind(this));
       return this._startupFlowPromise;
     }
 
@@ -736,11 +752,12 @@ cc.Class({
     }.bind(this)).then(function () {
       this._showLevelSelectView();
     }.bind(this)).catch(function (error) {
-      Logger.warn("Startup loading flow failed", error && error.message ? error.message : error);
-      if (this._loadingViewController && this._loadingViewController.hideImmediate) {
-        this._loadingViewController.hideImmediate();
+      Logger.error("Startup loading flow failed", error && error.stack ? error.stack : error);
+      this._setStatus("Startup resource loading failed. Check console logs.");
+      if (this._loadingViewController && this._loadingViewController.setStage) {
+        this._loadingViewController.setStage("启动资源加载失败");
       }
-      this._showLevelSelectView();
+      throw error;
     }.bind(this));
 
     return this._startupFlowPromise;
@@ -837,15 +854,23 @@ cc.Class({
       {
         id: "resources_bundle",
         stage: "准备资源分包...",
-        weight: 0.3,
+        weight: 0.25,
         run: function () {
           return BundleLoader.ensureResourcesBundleLoaded();
         }
       },
       {
+        id: "ui_bundle",
+        stage: "准备界面分包...",
+        weight: 0.2,
+        run: function () {
+          return BundleLoader.ensureNamedBundleLoaded("ui");
+        }
+      },
+      {
         id: "level_select_prefabs",
         stage: "加载选关界面...",
-        weight: 0.45,
+        weight: 0.35,
         run: function () {
           return this._preloadStartupPrefabs();
         }.bind(this)
@@ -853,7 +878,7 @@ cc.Class({
       {
         id: "level_configs",
         stage: "初始化首关配置...",
-        weight: 0.25,
+        weight: 0.2,
         run: function () {
           return this._preloadStartupLevelConfigs();
         }.bind(this)
@@ -872,9 +897,7 @@ cc.Class({
           this._loadingViewController.setStage(task.stage);
         }
         this._setStatus(task.stage);
-        return Promise.resolve().then(task.run).catch(function (error) {
-          Logger.warn("Startup task failed: " + task.id, error && error.message ? error.message : error);
-        }).then(function () {
+        return Promise.resolve().then(task.run).then(function () {
           doneWeight += Math.max(0, Number(task.weight) || 0);
           if (this._loadingViewController && this._loadingViewController.setProgress) {
             this._loadingViewController.setProgress(totalWeight > 0 ? (doneWeight / totalWeight) : 1, false);
@@ -2250,6 +2273,68 @@ cc.Class({
     this._grantedAttemptRewardKeys[key] = true;
   },
 
+  _hasRewardedVideoAdConfig: function () {
+    if (typeof this.rewardedVideoAdUnitId !== "string") {
+      return false;
+    }
+
+    return this.rewardedVideoAdUnitId.trim().length > 0;
+  },
+
+  _setAdQuotaBlockedStatus: function (quotaResult) {
+    if (quotaResult.reason === "daily_limit") {
+      this._setStatus("今日奖励次数已达上限");
+    } else if (quotaResult.reason === "cooldown") {
+      this._setStatus("操作过快，请" + quotaResult.cooldownRemainingSec + "秒后重试");
+    } else {
+      this._setStatus("当前无法领取奖励");
+    }
+  },
+
+  _grantLoseRewardWithoutAdConfig: function (entry) {
+    if (this._adFlowInProgress) {
+      this._setStatus("广告处理中，请稍候...");
+      return;
+    }
+
+    if (!this.adRewardQuotaStore || typeof this.adRewardQuotaStore.canGrant !== "function") {
+      throw new Error("Lose reward without ad config requires AdRewardQuotaStore.canGrant.");
+    }
+
+    var quotaResult = this.adRewardQuotaStore.canGrant(entry.quotaType);
+    if (!quotaResult.allowed) {
+      this._setAdQuotaBlockedStatus(quotaResult);
+      return;
+    }
+
+    if (this._hasGrantedAttemptReward(entry.rewardType)) {
+      this._setStatus("本局该奖励已领取");
+      return;
+    }
+
+    var grantResult = this._grantAdEntryReward(entry, {
+      onRewardGrantedMessage: "广告配置缺失，奖励已生效，正在重新开局..."
+    });
+    if (!grantResult || !grantResult.accepted) {
+      throw new Error("Lose reward without ad config grant failed: " + (grantResult && grantResult.message ? grantResult.message : "unknown"));
+    }
+
+    if (typeof this.adRewardQuotaStore.recordGrant !== "function") {
+      throw new Error("Lose reward without ad config requires AdRewardQuotaStore.recordGrant.");
+    }
+    this.adRewardQuotaStore.recordGrant(entry.quotaType);
+    this._markAttemptRewardGranted(entry.rewardType);
+    this._trackTelemetry("ad_reward_grant", {
+      entry_key: entry.entryKey,
+      reward_type: entry.rewardType,
+      reward_value: entry.rewardValue,
+      entry_source: "lose_view",
+      grant_path: "missing_ad_config_skip"
+    });
+    this._setStatus(grantResult.message || "奖励已生效，正在重新开局...");
+    this._restartCurrentLevel();
+  },
+
   _onLoseWatchAdTap: function () {
     if (!this.currentLevelConfig || this.isRestarting || this.isSelectingLevel) {
       return;
@@ -2262,10 +2347,14 @@ cc.Class({
       return;
     }
 
+    if (!this._hasRewardedVideoAdConfig()) {
+      this._grantLoseRewardWithoutAdConfig(loseRewardEntry);
+      return;
+    }
+
     this._showRewardedAdForEntry(loseRewardEntry, {
       entrySource: "lose_view",
       trackExposure: false,
-      allowSimulatedCompletion: true,
       onRewardGrantedMessage: "奖励已生效，正在重新开局...",
       onRewardGranted: function () {
         this._restartCurrentLevel();
@@ -2312,13 +2401,7 @@ cc.Class({
       ? this.adRewardQuotaStore.canGrant(entry.quotaType)
       : { allowed: true, reason: "ok", cooldownRemainingSec: 0, remainingToday: -1 };
     if (!quotaResult.allowed) {
-      if (quotaResult.reason === "daily_limit") {
-        this._setStatus("今日奖励次数已达上限");
-      } else if (quotaResult.reason === "cooldown") {
-        this._setStatus("操作过快，请" + quotaResult.cooldownRemainingSec + "秒后重试");
-      } else {
-        this._setStatus("当前无法领取奖励");
-      }
+      this._setAdQuotaBlockedStatus(quotaResult);
       return Promise.resolve(false);
     }
 
@@ -2343,27 +2426,12 @@ cc.Class({
       }.bind(this)
     }).then(function (adResult) {
       var safeAdResult = adResult || null;
-      var usedSimulatedCompletion = false;
-      if (
-        (!safeAdResult || !safeAdResult.ok) &&
-        options.allowSimulatedCompletion === true
-      ) {
-        usedSimulatedCompletion = true;
-        safeAdResult = {
-          ok: true,
-          code: "simulated_close",
-          isCompleted: true,
-          simulated: true,
-          originalCode: adResult && adResult.code ? adResult.code : "unknown"
-        };
-      }
-
       var isCompleted = !!(safeAdResult && safeAdResult.isCompleted);
       this._trackTelemetry("ad_close", {
         entry_key: entry.entryKey,
         reward_type: entry.rewardType,
         is_completed: isCompleted,
-        is_simulated: usedSimulatedCompletion
+        is_simulated: !!(safeAdResult && safeAdResult.mock)
       });
 
       if (!safeAdResult || !safeAdResult.ok) {
@@ -2698,7 +2766,10 @@ cc.Class({
   _showAwardViewForRewardItems: GameBootstrapUiFlowMethods._showAwardViewForRewardItems,
   _hideAwardView: GameBootstrapUiFlowMethods._hideAwardView,
   _grantSignInRewardItems: GameBootstrapUiFlowMethods._grantSignInRewardItems,
+  _resolveSignInRewardItemsForDay: GameBootstrapUiFlowMethods._resolveSignInRewardItemsForDay,
+  _completeTodaySignInRewardClaim: GameBootstrapUiFlowMethods._completeTodaySignInRewardClaim,
   _claimTodaySignInReward: GameBootstrapUiFlowMethods._claimTodaySignInReward,
+  _claimTodaySignInRewardByAd: GameBootstrapUiFlowMethods._claimTodaySignInRewardByAd,
   _maybeAutoShowSignInView: GameBootstrapUiFlowMethods._maybeAutoShowSignInView,
   _resolveLeaderboardPlayerName: GameBootstrapUiFlowMethods._resolveLeaderboardPlayerName,
   _refreshLeaderboardEntries: GameBootstrapUiFlowMethods._refreshLeaderboardEntries,
@@ -2735,6 +2806,10 @@ cc.Class({
   _renderGameCircleWelfareView: GameBootstrapUiFlowMethods._renderGameCircleWelfareView,
   _refreshGameCircleWelfareProgress: GameBootstrapUiFlowMethods._refreshGameCircleWelfareProgress,
   _claimGameCircleWelfareTask: GameBootstrapUiFlowMethods._claimGameCircleWelfareTask,
+  _bindGameCircleWelfareReturnRefresh: GameBootstrapUiFlowMethods._bindGameCircleWelfareReturnRefresh,
+  _unbindGameCircleWelfareReturnRefresh: GameBootstrapUiFlowMethods._unbindGameCircleWelfareReturnRefresh,
+  _markGameCircleWelfareRefreshPending: GameBootstrapUiFlowMethods._markGameCircleWelfareRefreshPending,
+  _handleGameCircleWelfareReturnToGame: GameBootstrapUiFlowMethods._handleGameCircleWelfareReturnToGame,
   _resolveNativeButtonRectForNode: GameBootstrapUiFlowMethods._resolveNativeButtonRectForNode,
   _syncGameCircleNativeButtons: GameBootstrapUiFlowMethods._syncGameCircleNativeButtons,
   _openGameCircleFromWelfare: GameBootstrapUiFlowMethods._openGameCircleFromWelfare,

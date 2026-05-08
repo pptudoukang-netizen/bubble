@@ -109,6 +109,28 @@ function hideGameCircleWelfareViewNode(host) {
   }
 }
 
+function resolveGameCirclePlatform(host) {
+  if (host && host.gameCircleButtonAdapter && host.gameCircleButtonAdapter.platform) {
+    return host.gameCircleButtonAdapter.platform;
+  }
+  if (typeof wx !== "undefined") {
+    return wx;
+  }
+  if (typeof window !== "undefined" && window.wx) {
+    return window.wx;
+  }
+  return null;
+}
+
+function isGameCircleWelfareViewVisible(host) {
+  return !!(
+    host &&
+    host._gameCircleWelfareViewNode &&
+    cc.isValid(host._gameCircleWelfareViewNode) &&
+    host._gameCircleWelfareViewNode.active
+  );
+}
+
 function resolveStarChestFailMessage(reason, summary) {
   if (reason === "STAR_CHEST_DISABLED") {
     return "星星宝箱暂未开放";
@@ -141,7 +163,25 @@ function resolveGameCircleFailMessage(error) {
   if (message.indexOf("wx.createGameClubButton is unavailable") >= 0) {
     return "游戏圈入口仅微信小游戏环境可用";
   }
-  return "游戏圈福利操作失败，请重试";
+  if (message.indexOf("api scope is not declared in the privacy agreement") >= 0) {
+    return "请先在微信后台隐私保护指引声明游戏圈数据";
+  }
+  if (message.indexOf("GAME_CIRCLE_ENCRYPTED_DATA_REQUIRES_DECRYPTION") >= 0) {
+    return "游戏圈数据需后端解密后刷新";
+  }
+  if (message.indexOf("Game circle data missing like count metric") >= 0) {
+    return "游戏圈点赞数据字段未返回";
+  }
+  if (message.indexOf("Game circle platform response missing dataList") >= 0) {
+    if (message.length > 90) {
+      message = message.slice(0, 90);
+    }
+    return "游戏圈数据结构异常：" + message;
+  }
+  if (message.length > 90) {
+    message = message.slice(0, 90);
+  }
+  return "游戏圈福利失败：" + message;
 }
 
 function normalizeAwardPopupItems(items) {
@@ -671,6 +711,7 @@ module.exports = {
 
     var closeButtonNode = this._findNodeByNameRecursive(signInViewNode, "btn_close");
     var claimButtonNode = this._findNodeByNameRecursive(signInViewNode, "btn_award");
+    var claimAdButtonNode = this._findNodeByNameRecursive(signInViewNode, "btn_award_ad");
     var maskNode = this._findNodeByNameRecursive(signInViewNode, "mask");
 
     this._bindNodeTapOnce(closeButtonNode, function () {
@@ -684,6 +725,10 @@ module.exports = {
     this._bindNodeTapOnce(claimButtonNode, function () {
       this._playSfx("uiClick");
       this._claimTodaySignInReward();
+    }.bind(this));
+    this._bindNodeTapOnce(claimAdButtonNode, function () {
+      this._playSfx("uiClick");
+      this._claimTodaySignInRewardByAd();
     }.bind(this));
   },
 
@@ -757,6 +802,15 @@ module.exports = {
         claimButton.interactable = canClaimToday;
       }
       claimButtonNode.color = canClaimToday ? cc.color(255, 255, 255, 255) : cc.color(170, 170, 170, 255);
+    }
+    var claimAdButtonNode = this._findNodeByNameRecursive(signInViewNode, "btn_award_ad");
+    if (claimAdButtonNode && claimAdButtonNode.isValid) {
+      var claimAdButton = claimAdButtonNode.getComponent(cc.Button);
+      if (claimAdButton) {
+        claimAdButton.enableAutoGrayEffect = true;
+        claimAdButton.interactable = canClaimToday;
+      }
+      claimAdButtonNode.color = canClaimToday ? cc.color(255, 255, 255, 255) : cc.color(170, 170, 170, 255);
     }
 
     Promise.all(iconLoadTasks).catch(function (error) {
@@ -1013,6 +1067,62 @@ module.exports = {
     return summaryTexts;
   },
 
+  _resolveSignInRewardItemsForDay: function (day, multiplier) {
+    var safeDay = Math.floor(Number(day));
+    if (!Number.isFinite(safeDay) || safeDay < 1) {
+      throw new Error("Sign-in reward day is invalid: " + day);
+    }
+
+    var safeMultiplier = Math.floor(Number(multiplier));
+    if (!Number.isFinite(safeMultiplier) || safeMultiplier < 1) {
+      throw new Error("Sign-in reward multiplier is invalid: " + multiplier);
+    }
+
+    var rewardEntry = this._resolveSignInRewardByDay(safeDay);
+    if (!rewardEntry || !Array.isArray(rewardEntry.items) || rewardEntry.items.length <= 0) {
+      throw new Error("Sign-in reward config is missing for day " + safeDay + ".");
+    }
+
+    return rewardEntry.items.map(function (item, index) {
+      if (!item || typeof item.id !== "string" || !item.id) {
+        throw new Error("Sign-in reward item id is missing at day " + safeDay + ", index " + index + ".");
+      }
+
+      var count = Math.floor(Number(item.count));
+      if (!Number.isFinite(count) || count < 1) {
+        throw new Error("Sign-in reward item count is invalid at day " + safeDay + ", index " + index + ".");
+      }
+
+      return {
+        id: item.id,
+        count: count * safeMultiplier
+      };
+    });
+  },
+
+  _completeTodaySignInRewardClaim: function (claimResult, multiplier, successPrefix) {
+    if (!claimResult || !claimResult.accepted) {
+      throw new Error("Accepted sign-in claim result is required.");
+    }
+
+    var rewardItems = this._resolveSignInRewardItemsForDay(claimResult.claimedDay, multiplier);
+    this.signInState = claimResult.state;
+    this.signInStore.save(this.signInState);
+
+    var summaryTexts = this._grantSignInRewardItems(rewardItems);
+
+    this._updateLevelSelectTopStatus();
+    this._renderSignInView();
+    this._updateSignInEntryState();
+
+    var summary = summaryTexts.length > 0 ? summaryTexts.join("，") : "奖励已发放";
+    this._setStatus(successPrefix + "：" + summary);
+    this._showAwardViewForRewardItems(rewardItems).catch(function (error) {
+      Logger.error("Show sign-in award view failed", error && error.message ? error.message : error);
+      this._setStatus("签到奖励弹窗加载失败");
+    }.bind(this));
+  },
+
   _claimTodaySignInReward: function () {
     if (!this.signInStore || typeof this.signInStore.claimToday !== "function") {
       this._setStatus("签到系统未就绪");
@@ -1033,24 +1143,100 @@ module.exports = {
       return;
     }
 
-    // 先持久化签到状态，避免异常退出造成重复领取。
-    this.signInState = claimResult.state;
-    this.signInStore.save(this.signInState);
+    this._completeTodaySignInRewardClaim(claimResult, 1, "签到成功");
+  },
 
-    var rewardEntry = this._resolveSignInRewardByDay(claimResult.claimedDay);
-    var rewardItems = rewardEntry && Array.isArray(rewardEntry.items) ? rewardEntry.items : [];
-    var summaryTexts = this._grantSignInRewardItems(rewardItems);
+  _claimTodaySignInRewardByAd: function () {
+    if (this._signInAdClaimInProgress) {
+      this._setStatus("广告处理中，请稍候...");
+      return;
+    }
 
-    this._updateLevelSelectTopStatus();
-    this._renderSignInView();
-    this._updateSignInEntryState();
+    if (typeof this._hasRewardedVideoAdConfig !== "function" || !this._hasRewardedVideoAdConfig()) {
+      if (typeof this._setStatusWithTip === "function") {
+        this._setStatusWithTip("sign_in_ad_unavailable", null, "暂时还没有广告可看哦");
+      } else {
+        this._setStatus("暂时还没有广告可看哦");
+      }
+      return;
+    }
 
-    var summary = summaryTexts.length > 0 ? summaryTexts.join("，") : "奖励已发放";
-    var successMessage = "签到成功：" + summary;
-    this._setStatus(successMessage);
-    this._showAwardViewForRewardItems(rewardItems).catch(function (error) {
-      Logger.error("Show sign-in award view failed", error && error.message ? error.message : error);
-      this._setStatus("签到奖励弹窗加载失败");
+    if (!this.signInStore || typeof this.signInStore.claimToday !== "function") {
+      throw new Error("Sign-in ad reward requires SignInStore.claimToday.");
+    }
+    if (typeof this.signInStore.canClaimToday !== "function") {
+      throw new Error("Sign-in ad reward requires SignInStore.canClaimToday.");
+    }
+    if (!this.adService || typeof this.adService.showRewarded !== "function") {
+      throw new Error("Sign-in ad reward requires AdService.showRewarded.");
+    }
+
+    this._refreshSignInState();
+    var now = new Date();
+    if (!this.signInStore.canClaimToday(this.signInState, now)) {
+      if (typeof this._setStatusWithTip === "function") {
+        this._setStatusWithTip("sign_in_already_claimed", null, "今日奖励已领取");
+      } else {
+        this._setStatus("今日奖励已领取");
+      }
+      this._renderSignInView();
+      this._updateSignInEntryState();
+      return;
+    }
+
+    this._signInAdClaimInProgress = true;
+    this._trackTelemetry("ad_request", {
+      entry_key: "sign_in_double_reward",
+      reward_type: "sign_in_double_reward"
+    });
+
+    this.adService.showRewarded({
+      placement: "sign_in_double_reward",
+      onShow: function () {
+        this._trackTelemetry("ad_show", {
+          entry_key: "sign_in_double_reward",
+          reward_type: "sign_in_double_reward"
+        });
+      }.bind(this)
+    }).then(function (adResult) {
+      var isCompleted = !!(adResult && adResult.ok && adResult.isCompleted);
+      this._trackTelemetry("ad_close", {
+        entry_key: "sign_in_double_reward",
+        reward_type: "sign_in_double_reward",
+        is_completed: isCompleted,
+        is_simulated: !!(adResult && adResult.mock)
+      });
+
+      if (!adResult || !adResult.ok) {
+        this._setStatus("广告加载失败，请稍后重试");
+        return;
+      }
+      if (!isCompleted) {
+        this._setStatus("未完整观看广告，签到奖励未发放");
+        return;
+      }
+
+      var claimResult = this.signInStore.claimToday(this.signInState, now);
+      if (!claimResult || !claimResult.accepted) {
+        this._setStatus("今日奖励已领取");
+        this._renderSignInView();
+        this._updateSignInEntryState();
+        return;
+      }
+
+      this._completeTodaySignInRewardClaim(claimResult, 2, "签到双倍领取成功");
+      this._trackTelemetry("ad_reward_grant", {
+        entry_key: "sign_in_double_reward",
+        reward_type: "sign_in_double_reward",
+        reward_value: "x2"
+      });
+    }.bind(this), function () {
+      this._setStatus("广告展示失败，请稍后重试");
+    }.bind(this)).then(function () {
+      this._signInAdClaimInProgress = false;
+    }.bind(this), function (error) {
+      this._signInAdClaimInProgress = false;
+      throw error;
     }.bind(this));
   },
 
@@ -1602,7 +1788,9 @@ module.exports = {
 
     this._bindNodeTapOnce(entryNode, function () {
       this._playSfx("uiClick");
-      this._showGameCircleWelfareView();
+      this._showGameCircleWelfareView({
+        refreshOnOpen: true
+      });
     }.bind(this));
 
     this._updateGameCircleEntryState();
@@ -1644,7 +1832,8 @@ module.exports = {
     }.bind(this));
   },
 
-  _showGameCircleWelfareView: function () {
+  _showGameCircleWelfareView: function (options) {
+    var showOptions = options || {};
     if (!this.isSelectingLevel || this.isRestarting) {
       return;
     }
@@ -1703,10 +1892,20 @@ module.exports = {
       }
 
       viewNode.active = true;
+      if (showOptions.refreshOnOpen === true) {
+        return this._refreshGameCircleWelfareProgress({
+          silent: true,
+          source: "open_panel"
+        });
+      }
       return this._renderGameCircleWelfareView();
     }.bind(this)).catch(function (error) {
-      Logger.error("Show game circle welfare view failed", error && error.message ? error.message : error);
-      showStatusAndTip(this, "游戏圈福利加载失败");
+      var message = error && error.message ? error.message : String(error);
+      Logger.error("Show game circle welfare view failed", message);
+      if (message.length > 80) {
+        message = message.slice(0, 80);
+      }
+      showStatusAndTip(this, "游戏圈福利加载失败：" + message);
     }.bind(this));
   },
 
@@ -1736,19 +1935,26 @@ module.exports = {
     }.bind(this));
   },
 
-  _refreshGameCircleWelfareProgress: function () {
+  _refreshGameCircleWelfareProgress: function (options) {
+    var refreshOptions = options || {};
     if (!this.gameCircleWelfareService || typeof this.gameCircleWelfareService.refreshMetrics !== "function") {
       showStatusAndTip(this, "游戏圈福利未就绪");
-      return;
+      return Promise.reject(new Error("Game circle welfare service is not ready."));
     }
-    this.gameCircleWelfareService.refreshMetrics(new Date()).then(function () {
+    return this.gameCircleWelfareService.refreshMetrics(new Date()).then(function () {
       this._updateGameCircleEntryState();
+      if (!isGameCircleWelfareViewVisible(this)) {
+        return null;
+      }
       return this._renderGameCircleWelfareView();
     }.bind(this)).then(function () {
-      showStatusAndTip(this, "游戏圈进度已刷新");
+      if (refreshOptions.silent !== true) {
+        showStatusAndTip(this, "游戏圈进度已刷新");
+      }
     }.bind(this)).catch(function (error) {
       Logger.error("Refresh game circle welfare progress failed", error && error.message ? error.message : error);
       showStatusAndTip(this, resolveGameCircleFailMessage(error));
+      throw error;
     }.bind(this));
   },
 
@@ -1786,6 +1992,72 @@ module.exports = {
       Logger.error("Claim game circle welfare task failed", error && error.message ? error.message : error);
       showStatusAndTip(this, resolveGameCircleFailMessage(error));
     }
+  },
+
+  _bindGameCircleWelfareReturnRefresh: function () {
+    if (typeof this._handleGameCircleWelfareReturnToGame !== "function") {
+      throw new Error("Game circle welfare return handler is missing.");
+    }
+    if (this._gameCircleWelfareReturnShowHandler) {
+      return;
+    }
+    var handler = this._handleGameCircleWelfareReturnToGame.bind(this);
+    this._gameCircleWelfareReturnShowHandler = handler;
+    if (cc && cc.game && typeof cc.game.on === "function" && cc.game.EVENT_SHOW) {
+      cc.game.on(cc.game.EVENT_SHOW, handler);
+    }
+    var platform = resolveGameCirclePlatform(this);
+    if (platform && typeof platform.onShow === "function") {
+      platform.onShow(handler);
+    }
+  },
+
+  _unbindGameCircleWelfareReturnRefresh: function () {
+    var handler = this._gameCircleWelfareReturnShowHandler;
+    if (!handler) {
+      return;
+    }
+    if (cc && cc.game && typeof cc.game.off === "function" && cc.game.EVENT_SHOW) {
+      cc.game.off(cc.game.EVENT_SHOW, handler);
+    }
+    var platform = resolveGameCirclePlatform(this);
+    if (platform && typeof platform.offShow === "function") {
+      platform.offShow(handler);
+    }
+    this._gameCircleWelfareReturnShowHandler = null;
+  },
+
+  _markGameCircleWelfareRefreshPending: function (source) {
+    if (typeof source !== "string" || !source) {
+      throw new Error("Game circle welfare refresh pending source is required.");
+    }
+    this._pendingGameCircleWelfareRefreshOnShow = true;
+    this._trackTelemetry("game_circle_return_refresh_pending", {
+      activity_id: this.gameCircleWelfareConfig.activityId,
+      source: source
+    });
+  },
+
+  _handleGameCircleWelfareReturnToGame: function () {
+    if (this._pendingGameCircleWelfareRefreshOnShow !== true) {
+      return;
+    }
+    if (!this.isSelectingLevel || this.isRestarting || !isGameCircleWelfareViewVisible(this)) {
+      this._pendingGameCircleWelfareRefreshOnShow = false;
+      this._trackTelemetry("game_circle_return_refresh_cancel", {
+        activity_id: this.gameCircleWelfareConfig.activityId,
+        reason: "welfare_view_not_active"
+      });
+      return;
+    }
+    this._pendingGameCircleWelfareRefreshOnShow = false;
+    this._trackTelemetry("game_circle_return_refresh_start", {
+      activity_id: this.gameCircleWelfareConfig.activityId
+    });
+    return this._refreshGameCircleWelfareProgress({
+      silent: true,
+      source: "return_from_game_circle"
+    });
   },
 
   _resolveNativeButtonRectForNode: function (node) {
@@ -1828,6 +2100,7 @@ module.exports = {
         this._resolveNativeButtonRectForNode(buttonState.circleButtonNode),
         entry,
         function () {
+          this._markGameCircleWelfareRefreshPending("panel_entry");
           this._trackTelemetry("game_circle_entry_click", {
             activity_id: this.gameCircleWelfareConfig.activityId,
             source: "panel_entry",
@@ -1849,6 +2122,7 @@ module.exports = {
         this._resolveNativeButtonRectForNode(taskButton.goButtonNode),
         entry,
         function () {
+          this._markGameCircleWelfareRefreshPending("task_" + taskButton.taskId);
           this._trackTelemetry("game_circle_entry_click", {
             activity_id: this.gameCircleWelfareConfig.activityId,
             source: "task_" + taskButton.taskId,

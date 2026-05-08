@@ -7,6 +7,14 @@ function clone(data) {
   return JSON.parse(JSON.stringify(data));
 }
 
+function stringifyForError(data) {
+  var text = JSON.stringify(data);
+  if (text.length > 600) {
+    return text.slice(0, 600);
+  }
+  return text;
+}
+
 function requirePositiveInteger(value, fieldName) {
   var parsed = Math.floor(Number(value));
   if (!Number.isFinite(parsed) || parsed <= 0 || parsed !== Number(value)) {
@@ -125,6 +133,32 @@ function resolveType(dataType) {
   throw new Error("Game circle dataList item has invalid dataType.");
 }
 
+function parseGameClubDataListText(text) {
+  if (typeof text !== "string" || !text) {
+    throw new Error("Game circle dataList text must be a non-empty string.");
+  }
+  var parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch (error) {
+    throw new Error("Game circle dataList text JSON parse failed: " + (error && error.message ? error.message : String(error)));
+  }
+  if (Array.isArray(parsed)) {
+    return parsed;
+  }
+  if (parsed && typeof parsed === "object" && Array.isArray(parsed.dataList)) {
+    return parsed.dataList;
+  }
+  throw new Error("Game circle dataList text does not contain dataList array.");
+}
+
+function resolveDataPayload(response) {
+  if (response && typeof response === "object" && response.data && typeof response.data === "object") {
+    return response.data;
+  }
+  return response;
+}
+
 function resolveDataList(response) {
   if (!response || typeof response !== "object") {
     throw new Error("Game circle platform response must be an object.");
@@ -132,8 +166,17 @@ function resolveDataList(response) {
   if (Array.isArray(response.dataList)) {
     return response.dataList;
   }
-  if (response.data && Array.isArray(response.data.dataList)) {
-    return response.data.dataList;
+  var payload = resolveDataPayload(response);
+  if (payload && typeof payload === "object") {
+    if (Array.isArray(payload.dataList)) {
+      return payload.dataList;
+    }
+    if (typeof payload.dataList === "string") {
+      return parseGameClubDataListText(payload.dataList);
+    }
+    if (payload.encryptedData || payload.cloudID) {
+      throw new Error("GAME_CIRCLE_ENCRYPTED_DATA_REQUIRES_DECRYPTION");
+    }
   }
   if (Array.isArray(response)) {
     return response;
@@ -174,27 +217,36 @@ GameCircleWelfareService.prototype.getDataTypeList = function () {
 };
 
 GameCircleWelfareService.prototype.parsePlatformMetrics = function (response) {
-  var dataList = resolveDataList(response);
+  var dataList;
+  try {
+    dataList = resolveDataList(response);
+  } catch (error) {
+    throw new Error((error && error.message ? error.message : String(error)) + "; response=" + stringifyForError(response));
+  }
   var valuesByType = {};
-  dataList.forEach(function (item, index) {
-    if (!item || typeof item !== "object") {
-      throw new Error("Game circle dataList item at index " + index + " must be an object.");
-    }
-    var type = resolveType(item.dataType);
-    valuesByType[type] = requireNonNegativeInteger(item.value, "dataList[" + index + "].value");
-  });
+  try {
+    dataList.forEach(function (item, index) {
+      if (!item || typeof item !== "object") {
+        throw new Error("Game circle dataList item at index " + index + " must be an object.");
+      }
+      var type = resolveType(item.dataType);
+      valuesByType[type] = requireNonNegativeInteger(item.value, "dataList[" + index + "].value");
+    });
+  } catch (error) {
+    throw new Error((error && error.message ? error.message : String(error)) + "; dataList=" + stringifyForError(dataList));
+  }
 
   var joinType = this.config.dataTypes.joinTime;
   var likeType = this.config.dataTypes.todayLikePostCount;
   var publishType = this.config.dataTypes.todayPublishPostCount;
   if (!Object.prototype.hasOwnProperty.call(valuesByType, joinType)) {
-    throw new Error("Game circle data missing join time metric.");
+    throw new Error("Game circle data missing join time metric; dataList=" + stringifyForError(dataList));
   }
   if (!Object.prototype.hasOwnProperty.call(valuesByType, likeType)) {
-    throw new Error("Game circle data missing like count metric.");
+    throw new Error("Game circle data missing like count metric; dataList=" + stringifyForError(dataList));
   }
   if (!Object.prototype.hasOwnProperty.call(valuesByType, publishType)) {
-    throw new Error("Game circle data missing publish count metric.");
+    throw new Error("Game circle data missing publish count metric; dataList=" + stringifyForError(dataList));
   }
 
   return {

@@ -3,8 +3,28 @@
 var Logger = require("./Logger");
 
 var RESOURCES_BUNDLE_NAME = "resources";
+var UI_BUNDLE_NAME = "ui";
+var UI_PREFAB_LEGACY_PREFIX = "prefabs/ui/";
+var UI_PREFAB_BUNDLE_PREFIX = "prefabs/";
+var UI_BUNDLE_PREFABS = {
+  AwardView: true,
+  BackpackView: true,
+  BuyView: true,
+  GamingCircleView: true,
+  LoseView: true,
+  RankingItem: true,
+  RankingView: true,
+  SettingView: true,
+  ShopView: true,
+  "SignInView ": true,
+  Tips: true,
+  WinView: true
+};
 var resourcesBundle = null;
 var resourcesBundlePromise = null;
+var namedBundleCache = {};
+var namedBundlePromises = {};
+var namedSubpackagePromises = {};
 
 function hasAssetManager() {
   return !!(cc && cc.assetManager && typeof cc.assetManager.loadBundle === "function");
@@ -60,6 +80,20 @@ function runBundleLoad(path, type, callback) {
   }
 
   resourcesBundle.load(path, callback);
+}
+
+function runNamedBundleLoad(bundleName, bundle, path, type, callback) {
+  if (!bundle || typeof bundle.load !== "function") {
+    callback(new Error("Asset bundle not loaded: " + bundleName));
+    return;
+  }
+
+  if (type) {
+    bundle.load(path, type, callback);
+    return;
+  }
+
+  bundle.load(path, callback);
 }
 
 function runBundleLoadDir(path, type, callback) {
@@ -182,10 +216,120 @@ function ensureResourcesBundleLoaded() {
   return resourcesBundlePromise;
 }
 
+function isWeChatGameRuntime() {
+  return !!(
+    typeof wx !== "undefined" &&
+    wx &&
+    typeof wx.loadSubpackage === "function"
+  );
+}
+
+function ensureWeChatSubpackageLoaded(bundleName) {
+  if (!isWeChatGameRuntime()) {
+    return Promise.resolve();
+  }
+
+  if (namedSubpackagePromises[bundleName]) {
+    return namedSubpackagePromises[bundleName];
+  }
+
+  namedSubpackagePromises[bundleName] = new Promise(function (resolve, reject) {
+    wx.loadSubpackage({
+      name: bundleName,
+      success: function () {
+        resolve();
+      },
+      fail: function (error) {
+        namedSubpackagePromises[bundleName] = null;
+        reject(toError(error, "Load WeChat subpackage failed: " + bundleName));
+      }
+    });
+  });
+
+  return namedSubpackagePromises[bundleName];
+}
+
+function ensureNamedBundleLoaded(bundleName) {
+  if (!bundleName || typeof bundleName !== "string") {
+    return Promise.reject(new Error("Invalid bundle name: " + bundleName));
+  }
+
+  if (bundleName === RESOURCES_BUNDLE_NAME) {
+    return ensureResourcesBundleLoaded();
+  }
+
+  if (namedBundleCache[bundleName]) {
+    return Promise.resolve(namedBundleCache[bundleName]);
+  }
+
+  if (!hasAssetManager()) {
+    return Promise.reject(new Error("AssetManager is required to load bundle: " + bundleName));
+  }
+
+  if (namedBundlePromises[bundleName]) {
+    return namedBundlePromises[bundleName];
+  }
+
+  namedBundlePromises[bundleName] = ensureWeChatSubpackageLoaded(bundleName).then(function () {
+    return new Promise(function (resolve, reject) {
+      cc.assetManager.loadBundle(bundleName, function (error, bundle) {
+        namedBundlePromises[bundleName] = null;
+        if (error) {
+          reject(toError(error, "Load asset bundle failed: " + bundleName));
+          return;
+        }
+
+        if (!bundle || typeof bundle.load !== "function") {
+          reject(new Error("Loaded asset bundle is invalid: " + bundleName));
+          return;
+        }
+
+        namedBundleCache[bundleName] = bundle;
+        resolve(bundle);
+      });
+    });
+  }).catch(function (error) {
+    namedBundlePromises[bundleName] = null;
+    throw error;
+  });
+
+  return namedBundlePromises[bundleName];
+}
+
+function resolveLoadRoute(path) {
+  if (path.indexOf(UI_PREFAB_LEGACY_PREFIX) !== 0) {
+    return {
+      bundleName: RESOURCES_BUNDLE_NAME,
+      path: path
+    };
+  }
+
+  var prefabName = path.slice(UI_PREFAB_LEGACY_PREFIX.length);
+  if (UI_BUNDLE_PREFABS[prefabName] !== true) {
+    return {
+      bundleName: RESOURCES_BUNDLE_NAME,
+      path: path
+    };
+  }
+
+  return {
+    bundleName: UI_BUNDLE_NAME,
+    path: UI_PREFAB_BUNDLE_PREFIX + prefabName
+  };
+}
+
 function loadRes(path, typeOrCallback, callback) {
   var args = normalizeTypeAndCallback(typeOrCallback, callback);
   if (!path || typeof path !== "string") {
     args.callback(new Error("Invalid resource path: " + path));
+    return;
+  }
+
+  var route = resolveLoadRoute(path);
+  if (route.bundleName !== RESOURCES_BUNDLE_NAME) {
+    ensureNamedBundleLoaded(route.bundleName).then(function (bundle) {
+      runNamedBundleLoad(route.bundleName, bundle, route.path, args.type, args.callback);
+    }).catch(args.callback);
     return;
   }
 
@@ -236,6 +380,7 @@ function loadResDir(path, typeOrCallback, callback) {
 
 module.exports = {
   ensureResourcesBundleLoaded: ensureResourcesBundleLoaded,
+  ensureNamedBundleLoaded: ensureNamedBundleLoaded,
   loadRes: loadRes,
   loadResDir: loadResDir
 };

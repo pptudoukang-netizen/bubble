@@ -36,6 +36,8 @@ var RUN_ANIMATION_RESOURCE_PATH = "animation/run_ani";
 var RUN_ANIMATION_NODE_NAME = "run_ani";
 var RUN_ANIMATION_POSITION = cc.v2(0, 80);
 var RUN_ANIMATION_SCALE = 0.5;
+var MAP_SWIPE_MIN_DISTANCE = 90;
+var MAP_SWIPE_VERTICAL_TOLERANCE = 0.75;
 
 var levelButtonSkinFrames = null;
 var levelButtonSkinLoadPromise = null;
@@ -128,20 +130,26 @@ function ensureRunAnimationClip() {
   return runAnimationClipLoadPromise;
 }
 
-function attachRunAnimationToLevelSlot(slotNode) {
+function attachRunAnimationToLevelSlot(slotNode, levelMapRootNode) {
   if (!slotNode || !slotNode.isValid) {
     throw new Error("Run animation target slot is invalid.");
   }
+  if (!levelMapRootNode || !levelMapRootNode.isValid) {
+    throw new Error("Run animation level map root node is invalid.");
+  }
 
   return ensureRunAnimationClip().then(function (clip) {
-    if (!slotNode || !slotNode.isValid) {
+    if (!slotNode || !slotNode.isValid || !levelMapRootNode || !levelMapRootNode.isValid) {
       throw new Error("Run animation target slot was destroyed before attachment.");
     }
 
+    var targetWorldPosition = slotNode.convertToWorldSpaceAR(RUN_ANIMATION_POSITION);
+    var targetLocalPosition = levelMapRootNode.convertToNodeSpaceAR(targetWorldPosition);
     var runNode = new cc.Node(RUN_ANIMATION_NODE_NAME);
-    runNode.parent = slotNode;
-    runNode.setPosition(RUN_ANIMATION_POSITION);
+    runNode.parent = levelMapRootNode;
+    runNode.setPosition(targetLocalPosition);
     runNode.setScale(RUN_ANIMATION_SCALE);
+    runNode.zIndex = 9999;
     runNode.addComponent(cc.Sprite);
 
     clip.wrapMode = cc.WrapMode.Loop;
@@ -313,6 +321,131 @@ function bindMapSwitchButton(buttonNode, levelViewNode, nextIndexResolver, onMap
     var nextIndex = nextIndexResolver(levelViewNode);
     onMapIndexChange(nextIndex);
   });
+}
+
+function getTouchLocation(event) {
+  if (!event || typeof event.getLocation !== "function") {
+    return null;
+  }
+
+  var location = event.getLocation();
+  if (!location || typeof location.x !== "number" || typeof location.y !== "number") {
+    return null;
+  }
+  return location;
+}
+
+function resolveSwipeTargetMapIndex(levelView, deltaX) {
+  var currentMapIndex = Math.max(0, Math.floor(Number(levelView.__levelSelectCurrentMapIndex) || 0));
+  var mapCount = Math.max(0, Math.floor(Number(levelView.__levelSelectMapCount) || 0));
+  if (mapCount <= 1) {
+    return currentMapIndex;
+  }
+
+  if (deltaX < 0 && currentMapIndex < mapCount - 1) {
+    return currentMapIndex + 1;
+  }
+  if (deltaX > 0 && currentMapIndex > 0) {
+    return currentMapIndex - 1;
+  }
+  return currentMapIndex;
+}
+
+function bindLevelMapSwipe(swipeNode, levelView, onMapIndexChange) {
+  if (!swipeNode || !swipeNode.isValid || !levelView || !levelView.isValid) {
+    return;
+  }
+
+  swipeNode.__levelMapSwipeOnMapIndexChange = onMapIndexChange;
+  if (swipeNode.__levelMapSwipeBound === true) {
+    return;
+  }
+
+  swipeNode.__levelMapSwipeBound = true;
+  swipeNode.__levelMapSwipeTracking = false;
+  swipeNode.__levelMapSwipeStart = null;
+  swipeNode.__levelMapSwipeLast = null;
+  levelView.__levelMapSwipeConsumed = false;
+
+  swipeNode.on(cc.Node.EventType.TOUCH_START, function (event) {
+    levelView.__levelMapSwipeConsumed = false;
+    if (levelView.__levelMapSwipeEnabled !== true) {
+      return;
+    }
+
+    var location = getTouchLocation(event);
+    if (!location) {
+      return;
+    }
+
+    swipeNode.__levelMapSwipeTracking = true;
+    swipeNode.__levelMapSwipeStart = {
+      x: location.x,
+      y: location.y
+    };
+    swipeNode.__levelMapSwipeLast = {
+      x: location.x,
+      y: location.y
+    };
+  }, swipeNode, true);
+
+  swipeNode.on(cc.Node.EventType.TOUCH_MOVE, function (event) {
+    if (swipeNode.__levelMapSwipeTracking !== true) {
+      return;
+    }
+
+    var location = getTouchLocation(event);
+    if (!location) {
+      return;
+    }
+
+    swipeNode.__levelMapSwipeLast = {
+      x: location.x,
+      y: location.y
+    };
+  }, swipeNode, true);
+
+  swipeNode.on(cc.Node.EventType.TOUCH_CANCEL, function () {
+    swipeNode.__levelMapSwipeTracking = false;
+    swipeNode.__levelMapSwipeStart = null;
+    swipeNode.__levelMapSwipeLast = null;
+  }, swipeNode, true);
+
+  swipeNode.on(cc.Node.EventType.TOUCH_END, function (event) {
+    if (swipeNode.__levelMapSwipeTracking !== true) {
+      return;
+    }
+
+    var endLocation = getTouchLocation(event) || swipeNode.__levelMapSwipeLast;
+    var startLocation = swipeNode.__levelMapSwipeStart;
+    swipeNode.__levelMapSwipeTracking = false;
+    swipeNode.__levelMapSwipeStart = null;
+    swipeNode.__levelMapSwipeLast = null;
+    if (!startLocation || !endLocation || levelView.__levelMapSwipeEnabled !== true) {
+      return;
+    }
+
+    var deltaX = endLocation.x - startLocation.x;
+    var deltaY = endLocation.y - startLocation.y;
+    if (Math.abs(deltaX) < MAP_SWIPE_MIN_DISTANCE) {
+      return;
+    }
+    if (Math.abs(deltaY) > Math.abs(deltaX) * MAP_SWIPE_VERTICAL_TOLERANCE) {
+      return;
+    }
+
+    var targetMapIndex = resolveSwipeTargetMapIndex(levelView, deltaX);
+    var currentMapIndex = Math.max(0, Math.floor(Number(levelView.__levelSelectCurrentMapIndex) || 0));
+    if (targetMapIndex === currentMapIndex) {
+      return;
+    }
+
+    var handler = swipeNode.__levelMapSwipeOnMapIndexChange;
+    if (typeof handler === "function") {
+      levelView.__levelMapSwipeConsumed = true;
+      handler(targetMapIndex);
+    }
+  }, swipeNode, true);
 }
 
 function bindNamedButtonTap(buttonNode, boundFlagName, handlerPropertyName, handler) {
@@ -504,6 +637,7 @@ function renderLevelSelectContent(options) {
   }
 
   levelView.active = true;
+  levelView.__levelMapSwipeEnabled = options.levelSelectRouteEditorMode !== true;
   updateTopStatus(levelView, {
     staminaValue: staminaValue,
     coinValue: coinValue,
@@ -525,6 +659,7 @@ function renderLevelSelectContent(options) {
       mapCount: 0
     };
   }
+  bindLevelMapSwipe(mapHostNode, levelView, onMapIndexChange);
   mapHostNode.removeAllChildren();
 
   var baseMapPrefab = mapPrefabs.length > 0 ? mapPrefabs[0] : null;
@@ -611,6 +746,9 @@ function renderLevelSelectContent(options) {
         if (event) {
           event.stopPropagation();
         }
+        if (levelView.__levelMapSwipeConsumed === true) {
+          return;
+        }
 
         if (!slotNode.__levelSelectUnlocked || !Number.isInteger(slotNode.__levelSelectLevelId)) {
           return;
@@ -624,7 +762,7 @@ function renderLevelSelectContent(options) {
     slotNode.__levelSelectUnlocked = isUnlocked;
   });
   if (runAnimationTargetSlot) {
-    attachRunAnimationToLevelSlot(runAnimationTargetSlot);
+    attachRunAnimationToLevelSlot(runAnimationTargetSlot, mapNode);
   }
 
   var nextMapNode = levelView.getChildByName("next_map");

@@ -17,6 +17,10 @@
         {
             "name": "resources",
             "root": "subpackages/resources"
+        },
+        {
+            "name": "ui",
+            "root": "subpackages/ui"
         }
     ],
     "openDataContext": "bubble"

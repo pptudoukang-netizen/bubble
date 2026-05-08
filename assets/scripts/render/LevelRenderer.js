@@ -503,6 +503,9 @@ function LevelRenderer(rootNode) {
     onBackLevel: null,
     onWatchAd: null
   };
+  this.loseAdPresentation = {
+    showVideoIcon: true
+  };
   this.gameplayActionHandlers = {
     onBackToLevel: null,
     onUseRainbow: null,
@@ -511,6 +514,13 @@ function LevelRenderer(rootNode) {
     onUseBarrierHammer: null
   };
 }
+
+LevelRenderer.prototype.setLoseAdPresentation = function (options) {
+  options = options || {};
+  this.loseAdPresentation = {
+    showVideoIcon: options.showVideoIcon === true
+  };
+};
 
 LevelRenderer.prototype.warmupSharedAssets = function () {
   if (this._sharedWarmupPromise) {

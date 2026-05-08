@@ -1967,6 +1967,10 @@ LevelRenderer.prototype._renderLoseView = function (runtimeSnapshot) {
   if (adButtonNode) {
     adButtonNode.active = !!loseRewardEntry;
     if (loseRewardEntry) {
+      var videoIconNode = adButtonNode.getChildByName("vido_icon");
+      if (videoIconNode) {
+        videoIconNode.active = !!(this.loseAdPresentation && this.loseAdPresentation.showVideoIcon);
+      }
       var awardTipsNode = adButtonNode.getChildByName("award_tips");
       var awardTipsLabel = awardTipsNode ? awardTipsNode.getComponent(cc.Label) : null;
       if (awardTipsLabel) {
