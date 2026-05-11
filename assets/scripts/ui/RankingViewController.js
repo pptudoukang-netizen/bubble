@@ -5,9 +5,9 @@ var Logger = require("../utils/Logger");
 
 var ROOT_WIDTH = 720;
 var ROOT_HEIGHT = 1280;
-var LIST_WIDTH = 593;
-var LIST_HEIGHT = 789;
-var ROW_WIDTH = 593;
+var LIST_WIDTH = 590;
+var LIST_HEIGHT = 826;
+var ROW_WIDTH = 590;
 var ROW_HEIGHT = 143;
 var ROW_GAP = 8;
 var ROW_STRIDE = ROW_HEIGHT + ROW_GAP;
@@ -25,8 +25,7 @@ var SPRITE_PATHS = {
   rank2Badge: "image/ranking/2",
   rank3Badge: "image/ranking/3",
   itemBg1: "image/ranking/item_bg_1",
-  itemBg2: "image/ranking/item_bg2",
-  itemBg3: "image/ranking/item_bg_3"
+  itemBg2: "image/ranking/item_bg_2"
 };
 var AVATAR_SPRITE_FRAME_CACHE = {};
 var AVATAR_LOAD_PROMISES = {};
@@ -131,10 +130,7 @@ function resolveRowBgKey(rank) {
   if (rank === 1) {
     return "itemBg1";
   }
-  if (rank === 2) {
-    return "itemBg2";
-  }
-  return "itemBg3";
+  return "itemBg2";
 }
 
 function getScrollOffsetY(scrollView) {
@@ -568,7 +564,7 @@ RankingViewController.prototype._renderRankRow = function (row, entry, index) {
   }
   if (refs.nameLabel) {
     refs.nameLabel.string = nickname || "\u73a9\u5bb6";
-    refs.nameLabel.node.color = isSelf ? cc.color(255, 248, 174) : cc.color(255, 255, 255);
+    refs.nameLabel.node.color = cc.color(41, 18, 102);
   }
   if (refs.scoreLabel) {
     refs.scoreLabel.string = score + TEXT.scoreSuffix;

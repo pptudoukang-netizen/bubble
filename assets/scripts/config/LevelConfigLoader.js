@@ -17,59 +17,77 @@ function clone(data) {
   return JSON.parse(JSON.stringify(data));
 }
 
-function normalizeRowString(rowIndex, rowString, maxColumns) {
-  var rowColumns = BoardLayout.getRowColumnCount(rowIndex, maxColumns);
-  var source = typeof rowString === "string" ? rowString : "";
-  var normalized = source.slice(0, rowColumns);
-
-  if (normalized.length < rowColumns) {
-    normalized += ".".repeat(rowColumns - normalized.length);
+function assertPositiveInteger(value, fieldName, levelKey) {
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(fieldName + " must be a positive integer: " + levelKey);
   }
-
-  return normalized;
+  return value;
 }
 
-function normalizeLayoutRows(layout) {
-  var maxColumns = layout.reduce(function (max, row) {
-    return Math.max(max, typeof row === "string" ? row.length : 0);
-  }, 0);
-  maxColumns = Math.max(BoardLayout.defaultColumns || 10, maxColumns);
+function assertNumberInRange(value, fieldName, min, max, levelKey) {
+  if (typeof value !== "number" || value < min || value > max) {
+    throw new Error(fieldName + " must be in [" + min + ", " + max + "]: " + levelKey);
+  }
+  return value;
+}
+
+function validateRowString(rowIndex, rowString, levelColors, levelKey) {
+  if (typeof rowString !== "string") {
+    throw new Error("level.layout row must be a string at index " + rowIndex + ": " + levelKey);
+  }
+
+  var expectedColumns = BoardLayout.getRowColumnCount(rowIndex, BoardLayout.defaultColumns);
+  if (rowString.length > expectedColumns) {
+    throw new Error("level.layout row length invalid at index " + rowIndex + ": expected at most " + expectedColumns + ", got " + rowString.length + ": " + levelKey);
+  }
+
+  rowString.split("").forEach(function (cellCode, colIndex) {
+    if (cellCode !== "." && levelColors.indexOf(cellCode) === -1) {
+      throw new Error("level.layout contains invalid code `" + cellCode + "` at " + rowIndex + ":" + colIndex + ": " + levelKey);
+    }
+  });
+
+  if (rowString.length < expectedColumns) {
+    return rowString + ".".repeat(expectedColumns - rowString.length);
+  }
+
+  return rowString;
+}
+
+function normalizeLayoutRows(layout, levelColors, levelKey) {
+  if (!Array.isArray(layout) || layout.length === 0) {
+    throw new Error("Level layout must be a non-empty array: " + levelKey);
+  }
 
   return layout.map(function (rowString, rowIndex) {
-    return normalizeRowString(rowIndex, rowString, maxColumns);
+    return validateRowString(rowIndex, rowString, levelColors, levelKey);
   });
 }
 
 function validateEntityType(category, entityType) {
-  var allowedTypes = SPECIAL_ENTITY_TYPES[category] || [];
-  return allowedTypes.indexOf(entityType) !== -1;
+  if (!Object.prototype.hasOwnProperty.call(SPECIAL_ENTITY_TYPES, category)) {
+    return false;
+  }
+  return SPECIAL_ENTITY_TYPES[category].indexOf(entityType) !== -1;
 }
 
 function hasUniqueItems(items) {
   return new Set(items).size === items.length;
 }
 
-function resolveShotLimit(levelConfig) {
-  if (!levelConfig || typeof levelConfig !== "object") {
-    return 0;
+function resolveExpectedLevelId(levelKey) {
+  if (typeof levelKey !== "string") {
+    throw new Error("levelKey must be a string.");
   }
-
-  var candidates = [
-    levelConfig.shotLimit,
-    levelConfig.stepLimit,
-    levelConfig.moveLimit,
-    levelConfig.turnLimit,
-    levelConfig.maxShots
-  ];
-
-  for (var index = 0; index < candidates.length; index += 1) {
-    var value = Number(candidates[index]);
-    if (Number.isFinite(value) && value >= 0) {
-      return Math.floor(value);
-    }
+  var match = levelKey.match(/^level_(\d{3})$/);
+  if (!match) {
+    throw new Error("levelKey must match level_###: " + levelKey);
   }
+  return Number(match[1]);
+}
 
-  return 0;
+function resolveShotLimit(levelConfig, levelKey) {
+  return assertPositiveInteger(levelConfig.shotLimit, "level.shotLimit", levelKey);
 }
 
 function normalizeSpecialEntities(levelConfig, levelKey) {
@@ -81,7 +99,7 @@ function normalizeSpecialEntities(levelConfig, levelKey) {
     throw new Error("level.specialEntities must be an array: " + levelKey);
   }
 
-  var normalizedLayout = normalizeLayoutRows(levelConfig.layout);
+  var normalizedLayout = normalizeLayoutRows(levelConfig.layout, levelConfig.colors, levelKey);
   var seenIds = {};
   var seenCoordinates = {};
 
@@ -151,17 +169,26 @@ function normalizeSpecialEntities(levelConfig, levelKey) {
 
 function normalizeLevelConfig(rawConfig, levelKey) {
   var config = clone(rawConfig);
+  var expectedLevelId = resolveExpectedLevelId(levelKey);
+
+  if (config.schemaVersion !== 1) {
+    throw new Error("schemaVersion must be 1: " + levelKey);
+  }
+  if (config.coordinateSystem !== "odd-r-hex") {
+    throw new Error("coordinateSystem must be odd-r-hex: " + levelKey);
+  }
 
   if (!config.level) {
     throw new Error("Level config is missing `level`: " + levelKey);
   }
-
-  if (!Array.isArray(config.level.layout)) {
-    throw new Error("Level layout must be an array: " + levelKey);
+  if (config.level.levelId !== expectedLevelId) {
+    throw new Error("level.levelId mismatch: expected " + expectedLevelId + ", got " + config.level.levelId + ": " + levelKey);
+  }
+  var expectedLevelPrefix = "L" + ("000" + expectedLevelId).slice(-3) + "_";
+  if (typeof config.level.code !== "string" || !new RegExp("^" + expectedLevelPrefix).test(config.level.code)) {
+    throw new Error("level.code must start with " + expectedLevelPrefix + ": " + levelKey);
   }
 
-  config.level.shotLimit = resolveShotLimit(config.level);
-  config.level.targetScore = Math.max(0, Math.floor(Number(config.level.targetScore) || 0));
   if (!Array.isArray(config.level.colors) || !config.level.colors.length) {
     throw new Error("level.colors must be a non-empty array: " + levelKey);
   }
@@ -173,6 +200,16 @@ function normalizeLevelConfig(rawConfig, levelKey) {
       throw new Error("unsupported color in level.colors `" + colorCode + "`: " + levelKey);
     }
   });
+
+  config.level.layout = normalizeLayoutRows(config.level.layout, config.level.colors, levelKey);
+
+  if (!Number.isInteger(config.level.colorCount) || config.level.colorCount !== config.level.colors.length) {
+    throw new Error("level.colorCount must equal level.colors.length: " + levelKey);
+  }
+
+  config.level.shotLimit = resolveShotLimit(config.level, levelKey);
+  config.level.targetScore = assertPositiveInteger(config.level.targetScore, "level.targetScore", levelKey);
+  config.level.dropInterval = assertPositiveInteger(config.level.dropInterval, "level.dropInterval", levelKey);
 
   var jarCount = Number(config.level.jarCount);
   if (!Number.isInteger(jarCount) || jarCount <= 0) {
@@ -189,6 +226,27 @@ function normalizeLevelConfig(rawConfig, levelKey) {
       throw new Error("unsupported color in level.jarColors `" + colorCode + "`: " + levelKey);
     }
   });
+
+  if (!config.level.spawnWeights || typeof config.level.spawnWeights !== "object" || Array.isArray(config.level.spawnWeights)) {
+    throw new Error("level.spawnWeights must be an object: " + levelKey);
+  }
+  config.level.colors.forEach(function (colorCode) {
+    if (typeof config.level.spawnWeights[colorCode] !== "number" || config.level.spawnWeights[colorCode] <= 0) {
+      throw new Error("level.spawnWeights." + colorCode + " must be > 0: " + levelKey);
+    }
+  });
+  Object.keys(config.level.spawnWeights).forEach(function (colorCode) {
+    if (config.level.colors.indexOf(colorCode) === -1) {
+      throw new Error("level.spawnWeights contains color not in level.colors `" + colorCode + "`: " + levelKey);
+    }
+  });
+
+  if (!config.level.jarRules || typeof config.level.jarRules !== "object" || Array.isArray(config.level.jarRules)) {
+    throw new Error("level.jarRules must be an object: " + levelKey);
+  }
+  assertNumberInRange(config.level.jarRules.rimBounce, "level.jarRules.rimBounce", 0.4, 0.95, levelKey);
+  assertNumberInRange(config.level.jarRules.collectZoneScale, "level.jarRules.collectZoneScale", 0.7, 1.4, levelKey);
+  assertNumberInRange(config.level.jarRules.sameColorBonus, "level.jarRules.sameColorBonus", 1, 3, levelKey);
 
   config.level.specialEntities = normalizeSpecialEntities(config.level, levelKey);
 

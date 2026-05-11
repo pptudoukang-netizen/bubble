@@ -31,7 +31,7 @@ function AdService(options) {
   options = options || {};
   this.adUnitId = typeof options.adUnitId === "string" ? options.adUnitId : "";
   this.logger = options.logger || null;
-  this.mockEnabled = options.mockEnabled !== false;
+  this.mockEnabled = options.mockEnabled === true;
   this.mockCloseDelayMs = Math.max(
     0,
     Math.floor(Number(options.mockCloseDelayMs) || DEFAULT_MOCK_CLOSE_DELAY_MS)
@@ -65,20 +65,15 @@ AdService.prototype._logWarn = function () {
 
 AdService.prototype._createRewardedAd = function () {
   if (!this.isSupported()) {
-    return null;
+    throw new Error("Rewarded video ad API is unavailable.");
   }
   if (!this.adUnitId) {
-    return null;
+    throw new Error("Rewarded video ad unit id is required.");
   }
 
-  try {
-    return wx.createRewardedVideoAd({
-      adUnitId: this.adUnitId
-    });
-  } catch (error) {
-    this._logWarn("Create rewarded ad failed", error && error.message ? error.message : error);
-    return null;
-  }
+  return wx.createRewardedVideoAd({
+    adUnitId: this.adUnitId
+  });
 };
 
 AdService.prototype._ensureRewardedAd = function () {
@@ -92,19 +87,10 @@ AdService.prototype._ensureRewardedAd = function () {
 
 AdService.prototype.preloadRewarded = function () {
   if (!this.isSupported()) {
-    return Promise.resolve({
-      ok: false,
-      code: "unsupported"
-    });
+    return Promise.reject(new Error("Rewarded video ad API is unavailable."));
   }
 
   var rewardedAd = this._ensureRewardedAd();
-  if (!rewardedAd) {
-    return Promise.resolve({
-      ok: false,
-      code: this.adUnitId ? "init_fail" : "missing_ad_unit"
-    });
-  }
 
   return rewardedAd.load().then(function () {
     return {
@@ -122,11 +108,7 @@ AdService.prototype.preloadRewarded = function () {
 
 AdService.prototype._showMockRewarded = function () {
   if (!this.mockEnabled) {
-    return Promise.resolve({
-      ok: false,
-      code: "unsupported",
-      isCompleted: false
-    });
+    return Promise.reject(new Error("Mock rewarded ad is disabled."));
   }
 
   return new Promise(function (resolve) {
@@ -152,21 +134,18 @@ AdService.prototype.showRewarded = function (options) {
   }
 
   if (!this.isSupported()) {
-    this._logWarn("Rewarded ad unsupported. Falling back to mock result.");
-    return this._showMockRewarded();
-  }
-
-  var rewardedAd = this._ensureRewardedAd();
-  if (!rewardedAd) {
     if (this.mockEnabled) {
-      this._logWarn("Rewarded ad unavailable. Falling back to mock result.");
+      this._logWarn("Rewarded ad unsupported. Using explicitly enabled mock result.");
       return this._showMockRewarded();
     }
-    return Promise.resolve({
-      ok: false,
-      code: this.adUnitId ? "init_fail" : "missing_ad_unit",
-      isCompleted: false
-    });
+    return Promise.reject(new Error("Rewarded video ad API is unavailable."));
+  }
+
+  var rewardedAd = null;
+  try {
+    rewardedAd = this._ensureRewardedAd();
+  } catch (error) {
+    return Promise.reject(error);
   }
 
   this._isShowing = true;
@@ -225,11 +204,7 @@ AdService.prototype.showRewarded = function (options) {
     rewardedAd.load().then(function () {
       phase = "show";
       if (typeof options.onShow === "function") {
-        try {
-          options.onShow();
-        } catch (callbackError) {
-          // Never block ad showing when hook fails.
-        }
+        options.onShow();
       }
       return rewardedAd.show();
     }).catch(function (error) {

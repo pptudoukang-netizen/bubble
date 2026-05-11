@@ -1,22 +1,43 @@
 "use strict";
 
+var StrictStorage = require("./StrictStorage");
+
 var STORAGE_KEY = "bubble_player_resources_v1";
-var DEFAULT_DAILY_STAMINA = 10;
+var NAMESPACE = "PlayerResourceStore";
 
 function clone(data) {
   return JSON.parse(JSON.stringify(data));
 }
 
-function toSafeNumber(value, fallback) {
-  var parsed = Math.floor(Number(value));
-  if (!Number.isFinite(parsed)) {
-    return Math.max(0, Math.floor(Number(fallback) || 0));
+function assertObject(value, message) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(message);
   }
-  return Math.max(0, parsed);
+}
+
+function requirePositiveInteger(value, fieldName) {
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(fieldName + " must be a positive integer.");
+  }
+  return value;
+}
+
+function requireNonNegativeInteger(value, fieldName) {
+  if (!Number.isInteger(value) || value < 0) {
+    throw new Error(fieldName + " must be a non-negative integer.");
+  }
+  return value;
 }
 
 function toDateKey(date) {
-  var now = date instanceof Date ? date : new Date();
+  var now = date;
+  if (now === undefined) {
+    now = new Date();
+  }
+  if (!(now instanceof Date) || Number.isNaN(now.getTime())) {
+    throw new Error("PlayerResourceStore date must be a valid Date.");
+  }
+
   var year = now.getFullYear();
   var month = now.getMonth() + 1;
   var day = now.getDate();
@@ -27,32 +48,39 @@ function toDateKey(date) {
   ].join("-");
 }
 
-function normalizeResources(raw, dailyStamina) {
-  var safeDailyStamina = Math.max(1, toSafeNumber(dailyStamina, DEFAULT_DAILY_STAMINA));
-  if (!raw || typeof raw !== "object") {
-    return {
-      version: 1,
-      stamina: safeDailyStamina,
-      coins: 0,
-      lastDailyResetDate: ""
-    };
+function createInitialResources(dailyStamina) {
+  return {
+    version: 1,
+    stamina: dailyStamina,
+    coins: 0,
+    lastDailyResetDate: ""
+  };
+}
+
+function normalizeResources(raw) {
+  assertObject(raw, "Player resources must be an object.");
+  if (raw.version !== 1) {
+    throw new Error("Player resources version must be 1.");
+  }
+  if (typeof raw.lastDailyResetDate !== "string") {
+    throw new Error("Player resources lastDailyResetDate must be a string.");
   }
 
   return {
     version: 1,
-    stamina: toSafeNumber(raw.stamina, safeDailyStamina),
-    coins: toSafeNumber(raw.coins, 0),
-    lastDailyResetDate: typeof raw.lastDailyResetDate === "string" ? raw.lastDailyResetDate : ""
+    stamina: requireNonNegativeInteger(raw.stamina, "Player stamina"),
+    coins: requireNonNegativeInteger(raw.coins, "Player coins"),
+    lastDailyResetDate: raw.lastDailyResetDate
   };
 }
 
 function PlayerResourceStore(options) {
-  options = options || {};
-  this.dailyStamina = Math.max(1, toSafeNumber(options.dailyStamina, DEFAULT_DAILY_STAMINA));
+  assertObject(options, "PlayerResourceStore options are required.");
+  this.dailyStamina = requirePositiveInteger(options.dailyStamina, "dailyStamina");
 }
 
 PlayerResourceStore.prototype.applyDailyReset = function (resources, now) {
-  var normalized = normalizeResources(resources, this.dailyStamina);
+  var normalized = normalizeResources(resources);
   var todayKey = toDateKey(now);
   if (normalized.lastDailyResetDate !== todayKey) {
     normalized.stamina = this.dailyStamina;
@@ -62,45 +90,22 @@ PlayerResourceStore.prototype.applyDailyReset = function (resources, now) {
 };
 
 PlayerResourceStore.prototype.load = function (now) {
-  var storage = cc && cc.sys && cc.sys.localStorage ? cc.sys.localStorage : null;
-  var normalized = null;
-
-  try {
-    if (!storage) {
-      normalized = normalizeResources(null, this.dailyStamina);
-    } else {
-      var rawText = storage.getItem(STORAGE_KEY);
-      var parsed = rawText ? JSON.parse(rawText) : null;
-      normalized = normalizeResources(parsed, this.dailyStamina);
-    }
-  } catch (error) {
-    normalized = normalizeResources(null, this.dailyStamina);
-  }
-
-  var resetApplied = this.applyDailyReset(normalized, now);
+  var rawResources = StrictStorage.readJsonOrCreate(STORAGE_KEY, NAMESPACE, function () {
+    return createInitialResources(this.dailyStamina);
+  }.bind(this));
+  var resetApplied = this.applyDailyReset(rawResources, now);
   this.save(resetApplied);
   return clone(resetApplied);
 };
 
 PlayerResourceStore.prototype.save = function (resources) {
-  try {
-    var storage = cc && cc.sys && cc.sys.localStorage ? cc.sys.localStorage : null;
-    if (!storage) {
-      return;
-    }
-
-    var normalized = normalizeResources(resources, this.dailyStamina);
-    storage.setItem(STORAGE_KEY, JSON.stringify(normalized));
-  } catch (error) {
-    // Ignore save failures.
-  }
+  var normalized = normalizeResources(resources);
+  StrictStorage.writeJson(STORAGE_KEY, NAMESPACE, normalized);
 };
 
 PlayerResourceStore.prototype.consumeStamina = function (resources, amount) {
-  var normalized = normalizeResources(resources, this.dailyStamina);
-  normalized = this.applyDailyReset(normalized);
-
-  var consumeAmount = Math.max(1, toSafeNumber(amount, 1));
+  var normalized = this.applyDailyReset(resources);
+  var consumeAmount = requirePositiveInteger(amount, "Stamina consume amount");
   if (normalized.stamina < consumeAmount) {
     return {
       accepted: false,
@@ -108,7 +113,7 @@ PlayerResourceStore.prototype.consumeStamina = function (resources, amount) {
     };
   }
 
-  normalized.stamina = Math.max(0, normalized.stamina - consumeAmount);
+  normalized.stamina = normalized.stamina - consumeAmount;
   return {
     accepted: true,
     resources: clone(normalized)

@@ -1,7 +1,5 @@
 "use strict";
 
-var Logger = require("./Logger");
-
 var RESOURCES_BUNDLE_NAME = "resources";
 var UI_BUNDLE_NAME = "ui";
 var UI_PREFAB_LEGACY_PREFIX = "prefabs/ui/";
@@ -28,10 +26,6 @@ var namedSubpackagePromises = {};
 
 function hasAssetManager() {
   return !!(cc && cc.assetManager && typeof cc.assetManager.loadBundle === "function");
-}
-
-function hasLegacyLoader() {
-  return !!(cc && cc.loader && typeof cc.loader.loadRes === "function");
 }
 
 function toError(errorLike, fallbackMessage) {
@@ -68,21 +62,7 @@ function normalizeTypeAndCallback(typeOrCallback, callback) {
   };
 }
 
-function runBundleLoad(path, type, callback) {
-  if (!resourcesBundle || typeof resourcesBundle.load !== "function") {
-    callback(new Error("Resources bundle not loaded."));
-    return;
-  }
-
-  if (type) {
-    resourcesBundle.load(path, type, callback);
-    return;
-  }
-
-  resourcesBundle.load(path, callback);
-}
-
-function runNamedBundleLoad(bundleName, bundle, path, type, callback) {
+function runBundleLoad(bundle, bundleName, path, type, callback) {
   if (!bundle || typeof bundle.load !== "function") {
     callback(new Error("Asset bundle not loaded: " + bundleName));
     return;
@@ -96,94 +76,43 @@ function runNamedBundleLoad(bundleName, bundle, path, type, callback) {
   bundle.load(path, callback);
 }
 
-function runBundleLoadDir(path, type, callback) {
-  if (!resourcesBundle || typeof resourcesBundle.loadDir !== "function") {
-    callback(new Error("Resources bundle not loaded."));
+function runNamedBundleLoad(bundleName, bundle, path, type, callback) {
+  runBundleLoad(bundle, bundleName, path, type, callback);
+}
+
+function runBundleLoadDir(bundle, bundleName, path, type, callback) {
+  if (!bundle || typeof bundle.loadDir !== "function") {
+    callback(new Error("Asset bundle directory loader unavailable: " + bundleName));
     return;
   }
 
   var urls = [];
-  if (typeof resourcesBundle.getDirWithPath === "function") {
-    try {
-      var infos = resourcesBundle.getDirWithPath(path, type || null);
-      if (Array.isArray(infos)) {
-        urls = infos.map(function (info) {
-          return info && typeof info.path === "string" ? info.path : null;
-        }).filter(function (item) {
-          return !!item;
-        });
-      }
-    } catch (error) {
-      Logger.warn("Resolve resource urls from bundle failed", path, error && error.message ? error.message : error);
-    }
+  if (typeof bundle.getDirWithPath !== "function") {
+    callback(new Error("Asset bundle directory metadata unavailable: " + bundleName));
+    return;
   }
+
+  var infos = bundle.getDirWithPath(path, type || null);
+  if (!Array.isArray(infos)) {
+    callback(new Error("Asset bundle directory metadata invalid: " + bundleName + "/" + path));
+    return;
+  }
+  urls = infos.map(function (info) {
+    return info && typeof info.path === "string" ? info.path : null;
+  }).filter(function (item) {
+    return !!item;
+  });
 
   var wrappedCallback = function (error, assets) {
     callback(error, assets, urls);
   };
 
   if (type) {
-    resourcesBundle.loadDir(path, type, wrappedCallback);
+    bundle.loadDir(path, type, wrappedCallback);
     return;
   }
 
-  resourcesBundle.loadDir(path, wrappedCallback);
-}
-
-function runLegacyLoadRes(path, type, callback, previousError) {
-  if (!hasLegacyLoader()) {
-    callback(previousError || new Error("Legacy resource loader unavailable."));
-    return;
-  }
-
-  var wrappedCallback = function (error, asset) {
-    if (!error) {
-      callback(null, asset);
-      return;
-    }
-
-    if (previousError) {
-      callback(new Error(previousError.message + " | fallback loadRes failed: " + (error.message || error)));
-      return;
-    }
-
-    callback(error);
-  };
-
-  if (type) {
-    cc.loader.loadRes(path, type, wrappedCallback);
-    return;
-  }
-
-  cc.loader.loadRes(path, wrappedCallback);
-}
-
-function runLegacyLoadResDir(path, type, callback, previousError) {
-  if (!hasLegacyLoader() || typeof cc.loader.loadResDir !== "function") {
-    callback(previousError || new Error("Legacy resource directory loader unavailable."));
-    return;
-  }
-
-  var wrappedCallback = function (error, assets, urls) {
-    if (!error) {
-      callback(null, assets, Array.isArray(urls) ? urls : []);
-      return;
-    }
-
-    if (previousError) {
-      callback(new Error(previousError.message + " | fallback loadResDir failed: " + (error.message || error)));
-      return;
-    }
-
-    callback(error);
-  };
-
-  if (type) {
-    cc.loader.loadResDir(path, type, wrappedCallback);
-    return;
-  }
-
-  cc.loader.loadResDir(path, wrappedCallback);
+  bundle.loadDir(path, wrappedCallback);
 }
 
 function ensureResourcesBundleLoaded() {
@@ -192,7 +121,15 @@ function ensureResourcesBundleLoaded() {
   }
 
   if (!hasAssetManager()) {
-    return Promise.resolve(null);
+    return Promise.reject(new Error("AssetManager is required to load resources."));
+  }
+
+  var existingBundle = (cc.assetManager && typeof cc.assetManager.getBundle === "function")
+    ? cc.assetManager.getBundle(RESOURCES_BUNDLE_NAME)
+    : null;
+  if (existingBundle && typeof existingBundle.load === "function") {
+    resourcesBundle = existingBundle;
+    return Promise.resolve(resourcesBundle);
   }
 
   if (resourcesBundlePromise) {
@@ -334,22 +271,8 @@ function loadRes(path, typeOrCallback, callback) {
   }
 
   ensureResourcesBundleLoaded().then(function (bundle) {
-    if (!bundle) {
-      runLegacyLoadRes(path, args.type, args.callback);
-      return;
-    }
-
-    runBundleLoad(path, args.type, function (error, asset) {
-      if (!error) {
-        args.callback(null, asset);
-        return;
-      }
-
-      runLegacyLoadRes(path, args.type, args.callback, toError(error, "Load resource by bundle failed."));
-    });
-  }).catch(function (error) {
-    runLegacyLoadRes(path, args.type, args.callback, toError(error, "Load resources bundle failed."));
-  });
+    runBundleLoad(bundle, RESOURCES_BUNDLE_NAME, path, args.type, args.callback);
+  }).catch(args.callback);
 }
 
 function loadResDir(path, typeOrCallback, callback) {
@@ -360,22 +283,8 @@ function loadResDir(path, typeOrCallback, callback) {
   }
 
   ensureResourcesBundleLoaded().then(function (bundle) {
-    if (!bundle) {
-      runLegacyLoadResDir(path, args.type, args.callback);
-      return;
-    }
-
-    runBundleLoadDir(path, args.type, function (error, assets, urls) {
-      if (!error) {
-        args.callback(null, assets, urls);
-        return;
-      }
-
-      runLegacyLoadResDir(path, args.type, args.callback, toError(error, "Load resource directory by bundle failed."));
-    });
-  }).catch(function (error) {
-    runLegacyLoadResDir(path, args.type, args.callback, toError(error, "Load resources bundle failed."));
-  });
+    runBundleLoadDir(bundle, RESOURCES_BUNDLE_NAME, path, args.type, args.callback);
+  }).catch(args.callback);
 }
 
 module.exports = {

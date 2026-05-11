@@ -116,9 +116,7 @@ ShopStateStore.prototype.load = function (dateKey, skuCounts) {
 
   var serializedText = rawText.trim();
   if (serializedText.length === 0) {
-    var emptyState = createInitialState(dateKey, skuCounts);
-    this.save(emptyState);
-    return clone(emptyState);
+    throw new Error("Shop state storage JSON must not be empty.");
   }
 
   var parsed = null;

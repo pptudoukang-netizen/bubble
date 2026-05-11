@@ -6,22 +6,51 @@ function clone(data) {
   return JSON.parse(JSON.stringify(data));
 }
 
-function toSafeCount(value, fallback) {
-  var parsed = Math.floor(Number(value));
-  if (!Number.isFinite(parsed)) {
-    return Math.max(0, Math.floor(Number(fallback) || 0));
+function assertObject(value, message) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(message);
   }
-  return Math.max(0, parsed);
+}
+
+function requireFunction(value, fieldName) {
+  if (typeof value !== "function") {
+    throw new Error(fieldName + " must be a function.");
+  }
+  return value;
+}
+
+function requireNonEmptyString(value, fieldName) {
+  if (typeof value !== "string" || value.length === 0) {
+    throw new Error(fieldName + " must be a non-empty string.");
+  }
+  return value;
+}
+
+function requirePositiveInteger(value, fieldName) {
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(fieldName + " must be a positive integer.");
+  }
+  return value;
+}
+
+function requireNonNegativeInteger(value, fieldName) {
+  if (!Number.isInteger(value) || value < 0) {
+    throw new Error(fieldName + " must be a non-negative integer.");
+  }
+  return value;
 }
 
 function normalizeRewardItems(items) {
-  return (Array.isArray(items) ? items : []).map(function (item) {
+  if (!Array.isArray(items) || items.length === 0) {
+    throw new Error("Star chest rewardItems must be a non-empty array.");
+  }
+
+  return items.map(function (item, index) {
+    assertObject(item, "Star chest reward item must be an object at index " + index + ".");
     return {
-      id: item && typeof item.id === "string" ? item.id : "",
-      count: Math.max(1, toSafeCount(item && item.count, 1))
+      id: requireNonEmptyString(item.id, "Star chest reward item id at index " + index),
+      count: requirePositiveInteger(item.count, "Star chest reward item count at index " + index)
     };
-  }).filter(function (item) {
-    return !!item.id;
   });
 }
 
@@ -30,30 +59,18 @@ function isInventoryItem(itemId) {
 }
 
 function StarChestRewardService(options) {
-  options = options || {};
-  this.getResources = typeof options.getResources === "function" ? options.getResources : function () { return null; };
-  this.saveResources = typeof options.saveResources === "function" ? options.saveResources : function () { return false; };
-  this.addInventoryItem = typeof options.addInventoryItem === "function" ? options.addInventoryItem : function () {
-    return { accepted: false, reason: "inventory_store_unavailable" };
-  };
+  assertObject(options, "StarChestRewardService options are required.");
+  this.getResources = requireFunction(options.getResources, "StarChestRewardService.getResources");
+  this.saveResources = requireFunction(options.saveResources, "StarChestRewardService.saveResources");
+  this.addInventoryItem = requireFunction(options.addInventoryItem, "StarChestRewardService.addInventoryItem");
 }
 
 StarChestRewardService.prototype.validateRewardItems = function (items) {
   var rewardItems = normalizeRewardItems(items);
-  if (!rewardItems.length) {
-    return {
-      accepted: false,
-      reason: "STAR_CHEST_REWARD_INVALID"
-    };
-  }
-
   for (var i = 0; i < rewardItems.length; i += 1) {
     var itemId = rewardItems[i].id;
     if (itemId !== "coin" && itemId !== "stamina" && !isInventoryItem(itemId)) {
-      return {
-        accepted: false,
-        reason: "STAR_CHEST_REWARD_INVALID"
-      };
+      throw new Error("Unsupported star chest reward item id: " + itemId);
     }
   }
 
@@ -65,40 +82,24 @@ StarChestRewardService.prototype.validateRewardItems = function (items) {
 
 StarChestRewardService.prototype.grantRewardItems = function (items) {
   var validation = this.validateRewardItems(items);
-  if (!validation.accepted) {
-    return validation;
-  }
-
   var rewardItems = validation.rewardItems;
+
   for (var i = 0; i < rewardItems.length; i += 1) {
     var item = rewardItems[i];
     if (item.id === "coin" || item.id === "stamina") {
       var resources = this.getResources();
-      if (!resources) {
-        return {
-          accepted: false,
-          reason: "STAR_CHEST_REWARD_GRANT_FAILED"
-        };
-      }
-      resources[item.id === "coin" ? "coins" : "stamina"] = Math.max(
-        0,
-        Math.floor(Number(resources[item.id === "coin" ? "coins" : "stamina"]) || 0)
-      ) + item.count;
-      if (!this.saveResources(resources)) {
-        return {
-          accepted: false,
-          reason: "STAR_CHEST_REWARD_GRANT_FAILED"
-        };
+      assertObject(resources, "Star chest reward resources must be an object.");
+      var resourceKey = item.id === "coin" ? "coins" : "stamina";
+      resources[resourceKey] = requireNonNegativeInteger(resources[resourceKey], "Player resource `" + resourceKey + "`") + item.count;
+      if (this.saveResources(resources) !== true) {
+        throw new Error("Star chest reward resource save must return true.");
       }
       continue;
     }
 
     var addResult = this.addInventoryItem(item.id, item.count);
-    if (!addResult || !addResult.accepted) {
-      return {
-        accepted: false,
-        reason: "STAR_CHEST_REWARD_GRANT_FAILED"
-      };
+    if (!addResult || addResult.accepted !== true) {
+      throw new Error("Star chest reward inventory grant failed: " + item.id);
     }
   }
 

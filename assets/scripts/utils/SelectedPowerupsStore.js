@@ -1,6 +1,9 @@
 "use strict";
 
+var StrictStorage = require("./StrictStorage");
+
 var STORAGE_KEY = "bubble_selected_powerups_v1";
+var NAMESPACE = "SelectedPowerupsStore";
 var MAX_SELECTED_POWERUPS = 4;
 var SUPPORTED_ITEM_IDS = ["swap_ball", "rainbow_ball", "blast_ball", "barrier_hammer"];
 
@@ -8,112 +11,118 @@ function clone(data) {
   return JSON.parse(JSON.stringify(data));
 }
 
+function assertObject(value, message) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(message);
+  }
+}
+
 function isSupportedItem(itemId) {
   return SUPPORTED_ITEM_IDS.indexOf(itemId) >= 0;
 }
 
+function requireSupportedItem(itemId) {
+  if (!isSupportedItem(itemId)) {
+    throw new Error("Unsupported selected powerup itemId: " + itemId);
+  }
+  return itemId;
+}
+
+function requirePositiveInteger(value, fieldName) {
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(fieldName + " must be a positive integer.");
+  }
+  return value;
+}
+
+function createInitialState() {
+  return {
+    version: 2,
+    selectedItems: [],
+    selectedItemCounts: {}
+  };
+}
+
 function normalizeSelectedItems(rawItems) {
-  var source = Array.isArray(rawItems) ? rawItems : [];
-  var selected = [];
+  if (!Array.isArray(rawItems)) {
+    throw new Error("selectedItems must be an array.");
+  }
+  if (rawItems.length > MAX_SELECTED_POWERUPS) {
+    throw new Error("selectedItems exceeds max selected powerups.");
+  }
 
-  source.forEach(function (itemId) {
-    if (!isSupportedItem(itemId) || selected.indexOf(itemId) >= 0) {
-      return;
+  var seen = {};
+  return rawItems.map(function (itemId) {
+    requireSupportedItem(itemId);
+    if (seen[itemId]) {
+      throw new Error("selectedItems contains duplicated itemId: " + itemId);
     }
-    if (selected.length >= MAX_SELECTED_POWERUPS) {
-      return;
-    }
-    selected.push(itemId);
+    seen[itemId] = true;
+    return itemId;
   });
-
-  return selected;
 }
 
 function normalizeSelectedItemCounts(rawCounts, selectedItems) {
-  var source = rawCounts && typeof rawCounts === "object" ? rawCounts : {};
-  var counts = {};
-  var selected = Array.isArray(selectedItems) ? selectedItems : [];
+  assertObject(rawCounts, "selectedItemCounts must be an object.");
+  var selectedMap = {};
+  selectedItems.forEach(function (itemId) {
+    selectedMap[itemId] = true;
+  });
 
-  selected.forEach(function (itemId) {
-    if (!isSupportedItem(itemId)) {
-      return;
+  Object.keys(rawCounts).forEach(function (itemId) {
+    requireSupportedItem(itemId);
+    if (!selectedMap[itemId]) {
+      throw new Error("selectedItemCounts contains item that is not selected: " + itemId);
     }
+  });
 
-    var safeCount = Math.max(1, Math.floor(Number(source[itemId]) || 1));
-    counts[itemId] = safeCount;
+  var counts = {};
+  selectedItems.forEach(function (itemId) {
+    if (!Object.prototype.hasOwnProperty.call(rawCounts, itemId)) {
+      throw new Error("selectedItemCounts missing count for selected item: " + itemId);
+    }
+    counts[itemId] = requirePositiveInteger(rawCounts[itemId], "selectedItemCounts." + itemId);
   });
 
   return counts;
 }
 
 function normalizeState(raw) {
-  var safeRaw = raw && typeof raw === "object" ? raw : null;
-  var normalizedItems = normalizeSelectedItems(safeRaw ? safeRaw.selectedItems : null);
-  if (!raw || typeof raw !== "object") {
-    return {
-      version: 2,
-      selectedItems: normalizedItems,
-      selectedItemCounts: normalizeSelectedItemCounts(null, normalizedItems)
-    };
+  assertObject(raw, "Selected powerups state must be an object.");
+  if (raw.version !== 2) {
+    throw new Error("Selected powerups version must be 2.");
   }
 
+  var selectedItems = normalizeSelectedItems(raw.selectedItems);
   return {
     version: 2,
-    selectedItems: normalizedItems,
-    selectedItemCounts: normalizeSelectedItemCounts(safeRaw.selectedItemCounts, normalizedItems)
+    selectedItems: selectedItems,
+    selectedItemCounts: normalizeSelectedItemCounts(raw.selectedItemCounts, selectedItems)
   };
 }
 
 function SelectedPowerupsStore() {}
 
 SelectedPowerupsStore.prototype.load = function () {
-  var storage = cc && cc.sys && cc.sys.localStorage ? cc.sys.localStorage : null;
-  var normalized = null;
-
-  try {
-    if (!storage) {
-      normalized = normalizeState(null);
-    } else {
-      var rawText = storage.getItem(STORAGE_KEY);
-      var parsed = rawText ? JSON.parse(rawText) : null;
-      normalized = normalizeState(parsed);
-    }
-  } catch (error) {
-    normalized = normalizeState(null);
-  }
-
-  this.save(normalized);
-  return clone(normalized);
+  var state = StrictStorage.readJsonOrCreate(STORAGE_KEY, NAMESPACE, createInitialState);
+  return clone(normalizeState(state));
 };
 
 SelectedPowerupsStore.prototype.save = function (state) {
-  try {
-    var storage = cc && cc.sys && cc.sys.localStorage ? cc.sys.localStorage : null;
-    if (!storage) {
-      return;
-    }
-
-    var normalized = normalizeState(state);
-    storage.setItem(STORAGE_KEY, JSON.stringify(normalized));
-  } catch (error) {
-    // Ignore save failures.
-  }
+  var normalized = normalizeState(state);
+  StrictStorage.writeJson(STORAGE_KEY, NAMESPACE, normalized);
 };
 
 SelectedPowerupsStore.prototype.setSelectedItems = function (selectedItemsOrState, selectedItemCounts) {
   var source = null;
   if (Array.isArray(selectedItemsOrState)) {
     source = {
+      version: 2,
       selectedItems: selectedItemsOrState,
       selectedItemCounts: selectedItemCounts
     };
-  } else if (selectedItemsOrState && typeof selectedItemsOrState === "object") {
-    source = selectedItemsOrState;
   } else {
-    source = {
-      selectedItems: [],
-      selectedItemCounts: {}
-    };
+    source = selectedItemsOrState;
   }
 
   var normalized = normalizeState(source);
@@ -123,22 +132,16 @@ SelectedPowerupsStore.prototype.setSelectedItems = function (selectedItemsOrStat
 
 SelectedPowerupsStore.prototype.toggleItem = function (state, itemId) {
   var normalized = normalizeState(state);
-  if (!isSupportedItem(itemId)) {
-    return {
-      accepted: false,
-      reason: "invalid_item_id",
-      state: clone(normalized)
-    };
-  }
+  requireSupportedItem(itemId);
 
   var selectedItems = normalized.selectedItems.slice();
-  var selectedItemCounts = normalizeSelectedItemCounts(normalized.selectedItemCounts, selectedItems);
+  var selectedItemCounts = clone(normalized.selectedItemCounts);
   var index = selectedItems.indexOf(itemId);
   if (index >= 0) {
     selectedItems.splice(index, 1);
-    normalized.selectedItems = selectedItems;
     delete selectedItemCounts[itemId];
-    normalized.selectedItemCounts = normalizeSelectedItemCounts(selectedItemCounts, selectedItems);
+    normalized.selectedItems = selectedItems;
+    normalized.selectedItemCounts = selectedItemCounts;
     return {
       accepted: true,
       selected: false,
@@ -155,9 +158,9 @@ SelectedPowerupsStore.prototype.toggleItem = function (state, itemId) {
   }
 
   selectedItems.push(itemId);
+  selectedItemCounts[itemId] = 1;
   normalized.selectedItems = selectedItems;
-  selectedItemCounts[itemId] = Math.max(1, Math.floor(Number(selectedItemCounts[itemId]) || 1));
-  normalized.selectedItemCounts = normalizeSelectedItemCounts(selectedItemCounts, selectedItems);
+  normalized.selectedItemCounts = selectedItemCounts;
   return {
     accepted: true,
     selected: true,
@@ -167,13 +170,7 @@ SelectedPowerupsStore.prototype.toggleItem = function (state, itemId) {
 
 SelectedPowerupsStore.prototype.setItemCount = function (state, itemId, count) {
   var normalized = normalizeState(state);
-  if (!isSupportedItem(itemId)) {
-    return {
-      accepted: false,
-      reason: "invalid_item_id",
-      state: clone(normalized)
-    };
-  }
+  requireSupportedItem(itemId);
 
   if (normalized.selectedItems.indexOf(itemId) < 0) {
     return {
@@ -183,9 +180,7 @@ SelectedPowerupsStore.prototype.setItemCount = function (state, itemId, count) {
     };
   }
 
-  var selectedItemCounts = normalizeSelectedItemCounts(normalized.selectedItemCounts, normalized.selectedItems);
-  selectedItemCounts[itemId] = Math.max(1, Math.floor(Number(count) || 1));
-  normalized.selectedItemCounts = normalizeSelectedItemCounts(selectedItemCounts, normalized.selectedItems);
+  normalized.selectedItemCounts[itemId] = requirePositiveInteger(count, "selected powerup count");
   return {
     accepted: true,
     itemId: itemId,

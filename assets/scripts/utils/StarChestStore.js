@@ -1,50 +1,93 @@
 "use strict";
 
+var StrictStorage = require("./StrictStorage");
+
 var STORAGE_KEY = "bubble_star_chest_state_v1";
+var NAMESPACE = "StarChestStore";
 
 function clone(data) {
   return JSON.parse(JSON.stringify(data));
 }
 
-function toSafeCount(value, fallback) {
-  var parsed = Math.floor(Number(value));
-  if (!Number.isFinite(parsed)) {
-    return Math.max(0, Math.floor(Number(fallback) || 0));
+function assertObject(value, message) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(message);
   }
-  return Math.max(0, parsed);
+}
+
+function requireNonEmptyString(value, fieldName) {
+  if (typeof value !== "string" || value.length === 0) {
+    throw new Error(fieldName + " must be a non-empty string.");
+  }
+  return value;
+}
+
+function requireNonNegativeInteger(value, fieldName) {
+  if (!Number.isInteger(value) || value < 0) {
+    throw new Error(fieldName + " must be a non-negative integer.");
+  }
+  return value;
+}
+
+function requirePositiveInteger(value, fieldName) {
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(fieldName + " must be a positive integer.");
+  }
+  return value;
 }
 
 function normalizeLog(rawLog) {
-  var source = rawLog && typeof rawLog === "object" ? rawLog : {};
+  assertObject(rawLog, "Star chest open log must be an object.");
+  if (!Array.isArray(rawLog.rewardItems)) {
+    throw new Error("Star chest open log rewardItems must be an array.");
+  }
+
   return {
-    openId: typeof source.openId === "string" ? source.openId : "",
-    totalStarsAtOpen: toSafeCount(source.totalStarsAtOpen, 0),
-    consumedStarsAfterOpen: toSafeCount(source.consumedStarsAfterOpen, 0),
-    rewardId: typeof source.rewardId === "string" ? source.rewardId : "",
-    rewardItems: Array.isArray(source.rewardItems) ? clone(source.rewardItems) : [],
-    timestamp: toSafeCount(source.timestamp, 0)
+    openId: requireNonEmptyString(rawLog.openId, "Star chest open log openId"),
+    totalStarsAtOpen: requireNonNegativeInteger(rawLog.totalStarsAtOpen, "Star chest open log totalStarsAtOpen"),
+    consumedStarsAfterOpen: requireNonNegativeInteger(rawLog.consumedStarsAfterOpen, "Star chest open log consumedStarsAfterOpen"),
+    rewardId: requireNonEmptyString(rawLog.rewardId, "Star chest open log rewardId"),
+    rewardItems: clone(rawLog.rewardItems),
+    timestamp: requireNonNegativeInteger(rawLog.timestamp, "Star chest open log timestamp")
+  };
+}
+
+function createInitialState(activityId) {
+  return {
+    version: 1,
+    activityId: activityId,
+    consumedStars: 0,
+    openedCount: 0,
+    lastOpenAt: 0,
+    openLogs: []
   };
 }
 
 function normalizeState(raw, activityId) {
-  var source = raw && typeof raw === "object" ? raw : {};
+  assertObject(raw, "Star chest state must be an object.");
+  if (raw.version !== 1) {
+    throw new Error("Star chest state version must be 1.");
+  }
+  if (raw.activityId !== activityId) {
+    throw new Error("Star chest state activityId mismatch.");
+  }
+  if (!Array.isArray(raw.openLogs)) {
+    throw new Error("Star chest state openLogs must be an array.");
+  }
+
   return {
     version: 1,
-    activityId: typeof source.activityId === "string" && source.activityId
-      ? source.activityId
-      : activityId,
-    consumedStars: toSafeCount(source.consumedStars, 0),
-    openedCount: toSafeCount(source.openedCount, 0),
-    lastOpenAt: toSafeCount(source.lastOpenAt, 0),
-    openLogs: Array.isArray(source.openLogs) ? source.openLogs.map(normalizeLog) : []
+    activityId: activityId,
+    consumedStars: requireNonNegativeInteger(raw.consumedStars, "Star chest consumedStars"),
+    openedCount: requireNonNegativeInteger(raw.openedCount, "Star chest openedCount"),
+    lastOpenAt: requireNonNegativeInteger(raw.lastOpenAt, "Star chest lastOpenAt"),
+    openLogs: raw.openLogs.map(normalizeLog)
   };
 }
 
 function StarChestStore(options) {
-  options = options || {};
-  this.activityId = typeof options.activityId === "string" && options.activityId
-    ? options.activityId
-    : "star_chest_v1";
+  assertObject(options, "StarChestStore options are required.");
+  this.activityId = requireNonEmptyString(options.activityId, "StarChestStore activityId");
 }
 
 StarChestStore.prototype.normalizeState = function (raw) {
@@ -52,41 +95,21 @@ StarChestStore.prototype.normalizeState = function (raw) {
 };
 
 StarChestStore.prototype.load = function () {
-  var storage = cc && cc.sys && cc.sys.localStorage ? cc.sys.localStorage : null;
-  var normalized = null;
-
-  try {
-    if (!storage) {
-      normalized = this.normalizeState(null);
-    } else {
-      var rawText = storage.getItem(STORAGE_KEY);
-      normalized = this.normalizeState(rawText ? JSON.parse(rawText) : null);
-    }
-  } catch (error) {
-    normalized = this.normalizeState(null);
-  }
-
-  this.save(normalized);
-  return clone(normalized);
+  var state = StrictStorage.readJsonOrCreate(STORAGE_KEY, NAMESPACE, function () {
+    return createInitialState(this.activityId);
+  }.bind(this));
+  return clone(this.normalizeState(state));
 };
 
 StarChestStore.prototype.save = function (state) {
-  try {
-    var storage = cc && cc.sys && cc.sys.localStorage ? cc.sys.localStorage : null;
-    if (!storage) {
-      return true;
-    }
-
-    storage.setItem(STORAGE_KEY, JSON.stringify(this.normalizeState(state)));
-    return true;
-  } catch (error) {
-    return false;
-  }
+  var normalized = this.normalizeState(state);
+  StrictStorage.writeJson(STORAGE_KEY, NAMESPACE, normalized);
+  return true;
 };
 
 StarChestStore.prototype.appendOpenLog = function (state, log, maxLogs) {
   var normalized = this.normalizeState(state);
-  var limit = Math.max(1, toSafeCount(maxLogs, 20));
+  var limit = requirePositiveInteger(maxLogs, "Star chest maxLogs");
   normalized.openLogs.unshift(normalizeLog(log));
   normalized.openLogs = normalized.openLogs.slice(0, limit);
   return normalized;

@@ -1,22 +1,44 @@
 "use strict";
 
+var StrictStorage = require("./StrictStorage");
+
 var STORAGE_KEY = "bubble_player_inventory_v1";
+var NAMESPACE = "InventoryStore";
 var SUPPORTED_ITEM_IDS = ["swap_ball", "rainbow_ball", "blast_ball", "barrier_hammer"];
 
 function clone(data) {
   return JSON.parse(JSON.stringify(data));
 }
 
-function toSafeCount(value, fallback) {
-  var parsed = Math.floor(Number(value));
-  if (!Number.isFinite(parsed)) {
-    return Math.max(0, Math.floor(Number(fallback) || 0));
-  }
-  return Math.max(0, parsed);
-}
-
 function isSupportedItem(itemId) {
   return SUPPORTED_ITEM_IDS.indexOf(itemId) >= 0;
+}
+
+function requireSupportedItem(itemId) {
+  if (!isSupportedItem(itemId)) {
+    throw new Error("Unsupported inventory itemId: " + itemId);
+  }
+  return itemId;
+}
+
+function requirePositiveInteger(value, fieldName) {
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(fieldName + " must be a positive integer.");
+  }
+  return value;
+}
+
+function requireNonNegativeInteger(value, fieldName) {
+  if (!Number.isInteger(value) || value < 0) {
+    throw new Error(fieldName + " must be a non-negative integer.");
+  }
+  return value;
+}
+
+function assertObject(value, message) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(message);
+  }
 }
 
 function createDefaultItems() {
@@ -28,86 +50,61 @@ function createDefaultItems() {
   };
 }
 
-function normalizeItems(rawItems) {
-  var normalized = createDefaultItems();
-  var source = rawItems && typeof rawItems === "object" ? rawItems : {};
-  SUPPORTED_ITEM_IDS.forEach(function (itemId) {
-    normalized[itemId] = toSafeCount(source[itemId], 0);
-  });
-  return normalized;
+function createInitialInventory() {
+  return {
+    version: 1,
+    items: createDefaultItems()
+  };
 }
 
 function normalizeInventory(raw) {
-  if (!raw || typeof raw !== "object") {
-    return {
-      version: 1,
-      items: createDefaultItems()
-    };
+  assertObject(raw, "Inventory must be an object.");
+  if (raw.version !== 1) {
+    throw new Error("Inventory version must be 1.");
   }
+  assertObject(raw.items, "Inventory items are required.");
+
+  Object.keys(raw.items).forEach(function (itemId) {
+    requireSupportedItem(itemId);
+  });
+
+  var items = {};
+  SUPPORTED_ITEM_IDS.forEach(function (itemId) {
+    if (!Object.prototype.hasOwnProperty.call(raw.items, itemId)) {
+      throw new Error("Inventory missing item count: " + itemId);
+    }
+    items[itemId] = requireNonNegativeInteger(raw.items[itemId], "Inventory item count `" + itemId + "`");
+  });
 
   return {
     version: 1,
-    items: normalizeItems(raw.items)
+    items: items
   };
 }
 
 function InventoryStore() {}
 
 InventoryStore.prototype.load = function () {
-  var storage = cc && cc.sys && cc.sys.localStorage ? cc.sys.localStorage : null;
-  var normalized = null;
-
-  try {
-    if (!storage) {
-      normalized = normalizeInventory(null);
-    } else {
-      var rawText = storage.getItem(STORAGE_KEY);
-      var parsed = rawText ? JSON.parse(rawText) : null;
-      normalized = normalizeInventory(parsed);
-    }
-  } catch (error) {
-    normalized = normalizeInventory(null);
-  }
-
-  this.save(normalized);
-  return clone(normalized);
+  var inventory = StrictStorage.readJsonOrCreate(STORAGE_KEY, NAMESPACE, createInitialInventory);
+  return clone(normalizeInventory(inventory));
 };
 
 InventoryStore.prototype.save = function (inventory) {
-  try {
-    var storage = cc && cc.sys && cc.sys.localStorage ? cc.sys.localStorage : null;
-    if (!storage) {
-      return;
-    }
-
-    var normalized = normalizeInventory(inventory);
-    storage.setItem(STORAGE_KEY, JSON.stringify(normalized));
-  } catch (error) {
-    // Ignore save failures.
-  }
+  var normalized = normalizeInventory(inventory);
+  StrictStorage.writeJson(STORAGE_KEY, NAMESPACE, normalized);
 };
 
 InventoryStore.prototype.getItemCount = function (inventory, itemId) {
-  if (!isSupportedItem(itemId)) {
-    return 0;
-  }
-
+  requireSupportedItem(itemId);
   var normalized = normalizeInventory(inventory);
-  return Math.max(0, Math.floor(Number(normalized.items[itemId]) || 0));
+  return normalized.items[itemId];
 };
 
 InventoryStore.prototype.addItem = function (inventory, itemId, count) {
-  if (!isSupportedItem(itemId)) {
-    return {
-      accepted: false,
-      reason: "invalid_item_id",
-      inventory: clone(normalizeInventory(inventory))
-    };
-  }
-
+  requireSupportedItem(itemId);
   var normalized = normalizeInventory(inventory);
-  var gained = Math.max(1, toSafeCount(count, 1));
-  normalized.items[itemId] = this.getItemCount(normalized, itemId) + gained;
+  var gained = requirePositiveInteger(count, "Inventory add count");
+  normalized.items[itemId] = normalized.items[itemId] + gained;
   return {
     accepted: true,
     itemId: itemId,
@@ -118,17 +115,10 @@ InventoryStore.prototype.addItem = function (inventory, itemId, count) {
 };
 
 InventoryStore.prototype.removeItem = function (inventory, itemId, count) {
-  if (!isSupportedItem(itemId)) {
-    return {
-      accepted: false,
-      reason: "invalid_item_id",
-      inventory: clone(normalizeInventory(inventory))
-    };
-  }
-
+  requireSupportedItem(itemId);
   var normalized = normalizeInventory(inventory);
-  var consume = Math.max(1, toSafeCount(count, 1));
-  var current = this.getItemCount(normalized, itemId);
+  var consume = requirePositiveInteger(count, "Inventory remove count");
+  var current = normalized.items[itemId];
   if (current < consume) {
     return {
       accepted: false,
@@ -148,11 +138,8 @@ InventoryStore.prototype.removeItem = function (inventory, itemId, count) {
 };
 
 InventoryStore.prototype.hasItem = function (inventory, itemId, count) {
-  if (!isSupportedItem(itemId)) {
-    return false;
-  }
-
-  var needed = Math.max(1, toSafeCount(count, 1));
+  requireSupportedItem(itemId);
+  var needed = requirePositiveInteger(count, "Inventory required count");
   return this.getItemCount(inventory, itemId) >= needed;
 };
 

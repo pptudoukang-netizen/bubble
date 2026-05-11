@@ -230,7 +230,6 @@ ShopViewController.prototype.render = function (options) {
     options.goodsList.forEach(function (goods, index) {
       this._renderItem(goods, index, options.purchaseState);
     }, this);
-    setLabelText(this._nodes.refreshTips, "每日 00:00 重置限购");
   }.bind(this)).catch(function (error) {
     Logger.error("ShopView render failed", error && error.stack ? error.stack : error);
     throw error;

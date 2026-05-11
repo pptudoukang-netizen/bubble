@@ -324,7 +324,7 @@ function ensureRankLayer() {
 
   layer.__rankTexture = texture;
   layer.__rankSprite = sprite;
-  createTouchableNode("WechatFriendRankClose", panel, 286.735, 418.221, 104, 106, hideRankLayer);
+  createTouchableNode("WechatFriendRankClose", panel, 272.215, 447.78, 102, 101, hideRankLayer);
   layer.on(cc.Node.EventType.TOUCH_MOVE, function (event) {
     var delta = event.getDelta();
     var scrollDelta = -delta.y;

@@ -4,78 +4,152 @@ function clone(data) {
   return JSON.parse(JSON.stringify(data));
 }
 
-function toSafeCount(value, fallback) {
-  var parsed = Math.floor(Number(value));
-  if (!Number.isFinite(parsed)) {
-    return Math.max(0, Math.floor(Number(fallback) || 0));
+function assertObject(value, message) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(message);
   }
-  return Math.max(0, parsed);
 }
 
-function normalizeReward(raw) {
-  var reward = raw && typeof raw === "object" ? raw : {};
+function requireFunction(value, fieldName) {
+  if (typeof value !== "function") {
+    throw new Error(fieldName + " must be a function.");
+  }
+  return value;
+}
+
+function requireBoolean(value, fieldName) {
+  if (typeof value !== "boolean") {
+    throw new Error(fieldName + " must be boolean.");
+  }
+  return value;
+}
+
+function requireNonEmptyString(value, fieldName) {
+  if (typeof value !== "string" || value.length === 0) {
+    throw new Error(fieldName + " must be a non-empty string.");
+  }
+  return value;
+}
+
+function requirePositiveInteger(value, fieldName) {
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(fieldName + " must be a positive integer.");
+  }
+  return value;
+}
+
+function requireNonNegativeInteger(value, fieldName) {
+  if (!Number.isInteger(value) || value < 0) {
+    throw new Error(fieldName + " must be a non-negative integer.");
+  }
+  return value;
+}
+
+function requireStoredStarCount(value, fieldName) {
+  if (!Number.isInteger(value) || value < 1 || value > 3) {
+    throw new Error(fieldName + " must be an integer in [1, 3].");
+  }
+  return value;
+}
+
+function normalizeRewardItem(item, index, rewardId) {
+  assertObject(item, "Star chest reward item must be an object: " + rewardId + "#" + index);
   return {
-    rewardId: typeof reward.rewardId === "string" ? reward.rewardId : "",
-    weight: toSafeCount(reward.weight, 0),
-    rewardItems: Array.isArray(reward.rewardItems) ? clone(reward.rewardItems) : []
+    id: requireNonEmptyString(item.id, "Star chest reward item id: " + rewardId + "#" + index),
+    count: requirePositiveInteger(item.count, "Star chest reward item count: " + rewardId + "#" + index)
   };
 }
 
-function resolveValidRewards(config) {
-  return (Array.isArray(config && config.rewards) ? config.rewards : []).map(normalizeReward).filter(function (reward) {
-    return !!reward.rewardId && reward.weight > 0 && reward.rewardItems.length > 0;
-  });
+function normalizeReward(rawReward, index) {
+  assertObject(rawReward, "Star chest reward must be an object at index " + index + ".");
+  var rewardId = requireNonEmptyString(rawReward.rewardId, "Star chest rewardId at index " + index);
+  if (!Array.isArray(rawReward.rewardItems) || rawReward.rewardItems.length === 0) {
+    throw new Error("Star chest rewardItems must be a non-empty array: " + rewardId);
+  }
+
+  return {
+    rewardId: rewardId,
+    weight: requirePositiveInteger(rawReward.weight, "Star chest reward weight: " + rewardId),
+    rewardItems: rawReward.rewardItems.map(function (item, itemIndex) {
+      return normalizeRewardItem(item, itemIndex, rewardId);
+    })
+  };
+}
+
+function normalizeConfig(config) {
+  assertObject(config, "StarChestService config is required.");
+  if (!Array.isArray(config.rewards) || config.rewards.length === 0) {
+    throw new Error("StarChestService config rewards must be a non-empty array.");
+  }
+
+  return {
+    enabled: requireBoolean(config.enabled, "StarChestService config enabled"),
+    activityId: requireNonEmptyString(config.activityId, "StarChestService config activityId"),
+    starsPerChest: requirePositiveInteger(config.starsPerChest, "StarChestService config starsPerChest"),
+    showRedDotWhenOpenable: requireBoolean(config.showRedDotWhenOpenable, "StarChestService config showRedDotWhenOpenable"),
+    maxClaimLogs: requirePositiveInteger(config.maxClaimLogs, "StarChestService config maxClaimLogs"),
+    rewards: config.rewards.map(normalizeReward)
+  };
 }
 
 function StarChestService(options) {
-  options = options || {};
-  this.config = options.config || {};
-  this.store = options.store || null;
-  this.rewardService = options.rewardService || null;
+  assertObject(options, "StarChestService options are required.");
+  this.config = normalizeConfig(options.config);
+  this.store = options.store;
+  if (!this.store || typeof this.store.load !== "function" || typeof this.store.save !== "function" || typeof this.store.appendOpenLog !== "function") {
+    throw new Error("StarChestService requires store load/save/appendOpenLog.");
+  }
+  this.rewardService = options.rewardService;
+  if (!this.rewardService || typeof this.rewardService.grantRewardItems !== "function") {
+    throw new Error("StarChestService requires rewardService.grantRewardItems.");
+  }
   this.telemetry = options.telemetry || null;
+  if (this.telemetry !== null) {
+    requireFunction(this.telemetry.track, "StarChestService telemetry.track");
+  }
 }
 
 StarChestService.prototype.calculateTotalStars = function (levelProgress) {
-  var starsByLevel = levelProgress && levelProgress.starsByLevel && typeof levelProgress.starsByLevel === "object"
-    ? levelProgress.starsByLevel
-    : {};
-  return Object.keys(starsByLevel).reduce(function (total, levelId) {
-    var stars = Math.max(0, Math.min(3, Math.floor(Number(starsByLevel[levelId]) || 0)));
-    return total + stars;
+  assertObject(levelProgress, "StarChestService levelProgress is required.");
+  assertObject(levelProgress.starsByLevel, "StarChestService levelProgress.starsByLevel is required.");
+
+  return Object.keys(levelProgress.starsByLevel).reduce(function (total, levelId) {
+    if (!/^[1-9]\d*$/.test(levelId)) {
+      throw new Error("StarChestService starsByLevel key must be a positive integer string: " + levelId);
+    }
+    return total + requireStoredStarCount(levelProgress.starsByLevel[levelId], "StarChestService starsByLevel." + levelId);
   }, 0);
 };
 
-StarChestService.prototype._getStarsPerChest = function () {
-  return Math.floor(Number(this.config.starsPerChest) || 0);
-};
-
 StarChestService.prototype._isEnabled = function () {
-  return this.config && this.config.enabled !== false && this._getStarsPerChest() > 0;
+  return this.config.enabled === true;
 };
 
 StarChestService.prototype.getChestSummary = function (levelProgress) {
-  var state = this.store && typeof this.store.load === "function" ? this.store.load() : {
-    consumedStars: 0,
-    openedCount: 0
-  };
-  var starsPerChest = this._getStarsPerChest();
+  var state = this.store.load();
+  var starsPerChest = this.config.starsPerChest;
   var totalStars = this.calculateTotalStars(levelProgress);
-  var consumedStars = Math.max(0, Math.floor(Number(state && state.consumedStars) || 0));
-  var availableStars = Math.max(0, totalStars - consumedStars);
+  var consumedStars = requireNonNegativeInteger(state.consumedStars, "Star chest consumedStars");
+  var openedCount = requireNonNegativeInteger(state.openedCount, "Star chest openedCount");
+  var availableStars = totalStars - consumedStars;
+  if (availableStars < 0) {
+    throw new Error("Star chest consumedStars exceeds total stars.");
+  }
+
   var openableCount = this._isEnabled() ? Math.floor(availableStars / starsPerChest) : 0;
   var progressStars = this._isEnabled() ? (availableStars % starsPerChest) : 0;
   var status = openableCount > 0 ? "openable" : (totalStars > 0 ? "progressing" : "locked");
 
   return {
     enabled: this._isEnabled(),
-    activityId: this.config.activityId || "star_chest_v1",
+    activityId: this.config.activityId,
     totalStars: totalStars,
     consumedStars: consumedStars,
     availableStars: availableStars,
-    starsPerChest: Math.max(0, starsPerChest),
+    starsPerChest: starsPerChest,
     progressStars: progressStars,
     openableCount: openableCount,
-    openedCount: Math.max(0, Math.floor(Number(state && state.openedCount) || 0)),
+    openedCount: openedCount,
     status: status
   };
 };
@@ -85,11 +159,7 @@ StarChestService.prototype.hasOpenableChest = function (levelProgress) {
 };
 
 StarChestService.prototype._pickReward = function () {
-  var rewards = resolveValidRewards(this.config);
-  if (!rewards.length) {
-    return null;
-  }
-
+  var rewards = this.config.rewards;
   var totalWeight = rewards.reduce(function (total, reward) {
     return total + reward.weight;
   }, 0);
@@ -104,7 +174,7 @@ StarChestService.prototype._pickReward = function () {
 };
 
 StarChestService.prototype._track = function (eventName, payload) {
-  if (!this.telemetry || typeof this.telemetry.track !== "function") {
+  if (!this.telemetry) {
     return;
   }
   this.telemetry.track(eventName, payload);
@@ -128,30 +198,24 @@ StarChestService.prototype.openChest = function (levelProgress, now) {
   }
 
   var reward = this._pickReward();
-  if (!reward) {
-    return {
-      accepted: false,
-      reason: "STAR_CHEST_REWARD_POOL_EMPTY",
-      summary: summary
-    };
+  var grantResult = this.rewardService.grantRewardItems(reward.rewardItems);
+  if (!grantResult || grantResult.accepted !== true) {
+    throw new Error("Star chest reward grant must return accepted true.");
   }
 
-  var grantResult = this.rewardService && typeof this.rewardService.grantRewardItems === "function"
-    ? this.rewardService.grantRewardItems(reward.rewardItems)
-    : { accepted: false, reason: "STAR_CHEST_REWARD_GRANT_FAILED" };
-  if (!grantResult || !grantResult.accepted) {
-    return {
-      accepted: false,
-      reason: grantResult && grantResult.reason ? grantResult.reason : "STAR_CHEST_REWARD_GRANT_FAILED",
-      summary: summary
-    };
+  var nowDate = now;
+  if (nowDate === undefined) {
+    nowDate = new Date();
+  }
+  if (!(nowDate instanceof Date) || Number.isNaN(nowDate.getTime())) {
+    throw new Error("StarChestService now must be a valid Date.");
   }
 
-  var timestamp = now instanceof Date ? now.getTime() : Date.now();
+  var timestamp = nowDate.getTime();
   var state = this.store.load();
-  var consumedStarsAfterOpen = Math.max(0, Math.floor(Number(state.consumedStars) || 0)) + summary.starsPerChest;
+  var consumedStarsAfterOpen = requireNonNegativeInteger(state.consumedStars, "Star chest consumedStars") + summary.starsPerChest;
   state.consumedStars = consumedStarsAfterOpen;
-  state.openedCount = Math.max(0, Math.floor(Number(state.openedCount) || 0)) + 1;
+  state.openedCount = requireNonNegativeInteger(state.openedCount, "Star chest openedCount") + 1;
   state.lastOpenAt = timestamp;
   state = this.store.appendOpenLog(state, {
     openId: "star_chest_" + timestamp + "_" + String(state.openedCount),
@@ -162,12 +226,8 @@ StarChestService.prototype.openChest = function (levelProgress, now) {
     timestamp: timestamp
   }, this.config.maxClaimLogs);
 
-  if (!this.store.save(state)) {
-    return {
-      accepted: false,
-      reason: "STAR_CHEST_SAVE_FAILED",
-      summary: summary
-    };
+  if (this.store.save(state) !== true) {
+    throw new Error("Star chest store save must return true.");
   }
 
   var nextSummary = this.getChestSummary(levelProgress);
@@ -184,7 +244,7 @@ StarChestService.prototype.openChest = function (levelProgress, now) {
   return {
     accepted: true,
     rewardId: reward.rewardId,
-    rewardItems: grantResult.rewardItems,
+    rewardItems: clone(grantResult.rewardItems),
     summary: nextSummary
   };
 };

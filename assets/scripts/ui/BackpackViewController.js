@@ -33,6 +33,8 @@ var ITEM_DEFINITION_MAP = ITEM_DEFINITIONS.reduce(function (result, definition) 
 
 var MAX_SELECTED_POWERUPS = 4;
 var TOTAL_SELECTED_TIPS_TEXT = "提示：关卡中最多携带" + MAX_SELECTED_POWERUPS + "个道具";
+var PACK_LIST_ITEM_SPACING = 20;
+var SELECTED_LIST_ITEM_SPACING = 16;
 
 function findNodeByNameRecursive(rootNode, name) {
   if (!rootNode || !rootNode.isValid) {
@@ -50,6 +52,49 @@ function findNodeByNameRecursive(rootNode, name) {
     }
   }
   return null;
+}
+
+function requireValidNode(node, description) {
+  if (!node || !node.isValid) {
+    throw new Error("BackpackView requires " + description + ".");
+  }
+  return node;
+}
+
+function requireChildNode(parentNode, childName, parentDescription) {
+  requireValidNode(parentNode, parentDescription);
+  return requireValidNode(
+    parentNode.getChildByName(childName),
+    parentDescription + "/" + childName
+  );
+}
+
+function requirePositiveNumber(value, description) {
+  var numberValue = Number(value);
+  if (!Number.isFinite(numberValue) || numberValue <= 0) {
+    throw new Error("BackpackView requires positive " + description + ".");
+  }
+  return numberValue;
+}
+
+function calculatePackContentWidth(packListNode, itemWidth, visibleItemCount) {
+  var packListWidth = requirePositiveNumber(packListNode.width, "pack list width");
+  if (visibleItemCount <= 0) {
+    return packListWidth;
+  }
+
+  var totalItemWidth = (visibleItemCount * itemWidth) + ((visibleItemCount - 1) * PACK_LIST_ITEM_SPACING);
+  return Math.max(packListWidth, totalItemWidth);
+}
+
+function calculateSelectedContentWidth(selectListNode, itemWidth, visibleItemCount) {
+  var selectListWidth = requirePositiveNumber(selectListNode.width, "selected list width");
+  if (visibleItemCount <= 0) {
+    return selectListWidth;
+  }
+
+  var totalItemWidth = (visibleItemCount * itemWidth) + ((visibleItemCount - 1) * SELECTED_LIST_ITEM_SPACING);
+  return Math.max(selectListWidth, totalItemWidth);
 }
 
 function bindTapOnce(node, key, onTap) {
@@ -166,39 +211,41 @@ function BackpackViewController(options) {
 
 BackpackViewController.prototype._resolveNodes = function () {
   if (!this.node || !this.node.isValid) {
-    return {};
+    throw new Error("BackpackView requires root node.");
   }
 
-  var panelNode = findNodeByNameRecursive(this.node, "Panel");
-  var packListNode = panelNode ? panelNode.getChildByName("pack_listview") : null;
-  var selectListNode = panelNode ? panelNode.getChildByName("select_listview") : null;
-  var packItemTemplate = packListNode ? packListNode.getChildByName("prop_item") : null;
-  var selectedItemTemplate = selectListNode ? selectListNode.getChildByName("select_item") : null;
+  var panelNode = requireValidNode(findNodeByNameRecursive(this.node, "Panel"), "Panel");
+  var packListNode = requireChildNode(panelNode, "pack_listview", "Panel");
+  var packScrollView = packListNode.getComponent(cc.ScrollView);
+  if (!packScrollView) {
+    throw new Error("BackpackView requires Panel/pack_listview to have cc.ScrollView.");
+  }
+  var packContentNode = requireValidNode(packScrollView.content, "Panel/pack_listview ScrollView.content");
+  var selectListNode = requireChildNode(panelNode, "select_listview", "Panel");
+  var selectScrollView = selectListNode.getComponent(cc.ScrollView);
+  if (!selectScrollView) {
+    throw new Error("BackpackView requires Panel/select_listview to have cc.ScrollView.");
+  }
+  var selectContentNode = requireValidNode(selectScrollView.content, "Panel/select_listview ScrollView.content");
+  var packItemTemplate = requireChildNode(packContentNode, "prop_item", "Panel/pack_listview/content");
+  var selectedItemTemplate = requireChildNode(selectContentNode, "select_item", "Panel/select_listview/content");
 
   var nodes = {
-    mask: findNodeByNameRecursive(this.node, "mask"),
+    mask: requireValidNode(findNodeByNameRecursive(this.node, "mask"), "mask"),
     panel: panelNode,
-    closeButton: panelNode ? panelNode.getChildByName("btn_close") : null,
-    useButton: panelNode ? panelNode.getChildByName("use_btn") : null,
-    titleLabelNode: panelNode ? panelNode.getChildByName("select_title") : null,
-    tipsLabelNode: panelNode ? panelNode.getChildByName("tips") : null,
+    closeButton: requireChildNode(panelNode, "btn_close", "Panel"),
+    useButton: requireChildNode(panelNode, "use_btn", "Panel"),
+    titleLabelNode: requireChildNode(panelNode, "select_title", "Panel"),
+    tipsLabelNode: requireChildNode(panelNode, "tips", "Panel"),
     packListNode: packListNode,
+    packScrollView: packScrollView,
+    packContentNode: packContentNode,
     selectListNode: selectListNode,
+    selectScrollView: selectScrollView,
+    selectContentNode: selectContentNode,
     packItemTemplate: packItemTemplate,
     selectedItemTemplate: selectedItemTemplate
   };
-
-  if (
-    !nodes.panel ||
-    !nodes.packListNode ||
-    !nodes.selectListNode ||
-    !nodes.packItemTemplate ||
-    !nodes.selectedItemTemplate ||
-    !nodes.closeButton ||
-    !nodes.useButton
-  ) {
-    Logger.warn("BackpackView prefab structure is incomplete.");
-  }
 
   return nodes;
 };
@@ -215,20 +262,23 @@ BackpackViewController.prototype._bindActions = function () {
 };
 
 BackpackViewController.prototype._initPackItemNodes = function () {
-  var packListNode = this._nodes.packListNode;
-  var templateNode = this._nodes.packItemTemplate;
-  if (!packListNode || !templateNode || !packListNode.isValid || !templateNode.isValid) {
-    return;
-  }
+  var packListNode = requireValidNode(this._nodes.packListNode, "Panel/pack_listview");
+  var packContentNode = requireValidNode(this._nodes.packContentNode, "Panel/pack_listview ScrollView.content");
+  var templateNode = requireValidNode(this._nodes.packItemTemplate, "Panel/pack_listview/content/prop_item");
+
+  var itemWidth = requirePositiveNumber(templateNode.width, "pack item width");
+  packContentNode.width = calculatePackContentWidth(packListNode, itemWidth, 0);
 
   ITEM_DEFINITIONS.forEach(function (definition, index) {
     var itemNode = index === 0 ? templateNode : cc.instantiate(templateNode);
     if (index > 0) {
-      itemNode.parent = packListNode;
+      itemNode.parent = packContentNode;
     }
 
     itemNode.name = "prop_item_" + definition.itemId;
-    itemNode.active = true;
+    itemNode.active = false;
+    itemNode.x = 0;
+    itemNode.y = 0;
     this._packItemNodesByItemId[definition.itemId] = itemNode;
     bindTapOnce(itemNode, "__backpackPackItemTapBound", function () {
       if (!this._interactionEnabled) {
@@ -249,51 +299,68 @@ BackpackViewController.prototype._clearSelectedListItems = function () {
 };
 
 BackpackViewController.prototype._renderPackList = function (inventory, selectedItems, selectedItemCounts) {
+  var packListNode = requireValidNode(this._nodes.packListNode, "Panel/pack_listview");
+  var packContentNode = requireValidNode(this._nodes.packContentNode, "Panel/pack_listview ScrollView.content");
+  var templateNode = requireValidNode(this._nodes.packItemTemplate, "Panel/pack_listview/content/prop_item");
+  var itemWidth = requirePositiveNumber(templateNode.width, "pack item width");
+  var visibleIndex = 0;
+
   ITEM_DEFINITIONS.forEach(function (definition) {
-    var itemNode = this._packItemNodesByItemId[definition.itemId];
-    if (!itemNode || !itemNode.isValid) {
-      return;
-    }
-
+    var itemNode = requireValidNode(
+      this._packItemNodesByItemId[definition.itemId],
+      "pack item node for " + definition.itemId
+    );
     var itemCount = getItemCount(inventory, definition.itemId);
-    var isSelected = selectedItems.indexOf(definition.itemId) >= 0;
-    var iconNode = itemNode.getChildByName("icon");
-    var nameNode = itemNode.getChildByName("name");
-    var numNode = itemNode.getChildByName("num");
-    var selectedNode = itemNode.getChildByName("selected");
-
-    setLabelText(nameNode, definition.displayName);
-    setLabelText(numNode, String(itemCount));
-
-    if (selectedNode && selectedNode.isValid) {
-      selectedNode.active = isSelected;
-    }
-
-    if (!this._interactionEnabled) {
-      itemNode.opacity = itemCount > 0 ? 235 : 140;
+    if (itemCount <= 0) {
+      itemNode.active = false;
     } else {
-      itemNode.opacity = itemCount > 0 ? 255 : 150;
+      var isSelected = selectedItems.indexOf(definition.itemId) >= 0;
+      var iconNode = itemNode.getChildByName("icon");
+      var nameNode = itemNode.getChildByName("name");
+      var numNode = itemNode.getChildByName("num");
+      var selectedNode = itemNode.getChildByName("selected");
+
+      itemNode.active = true;
+      itemNode.x = (itemWidth / 2) + (visibleIndex * (itemWidth + PACK_LIST_ITEM_SPACING));
+      itemNode.y = 0;
+      visibleIndex += 1;
+
+      setLabelText(nameNode, definition.displayName);
+      setLabelText(numNode, String(itemCount));
+
+      if (selectedNode && selectedNode.isValid) {
+        selectedNode.active = isSelected;
+      }
+
+      if (!this._interactionEnabled) {
+        itemNode.opacity = 235;
+      } else {
+        itemNode.opacity = 255;
+      }
+      itemNode.color = isSelected ? cc.color(255, 255, 255) : cc.color(235, 235, 235);
+      setSpriteFrame(iconNode, this._itemSpriteFrames[definition.itemId] || null);
     }
-    itemNode.color = isSelected ? cc.color(255, 255, 255) : cc.color(235, 235, 235);
-    setSpriteFrame(iconNode, this._itemSpriteFrames[definition.itemId] || null);
   }, this);
+
+  packContentNode.width = calculatePackContentWidth(packListNode, itemWidth, visibleIndex);
 };
 
 BackpackViewController.prototype._renderSelectedList = function (inventory, selectedItems, selectedItemCounts) {
-  var listNode = this._nodes.selectListNode;
-  var templateNode = this._nodes.selectedItemTemplate;
-  if (!listNode || !templateNode || !listNode.isValid || !templateNode.isValid) {
-    return;
-  }
+  var listNode = requireValidNode(this._nodes.selectListNode, "Panel/select_listview");
+  var contentNode = requireValidNode(this._nodes.selectContentNode, "Panel/select_listview ScrollView.content");
+  var templateNode = requireValidNode(this._nodes.selectedItemTemplate, "Panel/select_listview/content/select_item");
+  var itemWidth = requirePositiveNumber(templateNode.width, "selected item width");
 
   this._clearSelectedListItems();
   templateNode.active = false;
+  contentNode.width = calculateSelectedContentWidth(listNode, itemWidth, 0);
   var totalSelectedCount = getTotalSelectedCount(selectedItems, selectedItemCounts, inventory);
+  var visibleIndex = 0;
 
   selectedItems.forEach(function (itemId) {
     var definition = ITEM_DEFINITION_MAP[itemId];
     if (!definition) {
-      return;
+      throw new Error("BackpackView selected item is unsupported: " + itemId);
     }
 
     var selectedCount = getSelectedCount(selectedItemCounts, itemId);
@@ -302,8 +369,11 @@ BackpackViewController.prototype._renderSelectedList = function (inventory, sele
 
     var rowNode = cc.instantiate(templateNode);
     rowNode.name = "select_item_" + itemId;
-    rowNode.parent = listNode;
+    rowNode.parent = contentNode;
     rowNode.active = true;
+    rowNode.x = (itemWidth / 2) + (visibleIndex * (itemWidth + SELECTED_LIST_ITEM_SPACING));
+    rowNode.y = 0;
+    visibleIndex += 1;
 
     var iconNode = rowNode.getChildByName("icon");
     var numNode = rowNode.getChildByName("num");
@@ -343,6 +413,8 @@ BackpackViewController.prototype._renderSelectedList = function (inventory, sele
 
     this._selectedListItemNodes.push(rowNode);
   }, this);
+
+  contentNode.width = calculateSelectedContentWidth(listNode, itemWidth, visibleIndex);
 };
 
 BackpackViewController.prototype._renderHeaderAndButton = function (selectedItems, selectedItemCounts) {

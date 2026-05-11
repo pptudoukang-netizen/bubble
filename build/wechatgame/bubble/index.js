@@ -10,19 +10,31 @@ var PANEL_X = 37.5;
 var PANEL_Y = 150;
 var PANEL_WIDTH = 645;
 var PANEL_HEIGHT = 1008;
-var CLOSE_X = 594.735;
-var CLOSE_Y = 182.779;
-var CLOSE_WIDTH = 104;
-var CLOSE_HEIGHT = 106;
-var LIST_X = 61.5;
-var LIST_Y = 345.5;
-var LIST_WIDTH = 593;
-var LIST_HEIGHT = 789;
-var ROW_WIDTH = 593;
+var TITLE_BG_X = 183.86;
+var TITLE_BG_Y = 97.093;
+var TITLE_BG_WIDTH = 355;
+var TITLE_BG_HEIGHT = 136;
+var TITLE_X = 368.757;
+var TITLE_Y = 158.41;
+var CLOSE_X = 581.215;
+var CLOSE_Y = 141.72;
+var CLOSE_WIDTH = 102;
+var CLOSE_HEIGHT = 101;
+var LIST_X = 68.962;
+var LIST_Y = 246.604;
+var LIST_WIDTH = 590;
+var LIST_HEIGHT = 826;
+var ROW_WIDTH = 590;
 var ROW_HEIGHT = 143;
 var ROW_GAP = 8;
 var ROW_STRIDE = ROW_HEIGHT + ROW_GAP;
 var ROW_POOL_BUFFER = 2;
+var DECOR_BUBBLES = [
+  { x: 176.201, y: 1033.396, size: 86 },
+  { x: 253.3, y: 1081.371, size: 59 },
+  { x: 379.117, y: 1089.301, size: 86 },
+  { x: 435.51, y: 1037.889, size: 59 }
+];
 
 var ROW_CENTER_X = LIST_X + (ROW_WIDTH * 0.5);
 var RANK_BADGE_X = ROW_CENTER_X - 229.138;
@@ -36,15 +48,43 @@ var LEVEL_X = ROW_CENTER_X + 280.898;
 
 var IMAGE_PATHS = {
   panelBg: "bubble/image/ranking/bg.png",
+  titleBg: "bubble/image/ranking/title_bg.png",
   closeButton: "bubble/image/ranking/btn_close.png",
+  decorBubble: "bubble/image/ranking/paopao.png",
   rank1Badge: "bubble/image/ranking/1.png",
   rank2Badge: "bubble/image/ranking/2.png",
   rank3Badge: "bubble/image/ranking/3.png",
   avatar: "bubble/image/ranking/avatar.png",
   avatarFrame: "bubble/image/ranking/avatar_frame.png",
   itemBg1: "bubble/image/ranking/item_bg_1.png",
-  itemBg2: "bubble/image/ranking/item_bg2.png",
-  itemBg3: "bubble/image/ranking/item_bg_3.png"
+  itemBg2: "bubble/image/ranking/item_bg_2.png"
+};
+
+var IMAGE_SLICES = {
+  panelBg: {
+    width: 659,
+    height: 607,
+    top: 153,
+    bottom: 262,
+    left: 0,
+    right: 0
+  },
+  itemBg1: {
+    width: 178,
+    height: 141,
+    top: 36,
+    bottom: 43,
+    left: 64,
+    right: 69
+  },
+  itemBg2: {
+    width: 149,
+    height: 141,
+    top: 41,
+    bottom: 50,
+    left: 46,
+    right: 58
+  }
 };
 
 if (typeof wx === "undefined" || !wx) {
@@ -123,15 +163,66 @@ function drawImageAsset(key, x, y, width, height) {
   return true;
 }
 
+function drawImageSlice(asset, sx, sy, sw, sh, dx, dy, dw, dh) {
+  if (sw > 0 && sh > 0 && dw > 0 && dh > 0) {
+    context.drawImage(asset.image, sx, sy, sw, sh, dx, dy, dw, dh);
+  }
+}
+
+function drawSlicedImageAsset(key, x, y, width, height) {
+  var asset = rankImages[key];
+  if (!asset || asset.loaded !== true) {
+    return false;
+  }
+  var slice = IMAGE_SLICES[key];
+  if (!slice) {
+    throw new Error("Open data rank image slice is missing: " + key + ".");
+  }
+  var sourceCenterWidth = slice.width - slice.left - slice.right;
+  var sourceCenterHeight = slice.height - slice.top - slice.bottom;
+  var targetCenterWidth = width - slice.left - slice.right;
+  var targetCenterHeight = height - slice.top - slice.bottom;
+  if (sourceCenterWidth < 0 || sourceCenterHeight < 0 || targetCenterWidth < 0 || targetCenterHeight < 0) {
+    throw new Error("Open data rank image slice is invalid: " + key + ".");
+  }
+
+  var sx = [0, slice.left, slice.width - slice.right];
+  var sy = [0, slice.top, slice.height - slice.bottom];
+  var sw = [slice.left, sourceCenterWidth, slice.right];
+  var sh = [slice.top, sourceCenterHeight, slice.bottom];
+  var dx = [x, x + slice.left, x + width - slice.right];
+  var dy = [y, y + slice.top, y + height - slice.bottom];
+  var dw = [slice.left, targetCenterWidth, slice.right];
+  var dh = [slice.top, targetCenterHeight, slice.bottom];
+
+  for (var row = 0; row < 3; row += 1) {
+    for (var col = 0; col < 3; col += 1) {
+      drawImageSlice(asset, sx[col], sy[row], sw[col], sh[row], dx[col], dy[row], dw[col], dh[row]);
+    }
+  }
+  return true;
+}
+
 function drawRankingShell() {
   clearCanvas();
-  drawImageAsset("panelBg", PANEL_X, PANEL_Y, PANEL_WIDTH, PANEL_HEIGHT);
+  drawSlicedImageAsset("panelBg", PANEL_X, PANEL_Y, PANEL_WIDTH, PANEL_HEIGHT);
+  drawImageAsset("titleBg", TITLE_BG_X, TITLE_BG_Y, TITLE_BG_WIDTH, TITLE_BG_HEIGHT);
+  context.save();
+  context.fillStyle = "#ffffff";
+  context.strokeStyle = "#773bfa";
+  context.lineWidth = 1;
+  context.font = "bold 46px Arial";
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  context.strokeText("好友排行榜", TITLE_X, TITLE_Y);
+  context.fillText("好友排行榜", TITLE_X, TITLE_Y);
+  context.restore();
   drawImageAsset("closeButton", CLOSE_X, CLOSE_Y, CLOSE_WIDTH, CLOSE_HEIGHT);
 }
 
 function drawCenteredStatus(text) {
   context.save();
-  context.fillStyle = "#ffffff";
+  context.fillStyle = "#291266";
   context.font = "bold 32px Arial";
   context.textAlign = "center";
   context.textBaseline = "middle";
@@ -139,11 +230,19 @@ function drawCenteredStatus(text) {
   context.restore();
 }
 
+function drawRankingDecorations() {
+  for (var index = 0; index < DECOR_BUBBLES.length; index += 1) {
+    var bubble = DECOR_BUBBLES[index];
+    drawImageAsset("decorBubble", bubble.x, bubble.y, bubble.size, bubble.size);
+  }
+}
+
 function drawLoading(activeType) {
   currentViewMode = "loading";
   currentRankType = activeType;
   drawRankingShell();
   drawCenteredStatus("好友数据读取中...");
+  drawRankingDecorations();
 }
 
 function drawEmpty(activeType, text) {
@@ -152,6 +251,7 @@ function drawEmpty(activeType, text) {
   currentEmptyText = text;
   drawRankingShell();
   drawCenteredStatus(text);
+  drawRankingDecorations();
 }
 
 function isPrivacyAgreementScopeError(error) {
@@ -306,10 +406,7 @@ function resolveRowBgKey(rank) {
   if (rank === 1) {
     return "itemBg1";
   }
-  if (rank === 2) {
-    return "itemBg2";
-  }
-  return "itemBg3";
+  return "itemBg2";
 }
 
 function fitText(text, maxWidth) {
@@ -342,9 +439,12 @@ function drawRank(entry, rowCenterY) {
   }
   context.save();
   context.fillStyle = "#ffffff";
+  context.strokeStyle = "#773bfa";
+  context.lineWidth = 2;
   context.font = "bold 36px Arial";
   context.textAlign = "center";
   context.textBaseline = "middle";
+  context.strokeText(String(rank), RANK_NUM_X, rowCenterY - RANK_NUM_Y);
   context.fillText(String(rank), RANK_NUM_X, rowCenterY - RANK_NUM_Y);
   context.restore();
 }
@@ -352,19 +452,25 @@ function drawRank(entry, rowCenterY) {
 function drawRow(entry, index) {
   var y = LIST_Y + (index * ROW_STRIDE);
   var rowCenterY = y + (ROW_HEIGHT * 0.5);
-  drawImageAsset(resolveRowBgKey(entry.rank), LIST_X, y, ROW_WIDTH, ROW_HEIGHT);
+  drawSlicedImageAsset(resolveRowBgKey(entry.rank), LIST_X, y, ROW_WIDTH, ROW_HEIGHT);
   drawRank(entry, rowCenterY);
   drawAvatar(AVATAR_X, rowCenterY);
 
   context.save();
   context.textBaseline = "middle";
-  context.fillStyle = "#ffffff";
+  context.fillStyle = "#291266";
   context.font = "36px Arial";
   context.textAlign = "left";
   context.fillText(fitText(entry.nickname, 210), NAME_X, rowCenterY);
 
   context.textAlign = "right";
+  context.fillStyle = "#773bfa";
+  context.strokeStyle = "#ffffff";
+  context.lineWidth = 2;
+  context.font = "bold 36px Arial";
+  context.strokeText(String(entry.score), SCORE_X, rowCenterY);
   context.fillText(String(entry.score), SCORE_X, rowCenterY);
+  context.fillStyle = "#8174af";
   context.font = "30px Arial";
   context.fillText("(" + entry.completedLevels + "关)", LEVEL_X, rowCenterY);
   context.restore();
@@ -397,6 +503,7 @@ function drawEntries(entries, rankType) {
     }
   }
   context.restore();
+  drawRankingDecorations();
 }
 
 function requestRank(rankType) {

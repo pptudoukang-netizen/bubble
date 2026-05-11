@@ -1,86 +1,80 @@
 "use strict";
 
+var StrictStorage = require("../utils/StrictStorage");
+
 var STORAGE_KEY = "bubble_audio_settings_v1";
-
-function clamp01(value, fallback) {
-  var parsed = Number(value);
-  if (!isFinite(parsed)) {
-    return fallback;
-  }
-
-  return Math.max(0, Math.min(1, parsed));
-}
-
-function createDefaultSettings(defaults) {
-  defaults = defaults || {};
-  return {
-    version: 1,
-    musicEnabled: defaults.musicEnabled !== false,
-    sfxEnabled: defaults.sfxEnabled !== false,
-    vibrationEnabled: defaults.vibrationEnabled !== false,
-    musicVolume: clamp01(defaults.musicVolume, 0.6),
-    sfxVolume: clamp01(defaults.sfxVolume, 1)
-  };
-}
-
-function normalizeSettings(raw, defaults) {
-  var fallback = createDefaultSettings(defaults);
-  if (!raw || typeof raw !== "object") {
-    return fallback;
-  }
-
-  return {
-    version: 1,
-    musicEnabled: raw.musicEnabled !== false,
-    sfxEnabled: raw.sfxEnabled !== false,
-    vibrationEnabled: raw.vibrationEnabled !== false,
-    musicVolume: clamp01(raw.musicVolume, fallback.musicVolume),
-    sfxVolume: clamp01(raw.sfxVolume, fallback.sfxVolume)
-  };
-}
+var NAMESPACE = "AudioSettingsStore";
 
 function clone(data) {
   return JSON.parse(JSON.stringify(data));
 }
 
+function assertObject(value, message) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(message);
+  }
+}
+
+function requireBoolean(value, fieldName) {
+  if (typeof value !== "boolean") {
+    throw new Error(fieldName + " must be boolean.");
+  }
+  return value;
+}
+
+function requireNumberInRange(value, fieldName, min, max) {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < min || value > max) {
+    throw new Error(fieldName + " must be a number in [" + min + ", " + max + "].");
+  }
+  return value;
+}
+
+function createInitialSettings(defaults) {
+  assertObject(defaults, "AudioSettingsStore defaults are required.");
+  return {
+    version: 1,
+    musicEnabled: requireBoolean(defaults.musicEnabled, "Audio default musicEnabled"),
+    sfxEnabled: requireBoolean(defaults.sfxEnabled, "Audio default sfxEnabled"),
+    vibrationEnabled: requireBoolean(defaults.vibrationEnabled, "Audio default vibrationEnabled"),
+    musicVolume: requireNumberInRange(defaults.musicVolume, "Audio default musicVolume", 0, 1),
+    sfxVolume: requireNumberInRange(defaults.sfxVolume, "Audio default sfxVolume", 0, 1)
+  };
+}
+
+function normalizeSettings(raw) {
+  assertObject(raw, "Audio settings must be an object.");
+  if (raw.version !== 1) {
+    throw new Error("Audio settings version must be 1.");
+  }
+
+  return {
+    version: 1,
+    musicEnabled: requireBoolean(raw.musicEnabled, "Audio settings musicEnabled"),
+    sfxEnabled: requireBoolean(raw.sfxEnabled, "Audio settings sfxEnabled"),
+    vibrationEnabled: requireBoolean(raw.vibrationEnabled, "Audio settings vibrationEnabled"),
+    musicVolume: requireNumberInRange(raw.musicVolume, "Audio settings musicVolume", 0, 1),
+    sfxVolume: requireNumberInRange(raw.sfxVolume, "Audio settings sfxVolume", 0, 1)
+  };
+}
+
 function AudioSettingsStore(defaults) {
-  this.defaults = defaults || {};
+  this.defaults = createInitialSettings(defaults);
 }
 
 AudioSettingsStore.prototype.load = function () {
-  try {
-    var storage = cc && cc.sys && cc.sys.localStorage ? cc.sys.localStorage : null;
-    if (!storage) {
-      return createDefaultSettings(this.defaults);
-    }
-
-    var rawText = storage.getItem(STORAGE_KEY);
-    if (!rawText) {
-      return createDefaultSettings(this.defaults);
-    }
-
-    return normalizeSettings(JSON.parse(rawText), this.defaults);
-  } catch (error) {
-    return createDefaultSettings(this.defaults);
-  }
+  var settings = StrictStorage.readJsonOrCreate(STORAGE_KEY, NAMESPACE, function () {
+    return clone(this.defaults);
+  }.bind(this));
+  return clone(normalizeSettings(settings));
 };
 
 AudioSettingsStore.prototype.save = function (settings) {
-  try {
-    var storage = cc && cc.sys && cc.sys.localStorage ? cc.sys.localStorage : null;
-    if (!storage) {
-      return;
-    }
-
-    var normalized = normalizeSettings(settings, this.defaults);
-    storage.setItem(STORAGE_KEY, JSON.stringify(normalized));
-  } catch (error) {
-    // Ignore save errors to keep runtime stable.
-  }
+  var normalized = normalizeSettings(settings);
+  StrictStorage.writeJson(STORAGE_KEY, NAMESPACE, normalized);
 };
 
 AudioSettingsStore.prototype.normalize = function (settings) {
-  return clone(normalizeSettings(settings, this.defaults));
+  return clone(normalizeSettings(settings));
 };
 
 module.exports = AudioSettingsStore;

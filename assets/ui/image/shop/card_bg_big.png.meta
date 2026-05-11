@@ -8,8 +8,8 @@
   "premultiplyAlpha": false,
   "genMipmaps": false,
   "packable": true,
-  "width": 287,
-  "height": 344,
+  "width": 147,
+  "height": 120,
   "platformSettings": {},
   "subMetas": {
     "card_bg_big": {
@@ -24,14 +24,14 @@
       "offsetY": 0,
       "trimX": 0,
       "trimY": 0,
-      "width": 287,
-      "height": 344,
-      "rawWidth": 287,
-      "rawHeight": 344,
-      "borderTop": 0,
-      "borderBottom": 0,
-      "borderLeft": 0,
-      "borderRight": 0,
+      "width": 147,
+      "height": 120,
+      "rawWidth": 147,
+      "rawHeight": 120,
+      "borderTop": 40,
+      "borderBottom": 38,
+      "borderLeft": 56,
+      "borderRight": 49,
       "subMetas": {}
     }
   }
