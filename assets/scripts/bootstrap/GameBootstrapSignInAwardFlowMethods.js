@@ -14,6 +14,56 @@ var AWARD_ITEM_DISPLAY_NAMES = Shared.AWARD_ITEM_DISPLAY_NAMES;
 var SIGN_IN_STATUS_TEXT = Shared.SIGN_IN_STATUS_TEXT;
 var hasOwn = Shared.hasOwn;
 var normalizeAwardPopupItems = Shared.normalizeAwardPopupItems;
+var AWARD_LIST_ITEM_SPACING = 10;
+
+function requireValidNode(node, description) {
+  if (!node || !node.isValid) {
+    throw new Error("AwardView requires " + description + ".");
+  }
+  return node;
+}
+
+function requirePositiveNumber(value, description) {
+  var numberValue = Number(value);
+  if (!Number.isFinite(numberValue) || numberValue <= 0) {
+    throw new Error("AwardView requires positive " + description + ".");
+  }
+  return numberValue;
+}
+
+function findNodeByNameWithComponent(rootNode, name, componentClass) {
+  requireValidNode(rootNode, "root node");
+  if (!name || typeof name !== "string") {
+    throw new Error("AwardView requires node name.");
+  }
+  if (!componentClass) {
+    throw new Error("AwardView requires component class.");
+  }
+
+  var queue = [rootNode];
+  while (queue.length > 0) {
+    var node = queue.shift();
+    requireValidNode(node, name);
+    if (node.name === name && node.getComponent(componentClass)) {
+      return node;
+    }
+    if (node.children && node.children.length > 0) {
+      Array.prototype.push.apply(queue, node.children);
+    }
+  }
+
+  throw new Error("AwardView requires " + name + " with component.");
+}
+
+function calculateAwardContentWidth(awardListNode, itemWidth, itemCount) {
+  var listWidth = requirePositiveNumber(awardListNode.width, "award list width");
+  if (itemCount <= 0) {
+    return listWidth;
+  }
+
+  var totalItemWidth = (itemCount * itemWidth) + ((itemCount - 1) * AWARD_LIST_ITEM_SPACING);
+  return Math.max(listWidth, totalItemWidth);
+}
 
 module.exports = {
   _getDailySignInConfig: function () {
@@ -452,11 +502,12 @@ module.exports = {
     var maskNode = this._findNodeByNameRecursive(awardViewNode, "mask");
     var closeButtonNode = this._findNodeByNameRecursive(awardViewNode, "btn_close");
     var confirmButtonNode = this._findNodeByNameRecursive(awardViewNode, "sure_btn");
-    var awardListNode = this._findNodeByNameRecursive(awardViewNode, "award_list");
-    var itemTemplateNode = awardListNode ? awardListNode.getChildByName("award_item") : null;
-    var layout = awardListNode ? awardListNode.getComponent(cc.Layout) : null;
+    var awardListNode = findNodeByNameWithComponent(awardViewNode, "award_list", cc.ScrollView);
+    var scrollView = awardListNode.getComponent(cc.ScrollView);
+    var contentNode = scrollView ? scrollView.content : null;
+    var itemTemplateNode = contentNode ? contentNode.getChildByName("award_item") : null;
 
-    if (!panelNode || !maskNode || !closeButtonNode || !confirmButtonNode || !awardListNode || !itemTemplateNode || !layout) {
+    if (!panelNode || !maskNode || !closeButtonNode || !confirmButtonNode || !awardListNode || !scrollView || !contentNode || !itemTemplateNode) {
       throw new Error("AwardView prefab structure is incomplete.");
     }
 
@@ -466,8 +517,9 @@ module.exports = {
       closeButtonNode: closeButtonNode,
       confirmButtonNode: confirmButtonNode,
       awardListNode: awardListNode,
+      scrollView: scrollView,
+      contentNode: contentNode,
       itemTemplateNode: itemTemplateNode,
-      listLayout: layout
     };
   },
 
@@ -491,24 +543,30 @@ module.exports = {
     var normalizedItems = normalizeAwardPopupItems(rewardItems);
     var nodes = this._resolveAwardViewNodes(this._awardViewNode);
     var awardListNode = nodes.awardListNode;
+    var contentNode = nodes.contentNode;
     var itemTemplateNode = nodes.itemTemplateNode;
+    var itemWidth = requirePositiveNumber(itemTemplateNode.width, "award item width");
 
-    for (var childIndex = awardListNode.children.length - 1; childIndex >= 0; childIndex -= 1) {
-      var child = awardListNode.children[childIndex];
+    for (var childIndex = contentNode.children.length - 1; childIndex >= 0; childIndex -= 1) {
+      var child = contentNode.children[childIndex];
       if (!child || !child.isValid || child === itemTemplateNode) {
         continue;
       }
       child.destroy();
     }
 
+    contentNode.width = calculateAwardContentWidth(awardListNode, itemWidth, normalizedItems.length);
+
     var iconTasks = [];
     for (var i = 0; i < normalizedItems.length; i += 1) {
       var rewardItem = normalizedItems[i];
       var itemNode = i === 0 ? itemTemplateNode : cc.instantiate(itemTemplateNode);
       if (i > 0) {
-        itemNode.parent = awardListNode;
+        itemNode.parent = contentNode;
       }
       itemNode.active = true;
+      itemNode.x = (itemWidth / 2) + (i * (itemWidth + AWARD_LIST_ITEM_SPACING));
+      itemNode.y = 0;
 
       var iconNode = itemNode.getChildByName("icon");
       var iconSprite = iconNode ? iconNode.getComponent(cc.Sprite) : null;
@@ -533,7 +591,6 @@ module.exports = {
       }.bind(this))(iconSprite, rewardItem.id);
     }
 
-    nodes.listLayout.updateLayout();
     return Promise.all(iconTasks);
   },
 
