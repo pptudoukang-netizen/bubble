@@ -42,6 +42,41 @@ module.exports = {
     }
   },
 
+  _canShowRewardedVideoAd: function () {
+    if (!this.adService || typeof this.adService.canShowRewarded !== "function") {
+      throw new Error("Ad reward flow requires AdService.canShowRewarded.");
+    }
+
+    return this.adService.canShowRewarded();
+  },
+
+  _setRewardedVideoAdUnavailableStatus: function () {
+    if (typeof this._setStatusWithTip === "function") {
+      this._setStatusWithTip("rewarded_video_ad_unavailable", null, "当前环境不支持激励视频广告，请在微信开发者工具或真机中重试");
+      return;
+    }
+
+    this._setStatus("当前环境不支持激励视频广告，请在微信开发者工具或真机中重试");
+  },
+
+  _setRewardedAdFailureStatus: function (adResult, fallbackMessage) {
+    var code = adResult && typeof adResult.code === "string" ? adResult.code : "";
+    if (code === "no_fill") {
+      if (typeof this._setStatusWithTip === "function") {
+        this._setStatusWithTip("rewarded_ad_no_fill", null, "暂时没有合适的广告，请稍后再试");
+        return;
+      }
+      this._setStatus("暂时没有合适的广告，请稍后再试");
+      return;
+    }
+
+    if (typeof this._setStatusWithTip === "function") {
+      this._setStatusWithTip("rewarded_ad_failed", null, fallbackMessage);
+      return;
+    }
+    this._setStatus(fallbackMessage);
+  },
+
   _setAdQuotaBlockedStatus: function (quotaResult) {
     if (quotaResult.reason === "daily_limit") {
       this._setStatus("今日奖励次数已达上限");
@@ -50,6 +85,16 @@ module.exports = {
     } else {
       this._setStatus("当前无法领取奖励");
     }
+  },
+
+  _buildRewardedAdSceneId: function (entry, options) {
+    if (!entry || !entry.entryKey) {
+      throw new Error("Rewarded ad sceneID requires entry.entryKey.");
+    }
+    var source = options && typeof options.entrySource === "string" && options.entrySource
+      ? options.entrySource
+      : entry.entryKey;
+    return source + ":" + entry.entryKey;
   },
 
   _onLoseWatchAdTap: function () {
@@ -68,25 +113,14 @@ module.exports = {
       throw new Error("Lose reward requires rewardedVideoAdUnitId.");
     }
 
-    this._showRewardedAdForEntry(loseRewardEntry, {
+    return this._showRewardedAdForEntry(loseRewardEntry, {
       entrySource: "lose_view",
       trackExposure: false,
       onRewardGrantedMessage: "奖励已生效，正在重新开局...",
       onRewardGranted: function () {
         this._restartCurrentLevel();
       }.bind(this)
-    }).then(function (granted) {
-      if (granted) {
-        return;
-      }
-
-      if (this.isRestarting || this.isSelectingLevel) {
-        return;
-      }
-
-      this._setStatusWithTip("ad_reward_not_granted_back_to_level", null, "广告未发奖，返回选关页面");
-      this._onBackToLevelTap();
-    }.bind(this));
+    });
   },
 
   _showRewardedAdForEntry: function (entry, options) {
@@ -117,6 +151,11 @@ module.exports = {
     }
 
     this._requireRewardedVideoAdConfig();
+    if (!this._canShowRewardedVideoAd()) {
+      this._setRewardedVideoAdUnavailableStatus();
+      return Promise.resolve(false);
+    }
+
     var quotaResult = this.adRewardQuotaStore.canGrant(entry.quotaType);
     if (!quotaResult.allowed) {
       this._setAdQuotaBlockedStatus(quotaResult);
@@ -129,6 +168,7 @@ module.exports = {
     }
 
     this._adFlowInProgress = true;
+    var sceneID = this._buildRewardedAdSceneId(entry, options);
     this._trackTelemetry("ad_request", {
       entry_key: entry.entryKey,
       reward_type: entry.rewardType
@@ -136,6 +176,7 @@ module.exports = {
 
     return this.adService.showRewarded({
       placement: options.entrySource || entry.entryKey,
+      sceneID: sceneID,
       onShow: function () {
         this._trackTelemetry("ad_show", {
           entry_key: entry.entryKey,
@@ -153,7 +194,7 @@ module.exports = {
       });
 
       if (!safeAdResult || !safeAdResult.ok) {
-        this._setStatus("广告加载失败，请稍后重试");
+        this._setRewardedAdFailureStatus(safeAdResult, "广告加载失败，请稍后重试");
         return false;
       }
       if (!isCompleted) {
@@ -163,6 +204,7 @@ module.exports = {
 
       var grantResult = this._grantAdEntryReward(entry, options);
       if (!grantResult || !grantResult.accepted) {
+        this.adService.reportHostedRewardFailure(safeAdResult);
         this._setStatus(grantResult && grantResult.message ? grantResult.message : "奖励发放失败");
         return false;
       }
@@ -184,15 +226,23 @@ module.exports = {
       if (typeof options.onRewardGranted === "function") {
         options.onRewardGranted();
       }
+      this.adService.reportHostedRewardSuccess(safeAdResult);
       return true;
-    }.bind(this), function () {
-      this._setStatus("广告展示失败，请稍后重试");
+    }.bind(this), function (error) {
+      this._setRewardedAdFailureStatus({
+        code: "show_fail",
+        error: error
+      }, "广告展示失败，请稍后重试");
       return false;
     }.bind(this)).then(function (granted) {
       this._adFlowInProgress = false;
       return granted;
-    }.bind(this), function () {
+    }.bind(this), function (error) {
       this._adFlowInProgress = false;
+      this._setRewardedAdFailureStatus({
+        code: "show_fail",
+        error: error
+      }, "广告处理失败，请稍后重试");
       return false;
     }.bind(this));
   },

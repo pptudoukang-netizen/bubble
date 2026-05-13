@@ -765,10 +765,17 @@ module.exports = {
     if (!this.adService || typeof this.adService.showRewarded !== "function") {
       throw new Error("Sign-in ad reward requires AdService.showRewarded.");
     }
+    if (typeof this._canShowRewardedVideoAd !== "function") {
+      throw new Error("Sign-in ad reward requires rewarded video ad runtime validation.");
+    }
     if (typeof this._requireRewardedVideoAdConfig !== "function") {
       throw new Error("Sign-in ad reward requires rewarded video ad config validation.");
     }
     this._requireRewardedVideoAdConfig();
+    if (!this._canShowRewardedVideoAd()) {
+      this._setRewardedVideoAdUnavailableStatus();
+      return;
+    }
 
     this._refreshSignInState();
     var now = new Date();
@@ -784,6 +791,7 @@ module.exports = {
     }
 
     this._signInAdClaimInProgress = true;
+    var adSceneID = "sign_in:double_reward";
     this._trackTelemetry("ad_request", {
       entry_key: "sign_in_double_reward",
       reward_type: "sign_in_double_reward"
@@ -791,6 +799,7 @@ module.exports = {
 
     this.adService.showRewarded({
       placement: "sign_in_double_reward",
+      sceneID: adSceneID,
       onShow: function () {
         this._trackTelemetry("ad_show", {
           entry_key: "sign_in_double_reward",
@@ -807,7 +816,7 @@ module.exports = {
       });
 
       if (!adResult || !adResult.ok) {
-        this._setStatus("广告加载失败，请稍后重试");
+        this._setRewardedAdFailureStatus(adResult, "广告加载失败，请稍后重试");
         return;
       }
       if (!isCompleted) {
@@ -817,6 +826,7 @@ module.exports = {
 
       var claimResult = this.signInStore.claimToday(this.signInState, now);
       if (!claimResult || !claimResult.accepted) {
+        this.adService.reportHostedRewardFailure(adResult);
         this._setStatus("今日奖励已领取");
         this._renderSignInView();
         this._updateSignInEntryState();
@@ -829,12 +839,20 @@ module.exports = {
         reward_type: "sign_in_double_reward",
         reward_value: "x2"
       });
-    }.bind(this), function () {
-      this._setStatus("广告展示失败，请稍后重试");
+      this.adService.reportHostedRewardSuccess(adResult);
+    }.bind(this), function (error) {
+      this._setRewardedAdFailureStatus({
+        code: "show_fail",
+        error: error
+      }, "广告展示失败，请稍后重试");
     }.bind(this)).then(function () {
       this._signInAdClaimInProgress = false;
     }.bind(this), function (error) {
       this._signInAdClaimInProgress = false;
+      this._setRewardedAdFailureStatus({
+        code: "show_fail",
+        error: error
+      }, "广告处理失败，请稍后重试");
       throw error;
     }.bind(this));
   },

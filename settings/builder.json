@@ -15,7 +15,7 @@
   "mainCompressionType": "default",
   "mainIsRemote": false,
   "optimizeHotUpdate": false,
-  "md5Cache": true,
+  "md5Cache": false,
   "nativeMd5Cache": true,
   "encryptJs": true,
   "xxteaKey": "0fc9e78e-750b-48",

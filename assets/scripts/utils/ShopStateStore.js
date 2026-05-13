@@ -1,6 +1,9 @@
 "use strict";
 
+var StrictStorage = require("./StrictStorage");
+
 var STORAGE_KEY = "bubble_shop_state_v1";
+var NAMESPACE = "ShopStateStore";
 
 function clone(data) {
   return JSON.parse(JSON.stringify(data));
@@ -92,47 +95,18 @@ function createInitialState(dateKey, skuCounts) {
   });
 }
 
-function resolveStorage() {
-  if (typeof cc === "undefined" || !cc.sys || !cc.sys.localStorage) {
-    throw new Error("ShopStateStore requires cc.sys.localStorage.");
-  }
-  return cc.sys.localStorage;
-}
-
 function ShopStateStore() {}
 
 ShopStateStore.prototype.load = function (dateKey, skuCounts) {
-  var storage = resolveStorage();
-  var rawText = storage.getItem(STORAGE_KEY);
-  if (rawText === null) {
-    var initialState = createInitialState(dateKey, skuCounts);
-    this.save(initialState);
-    return clone(initialState);
-  }
-
-  if (typeof rawText !== "string") {
-    throw new Error("Shop state storage value must be a string.");
-  }
-
-  var serializedText = rawText.trim();
-  if (serializedText.length === 0) {
-    throw new Error("Shop state storage JSON must not be empty.");
-  }
-
-  var parsed = null;
-  try {
-    parsed = JSON.parse(serializedText);
-  } catch (error) {
-    throw new Error("Shop state storage JSON is invalid: " + error.message);
-  }
-
-  return clone(normalizeState(parsed));
+  var state = StrictStorage.readJsonOrCreate(STORAGE_KEY, NAMESPACE, function () {
+    return createInitialState(dateKey, skuCounts);
+  });
+  return clone(normalizeState(state));
 };
 
 ShopStateStore.prototype.save = function (state) {
-  var storage = resolveStorage();
   var normalized = normalizeState(state);
-  storage.setItem(STORAGE_KEY, JSON.stringify(normalized));
+  StrictStorage.writeJson(STORAGE_KEY, NAMESPACE, normalized);
 };
 
 ShopStateStore.createInitialState = createInitialState;

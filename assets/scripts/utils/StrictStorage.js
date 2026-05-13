@@ -20,6 +20,27 @@ function resolveStorage(namespace) {
   return cc.sys.localStorage;
 }
 
+function storageContainsKey(storage, storageKey) {
+  if (typeof wx !== "undefined" && wx && typeof wx.getStorageInfoSync === "function") {
+    var storageInfo = wx.getStorageInfoSync();
+    if (!storageInfo || !Array.isArray(storageInfo.keys)) {
+      throw new Error("StrictStorage wx.getStorageInfoSync must return keys.");
+    }
+    return storageInfo.keys.indexOf(storageKey) >= 0;
+  }
+
+  if (typeof storage.length === "number" && typeof storage.key === "function") {
+    for (var index = 0; index < storage.length; index += 1) {
+      if (storage.key(index) === storageKey) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  throw new Error("StrictStorage cannot determine whether storage key exists: " + storageKey);
+}
+
 function readStoredText(storageKey, namespace) {
   assertStorageKey(storageKey);
   var storage = resolveStorage(namespace);
@@ -31,6 +52,9 @@ function readStoredText(storageKey, namespace) {
     throw new Error(namespace + " storage value must be a string: " + storageKey);
   }
   if (rawText.trim().length === 0) {
+    if (!storageContainsKey(storage, storageKey)) {
+      return null;
+    }
     throw new Error(namespace + " storage JSON must not be empty: " + storageKey);
   }
   return rawText;

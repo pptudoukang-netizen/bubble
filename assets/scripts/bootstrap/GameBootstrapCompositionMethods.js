@@ -212,7 +212,8 @@ module.exports = {
     this.adService = new AdService({
       adUnitId: this.rewardedVideoAdUnitId,
       logger: Logger,
-      mockEnabled: this.enableMockRewardedAdOnUnsupported === true
+      mockEnabled: this.enableMockRewardedAdOnUnsupported === true,
+      hostedShareBehaviorEnabled: true
     });
     this._settingViewPrefab = null;
     this._settingViewNode = null;

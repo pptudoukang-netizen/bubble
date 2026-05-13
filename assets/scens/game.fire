@@ -1603,7 +1603,7 @@
     "winSfxResource": "sound/win1",
     "jarBounceSfxResources": "sound/ding6,sound/ding6,sound/ding6,sound/ding6",
     "jarCollectBottomSfxResource": "sound/ding0",
-    "rewardedVideoAdUnitId": "123456",
+    "rewardedVideoAdUnitId": "adunit-a6c99a9ee6bc8015",
     "enableMockRewardedAdOnUnsupported": false,
     "staminaAdDailyLimit": 5,
     "inventoryAdDailyLimit": 12,
