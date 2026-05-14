@@ -403,16 +403,23 @@ function renderLevelMapNode(mapNode, context, mapIndex, shouldAttachRunAnimation
   }
 }
 
-function instantiateLevelMapNode(mapHostNode, context, mapIndex, nodeName, shouldAttachRunAnimation) {
+function instantiateLevelMapNode(mapHostNode, context, mapIndex, nodeName, initialX, shouldAttachRunAnimation) {
+  if (typeof initialX !== "number") {
+    throw new Error("Level map initial x must be a number.");
+  }
+
   var mapPrefab = resolveLevelMapPrefab(context.mapPrefabs, mapIndex);
   var mapNode = instantiateNode(mapPrefab, nodeName);
   if (!mapNode) {
     throw new Error("Instantiate level map failed: " + nodeName + ".");
   }
 
+  disableLevelMapRootWidget(mapNode);
+  mapNode.x = initialX;
+  mapNode.active = false;
   mapNode.parent = mapHostNode;
-  mapNode.active = true;
   renderLevelMapNode(mapNode, context, mapIndex, shouldAttachRunAnimation);
+  mapNode.active = true;
   return mapNode;
 }
 
@@ -437,9 +444,23 @@ function destroyMapNode(node) {
   }
 }
 
+function setLevelMapNodeX(node, x) {
+  requireValidLevelMapNode(node, "level map node");
+  node.x = x;
+}
+
+function disableLevelMapRootWidget(mapNode) {
+  requireValidLevelMapNode(mapNode, "level map node");
+  var widget = mapNode.getComponent(cc.Widget);
+  if (widget) {
+    widget.enabled = false;
+  }
+}
+
 function getCurrentLevelMapNode(levelView) {
   var currentNode = levelView.__levelMapCurrentNode;
   if (currentNode && currentNode.isValid) {
+    disableLevelMapRootWidget(currentNode);
     return currentNode;
   }
 
@@ -448,6 +469,7 @@ function getCurrentLevelMapNode(levelView) {
     throw new Error("Level map host must contain exactly one current map before transition.");
   }
   currentNode = mapHostNode.children[0];
+  disableLevelMapRootWidget(currentNode);
   levelView.__levelMapCurrentNode = currentNode;
   return currentNode;
 }
@@ -488,11 +510,11 @@ function runLevelMapSlide(levelView, currentNode, targetNode, width, direction, 
   };
 
   cc.tween(currentNode)
-    .to(MAP_SLIDE_DURATION, { x: -direction * width, y: 0 })
+    .to(MAP_SLIDE_DURATION, { x: -direction * width })
     .call(finishOne)
     .start();
   cc.tween(targetNode)
-    .to(MAP_SLIDE_DURATION, { x: 0, y: 0 })
+    .to(MAP_SLIDE_DURATION, { x: 0 })
     .call(finishOne)
     .start();
 }
@@ -515,9 +537,8 @@ function animateLevelMapSwitch(levelView, targetMapIndex) {
   var width = resolveMapSlideWidth(mapHostNode);
   var direction = resolveMapDirection(currentMapIndex, targetMapIndex);
   var currentNode = getCurrentLevelMapNode(levelView);
-  var targetNode = instantiateLevelMapNode(mapHostNode, context, targetMapIndex, "LevelMapRuntimeNext", false);
-  currentNode.setPosition(0, 0);
-  targetNode.setPosition(direction * width, 0);
+  var targetNode = instantiateLevelMapNode(mapHostNode, context, targetMapIndex, "LevelMapRuntimeNext", direction * width, false);
+  setLevelMapNodeX(currentNode, 0);
   runLevelMapSlide(levelView, currentNode, targetNode, width, direction, function () {
     levelView.__levelMapCurrentNode = targetNode;
     levelView.__levelSelectCurrentMapIndex = targetMapIndex;
@@ -621,7 +642,7 @@ function clearLevelMapSwipeDrag(swipeNode, keepCurrentPosition) {
   }
 
   if (drag.currentNode && drag.currentNode.isValid && keepCurrentPosition !== true) {
-    drag.currentNode.setPosition(0, 0);
+    setLevelMapNodeX(drag.currentNode, 0);
   }
   destroyMapNode(drag.targetNode);
 }
@@ -646,8 +667,7 @@ function updateLevelMapSwipeDrag(swipeNode, levelView, deltaX) {
   if (!drag || drag.targetMapIndex !== targetMapIndex) {
     clearLevelMapSwipeDrag(swipeNode);
     var currentNode = getCurrentLevelMapNode(levelView);
-    var targetNode = instantiateLevelMapNode(mapHostNode, context, targetMapIndex, "LevelMapRuntimeSwipe", false);
-    targetNode.setPosition(direction * width, 0);
+    var targetNode = instantiateLevelMapNode(mapHostNode, context, targetMapIndex, "LevelMapRuntimeSwipe", direction * width, false);
     drag = {
       currentNode: currentNode,
       targetNode: targetNode,
@@ -659,8 +679,8 @@ function updateLevelMapSwipeDrag(swipeNode, levelView, deltaX) {
   }
 
   var clampedDeltaX = clampSwipeDelta(deltaX, drag.direction, drag.width);
-  drag.currentNode.setPosition(clampedDeltaX, 0);
-  drag.targetNode.setPosition(clampedDeltaX + drag.direction * drag.width, 0);
+  setLevelMapNodeX(drag.currentNode, clampedDeltaX);
+  setLevelMapNodeX(drag.targetNode, clampedDeltaX + drag.direction * drag.width);
 }
 
 function runLevelMapSnapBack(levelView, swipeNode, drag) {
@@ -683,17 +703,17 @@ function runLevelMapSnapBack(levelView, swipeNode, drag) {
     }
 
     destroyMapNode(drag.targetNode);
-    drag.currentNode.setPosition(0, 0);
+    setLevelMapNodeX(drag.currentNode, 0);
     swipeNode.__levelMapSwipeDrag = null;
     levelView.__levelMapTransitionActive = false;
   };
 
   cc.tween(drag.currentNode)
-    .to(MAP_SLIDE_DURATION, { x: 0, y: 0 })
+    .to(MAP_SLIDE_DURATION, { x: 0 })
     .call(finishOne)
     .start();
   cc.tween(drag.targetNode)
-    .to(MAP_SLIDE_DURATION, { x: drag.direction * drag.width, y: 0 })
+    .to(MAP_SLIDE_DURATION, { x: drag.direction * drag.width })
     .call(finishOne)
     .start();
 }
@@ -1088,8 +1108,7 @@ function renderLevelSelectContent(options) {
     onMapIndexChange: onMapIndexChange
   };
 
-  var mapNode = instantiateLevelMapNode(mapHostNode, levelView.__levelMapRenderContext, currentMapIndex, "LevelMapRuntime", true);
-  mapNode.setPosition(0, 0);
+  var mapNode = instantiateLevelMapNode(mapHostNode, levelView.__levelMapRenderContext, currentMapIndex, "LevelMapRuntime", 0, true);
   levelView.__levelMapCurrentNode = mapNode;
   levelView.__levelSelectCurrentMapIndex = currentMapIndex;
   levelView.__levelSelectMapCount = mapCount;
