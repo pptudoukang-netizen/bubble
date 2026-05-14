@@ -38,6 +38,7 @@ var RUN_ANIMATION_POSITION = cc.v2(0, 80);
 var RUN_ANIMATION_SCALE = 0.5;
 var MAP_SWIPE_MIN_DISTANCE = 90;
 var MAP_SWIPE_VERTICAL_TOLERANCE = 0.75;
+var MAP_SLIDE_DURATION = 0.28;
 
 var levelButtonSkinFrames = null;
 var levelButtonSkinLoadPromise = null;
@@ -307,7 +308,226 @@ function applyLevelButtonState(buttonNode, options) {
   ensureLevelCurrentHighlight(buttonNode, isCurrent);
 }
 
-function bindMapSwitchButton(buttonNode, levelViewNode, nextIndexResolver, onMapIndexChange) {
+function requireValidLevelMapNode(node, description) {
+  if (!node || !node.isValid) {
+    throw new Error("Level map transition requires valid " + description + ".");
+  }
+  return node;
+}
+
+function resolveMapSlideWidth(mapHostNode) {
+  requireValidLevelMapNode(mapHostNode, "map host node");
+  var size = mapHostNode.getContentSize();
+  if (!size || !(size.width > 0)) {
+    throw new Error("Level map host width must be greater than 0.");
+  }
+  return size.width;
+}
+
+function resolveLevelMapPrefab(mapPrefabs, mapIndex) {
+  if (!Array.isArray(mapPrefabs) || mapPrefabs.length === 0) {
+    throw new Error("Level map prefabs must be configured before switching maps.");
+  }
+
+  var prefabIndex = Math.min(mapIndex, mapPrefabs.length - 1);
+  var prefab = mapPrefabs[prefabIndex];
+  if (!prefab) {
+    throw new Error("Level map prefab missing at index " + prefabIndex + ".");
+  }
+  return prefab;
+}
+
+function renderLevelMapNode(mapNode, context, mapIndex, shouldAttachRunAnimation) {
+  requireValidLevelMapNode(mapNode, "map node");
+  var levelView = requireValidLevelMapNode(context.levelView, "level view node");
+  var slots = collectLevelSlots(mapNode);
+  if (slots.length === 0) {
+    throw new Error("Level map prefab must contain level slots.");
+  }
+
+  var runAnimationTargetSlot = null;
+  slots.forEach(function (slot) {
+    var slotNode = slot.node;
+    var levelIndex = mapIndex * context.slotsPerMap + slot.index;
+    if (levelIndex < 0 || levelIndex >= context.levelIds.length) {
+      slotNode.active = false;
+      return;
+    }
+
+    slotNode.active = true;
+    var levelId = context.levelIds[levelIndex];
+    var levelLabelNode = slotNode.getChildByName("level");
+    var levelLabel = levelLabelNode ? levelLabelNode.getComponent(cc.Label) : null;
+    if (levelLabel) {
+      levelLabel.string = String(levelId);
+    }
+
+    var starCount = context.getLevelStarCount(levelId);
+    var isPassed = context.isLevelCompleted(levelId);
+    var isUnlocked = levelId <= context.highestUnlocked;
+    var isCurrent = levelId === context.highlightedLevelId;
+    if (levelId === context.lastUnlockableLevelId) {
+      runAnimationTargetSlot = slotNode;
+    }
+    applyLevelButtonState(slotNode, {
+      isPassed: isPassed,
+      isUnlocked: isUnlocked,
+      isCurrent: isCurrent,
+      starCount: starCount
+    });
+
+    if (slotNode.__levelSelectTapBound !== true) {
+      slotNode.__levelSelectTapBound = true;
+      slotNode.on(cc.Node.EventType.TOUCH_END, function (event) {
+        if (event) {
+          event.stopPropagation();
+        }
+        if (levelView.__levelMapSwipeConsumed === true) {
+          return;
+        }
+
+        if (!slotNode.__levelSelectUnlocked || !Number.isInteger(slotNode.__levelSelectLevelId)) {
+          return;
+        }
+
+        context.onLevelSelectTap(slotNode.__levelSelectLevelId);
+      });
+    }
+
+    slotNode.__levelSelectLevelId = levelId;
+    slotNode.__levelSelectUnlocked = isUnlocked;
+  });
+
+  if (runAnimationTargetSlot && shouldAttachRunAnimation === true) {
+    attachRunAnimationToLevelSlot(runAnimationTargetSlot, mapNode);
+  }
+}
+
+function instantiateLevelMapNode(mapHostNode, context, mapIndex, nodeName, shouldAttachRunAnimation) {
+  var mapPrefab = resolveLevelMapPrefab(context.mapPrefabs, mapIndex);
+  var mapNode = instantiateNode(mapPrefab, nodeName);
+  if (!mapNode) {
+    throw new Error("Instantiate level map failed: " + nodeName + ".");
+  }
+
+  mapNode.parent = mapHostNode;
+  mapNode.active = true;
+  renderLevelMapNode(mapNode, context, mapIndex, shouldAttachRunAnimation);
+  return mapNode;
+}
+
+function resolveLevelMapTransitionContext(levelView) {
+  requireValidLevelMapNode(levelView, "level view node");
+  var context = levelView.__levelMapRenderContext;
+  if (!context || typeof context !== "object") {
+    throw new Error("Level map render context is missing.");
+  }
+  return context;
+}
+
+function stopMapNodeMotion(node) {
+  if (node && node.isValid) {
+    node.stopAllActions();
+  }
+}
+
+function destroyMapNode(node) {
+  if (node && node.isValid) {
+    node.destroy();
+  }
+}
+
+function getCurrentLevelMapNode(levelView) {
+  var currentNode = levelView.__levelMapCurrentNode;
+  if (currentNode && currentNode.isValid) {
+    return currentNode;
+  }
+
+  var mapHostNode = requireValidLevelMapNode(levelView.getChildByName("map"), "map host node");
+  if (mapHostNode.children.length !== 1) {
+    throw new Error("Level map host must contain exactly one current map before transition.");
+  }
+  currentNode = mapHostNode.children[0];
+  levelView.__levelMapCurrentNode = currentNode;
+  return currentNode;
+}
+
+function resolveMapDirection(currentMapIndex, targetMapIndex) {
+  if (targetMapIndex > currentMapIndex) {
+    return 1;
+  }
+  if (targetMapIndex < currentMapIndex) {
+    return -1;
+  }
+  throw new Error("Level map target index must differ from current index.");
+}
+
+function runLevelMapSlide(levelView, currentNode, targetNode, width, direction, onComplete) {
+  requireValidLevelMapNode(levelView, "level view node");
+  requireValidLevelMapNode(currentNode, "current map node");
+  requireValidLevelMapNode(targetNode, "target map node");
+  if (typeof cc.tween !== "function") {
+    throw new Error("Level map slide requires cc.tween.");
+  }
+
+  levelView.__levelMapTransitionActive = true;
+  stopMapNodeMotion(currentNode);
+  stopMapNodeMotion(targetNode);
+
+  var completedCount = 0;
+  var finishOne = function () {
+    completedCount += 1;
+    if (completedCount < 2) {
+      return;
+    }
+
+    levelView.__levelMapTransitionActive = false;
+    if (typeof onComplete === "function") {
+      onComplete();
+    }
+  };
+
+  cc.tween(currentNode)
+    .to(MAP_SLIDE_DURATION, { x: -direction * width, y: 0 })
+    .call(finishOne)
+    .start();
+  cc.tween(targetNode)
+    .to(MAP_SLIDE_DURATION, { x: 0, y: 0 })
+    .call(finishOne)
+    .start();
+}
+
+function animateLevelMapSwitch(levelView, targetMapIndex) {
+  var context = resolveLevelMapTransitionContext(levelView);
+  var currentMapIndex = requireLevelMapIntegerProperty(levelView, "__levelSelectCurrentMapIndex");
+  var mapCount = requireLevelMapIntegerProperty(levelView, "__levelSelectMapCount");
+  if (targetMapIndex < 0 || targetMapIndex >= mapCount) {
+    throw new Error("Level map target index out of range: " + targetMapIndex + ".");
+  }
+  if (targetMapIndex === currentMapIndex) {
+    return;
+  }
+  if (levelView.__levelMapTransitionActive === true) {
+    return;
+  }
+
+  var mapHostNode = requireValidLevelMapNode(levelView.getChildByName("map"), "map host node");
+  var width = resolveMapSlideWidth(mapHostNode);
+  var direction = resolveMapDirection(currentMapIndex, targetMapIndex);
+  var currentNode = getCurrentLevelMapNode(levelView);
+  var targetNode = instantiateLevelMapNode(mapHostNode, context, targetMapIndex, "LevelMapRuntimeNext", false);
+  currentNode.setPosition(0, 0);
+  targetNode.setPosition(direction * width, 0);
+  runLevelMapSlide(levelView, currentNode, targetNode, width, direction, function () {
+    levelView.__levelMapCurrentNode = targetNode;
+    levelView.__levelSelectCurrentMapIndex = targetMapIndex;
+    updateMapSwitchButtonState(levelView, targetMapIndex, mapCount);
+    destroyMapNode(currentNode);
+    context.onMapIndexChange(targetMapIndex);
+  });
+}
+
+function bindMapSwitchButton(buttonNode, levelViewNode, nextIndexResolver) {
   if (!buttonNode || buttonNode.__mapSwitchBound === true) {
     return;
   }
@@ -319,7 +539,7 @@ function bindMapSwitchButton(buttonNode, levelViewNode, nextIndexResolver, onMap
     }
 
     var nextIndex = nextIndexResolver(levelViewNode);
-    onMapIndexChange(nextIndex);
+    animateLevelMapSwitch(levelViewNode, nextIndex);
   });
 }
 
@@ -335,9 +555,18 @@ function getTouchLocation(event) {
   return location;
 }
 
+function requireLevelMapIntegerProperty(levelView, propertyName) {
+  requireValidLevelMapNode(levelView, "level view node");
+  var value = levelView[propertyName];
+  if (!Number.isInteger(value)) {
+    throw new Error("Level view property `" + propertyName + "` must be an integer.");
+  }
+  return value;
+}
+
 function resolveSwipeTargetMapIndex(levelView, deltaX) {
-  var currentMapIndex = Math.max(0, Math.floor(Number(levelView.__levelSelectCurrentMapIndex) || 0));
-  var mapCount = Math.max(0, Math.floor(Number(levelView.__levelSelectMapCount) || 0));
+  var currentMapIndex = requireLevelMapIntegerProperty(levelView, "__levelSelectCurrentMapIndex");
+  var mapCount = requireLevelMapIntegerProperty(levelView, "__levelSelectMapCount");
   if (mapCount <= 1) {
     return currentMapIndex;
   }
@@ -351,12 +580,152 @@ function resolveSwipeTargetMapIndex(levelView, deltaX) {
   return currentMapIndex;
 }
 
-function bindLevelMapSwipe(swipeNode, levelView, onMapIndexChange) {
+function updateMapSwitchButtonState(levelView, currentMapIndex, mapCount) {
+  var previousMapNode = levelView.getChildByName("previous_map");
+  var nextMapNode = levelView.getChildByName("next_map");
+  var hasPrevious = currentMapIndex > 0;
+  var hasNext = currentMapIndex < mapCount - 1;
+
+  if (previousMapNode) {
+    previousMapNode.active = hasPrevious;
+    var previousButton = previousMapNode.getComponent(cc.Button);
+    if (previousButton) {
+      previousButton.interactable = hasPrevious;
+    }
+  }
+
+  if (nextMapNode) {
+    nextMapNode.active = hasNext;
+    var nextButton = nextMapNode.getComponent(cc.Button);
+    if (nextButton) {
+      nextButton.interactable = hasNext;
+    }
+  }
+}
+
+function clampSwipeDelta(deltaX, direction, width) {
+  if (direction > 0) {
+    return Math.max(-width, Math.min(0, deltaX));
+  }
+  if (direction < 0) {
+    return Math.max(0, Math.min(width, deltaX));
+  }
+  throw new Error("Level map swipe direction must not be 0.");
+}
+
+function clearLevelMapSwipeDrag(swipeNode, keepCurrentPosition) {
+  var drag = swipeNode.__levelMapSwipeDrag;
+  swipeNode.__levelMapSwipeDrag = null;
+  if (!drag) {
+    return;
+  }
+
+  if (drag.currentNode && drag.currentNode.isValid && keepCurrentPosition !== true) {
+    drag.currentNode.setPosition(0, 0);
+  }
+  destroyMapNode(drag.targetNode);
+}
+
+function updateLevelMapSwipeDrag(swipeNode, levelView, deltaX) {
+  if (levelView.__levelMapTransitionActive === true) {
+    return;
+  }
+
+  var currentMapIndex = requireLevelMapIntegerProperty(levelView, "__levelSelectCurrentMapIndex");
+  var targetMapIndex = resolveSwipeTargetMapIndex(levelView, deltaX);
+  if (targetMapIndex === currentMapIndex) {
+    clearLevelMapSwipeDrag(swipeNode);
+    return;
+  }
+
+  var context = resolveLevelMapTransitionContext(levelView);
+  var mapHostNode = requireValidLevelMapNode(levelView.getChildByName("map"), "map host node");
+  var width = resolveMapSlideWidth(mapHostNode);
+  var direction = resolveMapDirection(currentMapIndex, targetMapIndex);
+  var drag = swipeNode.__levelMapSwipeDrag;
+  if (!drag || drag.targetMapIndex !== targetMapIndex) {
+    clearLevelMapSwipeDrag(swipeNode);
+    var currentNode = getCurrentLevelMapNode(levelView);
+    var targetNode = instantiateLevelMapNode(mapHostNode, context, targetMapIndex, "LevelMapRuntimeSwipe", false);
+    targetNode.setPosition(direction * width, 0);
+    drag = {
+      currentNode: currentNode,
+      targetNode: targetNode,
+      targetMapIndex: targetMapIndex,
+      direction: direction,
+      width: width
+    };
+    swipeNode.__levelMapSwipeDrag = drag;
+  }
+
+  var clampedDeltaX = clampSwipeDelta(deltaX, drag.direction, drag.width);
+  drag.currentNode.setPosition(clampedDeltaX, 0);
+  drag.targetNode.setPosition(clampedDeltaX + drag.direction * drag.width, 0);
+}
+
+function runLevelMapSnapBack(levelView, swipeNode, drag) {
+  requireValidLevelMapNode(levelView, "level view node");
+  requireValidLevelMapNode(drag.currentNode, "current map node");
+  requireValidLevelMapNode(drag.targetNode, "target map node");
+  if (typeof cc.tween !== "function") {
+    throw new Error("Level map snap back requires cc.tween.");
+  }
+
+  levelView.__levelMapTransitionActive = true;
+  stopMapNodeMotion(drag.currentNode);
+  stopMapNodeMotion(drag.targetNode);
+
+  var completedCount = 0;
+  var finishOne = function () {
+    completedCount += 1;
+    if (completedCount < 2) {
+      return;
+    }
+
+    destroyMapNode(drag.targetNode);
+    drag.currentNode.setPosition(0, 0);
+    swipeNode.__levelMapSwipeDrag = null;
+    levelView.__levelMapTransitionActive = false;
+  };
+
+  cc.tween(drag.currentNode)
+    .to(MAP_SLIDE_DURATION, { x: 0, y: 0 })
+    .call(finishOne)
+    .start();
+  cc.tween(drag.targetNode)
+    .to(MAP_SLIDE_DURATION, { x: drag.direction * drag.width, y: 0 })
+    .call(finishOne)
+    .start();
+}
+
+function finishLevelMapSwipeDrag(swipeNode, levelView, shouldSwitch) {
+  var drag = swipeNode.__levelMapSwipeDrag;
+  if (!drag) {
+    return;
+  }
+
+  if (shouldSwitch === true) {
+    swipeNode.__levelMapSwipeDrag = null;
+    runLevelMapSlide(levelView, drag.currentNode, drag.targetNode, drag.width, drag.direction, function () {
+      levelView.__levelMapCurrentNode = drag.targetNode;
+      levelView.__levelSelectCurrentMapIndex = drag.targetMapIndex;
+      var mapCount = requireLevelMapIntegerProperty(levelView, "__levelSelectMapCount");
+      updateMapSwitchButtonState(levelView, drag.targetMapIndex, mapCount);
+      destroyMapNode(drag.currentNode);
+      var context = resolveLevelMapTransitionContext(levelView);
+      context.onMapIndexChange(drag.targetMapIndex);
+    });
+    return;
+  }
+
+  runLevelMapSnapBack(levelView, swipeNode, drag);
+}
+
+function bindLevelMapSwipe(swipeNode, levelView) {
   if (!swipeNode || !swipeNode.isValid || !levelView || !levelView.isValid) {
     return;
   }
 
-  swipeNode.__levelMapSwipeOnMapIndexChange = onMapIndexChange;
   if (swipeNode.__levelMapSwipeBound === true) {
     return;
   }
@@ -369,7 +738,7 @@ function bindLevelMapSwipe(swipeNode, levelView, onMapIndexChange) {
 
   swipeNode.on(cc.Node.EventType.TOUCH_START, function (event) {
     levelView.__levelMapSwipeConsumed = false;
-    if (levelView.__levelMapSwipeEnabled !== true) {
+    if (levelView.__levelMapSwipeEnabled !== true || levelView.__levelMapTransitionActive === true) {
       return;
     }
 
@@ -387,6 +756,7 @@ function bindLevelMapSwipe(swipeNode, levelView, onMapIndexChange) {
       x: location.x,
       y: location.y
     };
+    clearLevelMapSwipeDrag(swipeNode);
   }, swipeNode, true);
 
   swipeNode.on(cc.Node.EventType.TOUCH_MOVE, function (event) {
@@ -403,9 +773,16 @@ function bindLevelMapSwipe(swipeNode, levelView, onMapIndexChange) {
       x: location.x,
       y: location.y
     };
+    var startLocation = swipeNode.__levelMapSwipeStart;
+    if (!startLocation) {
+      return;
+    }
+
+    updateLevelMapSwipeDrag(swipeNode, levelView, location.x - startLocation.x);
   }, swipeNode, true);
 
   swipeNode.on(cc.Node.EventType.TOUCH_CANCEL, function () {
+    finishLevelMapSwipeDrag(swipeNode, levelView, false);
     swipeNode.__levelMapSwipeTracking = false;
     swipeNode.__levelMapSwipeStart = null;
     swipeNode.__levelMapSwipeLast = null;
@@ -422,29 +799,30 @@ function bindLevelMapSwipe(swipeNode, levelView, onMapIndexChange) {
     swipeNode.__levelMapSwipeStart = null;
     swipeNode.__levelMapSwipeLast = null;
     if (!startLocation || !endLocation || levelView.__levelMapSwipeEnabled !== true) {
+      finishLevelMapSwipeDrag(swipeNode, levelView, false);
       return;
     }
 
     var deltaX = endLocation.x - startLocation.x;
     var deltaY = endLocation.y - startLocation.y;
     if (Math.abs(deltaX) < MAP_SWIPE_MIN_DISTANCE) {
+      finishLevelMapSwipeDrag(swipeNode, levelView, false);
       return;
     }
     if (Math.abs(deltaY) > Math.abs(deltaX) * MAP_SWIPE_VERTICAL_TOLERANCE) {
+      finishLevelMapSwipeDrag(swipeNode, levelView, false);
       return;
     }
 
     var targetMapIndex = resolveSwipeTargetMapIndex(levelView, deltaX);
-    var currentMapIndex = Math.max(0, Math.floor(Number(levelView.__levelSelectCurrentMapIndex) || 0));
+    var currentMapIndex = requireLevelMapIntegerProperty(levelView, "__levelSelectCurrentMapIndex");
     if (targetMapIndex === currentMapIndex) {
+      finishLevelMapSwipeDrag(swipeNode, levelView, false);
       return;
     }
 
-    var handler = swipeNode.__levelMapSwipeOnMapIndexChange;
-    if (typeof handler === "function") {
-      levelView.__levelMapSwipeConsumed = true;
-      handler(targetMapIndex);
-    }
+    levelView.__levelMapSwipeConsumed = true;
+    finishLevelMapSwipeDrag(swipeNode, levelView, true);
   }, swipeNode, true);
 }
 
@@ -659,7 +1037,8 @@ function renderLevelSelectContent(options) {
       mapCount: 0
     };
   }
-  bindLevelMapSwipe(mapHostNode, levelView, onMapIndexChange);
+  bindLevelMapSwipe(mapHostNode, levelView);
+  mapHostNode.__levelMapSwipeDrag = null;
   mapHostNode.removeAllChildren();
 
   var baseMapPrefab = mapPrefabs.length > 0 ? mapPrefabs[0] : null;
@@ -694,106 +1073,44 @@ function renderLevelSelectContent(options) {
   var currentMapIndex = requestedMapIndex === null ? highlightedMapIndex : requestedMapIndex;
   currentMapIndex = Math.max(0, Math.min(mapCount - 1, currentMapIndex));
 
-  var mapPrefab = mapPrefabs[Math.min(currentMapIndex, mapPrefabs.length - 1)] || baseMapPrefab;
-  var mapNode = instantiateNode(mapPrefab, "LevelMapRuntime");
-  if (!mapNode) {
-    return {
-      levelViewNode: levelView,
-      currentMapIndex: currentMapIndex,
-      mapCount: 0
-    };
-  }
-  mapNode.parent = mapHostNode;
-  mapNode.setPosition(0, 0);
-  mapNode.active = true;
   ensureLevelButtonSkinFrames();
+  levelView.__levelMapRenderContext = {
+    levelView: levelView,
+    mapPrefabs: mapPrefabs,
+    slotsPerMap: slotsPerMap,
+    levelIds: levelIds,
+    highestUnlocked: highestUnlocked,
+    highlightedLevelId: highlightedLevelId,
+    lastUnlockableLevelId: lastUnlockableLevelId,
+    getLevelStarCount: getLevelStarCount,
+    isLevelCompleted: isLevelCompleted,
+    onLevelSelectTap: onLevelSelectTap,
+    onMapIndexChange: onMapIndexChange
+  };
 
-  var slots = collectLevelSlots(mapNode);
-  var runAnimationTargetSlot = null;
-  slots.forEach(function (slot) {
-    var slotNode = slot.node;
-    var levelIndex = currentMapIndex * slotsPerMap + slot.index;
-    if (levelIndex < 0 || levelIndex >= levelIds.length) {
-      slotNode.active = false;
-      return;
-    }
-
-    slotNode.active = true;
-    var levelId = levelIds[levelIndex];
-    var levelLabelNode = slotNode.getChildByName("level");
-    var levelLabel = levelLabelNode ? levelLabelNode.getComponent(cc.Label) : null;
-    if (levelLabel) {
-      levelLabel.string = String(levelId);
-    }
-
-    var starCount = getLevelStarCount(levelId);
-    var isPassed = isLevelCompleted(levelId);
-    var isUnlocked = levelId <= highestUnlocked;
-    var isCurrent = levelId === highlightedLevelId;
-    if (levelId === lastUnlockableLevelId) {
-      runAnimationTargetSlot = slotNode;
-    }
-    applyLevelButtonState(slotNode, {
-      isPassed: isPassed,
-      isUnlocked: isUnlocked,
-      isCurrent: isCurrent,
-      starCount: starCount
-    });
-
-    if (slotNode.__levelSelectTapBound !== true) {
-      slotNode.__levelSelectTapBound = true;
-      slotNode.on(cc.Node.EventType.TOUCH_END, function (event) {
-        if (event) {
-          event.stopPropagation();
-        }
-        if (levelView.__levelMapSwipeConsumed === true) {
-          return;
-        }
-
-        if (!slotNode.__levelSelectUnlocked || !Number.isInteger(slotNode.__levelSelectLevelId)) {
-          return;
-        }
-
-        onLevelSelectTap(slotNode.__levelSelectLevelId);
-      });
-    }
-
-    slotNode.__levelSelectLevelId = levelId;
-    slotNode.__levelSelectUnlocked = isUnlocked;
-  });
-  if (runAnimationTargetSlot) {
-    attachRunAnimationToLevelSlot(runAnimationTargetSlot, mapNode);
-  }
+  var mapNode = instantiateLevelMapNode(mapHostNode, levelView.__levelMapRenderContext, currentMapIndex, "LevelMapRuntime", true);
+  mapNode.setPosition(0, 0);
+  levelView.__levelMapCurrentNode = mapNode;
+  levelView.__levelSelectCurrentMapIndex = currentMapIndex;
+  levelView.__levelSelectMapCount = mapCount;
+  levelView.__levelMapTransitionActive = false;
+  levelView.__levelMapSwipeConsumed = false;
 
   var nextMapNode = levelView.getChildByName("next_map");
   var previousMapNode = levelView.getChildByName("previous_map");
-  var hasPrevious = currentMapIndex > 0;
-  var hasNext = currentMapIndex < mapCount - 1;
+  updateMapSwitchButtonState(levelView, currentMapIndex, mapCount);
 
   if (previousMapNode) {
-    previousMapNode.active = hasPrevious;
-    var previousButton = previousMapNode.getComponent(cc.Button);
-    if (previousButton) {
-      previousButton.interactable = hasPrevious;
-    }
     bindMapSwitchButton(previousMapNode, levelView, function (viewNode) {
-      return (viewNode.__levelSelectCurrentMapIndex || 0) - 1;
-    }, onMapIndexChange);
+      return requireLevelMapIntegerProperty(viewNode, "__levelSelectCurrentMapIndex") - 1;
+    });
   }
 
   if (nextMapNode) {
-    nextMapNode.active = hasNext;
-    var nextButton = nextMapNode.getComponent(cc.Button);
-    if (nextButton) {
-      nextButton.interactable = hasNext;
-    }
     bindMapSwitchButton(nextMapNode, levelView, function (viewNode) {
-      return (viewNode.__levelSelectCurrentMapIndex || 0) + 1;
-    }, onMapIndexChange);
+      return requireLevelMapIntegerProperty(viewNode, "__levelSelectCurrentMapIndex") + 1;
+    });
   }
-
-  levelView.__levelSelectCurrentMapIndex = currentMapIndex;
-  levelView.__levelSelectMapCount = mapCount;
 
   return {
     levelViewNode: levelView,

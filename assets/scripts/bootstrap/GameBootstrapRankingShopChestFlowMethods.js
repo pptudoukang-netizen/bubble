@@ -6,6 +6,7 @@ var LeaderboardStore = Shared.LeaderboardStore;
 var RankingViewController = Shared.RankingViewController;
 var ShopViewController = Shared.ShopViewController;
 var BuyViewController = Shared.BuyViewController;
+var PopupPanelAnimator = Shared.PopupPanelAnimator;
 var RANKING_VIEW_PREFAB_PATH = Shared.RANKING_VIEW_PREFAB_PATH;
 var SHOP_VIEW_PREFAB_PATH = Shared.SHOP_VIEW_PREFAB_PATH;
 var BUY_VIEW_PREFAB_PATH = Shared.BUY_VIEW_PREFAB_PATH;
@@ -89,6 +90,7 @@ module.exports = {
       }
 
       rankingNode.active = true;
+      PopupPanelAnimator.play(rankingNode);
       this._renderRankingView();
     }.bind(this)).catch(function (error) {
       Logger.warn("Show ranking view failed", error && error.message ? error.message : error);
@@ -176,6 +178,7 @@ module.exports = {
       }
 
       shopNode.active = true;
+      PopupPanelAnimator.play(shopNode);
       if (this.telemetryService && typeof this.telemetryService.track === "function") {
         this.telemetryService.track("shop_view_open", {});
       }
@@ -291,6 +294,7 @@ module.exports = {
 
       this._buyViewSkuId = skuId;
       buyNode.active = true;
+      PopupPanelAnimator.play(buyNode);
       return this._renderBuyView(goods, remaining);
     }.bind(this)).catch(function (error) {
       Logger.error("Show buy view failed", error && error.stack ? error.stack : error);

@@ -9,6 +9,7 @@ var SETTING_STATUS_X_DISABLED = Shared.SETTING_STATUS_X_DISABLED;
 var SETTING_VOLUME_ICON_OPEN_PATH = Shared.SETTING_VOLUME_ICON_OPEN_PATH;
 var SETTING_VOLUME_ICON_CLOSE_PATH = Shared.SETTING_VOLUME_ICON_CLOSE_PATH;
 var hideGameCircleWelfareViewNode = Shared.hideGameCircleWelfareViewNode;
+var PopupPanelAnimator = Shared.PopupPanelAnimator;
 
 module.exports = {
   _onLevelSelectSettingTap: function () {
@@ -61,6 +62,7 @@ module.exports = {
       }
 
       settingNode.active = true;
+      PopupPanelAnimator.play(settingNode, { targetNodeName: "ContentContainer" });
       this._ensureSettingVolumeIconSprites().then(function () {
         this._syncSettingViewFromAudioSettings(settingNode);
       }.bind(this));

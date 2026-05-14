@@ -9,6 +9,7 @@ var hideGameCircleWelfareViewNode = Shared.hideGameCircleWelfareViewNode;
 var resolveGameCirclePlatform = Shared.resolveGameCirclePlatform;
 var isGameCircleWelfareViewVisible = Shared.isGameCircleWelfareViewVisible;
 var resolveGameCircleFailMessage = Shared.resolveGameCircleFailMessage;
+var PopupPanelAnimator = Shared.PopupPanelAnimator;
 
 module.exports = {
   _ensureGameCircleEntryRedDot: function (entryNode) {
@@ -172,6 +173,7 @@ module.exports = {
       }
 
       viewNode.active = true;
+      PopupPanelAnimator.play(viewNode);
       if (showOptions.refreshOnOpen === true) {
         return this._refreshGameCircleWelfareProgress({
           silent: true,

@@ -14,6 +14,7 @@ var AWARD_ITEM_DISPLAY_NAMES = Shared.AWARD_ITEM_DISPLAY_NAMES;
 var SIGN_IN_STATUS_TEXT = Shared.SIGN_IN_STATUS_TEXT;
 var hasOwn = Shared.hasOwn;
 var normalizeAwardPopupItems = Shared.normalizeAwardPopupItems;
+var PopupPanelAnimator = Shared.PopupPanelAnimator;
 var AWARD_LIST_ITEM_SPACING = 10;
 
 function requireValidNode(node, description) {
@@ -29,6 +30,13 @@ function requirePositiveNumber(value, description) {
     throw new Error("AwardView requires positive " + description + ".");
   }
   return numberValue;
+}
+
+function requirePositiveInteger(value, description) {
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error("AwardView requires positive integer " + description + ".");
+  }
+  return value;
 }
 
 function findNodeByNameWithComponent(rootNode, name, componentClass) {
@@ -57,12 +65,30 @@ function findNodeByNameWithComponent(rootNode, name, componentClass) {
 
 function calculateAwardContentWidth(awardListNode, itemWidth, itemCount) {
   var listWidth = requirePositiveNumber(awardListNode.width, "award list width");
-  if (itemCount <= 0) {
-    return listWidth;
+  var totalItemWidth = calculateAwardItemsWidth(itemWidth, itemCount);
+  return Math.max(listWidth, totalItemWidth);
+}
+
+function calculateAwardItemsWidth(itemWidth, itemCount) {
+  requirePositiveNumber(itemWidth, "award item width");
+  requirePositiveInteger(itemCount, "award item count");
+  return (itemCount * itemWidth) + ((itemCount - 1) * AWARD_LIST_ITEM_SPACING);
+}
+
+function calculateCenteredAwardItemX(contentWidth, itemWidth, itemCount, itemIndex) {
+  requirePositiveNumber(contentWidth, "award content width");
+  requirePositiveNumber(itemWidth, "award item width");
+  requirePositiveInteger(itemCount, "award item count");
+  if (!Number.isInteger(itemIndex) || itemIndex < 0 || itemIndex >= itemCount) {
+    throw new Error("AwardView requires valid award item index.");
   }
 
-  var totalItemWidth = (itemCount * itemWidth) + ((itemCount - 1) * AWARD_LIST_ITEM_SPACING);
-  return Math.max(listWidth, totalItemWidth);
+  var totalItemWidth = calculateAwardItemsWidth(itemWidth, itemCount);
+  var startX = (contentWidth - totalItemWidth) / 2;
+  if (startX < 0) {
+    throw new Error("AwardView content width is smaller than award item total width.");
+  }
+  return startX + (itemWidth / 2) + (itemIndex * (itemWidth + AWARD_LIST_ITEM_SPACING));
 }
 
 module.exports = {
@@ -436,6 +462,7 @@ module.exports = {
         }
 
         signInViewNode.active = true;
+        PopupPanelAnimator.play(signInViewNode, { targetNodeName: "ContentContainer" });
         this._renderSignInView();
       }.bind(this));
     }.bind(this)).catch(function (error) {
@@ -555,7 +582,8 @@ module.exports = {
       child.destroy();
     }
 
-    contentNode.width = calculateAwardContentWidth(awardListNode, itemWidth, normalizedItems.length);
+    var contentWidth = calculateAwardContentWidth(awardListNode, itemWidth, normalizedItems.length);
+    contentNode.width = contentWidth;
 
     var iconTasks = [];
     for (var i = 0; i < normalizedItems.length; i += 1) {
@@ -565,7 +593,7 @@ module.exports = {
         itemNode.parent = contentNode;
       }
       itemNode.active = true;
-      itemNode.x = (itemWidth / 2) + (i * (itemWidth + AWARD_LIST_ITEM_SPACING));
+      itemNode.x = calculateCenteredAwardItemX(contentWidth, itemWidth, normalizedItems.length, i);
       itemNode.y = 0;
 
       var iconNode = itemNode.getChildByName("icon");
@@ -611,6 +639,7 @@ module.exports = {
       }
 
       awardViewNode.active = true;
+      PopupPanelAnimator.play(awardViewNode);
       return this._renderAwardView(normalizedItems);
     }.bind(this));
   },

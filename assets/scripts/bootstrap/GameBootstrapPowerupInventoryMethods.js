@@ -5,6 +5,7 @@ var Logger = Shared.Logger;
 var InventoryStore = Shared.InventoryStore;
 var SelectedPowerupsStore = Shared.SelectedPowerupsStore;
 var BackpackViewController = Shared.BackpackViewController;
+var PopupPanelAnimator = Shared.PopupPanelAnimator;
 var INVENTORY_VIEW_PREFAB_PATH = Shared.INVENTORY_VIEW_PREFAB_PATH;
 var POWERUP_TYPE_BY_ITEM_ID = Shared.POWERUP_TYPE_BY_ITEM_ID;
 var ITEM_ID_BY_POWERUP_TYPE = Shared.ITEM_ID_BY_POWERUP_TYPE;
@@ -662,6 +663,7 @@ module.exports = {
       }
 
       inventoryViewNode.active = true;
+      PopupPanelAnimator.play(inventoryViewNode);
       this._renderInventoryView();
     }.bind(this)).catch(function (error) {
       Logger.warn("Show inventory view failed", error && error.message ? error.message : error);

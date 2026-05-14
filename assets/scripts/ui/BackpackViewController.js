@@ -126,6 +126,32 @@ function bindTapOnce(node, key, onTap) {
   });
 }
 
+function bindTapWithoutScaleOnce(node, key, onTap) {
+  if (!node || !node.isValid || !key || node[key] === true) {
+    return;
+  }
+
+  node[key] = true;
+  node.on(cc.Node.EventType.TOUCH_START, function (event) {
+    if (event) {
+      event.stopPropagation();
+    }
+  });
+  node.on(cc.Node.EventType.TOUCH_CANCEL, function (event) {
+    if (event) {
+      event.stopPropagation();
+    }
+  });
+  node.on(cc.Node.EventType.TOUCH_END, function (event) {
+    if (event) {
+      event.stopPropagation();
+    }
+    if (typeof onTap === "function") {
+      onTap();
+    }
+  });
+}
+
 function getItemCount(inventory, itemId) {
   var items = inventory && inventory.items ? inventory.items : {};
   return Math.max(0, Math.floor(Number(items[itemId]) || 0));
@@ -252,7 +278,7 @@ BackpackViewController.prototype._resolveNodes = function () {
 
 BackpackViewController.prototype._bindActions = function () {
   bindTapOnce(this._nodes.closeButton, "__backpackCloseTapBound", this.onClose);
-  bindTapOnce(this._nodes.mask, "__backpackMaskTapBound", this.onClose);
+  bindTapWithoutScaleOnce(this._nodes.mask, "__backpackMaskTapBound", this.onClose);
   bindTapOnce(this._nodes.useButton, "__backpackUseTapBound", function () {
     if (!this._useButtonEnabled) {
       return;

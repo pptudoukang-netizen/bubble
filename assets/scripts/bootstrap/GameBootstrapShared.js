@@ -33,6 +33,7 @@ var LevelRenderer = require("../render/LevelRenderer");
 var LoadingViewController = require("../ui/LoadingViewController");
 var TipsPresenter = require("../ui/TipsPresenter");
 var BackpackViewController = require("../ui/BackpackViewController");
+var PopupPanelAnimator = require("../ui/PopupPanelAnimator");
 var StarChestRewardService = require("../services/StarChestRewardService");
 var StarChestService = require("../services/StarChestService");
 var GameCircleButtonAdapter = require("../services/GameCircleButtonAdapter");
@@ -139,6 +140,7 @@ module.exports = {
   LoadingViewController: LoadingViewController,
   TipsPresenter: TipsPresenter,
   BackpackViewController: BackpackViewController,
+  PopupPanelAnimator: PopupPanelAnimator,
   StarChestRewardService: StarChestRewardService,
   StarChestService: StarChestService,
   GameCircleButtonAdapter: GameCircleButtonAdapter,

@@ -171,6 +171,9 @@ AdService.prototype._normalizeHostedRecommendation = function (payload) {
   }
 
   var source = payload && typeof payload === "object" ? payload : {};
+  if (typeof source.shareValue === "undefined" && typeof source.rewardValue === "undefined") {
+    return null;
+  }
   var shareValue = Number(source.shareValue);
   var rewardValue = Number(source.rewardValue);
   if ((shareValue !== 0 && shareValue !== 1) || (rewardValue !== 0 && rewardValue !== 1)) {
@@ -261,8 +264,11 @@ AdService.prototype._buildHostedReportContext = function (sceneID, recommendatio
   if (!this.adUnitId) {
     throw new Error("Rewarded video ad hosted reporting requires adUnitId.");
   }
+  if (!recommendation) {
+    return null;
+  }
 
-  var useWechatAdStrategy = !!(recommendation && recommendation.rewardValue === 1);
+  var useWechatAdStrategy = recommendation.rewardValue === 1;
   return {
     currentShow: 0,
     strategy: useWechatAdStrategy ? 1 : 0,
@@ -277,11 +283,11 @@ AdService.prototype._reportHostedShareBehavior = function (rewardedAd, context, 
   if (!this.hostedShareBehaviorEnabled) {
     return null;
   }
+  if (!context) {
+    return null;
+  }
   if (!rewardedAd || typeof rewardedAd.reportShareBehavior !== "function") {
     throw new Error("Rewarded video ad requires reportShareBehavior in hosted share behavior mode.");
-  }
-  if (!context) {
-    throw new Error("Rewarded video ad hosted report context is required.");
   }
 
   var reportResult = rewardedAd.reportShareBehavior({
@@ -307,17 +313,13 @@ AdService.prototype.reportHostedRewardSuccess = function (adResult) {
     return null;
   }
   if (!adResult || !adResult.hostedReportContext) {
-    throw new Error("Rewarded video ad success report requires hostedReportContext.");
+    return null;
   }
   var rewardedAd = adResult.hostedRewardedAd || this._rewardedAd;
   if (!rewardedAd) {
     throw new Error("Rewarded video ad success report requires current rewarded ad.");
   }
-  var result = this._reportHostedShareBehavior(rewardedAd, adResult.hostedReportContext, 4);
-  if (this._rewardedAd === rewardedAd) {
-    this._disposeRewardedAd();
-  }
-  return result;
+  return this._reportHostedShareBehavior(rewardedAd, adResult.hostedReportContext, 4);
 };
 
 AdService.prototype.reportHostedRewardFailure = function (adResult) {
@@ -328,17 +330,13 @@ AdService.prototype.reportHostedRewardFailure = function (adResult) {
     return null;
   }
   if (!adResult || !adResult.hostedReportContext) {
-    throw new Error("Rewarded video ad failure report requires hostedReportContext.");
+    return null;
   }
   var rewardedAd = adResult.hostedRewardedAd || this._rewardedAd;
   if (!rewardedAd) {
     throw new Error("Rewarded video ad failure report requires current rewarded ad.");
   }
-  var result = this._reportHostedShareBehavior(rewardedAd, adResult.hostedReportContext, 5);
-  if (this._rewardedAd === rewardedAd) {
-    this._disposeRewardedAd();
-  }
-  return result;
+  return this._reportHostedShareBehavior(rewardedAd, adResult.hostedReportContext, 5);
 };
 
 AdService.prototype._createRewardedAd = function () {
@@ -358,9 +356,6 @@ AdService.prototype._createRewardedAd = function () {
 };
 
 AdService.prototype._ensureRewardedAd = function () {
-  if (this._rewardedAd && this._rewardedAdNeedsRecreate) {
-    this._disposeRewardedAd();
-  }
   if (this._rewardedAd) {
     return this._rewardedAd;
   }
@@ -525,11 +520,6 @@ AdService.prototype.showRewarded = function (options) {
         failWithReportError(reportError);
         return;
       }
-      if (!completed) {
-        this._disposeRewardedAd();
-      } else {
-        this._rewardedAdNeedsRecreate = true;
-      }
       finalize({
         ok: true,
         code: "close",
@@ -571,17 +561,7 @@ AdService.prototype.showRewarded = function (options) {
 
     this._lastHostedRecommendation = null;
     this._lastHostedRecommendationError = null;
-    rewardedAd.load().then(function () {
-      if (this._lastHostedRecommendationError) {
-        throw this._lastHostedRecommendationError;
-      }
-      if (this.hostedShareBehaviorEnabled && !this._lastHostedRecommendation) {
-        throw new Error("Rewarded video ad hosted recommendation was not received before show.");
-      }
-      if (this.hostedShareBehaviorEnabled && this._lastHostedRecommendation) {
-        hostedReportContext = this._buildHostedReportContext(sceneID, this._lastHostedRecommendation);
-      }
-      this._reportHostedShareBehavior(rewardedAd, hostedReportContext, 2);
+    var displayRewardedAd = function () {
       phase = "show";
       if (typeof options.onShow === "function") {
         options.onShow();
@@ -589,6 +569,22 @@ AdService.prototype.showRewarded = function (options) {
       return rewardedAd.show().then(function () {
         this._reportHostedShareBehavior(rewardedAd, hostedReportContext, 1);
       }.bind(this));
+    }.bind(this);
+
+    var showLoadedAd = function () {
+      if (this._lastHostedRecommendationError) {
+        throw this._lastHostedRecommendationError;
+      }
+      if (this.hostedShareBehaviorEnabled && this._lastHostedRecommendation) {
+        hostedReportContext = this._buildHostedReportContext(sceneID, this._lastHostedRecommendation);
+      }
+      this._reportHostedShareBehavior(rewardedAd, hostedReportContext, 2);
+      return displayRewardedAd();
+    }.bind(this);
+
+    displayRewardedAd().catch(function () {
+      phase = "load";
+      return rewardedAd.load().then(showLoadedAd);
     }.bind(this)).catch(function (error) {
       if (settled) {
         return;

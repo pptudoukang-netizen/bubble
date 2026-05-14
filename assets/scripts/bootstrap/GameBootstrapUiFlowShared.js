@@ -13,6 +13,7 @@ var RankingViewController = require("../ui/RankingViewController");
 var GameCircleWelfareViewController = require("../ui/GameCircleWelfareViewController");
 var ShopViewController = require("../ui/ShopViewController");
 var BuyViewController = require("../ui/BuyViewController");
+var PopupPanelAnimator = require("../ui/PopupPanelAnimator");
 
 var SETTING_VOLUME_STEP = 0.1;
 var SETTING_STATUS_X_ENABLED = -18;
@@ -227,6 +228,7 @@ module.exports = {
   GameCircleWelfareViewController: GameCircleWelfareViewController,
   ShopViewController: ShopViewController,
   BuyViewController: BuyViewController,
+  PopupPanelAnimator: PopupPanelAnimator,
   SETTING_VOLUME_STEP: SETTING_VOLUME_STEP,
   SETTING_STATUS_X_ENABLED: SETTING_STATUS_X_ENABLED,
   SETTING_STATUS_X_DISABLED: SETTING_STATUS_X_DISABLED,

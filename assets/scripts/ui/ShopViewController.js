@@ -93,6 +93,31 @@ function bindTapOnce(node, key, onTap) {
   });
 }
 
+function bindTapWithoutScaleOnce(node, key, onTap) {
+  assertFunction(onTap, "ShopView tap callback is required.");
+  if (node[key] === true) {
+    node[key + "Handler"] = onTap;
+    return;
+  }
+
+  node[key] = true;
+  node[key + "Handler"] = onTap;
+  node.on(cc.Node.EventType.TOUCH_START, function (event) {
+    event.stopPropagation();
+  });
+  node.on(cc.Node.EventType.TOUCH_CANCEL, function (event) {
+    event.stopPropagation();
+  });
+  node.on(cc.Node.EventType.TOUCH_END, function (event) {
+    event.stopPropagation();
+    var handler = node[key + "Handler"];
+    if (typeof handler !== "function") {
+      throw new Error("ShopView tap handler missing for node: " + node.name);
+    }
+    handler();
+  });
+}
+
 function loadSpriteFrame(path) {
   return new Promise(function (resolve, reject) {
     BundleLoader.loadRes(path, cc.SpriteFrame, function (error, spriteFrame) {
@@ -159,7 +184,7 @@ ShopViewController.prototype._resolveNodes = function () {
 };
 
 ShopViewController.prototype._bindActions = function () {
-  bindTapOnce(this._nodes.mask, "__shopCloseTapBound", this.onClose);
+  bindTapWithoutScaleOnce(this._nodes.mask, "__shopCloseTapBound", this.onClose);
   bindTapOnce(this._nodes.closeButton, "__shopCloseTapBound", this.onClose);
 };
 
