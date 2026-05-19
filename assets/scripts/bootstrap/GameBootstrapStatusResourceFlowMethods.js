@@ -62,12 +62,8 @@ module.exports = {
       this._loadLevelById(nextLevelId, "Next level started", "No next level available.");
     }.bind(this);
 
-    if (!this._consumeStaminaForLevelEntry(startNextLevel)) {
-      if (!this._staminaRecoveryInProgress) {
-        this._setStatus("Stamina is not enough. It resets to 10 at 00:00.");
-        // 胜利页点击“下一关”时若体力不足，主动返回选关页，避免“点击无反应”的体验。
-        this._showLevelSelectView();
-      }
+    if (!this._consumeStaminaForLevelEntry()) {
+      this._showPowerTipsView(startNextLevel);
       return;
     }
 
@@ -189,7 +185,7 @@ module.exports = {
     };
   },
 
-  _consumeStaminaForLevelEntry: function (onRecovered) {
+  _consumeStaminaForLevelEntry: function () {
     if (!this.playerResourceStore) {
       return true;
     }
@@ -201,18 +197,6 @@ module.exports = {
         ? consumeResult.resources
         : (this.playerResources || { stamina: 0, coins: 0 });
       this._updateLevelSelectTopStatus();
-      if (
-        typeof onRecovered === "function" &&
-        typeof this._tryRecoverStaminaByAd === "function"
-      ) {
-        this._tryRecoverStaminaByAd(function () {
-          if (!this._consumeStaminaForLevelEntry()) {
-            this._setStatus("Stamina is not enough. It resets to 10 at 00:00.");
-            return;
-          }
-          onRecovered();
-        }.bind(this));
-      }
       return false;
     }
 

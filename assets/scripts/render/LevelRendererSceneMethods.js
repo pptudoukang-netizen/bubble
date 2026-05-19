@@ -25,7 +25,7 @@ function attachLevelRendererSceneMethods(LevelRenderer, deps) {
   var BOARD_BUBBLE_SIZE = deps.BOARD_BUBBLE_SIZE;
   var NEXT_SHOT_BUBBLE_SIZE = deps.NEXT_SHOT_BUBBLE_SIZE;
   var JAR_RENDER_SIZE = deps.JAR_RENDER_SIZE;
-  var SCENE_BG_SPRITE_PATH = deps.SCENE_BG_SPRITE_PATH;
+  var resolveGameBackgroundSpritePath = deps.resolveGameBackgroundSpritePath;
   var POPUP_CONTENT_CONTAINER_NAME = deps.POPUP_CONTENT_CONTAINER_NAME;
   var POPUP_OPEN_ANIM_DURATION = deps.POPUP_OPEN_ANIM_DURATION;
   var POPUP_OPEN_ANIM_FROM_SCALE = deps.POPUP_OPEN_ANIM_FROM_SCALE;
@@ -86,6 +86,57 @@ function attachLevelRendererSceneMethods(LevelRenderer, deps) {
   var DANGER_NORMAL_OUTLINE_COLOR = cc.color(151, 86, 86);
   var DANGER_WARNING_OUTLINE_COLOR = cc.color(148, 28, 28);
   var DANGER_WARNING_ROW_THRESHOLD = Math.max(1, Number(BoardLayout.rowHeight) || 64);
+  var HUD_STAR_PARTICLE_NODE_NAME = "starParticle";
+  var HUD_STAR_PARTICLE_DURATION = 0.7;
+  var HUD_STAR_PARTICLE_HOLD_DURATION = 0.5;
+  var HUD_STAR_PUNCH_SCALE = 1.35;
+  var HUD_STAR_PUNCH_UP_DURATION = 0.12;
+  var HUD_STAR_PUNCH_DOWN_DURATION = 0.14;
+
+LevelRenderer.prototype._ensureHudStarAnimationState = function () {
+  var lastMissing = typeof this.lastHudStarRating === "undefined";
+  var displayedMissing = typeof this.hudStarDisplayedRating === "undefined";
+  var queuedMissing = typeof this.hudStarQueuedRating === "undefined";
+  var queueMissing = typeof this.hudStarAnimationQueue === "undefined";
+  var activeMissing = typeof this.hudStarAnimationActive === "undefined";
+  var missingCount = 0;
+
+  missingCount += lastMissing ? 1 : 0;
+  missingCount += displayedMissing ? 1 : 0;
+  missingCount += queuedMissing ? 1 : 0;
+  missingCount += queueMissing ? 1 : 0;
+  missingCount += activeMissing ? 1 : 0;
+
+  if (missingCount === 5) {
+    this.lastHudStarRating = null;
+    this.hudStarDisplayedRating = null;
+    this.hudStarQueuedRating = 0;
+    this.hudStarAnimationQueue = [];
+    this.hudStarAnimationActive = false;
+    return;
+  }
+
+  if (missingCount > 0) {
+    throw new Error("HUD star animation state is partially initialized.");
+  }
+
+  if (this.lastHudStarRating !== null && (typeof this.lastHudStarRating !== "number" || !isFinite(this.lastHudStarRating))) {
+    throw new Error("HUD star last rating must be a finite number or null.");
+  }
+  if (this.hudStarDisplayedRating !== null && (typeof this.hudStarDisplayedRating !== "number" || !isFinite(this.hudStarDisplayedRating))) {
+    throw new Error("HUD star displayed rating must be a finite number or null.");
+  }
+  if (typeof this.hudStarQueuedRating !== "number" || !isFinite(this.hudStarQueuedRating)) {
+    throw new Error("HUD star queued rating must be a finite number.");
+  }
+  if (!Array.isArray(this.hudStarAnimationQueue)) {
+    throw new Error("HUD star animation queue must be an array.");
+  }
+  if (typeof this.hudStarAnimationActive !== "boolean") {
+    throw new Error("HUD star animation active state must be boolean.");
+  }
+};
+
 LevelRenderer.prototype._mountGameViewScaffold = function () {
   if (!this.layers) {
     return;
@@ -125,15 +176,36 @@ LevelRenderer.prototype._moveGameViewChildToLayer = function (gameViewNode, chil
   return 1;
 };
 
+LevelRenderer.prototype._applyGameBackground = function (backgroundNode, syncToRoot) {
+  if (!backgroundNode || !backgroundNode.isValid) {
+    throw new Error("Game background node is required.");
+  }
+  if (typeof syncToRoot !== "boolean") {
+    throw new Error("Game background syncToRoot flag is required.");
+  }
+
+  var backgroundSpritePath = resolveGameBackgroundSpritePath(this.currentLevelConfig);
+  var frame = this.spriteFrameCache[backgroundSpritePath];
+  if (!frame) {
+    throw new Error("Game background sprite frame is missing: " + backgroundSpritePath);
+  }
+
+  ensureSprite(backgroundNode, frame);
+  if (syncToRoot) {
+    if (!this.rootNode || typeof this.rootNode.getContentSize !== "function") {
+      throw new Error("Root node size is required for runtime game background.");
+    }
+    backgroundNode.setContentSize(this.rootNode.getContentSize());
+    backgroundNode.setPosition(0, 0);
+  }
+};
+
 LevelRenderer.prototype._renderBackground = function () {
   var mountedBgNode = this.layers && this.layers.background
     ? (this.layers.background.getChildByName("bg") || this.layers.background.getChildByName("Background"))
     : null;
   if (mountedBgNode) {
-    if (this.rootNode && this.rootNode.getContentSize) {
-      mountedBgNode.setContentSize(this.rootNode.getContentSize());
-      mountedBgNode.setPosition(0, 0);
-    }
+    this._applyGameBackground(mountedBgNode, false);
     return;
   }
 
@@ -145,10 +217,7 @@ LevelRenderer.prototype._renderBackground = function () {
     ? this.layers.background.getChildByName("Background")
     : null;
   if (sceneBgNode) {
-    if (this.rootNode && this.rootNode.getContentSize) {
-      sceneBgNode.setContentSize(this.rootNode.getContentSize());
-      sceneBgNode.setPosition(0, 0);
-    }
+    this._applyGameBackground(sceneBgNode, false);
     if (runtimeBgNode) {
       runtimeBgNode.active = false;
     }
@@ -156,14 +225,7 @@ LevelRenderer.prototype._renderBackground = function () {
   }
 
   var node = this._instantiateOrCreate(null, this.layers.background, "Background");
-  var frame = this.spriteFrameCache[SCENE_BG_SPRITE_PATH];
-  if (!frame) {
-    return;
-  }
-
-  ensureSprite(node, frame);
-  node.setPosition(0, 0);
-  node.setContentSize(this.rootNode.getContentSize());
+  this._applyGameBackground(node, true);
 };
 
 LevelRenderer.prototype._renderHud = function (levelConfig, runtimeSnapshot) {
@@ -473,6 +535,195 @@ LevelRenderer.prototype._setHudStarLit = function (starNode, lit) {
   starNode.opacity = lit ? 255 : 190;
 };
 
+LevelRenderer.prototype._getGameViewNode = function () {
+  if (!this.layers || !this.layers.hud) {
+    return null;
+  }
+
+  return this.layers.hud.getChildByName("GameView");
+};
+
+LevelRenderer.prototype._getHudStarParticleNode = function () {
+  var gameViewNode = this._getGameViewNode();
+  if (!gameViewNode || !gameViewNode.isValid) {
+    throw new Error("GameView node is required for HUD star particle.");
+  }
+
+  var particleNode = gameViewNode.getChildByName(HUD_STAR_PARTICLE_NODE_NAME);
+  if (!particleNode || !particleNode.isValid) {
+    throw new Error("GameView requires starParticle node.");
+  }
+  particleNode.zIndex = 1000;
+  return particleNode;
+};
+
+LevelRenderer.prototype._convertNodePositionToGameView = function (node) {
+  var gameViewNode = this._getGameViewNode();
+  if (!gameViewNode || !gameViewNode.isValid) {
+    throw new Error("GameView node is required for coordinate conversion.");
+  }
+  if (!node || !node.isValid || !node.parent || !node.parent.isValid) {
+    throw new Error("Valid source node is required for coordinate conversion.");
+  }
+
+  var worldPosition = node.parent.convertToWorldSpaceAR(node.getPosition());
+  return gameViewNode.convertToNodeSpaceAR(worldPosition);
+};
+
+LevelRenderer.prototype._resolveShooterParticleStartPosition = function () {
+  var shooterPanel = this.layers && this.layers.shooter
+    ? this.layers.shooter.getChildByName("ShooterPanel")
+    : null;
+  if (!shooterPanel || !shooterPanel.isValid) {
+    throw new Error("ShooterPanel is required for HUD star particle start position.");
+  }
+
+  var shooterNode = shooterPanel.getChildByName("CurrentBallAnchor") || shooterPanel.getChildByName("ShooterBase");
+  if (!shooterNode || !shooterNode.isValid) {
+    throw new Error("Shooter visual node is required for HUD star particle start position.");
+  }
+  return this._convertNodePositionToGameView(shooterNode);
+};
+
+LevelRenderer.prototype._buildHudStarBezierPoints = function (startPosition, endPosition) {
+  if (!startPosition || !endPosition) {
+    throw new Error("HUD star particle bezier requires start and end positions.");
+  }
+
+  var deltaX = endPosition.x - startPosition.x;
+  var deltaY = endPosition.y - startPosition.y;
+  return [
+    cc.v2(startPosition.x + deltaX * 0.28, startPosition.y + Math.max(120, deltaY * 0.28)),
+    cc.v2(startPosition.x + deltaX * 0.72, endPosition.y + Math.max(80, Math.abs(deltaX) * 0.12)),
+    cc.v2(endPosition.x, endPosition.y)
+  ];
+};
+
+LevelRenderer.prototype._playHudStarPunch = function (starNode) {
+  if (!starNode || !starNode.isValid) {
+    throw new Error("HUD star punch requires a valid star node.");
+  }
+  if (typeof cc.tween !== "function") {
+    throw new Error("HUD star punch requires cc.tween.");
+  }
+
+  starNode.stopAllActions();
+  starNode.scale = 1;
+  cc.tween(starNode)
+    .to(HUD_STAR_PUNCH_UP_DURATION, { scale: HUD_STAR_PUNCH_SCALE })
+    .to(HUD_STAR_PUNCH_DOWN_DURATION, { scale: 1 })
+    .start();
+};
+
+LevelRenderer.prototype._playHudStarParticleToStar = function (starNode, onArrive, onComplete) {
+  if (!starNode || !starNode.isValid) {
+    throw new Error("HUD star particle requires a valid target star node.");
+  }
+  if (
+    typeof cc.bezierTo !== "function" ||
+    typeof cc.sequence !== "function" ||
+    typeof cc.callFunc !== "function" ||
+    typeof cc.delayTime !== "function"
+  ) {
+    throw new Error("HUD star particle requires bezier actions.");
+  }
+
+  var particleNode = this._getHudStarParticleNode();
+  var particleSystem = particleNode.getComponent(cc.ParticleSystem);
+  if (!particleSystem) {
+    throw new Error("GameView.starParticle requires cc.ParticleSystem.");
+  }
+
+  var startPosition = this._resolveShooterParticleStartPosition();
+  var endPosition = this._convertNodePositionToGameView(starNode);
+  particleNode.stopAllActions();
+  particleNode.active = true;
+  particleNode.setPosition(startPosition);
+  if (typeof particleSystem.resetSystem !== "function") {
+    throw new Error("GameView.starParticle ParticleSystem requires resetSystem.");
+  }
+  particleSystem.resetSystem();
+
+  var moveAction = cc.bezierTo(
+    HUD_STAR_PARTICLE_DURATION,
+    this._buildHudStarBezierPoints(startPosition, endPosition)
+  );
+  if (moveAction && typeof moveAction.easing === "function" && typeof cc.easeOut === "function") {
+    moveAction = moveAction.easing(cc.easeOut(2.6));
+  }
+
+  particleNode.runAction(cc.sequence(
+    moveAction,
+    cc.callFunc(function () {
+      if (typeof onArrive === "function") {
+        onArrive();
+      }
+    }, this),
+    cc.delayTime(HUD_STAR_PARTICLE_HOLD_DURATION),
+    cc.callFunc(function () {
+      if (typeof particleSystem.stopSystem === "function") {
+        particleSystem.stopSystem();
+      }
+      particleNode.active = false;
+      if (typeof onComplete === "function") {
+        onComplete();
+      }
+    }, this)
+  ));
+};
+
+LevelRenderer.prototype._runHudStarAnimationQueue = function () {
+  this._ensureHudStarAnimationState();
+  if (this.hudStarAnimationActive) {
+    return;
+  }
+  if (this.hudStarAnimationQueue.length === 0) {
+    return;
+  }
+
+  var item = this.hudStarAnimationQueue.shift();
+  if (!item || !item.starNode || !item.starNode.isValid) {
+    throw new Error("HUD star animation queue contains invalid target.");
+  }
+
+  this.hudStarAnimationActive = true;
+  this._playHudStarParticleToStar(item.starNode, function () {
+    this._setHudStarLit(item.starNode, true);
+    this.hudStarDisplayedRating = Math.max(
+      Math.floor(Number(this.hudStarDisplayedRating) || 0),
+      Math.floor(Number(item.rating) || 0)
+    );
+    this._playHudStarPunch(item.starNode);
+  }.bind(this), function () {
+    this.hudStarAnimationActive = false;
+    this._runHudStarAnimationQueue();
+  }.bind(this));
+};
+
+LevelRenderer.prototype._queueHudStarUnlockAnimations = function (starNodes, nextRating) {
+  this._ensureHudStarAnimationState();
+  if (!Array.isArray(starNodes)) {
+    throw new Error("HUD star unlock animation requires star nodes.");
+  }
+  var queuedRating = Math.max(0, Math.floor(Number(this.hudStarQueuedRating) || 0));
+  if (nextRating <= queuedRating) {
+    return;
+  }
+
+  for (var index = queuedRating; index < nextRating; index += 1) {
+    var starNode = starNodes[index];
+    if (!starNode || !starNode.isValid) {
+      throw new Error("HUD star node is missing for rating index " + index + ".");
+    }
+    this.hudStarAnimationQueue.push({
+      starNode: starNode,
+      rating: index + 1
+    });
+  }
+  this.hudStarQueuedRating = nextRating;
+  this._runHudStarAnimationQueue();
+};
+
 LevelRenderer.prototype._resolveHudStarMarkerRatios = function (winStats) {
   var thresholds = winStats && winStats.starThresholds ? winStats.starThresholds : null;
   var star1 = Math.max(0, Number(thresholds && thresholds.star1) || 0);
@@ -523,6 +774,7 @@ LevelRenderer.prototype._layoutHudStarMarkers = function (panel, winStats, starN
 };
 
 LevelRenderer.prototype._renderHudStarProgress = function (panel, runtimeSnapshot) {
+  this._ensureHudStarAnimationState();
   var progressBar = this._getHudProgressBar(panel);
   var winStats = runtimeSnapshot && runtimeSnapshot.winStats ? runtimeSnapshot.winStats : null;
   var starProgress = winStats ? clamp(Number(winStats.starProgress) || 0, 0, 1) : 0;
@@ -534,9 +786,30 @@ LevelRenderer.prototype._renderHudStarProgress = function (panel, runtimeSnapsho
 
   var starNodes = this._getHudStarNodes(panel);
   this._layoutHudStarMarkers(panel, winStats, starNodes);
+  if (this.lastHudStarRating === null) {
+    this.lastHudStarRating = starRating;
+    this.hudStarDisplayedRating = starRating;
+    this.hudStarQueuedRating = starRating;
+    starNodes.forEach(function (starNode, index) {
+      this._setHudStarLit(starNode, index < starRating);
+    }, this);
+    return;
+  }
+
+  var displayedRating = Math.max(0, Math.floor(Number(this.hudStarDisplayedRating) || 0));
+  if (starRating < displayedRating) {
+    this.hudStarAnimationQueue = [];
+    this.hudStarAnimationActive = false;
+    this.hudStarDisplayedRating = starRating;
+    this.hudStarQueuedRating = starRating;
+    displayedRating = starRating;
+  }
+
   starNodes.forEach(function (starNode, index) {
-    this._setHudStarLit(starNode, index < starRating);
+    this._setHudStarLit(starNode, index < displayedRating);
   }, this);
+  this.lastHudStarRating = starRating;
+  this._queueHudStarUnlockAnimations(starNodes, starRating);
 };
 
 LevelRenderer.prototype._renderBoard = function (boardSnapshot) {
@@ -2002,7 +2275,7 @@ LevelRenderer.prototype._renderResultPopup = function (runtimeSnapshot) {
   popup.setPosition(0, 40);
 
   var bg = getOrCreateChild(popup, "PopupBg");
-  var frame = this.spriteFrameCache[SCENE_BG_SPRITE_PATH];
+  var frame = this._getWhiteSpriteFrameForSize(1, 1);
   if (frame) {
     ensureSprite(bg, frame);
     bg.setContentSize(new cc.Size(540, 320));

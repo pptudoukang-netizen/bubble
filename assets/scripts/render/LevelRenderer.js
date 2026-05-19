@@ -63,7 +63,8 @@ var GUIDE_DOT_RADIUS = 4;
 var GUIDE_DOT_SIZE = GUIDE_DOT_RADIUS * 2;
 var GUIDE_DOT_MAX_COUNT = 64;
 var GUIDE_DOT_SPRITE_PATH = "image/white_point";
-var SCENE_BG_SPRITE_PATH = "image/game_bg";
+var GAME_BG_RESOURCE_PREFIX = "image/game_bg/game_bg";
+var LEVEL_MAP_SLOT_COUNT = 10;
 var GUIDE_DOT_PULSE_DURATION = 0.36;
 var GUIDE_DOT_PULSE_SCALE_LARGE = 1.5;
 var GUIDE_DOT_PULSE_SCALE_SMALL = 0.5;
@@ -268,6 +269,20 @@ function buildHudRenderKey(levelConfig, runtimeSnapshot) {
     objectiveDisplay.iconCode || "",
     objectiveDisplay.progressText || ""
   ].join("|");
+}
+
+function resolveLevelMapIndexForLevel(levelConfig) {
+  var levelId = levelConfig && levelConfig.level
+    ? Math.floor(Number(levelConfig.level.levelId))
+    : 0;
+  if (!Number.isInteger(levelId) || levelId <= 0) {
+    throw new Error("Level background requires positive integer level.levelId.");
+  }
+  return Math.ceil(levelId / LEVEL_MAP_SLOT_COUNT);
+}
+
+function resolveGameBackgroundSpritePath(levelConfig) {
+  return GAME_BG_RESOURCE_PREFIX + resolveLevelMapIndexForLevel(levelConfig);
 }
 
 function buildJarRenderKey(levelConfig, runtimeSnapshot) {
@@ -476,6 +491,11 @@ function LevelRenderer(rootNode) {
   this.whiteMaskFrames = {};
   this.whiteMaskTextures = [];
   this.lastHudRenderKey = "";
+  this.lastHudStarRating = null;
+  this.hudStarDisplayedRating = null;
+  this.hudStarQueuedRating = 0;
+  this.hudStarAnimationQueue = [];
+  this.hudStarAnimationActive = false;
   this.lastJarRenderKey = "";
   this.lastRenderedFallingCount = 0;
   this.dangerLineReady = false;
@@ -625,6 +645,11 @@ LevelRenderer.prototype.renderLevel = function (levelConfig, runtimeSnapshot) {
   this.currentLevelConfig = levelConfig;
   this.lastBoardVersion = -1;
   this.lastHudRenderKey = "";
+  this.lastHudStarRating = null;
+  this.hudStarDisplayedRating = null;
+  this.hudStarQueuedRating = 0;
+  this.hudStarAnimationQueue = [];
+  this.hudStarAnimationActive = false;
   this.lastJarRenderKey = "";
   this.lastRenderedFallingCount = 0;
   this.dangerLineReady = false;
@@ -761,6 +786,7 @@ LevelRenderer.prototype._getOrCreateLayer = function (name, zIndex) {
 
 LevelRenderer.prototype._collectSpritePaths = function (levelConfig, runtimeSnapshot) {
   var paths = this._collectCommonSpritePaths().slice();
+  paths.push(resolveGameBackgroundSpritePath(levelConfig));
 
   (levelConfig.level.colors || []).forEach(function (colorCode) {
     paths.push(BALL_RESOURCES[colorCode]);
@@ -868,7 +894,6 @@ LevelRenderer.prototype._applyGuideDotPulse = function (dotNode, pointIndex) {
 
 LevelRenderer.prototype._collectCommonSpritePaths = function () {
   return [
-    SCENE_BG_SPRITE_PATH,
     "image/fort",
     GUIDE_DOT_SPRITE_PATH,
     BALL_RESOURCES.R,
@@ -947,7 +972,7 @@ var LEVEL_RENDERER_SCENE_DEPS = {
   BOARD_BUBBLE_SIZE: BOARD_BUBBLE_SIZE,
   NEXT_SHOT_BUBBLE_SIZE: NEXT_SHOT_BUBBLE_SIZE,
   JAR_RENDER_SIZE: JAR_RENDER_SIZE,
-  SCENE_BG_SPRITE_PATH: SCENE_BG_SPRITE_PATH,
+  resolveGameBackgroundSpritePath: resolveGameBackgroundSpritePath,
   POPUP_CONTENT_CONTAINER_NAME: POPUP_CONTENT_CONTAINER_NAME,
   POPUP_OPEN_ANIM_DURATION: POPUP_OPEN_ANIM_DURATION,
   POPUP_OPEN_ANIM_FROM_SCALE: POPUP_OPEN_ANIM_FROM_SCALE,

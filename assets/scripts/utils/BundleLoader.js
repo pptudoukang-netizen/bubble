@@ -10,6 +10,7 @@ var UI_BUNDLE_PREFABS = {
   BuyView: true,
   GamingCircleView: true,
   LoseView: true,
+  PowerTipsView: true,
   RankingItem: true,
   RankingView: true,
   SettingView: true,

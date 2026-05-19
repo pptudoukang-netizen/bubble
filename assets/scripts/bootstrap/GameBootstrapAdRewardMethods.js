@@ -400,7 +400,7 @@ module.exports = {
     }
 
     this._staminaRecoveryInProgress = true;
-    this._showRewardedAdForEntry(rewardEntry, {
+    return this._showRewardedAdForEntry(rewardEntry, {
       entrySource: "stamina_insufficient",
       onRewardGrantedMessage: "体力补给成功，可继续挑战"
     }).then(function (granted) {

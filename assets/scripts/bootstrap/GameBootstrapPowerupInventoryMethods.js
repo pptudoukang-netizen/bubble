@@ -7,6 +7,7 @@ var SelectedPowerupsStore = Shared.SelectedPowerupsStore;
 var BackpackViewController = Shared.BackpackViewController;
 var PopupPanelAnimator = Shared.PopupPanelAnimator;
 var INVENTORY_VIEW_PREFAB_PATH = Shared.INVENTORY_VIEW_PREFAB_PATH;
+var POWER_TIPS_VIEW_PREFAB_PATH = Shared.POWER_TIPS_VIEW_PREFAB_PATH;
 var POWERUP_TYPE_BY_ITEM_ID = Shared.POWERUP_TYPE_BY_ITEM_ID;
 var ITEM_ID_BY_POWERUP_TYPE = Shared.ITEM_ID_BY_POWERUP_TYPE;
 var MAX_SELECTED_POWERUPS = Shared.MAX_SELECTED_POWERUPS;
@@ -549,6 +550,103 @@ module.exports = {
     }.bind(this));
   },
 
+  _ensurePowerTipsViewPrefab: function () {
+    if (this._powerTipsViewPrefab) {
+      return Promise.resolve(this._powerTipsViewPrefab);
+    }
+
+    return this._loadPrefab(POWER_TIPS_VIEW_PREFAB_PATH).then(function (prefab) {
+      this._powerTipsViewPrefab = prefab;
+      return prefab;
+    }.bind(this));
+  },
+
+  _bindPowerTipsViewActions: function (powerTipsViewNode) {
+    var adButtonNode = this._findNodeByNameRecursive(powerTipsViewNode, "ad_btn");
+    var closeButtonNode = this._findNodeByNameRecursive(powerTipsViewNode, "btn_close");
+    if (!adButtonNode || !closeButtonNode) {
+      throw new Error("PowerTipsView requires ad_btn and btn_close nodes.");
+    }
+
+    this._bindNodeTapOnce(closeButtonNode, function () {
+      this._playSfx("uiClick");
+      this._hidePowerTipsView();
+    }.bind(this));
+
+    this._bindNodeTapOnce(adButtonNode, function () {
+      this._onPowerTipsAdTap();
+    }.bind(this));
+  },
+
+  _showPowerTipsView: function (onRecovered) {
+    if (typeof onRecovered !== "function") {
+      throw new Error("PowerTipsView requires a recovery callback.");
+    }
+
+    this._pendingPowerTipsRecovery = onRecovered;
+    this._hideAwardView();
+    this._hideSettingView();
+    this._hideRankingView();
+    this._hideShopView();
+    if (typeof this._hideInventoryView === "function") {
+      this._hideInventoryView();
+    }
+
+    this._ensurePowerTipsViewPrefab().then(function (prefab) {
+      var powerTipsViewNode = this._powerTipsViewNode;
+      if (!powerTipsViewNode || !cc.isValid(powerTipsViewNode)) {
+        powerTipsViewNode = cc.instantiate(prefab);
+        if (!powerTipsViewNode) {
+          throw new Error("Instantiate PowerTipsView prefab failed.");
+        }
+        powerTipsViewNode.parent = this.node;
+        powerTipsViewNode.setPosition(0, 0);
+        powerTipsViewNode.zIndex = 360;
+        this._powerTipsViewNode = powerTipsViewNode;
+        this._bindPowerTipsViewActions(powerTipsViewNode);
+      }
+
+      powerTipsViewNode.active = true;
+      PopupPanelAnimator.play(powerTipsViewNode);
+      this._setStatus("体力不足，观看广告可恢复体力");
+    }.bind(this)).catch(function (error) {
+      Logger.error("Show PowerTipsView failed", error && error.stack ? error.stack : error);
+      this._pendingPowerTipsRecovery = null;
+      this._setStatus("体力不足提示加载失败");
+    }.bind(this));
+  },
+
+  _hidePowerTipsView: function () {
+    this._pendingPowerTipsRecovery = null;
+    if (!this._powerTipsViewNode || !cc.isValid(this._powerTipsViewNode)) {
+      return;
+    }
+    this._powerTipsViewNode.active = false;
+  },
+
+  _onPowerTipsAdTap: function () {
+    if (this._staminaRecoveryInProgress) {
+      this._setStatus("广告处理中，请稍候...");
+      return;
+    }
+    if (typeof this._pendingPowerTipsRecovery !== "function") {
+      throw new Error("PowerTipsView recovery callback is missing.");
+    }
+
+    this._playSfx("uiClick");
+    this._tryRecoverStaminaByAd(function () {
+      var onRecovered = this._pendingPowerTipsRecovery;
+      if (typeof onRecovered !== "function") {
+        throw new Error("PowerTipsView recovery callback was cleared before reward grant.");
+      }
+      if (!this._consumeStaminaForLevelEntry()) {
+        throw new Error("Recovered stamina must be consumable before entering level.");
+      }
+      this._hidePowerTipsView();
+      onRecovered();
+    }.bind(this));
+  },
+
   _setPendingLevelEntry: function (levelId) {
     var safeLevelId = Math.max(1, Math.floor(Number(levelId) || 0));
     if (safeLevelId <= 0) {
@@ -596,10 +694,8 @@ module.exports = {
       this._loadLevelById(safeLevelId, "Level selected", "Load selected level failed. Check console logs.");
     }.bind(this);
 
-    if (!this._consumeStaminaForLevelEntry(loadSelectedLevel)) {
-      if (!this._staminaRecoveryInProgress) {
-        this._setStatus("Stamina is not enough. It resets to 10 at 00:00.");
-      }
+    if (!this._consumeStaminaForLevelEntry()) {
+      this._showPowerTipsView(loadSelectedLevel);
       return false;
     }
 

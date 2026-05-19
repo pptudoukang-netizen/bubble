@@ -416,6 +416,7 @@ function instantiateLevelMapNode(mapHostNode, context, mapIndex, nodeName, initi
 
   disableLevelMapRootWidget(mapNode);
   mapNode.x = initialX;
+  alignLevelMapBottomToHost(mapHostNode, mapNode);
   mapNode.active = false;
   mapNode.parent = mapHostNode;
   renderLevelMapNode(mapNode, context, mapIndex, shouldAttachRunAnimation);
@@ -449,6 +450,26 @@ function setLevelMapNodeX(node, x) {
   node.x = x;
 }
 
+function alignLevelMapBottomToHost(mapHostNode, mapNode) {
+  requireValidLevelMapNode(mapHostNode, "map host node");
+  requireValidLevelMapNode(mapNode, "level map node");
+
+  var hostSize = mapHostNode.getContentSize();
+  var mapSize = mapNode.getContentSize();
+  if (!hostSize || !Number.isFinite(hostSize.height) || hostSize.height <= 0) {
+    throw new Error("Level map host height must be greater than 0.");
+  }
+  if (!mapSize || !Number.isFinite(mapSize.height) || mapSize.height <= 0) {
+    throw new Error("Level map height must be greater than 0.");
+  }
+  if (!Number.isFinite(mapHostNode.anchorY) || !Number.isFinite(mapNode.anchorY)) {
+    throw new Error("Level map anchors must be valid numbers.");
+  }
+
+  var hostBottomY = -mapHostNode.anchorY * hostSize.height;
+  mapNode.y = hostBottomY + mapNode.anchorY * mapSize.height;
+}
+
 function disableLevelMapRootWidget(mapNode) {
   requireValidLevelMapNode(mapNode, "level map node");
   var widget = mapNode.getComponent(cc.Widget);
@@ -461,6 +482,8 @@ function getCurrentLevelMapNode(levelView) {
   var currentNode = levelView.__levelMapCurrentNode;
   if (currentNode && currentNode.isValid) {
     disableLevelMapRootWidget(currentNode);
+    var currentMapHostNode = requireValidLevelMapNode(levelView.getChildByName("map"), "map host node");
+    alignLevelMapBottomToHost(currentMapHostNode, currentNode);
     return currentNode;
   }
 
@@ -470,6 +493,7 @@ function getCurrentLevelMapNode(levelView) {
   }
   currentNode = mapHostNode.children[0];
   disableLevelMapRootWidget(currentNode);
+  alignLevelMapBottomToHost(mapHostNode, currentNode);
   levelView.__levelMapCurrentNode = currentNode;
   return currentNode;
 }
