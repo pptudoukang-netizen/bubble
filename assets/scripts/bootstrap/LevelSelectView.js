@@ -289,7 +289,7 @@ function applyLevelButtonState(buttonNode, options) {
   var labelNode = buttonNode.getChildByName("level");
   var button = buttonNode.getComponent(cc.Button);
   if (button) {
-    button.interactable = isUnlocked;
+    button.interactable = true;
     button.enableAutoGrayEffect = false;
   }
   buttonNode.setContentSize(LEVEL_BUTTON_SIZE);
