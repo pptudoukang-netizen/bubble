@@ -39,6 +39,14 @@ var RUN_ANIMATION_SCALE = 0.5;
 var MAP_SWIPE_MIN_DISTANCE = 90;
 var MAP_SWIPE_VERTICAL_TOLERANCE = 0.75;
 var MAP_SLIDE_DURATION = 0.28;
+var LEVEL_MAP_DECORATION_MAP_INDEX = 0;
+var FLOATING_ISLAND_NODE_NAMES = ["fudao1", "fudao2"];
+var FLOATING_ISLAND_AMPLITUDE = 18;
+var FLOATING_ISLAND_DURATION = 1.35;
+var STAR_NODE_NAME = "star";
+var STAR_TWINKLE_DIM_OPACITY = 120;
+var STAR_TWINKLE_SCALE = 1.18;
+var STAR_TWINKLE_DURATION = 0.45;
 
 var levelButtonSkinFrames = null;
 var levelButtonSkinLoadPromise = null;
@@ -403,6 +411,89 @@ function renderLevelMapNode(mapNode, context, mapIndex, shouldAttachRunAnimation
   }
 }
 
+function requireLevelMapDecorationNode(mapNode, nodeName) {
+  requireValidLevelMapNode(mapNode, "level map node");
+  var node = mapNode.getChildByName(nodeName);
+  if (!node || !node.isValid) {
+    throw new Error("LevelMap1 decoration node `" + nodeName + "` is missing.");
+  }
+  return node;
+}
+
+function requireTweenForLevelMapDecoration() {
+  if (!cc || typeof cc.tween !== "function") {
+    throw new Error("LevelMap1 decoration animation requires cc.tween.");
+  }
+}
+
+function playFloatingIslandAnimation(islandNode, phaseIndex) {
+  requireTweenForLevelMapDecoration();
+  requireValidLevelMapNode(islandNode, "floating island node");
+  if (!Number.isFinite(islandNode.y)) {
+    throw new Error("Floating island y must be a valid number.");
+  }
+
+  islandNode.stopAllActions();
+  var baseY = islandNode.y;
+  var topY = baseY + FLOATING_ISLAND_AMPLITUDE;
+  var bottomY = baseY - FLOATING_ISLAND_AMPLITUDE;
+  var firstY = phaseIndex % 2 === 0 ? topY : bottomY;
+  var secondY = phaseIndex % 2 === 0 ? bottomY : topY;
+  islandNode.y = baseY;
+
+  cc.tween(islandNode)
+    .repeatForever(
+      cc.tween()
+        .to(FLOATING_ISLAND_DURATION, { y: firstY }, { easing: "sineInOut" })
+        .to(FLOATING_ISLAND_DURATION, { y: secondY }, { easing: "sineInOut" })
+        .to(FLOATING_ISLAND_DURATION, { y: baseY }, { easing: "sineInOut" })
+    )
+    .start();
+}
+
+function playStarTwinkleAnimation(starNode) {
+  requireTweenForLevelMapDecoration();
+  requireValidLevelMapNode(starNode, "star node");
+  if (!Number.isFinite(starNode.opacity) || !Number.isFinite(starNode.scale)) {
+    throw new Error("Star opacity and scale must be valid numbers.");
+  }
+
+  starNode.stopAllActions();
+  var baseOpacity = starNode.opacity;
+  var baseScale = starNode.scale;
+  starNode.opacity = baseOpacity;
+  starNode.scale = baseScale;
+
+  cc.tween(starNode)
+    .repeatForever(
+      cc.tween()
+        .to(STAR_TWINKLE_DURATION, {
+          opacity: STAR_TWINKLE_DIM_OPACITY,
+          scale: baseScale
+        }, { easing: "sineInOut" })
+        .to(STAR_TWINKLE_DURATION, {
+          opacity: baseOpacity,
+          scale: baseScale * STAR_TWINKLE_SCALE
+        }, { easing: "sineInOut" })
+        .to(STAR_TWINKLE_DURATION, {
+          opacity: baseOpacity,
+          scale: baseScale
+        }, { easing: "sineInOut" })
+    )
+    .start();
+}
+
+function playLevelMapDecorationAnimations(mapNode, mapIndex) {
+  if (mapIndex !== LEVEL_MAP_DECORATION_MAP_INDEX) {
+    return;
+  }
+
+  FLOATING_ISLAND_NODE_NAMES.forEach(function (nodeName, index) {
+    playFloatingIslandAnimation(requireLevelMapDecorationNode(mapNode, nodeName), index);
+  });
+  playStarTwinkleAnimation(requireLevelMapDecorationNode(mapNode, STAR_NODE_NAME));
+}
+
 function instantiateLevelMapNode(mapHostNode, context, mapIndex, nodeName, initialX, shouldAttachRunAnimation) {
   if (typeof initialX !== "number") {
     throw new Error("Level map initial x must be a number.");
@@ -421,6 +512,7 @@ function instantiateLevelMapNode(mapHostNode, context, mapIndex, nodeName, initi
   mapNode.parent = mapHostNode;
   renderLevelMapNode(mapNode, context, mapIndex, shouldAttachRunAnimation);
   mapNode.active = true;
+  playLevelMapDecorationAnimations(mapNode, mapIndex);
   return mapNode;
 }
 

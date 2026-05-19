@@ -21,6 +21,7 @@ module.exports = {
       this._hideInventoryView();
     }
     this.isRestarting = true;
+    this._currentLevelEnteredByTestUnlock = false;
     this._setDropTestButtonVisible(false);
     this._lastRuntimeState = null;
     this.levelManager.loadLevel(levelId).then(function (levelConfig) {

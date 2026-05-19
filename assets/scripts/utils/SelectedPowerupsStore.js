@@ -87,8 +87,36 @@ function normalizeSelectedItemCounts(rawCounts, selectedItems) {
   return counts;
 }
 
+function resolveLegacySelectedItems(raw) {
+  if (Array.isArray(raw.selectedItems)) {
+    return raw.selectedItems;
+  }
+  if (Array.isArray(raw.selectedPowerups)) {
+    return raw.selectedPowerups;
+  }
+
+  throw new Error("Selected powerups version 1 requires selectedItems or selectedPowerups.");
+}
+
+function migrateVersion1State(raw) {
+  var selectedItems = normalizeSelectedItems(resolveLegacySelectedItems(raw));
+  var selectedItemCounts = {};
+  selectedItems.forEach(function (itemId) {
+    selectedItemCounts[itemId] = 1;
+  });
+
+  return {
+    version: 2,
+    selectedItems: selectedItems,
+    selectedItemCounts: selectedItemCounts
+  };
+}
+
 function normalizeState(raw) {
   assertObject(raw, "Selected powerups state must be an object.");
+  if (raw.version === 1) {
+    return migrateVersion1State(raw);
+  }
   if (raw.version !== 2) {
     throw new Error("Selected powerups version must be 2.");
   }
@@ -105,7 +133,11 @@ function SelectedPowerupsStore() {}
 
 SelectedPowerupsStore.prototype.load = function () {
   var state = StrictStorage.readJsonOrCreate(STORAGE_KEY, NAMESPACE, createInitialState);
-  return clone(normalizeState(state));
+  var normalized = normalizeState(state);
+  if (state.version !== normalized.version) {
+    StrictStorage.writeJson(STORAGE_KEY, NAMESPACE, normalized);
+  }
+  return clone(normalized);
 };
 
 SelectedPowerupsStore.prototype.save = function (state) {

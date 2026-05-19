@@ -49,8 +49,12 @@ cc.Class({
       tooltip: "路线连续采样时，两次记录点之间的最小距离（像素）。"
     },
     levelSelectMaxLevelId: {
-      default: 21,
+      default: 40,
       tooltip: "关卡选择界面的快速首屏数量（用于避免首次扫描资源目录阻塞展示）。"
+    },
+    unlockAllLevelsForTest: {
+      default: false,
+      tooltip: "测试开关：开启后关卡选择界面临时解锁全部可用关卡，不写入玩家进度。"
     },
     resetLevelProgressOnStart: {
       default: false,

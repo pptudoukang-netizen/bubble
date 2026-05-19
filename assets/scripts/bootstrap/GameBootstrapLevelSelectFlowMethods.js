@@ -8,6 +8,19 @@ var StarRatingPolicy = Shared.StarRatingPolicy;
 var MAX_LEVEL_MAP_PREFAB_INDEX = Shared.MAX_LEVEL_MAP_PREFAB_INDEX;
 var hideGameCircleWelfareViewNode = Shared.hideGameCircleWelfareViewNode;
 
+function resolveMaxAvailableLevelId(levelIds) {
+  if (!Array.isArray(levelIds) || levelIds.length === 0) {
+    throw new Error("Unlock all levels for test requires non-empty level ids.");
+  }
+
+  return levelIds.reduce(function (maxLevelId, levelId) {
+    if (!Number.isInteger(levelId) || levelId <= 0) {
+      throw new Error("Unlock all levels for test received invalid level id: " + levelId);
+    }
+    return Math.max(maxLevelId, levelId);
+  }, 0);
+}
+
 module.exports = {
   _showLevelSelectView: function (options) {
     options = options || {};
@@ -328,6 +341,9 @@ module.exports = {
     this._refreshLevelProgress();
 
     var highestUnlocked = Math.max(1, Number(this.levelProgress.highestUnlockedLevel) || 1);
+    if (this.unlockAllLevelsForTest === true) {
+      highestUnlocked = resolveMaxAvailableLevelId(levelIds);
+    }
     var highlightedLevelId = this._resolveHighlightedLevelId(levelIds, highestUnlocked);
     var renderResult = LevelSelectView.renderLevelSelectContent({
       hostNode: this.node,
@@ -402,17 +418,26 @@ module.exports = {
 
   _refreshLevelProgress: function () {
     this.levelProgress = this.levelProgressStore.load();
-    if (!this.levelProgress || typeof this.levelProgress !== "object") {
-      this.levelProgress = {
-        highestUnlockedLevel: 1,
-        selectedLevelId: 1,
-        completedLevels: {},
-        starsByLevel: {}
-      };
-    }
   },
 
   _rememberSelectedLevel: function (levelId) {
+    var safeLevelId = Number(levelId);
+    if (!Number.isInteger(safeLevelId) || safeLevelId <= 0) {
+      throw new Error("Selected level id must be a positive integer.");
+    }
+    if (!this.levelProgress || typeof this.levelProgress !== "object") {
+      throw new Error("Level progress must be loaded before remembering selected level.");
+    }
+    var highestUnlocked = Number(this.levelProgress.highestUnlockedLevel);
+    if (!Number.isInteger(highestUnlocked) || highestUnlocked <= 0) {
+      throw new Error("highestUnlockedLevel must be a positive integer.");
+    }
+    this._currentLevelEnteredByTestUnlock = false;
+    if (this.unlockAllLevelsForTest === true && safeLevelId > highestUnlocked) {
+      this._currentLevelEnteredByTestUnlock = true;
+      return;
+    }
+
     this.levelProgress = this.levelProgressStore.setSelectedLevel(this.levelProgress, levelId);
     this.levelProgressStore.save(this.levelProgress);
   },
@@ -444,6 +469,12 @@ module.exports = {
 
   _recordCurrentLevelWin: function (snapshot) {
     if (!this._currentLevelId) {
+      return;
+    }
+    if (this._currentLevelEnteredByTestUnlock === true) {
+      Logger.info("Skip progress record for test-unlocked level", {
+        levelId: this._currentLevelId
+      });
       return;
     }
 

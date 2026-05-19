@@ -53,6 +53,21 @@ function requireCanonicalLevelKey(key, fieldName) {
   return key;
 }
 
+function resolveHighestUnlockedFromCompletedLevels(completedLevels) {
+  assertObject(completedLevels, "completedLevels is required.");
+
+  var highestCompletedLevelId = 0;
+  Object.keys(completedLevels).forEach(function (key) {
+    requireCanonicalLevelKey(key, "completedLevels");
+    if (completedLevels[key] !== true) {
+      throw new Error("completedLevels." + key + " must be true.");
+    }
+    highestCompletedLevelId = Math.max(highestCompletedLevelId, Number(key));
+  });
+
+  return highestCompletedLevelId + 1;
+}
+
 function normalizeProgress(raw) {
   assertObject(raw, "Level progress must be an object.");
   if (raw.version !== 1) {
@@ -63,9 +78,6 @@ function normalizeProgress(raw) {
 
   var highestUnlockedLevel = requirePositiveInteger(raw.highestUnlockedLevel, "highestUnlockedLevel");
   var selectedLevelId = requirePositiveInteger(raw.selectedLevelId, "selectedLevelId");
-  if (highestUnlockedLevel < selectedLevelId) {
-    throw new Error("highestUnlockedLevel must be >= selectedLevelId.");
-  }
 
   var completedLevels = {};
   Object.keys(raw.completedLevels).forEach(function (key) {
@@ -82,6 +94,14 @@ function normalizeProgress(raw) {
     starsByLevel[key] = requireStoredStarCount(raw.starsByLevel[key], "starsByLevel." + key);
   });
 
+  var progressUnlockedLevel = resolveHighestUnlockedFromCompletedLevels(completedLevels);
+  if (highestUnlockedLevel > progressUnlockedLevel) {
+    highestUnlockedLevel = progressUnlockedLevel;
+  }
+  if (highestUnlockedLevel < selectedLevelId) {
+    selectedLevelId = highestUnlockedLevel;
+  }
+
   return {
     version: 1,
     highestUnlockedLevel: highestUnlockedLevel,
@@ -95,7 +115,11 @@ function LevelProgressStore() {}
 
 LevelProgressStore.prototype.load = function () {
   var progress = StrictStorage.readJsonOrCreate(STORAGE_KEY, NAMESPACE, createDefaultProgress);
-  return clone(normalizeProgress(progress));
+  var normalized = normalizeProgress(progress);
+  if (JSON.stringify(progress) !== JSON.stringify(normalized)) {
+    StrictStorage.writeJson(STORAGE_KEY, NAMESPACE, normalized);
+  }
+  return clone(normalized);
 };
 
 LevelProgressStore.prototype.save = function (progress) {
@@ -112,9 +136,11 @@ LevelProgressStore.prototype.reset = function () {
 LevelProgressStore.prototype.setSelectedLevel = function (progress, levelId) {
   var normalized = normalizeProgress(progress);
   var safeLevelId = requirePositiveInteger(levelId, "levelId");
+  if (safeLevelId > normalized.highestUnlockedLevel) {
+    throw new Error("Cannot select locked level: " + safeLevelId);
+  }
 
   normalized.selectedLevelId = safeLevelId;
-  normalized.highestUnlockedLevel = Math.max(normalized.highestUnlockedLevel, safeLevelId);
   return clone(normalized);
 };
 
