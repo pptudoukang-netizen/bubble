@@ -1,0 +1,1 @@
+module.exports = [1,["dfTiWFsWdCQqJ3/HbodBw0"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"fudao2","rect":[0,0,262,552],"offset":[-19,0],"originalSize":[300,552],"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

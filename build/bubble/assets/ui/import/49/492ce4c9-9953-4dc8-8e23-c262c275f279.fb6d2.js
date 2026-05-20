@@ -1,1 +1,0 @@
-module.exports = [1,["0f6tKwEfNJpbQfBk9OZtGC"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"ainbow_ball","rect":[0,0,147,148],"offset":[0,0],"originalSize":[147,148],"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

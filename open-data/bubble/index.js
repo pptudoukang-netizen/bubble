@@ -54,7 +54,6 @@ var IMAGE_PATHS = {
   rank1Badge: "bubble/image/ranking/1.png",
   rank2Badge: "bubble/image/ranking/2.png",
   rank3Badge: "bubble/image/ranking/3.png",
-  avatar: "bubble/image/ranking/avatar.png",
   avatarFrame: "bubble/image/ranking/avatar_frame.png",
   itemBg1: "bubble/image/ranking/item_bg_1.png",
   itemBg2: "bubble/image/ranking/item_bg_2.png"
@@ -113,6 +112,7 @@ var currentEmptyText = "点击排行榜查看好友数据";
 var currentViewMode = "empty";
 var currentRequestRankType = "";
 var rankImages = {};
+var avatarImages = {};
 
 function clearCanvas() {
   context.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
@@ -152,6 +152,34 @@ function loadRankImages() {
   Object.keys(IMAGE_PATHS).forEach(function (key) {
     loadRankImage(key, IMAGE_PATHS[key]);
   });
+}
+
+function loadAvatarImage(avatarUrl) {
+  if (typeof avatarUrl !== "string" || avatarUrl.trim() === "") {
+    throw new Error("Friend rank avatarUrl is required.");
+  }
+  var normalizedUrl = avatarUrl.trim();
+  var cachedAvatar = avatarImages[normalizedUrl];
+  if (cachedAvatar) {
+    return cachedAvatar;
+  }
+
+  var image = wx.createImage();
+  var asset = {
+    image: image,
+    loaded: false,
+    url: normalizedUrl
+  };
+  image.onload = function () {
+    asset.loaded = true;
+    requestRepaint();
+  };
+  image.onerror = function (error) {
+    throw new Error("Load friend rank avatar failed: " + normalizedUrl + ", " + JSON.stringify(error));
+  };
+  avatarImages[normalizedUrl] = asset;
+  image.src = normalizedUrl;
+  return asset;
 }
 
 function drawImageAsset(key, x, y, width, height) {
@@ -366,7 +394,7 @@ function buildEntries(friendData, rankType) {
     if (typeof user.nickname !== "string") {
       throw new Error("Friend rank user nickname is required.");
     }
-    if (typeof user.avatarUrl !== "string") {
+    if (typeof user.avatarUrl !== "string" || user.avatarUrl.trim() === "") {
       throw new Error("Friend rank user avatarUrl is required.");
     }
     var rankValue = parseRankValue(findKeyValue(user.KVDataList, key), key);
@@ -420,12 +448,15 @@ function fitText(text, maxWidth) {
   return result;
 }
 
-function drawAvatar(x, y) {
+function drawAvatar(avatarUrl, x, y) {
+  var asset = loadAvatarImage(avatarUrl);
   context.save();
   context.beginPath();
   context.arc(x, y, 40, 0, Math.PI * 2);
   context.clip();
-  drawImageAsset("avatar", x - 40, y - 40, 80, 80);
+  if (asset.loaded === true) {
+    context.drawImage(asset.image, x - 40, y - 40, 80, 80);
+  }
   context.restore();
   drawImageAsset("avatarFrame", x - 40, y - 40, 80, 80);
 }
@@ -454,7 +485,7 @@ function drawRow(entry, index) {
   var rowCenterY = y + (ROW_HEIGHT * 0.5);
   drawSlicedImageAsset(resolveRowBgKey(entry.rank), LIST_X, y, ROW_WIDTH, ROW_HEIGHT);
   drawRank(entry, rowCenterY);
-  drawAvatar(AVATAR_X, rowCenterY);
+  drawAvatar(entry.avatarUrl, AVATAR_X, rowCenterY);
 
   context.save();
   context.textBaseline = "middle";

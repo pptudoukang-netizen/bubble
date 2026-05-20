@@ -1,1 +1,0 @@
-module.exports = [1,["29wI53vTZPQ5n+8roWUedF"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"title","rect":[0,0,379,101],"offset":[0,0],"originalSize":[379,101],"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];
