@@ -323,8 +323,29 @@ function requireValidLevelMapNode(node, description) {
   return node;
 }
 
+function updateNodeWidgetAlignment(node, description) {
+  requireValidLevelMapNode(node, description);
+  var widget = node.getComponent(cc.Widget);
+  if (!widget) {
+    throw new Error(description + " widget is required before rendering level map.");
+  }
+  if (widget.enabled !== true) {
+    throw new Error(description + " widget must be enabled before rendering level map.");
+  }
+  if (typeof widget.updateAlignment !== "function") {
+    throw new Error(description + " widget requires updateAlignment.");
+  }
+  widget.updateAlignment();
+}
+
+function updateLevelSelectLayoutBeforeMapRender(levelView, mapHostNode) {
+  updateNodeWidgetAlignment(levelView, "level view node");
+  updateNodeWidgetAlignment(mapHostNode, "map host node");
+}
+
 function resolveMapSlideWidth(mapHostNode) {
   requireValidLevelMapNode(mapHostNode, "map host node");
+  updateNodeWidgetAlignment(mapHostNode, "map host node");
   var size = mapHostNode.getContentSize();
   if (!size || !(size.width > 0)) {
     throw new Error("Level map host width must be greater than 0.");
@@ -506,10 +527,10 @@ function instantiateLevelMapNode(mapHostNode, context, mapIndex, nodeName, initi
   }
 
   disableLevelMapRootWidget(mapNode);
-  mapNode.x = initialX;
-  alignLevelMapBottomToHost(mapHostNode, mapNode);
   mapNode.active = false;
   mapNode.parent = mapHostNode;
+  mapNode.x = initialX;
+  alignLevelMapBottomToHost(mapHostNode, mapNode);
   renderLevelMapNode(mapNode, context, mapIndex, shouldAttachRunAnimation);
   mapNode.active = true;
   playLevelMapDecorationAnimations(mapNode, mapIndex);
@@ -545,6 +566,7 @@ function setLevelMapNodeX(node, x) {
 function alignLevelMapBottomToHost(mapHostNode, mapNode) {
   requireValidLevelMapNode(mapHostNode, "map host node");
   requireValidLevelMapNode(mapNode, "level map node");
+  updateNodeWidgetAlignment(mapHostNode, "map host node");
 
   var hostSize = mapHostNode.getContentSize();
   var mapSize = mapNode.getContentSize();
@@ -1173,6 +1195,7 @@ function renderLevelSelectContent(options) {
       mapCount: 0
     };
   }
+  updateLevelSelectLayoutBeforeMapRender(levelView, mapHostNode);
   bindLevelMapSwipe(mapHostNode, levelView);
   mapHostNode.__levelMapSwipeDrag = null;
   mapHostNode.removeAllChildren();
