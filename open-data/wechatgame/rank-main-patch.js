@@ -8,8 +8,13 @@ var DESIGN_HEIGHT = 1280;
 var RANK_MESSAGE_SOURCE = "bubble_friend_rank";
 var RANK_MASK_COLOR = cc.color(21, 15, 48, 180);
 var RANK_INSTALL_SCHEDULER_KEY = "wechat_rank_install";
+var RANK_PREPARE_TIMEOUT_MS = 120000;
+var RANK_PREPARE_POLL_INTERVAL_MS = 80;
+var FRIEND_RANK_AUTH_SCOPE = "scope.WxFriendInteraction";
 var rankPrivacyAuthorizationPending = false;
 var rankPrivacyAuthorizationCallbacks = [];
+var rankPrepareAttemptId = 0;
+var rankFriendAuthorizationDenied = false;
 
 function assertWxApi(name) {
   if (typeof wx === "undefined" || !wx || typeof wx[name] !== "function") {
@@ -160,7 +165,7 @@ function submitLevelWinAfterPrivacyAuthorization(host, snapshot) {
 }
 
 function submitLevelWin(host, snapshot) {
-  requireRankPrivacyAuthorization(function () {
+  submitAfterRankPrivacyAuthorized(function () {
     submitLevelWinAfterPrivacyAuthorization(host, snapshot);
   });
 }
@@ -207,7 +212,7 @@ function findBootstrapHost() {
         if (
           component &&
           typeof component._recordCurrentLevelWin === "function" &&
-          typeof component._showRankingView === "function"
+          typeof component._onLevelSelectRankingTap === "function"
         ) {
           host = component;
           index = components.length;
@@ -327,7 +332,7 @@ function ensureRankLayer() {
   createTouchableNode("WechatFriendRankClose", panel, 272.215, 447.78, 102, 101, hideRankLayer);
   layer.on(cc.Node.EventType.TOUCH_MOVE, function (event) {
     var delta = event.getDelta();
-    var scrollDelta = -delta.y;
+    var scrollDelta = delta.y;
     if (scrollDelta !== 0) {
       assertWxApi("getOpenDataContext")().postMessage({
         source: RANK_MESSAGE_SOURCE,
@@ -370,6 +375,41 @@ function startRankLayerTextureRefresh(layer) {
   )));
 }
 
+function isPrivacyPermissionNotAuthorizedError(error) {
+  if (!error || typeof error !== "object") {
+    throw new Error("Invalid privacy authorization error.");
+  }
+  if (error.errno === 104) {
+    return true;
+  }
+  if (typeof error.errMsg !== "string") {
+    throw new Error("Privacy authorization error requires errMsg.");
+  }
+  return error.errMsg.indexOf("privacy permission is not authorized") >= 0;
+}
+
+function submitAfterRankPrivacyAuthorized(onAuthorized) {
+  if (typeof onAuthorized !== "function") {
+    throw new Error("Rank privacy check requires success callback.");
+  }
+  assertWxApi("getPrivacySetting")({
+    success: function (result) {
+      if (!result || typeof result !== "object") {
+        throw new Error("wx.getPrivacySetting returned invalid result before rank upload.");
+      }
+      if (typeof result.needAuthorization !== "boolean") {
+        throw new Error("wx.getPrivacySetting result requires needAuthorization.");
+      }
+      if (result.needAuthorization === false) {
+        onAuthorized();
+      }
+    },
+    fail: function (error) {
+      throw new Error("wx.getPrivacySetting failed before rank upload: " + JSON.stringify(error));
+    }
+  });
+}
+
 function requireRankPrivacyAuthorization(onAuthorized) {
   if (typeof onAuthorized !== "function") {
     throw new Error("Rank privacy authorization requires success callback.");
@@ -391,28 +431,129 @@ function requireRankPrivacyAuthorization(onAuthorized) {
     fail: function (error) {
       rankPrivacyAuthorizationPending = false;
       rankPrivacyAuthorizationCallbacks.length = 0;
-      throw new Error("wx.requirePrivacyAuthorize failed before using friend rank APIs: " + JSON.stringify(error));
+      if (!isPrivacyPermissionNotAuthorizedError(error)) {
+        throw new Error("wx.requirePrivacyAuthorize failed before using friend rank APIs: " + JSON.stringify(error));
+      }
     }
   });
 }
 
-function openRankLayer(rankType) {
-  var messageType = rankType === "total" ? "show_total_rank" : "show_progress_rank";
-  var layer = ensureRankLayer();
+function openPreparedRankLayer(layer) {
+  if (!layer || !layer.isValid) {
+    throw new Error("Prepared rank layer is invalid.");
+  }
   layer.active = true;
-  var openDataContext = assertWxApi("getOpenDataContext")();
-  openDataContext.postMessage({
-    source: RANK_MESSAGE_SOURCE,
-    type: messageType
-  });
   hideLocalRankingView();
   refreshSharedCanvasTexture(layer);
   startRankLayerTextureRefresh(layer);
 }
 
+function resolveFriendRankAuthorizationState(onResolved) {
+  if (typeof onResolved !== "function") {
+    throw new Error("Friend rank authorization state resolver requires callback.");
+  }
+  assertWxApi("getSetting")({
+    success: function (result) {
+      if (!result || typeof result !== "object" || !result.authSetting || typeof result.authSetting !== "object") {
+        throw new Error("wx.getSetting returned invalid result before opening friend rank.");
+      }
+      if (result.authSetting[FRIEND_RANK_AUTH_SCOPE] === true) {
+        rankFriendAuthorizationDenied = false;
+        onResolved("authorized");
+        return;
+      }
+      if (result.authSetting[FRIEND_RANK_AUTH_SCOPE] === false) {
+        rankFriendAuthorizationDenied = true;
+        onResolved("denied");
+        return;
+      }
+      onResolved("pending");
+    },
+    fail: function (error) {
+      throw new Error("wx.getSetting failed before opening friend rank: " + JSON.stringify(error));
+    }
+  });
+}
+
+function resolveOpenSettingAuthorized(result) {
+  if (!result || typeof result !== "object" || !result.authSetting || typeof result.authSetting !== "object") {
+    throw new Error("wx.openSetting returned invalid result for friend rank.");
+  }
+  return result.authSetting[FRIEND_RANK_AUTH_SCOPE] === true;
+}
+
+function openFriendRankSetting(onResolved) {
+  if (typeof onResolved !== "function") {
+    throw new Error("Friend rank openSetting requires callback.");
+  }
+  assertWxApi("openSetting")({
+    success: function (result) {
+      onResolved(resolveOpenSettingAuthorized(result));
+    },
+    fail: function (error) {
+      throw new Error("wx.openSetting failed before opening friend rank: " + JSON.stringify(error));
+    }
+  });
+}
+
+function postPrepareRankMessage(openDataContext, rankType, attemptId) {
+  var messageType = rankType === "total" ? "prepare_total_rank" : "prepare_progress_rank";
+  openDataContext.postMessage({
+    source: RANK_MESSAGE_SOURCE,
+    type: messageType,
+    attemptId: attemptId
+  });
+}
+
+function waitForPreparedRankLayer(layer, rankType, attemptId, startedAt) {
+  if (attemptId !== rankPrepareAttemptId) {
+    return;
+  }
+  if (!layer || !layer.isValid) {
+    throw new Error("Rank layer was destroyed before permission completed.");
+  }
+  if (Date.now() - startedAt >= RANK_PREPARE_TIMEOUT_MS) {
+    throw new Error("Timed out waiting for friend rank permission.");
+  }
+  resolveFriendRankAuthorizationState(function (state) {
+    if (attemptId !== rankPrepareAttemptId) {
+      return;
+    }
+    if (state === "authorized") {
+      openPreparedRankLayer(layer);
+      return;
+    }
+    if (state === "denied") {
+      return;
+    }
+    setTimeout(function () {
+      waitForPreparedRankLayer(layer, rankType, attemptId, startedAt);
+    }, RANK_PREPARE_POLL_INTERVAL_MS);
+  });
+}
+
+function prepareAndOpenRankLayer(rankType) {
+  var layer = ensureRankLayer();
+  layer.active = false;
+  layer.stopAllActions();
+  rankPrepareAttemptId += 1;
+  var openDataContext = assertWxApi("getOpenDataContext")();
+  postPrepareRankMessage(openDataContext, rankType, rankPrepareAttemptId);
+  waitForPreparedRankLayer(layer, rankType, rankPrepareAttemptId, Date.now());
+}
+
 function showRankLayer(rankType) {
+  if (rankFriendAuthorizationDenied === true) {
+    openFriendRankSetting(function (isAuthorized) {
+      if (isAuthorized === true) {
+        rankFriendAuthorizationDenied = false;
+        prepareAndOpenRankLayer(rankType);
+      }
+    });
+    return;
+  }
   requireRankPrivacyAuthorization(function () {
-    openRankLayer(rankType);
+    prepareAndOpenRankLayer(rankType);
   });
 }
 
@@ -457,9 +598,6 @@ function patchBootstrapHost(host) {
       if (typeof this._playSfx === "function") {
         this._playSfx("uiClick");
       }
-      if (typeof this._hideRankingView === "function") {
-        this._hideRankingView();
-      }
       showRankLayer("total");
     };
     host.__wechatRankLevelSelectTapPatched = true;
@@ -483,6 +621,9 @@ function syncRankingButtonHandler(host) {
 function install() {
   assertWxApi("getOpenDataContext");
   assertWxApi("setUserCloudStorage");
+  assertWxApi("getPrivacySetting");
+  assertWxApi("getSetting");
+  assertWxApi("openSetting");
   var host = findBootstrapHost();
   if (host !== null) {
     patchBootstrapHost(host);

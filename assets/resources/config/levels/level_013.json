@@ -46,9 +46,9 @@
             "B",
             "Y"
         ],
-        "shotLimit": 25,
-        "targetScore": 8475,
-        "dropInterval": 4,
+        "shotLimit": 28,
+        "targetScore": 7797,
+        "dropInterval": 5,
         "jarCount": 4,
         "jarColors": [
             "R",
@@ -74,13 +74,19 @@
             },
             {
                 "type": "collect_any",
-                "value": 14
+                "value": 13
             }
         ],
         "bonusObjectives": [
             {
                 "type": "collect_any",
                 "value": 5
+            }
+        ],
+        "clearRewardItems": [
+            {
+                "id": "coin",
+                "count": 160
             }
         ],
         "layout": [
@@ -92,7 +98,7 @@
             "R......."
         ],
         "designNotes": "Split islands create competing priorities, while the rainbow lane offers one controlled recovery path.",
-        "difficultyScore": 84,
+        "difficultyScore": 76,
         "specialEntities": [
             {
                 "id": "skill_rainbow_01",

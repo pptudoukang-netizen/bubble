@@ -46,9 +46,9 @@
             "B",
             "P"
         ],
-        "shotLimit": 26,
-        "targetScore": 9300,
-        "dropInterval": 4,
+        "shotLimit": 29,
+        "targetScore": 8556,
+        "dropInterval": 5,
         "jarCount": 4,
         "jarColors": [
             "R",
@@ -75,13 +75,19 @@
             {
                 "type": "collect_color",
                 "color": "B",
-                "value": 16
+                "value": 15
             }
         ],
         "bonusObjectives": [
             {
                 "type": "clear_with_shots_remaining",
-                "value": 2
+                "value": 1
+            }
+        ],
+        "clearRewardItems": [
+            {
+                "id": "coin",
+                "count": 180
             }
         ],
         "layout": [
@@ -93,7 +99,7 @@
             "BPR....."
         ],
         "designNotes": "The board is more symmetrical, but a blast pickup and stone blocker force stronger path commitment.",
-        "difficultyScore": 88,
+        "difficultyScore": 80,
         "specialEntities": [
             {
                 "id": "skill_blast_01",

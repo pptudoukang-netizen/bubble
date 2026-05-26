@@ -29,6 +29,15 @@ var ROW_HEIGHT = 143;
 var ROW_GAP = 8;
 var ROW_STRIDE = ROW_HEIGHT + ROW_GAP;
 var ROW_POOL_BUFFER = 2;
+var RANK_STATUS_MARKER_SIZE = 2;
+var RANK_ATTEMPT_MARKER_X = RANK_STATUS_MARKER_SIZE;
+var RANK_STATUS_MARKERS = {
+  idle: "#000000",
+  loading: "#325dff",
+  ready: "#27c46b",
+  denied: "#f13f55",
+  failed: "#ffd447"
+};
 var DECOR_BUBBLES = [
   { x: 176.201, y: 1033.396, size: 86 },
   { x: 253.3, y: 1081.371, size: 59 },
@@ -111,11 +120,40 @@ var currentScrollOffset = 0;
 var currentEmptyText = "点击排行榜查看好友数据";
 var currentViewMode = "empty";
 var currentRequestRankType = "";
+var currentRankStatus = "idle";
+var currentRankAttemptId = 0;
 var rankImages = {};
 var avatarImages = {};
 
+function resolveRankAttemptColor(attemptId) {
+  var numberValue = Math.floor(Number(attemptId));
+  if (!Number.isFinite(numberValue) || numberValue < 0) {
+    throw new Error("Rank attemptId must be a non-negative integer.");
+  }
+  return {
+    r: Math.floor(numberValue / 65536) % 256,
+    g: Math.floor(numberValue / 256) % 256,
+    b: numberValue % 256
+  };
+}
+
+function writeRankStatusMarker(status) {
+  if (!Object.prototype.hasOwnProperty.call(RANK_STATUS_MARKERS, status)) {
+    throw new Error("Unsupported rank status marker: " + status + ".");
+  }
+  var attemptColor = resolveRankAttemptColor(currentRankAttemptId);
+  currentRankStatus = status;
+  context.save();
+  context.fillStyle = RANK_STATUS_MARKERS[status];
+  context.fillRect(0, 0, RANK_STATUS_MARKER_SIZE, RANK_STATUS_MARKER_SIZE);
+  context.fillStyle = "rgb(" + attemptColor.r + "," + attemptColor.g + "," + attemptColor.b + ")";
+  context.fillRect(RANK_ATTEMPT_MARKER_X, 0, 1, 1);
+  context.restore();
+}
+
 function clearCanvas() {
   context.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+  writeRankStatusMarker("idle");
 }
 
 function requestRepaint() {
@@ -271,6 +309,7 @@ function drawLoading(activeType) {
   drawRankingShell();
   drawCenteredStatus("好友数据读取中...");
   drawRankingDecorations();
+  writeRankStatusMarker("loading");
 }
 
 function drawEmpty(activeType, text) {
@@ -280,6 +319,7 @@ function drawEmpty(activeType, text) {
   drawRankingShell();
   drawCenteredStatus(text);
   drawRankingDecorations();
+  writeRankStatusMarker(currentRankStatus);
 }
 
 function isPrivacyAgreementScopeError(error) {
@@ -295,11 +335,30 @@ function isPrivacyAgreementScopeError(error) {
   return error.errMsg.indexOf("api scope is not declared in the privacy agreement") !== -1;
 }
 
+function isFriendRankAuthorizationDeniedError(error) {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+  var message = error.errMsg || error.message || "";
+  return typeof message === "string" && (
+    message.indexOf("auth deny") >= 0 ||
+    message.indexOf("auth denied") >= 0 ||
+    message.indexOf("auth cancel") >= 0
+  );
+}
+
 function drawFriendCloudStorageFail(rankType, error) {
+  if (isFriendRankAuthorizationDeniedError(error)) {
+    drawEmpty(rankType, "点击排行榜查看好友数据");
+    writeRankStatusMarker("denied");
+    return;
+  }
   if (isPrivacyAgreementScopeError(error)) {
+    writeRankStatusMarker("failed");
     drawEmpty(rankType, "隐私指引未声明微信朋友关系");
     throw new Error("wx.getFriendCloudStorage privacy scope is not declared. Configure WeChat MP privacy agreement for 微信朋友关系: " + JSON.stringify(error));
   }
+  writeRankStatusMarker("failed");
   drawEmpty(rankType, "网络异常，无法读取好友数据");
   throw new Error("wx.getFriendCloudStorage failed: " + JSON.stringify(error));
 }
@@ -513,6 +572,7 @@ function drawEntries(entries, rankType) {
   drawRankingShell();
   if (entries.length === 0) {
     drawEmpty(rankType, "暂无好友排行数据");
+    writeRankStatusMarker("ready");
     return;
   }
   var maxOffset = Math.max(0, (entries.length * ROW_STRIDE) - LIST_HEIGHT + ROW_GAP);
@@ -535,14 +595,20 @@ function drawEntries(entries, rankType) {
   }
   context.restore();
   drawRankingDecorations();
+  writeRankStatusMarker("ready");
 }
 
-function requestRank(rankType) {
-  if (currentViewMode === "loading" && currentRequestRankType === rankType) {
+function requestRank(rankType, attemptId) {
+  var normalizedAttemptId = Math.floor(Number(attemptId));
+  if (!Number.isFinite(normalizedAttemptId) || normalizedAttemptId <= 0) {
+    throw new Error("Open data rank request requires positive attemptId.");
+  }
+  if (currentViewMode === "loading" && currentRequestRankType === rankType && currentRankAttemptId === normalizedAttemptId) {
     return;
   }
   currentRankType = rankType;
   currentRequestRankType = rankType;
+  currentRankAttemptId = normalizedAttemptId;
   currentScrollOffset = 0;
   drawLoading(rankType);
   var key = rankType === "total" ? TOTAL_SCORE_KEY : MAX_PASS_LEVEL_KEY;
@@ -579,6 +645,8 @@ function scrollRank(deltaY) {
 
 function isRankMessageType(type) {
   return (
+    type === "prepare_progress_rank" ||
+    type === "prepare_total_rank" ||
     type === "show_progress_rank" ||
     type === "show_total_rank" ||
     type === "hide_rank" ||
@@ -599,12 +667,20 @@ wx.onMessage(function (message) {
   if (!isRankMessageType(message.type)) {
     throw new Error("Unsupported open data rank message: " + message.type + ".");
   }
+  if (message.type === "prepare_progress_rank") {
+    requestRank("progress", message.attemptId);
+    return;
+  }
+  if (message.type === "prepare_total_rank") {
+    requestRank("total", message.attemptId);
+    return;
+  }
   if (message.type === "show_progress_rank") {
-    requestRank("progress");
+    requestRank("progress", message.attemptId);
     return;
   }
   if (message.type === "show_total_rank") {
-    requestRank("total");
+    requestRank("total", message.attemptId);
     return;
   }
   if (message.type === "hide_rank") {

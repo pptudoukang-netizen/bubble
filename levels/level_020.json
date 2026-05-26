@@ -46,9 +46,9 @@
             "B",
             "P"
         ],
-        "shotLimit": 30,
-        "targetScore": 12030,
-        "dropInterval": 3,
+        "shotLimit": 33,
+        "targetScore": 11068,
+        "dropInterval": 4,
         "jarCount": 4,
         "jarColors": [
             "R",
@@ -74,7 +74,7 @@
             },
             {
                 "type": "collect_any",
-                "value": 22
+                "value": 20
             }
         ],
         "bonusObjectives": [
@@ -82,6 +82,16 @@
                 "type": "collect_color",
                 "color": "P",
                 "value": 4
+            }
+        ],
+        "clearRewardItems": [
+            {
+                "id": "coin",
+                "count": 230
+            },
+            {
+                "id": "stamina",
+                "count": 2
             }
         ],
         "layout": [
@@ -93,7 +103,7 @@
             "PRGBPRGB"
         ],
         "designNotes": "Final prototype board mixes every core pressure: dense colors, route blockers, skill pickups and a two-step ice target.",
-        "difficultyScore": 98,
+        "difficultyScore": 90,
         "specialEntities": [
             {
                 "id": "skill_blast_01",

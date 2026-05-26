@@ -7,11 +7,12 @@ var NAMESPACE = "LevelProgressStore";
 
 function createDefaultProgress() {
   return {
-    version: 1,
+    version: 2,
     highestUnlockedLevel: 1,
     selectedLevelId: 1,
     completedLevels: {},
-    starsByLevel: {}
+    starsByLevel: {},
+    bestScoresByLevel: {}
   };
 }
 
@@ -46,6 +47,13 @@ function requireRuntimeStarCount(value, fieldName) {
   return value;
 }
 
+function requireNonNegativeInteger(value, fieldName) {
+  if (!Number.isInteger(value) || value < 0) {
+    throw new Error(fieldName + " must be a non-negative integer.");
+  }
+  return value;
+}
+
 function requireCanonicalLevelKey(key, fieldName) {
   if (typeof key !== "string" || !/^[1-9]\d*$/.test(key)) {
     throw new Error(fieldName + " key must be a canonical positive level id.");
@@ -68,10 +76,37 @@ function resolveHighestUnlockedFromCompletedLevels(completedLevels) {
   return highestCompletedLevelId + 1;
 }
 
+function normalizeBestScoresByLevel(rawBestScoresByLevel) {
+  assertObject(rawBestScoresByLevel, "Level progress bestScoresByLevel is required.");
+  var bestScoresByLevel = {};
+  Object.keys(rawBestScoresByLevel).forEach(function (key) {
+    requireCanonicalLevelKey(key, "bestScoresByLevel");
+    bestScoresByLevel[key] = requireNonNegativeInteger(rawBestScoresByLevel[key], "bestScoresByLevel." + key);
+  });
+  return bestScoresByLevel;
+}
+
+function migrateVersion1Progress(raw) {
+  assertObject(raw.completedLevels, "Level progress completedLevels is required.");
+  assertObject(raw.starsByLevel, "Level progress starsByLevel is required.");
+
+  return {
+    version: 2,
+    highestUnlockedLevel: raw.highestUnlockedLevel,
+    selectedLevelId: raw.selectedLevelId,
+    completedLevels: raw.completedLevels,
+    starsByLevel: raw.starsByLevel,
+    bestScoresByLevel: {}
+  };
+}
+
 function normalizeProgress(raw) {
   assertObject(raw, "Level progress must be an object.");
-  if (raw.version !== 1) {
-    throw new Error("Level progress version must be 1.");
+  if (raw.version === 1) {
+    return normalizeProgress(migrateVersion1Progress(raw));
+  }
+  if (raw.version !== 2) {
+    throw new Error("Level progress version must be 2.");
   }
   assertObject(raw.completedLevels, "Level progress completedLevels is required.");
   assertObject(raw.starsByLevel, "Level progress starsByLevel is required.");
@@ -93,6 +128,7 @@ function normalizeProgress(raw) {
     requireCanonicalLevelKey(key, "starsByLevel");
     starsByLevel[key] = requireStoredStarCount(raw.starsByLevel[key], "starsByLevel." + key);
   });
+  var bestScoresByLevel = normalizeBestScoresByLevel(raw.bestScoresByLevel);
 
   var progressUnlockedLevel = resolveHighestUnlockedFromCompletedLevels(completedLevels);
   if (highestUnlockedLevel > progressUnlockedLevel) {
@@ -103,11 +139,12 @@ function normalizeProgress(raw) {
   }
 
   return {
-    version: 1,
+    version: 2,
     highestUnlockedLevel: highestUnlockedLevel,
     selectedLevelId: selectedLevelId,
     completedLevels: completedLevels,
-    starsByLevel: starsByLevel
+    starsByLevel: starsByLevel,
+    bestScoresByLevel: bestScoresByLevel
   };
 }
 
@@ -144,13 +181,17 @@ LevelProgressStore.prototype.setSelectedLevel = function (progress, levelId) {
   return clone(normalized);
 };
 
-LevelProgressStore.prototype.recordCompletion = function (progress, levelId, stars) {
+LevelProgressStore.prototype.recordCompletion = function (progress, levelId, stars, score) {
   var normalized = normalizeProgress(progress);
   var safeLevelId = requirePositiveInteger(levelId, "levelId");
   var safeStars = requireRuntimeStarCount(stars, "stars");
+  var safeScore = requireNonNegativeInteger(score, "score");
   var key = String(safeLevelId);
   var previousStars = normalized.starsByLevel[key] ? requireStoredStarCount(normalized.starsByLevel[key], "starsByLevel." + key) : 0;
   var bestStars = Math.max(previousStars, safeStars);
+  var previousBestScore = Object.prototype.hasOwnProperty.call(normalized.bestScoresByLevel, key)
+    ? requireNonNegativeInteger(normalized.bestScoresByLevel[key], "bestScoresByLevel." + key)
+    : 0;
 
   normalized.completedLevels[key] = true;
   if (bestStars > 0) {
@@ -158,6 +199,7 @@ LevelProgressStore.prototype.recordCompletion = function (progress, levelId, sta
   } else {
     delete normalized.starsByLevel[key];
   }
+  normalized.bestScoresByLevel[key] = Math.max(previousBestScore, safeScore);
   normalized.selectedLevelId = safeLevelId;
   normalized.highestUnlockedLevel = Math.max(normalized.highestUnlockedLevel, safeLevelId + 1);
   return clone(normalized);
@@ -174,6 +216,16 @@ LevelProgressStore.prototype.getStars = function (progress, levelId) {
   var safeLevelId = requirePositiveInteger(levelId, "levelId");
   var value = normalized.starsByLevel[String(safeLevelId)];
   return value ? requireStoredStarCount(value, "starsByLevel." + safeLevelId) : 0;
+};
+
+LevelProgressStore.prototype.getBestScore = function (progress, levelId) {
+  var normalized = normalizeProgress(progress);
+  var safeLevelId = requirePositiveInteger(levelId, "levelId");
+  var key = String(safeLevelId);
+  if (!Object.prototype.hasOwnProperty.call(normalized.bestScoresByLevel, key)) {
+    return 0;
+  }
+  return requireNonNegativeInteger(normalized.bestScoresByLevel[key], "bestScoresByLevel." + key);
 };
 
 LevelProgressStore.prototype.getHighestUnlockedLevel = function (progress) {

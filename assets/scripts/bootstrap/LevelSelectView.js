@@ -1049,6 +1049,10 @@ function updateTopStatus(levelView, options) {
   var onOpenShop = typeof options.onOpenShop === "function"
     ? options.onOpenShop
     : function () {};
+  if (typeof options.onOpenDailyTasks !== "function") {
+    throw new Error("LevelSelectView requires onOpenDailyTasks.");
+  }
+  var onOpenDailyTasks = options.onOpenDailyTasks;
 
   var topLayerNode = resolveTopLayerNode(levelView);
   var loveNode = topLayerNode ? topLayerNode.getChildByName("love_info") : null;
@@ -1102,6 +1106,12 @@ function updateTopStatus(levelView, options) {
     "__onOpenShop",
     onOpenShop
   );
+  bindNamedButtonTap(
+    topLayerNode ? topLayerNode.getChildByName("daily_tasks_btn") : null,
+    "__dailyTasksTapBound",
+    "__onOpenDailyTasks",
+    onOpenDailyTasks
+  );
 }
 
 function renderLevelSelectContent(options) {
@@ -1141,6 +1151,10 @@ function renderLevelSelectContent(options) {
   var onOpenShop = typeof options.onOpenShop === "function"
     ? options.onOpenShop
     : function () {};
+  if (typeof options.onOpenDailyTasks !== "function") {
+    throw new Error("LevelSelectView requires onOpenDailyTasks.");
+  }
+  var onOpenDailyTasks = options.onOpenDailyTasks;
 
   if (!hostNode || !hostNode.isValid) {
     logError("Invalid host node when rendering level select.");
@@ -1181,7 +1195,8 @@ function renderLevelSelectContent(options) {
     onOpenRanking: onOpenRanking,
     onOpenInventory: onOpenInventory,
     onOpenStarChest: onOpenStarChest,
-    onOpenShop: onOpenShop
+    onOpenShop: onOpenShop,
+    onOpenDailyTasks: onOpenDailyTasks
   });
 
   var mapHostNode = levelView.getChildByName("map");

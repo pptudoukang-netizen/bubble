@@ -46,9 +46,9 @@
             "B",
             "Y"
         ],
-        "shotLimit": 23,
-        "targetScore": 6345,
-        "dropInterval": 5,
+        "shotLimit": 25,
+        "targetScore": 5837,
+        "dropInterval": 6,
         "jarCount": 4,
         "jarColors": [
             "R",
@@ -74,7 +74,7 @@
             },
             {
                 "type": "collect_any",
-                "value": 10
+                "value": 9
             }
         ],
         "bonusObjectives": [
@@ -82,6 +82,12 @@
                 "type": "collect_color",
                 "color": "Y",
                 "value": 3
+            }
+        ],
+        "clearRewardItems": [
+            {
+                "id": "coin",
+                "count": 120
             }
         ],
         "layout": [
@@ -93,7 +99,7 @@
             "........"
         ],
         "designNotes": "Mixed-color pockets remain available, but the center lane is less forgiving than before.",
-        "difficultyScore": 79
+        "difficultyScore": 73
     },
     "difficultyScaleMax": 100
 }

@@ -1,10 +1,15 @@
 {
   "scripts": {
+    "validate:stamina": "node tools/validate-stamina-system.js",
     "validate:levels": "node tools/validate-level-content.js",
     "validate:level-sync": "node tools/validate-level-sync.js",
     "validate:aim": "node tools/validate-aim-profiles.js",
     "validate:shots": "node tools/validate-shot-regression.js",
     "validate:release": "node tools/validate-release-config.js",
-    "validate": "npm run validate:levels && npm run validate:level-sync && npm run validate:aim && npm run validate:shots && npm run validate:release"
+    "validate": "npm run validate:stamina && npm run validate:levels && npm run validate:level-sync && npm run validate:aim && npm run validate:shots && npm run validate:release",
+    "chatgpt:images": "node tools/chatgpt-web-image-regenerator.js"
+  },
+  "devDependencies": {
+    "playwright-core": "1.30.0"
   }
 }

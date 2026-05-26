@@ -45,9 +45,9 @@
             "G",
             "B"
         ],
-        "shotLimit": 20,
-        "targetScore": 5580,
-        "dropInterval": 5,
+        "shotLimit": 22,
+        "targetScore": 5134,
+        "dropInterval": 6,
         "jarCount": 3,
         "jarColors": [
             "R",
@@ -89,7 +89,7 @@
             "........"
         ],
         "designNotes": "A wider bridge with fewer free gaps. Players must target support cuts more deliberately.",
-        "difficultyScore": 72
+        "difficultyScore": 66
     },
     "difficultyScaleMax": 100
 }

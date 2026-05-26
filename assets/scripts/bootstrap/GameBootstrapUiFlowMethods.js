@@ -1,8 +1,11 @@
 "use strict";
 
 var flowModules = [
+  require("./GameBootstrapNetworkLoadingFlowMethods"),
+  require("./GameBootstrapShareFlowMethods"),
   require("./GameBootstrapStatusResourceFlowMethods"),
   require("./GameBootstrapSignInAwardFlowMethods"),
+  require("./GameBootstrapDailyTaskFlowMethods"),
   require("./GameBootstrapRankingShopChestFlowMethods"),
   require("./GameBootstrapGameCircleFlowMethods"),
   require("./GameBootstrapSettingsFlowMethods"),

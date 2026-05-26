@@ -46,9 +46,9 @@
             "B",
             "Y"
         ],
-        "shotLimit": 25,
-        "targetScore": 8385,
-        "dropInterval": 4,
+        "shotLimit": 28,
+        "targetScore": 7714,
+        "dropInterval": 5,
         "jarCount": 4,
         "jarColors": [
             "R",
@@ -74,7 +74,7 @@
             },
             {
                 "type": "collect_any",
-                "value": 13
+                "value": 12
             }
         ],
         "bonusObjectives": [
@@ -82,6 +82,16 @@
                 "type": "collect_color",
                 "color": "B",
                 "value": 3
+            }
+        ],
+        "clearRewardItems": [
+            {
+                "id": "coin",
+                "count": 150
+            },
+            {
+                "id": "stamina",
+                "count": 1
             }
         ],
         "layout": [
@@ -93,7 +103,7 @@
             "........"
         ],
         "designNotes": "Rainbow skill ball appears near a constrained bridge so players can feel its value as a color fixer.",
-        "difficultyScore": 83,
+        "difficultyScore": 75,
         "specialEntities": [
             {
                 "id": "skill_rainbow_01",

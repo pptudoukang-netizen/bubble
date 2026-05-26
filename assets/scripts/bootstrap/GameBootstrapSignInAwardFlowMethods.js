@@ -16,6 +16,8 @@ var hasOwn = Shared.hasOwn;
 var normalizeAwardPopupItems = Shared.normalizeAwardPopupItems;
 var PopupPanelAnimator = Shared.PopupPanelAnimator;
 var AWARD_LIST_ITEM_SPACING = 10;
+var AWARD_LIST_MIN_VIEWPORT_WIDTH = 160;
+var AWARD_LIST_MAX_VIEWPORT_WIDTH = 450;
 
 function requireValidNode(node, description) {
   if (!node || !node.isValid) {
@@ -69,6 +71,14 @@ function calculateAwardContentWidth(awardListNode, itemWidth, itemCount) {
   return Math.max(listWidth, totalItemWidth);
 }
 
+function calculateAwardListViewportWidth(itemWidth, itemCount) {
+  var totalItemWidth = calculateAwardItemsWidth(itemWidth, itemCount);
+  return Math.min(
+    AWARD_LIST_MAX_VIEWPORT_WIDTH,
+    Math.max(AWARD_LIST_MIN_VIEWPORT_WIDTH, totalItemWidth)
+  );
+}
+
 function calculateAwardItemsWidth(itemWidth, itemCount) {
   requirePositiveNumber(itemWidth, "award item width");
   requirePositiveInteger(itemCount, "award item count");
@@ -89,6 +99,36 @@ function calculateCenteredAwardItemX(contentWidth, itemWidth, itemCount, itemInd
     throw new Error("AwardView content width is smaller than award item total width.");
   }
   return startX + (itemWidth / 2) + (itemIndex * (itemWidth + AWARD_LIST_ITEM_SPACING));
+}
+
+function requireSignInDisplayRewardItem(rewardEntry, day) {
+  if (!rewardEntry || !Array.isArray(rewardEntry.items) || rewardEntry.items.length <= 0) {
+    throw new Error("Sign-in display reward config is missing for day " + day + ".");
+  }
+
+  for (var i = 0; i < rewardEntry.items.length; i += 1) {
+    var item = rewardEntry.items[i];
+    if (!item || typeof item.id !== "string" || !item.id) {
+      throw new Error("Sign-in display reward item id is missing at day " + day + ", index " + i + ".");
+    }
+
+    var count = Math.floor(Number(item.count));
+    if (!Number.isFinite(count) || count < 1) {
+      throw new Error("Sign-in display reward item count is invalid at day " + day + ", index " + i + ".");
+    }
+
+    if (item.id !== "coin") {
+      return {
+        id: item.id,
+        count: count
+      };
+    }
+  }
+
+  return {
+    id: rewardEntry.items[0].id,
+    count: Math.floor(Number(rewardEntry.items[0].count))
+  };
 }
 
 module.exports = {
@@ -258,18 +298,8 @@ module.exports = {
     return null;
   },
 
-  _resolveSignInDisplayRewardItem: function (rewardEntry) {
-    var items = rewardEntry && Array.isArray(rewardEntry.items) ? rewardEntry.items : [];
-    if (!items.length) {
-      return null;
-    }
-
-    for (var i = 0; i < items.length; i += 1) {
-      if (items[i] && items[i].id !== "coin") {
-        return items[i];
-      }
-    }
-    return items[0];
+  _resolveSignInDisplayRewardItem: function (rewardEntry, day) {
+    return requireSignInDisplayRewardItem(rewardEntry, day);
   },
 
   _resolveSignInIconPath: function (day, itemId) {
@@ -373,7 +403,7 @@ module.exports = {
       }
 
       var rewardEntry = this._resolveSignInRewardByDay(day);
-      var displayItem = this._resolveSignInDisplayRewardItem(rewardEntry);
+      var displayItem = this._resolveSignInDisplayRewardItem(rewardEntry, day);
       var iconNode = dayNode.getChildByName("icon");
       var iconSprite = iconNode ? iconNode.getComponent(cc.Sprite) : null;
       if (iconSprite && displayItem && displayItem.id) {
@@ -386,6 +416,13 @@ module.exports = {
           }));
         }.bind(this))(iconSprite, displayItem.id, day);
       }
+
+      var numNode = dayNode.getChildByName("num");
+      var numLabel = numNode ? numNode.getComponent(cc.Label) : null;
+      if (!numLabel) {
+        throw new Error("SignInView day" + day + " requires num label.");
+      }
+      numLabel.string = "x" + displayItem.count;
 
       var dayState = this._resolveSignInDayUiState(day, currentState, canClaimToday);
       var awardButtonNode = dayNode.getChildByName("award_btn");
@@ -438,6 +475,9 @@ module.exports = {
       this._markSignInPopupShown(options.now || new Date());
     }
     this._hideAwardView();
+    if (typeof this._hideDailyTaskView === "function") {
+      this._hideDailyTaskView();
+    }
     this._hideShopView();
 
     this._ensureSignInViewPrefab().then(function (prefab) {
@@ -531,10 +571,11 @@ module.exports = {
     var confirmButtonNode = this._findNodeByNameRecursive(awardViewNode, "sure_btn");
     var awardListNode = findNodeByNameWithComponent(awardViewNode, "award_list", cc.ScrollView);
     var scrollView = awardListNode.getComponent(cc.ScrollView);
+    var viewNode = awardListNode.getChildByName("view");
     var contentNode = scrollView ? scrollView.content : null;
     var itemTemplateNode = contentNode ? contentNode.getChildByName("award_item") : null;
 
-    if (!panelNode || !maskNode || !closeButtonNode || !confirmButtonNode || !awardListNode || !scrollView || !contentNode || !itemTemplateNode) {
+    if (!panelNode || !maskNode || !closeButtonNode || !confirmButtonNode || !awardListNode || !scrollView || !viewNode || !contentNode || !itemTemplateNode) {
       throw new Error("AwardView prefab structure is incomplete.");
     }
 
@@ -544,6 +585,7 @@ module.exports = {
       closeButtonNode: closeButtonNode,
       confirmButtonNode: confirmButtonNode,
       awardListNode: awardListNode,
+      viewNode: viewNode,
       scrollView: scrollView,
       contentNode: contentNode,
       itemTemplateNode: itemTemplateNode,
@@ -570,6 +612,7 @@ module.exports = {
     var normalizedItems = normalizeAwardPopupItems(rewardItems);
     var nodes = this._resolveAwardViewNodes(this._awardViewNode);
     var awardListNode = nodes.awardListNode;
+    var viewNode = nodes.viewNode;
     var contentNode = nodes.contentNode;
     var itemTemplateNode = nodes.itemTemplateNode;
     var itemWidth = requirePositiveNumber(itemTemplateNode.width, "award item width");
@@ -582,6 +625,9 @@ module.exports = {
       child.destroy();
     }
 
+    var viewportWidth = calculateAwardListViewportWidth(itemWidth, normalizedItems.length);
+    awardListNode.width = viewportWidth;
+    viewNode.width = viewportWidth;
     var contentWidth = calculateAwardContentWidth(awardListNode, itemWidth, normalizedItems.length);
     contentNode.width = contentWidth;
 

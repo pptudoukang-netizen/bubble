@@ -46,9 +46,9 @@
             "B",
             "P"
         ],
-        "shotLimit": 28,
-        "targetScore": 11330,
-        "dropInterval": 4,
+        "shotLimit": 31,
+        "targetScore": 10424,
+        "dropInterval": 5,
         "jarCount": 4,
         "jarColors": [
             "R",
@@ -74,13 +74,23 @@
             },
             {
                 "type": "collect_any",
-                "value": 19
+                "value": 18
             }
         ],
         "bonusObjectives": [
             {
                 "type": "collect_any",
                 "value": 6
+            }
+        ],
+        "clearRewardItems": [
+            {
+                "id": "coin",
+                "count": 210
+            },
+            {
+                "id": "stamina",
+                "count": 1
             }
         ],
         "layout": [
@@ -92,7 +102,7 @@
             "GBPRG..."
         ],
         "designNotes": "Dense reading now includes both hard and soft blockers, reducing clean direct clears.",
-        "difficultyScore": 94,
+        "difficultyScore": 86,
         "specialEntities": [
             {
                 "id": "stone_01",

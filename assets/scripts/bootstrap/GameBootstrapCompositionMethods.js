@@ -6,15 +6,19 @@ var Logger = Shared.Logger;
 var PoolManager = Shared.PoolManager;
 var LevelProgressStore = Shared.LevelProgressStore;
 var PlayerResourceStore = Shared.PlayerResourceStore;
+var DailyTaskStore = Shared.DailyTaskStore;
+var StaminaRecoveryStore = Shared.StaminaRecoveryStore;
 var InventoryStore = Shared.InventoryStore;
 var StarChestStore = Shared.StarChestStore;
 var ShopStateStore = Shared.ShopStateStore;
 var GameCircleWelfareStore = Shared.GameCircleWelfareStore;
 var SelectedPowerupsStore = Shared.SelectedPowerupsStore;
 var SignInStore = Shared.SignInStore;
+var NewGiftStore = Shared.NewGiftStore;
 var RouteConfigStore = Shared.RouteConfigStore;
 var AudioManager = Shared.AudioManager;
 var DailySignInConfig = Shared.DailySignInConfig;
+var DailyTaskConfig = Shared.DailyTaskConfig;
 var StarChestConfig = Shared.StarChestConfig;
 var GameCircleWelfareConfig = Shared.GameCircleWelfareConfig;
 var ShopGoodsConfig = Shared.ShopGoodsConfig;
@@ -24,14 +28,19 @@ var RuntimeModeConfig = Shared.RuntimeModeConfig;
 var GameManager = Shared.GameManager;
 var ResourceGateway = Shared.ResourceGateway;
 var LevelRenderer = Shared.LevelRenderer;
+var NetworkLoadingOverlay = Shared.NetworkLoadingOverlay;
 var TipsPresenter = Shared.TipsPresenter;
 var StarChestRewardService = Shared.StarChestRewardService;
 var StarChestService = Shared.StarChestService;
+var DailyTaskRewardService = Shared.DailyTaskRewardService;
+var DailyTaskService = Shared.DailyTaskService;
 var GameCircleButtonAdapter = Shared.GameCircleButtonAdapter;
 var GameCircleWelfareService = Shared.GameCircleWelfareService;
 var ShopConfigService = Shared.ShopConfigService;
 var ShopStateService = Shared.ShopStateService;
 var ShopPurchaseService = Shared.ShopPurchaseService;
+var WechatShareService = Shared.WechatShareService;
+var FriendGiftService = Shared.FriendGiftService;
 var AdService = Shared.AdService;
 var TelemetryService = Shared.TelemetryService;
 var AdRewardQuotaStore = Shared.AdRewardQuotaStore;
@@ -62,6 +71,11 @@ module.exports = {
     this._routeEditorButtons = {};
     this._loadingViewNode = null;
     this._loadingViewController = null;
+    this.networkLoadingOverlay = null;
+    this.wechatShareService = null;
+    this.friendGiftService = null;
+    this._friendGiftEnterShowHandler = null;
+    this._wechatShareMenuPromise = null;
     this._startupFlowPromise = null;
     this._startupResolvedLevelIds = null;
     this._startupPrefabWarmupPromise = null;
@@ -70,6 +84,7 @@ module.exports = {
     this._lastAimRefreshPoint = null;
     this._lastAimRefreshScreenPoint = null;
     this._currentLevelId = 0;
+    this._currentLevelAwardedClearRewardItems = [];
     this._levelSelectRouteEditorMode = false;
     this._pendingRouteEditorAutoEnable = false;
     this._levelConfigPreloadPromise = null;
@@ -80,6 +95,7 @@ module.exports = {
     this._pendingNextRoundRewards = [];
     this._adFlowInProgress = false;
     this._staminaRecoveryInProgress = false;
+    this._staminaRecoveryTicker = null;
     this._pendingLevelEntry = null;
     this.telemetryService = new TelemetryService({
       logger: Logger
@@ -89,8 +105,10 @@ module.exports = {
       ? this.levelProgressStore.reset()
       : this.levelProgressStore.load();
     this.playerResourceStore = new PlayerResourceStore({
-      dailyStamina: 10
+      dailyStamina: 20
     });
+    this.staminaRecoveryStore = new StaminaRecoveryStore();
+    this.staminaRecoveryState = this.staminaRecoveryStore.load();
     this.playerResources = this.playerResourceStore.load();
     if (RuntimeModeConfig.enableInspectorOverrides === true) {
       var inspectorStamina = Math.floor(Number(this.inspectorStaminaValue));
@@ -99,7 +117,33 @@ module.exports = {
       }
       this.playerResources.stamina = inspectorStamina;
       this.playerResourceStore.save(this.playerResources);
+      this._markStaminaRecoveryBaseline(new Date());
     }
+    this.playerResources = this._refreshPlayerResources();
+    this.dailyTaskConfig = clone(DailyTaskConfig);
+    this.dailyTaskStore = new DailyTaskStore({
+      resetTimezone: this.dailyTaskConfig.resetTimezone
+    });
+    this.dailyTaskRewardService = new DailyTaskRewardService({
+      getResources: function () {
+        return this._refreshPlayerResources();
+      }.bind(this),
+      saveResources: function (resources) {
+        this.playerResources = resources;
+        if (!this.playerResourceStore || typeof this.playerResourceStore.save !== "function") {
+          throw new Error("Daily task reward requires PlayerResourceStore.save.");
+        }
+        this.playerResourceStore.save(this.playerResources);
+        return true;
+      }.bind(this)
+    });
+    this.dailyTaskService = new DailyTaskService({
+      config: this.dailyTaskConfig,
+      store: this.dailyTaskStore,
+      rewardService: this.dailyTaskRewardService,
+      telemetry: this.telemetryService
+    });
+    this.dailyTaskState = this.dailyTaskStore.load(new Date());
     this.inventoryStore = new InventoryStore();
     this.playerInventory = this.inventoryStore.load();
     this.starChestConfig = clone(StarChestConfig);
@@ -177,12 +221,21 @@ module.exports = {
     this._inventoryViewNode = null;
     this._inventoryViewController = null;
     this._inventoryViewReadOnly = true;
+    this._startGameViewPrefab = null;
+    this._startGameViewNode = null;
+    this._startGameViewController = null;
+    this._startGameLevelId = 0;
+    this._startGameLevelConfig = null;
+    this._pendingStartGamePowerups = [];
     this._powerTipsViewPrefab = null;
     this._powerTipsViewNode = null;
     this._pendingPowerTipsRecovery = null;
     this._shopViewPrefab = null;
     this._shopViewNode = null;
     this._shopViewController = null;
+    this._dailyTaskViewPrefab = null;
+    this._dailyTaskViewNode = null;
+    this._dailyTaskViewController = null;
     this._buyViewPrefab = null;
     this._buyViewNode = null;
     this._buyViewController = null;
@@ -194,6 +247,9 @@ module.exports = {
     });
     this.signInState = this.signInStore.load();
     this.signInStore.save(this.signInState);
+    this.newGiftStore = new NewGiftStore();
+    this.newGiftState = this.newGiftStore.load();
+    this.newGiftStore.save(this.newGiftState);
     this.routeConfigStore = new RouteConfigStore();
     this.routeConfig = this.routeConfigStore.load();
     this.adRewardQuotaStore = new AdRewardQuotaStore({
@@ -257,6 +313,23 @@ module.exports = {
       resourceGateway: this.resourceGateway,
       zIndex: 600
     });
+    this.networkLoadingOverlay = new NetworkLoadingOverlay({
+      rootNode: this.node,
+      timeoutMs: requireNonNegativeInteger(this.networkLoadingTimeoutMs, "networkLoadingTimeoutMs"),
+      zIndex: 800
+    });
+    this.wechatShareService = new WechatShareService({
+      logger: Logger,
+      shareConfig: {
+        title: this.shareTitle,
+        imageUrl: this.shareImageUrl,
+        query: this.shareQuery
+      }
+    });
+    this.friendGiftService = new FriendGiftService({
+      cloudEnvId: this.friendGiftCloudEnvId
+    });
+    this._wechatShareMenuPromise = this._initializeWechatShare();
 
     this._createStatusOverlay();
     this._createDropTestButton();
@@ -295,6 +368,13 @@ module.exports = {
       }.bind(this),
       onUseBarrierHammer: function () {
         this._onUseBarrierHammerTap();
+      }.bind(this),
+      onSelectRainbowColor: function (colorCode) {
+        this._onSelectRainbowColorTap(colorCode);
+      }.bind(this),
+      onRecoverInventoryByAd: function (powerupType) {
+        this._playSfx("uiClick");
+        this._tryRecoverInventoryByAd(powerupType);
       }.bind(this)
     });
 

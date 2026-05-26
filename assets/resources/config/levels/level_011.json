@@ -46,9 +46,9 @@
             "B",
             "Y"
         ],
-        "shotLimit": 24,
-        "targetScore": 8460,
-        "dropInterval": 4,
+        "shotLimit": 27,
+        "targetScore": 7783,
+        "dropInterval": 5,
         "jarCount": 4,
         "jarColors": [
             "R",
@@ -75,13 +75,19 @@
             {
                 "type": "collect_color",
                 "color": "R",
-                "value": 12
+                "value": 11
             }
         ],
         "bonusObjectives": [
             {
                 "type": "collect_same_color_bonus_hits",
                 "value": 3
+            }
+        ],
+        "clearRewardItems": [
+            {
+                "id": "coin",
+                "count": 140
             }
         ],
         "layout": [
@@ -93,7 +99,7 @@
             "........"
         ],
         "designNotes": "Red collection now happens around two blocking stones, pushing players to read structure instead of color alone.",
-        "difficultyScore": 82,
+        "difficultyScore": 74,
         "specialEntities": [
             {
                 "id": "stone_01",

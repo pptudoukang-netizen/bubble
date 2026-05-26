@@ -7,7 +7,6 @@ function createGameManagerShotResolutionMethods(deps) {
   var quantize = deps.quantize;
   var buildProjectilePathFromShotPlan = deps.buildProjectilePathFromShotPlan;
   var measurePathDistance = deps.measurePathDistance;
-  var RAINBOW_TIE_BREAK_ORDER = deps.RAINBOW_TIE_BREAK_ORDER;
   var isSkillBall = deps.isSkillBall;
   var isIceBall = deps.isIceBall;
   var isBlastBall = deps.isBlastBall;
@@ -179,121 +178,280 @@ function createGameManagerShotResolutionMethods(deps) {
       ].join("|");
     },
 
-    _estimateColorGroupAt: function (targetCell, colorCode) {
+    _buildRainbowAssimilationContext: function (targetCell) {
       var grid = this.systems.bubbleGrid;
-      var queue = [];
-      var visited = {};
-      var groupCount = 1;
-      var directNeighbors = 0;
+      var contactsByKey = {};
+      var contactCells = [];
+      var candidatesByColor = {};
+      var rainbowQueue = [];
+      var rainbowVisited = {};
 
-      grid.getNeighborCoordinates(targetCell.row, targetCell.col).forEach(function (neighbor) {
-        var neighborCell = grid.getCell(neighbor.row, neighbor.col);
-        if (!neighborCell || neighborCell.color !== colorCode) {
-          return;
+      var addContactCell = function (cell) {
+        var key = cell.row + ":" + cell.col;
+        if (!contactsByKey[key]) {
+          contactsByKey[key] = true;
+          contactCells.push(cell);
         }
+      };
 
-        directNeighbors += 1;
-        queue.push({
-          row: neighbor.row,
-          col: neighbor.col
-        });
+      var addCandidateCell = function (cell) {
+        var position = grid.getCellPosition(cell.row, cell.col);
+        var candidate = candidatesByColor[cell.color];
+        if (
+          !candidate ||
+          position.y > candidate.position.y ||
+          (position.y === candidate.position.y && position.x < candidate.position.x)
+        ) {
+          candidatesByColor[cell.color] = {
+            color: cell.color,
+            sourceCell: cell,
+            position: position
+          };
+        }
+      };
+
+      var enqueueRainbowContact = function (cell) {
+        var key = cell.row + ":" + cell.col;
+        addContactCell(cell);
+        if (!rainbowVisited[key]) {
+          rainbowVisited[key] = true;
+          rainbowQueue.push(cell);
+        }
+      };
+
+      grid.getNeighborCoordinates(targetCell.row, targetCell.col).forEach(function (coord) {
+        var cell = grid.getCell(coord.row, coord.col);
+        if (cell) {
+          if (typeof cell.color === "string" && cell.color) {
+            addContactCell(cell);
+            addCandidateCell(cell);
+          } else if (isRainbowBall(cell)) {
+            enqueueRainbowContact(cell);
+          }
+        }
       });
 
-      while (queue.length) {
-        var current = queue.shift();
+      for (var cursor = 0; cursor < rainbowQueue.length; cursor += 1) {
+        var rainbowCell = rainbowQueue[cursor];
+        grid.getNeighborCoordinates(rainbowCell.row, rainbowCell.col).forEach(function (coord) {
+          var cell = grid.getCell(coord.row, coord.col);
+          if (cell) {
+            if (typeof cell.color === "string" && cell.color) {
+              addCandidateCell(cell);
+            } else if (isRainbowBall(cell)) {
+              enqueueRainbowContact(cell);
+            }
+          }
+        });
+      }
+
+      return {
+        contactCells: contactCells,
+        candidates: Object.keys(candidatesByColor).map(function (color) {
+          return candidatesByColor[color];
+        })
+      };
+    },
+
+    _buildRainbowContactCandidates: function (targetCell) {
+      return this._buildRainbowAssimilationContext(targetCell).candidates;
+    },
+
+    _isRainbowSelfOnlyContact: function (cell) {
+      return !!(
+        isBlastBall(cell) ||
+        (
+          cell &&
+          cell.entityCategory === "obstacle_ball" &&
+          cell.entityType === "stone"
+        )
+      );
+    },
+
+    _selectRandomRainbowAttachColor: function () {
+      var level = this.currentLevel && this.currentLevel.level ? this.currentLevel.level : null;
+      if (!level || !Array.isArray(level.colors) || !level.colors.length) {
+        throw new Error("Rainbow random attach requires level.colors.");
+      }
+      if (!level.spawnWeights || typeof level.spawnWeights !== "object" || Array.isArray(level.spawnWeights)) {
+        throw new Error("Rainbow random attach requires level.spawnWeights.");
+      }
+
+      var colors = level.colors.slice();
+      var totalWeight = colors.reduce(function (sum, colorCode) {
+        var weight = level.spawnWeights[colorCode];
+        if (typeof weight !== "number" || weight <= 0) {
+          throw new Error("Rainbow random attach spawn weight must be > 0: " + colorCode);
+        }
+
+        return sum + weight;
+      }, 0);
+      var threshold = Math.random() * totalWeight;
+      var running = 0;
+
+      for (var i = 0; i < colors.length; i += 1) {
+        var colorCode = colors[i];
+        running += level.spawnWeights[colorCode];
+        if (threshold <= running) {
+          return colorCode;
+        }
+      }
+
+      throw new Error("Rainbow random attach failed to select a color.");
+    },
+
+    _getVirtualRainbowColorAt: function (cell, colorByKey) {
+      var key = cell.row + ":" + cell.col;
+      if (Object.prototype.hasOwnProperty.call(colorByKey, key)) {
+        return colorByKey[key];
+      }
+
+      var gridCell = this.systems.bubbleGrid.getCell(cell.row, cell.col);
+      return gridCell && typeof gridCell.color === "string" ? gridCell.color : null;
+    },
+
+    _findVirtualRainbowMatchGroup: function (targetCell, colorByKey) {
+      var grid = this.systems.bubbleGrid;
+      var targetColor = this._getVirtualRainbowColorAt(targetCell, colorByKey);
+      if (!targetColor) {
+        throw new Error("Rainbow resolution requires a target color.");
+      }
+
+      var queue = [{
+        row: targetCell.row,
+        col: targetCell.col
+      }];
+      var visited = {};
+      var group = [];
+
+      for (var cursor = 0; cursor < queue.length; cursor += 1) {
+        var current = queue[cursor];
         var key = current.row + ":" + current.col;
         if (visited[key]) {
           continue;
         }
 
         visited[key] = true;
-        var gridCell = grid.getCell(current.row, current.col);
-        if (!gridCell || gridCell.color !== colorCode) {
+        if (this._getVirtualRainbowColorAt(current, colorByKey) !== targetColor) {
           continue;
         }
 
-        groupCount += 1;
+        group.push({
+          row: current.row,
+          col: current.col
+        });
+
         grid.getNeighborCoordinates(current.row, current.col).forEach(function (neighbor) {
           var neighborKey = neighbor.row + ":" + neighbor.col;
           if (visited[neighborKey]) {
             return;
           }
 
-          var neighborCell = grid.getCell(neighbor.row, neighbor.col);
-          if (neighborCell && neighborCell.color === colorCode) {
+          if (this._getVirtualRainbowColorAt(neighbor, colorByKey) === targetColor) {
             queue.push({
               row: neighbor.row,
               col: neighbor.col
             });
           }
-        });
+        }, this);
       }
 
+      if (!this.systems.matchSystem || !Number.isInteger(this.systems.matchSystem.matchThreshold)) {
+        throw new Error("Rainbow resolution requires MatchSystem.matchThreshold.");
+      }
+
+      var threshold = this.systems.matchSystem.matchThreshold;
+      return group.length >= threshold ? group : [];
+    },
+
+    _evaluateRainbowCandidate: function (targetCell, contactCells, candidate) {
+      var colorByKey = {};
+      colorByKey[targetCell.row + ":" + targetCell.col] = candidate.color;
+      contactCells.forEach(function (cell) {
+        colorByKey[cell.row + ":" + cell.col] = candidate.color;
+      });
+
+      var matchedCells = this._findVirtualRainbowMatchGroup(targetCell, colorByKey);
       return {
-        color: colorCode,
-        groupSize: groupCount,
-        directNeighbors: directNeighbors,
-        canImmediateClear: groupCount >= 3
+        color: candidate.color,
+        sourceCell: candidate.sourceCell,
+        position: candidate.position,
+        dropCount: matchedCells.length,
+        matchedCount: matchedCells.length
       };
     },
 
-    _selectRainbowAttachColor: function (targetCell) {
-      var availableColors = this.currentLevel && this.currentLevel.level && Array.isArray(this.currentLevel.level.colors)
-        ? this.currentLevel.level.colors.slice()
-        : [];
-      if (!availableColors.length) {
-        return "R";
+    _selectRainbowAssimilation: function (targetCell, collidedCell) {
+      if (this._isRainbowSelfOnlyContact(collidedCell)) {
+        return {
+          color: this._selectRandomRainbowAttachColor(),
+          contactCells: [],
+          expectedDropCount: 0,
+          matchedCount: 0
+        };
+      }
+
+      var context = this._buildRainbowAssimilationContext(targetCell);
+      var contactCells = context.contactCells;
+      if (!contactCells.length) {
+        return {
+          color: this._selectRandomRainbowAttachColor(),
+          contactCells: [],
+          expectedDropCount: 0,
+          matchedCount: 0
+        };
+      }
+
+      var candidates = context.candidates;
+      if (!candidates.length) {
+        return {
+          color: this._selectRandomRainbowAttachColor(),
+          contactCells: contactCells,
+          expectedDropCount: 0,
+          matchedCount: 0
+        };
       }
 
       var best = null;
-      availableColors.forEach(function (colorCode) {
-        var estimate = this._estimateColorGroupAt(targetCell, colorCode);
-        var tieScore = RAINBOW_TIE_BREAK_ORDER[colorCode] || 0;
-        if (!best) {
-          best = {
-            estimate: estimate,
-            tieScore: tieScore
-          };
-          return;
-        }
-
-        if (estimate.canImmediateClear !== best.estimate.canImmediateClear) {
-          if (estimate.canImmediateClear) {
-            best = {
-              estimate: estimate,
-              tieScore: tieScore
-            };
-          }
-          return;
-        }
-
-        if (estimate.groupSize > best.estimate.groupSize) {
-          best = {
-            estimate: estimate,
-            tieScore: tieScore
-          };
-          return;
-        }
-
-        if (estimate.groupSize === best.estimate.groupSize) {
-          if (estimate.directNeighbors > best.estimate.directNeighbors) {
-            best = {
-              estimate: estimate,
-              tieScore: tieScore
-            };
-            return;
-          }
-
-          if (estimate.directNeighbors === best.estimate.directNeighbors && tieScore > best.tieScore) {
-            best = {
-              estimate: estimate,
-              tieScore: tieScore
-            };
-          }
+      candidates.forEach(function (candidate) {
+        var evaluated = this._evaluateRainbowCandidate(targetCell, contactCells, candidate);
+        if (
+          !best ||
+          evaluated.dropCount > best.dropCount ||
+          (
+            evaluated.dropCount === best.dropCount &&
+            (
+              evaluated.position.y > best.position.y ||
+              (evaluated.position.y === best.position.y && evaluated.position.x < best.position.x)
+            )
+          )
+        ) {
+          best = evaluated;
         }
       }, this);
 
-      return best ? best.estimate.color : availableColors[0];
+      return {
+        color: best.color,
+        contactCells: contactCells,
+        expectedDropCount: best.dropCount,
+        matchedCount: best.matchedCount
+      };
+    },
+
+    _resolveRainbowShot: function (projectile, targetCell) {
+      var grid = this.systems.bubbleGrid;
+      var collidedCell = projectile && projectile.shotPlan ? projectile.shotPlan.collidedCell : null;
+      var assimilation = this._selectRainbowAssimilation(targetCell, collidedCell);
+      grid.addBubble(targetCell, assimilation.color);
+      assimilation.contactCells.forEach(function (cell) {
+        grid.addBubble({
+          row: cell.row,
+          col: cell.col
+        }, assimilation.color);
+      });
+
+      var attachedBubble = grid.getCell(targetCell.row, targetCell.col);
+      return this._resolveAttachment(attachedBubble);
     },
 
     _injectCollectedSkillBalls: function (collectedDrops) {
@@ -515,12 +673,10 @@ function createGameManagerShotResolutionMethods(deps) {
 
       if (isBlastBall(firedBall)) {
         this.lastResolution = this._resolveBlastShot(projectile, targetCell);
+      } else if (isRainbowBall(firedBall)) {
+        this.lastResolution = this._resolveRainbowShot(projectile, targetCell);
       } else {
         var attachedColor = firedBall.color;
-        if (isRainbowBall(firedBall)) {
-          attachedColor = this._selectRainbowAttachColor(targetCell);
-        }
-
         var attachedBubble = grid.addBubble(targetCell, attachedColor);
         this.lastResolution = this._resolveAttachment(attachedBubble);
       }

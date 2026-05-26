@@ -69,6 +69,29 @@ function stringifyForError(data) {
   return text;
 }
 
+function isGameClubAuthDeniedError(error) {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+  var message = error.errorMessage || error.errMsg || error.message || "";
+  return typeof message === "string" && (
+    message.indexOf("auth deny") >= 0 ||
+    message.indexOf("auth denied") >= 0 ||
+    message.indexOf("auth cancel") >= 0
+  );
+}
+
+function rejectGameClubDataError(reject, error) {
+  if (isGameClubAuthDeniedError(error)) {
+    reject(new Error("GAME_CIRCLE_AUTH_DENIED"));
+    return;
+  }
+  var message = error && (error.errorMessage || error.errMsg || error.message)
+    ? (error.errorMessage || error.errMsg || error.message)
+    : "wx.getGameClubData failed.";
+  reject(new Error(message));
+}
+
 function resolveCloudDataListPayload(result) {
   if (!result || typeof result !== "object") {
     throw new Error("Game circle cloud function result must be an object.");
@@ -234,7 +257,7 @@ GameCircleButtonAdapter.prototype.getGameClubData = function (dataTypeList) {
       dataTypeList: dataTypeList,
       success: function (response) {
         if (response && typeof response === "object" && response.code !== undefined && Number(response.code) !== 0) {
-          reject(new Error(response.message || response.errMsg || "wx.getGameClubData returned non-zero code."));
+          rejectGameClubDataError(reject, response);
           return;
         }
         if (response && typeof response === "object" && response.cloudID) {
@@ -244,10 +267,7 @@ GameCircleButtonAdapter.prototype.getGameClubData = function (dataTypeList) {
         resolve(response);
       }.bind(this),
       fail: function (error) {
-        var message = error && (error.errorMessage || error.errMsg || error.message)
-          ? (error.errorMessage || error.errMsg || error.message)
-          : "wx.getGameClubData failed.";
-        reject(new Error(message));
+        rejectGameClubDataError(reject, error);
       }
     });
   }.bind(this));

@@ -44,7 +44,7 @@ module.exports = {
       iconPath: "image/props/rainbow_ball",
       price: {
         currency: "coin",
-        amount: 200
+        amount: 300
       },
       dailyLimit: 3,
       enabled: true,

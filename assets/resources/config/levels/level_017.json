@@ -46,9 +46,9 @@
             "B",
             "P"
         ],
-        "shotLimit": 28,
-        "targetScore": 11870,
-        "dropInterval": 4,
+        "shotLimit": 31,
+        "targetScore": 10920,
+        "dropInterval": 5,
         "jarCount": 4,
         "jarColors": [
             "R",
@@ -74,13 +74,19 @@
             },
             {
                 "type": "collect_any",
-                "value": 18
+                "value": 17
             }
         ],
         "bonusObjectives": [
             {
                 "type": "single_turn_drop_count",
-                "value": 5
+                "value": 4
+            }
+        ],
+        "clearRewardItems": [
+            {
+                "id": "coin",
+                "count": 200
             }
         ],
         "layout": [
@@ -92,7 +98,7 @@
             "RGBP...."
         ],
         "designNotes": "A long bridge now mixes blast value with an ice delay, turning the collapse into a multi-step setup.",
-        "difficultyScore": 92,
+        "difficultyScore": 84,
         "specialEntities": [
             {
                 "id": "skill_blast_01",

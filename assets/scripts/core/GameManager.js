@@ -19,6 +19,12 @@ var quantize = ProjectileMath.quantize;
 var buildProjectilePathFromShotPlan = ProjectileMath.buildProjectilePathFromShotPlan;
 var measurePathDistance = ProjectileMath.measurePathDistance;
 var buildAimGuidePath = ProjectileMath.buildAimGuidePath;
+var AD_REVIVE_MIN_DANGER_LINE_SPACE_ROWS = 3;
+var AD_REVIVE_MIN_REMAINING_SHOTS = 5;
+var AD_REVIVE_ALLOWED_STATES = {
+  out_of_shots: true,
+  lost_danger: true
+};
 
 function createEmptyResolution() {
   return {
@@ -377,6 +383,7 @@ function GameManager(options) {
   this.pendingRuntimeEvents = [];
   this.pendingBoardAdvanceDelay = 0;
   this.pendingBarrierHammer = false;
+  this.pendingRainbowColorSelection = null;
   this.jarScoreBoostActive = false;
   this.jarScoreBoostMultiplier = 1;
   this.jarScoreBoostRemainingMs = 0;
@@ -439,6 +446,7 @@ GameManager.prototype.startLevel = function (levelConfig) {
   this.pendingRuntimeEvents = [];
   this.pendingBoardAdvanceDelay = 0;
   this.pendingBarrierHammer = false;
+  this.pendingRainbowColorSelection = null;
   this.jarScoreBoostActive = false;
   this.jarScoreBoostMultiplier = 1;
   this.jarScoreBoostRemainingMs = 0;
@@ -743,7 +751,8 @@ GameManager.prototype.setAim = function (point, options) {
     this.state !== "running" ||
     this.activeProjectile ||
     this._isWaitingBoardAdvance() ||
-    this.pendingBarrierHammer
+    this.pendingBarrierHammer ||
+    this.pendingRainbowColorSelection
   ) {
     return this.getRuntimeSnapshot();
   }
@@ -761,7 +770,8 @@ GameManager.prototype.beginAim = function (point) {
     this.state !== "running" ||
     this.activeProjectile ||
     this._isWaitingBoardAdvance() ||
-    this.pendingBarrierHammer
+    this.pendingBarrierHammer ||
+    this.pendingRainbowColorSelection
   ) {
     return this.getRuntimeSnapshot();
   }
@@ -786,7 +796,8 @@ GameManager.prototype.fireShot = function () {
     this.state !== "running" ||
     this.activeProjectile ||
     this._isWaitingBoardAdvance() ||
-    this.pendingBarrierHammer
+    this.pendingBarrierHammer ||
+    this.pendingRainbowColorSelection
   ) {
     return this.getRuntimeSnapshot();
   }
@@ -856,6 +867,47 @@ GameManager.prototype.grantPowerupInventory = function (powerupType, count) {
   };
 };
 
+GameManager.prototype.reviveFromAd = function () {
+  if (AD_REVIVE_ALLOWED_STATES[this.state] !== true) {
+    throw new Error("Ad revive can only run from a lose state: " + this.state);
+  }
+  if (this.activeProjectile) {
+    throw new Error("Ad revive cannot run while a projectile is active.");
+  }
+  if (!this.systems || !this.systems.bubbleGrid) {
+    throw new Error("Ad revive requires BubbleGrid.");
+  }
+
+  var gridSpaceResult = this.systems.bubbleGrid.ensureDangerLineSpaceRows(AD_REVIVE_MIN_DANGER_LINE_SPACE_ROWS);
+  var previousRemainingShots = this.remainingShots;
+  if (previousRemainingShots < AD_REVIVE_MIN_REMAINING_SHOTS) {
+    this.remainingShots = AD_REVIVE_MIN_REMAINING_SHOTS;
+  }
+
+  this.state = "running";
+  this.isAiming = false;
+  this.pendingShotPlan = null;
+  this.pendingProjectileFinalize = false;
+  this.lastResolution = createEmptyResolution();
+  this._pushRuntimeEvent("ad_revive_granted", {
+    previous_remaining_shots: previousRemainingShots,
+    remaining_shots: this.remainingShots,
+    danger_space_shift_rows: gridSpaceResult.shiftRows,
+    danger_space_removed_cells: gridSpaceResult.removedCells.length,
+    danger_space_rows: gridSpaceResult.spaceRows
+  });
+
+  return {
+    accepted: true,
+    previousRemainingShots: previousRemainingShots,
+    remainingShots: this.remainingShots,
+    dangerSpaceShiftRows: gridSpaceResult.shiftRows,
+    dangerSpaceRemovedCells: gridSpaceResult.removedCells,
+    dangerSpaceRows: gridSpaceResult.spaceRows,
+    snapshot: this.getRuntimeSnapshot(this._drainRuntimeEvents())
+  };
+};
+
 GameManager.prototype.useSkillBall = function (entityType) {
   if (this.state !== "running") {
     return {
@@ -881,6 +933,14 @@ GameManager.prototype.useSkillBall = function (entityType) {
     };
   }
 
+  if (this.pendingRainbowColorSelection) {
+    return {
+      accepted: false,
+      reason: "rainbow_color_selection_active",
+      snapshot: this.getRuntimeSnapshot()
+    };
+  }
+
   var equipResult = this.systems.shooterController.equipSkillBall(entityType);
   if (!equipResult || !equipResult.accepted) {
     return {
@@ -890,7 +950,20 @@ GameManager.prototype.useSkillBall = function (entityType) {
     };
   }
 
-  if (this.isAiming) {
+  if (entityType === "rainbow") {
+    var colors = this.currentLevel && this.currentLevel.level && Array.isArray(this.currentLevel.level.colors)
+      ? this.currentLevel.level.colors.slice()
+      : [];
+    if (!colors.length) {
+      throw new Error("Rainbow color selection requires level.colors.");
+    }
+
+    this.isAiming = false;
+    this.pendingShotPlan = null;
+    this.pendingRainbowColorSelection = {
+      colors: colors
+    };
+  } else if (this.isAiming) {
     this._refreshShotPlan(true);
   }
 
@@ -923,6 +996,14 @@ GameManager.prototype.useSwapBall = function () {
     return {
       accepted: false,
       reason: "targeting_active",
+      snapshot: this.getRuntimeSnapshot()
+    };
+  }
+
+  if (this.pendingRainbowColorSelection) {
+    return {
+      accepted: false,
+      reason: "rainbow_color_selection_active",
       snapshot: this.getRuntimeSnapshot()
     };
   }
@@ -964,6 +1045,14 @@ GameManager.prototype.beginBarrierHammer = function () {
     };
   }
 
+  if (this.pendingRainbowColorSelection) {
+    return {
+      accepted: false,
+      reason: "rainbow_color_selection_active",
+      snapshot: this.getRuntimeSnapshot()
+    };
+  }
+
   var hammerCount = this.systems &&
     this.systems.shooterController &&
     this.systems.shooterController.skillInventory
@@ -996,6 +1085,7 @@ GameManager.prototype.beginBarrierHammer = function () {
   }
 
   this.pendingBarrierHammer = true;
+  this.pendingRainbowColorSelection = null;
   this.isAiming = false;
   this.pendingShotPlan = null;
   return {
@@ -1008,6 +1098,51 @@ GameManager.prototype.cancelBarrierHammer = function () {
   this.pendingBarrierHammer = false;
   return {
     accepted: true,
+    snapshot: this.getRuntimeSnapshot()
+  };
+};
+
+GameManager.prototype.selectRainbowColor = function (colorCode) {
+  if (this.state !== "running") {
+    return {
+      accepted: false,
+      reason: "state_invalid",
+      snapshot: this.getRuntimeSnapshot()
+    };
+  }
+
+  if (!this.pendingRainbowColorSelection) {
+    return {
+      accepted: false,
+      reason: "not_selecting_rainbow_color",
+      snapshot: this.getRuntimeSnapshot()
+    };
+  }
+
+  if (typeof colorCode !== "string" || this.pendingRainbowColorSelection.colors.indexOf(colorCode) === -1) {
+    return {
+      accepted: false,
+      reason: "invalid_color",
+      snapshot: this.getRuntimeSnapshot()
+    };
+  }
+
+  var resolveResult = this.systems.shooterController.resolveCurrentRainbowColor(colorCode);
+  if (!resolveResult || !resolveResult.accepted) {
+    return {
+      accepted: false,
+      reason: resolveResult && resolveResult.reason ? resolveResult.reason : "rainbow_color_resolve_failed",
+      snapshot: this.getRuntimeSnapshot()
+    };
+  }
+
+  this.pendingRainbowColorSelection = null;
+  this.pendingShotPlan = null;
+  this.isAiming = false;
+
+  return {
+    accepted: true,
+    color: colorCode,
     snapshot: this.getRuntimeSnapshot()
   };
 };
@@ -1403,12 +1538,16 @@ GameManager.prototype.getRuntimeSnapshot = function (runtimeEvents) {
   );
   shooterSnapshot.isAiming = this.isAiming;
   shooterSnapshot.pendingBarrierHammer = this.state === "running" && this.pendingBarrierHammer;
+  shooterSnapshot.pendingRainbowColorSelection = this.state === "running" && this.pendingRainbowColorSelection
+    ? clone(this.pendingRainbowColorSelection)
+    : null;
   shooterSnapshot.canUsePowerups = !!(
     this.state === "running" &&
     !this.activeProjectile &&
-    !this._isWaitingBoardAdvance()
+    !this._isWaitingBoardAdvance() &&
+    !this.pendingRainbowColorSelection
   );
-  shooterSnapshot.trajectory = this.isAiming && this.pendingShotPlan && !this.activeProjectile ? clone(this.pendingShotPlan) : null;
+  shooterSnapshot.trajectory = this.isAiming && this.pendingShotPlan && !this.activeProjectile && !this.pendingRainbowColorSelection ? clone(this.pendingShotPlan) : null;
 
   return {
     state: this.state,

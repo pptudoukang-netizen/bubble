@@ -11,7 +11,9 @@ var SPECIAL_ENTITY_TYPES = {
 };
 var ALLOWED_COLORS = ["R", "G", "B", "Y", "P"];
 var ALLOWED_INNER_COLORS = ALLOWED_COLORS.slice();
+var ALLOWED_CLEAR_REWARD_ITEM_IDS = ["coin", "stamina"];
 var MAX_JAR_COUNT = 4;
+var CLEAR_REWARD_START_LEVEL_ID = 5;
 
 function clone(data) {
   return JSON.parse(JSON.stringify(data));
@@ -88,6 +90,49 @@ function resolveExpectedLevelId(levelKey) {
 
 function resolveShotLimit(levelConfig, levelKey) {
   return assertPositiveInteger(levelConfig.shotLimit, "level.shotLimit", levelKey);
+}
+
+function normalizeClearRewardItems(levelConfig, levelId, levelKey) {
+  var rewardItems = levelConfig.clearRewardItems;
+  if (levelId < CLEAR_REWARD_START_LEVEL_ID) {
+    if (rewardItems !== undefined) {
+      throw new Error("level.clearRewardItems must not be configured before level " + CLEAR_REWARD_START_LEVEL_ID + ": " + levelKey);
+    }
+    return undefined;
+  }
+
+  if (!Array.isArray(rewardItems) || rewardItems.length === 0) {
+    throw new Error("level.clearRewardItems must be a non-empty array: " + levelKey);
+  }
+
+  var seenIds = {};
+  return rewardItems.map(function (item, index) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      throw new Error("level.clearRewardItems[" + index + "] must be object: " + levelKey);
+    }
+
+    var id = typeof item.id === "string" ? item.id.trim() : "";
+    if (ALLOWED_CLEAR_REWARD_ITEM_IDS.indexOf(id) === -1) {
+      throw new Error("level.clearRewardItems[" + index + "].id must be coin or stamina: " + levelKey);
+    }
+    if (seenIds[id]) {
+      throw new Error("duplicate level.clearRewardItems id `" + id + "`: " + levelKey);
+    }
+    seenIds[id] = true;
+
+    var count = assertPositiveInteger(item.count, "level.clearRewardItems[" + index + "].count", levelKey);
+    if (id === "coin" && (count < 50 || count > 300)) {
+      throw new Error("level.clearRewardItems[" + index + "].count for coin must be in [50, 300]: " + levelKey);
+    }
+    if (id === "stamina" && (count < 1 || count > 3)) {
+      throw new Error("level.clearRewardItems[" + index + "].count for stamina must be in [1, 3]: " + levelKey);
+    }
+
+    return {
+      id: id,
+      count: count
+    };
+  });
 }
 
 function normalizeSpecialEntities(levelConfig, levelKey) {
@@ -210,6 +255,10 @@ function normalizeLevelConfig(rawConfig, levelKey) {
   config.level.shotLimit = resolveShotLimit(config.level, levelKey);
   config.level.targetScore = assertPositiveInteger(config.level.targetScore, "level.targetScore", levelKey);
   config.level.dropInterval = assertPositiveInteger(config.level.dropInterval, "level.dropInterval", levelKey);
+  var clearRewardItems = normalizeClearRewardItems(config.level, expectedLevelId, levelKey);
+  if (clearRewardItems !== undefined) {
+    config.level.clearRewardItems = clearRewardItems;
+  }
 
   var jarCount = Number(config.level.jarCount);
   if (!Number.isInteger(jarCount) || jarCount <= 0) {

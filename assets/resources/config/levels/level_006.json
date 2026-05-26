@@ -44,9 +44,9 @@
             "G",
             "B"
         ],
-        "shotLimit": 21,
-        "targetScore": 5985,
-        "dropInterval": 5,
+        "shotLimit": 23,
+        "targetScore": 5506,
+        "dropInterval": 6,
         "jarCount": 3,
         "jarColors": [
             "R",
@@ -80,6 +80,16 @@
                 "value": 2
             }
         ],
+        "clearRewardItems": [
+            {
+                "id": "coin",
+                "count": 90
+            },
+            {
+                "id": "stamina",
+                "count": 1
+            }
+        ],
         "layout": [
             "RRGRBGGB",
             "RRGRGGGB",
@@ -89,7 +99,7 @@
             "........"
         ],
         "designNotes": "Blue collection is now attached to a tighter structure, requiring cleaner setup before the drop.",
-        "difficultyScore": 75
+        "difficultyScore": 69
     },
     "difficultyScaleMax": 100
 }

@@ -321,7 +321,7 @@
     },
     {
       "itemId": "rainbow_ball",
-      "price": 200,
+      "price": 300,
       "currency": "coin",
       "limitPerDay": 3
     },

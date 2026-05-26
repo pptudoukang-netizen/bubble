@@ -14,9 +14,9 @@ module.exports = {
       return;
     }
 
+    this._handleRuntimeStateTransition(snapshot);
     this.levelRenderer.refreshRuntime(this.currentLevelConfig, snapshot);
     this._playRuntimeAudioEvents(snapshot);
-    this._handleRuntimeStateTransition(snapshot);
     if (!snapshot.activeProjectile) {
       this._setStatus(this._formatStatus(this.currentLevelConfig, snapshot));
     }
@@ -88,6 +88,7 @@ module.exports = {
       x: touchLocation.x,
       y: touchLocation.y
     };
+    this._handleRuntimeStateTransition(snapshot);
     this.levelRenderer.refreshRuntime(this.currentLevelConfig, snapshot);
     this._setStatus(this._formatStatus(this.currentLevelConfig, snapshot));
   },
@@ -137,6 +138,7 @@ module.exports = {
         y: touchLocation.y
       };
     }
+    this._handleRuntimeStateTransition(snapshot);
     this.levelRenderer.refreshRuntime(this.currentLevelConfig, snapshot);
     this._setStatus(this._formatStatus(this.currentLevelConfig, snapshot));
   },
@@ -181,6 +183,7 @@ module.exports = {
     if (snapshot && Math.max(0, Number(snapshot.remainingShots) || 0) < shotsBeforeFire) {
       this._playSfx("shot");
     }
+    this._handleRuntimeStateTransition(snapshot);
     this.levelRenderer.refreshRuntime(this.currentLevelConfig, snapshot);
     this._playRuntimeAudioEvents(snapshot);
     this._setStatus(this._formatStatus(this.currentLevelConfig, snapshot));
@@ -202,6 +205,7 @@ module.exports = {
     var snapshot = this.gameManager.endAim();
     this._lastAimRefreshPoint = null;
     this._lastAimRefreshScreenPoint = null;
+    this._handleRuntimeStateTransition(snapshot);
     this.levelRenderer.refreshRuntime(this.currentLevelConfig, snapshot);
     this._setStatus(this._formatStatus(this.currentLevelConfig, snapshot));
   }

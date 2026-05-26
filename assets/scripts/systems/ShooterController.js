@@ -202,6 +202,31 @@ ShooterController.prototype.equipSkillBall = function (entityType) {
   };
 };
 
+ShooterController.prototype.resolveCurrentRainbowColor = function (colorCode) {
+  if (this.availableColors.indexOf(colorCode) === -1) {
+    return {
+      accepted: false,
+      reason: "invalid_color"
+    };
+  }
+
+  if (!this.currentBall || this.currentBall.entityCategory !== "skill_ball" || this.currentBall.entityType !== "rainbow") {
+    return {
+      accepted: false,
+      reason: "current_ball_not_rainbow"
+    };
+  }
+
+  this.currentBall = createNormalBall(colorCode);
+  this._syncLegacyColorFields();
+
+  return {
+    accepted: true,
+    color: colorCode,
+    currentBall: clone(this.currentBall)
+  };
+};
+
 ShooterController.prototype.swapCurrentAndNextBall = function () {
   var swapCount = Math.max(0, Math.floor(Number(this.skillInventory.swap) || 0));
   if (swapCount <= 0) {

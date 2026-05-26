@@ -36,6 +36,9 @@ module.exports = {
     this._hideAwardView();
     this._hideRankingView();
     this._hideSignInView();
+    if (typeof this._hideDailyTaskView === "function") {
+      this._hideDailyTaskView();
+    }
     this._hideShopView();
     hideGameCircleWelfareViewNode(this);
     if (typeof this._hideInventoryView === "function") {

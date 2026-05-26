@@ -21,6 +21,92 @@ function resolveMaxAvailableLevelId(levelIds) {
   }, 0);
 }
 
+function resolveWinSnapshotScore(snapshot) {
+  if (!snapshot || snapshot.state !== "won") {
+    throw new Error("Win score requires won runtime snapshot.");
+  }
+  if (!snapshot.winStats || typeof snapshot.winStats !== "object") {
+    throw new Error("Win score requires snapshot.winStats.");
+  }
+  var score = Math.floor(Number(snapshot.winStats.totalScore));
+  if (!Number.isInteger(score) || score < 0) {
+    throw new Error("Win score must be a non-negative integer.");
+  }
+  return score;
+}
+
+function clone(data) {
+  return JSON.parse(JSON.stringify(data));
+}
+
+function requirePositiveInteger(value, fieldName) {
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(fieldName + " must be a positive integer.");
+  }
+  return value;
+}
+
+function requireNonNegativeInteger(value, fieldName) {
+  if (!Number.isInteger(value) || value < 0) {
+    throw new Error(fieldName + " must be a non-negative integer.");
+  }
+  return value;
+}
+
+function normalizeOptionalPrepareLevelId(options) {
+  if (!options || options.prepareLevelId === undefined) {
+    return null;
+  }
+
+  var levelId = Math.floor(Number(options.prepareLevelId));
+  if (!Number.isInteger(levelId) || levelId <= 0) {
+    throw new Error("Level select prepareLevelId must be a positive integer.");
+  }
+  return levelId;
+}
+
+function getCurrentLevelClearRewardItems(levelConfig) {
+  if (!levelConfig || typeof levelConfig !== "object" || !levelConfig.level || typeof levelConfig.level !== "object") {
+    throw new Error("Level clear rewards require current level config.");
+  }
+  if (levelConfig.level.clearRewardItems === undefined) {
+    return [];
+  }
+  if (!Array.isArray(levelConfig.level.clearRewardItems)) {
+    throw new Error("level.clearRewardItems must be an array.");
+  }
+  return levelConfig.level.clearRewardItems.map(function (item, index) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      throw new Error("level.clearRewardItems[" + index + "] must be object.");
+    }
+    if (item.id !== "coin" && item.id !== "stamina") {
+      throw new Error("Unsupported level clear reward item id: " + item.id);
+    }
+    return {
+      id: item.id,
+      count: requirePositiveInteger(item.count, "level.clearRewardItems[" + index + "].count")
+    };
+  });
+}
+
+function resolveAwardedClearRewardItems(rewardItems, isFirstCompletion) {
+  if (!Array.isArray(rewardItems)) {
+    throw new Error("Level clear reward items must be an array.");
+  }
+  if (typeof isFirstCompletion !== "boolean") {
+    throw new Error("Level clear reward first-completion flag is required.");
+  }
+
+  return rewardItems.filter(function (item) {
+    return item.id !== "stamina" || isFirstCompletion;
+  }).map(function (item) {
+    return {
+      id: item.id,
+      count: item.count
+    };
+  });
+}
+
 module.exports = {
   _showLevelSelectView: function (options) {
     options = options || {};
@@ -28,7 +114,11 @@ module.exports = {
       return;
     }
 
+    var prepareLevelId = normalizeOptionalPrepareLevelId(options);
     var targetLevelId = Math.max(0, Math.floor(Number(options.targetLevelId) || 0));
+    if (prepareLevelId !== null) {
+      targetLevelId = prepareLevelId;
+    }
     if (!targetLevelId && this.currentLevelConfig && this.currentLevelConfig.level) {
       targetLevelId = Math.max(1, Math.floor(Number(this.currentLevelConfig.level.levelId) || 0));
     }
@@ -40,7 +130,13 @@ module.exports = {
     this._hideAwardView();
     this._hideSettingView();
     this._hideRankingView();
+    if (typeof this._hideDailyTaskView === "function") {
+      this._hideDailyTaskView();
+    }
     hideGameCircleWelfareViewNode(this);
+    if (typeof this._hideStartGameView === "function") {
+      this._hideStartGameView();
+    }
     if (typeof this._hideInventoryView === "function") {
       this._hideInventoryView();
     }
@@ -81,18 +177,35 @@ module.exports = {
         forcedMapIndex = this._resolveLevelMapIndexByLevelId(levelIds, targetLevelId, prefabs.mapPrefabs);
       }
       this._renderLevelSelectContent(prefabs.viewPrefab, prefabs.mapPrefabs, levelIds, forcedMapIndex);
+      this._ensureStaminaRecoveryTicker();
       this._updateSignInEntryState();
+      if (typeof this._updateDailyTaskEntryState === "function") {
+        this._updateDailyTaskEntryState();
+      }
       if (typeof this._updateInventoryEntryState === "function") {
         this._updateInventoryEntryState();
       }
       this._updateStarChestEntryState();
       this._ensureShopEntryButton();
+      this._updateNewGiftEntryState();
       if (typeof this._ensureGameCircleEntryButton === "function") {
         this._ensureGameCircleEntryButton();
       }
       this._maybeAutoShowSignInView();
       this._playLevelSelectBackgroundMusic();
       this._setStatus("Please select a level");
+      if (prepareLevelId !== null) {
+        if (typeof this._showStartGameView !== "function") {
+          throw new Error("Level select prepare requires StartGameView entry method.");
+        }
+        Promise.resolve().then(function () {
+          return this._showStartGameView(prepareLevelId);
+        }.bind(this)).catch(function (error) {
+          Logger.error("Show prepared StartGameView failed", error && error.stack ? error.stack : String(error));
+          throw error;
+        });
+      }
+      return null;
     }.bind(this)).catch(function (error) {
       this.isSelectingLevel = true;
       this.currentLevelConfig = null;
@@ -149,13 +262,20 @@ module.exports = {
   },
 
   _hideLevelSelectView: function () {
+    this._clearStaminaRecoveryTicker();
     this._hideAwardView();
     this._hideSettingView();
     this._hideRankingView();
+    if (typeof this._hideDailyTaskView === "function") {
+      this._hideDailyTaskView();
+    }
     this._hideShopView();
     hideGameCircleWelfareViewNode(this);
     if (typeof this._clearPendingLevelEntry === "function") {
       this._clearPendingLevelEntry();
+    }
+    if (typeof this._hideStartGameView === "function") {
+      this._hideStartGameView();
     }
     if (typeof this._hideInventoryView === "function") {
       this._hideInventoryView();
@@ -364,6 +484,7 @@ module.exports = {
       onOpenInventory: this._showInventoryView.bind(this),
       onOpenStarChest: this._openStarChest.bind(this),
       onOpenShop: this._onLevelSelectShopTap.bind(this),
+      onOpenDailyTasks: this._onLevelSelectDailyTasksTap.bind(this),
       onLevelSelectTap: this._onLevelSelectTap.bind(this),
       onMapIndexChange: this._onLevelSelectMapIndexChange.bind(this)
     });
@@ -379,14 +500,19 @@ module.exports = {
 
     this._refreshRouteEditorButtons();
     this._updateSignInEntryState();
+    if (typeof this._updateDailyTaskEntryState === "function") {
+      this._updateDailyTaskEntryState();
+    }
     if (typeof this._updateInventoryEntryState === "function") {
       this._updateInventoryEntryState();
     }
     this._updateStarChestEntryState();
     this._ensureShopEntryButton();
+    this._updateNewGiftEntryState();
     if (typeof this._ensureGameCircleEntryButton === "function") {
       this._ensureGameCircleEntryButton();
     }
+    this._ensureStaminaRecoveryTicker();
   },
 
   _onLevelSelectMapIndexChange: function (nextMapIndex) {
@@ -451,12 +577,20 @@ module.exports = {
     var currentState = snapshot.state;
     if (currentState === "won" && previousState !== "won") {
       this._playSfx("win");
+      var isFirstCompletion = !this._isLevelCompleted(this._currentLevelId);
       this._recordCurrentLevelWin(snapshot);
+      this._currentLevelAwardedClearRewardItems = this._currentLevelEnteredByTestUnlock === true
+        ? []
+        : this._grantCurrentLevelClearRewardItems(isFirstCompletion);
     } else if (
       currentState !== previousState &&
       (currentState === "out_of_shots" || currentState === "lost_danger" || currentState === "lost_objective")
     ) {
       this._playSfx("lose");
+    }
+    if (currentState === "won") {
+      this._applyCurrentLevelBestScoreFlag(snapshot);
+      this._applyCurrentLevelClearRewardItems(snapshot);
     }
     if (
       currentState !== previousState &&
@@ -467,9 +601,79 @@ module.exports = {
     this._lastRuntimeState = currentState;
   },
 
+  _applyCurrentLevelBestScoreFlag: function (snapshot) {
+    if (!snapshot || snapshot.state !== "won") {
+      return snapshot;
+    }
+    if (!this.levelProgressStore || typeof this.levelProgressStore.getBestScore !== "function") {
+      throw new Error("Personal best score requires LevelProgressStore.getBestScore.");
+    }
+    if (!this._currentLevelId) {
+      throw new Error("Personal best score requires current level id.");
+    }
+
+    var score = resolveWinSnapshotScore(snapshot);
+    var bestScore = this.levelProgressStore.getBestScore(this.levelProgress, this._currentLevelId);
+    snapshot.winStats.isPersonalBestScore = score >= bestScore;
+    snapshot.winStats.personalBestScore = bestScore;
+    return snapshot;
+  },
+
+  _applyCurrentLevelClearRewardItems: function (snapshot) {
+    if (!snapshot || snapshot.state !== "won") {
+      return snapshot;
+    }
+    if (!snapshot.winStats || typeof snapshot.winStats !== "object") {
+      throw new Error("Level clear rewards require snapshot.winStats.");
+    }
+    if (!Array.isArray(this._currentLevelAwardedClearRewardItems)) {
+      throw new Error("Level clear awarded reward items must be resolved before rendering WinView.");
+    }
+    snapshot.winStats.clearRewardItems = clone(this._currentLevelAwardedClearRewardItems);
+    return snapshot;
+  },
+
+  _grantCurrentLevelClearRewardItems: function (isFirstCompletion) {
+    if (typeof isFirstCompletion !== "boolean") {
+      throw new Error("Level clear reward grant requires first-completion flag.");
+    }
+    if (!this.playerResourceStore || typeof this.playerResourceStore.save !== "function") {
+      throw new Error("Level clear reward requires PlayerResourceStore.save.");
+    }
+
+    var configuredRewardItems = getCurrentLevelClearRewardItems(this.currentLevelConfig);
+    var awardedRewardItems = resolveAwardedClearRewardItems(configuredRewardItems, isFirstCompletion);
+    if (awardedRewardItems.length === 0) {
+      return [];
+    }
+
+    this._refreshPlayerResources();
+    var resources = this.playerResources;
+    if (!resources || typeof resources !== "object" || Array.isArray(resources)) {
+      throw new Error("Level clear reward requires player resources.");
+    }
+
+    awardedRewardItems.forEach(function (item) {
+      if (item.id === "coin") {
+        resources.coins = requireNonNegativeInteger(resources.coins, "Player coins") + item.count;
+        return;
+      }
+      if (item.id === "stamina") {
+        resources.stamina = requireNonNegativeInteger(resources.stamina, "Player stamina") + item.count;
+        return;
+      }
+      throw new Error("Unsupported level clear reward item id: " + item.id);
+    });
+
+    this.playerResources = resources;
+    this.playerResourceStore.save(this.playerResources);
+    this._updateLevelSelectTopStatus();
+    return clone(awardedRewardItems);
+  },
+
   _recordCurrentLevelWin: function (snapshot) {
     if (!this._currentLevelId) {
-      return;
+      throw new Error("Level completion requires current level id.");
     }
     if (this._currentLevelEnteredByTestUnlock === true) {
       Logger.info("Skip progress record for test-unlocked level", {
@@ -479,12 +683,23 @@ module.exports = {
     }
 
     var stars = this._calculateStarRating(snapshot);
-    this.levelProgress = this.levelProgressStore.recordCompletion(this.levelProgress, this._currentLevelId, stars);
+    var score = resolveWinSnapshotScore(snapshot);
+    this.levelProgress = this.levelProgressStore.recordCompletion(this.levelProgress, this._currentLevelId, stars, score);
     this.levelProgressStore.save(this.levelProgress);
+
     Logger.info("Level completion recorded", {
       levelId: this._currentLevelId,
-      stars: stars
+      stars: stars,
+      score: score
     });
+
+
+    if (typeof this._recordDailyTaskEvent === "function") {
+      this._recordDailyTaskEvent("clear_level", {
+        levelId: this._currentLevelId,
+        stars: stars
+      });
+    }
   },
 
   _calculateStarRating: function (snapshot) {
@@ -533,24 +748,9 @@ module.exports = {
       return;
     }
 
-    if (
-      typeof this._hasAvailableInventoryForLevelEntry === "function" &&
-      this._hasAvailableInventoryForLevelEntry()
-    ) {
-      if (typeof this._showInventoryView === "function") {
-        this._showInventoryView({
-          entryLevelId: levelId
-        });
-        return;
-      }
+    if (typeof this._showStartGameView !== "function") {
+      throw new Error("Level select requires StartGameView entry method.");
     }
-
-    if (typeof this._enterLevelFromLevelSelect === "function") {
-      this._enterLevelFromLevelSelect(levelId);
-      return;
-    }
-
-    this._setStatus("Loading level_" + ("000" + levelId).slice(-3) + "...");
-    this._loadLevelById(levelId, "Level selected", "Load selected level failed. Check console logs.");
+    this._showStartGameView(levelId);
   }
 };

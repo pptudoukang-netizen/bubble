@@ -48,16 +48,27 @@ function AdService(options) {
   this._rewardedAdErrorHandler = null;
   this._rewardedAdErrorSubscribers = [];
   this._rewardedAdErrorEmitted = false;
+  this._rewardedAdsByUnitId = {};
   this._lastHostedRecommendation = null;
   this._lastHostedRecommendationError = null;
   this._rewardedAdNeedsRecreate = false;
   this._lastRewardedAdDisposeAt = 0;
   this._isShowing = false;
+  this._activeShowToken = 0;
 }
 
 AdService.prototype.setAdUnitId = function (adUnitId) {
-  this._disposeRewardedAd();
-  this.adUnitId = typeof adUnitId === "string" ? adUnitId : "";
+  var nextAdUnitId = typeof adUnitId === "string" ? adUnitId : "";
+  if (this._isShowing && nextAdUnitId !== this.adUnitId) {
+    throw new Error("Cannot switch rewarded video ad unit while showing.");
+  }
+
+  this.adUnitId = nextAdUnitId;
+  this._rewardedAd = this._rewardedAdsByUnitId[nextAdUnitId] || null;
+  this._lastHostedRecommendation = null;
+  this._lastHostedRecommendationError = null;
+  this._rewardedAdErrorEmitted = false;
+  this._lastRewardedAdDisposeAt = 0;
 };
 
 AdService.prototype.isSupported = function () {
@@ -82,7 +93,11 @@ AdService.prototype._logWarn = function () {
   this.logger.warn.apply(this.logger, arguments);
 };
 
-AdService.prototype._disposeRewardedAd = function () {
+AdService.prototype._disposeRewardedAd = function (expectedRewardedAd) {
+  if (expectedRewardedAd && this._rewardedAd !== expectedRewardedAd) {
+    return false;
+  }
+
   var hadRewardedAd = !!this._rewardedAd;
   if (
     this._rewardedAd &&
@@ -115,10 +130,15 @@ AdService.prototype._disposeRewardedAd = function () {
     this._lastRewardedAdDisposeAt = Date.now();
   }
   this._isShowing = false;
+  return hadRewardedAd;
 };
 
 AdService.prototype._waitForRewardedAdRecreateCooldown = function () {
-  if (this._rewardedAd || this.recreateDelayMs <= 0 || this._lastRewardedAdDisposeAt <= 0) {
+  if (this._rewardedAd) {
+    return Promise.resolve();
+  }
+  if (this.recreateDelayMs <= 0 || this._lastRewardedAdDisposeAt <= 0) {
+    this._lastRewardedAdDisposeAt = 0;
     return Promise.resolve();
   }
 
@@ -198,6 +218,9 @@ AdService.prototype._bindRewardedAdLoadHandler = function (rewardedAd) {
   }
 
   this._rewardedAdLoadHandler = function (payload) {
+    if (rewardedAd !== this._rewardedAd) {
+      return;
+    }
     var recommendation = null;
     try {
       recommendation = this._normalizeHostedRecommendation(payload);
@@ -220,9 +243,8 @@ AdService.prototype._bindRewardedAdErrorHandler = function (rewardedAd) {
     throw new Error("Rewarded video ad requires onError support.");
   }
 
-  this._rewardedAdErrorEmitted = false;
   this._rewardedAdErrorHandler = function (error) {
-    if (this._rewardedAdErrorEmitted) {
+    if (rewardedAd !== this._rewardedAd) {
       return;
     }
     this._rewardedAdErrorEmitted = true;
@@ -348,8 +370,10 @@ AdService.prototype._createRewardedAd = function () {
   }
 
   var rewardedAd = wx.createRewardedVideoAd({
-    adUnitId: this.adUnitId
+    adUnitId: this.adUnitId,
+    multiton: true
   });
+  this._rewardedAdsByUnitId[this.adUnitId] = rewardedAd;
   this._bindRewardedAdLoadHandler(rewardedAd);
   this._bindRewardedAdErrorHandler(rewardedAd);
   return rewardedAd;
@@ -357,6 +381,12 @@ AdService.prototype._createRewardedAd = function () {
 
 AdService.prototype._ensureRewardedAd = function () {
   if (this._rewardedAd) {
+    return this._rewardedAd;
+  }
+
+  var cachedAd = this._rewardedAdsByUnitId[this.adUnitId];
+  if (cachedAd) {
+    this._rewardedAd = cachedAd;
     return this._rewardedAd;
   }
 
@@ -463,6 +493,8 @@ AdService.prototype.showRewarded = function (options) {
   }
 
   this._isShowing = true;
+  this._activeShowToken += 1;
+  var showToken = this._activeShowToken;
   return new Promise(function (resolve, reject) {
     var settled = false;
     var phase = "load";
@@ -491,7 +523,9 @@ AdService.prototype.showRewarded = function (options) {
       }
       settled = true;
       cleanup();
-      this._isShowing = false;
+      if (this._activeShowToken === showToken) {
+        this._isShowing = false;
+      }
       resolve(result);
     }.bind(this);
 
@@ -501,7 +535,9 @@ AdService.prototype.showRewarded = function (options) {
       }
       settled = true;
       cleanup();
-      this._isShowing = false;
+      if (this._activeShowToken === showToken) {
+        this._isShowing = false;
+      }
       reject(error);
     }.bind(this);
 
@@ -516,7 +552,6 @@ AdService.prototype.showRewarded = function (options) {
           this._reportHostedShareBehavior(rewardedAd, hostedReportContext, 5);
         }
       } catch (reportError) {
-        this._disposeRewardedAd();
         failWithReportError(reportError);
         return;
       }
@@ -541,11 +576,9 @@ AdService.prototype.showRewarded = function (options) {
       try {
         this._reportHostedShareBehavior(rewardedAd, hostedReportContext, 5);
       } catch (reportError) {
-        this._disposeRewardedAd();
         failWithReportError(reportError);
         return;
       }
-      this._disposeRewardedAd();
       finalize({
         ok: false,
         code: mapWxAdErrorCode(error, phase === "show" ? "show_fail" : "load_fail"),
@@ -593,11 +626,9 @@ AdService.prototype.showRewarded = function (options) {
       try {
         this._reportHostedShareBehavior(rewardedAd, hostedReportContext, 5);
       } catch (reportError) {
-        this._disposeRewardedAd();
         failWithReportError(reportError);
         return;
       }
-      this._disposeRewardedAd();
       if (errorCode === "show_fail" && retryCount < 1) {
         this._waitForRewardedAdRecreateCooldown().then(function () {
           var retryOptions = {};

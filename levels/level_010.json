@@ -46,9 +46,9 @@
             "B",
             "Y"
         ],
-        "shotLimit": 24,
-        "targetScore": 8415,
-        "dropInterval": 4,
+        "shotLimit": 27,
+        "targetScore": 7742,
+        "dropInterval": 5,
         "jarCount": 4,
         "jarColors": [
             "R",
@@ -74,13 +74,23 @@
             },
             {
                 "type": "collect_any",
-                "value": 11
+                "value": 10
             }
         ],
         "bonusObjectives": [
             {
                 "type": "clear_with_shots_remaining",
-                "value": 3
+                "value": 2
+            }
+        ],
+        "clearRewardItems": [
+            {
+                "id": "coin",
+                "count": 130
+            },
+            {
+                "id": "stamina",
+                "count": 1
             }
         ],
         "layout": [
@@ -92,7 +102,7 @@
             "........"
         ],
         "designNotes": "Stone obstacle is introduced as a true route blocker. The player must either route around it or plan for later removal.",
-        "difficultyScore": 80,
+        "difficultyScore": 72,
         "specialEntities": [
             {
                 "id": "stone_01",

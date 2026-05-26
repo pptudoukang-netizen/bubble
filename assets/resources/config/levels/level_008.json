@@ -46,9 +46,9 @@
             "B",
             "Y"
         ],
-        "shotLimit": 23,
-        "targetScore": 6345,
-        "dropInterval": 5,
+        "shotLimit": 25,
+        "targetScore": 5837,
+        "dropInterval": 6,
         "jarCount": 4,
         "jarColors": [
             "R",
@@ -84,6 +84,16 @@
                 "value": 3
             }
         ],
+        "clearRewardItems": [
+            {
+                "id": "coin",
+                "count": 110
+            },
+            {
+                "id": "stamina",
+                "count": 1
+            }
+        ],
         "layout": [
             "RRGGYYBY",
             "RRGGYYGB",
@@ -93,7 +103,7 @@
             "........"
         ],
         "designNotes": "Four-color reading appears in a denser arrangement with fewer free rescue angles.",
-        "difficultyScore": 78
+        "difficultyScore": 72
     },
     "difficultyScaleMax": 100
 }

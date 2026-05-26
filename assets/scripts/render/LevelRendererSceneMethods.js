@@ -7,6 +7,7 @@ function attachLevelRendererSceneMethods(LevelRenderer, deps) {
   var BALL_RESOURCES = deps.BALL_RESOURCES;
   var JAR_RESOURCES = deps.JAR_RESOURCES;
   var JAR_MASK_RESOURCES = deps.JAR_MASK_RESOURCES;
+  var REWARD_ITEM_RESOURCES = deps.REWARD_ITEM_RESOURCES;
   var PREFAB_PATHS = deps.PREFAB_PATHS;
   var JAR_RENDER_Y_OFFSET = deps.JAR_RENDER_Y_OFFSET;
   var GUIDE_DOT_SPACING = deps.GUIDE_DOT_SPACING;
@@ -19,7 +20,6 @@ function attachLevelRendererSceneMethods(LevelRenderer, deps) {
   var GUIDE_DOT_PULSE_SCALE_SMALL = deps.GUIDE_DOT_PULSE_SCALE_SMALL;
   var TEST_SLOT_RADIUS = deps.TEST_SLOT_RADIUS;
   var ICE_OVERLAY_OPACITY = deps.ICE_OVERLAY_OPACITY;
-  var REMAINING_SHOTS_OFFSET_Y = deps.REMAINING_SHOTS_OFFSET_Y;
   var NEXT_SHOT_OFFSET_X = deps.NEXT_SHOT_OFFSET_X;
   var NEXT_SHOT_OFFSET_Y = deps.NEXT_SHOT_OFFSET_Y;
   var BOARD_BUBBLE_SIZE = deps.BOARD_BUBBLE_SIZE;
@@ -41,6 +41,8 @@ function attachLevelRendererSceneMethods(LevelRenderer, deps) {
   var IMPACT_MIN_PUSH_DURATION = deps.IMPACT_MIN_PUSH_DURATION;
   var IMPACT_MIN_RETURN_DURATION = deps.IMPACT_MIN_RETURN_DURATION;
   var IMPACT_RETURN_DURATION_RATIO = deps.IMPACT_RETURN_DURATION_RATIO;
+  var SHOT_NO_DROP_SHAKE_OFFSET = deps.SHOT_NO_DROP_SHAKE_OFFSET;
+  var SHOT_NO_DROP_SHAKE_STEP_DURATION = deps.SHOT_NO_DROP_SHAKE_STEP_DURATION;
   var ROUTE_LINE_WIDTH_ACTIVE = deps.ROUTE_LINE_WIDTH_ACTIVE;
   var ROUTE_LINE_WIDTH_IDLE = deps.ROUTE_LINE_WIDTH_IDLE;
   var ROUTE_POINT_RADIUS_ACTIVE = deps.ROUTE_POINT_RADIUS_ACTIVE;
@@ -79,6 +81,22 @@ function attachLevelRendererSceneMethods(LevelRenderer, deps) {
   var DANGER_WARNING_SHAKE_RIGHT_X = 18;
   var DANGER_WARNING_SHAKE_STEP = 0.045;
   var HUD_STAR_MARKER_FALLBACK_RATIOS = [0.3 / 0.85, 0.6 / 0.85, 1];
+  var LOSE_RETRY_CENTER_X = 0;
+
+  function setLoseRetryButtonPosition(retryButtonNode, canRevive) {
+    if (!retryButtonNode) {
+      throw new Error("LoseView requires btn_retry.");
+    }
+    if (typeof retryButtonNode.x !== "number" || typeof retryButtonNode.y !== "number") {
+      throw new Error("LoseView btn_retry position is invalid.");
+    }
+    if (typeof retryButtonNode._loseRetryOriginalX !== "number") {
+      retryButtonNode._loseRetryOriginalX = retryButtonNode.x;
+    }
+
+    var nextX = canRevive ? retryButtonNode._loseRetryOriginalX : LOSE_RETRY_CENTER_X;
+    retryButtonNode.setPosition(nextX, retryButtonNode.y);
+  }
   var DANGER_NORMAL_BAND_OPACITY = 110;
   var DANGER_WARNING_BAND_OPACITY = 215;
   var DANGER_NORMAL_LABEL_COLOR = cc.color(255, 250, 235);
@@ -310,13 +328,22 @@ LevelRenderer.prototype._bindBottomPanelButton = function (buttonNode, action) {
     return;
   }
 
+  if (buttonNode.__bottomPanelHandlers) {
+    if (typeof buttonNode.off !== "function") {
+      throw new Error("Bottom panel button requires off support: " + buttonNode.name);
+    }
+    buttonNode.off(cc.Node.EventType.TOUCH_START, buttonNode.__bottomPanelHandlers.touchStart, this);
+    buttonNode.off(cc.Node.EventType.TOUCH_END, buttonNode.__bottomPanelHandlers.touchEnd, this);
+    buttonNode.off(cc.Node.EventType.TOUCH_CANCEL, buttonNode.__bottomPanelHandlers.touchCancel, this);
+  }
+
   buttonNode.__bottomPanelBoundAction = action;
-  buttonNode.on(cc.Node.EventType.TOUCH_START, function (event) {
+  var touchStartHandler = function (event) {
     if (event) {
       event.stopPropagation();
     }
-  }, this);
-  buttonNode.on(cc.Node.EventType.TOUCH_END, function (event) {
+  };
+  var touchEndHandler = function (event) {
     if (event) {
       event.stopPropagation();
     }
@@ -325,12 +352,21 @@ LevelRenderer.prototype._bindBottomPanelButton = function (buttonNode, action) {
       return;
     }
     this._invokeGameplayAction(action);
-  }, this);
-  buttonNode.on(cc.Node.EventType.TOUCH_CANCEL, function (event) {
+  };
+  var touchCancelHandler = function (event) {
     if (event) {
       event.stopPropagation();
     }
-  }, this);
+  };
+
+  buttonNode.__bottomPanelHandlers = {
+    touchStart: touchStartHandler,
+    touchEnd: touchEndHandler,
+    touchCancel: touchCancelHandler
+  };
+  buttonNode.on(cc.Node.EventType.TOUCH_START, touchStartHandler, this);
+  buttonNode.on(cc.Node.EventType.TOUCH_END, touchEndHandler, this);
+  buttonNode.on(cc.Node.EventType.TOUCH_CANCEL, touchCancelHandler, this);
 };
 
 LevelRenderer.prototype._setBottomPanelButtonEnabled = function (buttonNode, enabled, options) {
@@ -393,6 +429,39 @@ LevelRenderer.prototype._setBottomPanelCount = function (buttonNode, count) {
   label.string = String(Math.max(0, Math.floor(Number(count) || 0)));
 };
 
+LevelRenderer.prototype._setBottomPanelInventoryPresentation = function (buttonNode, count, adAction) {
+  if (!buttonNode) {
+    throw new Error("Bottom panel powerup button is required.");
+  }
+  if (typeof adAction !== "string" || !adAction) {
+    throw new Error("Bottom panel ad action is required.");
+  }
+
+  var numBgNode = buttonNode.getChildByName("num_bg");
+  var videoButtonNode = buttonNode.getChildByName("vido_btn");
+  if (!numBgNode) {
+    throw new Error("Bottom panel powerup button requires num_bg: " + buttonNode.name);
+  }
+  if (!videoButtonNode) {
+    throw new Error("Bottom panel powerup button requires vido_btn: " + buttonNode.name);
+  }
+
+  var numericCount = Number(count);
+  if (!Number.isFinite(numericCount)) {
+    throw new Error("Bottom panel inventory count must be finite: " + buttonNode.name);
+  }
+  var inventoryCount = Math.max(0, Math.floor(numericCount));
+  var hasInventory = inventoryCount > 0;
+  numBgNode.active = hasInventory;
+  videoButtonNode.active = !hasInventory;
+  if (hasInventory) {
+    this._setBottomPanelCount(buttonNode, inventoryCount);
+  } else {
+    this._bindBottomPanelButton(buttonNode, adAction);
+    this._bindBottomPanelButton(videoButtonNode, adAction);
+  }
+};
+
 LevelRenderer.prototype._renderBottomPanel = function (runtimeSnapshot) {
   if (!this.layers || !this.layers.hud) {
     return;
@@ -430,30 +499,31 @@ LevelRenderer.prototype._renderBottomPanel = function (runtimeSnapshot) {
   var destroyCount = Math.max(0, Math.floor(Number(skillInventory.barrier_hammer) || 0));
   var shooterSnapshot = runtimeSnapshot && runtimeSnapshot.shooter ? runtimeSnapshot.shooter : {};
   var pendingBarrierHammer = !!shooterSnapshot.pendingBarrierHammer;
+  var pendingRainbowColorSelection = !!shooterSnapshot.pendingRainbowColorSelection;
   var canUsePowerup = !!shooterSnapshot.canUsePowerups;
   var canUseRainbow = canUsePowerup && !pendingBarrierHammer && rainbowCount > 0;
   var canUseSwap = canUsePowerup && !pendingBarrierHammer && swapCount > 0;
   var canUseBarrierHammer = pendingBarrierHammer || (canUsePowerup && destroyCount > 0);
   var canUseBlast = canUsePowerup && !pendingBarrierHammer && blastCount > 0;
 
-  this._setBottomPanelCount(rainbowButtonNode, rainbowCount);
-  this._setBottomPanelCount(changeButtonNode, swapCount);
-  this._setBottomPanelCount(destroyButtonNode, destroyCount);
-  this._setBottomPanelCount(bombButtonNode, blastCount);
+  this._setBottomPanelInventoryPresentation(rainbowButtonNode, rainbowCount, "recover_inventory:rainbow");
+  this._setBottomPanelInventoryPresentation(changeButtonNode, swapCount, "recover_inventory:swap");
+  this._setBottomPanelInventoryPresentation(destroyButtonNode, destroyCount, "recover_inventory:barrier_hammer");
+  this._setBottomPanelInventoryPresentation(bombButtonNode, blastCount, "recover_inventory:blast");
   this._setBottomPanelButtonEnabled(backButtonNode, true, {
     dimWhenDisabled: false
   });
-  this._setBottomPanelButtonEnabled(rainbowButtonNode, canUseRainbow, {
-    dimWhenDisabled: rainbowCount <= 0
+  this._setBottomPanelButtonEnabled(rainbowButtonNode, rainbowCount > 0 ? canUseRainbow : !pendingRainbowColorSelection, {
+    dimWhenDisabled: false
   });
-  this._setBottomPanelButtonEnabled(changeButtonNode, canUseSwap, {
-    dimWhenDisabled: swapCount <= 0
+  this._setBottomPanelButtonEnabled(changeButtonNode, swapCount > 0 ? canUseSwap : !pendingRainbowColorSelection, {
+    dimWhenDisabled: false
   });
-  this._setBottomPanelButtonEnabled(destroyButtonNode, canUseBarrierHammer, {
-    dimWhenDisabled: !pendingBarrierHammer && destroyCount <= 0
+  this._setBottomPanelButtonEnabled(destroyButtonNode, destroyCount > 0 ? canUseBarrierHammer : !pendingRainbowColorSelection, {
+    dimWhenDisabled: false
   });
-  this._setBottomPanelButtonEnabled(bombButtonNode, canUseBlast, {
-    dimWhenDisabled: blastCount <= 0
+  this._setBottomPanelButtonEnabled(bombButtonNode, blastCount > 0 ? canUseBlast : !pendingRainbowColorSelection, {
+    dimWhenDisabled: false
   });
 };
 
@@ -1110,6 +1180,102 @@ LevelRenderer.prototype._playIceThawShake = function (runtimeSnapshot) {
   }, this);
 };
 
+LevelRenderer.prototype._playShotNoDropScreenShake = function (runtimeSnapshot) {
+  if (!runtimeSnapshot || !Array.isArray(runtimeSnapshot.runtimeEvents)) {
+    return;
+  }
+
+  var runtimeEvents = runtimeSnapshot.runtimeEvents;
+  var shakeEvent = null;
+  for (var index = 0; index < runtimeEvents.length; index += 1) {
+    var event = runtimeEvents[index];
+    if (event && event.type === "shot_no_drop") {
+      shakeEvent = event;
+    }
+  }
+
+  if (!shakeEvent) {
+    return;
+  }
+  if (typeof shakeEvent.id !== "number" || !isFinite(shakeEvent.id)) {
+    throw new Error("shot_no_drop event requires a numeric id.");
+  }
+  if (shakeEvent.id === this.lastNoDropShakeEventId) {
+    return;
+  }
+
+  this.lastNoDropShakeEventId = shakeEvent.id;
+  if (!this.layers) {
+    throw new Error("shot_no_drop screen shake requires renderer layers.");
+  }
+
+  var offset = Number(SHOT_NO_DROP_SHAKE_OFFSET);
+  var stepDuration = Number(SHOT_NO_DROP_SHAKE_STEP_DURATION);
+  if (!isFinite(offset) || offset <= 0) {
+    throw new Error("shot_no_drop screen shake offset must be positive.");
+  }
+  if (!isFinite(stepDuration) || stepDuration <= 0) {
+    throw new Error("shot_no_drop screen shake step duration must be positive.");
+  }
+  if (
+    typeof cc.sequence !== "function" ||
+    typeof cc.moveTo !== "function" ||
+    typeof cc.callFunc !== "function"
+  ) {
+    throw new Error("shot_no_drop screen shake requires Cocos actions.");
+  }
+
+  var layerNames = [
+    "dangerLine",
+    "jars",
+    "shooter",
+    "board",
+    "falling",
+    "jarOcclusion",
+    "testGrid"
+  ];
+  layerNames.forEach(function (name) {
+    var layer = this.layers[name];
+    if (!layer || !layer.isValid) {
+      throw new Error("shot_no_drop screen shake requires layer: " + name);
+    }
+    if (typeof layer.runAction !== "function" || typeof layer.stopAllActions !== "function") {
+      throw new Error("shot_no_drop screen shake layer must support Cocos actions: " + name);
+    }
+
+    var basePosition = layer.__shotNoDropShakeBasePosition;
+    if (basePosition) {
+      layer.setPosition(basePosition.x, basePosition.y);
+    } else {
+      basePosition = {
+        x: layer.x,
+        y: layer.y
+      };
+    }
+    if (
+      typeof basePosition.x !== "number" ||
+      typeof basePosition.y !== "number" ||
+      !isFinite(basePosition.x) ||
+      !isFinite(basePosition.y)
+    ) {
+      throw new Error("shot_no_drop screen shake layer position is invalid: " + name);
+    }
+    layer.__shotNoDropShakeBasePosition = basePosition;
+    layer.stopAllActions();
+
+    layer.runAction(cc.sequence(
+      cc.moveTo(stepDuration, basePosition.x - offset, basePosition.y),
+      cc.moveTo(stepDuration, basePosition.x + offset, basePosition.y),
+      cc.moveTo(stepDuration, basePosition.x - offset * 0.6, basePosition.y),
+      cc.moveTo(stepDuration, basePosition.x + offset * 0.6, basePosition.y),
+      cc.moveTo(stepDuration, basePosition.x, basePosition.y),
+      cc.callFunc(function () {
+        layer.__shotNoDropShakeBasePosition = null;
+      })
+    ));
+  }, this);
+};
+
 LevelRenderer.prototype._playImpactBounce = function (runtimeSnapshot) {
   var resolution = runtimeSnapshot && runtimeSnapshot.lastResolution ? runtimeSnapshot.lastResolution : null;
   var impact = resolution && resolution.impact ? resolution.impact : null;
@@ -1467,6 +1633,83 @@ LevelRenderer.prototype._renderDangerLine = function (runtimeSnapshot) {
   this.dangerLineReady = true;
 };
 
+LevelRenderer.prototype._renderRainbowColorSelector = function (shooterPanel, shooterSnapshot, aim) {
+  var selectorNode = getOrCreateChild(shooterPanel, "RainbowColorSelector");
+  var selection = shooterSnapshot && shooterSnapshot.pendingRainbowColorSelection
+    ? shooterSnapshot.pendingRainbowColorSelection
+    : null;
+  if (!selection) {
+    selectorNode.active = false;
+    return;
+  }
+
+  var colors = Array.isArray(selection.colors) ? selection.colors.slice() : [];
+  if (!colors.length) {
+    throw new Error("Rainbow color selector requires colors.");
+  }
+
+  selectorNode.active = true;
+  selectorNode.zIndex = 80;
+  var originX = aim.origin.x;
+  var originY = aim.origin.y;
+  var selectorKey = colors.join("|") + "@" + Math.round(originX) + ":" + Math.round(originY);
+  var shouldAnimate = selectorNode.__selectorKey !== selectorKey;
+  selectorNode.__selectorKey = selectorKey;
+
+  var buttonSize = new cc.Size(56, 56);
+  var radius = 104;
+  var spread = Math.min(120, Math.max(0, (colors.length - 1) * 30));
+  var startAngle = 90 + spread * 0.5;
+
+  colors.forEach(function (colorCode, index) {
+    if (!BALL_RESOURCES[colorCode]) {
+      throw new Error("Rainbow color selector missing ball resource: " + colorCode);
+    }
+
+    var buttonNode = getOrCreateChild(selectorNode, "RainbowColor_" + colorCode);
+    buttonNode.active = true;
+    buttonNode.zIndex = index + 1;
+    buttonNode.setContentSize(buttonSize);
+    buttonNode.setScale(1);
+    buttonNode.opacity = 255;
+    if (!buttonNode.getComponent(cc.Button)) {
+      buttonNode.addComponent(cc.Button);
+    }
+    this._applyBallVisualCached(buttonNode, colorCode, buttonSize);
+    this._bindBottomPanelButton(buttonNode, "select_rainbow_color:" + colorCode);
+
+    var angle = colors.length === 1 ? 90 : startAngle - (spread * index / (colors.length - 1));
+    var radians = angle * Math.PI / 180;
+    var targetX = originX + Math.cos(radians) * radius;
+    var targetY = originY + Math.sin(radians) * radius;
+
+    if (shouldAnimate || buttonNode.__rainbowTargetKey !== selectorKey) {
+      buttonNode.stopAllActions();
+      buttonNode.setPosition(originX, originY);
+      buttonNode.setScale(0.35);
+      buttonNode.opacity = 0;
+      buttonNode.runAction(cc.sequence(
+        cc.delayTime(index * 0.035),
+        cc.spawn(
+          cc.moveTo(0.18, targetX, targetY),
+          cc.scaleTo(0.18, 1),
+          cc.fadeTo(0.12, 255)
+        )
+      ));
+      buttonNode.__rainbowTargetKey = selectorKey;
+    } else {
+      buttonNode.setPosition(targetX, targetY);
+    }
+  }, this);
+
+  selectorNode.children.slice().forEach(function (child) {
+    if (child.name.indexOf("RainbowColor_") === 0) {
+      var colorCode = child.name.slice("RainbowColor_".length);
+      child.active = colors.indexOf(colorCode) !== -1;
+    }
+  });
+};
+
 LevelRenderer.prototype._renderShooter = function (shooterSnapshot, activeProjectile, remainingShots) {
   var shooterPanel = this.layers.shooter.getChildByName("ShooterPanel");
   if (!shooterPanel) {
@@ -1498,6 +1741,7 @@ LevelRenderer.prototype._renderShooter = function (shooterSnapshot, activeProjec
   currentAnchor.setPosition(aim.origin.x, aim.origin.y);
   currentAnchor.setScale(1);
   this._applyBallVisualCached(currentAnchor, shooterSnapshot.currentBall || shooterSnapshot.currentColor, BOARD_BUBBLE_SIZE);
+  this._renderRainbowColorSelector(shooterPanel, shooterSnapshot, aim);
 
   var changeButtonNode = shooterPanel.getChildByName("ChangeBtn");
   var hasSwapInventory = swapCount > 0;
@@ -1522,22 +1766,31 @@ LevelRenderer.prototype._renderShooter = function (shooterSnapshot, activeProjec
     );
   }
 
-  var shotsValue = Math.max(0, Math.floor(Number(remainingShots) || 0));
-  var remainingShotsNode = getOrCreateChild(shooterPanel, "RemainingShotsValue");
-  remainingShotsNode.setPosition(aim.origin.x, aim.origin.y + REMAINING_SHOTS_OFFSET_Y);
-  remainingShotsNode.setContentSize(140, 42);
-  remainingShotsNode.zIndex = 30;
-  remainingShotsNode.color = cc.color(255, 255, 255);
-  var remainingShotsLabel = ensureLabel(remainingShotsNode, String(shotsValue), 32, 36);
-  remainingShotsLabel.overflow = cc.Label.Overflow.NONE;
-  remainingShotsLabel.enableWrapText = false;
-  ensureOutline(remainingShotsNode, cc.color(83, 109, 138), 3);
-
   var nextAnchor = getOrCreateChild(shooterPanel, "NextBallAnchor");
   nextAnchor.setPosition(aim.origin.x + NEXT_SHOT_OFFSET_X, aim.origin.y + NEXT_SHOT_OFFSET_Y);
   nextAnchor.setScale(1);
   nextAnchor.opacity = 200;
   this._applyBallVisualCached(nextAnchor, shooterSnapshot.nextBall || shooterSnapshot.nextColor, NEXT_SHOT_BUBBLE_SIZE);
+
+  var shotsValue = Math.max(0, Math.floor(Number(remainingShots) || 0));
+  var surplusNode = shooterPanel.getChildByName("Surplus");
+  if (!surplusNode) {
+    throw new Error("ShooterPanel requires Surplus node.");
+  }
+  var surplusLabel = surplusNode.getComponent(cc.Label);
+  if (!surplusLabel) {
+    throw new Error("ShooterPanel Surplus requires cc.Label.");
+  }
+  var nextAnchorSize = nextAnchor.getContentSize();
+  var surplusSize = surplusNode.getContentSize();
+  if (!nextAnchorSize || !surplusSize || nextAnchorSize.height <= 0 || surplusSize.height <= 0) {
+    throw new Error("ShooterPanel Surplus positioning requires valid node sizes.");
+  }
+  surplusNode.setPosition(
+    nextAnchor.x,
+    nextAnchor.y + nextAnchorSize.height * 0.5 + surplusSize.height * 0.5 + 8
+  );
+  surplusLabel.string = "剩余" + shotsValue;
 
   var ghost = getOrCreateChild(shooterPanel, "GhostBubble");
   var hasTrajectory = !!(trajectory && trajectory.targetCellPosition && trajectory.pathPoints && trajectory.pathPoints.length >= 2);
@@ -1870,6 +2123,142 @@ LevelRenderer.prototype._setWinValueText = function (valueNode, text) {
   label.string = text;
 };
 
+  function getRuntimeWinClearRewardItems(runtimeSnapshot) {
+    if (!runtimeSnapshot || runtimeSnapshot.state !== "won") {
+      throw new Error("WinView clear rewards require won runtime snapshot.");
+    }
+    if (!runtimeSnapshot.winStats || typeof runtimeSnapshot.winStats !== "object") {
+      throw new Error("WinView clear rewards require runtimeSnapshot.winStats.");
+    }
+    if (!Array.isArray(runtimeSnapshot.winStats.clearRewardItems)) {
+      throw new Error("WinView clear rewards require winStats.clearRewardItems.");
+    }
+    return runtimeSnapshot.winStats.clearRewardItems;
+  }
+
+  function resolveRewardItemSpritePath(itemId) {
+    if (!REWARD_ITEM_RESOURCES || !REWARD_ITEM_RESOURCES[itemId]) {
+      throw new Error("WinView unsupported reward item id: " + itemId);
+    }
+    return REWARD_ITEM_RESOURCES[itemId];
+  }
+
+  function requireWinChild(parentNode, childName, ownerName) {
+    if (!parentNode || !parentNode.isValid) {
+      throw new Error("WinView requires valid parent for " + childName + ".");
+    }
+    var childNode = parentNode.getChildByName(childName);
+    if (!childNode || !childNode.isValid) {
+      throw new Error("WinView " + ownerName + " requires child node: " + childName);
+    }
+    return childNode;
+  }
+
+LevelRenderer.prototype._setWinScoreBgPosition = function (scoreBgNode, hasRewardItems) {
+  if (!scoreBgNode) {
+    throw new Error("WinView requires score_bg.");
+  }
+  if (typeof hasRewardItems !== "boolean") {
+    throw new Error("WinView score_bg position requires reward state.");
+  }
+  scoreBgNode.setPosition(scoreBgNode.x, hasRewardItems ? 65 : 30);
+};
+
+LevelRenderer.prototype._renderWinAwardInfo = function (winContent, rewardItems) {
+  if (!Array.isArray(rewardItems)) {
+    throw new Error("WinView award_info requires reward items array.");
+  }
+  var awardInfoNode = winContent ? winContent.getChildByName("award_info") : null;
+  if (rewardItems.length === 0) {
+    if (awardInfoNode) {
+      awardInfoNode.active = false;
+    }
+    return;
+  }
+
+  if (!awardInfoNode || !awardInfoNode.isValid) {
+    throw new Error("WinView requires award_info when clearRewardItems are configured.");
+  }
+  awardInfoNode.active = true;
+
+  var giftListNode = requireWinChild(awardInfoNode, "gift_list", "award_info");
+  var templateNode = requireWinChild(giftListNode, "gift", "award_info.gift_list");
+  var activeNodes = [];
+
+  rewardItems.forEach(function (rewardItem, index) {
+    if (!rewardItem || typeof rewardItem !== "object") {
+      throw new Error("WinView clear reward item must be object at index " + index + ".");
+    }
+    var itemId = typeof rewardItem.id === "string" ? rewardItem.id : "";
+    var count = Number(rewardItem.count);
+    if (!Number.isInteger(count) || count <= 0) {
+      throw new Error("WinView clear reward count must be positive integer: " + itemId);
+    }
+
+    var itemNode = null;
+    if (index === 0) {
+      itemNode = templateNode;
+    } else {
+      itemNode = giftListNode.getChildByName("gift_" + index);
+      if (!itemNode) {
+        if (typeof cc.instantiate !== "function") {
+          throw new Error("WinView multiple reward items require cc.instantiate.");
+        }
+        itemNode = cc.instantiate(templateNode);
+        itemNode.name = "gift_" + index;
+        itemNode.parent = giftListNode;
+      }
+    }
+
+    itemNode.active = true;
+    activeNodes.push(itemNode);
+
+    var iconNode = requireWinChild(itemNode, "icon", itemNode.name);
+    var numNode = requireWinChild(itemNode, "num", itemNode.name);
+    var spritePath = resolveRewardItemSpritePath(itemId);
+    var spriteFrame = this.spriteFrameCache[spritePath];
+    if (!spriteFrame) {
+      throw new Error("WinView reward sprite is not preloaded: " + spritePath);
+    }
+
+    ensureSprite(iconNode, spriteFrame);
+    var iconSize = iconNode.getContentSize();
+    if (!iconSize || iconSize.width <= 0 || iconSize.height <= 0) {
+      iconNode.setContentSize(spriteFrame.getOriginalSize());
+    }
+    this._setWinValueText(numNode, "x" + count);
+  }, this);
+
+  giftListNode.children.forEach(function (child) {
+    if (activeNodes.indexOf(child) === -1) {
+      child.active = false;
+    }
+  });
+
+  var layout = giftListNode.getComponent(cc.Layout);
+  if (layout) {
+    layout.spacingX = rewardItems.length > 1 ? 24 : 0;
+    if (typeof layout.updateLayout === "function") {
+      layout.updateLayout();
+    }
+  }
+};
+
+LevelRenderer.prototype._renderWinMaxScoreStamp = function (scoreBgNode, runtimeSnapshot) {
+  var maxScoreNode = requireWinChild(scoreBgNode, "max_score", "score_bg");
+  if (!runtimeSnapshot || runtimeSnapshot.state !== "won") {
+    maxScoreNode.active = false;
+    return;
+  }
+  if (!runtimeSnapshot.winStats || typeof runtimeSnapshot.winStats !== "object") {
+    throw new Error("WinView max_score requires runtimeSnapshot.winStats.");
+  }
+  if (typeof runtimeSnapshot.winStats.isPersonalBestScore !== "boolean") {
+    throw new Error("WinView max_score requires boolean winStats.isPersonalBestScore.");
+  }
+  maxScoreNode.active = runtimeSnapshot.winStats.isPersonalBestScore;
+};
+
 LevelRenderer.prototype._ensurePopupMaskVisible = function (popupNode, opacity) {
   if (!popupNode) {
     return;
@@ -2107,38 +2496,12 @@ LevelRenderer.prototype._renderWinView = function (runtimeSnapshot) {
 
   var winStats = runtimeSnapshot.winStats || {};
   var totalScore = Number(winStats.totalScore) || runtimeSnapshot.score || 0;
-  var sameColorProgress = Number(winStats.sameColorProgress) || 0;
-  var sameColorTarget = Number(winStats.sameColorTarget) || 0;
-  var sameColorBonusScore = Number(winStats.sameColorBonusScore) || 0;
-  var objectiveDisplay = buildObjectiveDisplayData(this.currentLevelConfig, runtimeSnapshot);
-  var progressText = sameColorTarget > 0
-    ? (sameColorProgress + "/" + sameColorTarget)
-    : String(sameColorProgress);
-
-  var metricRows = (winContent ? winContent.children : []).filter(function (child) {
-    return child && child.name === "label_bg";
-  }).sort(function (a, b) {
-    return b.y - a.y;
-  });
-
-  if (metricRows.length >= 3) {
-    this._setWinValueText(metricRows[0].getChildByName("score_value"), String(totalScore));
-    this._setWinValueText(metricRows[1].getChildByName("score_value"), progressText);
-    this._setWinValueText(metricRows[2].getChildByName("score_value"), String(sameColorBonusScore));
-
-    var winBallNode = metricRows[1].getChildByName("ball");
-    if (winBallNode) {
-      var iconCode = objectiveDisplay.iconCode;
-      var spritePath = iconCode ? BALL_RESOURCES[iconCode] : null;
-      var spriteFrame = spritePath ? this.spriteFrameCache[spritePath] : null;
-      if (spriteFrame) {
-        winBallNode.active = true;
-        ensureSprite(winBallNode, spriteFrame);
-      } else {
-        winBallNode.active = false;
-      }
-    }
-  }
+  var scoreBgNode = winContent ? winContent.getChildByName("score_bg") : null;
+  var rewardItems = getRuntimeWinClearRewardItems(runtimeSnapshot);
+  this._setWinScoreBgPosition(scoreBgNode, rewardItems.length > 0);
+  this._setWinValueText(requireWinChild(scoreBgNode, "score_value", "score_bg"), String(totalScore));
+  this._renderWinAwardInfo(winContent, rewardItems);
+  this._renderWinMaxScoreStamp(scoreBgNode, runtimeSnapshot);
 
   var starRating = resolveWinStarRating(this.currentLevelConfig, runtimeSnapshot);
   this._renderWinStars(winContent, starRating);
@@ -2236,13 +2599,23 @@ LevelRenderer.prototype._renderLoseView = function (runtimeSnapshot) {
   var loseRewardEntry = typeof resolveLoseRewardEntry === "function"
     ? resolveLoseRewardEntry(runtimeSnapshot.state)
     : null;
+  var canRevive = !!loseRewardEntry;
   var adButtonNode = loseContent ? loseContent.getChildByName("btn_ad") : null;
   if (adButtonNode) {
-    adButtonNode.active = !!loseRewardEntry;
+    adButtonNode.active = canRevive;
     if (loseRewardEntry) {
       var videoIconNode = adButtonNode.getChildByName("vido_icon");
+      var coinIconNode = adButtonNode.getChildByName("coin");
+      var showVideoIcon = !!(this.loseAdPresentation && this.loseAdPresentation.showVideoIcon);
+      var showCoinIcon = !!(this.loseAdPresentation && this.loseAdPresentation.showCoinIcon);
+      if (showVideoIcon && showCoinIcon) {
+        throw new Error("LoseView revive button cannot show video and coin icons at the same time.");
+      }
       if (videoIconNode) {
-        videoIconNode.active = !!(this.loseAdPresentation && this.loseAdPresentation.showVideoIcon);
+        videoIconNode.active = showVideoIcon;
+      }
+      if (coinIconNode) {
+        coinIconNode.active = showCoinIcon;
       }
       var awardTipsNode = adButtonNode.getChildByName("award_tips");
       var awardTipsLabel = awardTipsNode ? awardTipsNode.getComponent(cc.Label) : null;
@@ -2253,12 +2626,15 @@ LevelRenderer.prototype._renderLoseView = function (runtimeSnapshot) {
     }
   }
 
+  var retryButtonNode = loseContent ? loseContent.getChildByName("btn_retry") : null;
+  setLoseRetryButtonPosition(retryButtonNode, canRevive);
+
   var loseCloseButtonNode = loseContent ? loseContent.getChildByName("btn_close") : null;
   if (!loseCloseButtonNode && loseView) {
     loseCloseButtonNode = loseView.getChildByName("btn_close");
   }
   this._bindLoseButton(loseCloseButtonNode, "back");
-  this._bindLoseButton(loseContent ? loseContent.getChildByName("btn_retry") : null, "retry");
+  this._bindLoseButton(retryButtonNode, "retry");
   this._bindLoseButton(loseContent ? loseContent.getChildByName("btn_back") : null, "back");
 };
 

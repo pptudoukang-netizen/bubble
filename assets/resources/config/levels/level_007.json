@@ -44,9 +44,9 @@
             "G",
             "B"
         ],
-        "shotLimit": 22,
-        "targetScore": 6120,
-        "dropInterval": 5,
+        "shotLimit": 24,
+        "targetScore": 5630,
+        "dropInterval": 6,
         "jarCount": 3,
         "jarColors": [
             "R",
@@ -80,6 +80,12 @@
                 "value": 4
             }
         ],
+        "clearRewardItems": [
+            {
+                "id": "coin",
+                "count": 100
+            }
+        ],
         "layout": [
             "RRBGRBGG",
             "RRGGRGGG",
@@ -89,7 +95,7 @@
             "........"
         ],
         "designNotes": "The board rewards a big collapse, but missing the support line now costs much more.",
-        "difficultyScore": 76
+        "difficultyScore": 70
     },
     "difficultyScaleMax": 100
 }

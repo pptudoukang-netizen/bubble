@@ -83,8 +83,10 @@ PlayerResourceStore.prototype.applyDailyReset = function (resources, now) {
   var normalized = normalizeResources(resources);
   var todayKey = toDateKey(now);
   if (normalized.lastDailyResetDate !== todayKey) {
-    normalized.stamina = this.dailyStamina;
     normalized.lastDailyResetDate = todayKey;
+    if (normalized.stamina < this.dailyStamina) {
+      normalized.stamina = this.dailyStamina;
+    }
   }
   return normalized;
 };

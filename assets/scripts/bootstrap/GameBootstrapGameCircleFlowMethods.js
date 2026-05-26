@@ -11,6 +11,190 @@ var isGameCircleWelfareViewVisible = Shared.isGameCircleWelfareViewVisible;
 var resolveGameCircleFailMessage = Shared.resolveGameCircleFailMessage;
 var PopupPanelAnimator = Shared.PopupPanelAnimator;
 
+var GAME_CIRCLE_AUTH_REQUIRED_MESSAGE = "请在微信小游戏环境下完成授权后再打开游戏圈福利";
+var GAME_CIRCLE_PRIVACY_DENIED_ERROR = "GAME_CIRCLE_PRIVACY_DENIED";
+var gameCirclePrivacyAuthorized = false;
+var gameCirclePrivacyAuthorizationPending = false;
+var gameCirclePrivacyAuthorizationCallbacks = [];
+var gameCircleAuthorizationDenied = false;
+
+function isGameCircleAuthDeniedError(error) {
+  return !!(error && error.message === "GAME_CIRCLE_AUTH_DENIED");
+}
+
+function isGameCirclePrivacyDeniedError(error) {
+  if (!error) {
+    return false;
+  }
+  if (error.message === GAME_CIRCLE_PRIVACY_DENIED_ERROR) {
+    return true;
+  }
+  if (typeof error.errno === "number" && error.errno === 104) {
+    return true;
+  }
+  var message = error.message || error.errMsg || "";
+  return typeof message === "string" && message.indexOf("privacy permission is not authorized") >= 0;
+}
+
+function isNetworkLoadingTimeoutError(host, error) {
+  return !!(
+    host &&
+    typeof host._isNetworkLoadingTimeoutError === "function" &&
+    host._isNetworkLoadingTimeoutError(error)
+  );
+}
+
+function resolvePrivacyAuthorizationError(error) {
+  if (isGameCirclePrivacyDeniedError(error)) {
+    return new Error(GAME_CIRCLE_PRIVACY_DENIED_ERROR);
+  }
+  return new Error("wx.requirePrivacyAuthorize failed before using game circle APIs: " + JSON.stringify(error));
+}
+
+function flushGameCirclePrivacyAuthorizationCallbacks(error) {
+  var callbacks = gameCirclePrivacyAuthorizationCallbacks.slice();
+  gameCirclePrivacyAuthorizationCallbacks.length = 0;
+  callbacks.forEach(function (callbackGroup) {
+    if (error) {
+      callbackGroup.reject(error);
+      return;
+    }
+    callbackGroup.resolve(true);
+  });
+}
+
+function requireGameCirclePrivacyAuthorization(host) {
+  if (gameCirclePrivacyAuthorized === true) {
+    return Promise.resolve(true);
+  }
+  var platform = resolveGameCirclePlatform(host);
+  if (!platform || typeof platform.requirePrivacyAuthorize !== "function") {
+    return Promise.reject(new Error("wx.requirePrivacyAuthorize is unavailable."));
+  }
+
+  return new Promise(function (resolve, reject) {
+    gameCirclePrivacyAuthorizationCallbacks.push({
+      resolve: resolve,
+      reject: reject
+    });
+    if (gameCirclePrivacyAuthorizationPending === true) {
+      return;
+    }
+    gameCirclePrivacyAuthorizationPending = true;
+    platform.requirePrivacyAuthorize({
+      success: function () {
+        gameCirclePrivacyAuthorized = true;
+        gameCirclePrivacyAuthorizationPending = false;
+        flushGameCirclePrivacyAuthorizationCallbacks(null);
+      },
+      fail: function (error) {
+        gameCirclePrivacyAuthorizationPending = false;
+        flushGameCirclePrivacyAuthorizationCallbacks(resolvePrivacyAuthorizationError(error));
+      }
+    });
+  });
+}
+
+function canRequestGameCircleData(host) {
+  return !!(
+    host.gameCircleButtonAdapter &&
+    typeof host.gameCircleButtonAdapter.canGetGameClubData === "function" &&
+    host.gameCircleButtonAdapter.canGetGameClubData() &&
+    typeof host.gameCircleButtonAdapter.isSupported === "function" &&
+    host.gameCircleButtonAdapter.isSupported()
+  );
+}
+
+function refreshGameCircleMetricsWithLoading(host) {
+  if (typeof host._runWithNetworkLoading !== "function") {
+    throw new Error("Game circle welfare requires network loading runner.");
+  }
+  return host._runWithNetworkLoading(function () {
+    return host.gameCircleWelfareService.refreshMetrics(new Date());
+  }, {
+    timeoutMs: host.networkLoadingTimeoutMs
+  });
+}
+
+function openGameCircleSetting(host) {
+  var platform = resolveGameCirclePlatform(host);
+  if (!platform || typeof platform.openSetting !== "function") {
+    return Promise.reject(new Error("wx.openSetting is unavailable."));
+  }
+  return new Promise(function (resolve, reject) {
+    platform.openSetting({
+      success: function (result) {
+        if (!result || typeof result !== "object" || !result.authSetting || typeof result.authSetting !== "object") {
+          reject(new Error("wx.openSetting returned invalid result for game circle."));
+          return;
+        }
+        resolve(result.authSetting);
+      },
+      fail: function (error) {
+        reject(new Error("wx.openSetting failed before opening game circle welfare: " + JSON.stringify(error)));
+      }
+    });
+  });
+}
+
+function openGameCircleWelfareAfterSetting(host) {
+  return openGameCircleSetting(host).then(function () {
+    gameCircleAuthorizationDenied = false;
+    return openGameCircleWelfareAfterAuthorization(host);
+  }).catch(function (error) {
+    if (isGameCircleAuthDeniedError(error)) {
+      gameCircleAuthorizationDenied = true;
+      return null;
+    }
+    if (isGameCirclePrivacyDeniedError(error)) {
+      return null;
+    }
+    Logger.error("Open game circle setting failed", error && error.message ? error.message : error);
+    showStatusAndTip(host, resolveGameCircleFailMessage(error));
+    throw error;
+  });
+}
+
+function openGameCircleWelfareAfterAuthorization(host) {
+  if (!host.isSelectingLevel || host.isRestarting) {
+    return null;
+  }
+  if (!host.gameCircleWelfareService || typeof host.gameCircleWelfareService.refreshMetrics !== "function") {
+    showStatusAndTip(host, "游戏圈福利未就绪");
+    return null;
+  }
+  if (!canRequestGameCircleData(host)) {
+    showStatusAndTip(host, GAME_CIRCLE_AUTH_REQUIRED_MESSAGE);
+    return null;
+  }
+  if (gameCircleAuthorizationDenied === true) {
+    return openGameCircleWelfareAfterSetting(host);
+  }
+
+  return requireGameCirclePrivacyAuthorization(host).then(function () {
+    return refreshGameCircleMetricsWithLoading(host);
+  }).then(function () {
+    host._showGameCircleWelfareView({
+      refreshOnOpen: false
+    });
+  }).catch(function (error) {
+    if (isGameCircleAuthDeniedError(error)) {
+      gameCircleAuthorizationDenied = true;
+      return null;
+    }
+    if (isGameCirclePrivacyDeniedError(error)) {
+      return null;
+    }
+    if (isNetworkLoadingTimeoutError(host, error)) {
+      showStatusAndTip(host, resolveGameCircleFailMessage(error));
+      return null;
+    }
+    Logger.error("Open game circle welfare after authorization failed", error && error.message ? error.message : error);
+    showStatusAndTip(host, resolveGameCircleFailMessage(error));
+    throw error;
+  });
+}
+
 module.exports = {
   _ensureGameCircleEntryRedDot: function (entryNode) {
     if (!entryNode || !entryNode.isValid) {
@@ -69,9 +253,7 @@ module.exports = {
 
     this._bindNodeTapOnce(entryNode, function () {
       this._playSfx("uiClick");
-      this._showGameCircleWelfareView({
-        refreshOnOpen: true
-      });
+      openGameCircleWelfareAfterAuthorization(this);
     }.bind(this));
 
     this._updateGameCircleEntryState();
@@ -128,6 +310,9 @@ module.exports = {
     this._hideRankingView();
     this._hideSignInView();
     this._hideShopView();
+    if (typeof this._hideDailyTaskView === "function") {
+      this._hideDailyTaskView();
+    }
     hideGameCircleWelfareViewNode(this);
     if (typeof this._hideInventoryView === "function") {
       this._hideInventoryView();
@@ -174,13 +359,15 @@ module.exports = {
 
       viewNode.active = true;
       PopupPanelAnimator.play(viewNode);
-      if (showOptions.refreshOnOpen === true) {
-        return this._refreshGameCircleWelfareProgress({
-          silent: true,
-          source: "open_panel"
-        });
-      }
-      return this._renderGameCircleWelfareView();
+      return this._renderGameCircleWelfareView().then(function () {
+        if (showOptions.refreshOnOpen === true) {
+          return this._refreshGameCircleWelfareProgress({
+            silent: true,
+            source: "open_panel"
+          });
+        }
+        return null;
+      }.bind(this));
     }.bind(this)).catch(function (error) {
       var message = error && error.message ? error.message : String(error);
       Logger.error("Show game circle welfare view failed", message);
@@ -223,7 +410,9 @@ module.exports = {
       showStatusAndTip(this, "游戏圈福利未就绪");
       return Promise.reject(new Error("Game circle welfare service is not ready."));
     }
-    return this.gameCircleWelfareService.refreshMetrics(new Date()).then(function () {
+    return requireGameCirclePrivacyAuthorization(this).then(function () {
+      return refreshGameCircleMetricsWithLoading(this);
+    }.bind(this)).then(function () {
       this._updateGameCircleEntryState();
       if (!isGameCircleWelfareViewVisible(this)) {
         return null;
@@ -234,8 +423,18 @@ module.exports = {
         showStatusAndTip(this, "游戏圈进度已刷新");
       }
     }.bind(this)).catch(function (error) {
+      if (isGameCircleAuthDeniedError(error)) {
+        gameCircleAuthorizationDenied = true;
+        return null;
+      }
+      if (isGameCirclePrivacyDeniedError(error)) {
+        return null;
+      }
       Logger.error("Refresh game circle welfare progress failed", error && error.message ? error.message : error);
       showStatusAndTip(this, resolveGameCircleFailMessage(error));
+      if (isNetworkLoadingTimeoutError(this, error)) {
+        return null;
+      }
       throw error;
     }.bind(this));
   },

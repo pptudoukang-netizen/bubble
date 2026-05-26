@@ -4,10 +4,13 @@ var RESOURCES_BUNDLE_NAME = "resources";
 var UI_BUNDLE_NAME = "ui";
 var UI_PREFAB_LEGACY_PREFIX = "prefabs/ui/";
 var UI_PREFAB_BUNDLE_PREFIX = "prefabs/";
+var UI_COMMENT_ANIMATION_LEGACY_PREFIX = "ui/animation/comments/";
+var UI_COMMENT_ANIMATION_BUNDLE_PREFIX = "animation/comments/";
 var UI_BUNDLE_PREFABS = {
   AwardView: true,
   BackpackView: true,
   BuyView: true,
+  DailyTaskView: true,
   GamingCircleView: true,
   LoseView: true,
   PowerTipsView: true,
@@ -16,6 +19,7 @@ var UI_BUNDLE_PREFABS = {
   SettingView: true,
   ShopView: true,
   "SignInView ": true,
+  StartGameView: true,
   Tips: true,
   WinView: true
 };
@@ -235,6 +239,13 @@ function ensureNamedBundleLoaded(bundleName) {
 }
 
 function resolveLoadRoute(path) {
+  if (path.indexOf(UI_COMMENT_ANIMATION_LEGACY_PREFIX) === 0) {
+    return {
+      bundleName: UI_BUNDLE_NAME,
+      path: UI_COMMENT_ANIMATION_BUNDLE_PREFIX + path.slice(UI_COMMENT_ANIMATION_LEGACY_PREFIX.length)
+    };
+  }
+
   if (path.indexOf(UI_PREFAB_LEGACY_PREFIX) !== 0) {
     return {
       bundleName: RESOURCES_BUNDLE_NAME,

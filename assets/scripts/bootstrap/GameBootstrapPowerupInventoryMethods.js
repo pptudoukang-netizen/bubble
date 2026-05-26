@@ -2,17 +2,254 @@
 
 var Shared = require("./GameBootstrapShared");
 var Logger = Shared.Logger;
+var BundleLoader = Shared.BundleLoader;
 var InventoryStore = Shared.InventoryStore;
 var SelectedPowerupsStore = Shared.SelectedPowerupsStore;
 var BackpackViewController = Shared.BackpackViewController;
+var StartGameViewController = Shared.StartGameViewController;
 var PopupPanelAnimator = Shared.PopupPanelAnimator;
 var INVENTORY_VIEW_PREFAB_PATH = Shared.INVENTORY_VIEW_PREFAB_PATH;
+var START_GAME_VIEW_PREFAB_PATH = Shared.START_GAME_VIEW_PREFAB_PATH;
 var POWER_TIPS_VIEW_PREFAB_PATH = Shared.POWER_TIPS_VIEW_PREFAB_PATH;
 var POWERUP_TYPE_BY_ITEM_ID = Shared.POWERUP_TYPE_BY_ITEM_ID;
 var ITEM_ID_BY_POWERUP_TYPE = Shared.ITEM_ID_BY_POWERUP_TYPE;
 var MAX_SELECTED_POWERUPS = Shared.MAX_SELECTED_POWERUPS;
 var MAX_SELECTED_POWERUP_TOTAL_COUNT = Shared.MAX_SELECTED_POWERUP_TOTAL_COUNT;
 var INVENTORY_TOTAL_LIMIT_TIP = Shared.INVENTORY_TOTAL_LIMIT_TIP;
+var STAMINA_FLY_ICON_PATH = "image/props/love";
+var STAMINA_FLY_DURATION = 0.45;
+var STAMINA_FLY_FADE_DURATION = 0.12;
+var STAMINA_FLY_ENTER_DELAY = 1;
+var LEVEL_ENTRY_STAMINA_COST = 1;
+var START_GAME_POWERUP_UNLOCK_LEVEL_BY_ITEM_ID = {
+  swap_ball: 5,
+  rainbow_ball: 10,
+  blast_ball: 15,
+  barrier_hammer: 20
+};
+var START_GAME_OBJECTIVE_ICON_PATHS = {
+  R: "image/red_ball",
+  G: "image/green_ball",
+  B: "image/blue_ball",
+  Y: "image/yellow_ball",
+  P: "image/purple_ball",
+  RAINBOW: "image/rainbow_ball",
+  ICE: "image/ice_ball"
+};
+var START_GAME_COLLECTION_OBJECTIVE_TYPES = {
+  collect_any: true,
+  collect_color: true,
+  collect_ice: true
+};
+
+function requirePositiveInteger(value, fieldName) {
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(fieldName + " must be a positive integer.");
+  }
+  return value;
+}
+
+function requireNonNegativeInteger(value, fieldName) {
+  if (!Number.isInteger(value) || value < 0) {
+    throw new Error(fieldName + " must be a non-negative integer.");
+  }
+  return value;
+}
+
+function requireObject(value, fieldName) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(fieldName + " must be an object.");
+  }
+  return value;
+}
+
+function getLevelBody(levelConfig) {
+  requireObject(levelConfig, "StartGameView level config");
+  return requireObject(levelConfig.level, "StartGameView level data");
+}
+
+function getStartGameObjectiveList(levelConfig) {
+  var level = getLevelBody(levelConfig);
+  if (!Array.isArray(level.bonusObjectives)) {
+    throw new Error("StartGameView level bonusObjectives must be an array.");
+  }
+  if (!Array.isArray(level.winConditions)) {
+    throw new Error("StartGameView level winConditions must be an array.");
+  }
+  return level.bonusObjectives.concat(level.winConditions);
+}
+
+function findStartGameCollectionObjective(levelConfig) {
+  var objectives = getStartGameObjectiveList(levelConfig);
+  for (var i = 0; i < objectives.length; i += 1) {
+    var objective = objectives[i];
+    if (!objective || typeof objective !== "object" || Array.isArray(objective)) {
+      throw new Error("StartGameView objective entry must be an object.");
+    }
+    if (typeof objective.type !== "string") {
+      throw new Error("StartGameView objective type must be a string.");
+    }
+    if (START_GAME_COLLECTION_OBJECTIVE_TYPES[objective.type] === true) {
+      return objective;
+    }
+  }
+  throw new Error("StartGameView requires a collection objective.");
+}
+
+function buildStartGameObjective(levelConfig) {
+  var objective = findStartGameCollectionObjective(levelConfig);
+  var target = requirePositiveInteger(Math.floor(Number(objective.value)), "StartGameView objective target");
+
+  if (objective.type === "collect_any") {
+    return {
+      iconPath: START_GAME_OBJECTIVE_ICON_PATHS.RAINBOW,
+      target: target
+    };
+  }
+
+  if (objective.type === "collect_color") {
+    if (typeof objective.color !== "string" || !START_GAME_OBJECTIVE_ICON_PATHS[objective.color]) {
+      throw new Error("StartGameView collect_color objective requires a supported color.");
+    }
+    return {
+      iconPath: START_GAME_OBJECTIVE_ICON_PATHS[objective.color],
+      target: target
+    };
+  }
+
+  if (objective.type === "collect_ice") {
+    return {
+      iconPath: START_GAME_OBJECTIVE_ICON_PATHS.ICE,
+      target: target
+    };
+  }
+
+  throw new Error("Unsupported StartGameView objective type: " + objective.type);
+}
+
+function requireStartGameShopServices(host) {
+  requireObject(host, "StartGameView host");
+  if (!host.shopConfigService || typeof host.shopConfigService.getAllGoodsList !== "function") {
+    throw new Error("StartGameView purchase requires ShopConfigService.getAllGoodsList.");
+  }
+  if (!host.shopStateService || typeof host.shopStateService.getRemainingCount !== "function") {
+    throw new Error("StartGameView purchase requires ShopStateService.getRemainingCount.");
+  }
+  if (!host.shopPurchaseService || typeof host.shopPurchaseService.purchase !== "function") {
+    throw new Error("StartGameView purchase requires ShopPurchaseService.purchase.");
+  }
+}
+
+function getStartGameShopGoodsByItemId(host, itemId) {
+  requireStartGameShopServices(host);
+  if (!POWERUP_TYPE_BY_ITEM_ID[itemId]) {
+    throw new Error("StartGameView purchase item is unsupported: " + itemId);
+  }
+  var goodsList = host.shopConfigService.getAllGoodsList();
+  for (var i = 0; i < goodsList.length; i += 1) {
+    var goods = goodsList[i];
+    if (goods && goods.itemId === itemId) {
+      if (goods.enabled !== true) {
+        throw new Error("StartGameView purchase goods disabled: " + goods.skuId);
+      }
+      return goods;
+    }
+  }
+  throw new Error("StartGameView purchase goods missing for item: " + itemId);
+}
+
+function buildStartGamePurchaseOptions(host) {
+  requireStartGameShopServices(host);
+  if (typeof host.shopStateService.ensureDailyReset !== "function") {
+    throw new Error("StartGameView purchase requires ShopStateService.ensureDailyReset.");
+  }
+  host.shopStateService.ensureDailyReset();
+
+  var optionsByItemId = {};
+  Object.keys(POWERUP_TYPE_BY_ITEM_ID).forEach(function (itemId) {
+    var goods = getStartGameShopGoodsByItemId(host, itemId);
+    optionsByItemId[itemId] = {
+      price: requirePositiveInteger(goods.price.amount, "StartGameView purchase price `" + itemId + "`"),
+      remaining: requireNonNegativeInteger(host.shopStateService.getRemainingCount(goods.skuId), "StartGameView purchase remaining `" + itemId + "`")
+    };
+  });
+  return optionsByItemId;
+}
+
+function normalizeStartGameLevelId(levelId) {
+  return requirePositiveInteger(Math.floor(Number(levelId)), "StartGameView levelId");
+}
+
+function shouldShowFirstClearAwardTips(host, levelId) {
+  requireObject(host, "StartGameView host");
+  requireObject(host.levelProgress, "StartGameView level progress");
+  requireObject(host.levelProgress.completedLevels, "StartGameView completed levels");
+  var safeLevelId = normalizeStartGameLevelId(levelId);
+  var highestUnlockedLevel = normalizeStartGameLevelId(host.levelProgress.highestUnlockedLevel);
+  var key = String(safeLevelId);
+  var completedValue = host.levelProgress.completedLevels[key];
+  if (completedValue !== undefined && completedValue !== true) {
+    throw new Error("StartGameView completed level value must be true: " + key);
+  }
+  return safeLevelId === highestUnlockedLevel && completedValue !== true;
+}
+
+function validateStartGameSelectedPowerups(host, levelId, selectedItems) {
+  if (!Array.isArray(selectedItems)) {
+    throw new Error("StartGameView selected powerups must be an array.");
+  }
+  if (selectedItems.length > MAX_SELECTED_POWERUPS) {
+    throw new Error("StartGameView selected powerups exceed max count.");
+  }
+  if (!host.inventoryStore || typeof host.inventoryStore.getItemCount !== "function") {
+    throw new Error("StartGameView requires InventoryStore.getItemCount.");
+  }
+  if (typeof host._refreshPlayerInventory !== "function") {
+    throw new Error("StartGameView requires player inventory refresh method.");
+  }
+
+  host._refreshPlayerInventory();
+  return selectedItems.map(function (itemId, index) {
+    if (selectedItems.indexOf(itemId) !== index) {
+      throw new Error("StartGameView selected powerups contain duplicate item: " + itemId);
+    }
+    if (!POWERUP_TYPE_BY_ITEM_ID[itemId]) {
+      throw new Error("StartGameView selected powerup is unsupported: " + itemId);
+    }
+    var unlockLevel = START_GAME_POWERUP_UNLOCK_LEVEL_BY_ITEM_ID[itemId];
+    if (!Number.isInteger(unlockLevel)) {
+      throw new Error("StartGameView unlock level missing for item: " + itemId);
+    }
+    if (levelId < unlockLevel) {
+      throw new Error("StartGameView selected locked powerup: " + itemId);
+    }
+    if (host.inventoryStore.getItemCount(host.playerInventory, itemId) <= 0) {
+      throw new Error("StartGameView selected powerup inventory is empty: " + itemId);
+    }
+    return itemId;
+  });
+}
+
+function requireValidNode(node, description) {
+  if (!node || !node.isValid) {
+    throw new Error(description + " is required.");
+  }
+  return node;
+}
+
+function resolveNodeWorldPositionInParent(node, parentNode) {
+  requireValidNode(node, "Target node");
+  requireValidNode(parentNode, "Parent node");
+  if (!node.parent || typeof node.parent.convertToWorldSpaceAR !== "function") {
+    throw new Error("Target node parent cannot convert to world space.");
+  }
+  if (typeof parentNode.convertToNodeSpaceAR !== "function") {
+    throw new Error("Parent node cannot convert to local space.");
+  }
+
+  var worldPosition = node.parent.convertToWorldSpaceAR(node.getPosition());
+  return parentNode.convertToNodeSpaceAR(worldPosition);
+}
 
 module.exports = {
   _onUseSkillBallTap: function (entityType) {
@@ -33,10 +270,17 @@ module.exports = {
       ? useResult.snapshot
       : this.gameManager.getRuntimeSnapshot();
 
+    this._handleRuntimeStateTransition(snapshot);
     this.levelRenderer.refreshRuntime(this.currentLevelConfig, snapshot);
 
     if (useResult && useResult.accepted) {
       this._consumePersistentInventoryItemForPowerup(entityType);
+      if (entityType === "rainbow" && typeof this._recordDailyTaskEvent === "function") {
+        this._recordDailyTaskEvent("use_powerup", {
+          itemId: "rainbow_ball",
+          powerupType: entityType
+        });
+      }
       var skillName = entityType === "rainbow" ? "彩虹球" : "炸弹球";
       var inventory = snapshot && snapshot.shooter && snapshot.shooter.skillInventory
         ? snapshot.shooter.skillInventory
@@ -47,7 +291,9 @@ module.exports = {
         {
           remaining: remaining
         },
-        skillName + "已装填，剩余：" + remaining
+        entityType === "rainbow"
+          ? skillName + "已装填，请选择颜色"
+          : skillName + "已装填，剩余：" + remaining
       );
       return;
     }
@@ -111,6 +357,7 @@ module.exports = {
       ? swapResult.snapshot
       : this.gameManager.getRuntimeSnapshot();
 
+    this._handleRuntimeStateTransition(snapshot);
     this.levelRenderer.refreshRuntime(this.currentLevelConfig, snapshot);
 
     if (swapResult && swapResult.accepted) {
@@ -166,6 +413,43 @@ module.exports = {
     this._setStatusWithTip("swap_failed", null, "换球失败");
   },
 
+  _onSelectRainbowColorTap: function (colorCode) {
+    if (!this.currentLevelConfig || this.isRestarting || this.isSelectingLevel) {
+      return;
+    }
+
+    if (this._isTerminalState()) {
+      return;
+    }
+
+    this._trackTelemetry("rainbow_color_select", {
+      color: colorCode
+    });
+    this._playSfx("uiClick");
+
+    var selectResult = this.gameManager.selectRainbowColor(colorCode);
+    var snapshot = selectResult && selectResult.snapshot
+      ? selectResult.snapshot
+      : this.gameManager.getRuntimeSnapshot();
+
+    this._handleRuntimeStateTransition(snapshot);
+    this.levelRenderer.refreshRuntime(this.currentLevelConfig, snapshot);
+
+    if (selectResult && selectResult.accepted) {
+      this._setStatusWithTip("rainbow_color_selected", {
+        color: colorCode
+      }, "彩虹球已变色");
+      return;
+    }
+
+    var reason = selectResult && typeof selectResult.reason === "string" ? selectResult.reason : "rainbow_color_select_failed";
+    this._trackTelemetry("rainbow_color_select_fail", {
+      color: colorCode,
+      reason: reason
+    });
+    this._setStatusWithTip("rainbow_color_select_failed", null, "彩虹球选色失败");
+  },
+
   _onUseBarrierHammerTap: function () {
     if (!this.currentLevelConfig || this.isRestarting || this.isSelectingLevel) {
       return;
@@ -187,6 +471,7 @@ module.exports = {
       ? hammerResult.snapshot
       : this.gameManager.getRuntimeSnapshot();
 
+    this._handleRuntimeStateTransition(snapshot);
     this.levelRenderer.refreshRuntime(this.currentLevelConfig, snapshot);
 
     if (isTargeting) {
@@ -238,6 +523,7 @@ module.exports = {
       ? hammerResult.snapshot
       : this.gameManager.getRuntimeSnapshot();
 
+    this._handleRuntimeStateTransition(snapshot);
     this.levelRenderer.refreshRuntime(this.currentLevelConfig, snapshot);
 
     if (hammerResult && hammerResult.accepted) {
@@ -245,6 +531,12 @@ module.exports = {
         ? snapshot.shooter.skillInventory
         : {};
       this._consumePersistentInventoryItemForPowerup("barrier_hammer");
+      if (typeof this._recordDailyTaskEvent === "function") {
+        this._recordDailyTaskEvent("use_powerup", {
+          itemId: "barrier_hammer",
+          powerupType: "barrier_hammer"
+        });
+      }
       var remaining = Math.max(0, Math.floor(Number(inventory.barrier_hammer) || 0));
       this._setStatusWithTip("hammer_applied", {
         remaining: remaining
@@ -497,25 +789,34 @@ module.exports = {
   },
 
   _applySelectedPowerupsToRuntime: function (snapshot) {
+    if (!Array.isArray(this._pendingStartGamePowerups)) {
+      throw new Error("StartGameView pending powerups must be an array.");
+    }
+    if (this._pendingStartGamePowerups.length === 0) {
+      return snapshot;
+    }
     if (!this.gameManager || typeof this.gameManager.grantPowerupInventory !== "function") {
-      return snapshot || null;
+      throw new Error("StartGameView requires GameManager.grantPowerupInventory.");
     }
 
-    var selectedLoadouts = this._getSelectedPowerupLoadouts();
-    var latestSnapshot = snapshot || this.gameManager.getRuntimeSnapshot();
-    selectedLoadouts.forEach(function (loadout) {
-      var powerupType = POWERUP_TYPE_BY_ITEM_ID[loadout.itemId];
-      if (!powerupType) {
-        return;
+    var levelId = normalizeStartGameLevelId(this._currentLevelId);
+    var selectedItems = validateStartGameSelectedPowerups(this, levelId, this._pendingStartGamePowerups);
+    var runtimeSnapshot = snapshot;
+    selectedItems.forEach(function (itemId) {
+      var powerupType = POWERUP_TYPE_BY_ITEM_ID[itemId];
+      var inventoryCount = this.inventoryStore.getItemCount(this.playerInventory, itemId);
+      var grantResult = this.gameManager.grantPowerupInventory(powerupType, inventoryCount);
+      if (!grantResult || grantResult.accepted !== true) {
+        throw new Error("StartGameView grant runtime powerup failed: " + itemId);
       }
-
-      var grantResult = this.gameManager.grantPowerupInventory(powerupType, loadout.count);
-      if (grantResult && grantResult.snapshot) {
-        latestSnapshot = grantResult.snapshot;
+      if (!grantResult.snapshot) {
+        throw new Error("StartGameView grant runtime powerup result missing snapshot: " + itemId);
       }
+      runtimeSnapshot = grantResult.snapshot;
     }, this);
 
-    return latestSnapshot;
+    this._pendingStartGamePowerups = [];
+    return runtimeSnapshot;
   },
 
   _consumePersistentInventoryItemForPowerup: function (powerupType) {
@@ -550,6 +851,186 @@ module.exports = {
     }.bind(this));
   },
 
+  _ensureStartGameViewPrefab: function () {
+    if (this._startGameViewPrefab) {
+      return Promise.resolve(this._startGameViewPrefab);
+    }
+
+    return this._loadPrefab(START_GAME_VIEW_PREFAB_PATH).then(function (prefab) {
+      if (!prefab) {
+        throw new Error("StartGameView prefab is required.");
+      }
+      this._startGameViewPrefab = prefab;
+      return prefab;
+    }.bind(this));
+  },
+
+  _showStartGameView: function (levelId, options) {
+    var safeLevelId = normalizeStartGameLevelId(levelId);
+    if (options !== undefined && (!options || typeof options !== "object" || Array.isArray(options))) {
+      throw new Error("StartGameView options must be an object when provided.");
+    }
+    if (!this.levelManager || typeof this.levelManager.loadLevel !== "function") {
+      throw new Error("StartGameView requires LevelManager.loadLevel.");
+    }
+    this._pendingStartGamePowerups = options && options.selectedItems !== undefined
+      ? validateStartGameSelectedPowerups(this, safeLevelId, options.selectedItems)
+      : [];
+    this._startGameLevelId = safeLevelId;
+    this._startGameLevelConfig = null;
+    this._hideAwardView();
+    this._hideSettingView();
+    this._hideRankingView();
+    this._hideSignInView();
+    this._hideShopView();
+    if (typeof this._hideInventoryView === "function") {
+      this._hideInventoryView();
+    }
+
+    return Promise.all([
+      this._ensureStartGameViewPrefab(),
+      this.levelManager.loadLevel(safeLevelId)
+    ]).then(function (results) {
+      var prefab = results[0];
+      var levelConfig = results[1];
+      var startGameViewNode = this._startGameViewNode;
+      if (!startGameViewNode || !startGameViewNode.isValid) {
+        startGameViewNode = cc.instantiate(prefab);
+        if (!startGameViewNode) {
+          throw new Error("Instantiate StartGameView prefab failed.");
+        }
+        startGameViewNode.parent = this.node;
+        startGameViewNode.setPosition(0, 0);
+        startGameViewNode.zIndex = 340;
+        this._startGameViewNode = startGameViewNode;
+        this._startGameViewController = new StartGameViewController({
+          node: startGameViewNode,
+          onClose: function () {
+            this._playSfx("uiClick");
+            this._hideStartGameView();
+          }.bind(this),
+          onPlay: function (selectedItems) {
+            this._playSfx("uiClick");
+            this._startPreparedLevelEntry(safeLevelId, selectedItems);
+          }.bind(this),
+          onPurchasePowerup: function (itemId) {
+            this._playSfx("uiClick");
+            return this._purchaseStartGamePowerup(itemId);
+          }.bind(this),
+          onUnavailable: function (message) {
+            this._setStatus(message);
+            if (this.tipsPresenter && typeof this.tipsPresenter.showText === "function") {
+              this.tipsPresenter.showText(message);
+            }
+          }.bind(this)
+        });
+      }
+
+      this._startGameViewController.onPlay = function (selectedItems) {
+        this._playSfx("uiClick");
+        this._startPreparedLevelEntry(normalizeStartGameLevelId(this._startGameLevelId), selectedItems);
+      }.bind(this);
+      this._startGameViewController.onPurchasePowerup = function (itemId) {
+        this._playSfx("uiClick");
+        return this._purchaseStartGamePowerup(itemId);
+      }.bind(this);
+      this._startGameLevelConfig = levelConfig;
+      startGameViewNode.active = true;
+      PopupPanelAnimator.play(startGameViewNode);
+      return this._renderStartGameView();
+    }.bind(this)).catch(function (error) {
+      Logger.error("Show StartGameView failed", error && error.stack ? error.stack : String(error));
+      throw error;
+    });
+  },
+
+  _renderStartGameView: function () {
+    if (!this._startGameViewController || !this._startGameViewNode || !this._startGameViewNode.isValid) {
+      throw new Error("StartGameView controller is required before rendering.");
+    }
+    if (!this._startGameLevelConfig) {
+      throw new Error("StartGameView level config is required before rendering.");
+    }
+
+    this._refreshPlayerInventory();
+    return this._startGameViewController.render({
+      levelId: normalizeStartGameLevelId(this._startGameLevelId),
+      staminaCost: LEVEL_ENTRY_STAMINA_COST,
+      inventory: this.playerInventory,
+      objective: buildStartGameObjective(this._startGameLevelConfig),
+      showAwardTips: shouldShowFirstClearAwardTips(this, this._startGameLevelId),
+      selectedItems: this._pendingStartGamePowerups,
+      purchaseOptionsByItemId: buildStartGamePurchaseOptions(this)
+    });
+  },
+
+  _purchaseStartGamePowerup: function (itemId) {
+    var goods = getStartGameShopGoodsByItemId(this, itemId);
+    var result = this.shopPurchaseService.purchase(goods.skuId, 1);
+    if (!result || typeof result.accepted !== "boolean") {
+      throw new Error("StartGameView purchase result is invalid.");
+    }
+    if (!result.accepted) {
+      return {
+        accepted: false,
+        message: this._resolveShopPurchaseFailMessage(result.reason)
+      };
+    }
+
+    this._refreshPlayerResources();
+    this._refreshPlayerInventory();
+    this._updateLevelSelectTopStatus();
+    this._renderInventoryView();
+    this._updateInventoryEntryState();
+    if (this._shopViewNode && cc.isValid(this._shopViewNode) && this._shopViewNode.active) {
+      this._renderShopView();
+    }
+
+    var message = "获得" + result.goods.displayName + " +" + result.itemCount;
+    this._setStatusWithTip("shop_purchase_success", null, message);
+    return {
+      accepted: true,
+      inventory: this.playerInventory,
+      purchaseOptionsByItemId: buildStartGamePurchaseOptions(this),
+      message: message
+    };
+  },
+
+  _hideStartGameView: function () {
+    this._startGameLevelId = 0;
+    this._startGameLevelConfig = null;
+    if (!this._startGameViewNode || !this._startGameViewNode.isValid) {
+      return;
+    }
+    this._startGameViewNode.active = false;
+  },
+
+  _loadPreparedLevelFromLevelSelect: function (levelId, selectedItems) {
+    var safeLevelId = normalizeStartGameLevelId(levelId);
+    var preparedItems = validateStartGameSelectedPowerups(this, safeLevelId, selectedItems);
+    this._pendingStartGamePowerups = preparedItems.slice();
+    this._setStatus("Loading level_" + ("000" + safeLevelId).slice(-3) + "...");
+    this._loadLevelById(safeLevelId, "Level selected", "Load selected level failed. Check console logs.");
+  },
+
+  _startPreparedLevelEntry: function (levelId, selectedItems) {
+    var safeLevelId = normalizeStartGameLevelId(levelId);
+    var preparedItems = validateStartGameSelectedPowerups(this, safeLevelId, selectedItems);
+
+    this._hideStartGameView();
+    if (!this._consumeStaminaForLevelEntry()) {
+      this._showPowerTipsView(function () {
+        return this._showStartGameView(safeLevelId, {
+          selectedItems: preparedItems
+        });
+      }.bind(this));
+      return false;
+    }
+
+    this._loadPreparedLevelFromLevelSelect(safeLevelId, preparedItems);
+    return true;
+  },
+
   _ensurePowerTipsViewPrefab: function () {
     if (this._powerTipsViewPrefab) {
       return Promise.resolve(this._powerTipsViewPrefab);
@@ -564,11 +1045,17 @@ module.exports = {
   _bindPowerTipsViewActions: function (powerTipsViewNode) {
     var adButtonNode = this._findNodeByNameRecursive(powerTipsViewNode, "ad_btn");
     var closeButtonNode = this._findNodeByNameRecursive(powerTipsViewNode, "btn_close");
-    if (!adButtonNode || !closeButtonNode) {
-      throw new Error("PowerTipsView requires ad_btn and btn_close nodes.");
+    var maskNode = this._findNodeByNameRecursive(powerTipsViewNode, "mask");
+    if (!adButtonNode || !closeButtonNode || !maskNode) {
+      throw new Error("PowerTipsView requires mask, ad_btn and btn_close nodes.");
     }
 
     this._bindNodeTapOnce(closeButtonNode, function () {
+      this._playSfx("uiClick");
+      this._hidePowerTipsView();
+    }.bind(this));
+
+    this._bindNodeTapOnce(maskNode, function () {
       this._playSfx("uiClick");
       this._hidePowerTipsView();
     }.bind(this));
@@ -578,12 +1065,33 @@ module.exports = {
     }.bind(this));
   },
 
+  _renderPowerTipsView: function () {
+    if (!this._powerTipsViewNode || !cc.isValid(this._powerTipsViewNode)) {
+      throw new Error("PowerTipsView node is required before rendering.");
+    }
+    if (typeof this._resolveStaminaRecoveryGrantAmount !== "function") {
+      throw new Error("PowerTipsView requires stamina recovery grant resolver.");
+    }
+
+    var powerItemNode = this._findNodeByNameRecursive(this._powerTipsViewNode, "power_item");
+    var numNode = powerItemNode ? powerItemNode.getChildByName("num") : null;
+    var numLabel = numNode ? numNode.getComponent(cc.Label) : null;
+    if (!numLabel) {
+      throw new Error("PowerTipsView power_item requires num label.");
+    }
+
+    numLabel.string = "x" + this._resolveStaminaRecoveryGrantAmount();
+  },
+
   _showPowerTipsView: function (onRecovered) {
     if (typeof onRecovered !== "function") {
       throw new Error("PowerTipsView requires a recovery callback.");
     }
 
-    this._pendingPowerTipsRecovery = onRecovered;
+    this._pendingPowerTipsRecovery = {
+      onRecovered: onRecovered,
+      source: this.isSelectingLevel ? "level_select" : "runtime"
+    };
     this._hideAwardView();
     this._hideSettingView();
     this._hideRankingView();
@@ -608,6 +1116,7 @@ module.exports = {
 
       powerTipsViewNode.active = true;
       PopupPanelAnimator.play(powerTipsViewNode);
+      this._renderPowerTipsView();
       this._setStatus("体力不足，观看广告可恢复体力");
     }.bind(this)).catch(function (error) {
       Logger.error("Show PowerTipsView failed", error && error.stack ? error.stack : error);
@@ -624,27 +1133,117 @@ module.exports = {
     this._powerTipsViewNode.active = false;
   },
 
+  _ensureStaminaFlySpriteFrame: function () {
+    if (this._staminaFlySpriteFrame) {
+      return Promise.resolve(this._staminaFlySpriteFrame);
+    }
+
+    return new Promise(function (resolve, reject) {
+      BundleLoader.loadRes(STAMINA_FLY_ICON_PATH, cc.SpriteFrame, function (error, spriteFrame) {
+        if (error) {
+          reject(new Error("Load stamina fly icon failed: " + (error.message || error)));
+          return;
+        }
+        if (!spriteFrame) {
+          reject(new Error("Stamina fly icon sprite frame is empty."));
+          return;
+        }
+        this._staminaFlySpriteFrame = spriteFrame;
+        resolve(spriteFrame);
+      }.bind(this));
+    }.bind(this));
+  },
+
+  _playStaminaFlyToTop: function () {
+    if (!this.node || !this.node.isValid) {
+      throw new Error("Stamina fly animation requires root node.");
+    }
+    if (!this._levelSelectNode || !cc.isValid(this._levelSelectNode)) {
+      throw new Error("Stamina fly animation requires LevelView.");
+    }
+    if (typeof cc.tween !== "function") {
+      throw new Error("Stamina fly animation requires cc.tween.");
+    }
+
+    var topLayerNode = this._getLevelSelectTopLayerNode();
+    var loveInfoNode = topLayerNode ? topLayerNode.getChildByName("love_info") : null;
+    requireValidNode(loveInfoNode, "LevelView top_layer/love_info");
+
+    return this._ensureStaminaFlySpriteFrame().then(function (spriteFrame) {
+      var flyNode = new cc.Node("stamina_fly_icon");
+      flyNode.parent = this.node;
+      flyNode.zIndex = 950;
+      flyNode.setPosition(0, 0);
+      flyNode.width = 72;
+      flyNode.height = 72;
+      flyNode.scale = 1;
+      flyNode.opacity = 255;
+
+      var sprite = flyNode.addComponent(cc.Sprite);
+      sprite.spriteFrame = spriteFrame;
+
+      var targetPosition = resolveNodeWorldPositionInParent(loveInfoNode, this.node);
+      return new Promise(function (resolve) {
+        cc.tween(flyNode)
+          .to(STAMINA_FLY_DURATION, {
+            x: targetPosition.x,
+            y: targetPosition.y,
+            scale: 0.55
+          }, {
+            easing: "quadInOut"
+          })
+          .to(STAMINA_FLY_FADE_DURATION, {
+            opacity: 0
+          })
+          .call(function () {
+            if (flyNode && flyNode.isValid) {
+              flyNode.destroy();
+            }
+            resolve();
+          })
+          .start();
+      });
+    }.bind(this));
+  },
+
+  _delayAfterStaminaFly: function () {
+    return new Promise(function (resolve) {
+      setTimeout(resolve, STAMINA_FLY_ENTER_DELAY * 1000);
+    });
+  },
+
   _onPowerTipsAdTap: function () {
     if (this._staminaRecoveryInProgress) {
       this._setStatus("广告处理中，请稍候...");
       return;
     }
-    if (typeof this._pendingPowerTipsRecovery !== "function") {
+    if (!this._pendingPowerTipsRecovery || typeof this._pendingPowerTipsRecovery.onRecovered !== "function") {
       throw new Error("PowerTipsView recovery callback is missing.");
     }
 
     this._playSfx("uiClick");
-    this._tryRecoverStaminaByAd(function () {
-      var onRecovered = this._pendingPowerTipsRecovery;
-      if (typeof onRecovered !== "function") {
+    var recoverySource = this._pendingPowerTipsRecovery.source;
+    return this._tryRecoverStaminaByAd(function () {
+      var recoveryContext = this._pendingPowerTipsRecovery;
+      if (!recoveryContext || typeof recoveryContext.onRecovered !== "function") {
         throw new Error("PowerTipsView recovery callback was cleared before reward grant.");
       }
-      if (!this._consumeStaminaForLevelEntry()) {
-        throw new Error("Recovered stamina must be consumable before entering level.");
-      }
+      var onRecovered = recoveryContext.onRecovered;
       this._hidePowerTipsView();
-      onRecovered();
-    }.bind(this));
+
+      if (recoverySource !== "level_select") {
+        return onRecovered();
+      }
+
+      return this._playStaminaFlyToTop().then(function () {
+        this._updateLevelSelectTopStatus();
+        return this._delayAfterStaminaFly();
+      }.bind(this)).then(function () {
+        return onRecovered();
+      }.bind(this));
+    }.bind(this), {
+      deferTopStatusUpdate: recoverySource === "level_select"
+    });
   },
 
   _setPendingLevelEntry: function (levelId) {
@@ -684,22 +1283,18 @@ module.exports = {
   },
 
   _enterLevelFromLevelSelect: function (levelId) {
-    var safeLevelId = Math.max(1, Math.floor(Number(levelId) || 0));
-    if (safeLevelId <= 0) {
-      return false;
-    }
-
-    var loadSelectedLevel = function () {
-      this._setStatus("Loading level_" + ("000" + safeLevelId).slice(-3) + "...");
-      this._loadLevelById(safeLevelId, "Level selected", "Load selected level failed. Check console logs.");
-    }.bind(this);
+    var safeLevelId = normalizeStartGameLevelId(levelId);
 
     if (!this._consumeStaminaForLevelEntry()) {
-      this._showPowerTipsView(loadSelectedLevel);
+      this._showPowerTipsView(function () {
+        return this._showStartGameView(safeLevelId, {
+          selectedItems: []
+        });
+      }.bind(this));
       return false;
     }
 
-    loadSelectedLevel();
+    this._loadPreparedLevelFromLevelSelect(safeLevelId, []);
     return true;
   },
 
@@ -714,26 +1309,24 @@ module.exports = {
   },
 
   _showInventoryView: function (options) {
-    options = options || {};
-    var pendingLevelId = Math.max(0, Math.floor(Number(options.entryLevelId) || 0));
-    if (pendingLevelId > 0) {
-      this._setPendingLevelEntry(pendingLevelId);
-    } else {
-      this._clearPendingLevelEntry();
+    if (options !== undefined && (!options || typeof options !== "object" || Array.isArray(options))) {
+      throw new Error("Inventory view options must be an object.");
     }
-    this._inventoryViewReadOnly = !this._isInventorySelectionOperable();
+    this._clearPendingLevelEntry();
+    this._inventoryViewReadOnly = true;
 
     this._playSfx("uiClick");
     this._hideSettingView();
     this._hideRankingView();
     this._hideSignInView();
     this._hideShopView();
-    this._saveSelectedPowerups([], {});
+    if (typeof this._hideDailyTaskView === "function") {
+      this._hideDailyTaskView();
+    }
     this._updateInventoryEntryState();
     this._ensureInventoryViewPrefab().then(function (prefab) {
       if (!prefab) {
-        this._setStatus("背包界面加载失败");
-        return;
+        throw new Error("BackpackView prefab is required.");
       }
 
       var inventoryViewNode = this._inventoryViewNode;
@@ -750,20 +1343,16 @@ module.exports = {
             this._clearPendingLevelEntry();
             this._inventoryViewReadOnly = true;
             this._hideInventoryView();
-          }.bind(this),
-          onConfirm: this._confirmInventorySelection.bind(this),
-          onToggleItem: this._toggleInventorySelection.bind(this),
-          onIncreaseItemCount: this._increaseInventorySelectionCount.bind(this),
-          onDecreaseItemCount: this._decreaseInventorySelectionCount.bind(this)
+          }.bind(this)
         });
       }
 
       inventoryViewNode.active = true;
       PopupPanelAnimator.play(inventoryViewNode);
-      this._renderInventoryView();
+      return this._renderInventoryView();
     }.bind(this)).catch(function (error) {
-      Logger.warn("Show inventory view failed", error && error.message ? error.message : error);
-      this._setStatus("背包界面加载失败");
+      Logger.error("Show inventory view failed", error && error.stack ? error.stack : error);
+      throw error;
     }.bind(this));
   },
 
@@ -778,20 +1367,7 @@ module.exports = {
   },
 
   _confirmInventorySelection: function () {
-    if (!this._isInventorySelectionOperable()) {
-      return;
-    }
-
-    this._playSfx("uiClick");
-    if (this._pendingLevelEntry && this._pendingLevelEntry.levelId) {
-      this._hideInventoryView();
-      this._startPendingLevelEntry();
-      return;
-    }
-
     this._hideInventoryView();
-    this._setStatusWithTip("inventory_confirmed", null, "出战道具已保存");
-    this._updateInventoryEntryState();
   },
 
   _toggleInventorySelection: function (itemId) {
@@ -933,17 +1509,8 @@ module.exports = {
     }
 
     this._refreshPlayerInventory();
-    var selectedItems = this._getAvailableSelectedPowerupItems();
-    var selectedItemCounts = this.selectedPowerupsState && this.selectedPowerupsState.selectedItemCounts
-      ? this.selectedPowerupsState.selectedItemCounts
-      : {};
-    this._inventoryViewController.render({
-      inventory: this.playerInventory,
-      selectedItems: selectedItems,
-      selectedItemCounts: selectedItemCounts,
-      coinCount: this._getCurrentCoins(),
-      interactionEnabled: !this._inventoryViewReadOnly,
-      useButtonEnabled: !this._inventoryViewReadOnly
+    return this._inventoryViewController.render({
+      inventory: this.playerInventory
     });
   },
 
@@ -958,7 +1525,13 @@ module.exports = {
       return;
     }
 
-    var selectedItems = this._getAvailableSelectedPowerupItems();
-    entryNode.opacity = selectedItems.length > 0 ? 255 : 230;
+    this._refreshPlayerInventory();
+    if (!this.inventoryStore || typeof this.inventoryStore.getItemCount !== "function") {
+      throw new Error("Inventory entry state requires InventoryStore.getItemCount.");
+    }
+    var hasAnyItem = Object.keys(POWERUP_TYPE_BY_ITEM_ID).some(function (itemId) {
+      return this.inventoryStore.getItemCount(this.playerInventory, itemId) > 0;
+    }, this);
+    entryNode.opacity = hasAnyItem ? 255 : 230;
   }
 };

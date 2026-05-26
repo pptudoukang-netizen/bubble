@@ -1,182 +1,192 @@
 {
-  "schemaVersion": 1,
-  "gameMode": "glass_marble_bubble",
-  "coordinateSystem": "odd-r-hex",
-  "layoutNotes": {
-    "description": "Top-to-bottom rows. Each character represents one grid cell.",
-    "legend": {
-      ".": "empty",
-      "R": "red",
-      "G": "green",
-      "B": "blue",
-      "Y": "yellow"
-    }
-  },
-  "sharedDefaults": {
-    "collectMode": "any_with_same_color_bonus",
-    "loseConditions": [
-      {
-        "type": "reach_danger_line",
-        "value": 1
-      },
-      {
-        "type": "run_out_of_shots",
-        "value": 1
-      }
-    ],
-    "fallingRules": {
-      "maxDynamicMarbles": 10,
-      "maxBounces": 2,
-      "enableMarbleMarbleCollision": true
-    }
-  },
-  "level": {
-    "levelId": 36,
-    "code": "L036_LEVELMAP4_EXPANSION",
-    "difficulty": "expert",
-    "teaches": [
-      "red_chain_under_pressure",
-      "triple_bottom_gate"
-    ],
-    "colorCount": 4,
-    "colors": [
-      "R",
-      "G",
-      "B",
-      "Y"
-    ],
-    "shotLimit": 46,
-    "targetScore": 19255,
-    "dropInterval": 2,
-    "jarCount": 4,
-    "jarColors": [
-      "R",
-      "G",
-      "B",
-      "Y"
-    ],
-    "spawnWeights": {
-      "R": 1.8,
-      "G": 1,
-      "B": 1,
-      "Y": 1
+    "schemaVersion": 1,
+    "gameMode": "glass_marble_bubble",
+    "coordinateSystem": "odd-r-hex",
+    "layoutNotes": {
+        "description": "Top-to-bottom rows. Each character represents one grid cell.",
+        "legend": {
+            ".": "empty",
+            "R": "red",
+            "G": "green",
+            "B": "blue",
+            "Y": "yellow"
+        }
     },
-    "jarRules": {
-      "sameColorBonus": 2.02,
-      "rimBounce": 0.87,
-      "collectZoneScale": 0.83
+    "sharedDefaults": {
+        "collectMode": "any_with_same_color_bonus",
+        "loseConditions": [
+            {
+                "type": "reach_danger_line",
+                "value": 1
+            },
+            {
+                "type": "run_out_of_shots",
+                "value": 1
+            }
+        ],
+        "fallingRules": {
+            "maxDynamicMarbles": 10,
+            "maxBounces": 2,
+            "enableMarbleMarbleCollision": true
+        }
     },
-    "winConditions": [
-      {
-        "type": "clear_all",
-        "value": 1
-      },
-      {
-        "type": "collect_color",
-        "color": "R",
-        "value": 38
-      }
-    ],
-    "bonusObjectives": [
-      {
-        "type": "collect_same_color_bonus_hits",
-        "value": 9
-      }
-    ],
-    "layout": [
-      "RRGGYYBB",
-      "R.GGYYBR",
-      "BGG.BYBY",
-      "BBR.GG.B",
-      "GBBB.GY.",
-      "YRGB.R..",
-      "RGBY.G..",
-      "YR......"
-    ],
-    "designNotes": "The red target asks for a high-value same-color chain, but the lower gate punishes players who ignore the clear_all route until the end.",
-    "difficultyScore": 100,
-    "specialEntities": [
-      {
-        "id": "skill_blast_01",
-        "entityCategory": "skill_ball",
-        "entityType": "blast",
-        "row": 1,
-        "col": 1
-      },
-      {
-        "id": "stone_01",
-        "entityCategory": "obstacle_ball",
-        "entityType": "stone",
-        "row": 2,
-        "col": 3
-      },
-      {
-        "id": "skill_rainbow_01",
-        "entityCategory": "skill_ball",
-        "entityType": "rainbow",
-        "row": 3,
-        "col": 3
-      },
-      {
-        "id": "ice_01",
-        "entityCategory": "obstacle_ball",
-        "entityType": "ice",
-        "row": 3,
-        "col": 6,
-        "innerColor": "R"
-      },
-      {
-        "id": "stone_02",
-        "entityCategory": "obstacle_ball",
-        "entityType": "stone",
-        "row": 4,
-        "col": 4
-      },
-      {
-        "id": "ice_02",
-        "entityCategory": "obstacle_ball",
-        "entityType": "ice",
-        "row": 4,
-        "col": 7,
-        "innerColor": "B"
-      },
-      {
-        "id": "stone_03",
-        "entityCategory": "obstacle_ball",
-        "entityType": "stone",
-        "row": 5,
-        "col": 4
-      },
-      {
-        "id": "skill_rainbow_02",
-        "entityCategory": "skill_ball",
-        "entityType": "rainbow",
-        "row": 6,
-        "col": 4
-      },
-      {
-        "id": "skill_blast_02",
-        "entityCategory": "skill_ball",
-        "entityType": "blast",
-        "row": 7,
-        "col": 2
-      },
-      {
-        "id": "stone_04",
-        "entityCategory": "obstacle_ball",
-        "entityType": "stone",
-        "row": 7,
-        "col": 3
-      },
-      {
-        "id": "ice_03",
-        "entityCategory": "obstacle_ball",
-        "entityType": "ice",
-        "row": 7,
-        "col": 4,
-        "innerColor": "R"
-      }
-    ]
-  },
-  "difficultyScaleMax": 100
+    "level": {
+        "levelId": 36,
+        "code": "L036_LEVELMAP4_EXPANSION",
+        "difficulty": "expert",
+        "teaches": [
+            "red_chain_under_pressure",
+            "triple_bottom_gate"
+        ],
+        "colorCount": 4,
+        "colors": [
+            "R",
+            "G",
+            "B",
+            "Y"
+        ],
+        "shotLimit": 50,
+        "targetScore": 17715,
+        "dropInterval": 3,
+        "jarCount": 4,
+        "jarColors": [
+            "R",
+            "G",
+            "B",
+            "Y"
+        ],
+        "spawnWeights": {
+            "R": 1.8,
+            "G": 1,
+            "B": 1,
+            "Y": 1
+        },
+        "jarRules": {
+            "sameColorBonus": 2.02,
+            "rimBounce": 0.87,
+            "collectZoneScale": 0.83
+        },
+        "winConditions": [
+            {
+                "type": "clear_all",
+                "value": 1
+            },
+            {
+                "type": "collect_color",
+                "color": "R",
+                "value": 35
+            }
+        ],
+        "bonusObjectives": [
+            {
+                "type": "collect_same_color_bonus_hits",
+                "value": 9
+            }
+        ],
+        "clearRewardItems": [
+            {
+                "id": "coin",
+                "count": 300
+            },
+            {
+                "id": "stamina",
+                "count": 3
+            }
+        ],
+        "layout": [
+            "RRGGYYBB",
+            "R.GGYYBR",
+            "BGG.BYBY",
+            "BBR.GG.B",
+            "GBBB.GY.",
+            "YRGB.R..",
+            "RGBY.G..",
+            "YR......"
+        ],
+        "designNotes": "The red target asks for a high-value same-color chain, but the lower gate punishes players who ignore the clear_all route until the end.",
+        "difficultyScore": 90,
+        "specialEntities": [
+            {
+                "id": "skill_blast_01",
+                "entityCategory": "skill_ball",
+                "entityType": "blast",
+                "row": 1,
+                "col": 1
+            },
+            {
+                "id": "stone_01",
+                "entityCategory": "obstacle_ball",
+                "entityType": "stone",
+                "row": 2,
+                "col": 3
+            },
+            {
+                "id": "skill_rainbow_01",
+                "entityCategory": "skill_ball",
+                "entityType": "rainbow",
+                "row": 3,
+                "col": 3
+            },
+            {
+                "id": "ice_01",
+                "entityCategory": "obstacle_ball",
+                "entityType": "ice",
+                "row": 3,
+                "col": 6,
+                "innerColor": "R"
+            },
+            {
+                "id": "stone_02",
+                "entityCategory": "obstacle_ball",
+                "entityType": "stone",
+                "row": 4,
+                "col": 4
+            },
+            {
+                "id": "ice_02",
+                "entityCategory": "obstacle_ball",
+                "entityType": "ice",
+                "row": 4,
+                "col": 7,
+                "innerColor": "B"
+            },
+            {
+                "id": "stone_03",
+                "entityCategory": "obstacle_ball",
+                "entityType": "stone",
+                "row": 5,
+                "col": 4
+            },
+            {
+                "id": "skill_rainbow_02",
+                "entityCategory": "skill_ball",
+                "entityType": "rainbow",
+                "row": 6,
+                "col": 4
+            },
+            {
+                "id": "skill_blast_02",
+                "entityCategory": "skill_ball",
+                "entityType": "blast",
+                "row": 7,
+                "col": 2
+            },
+            {
+                "id": "stone_04",
+                "entityCategory": "obstacle_ball",
+                "entityType": "stone",
+                "row": 7,
+                "col": 3
+            },
+            {
+                "id": "ice_03",
+                "entityCategory": "obstacle_ball",
+                "entityType": "ice",
+                "row": 7,
+                "col": 4,
+                "innerColor": "R"
+            }
+        ]
+    },
+    "difficultyScaleMax": 100
 }

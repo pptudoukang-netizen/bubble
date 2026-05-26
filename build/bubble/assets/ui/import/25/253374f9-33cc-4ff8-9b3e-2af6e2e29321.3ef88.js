@@ -1,0 +1,1 @@
+module.exports = [1,["b9X7i7weFDMIE/EhzQsF5T"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"invite_icon","rect":[0,0,139,139],"offset":[0,0],"originalSize":[139,139],"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

@@ -6,6 +6,30 @@ var AdRewardQuotaStore = Shared.AdRewardQuotaStore;
 var AdRewardCatalog = Shared.AdRewardCatalog;
 var ITEM_ID_BY_POWERUP_TYPE = Shared.ITEM_ID_BY_POWERUP_TYPE;
 var clone = Shared.clone;
+var STAMINA_RECOVERY_LOW_GRANT = 1;
+var STAMINA_RECOVERY_HIGH_GRANT = 2;
+var STAMINA_RECOVERY_LOW_GRANT_COUNT = 2;
+
+function requirePositiveInteger(value, fieldName) {
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(fieldName + " must be a positive integer.");
+  }
+  return value;
+}
+
+function requireNonNegativeInteger(value, fieldName) {
+  if (!Number.isInteger(value) || value < 0) {
+    throw new Error(fieldName + " must be a non-negative integer.");
+  }
+  return value;
+}
+
+function resolveStaminaRecoveryGrantAmount(grantedTodayBefore) {
+  var safeGrantedTodayBefore = requireNonNegativeInteger(grantedTodayBefore, "Stamina recovery grantedToday");
+  return safeGrantedTodayBefore < STAMINA_RECOVERY_LOW_GRANT_COUNT
+    ? STAMINA_RECOVERY_LOW_GRANT
+    : STAMINA_RECOVERY_HIGH_GRANT;
+}
 
 module.exports = {
   _buildAttemptRewardKey: function (rewardType) {
@@ -28,18 +52,31 @@ module.exports = {
     this._grantedAttemptRewardKeys[key] = true;
   },
 
-  _hasRewardedVideoAdConfig: function () {
-    if (typeof this.rewardedVideoAdUnitId !== "string") {
-      throw new Error("rewardedVideoAdUnitId must be a string.");
+  _resolveRewardedVideoAdUnitId: function (options) {
+    if (options !== undefined && (!options || typeof options !== "object" || Array.isArray(options))) {
+      throw new Error("Rewarded video ad options must be an object when provided.");
     }
 
-    return this.rewardedVideoAdUnitId.trim().length > 0;
+    var adUnitId = options && Object.prototype.hasOwnProperty.call(options, "adUnitId")
+      ? options.adUnitId
+      : this.rewardedVideoAdUnitId;
+    if (typeof adUnitId !== "string") {
+      throw new Error("rewarded video ad unit id must be a string.");
+    }
+
+    return adUnitId.trim();
   },
 
-  _requireRewardedVideoAdConfig: function () {
-    if (!this._hasRewardedVideoAdConfig()) {
+  _hasRewardedVideoAdConfig: function (options) {
+    return this._resolveRewardedVideoAdUnitId(options).length > 0;
+  },
+
+  _requireRewardedVideoAdConfig: function (options) {
+    var adUnitId = this._resolveRewardedVideoAdUnitId(options);
+    if (adUnitId.length <= 0) {
       throw new Error("Rewarded video ad unit id is required before granting ad rewards.");
     }
+    return adUnitId;
   },
 
   _canShowRewardedVideoAd: function () {
@@ -63,10 +100,10 @@ module.exports = {
     var code = adResult && typeof adResult.code === "string" ? adResult.code : "";
     if (code === "no_fill") {
       if (typeof this._setStatusWithTip === "function") {
-        this._setStatusWithTip("rewarded_ad_no_fill", null, "暂时没有合适的广告，请稍后再试");
+        this._setStatusWithTip("rewarded_ad_no_fill", null, "暂时没有新的广告，请稍后再试");
         return;
       }
-      this._setStatus("暂时没有合适的广告，请稍后再试");
+      this._setStatus("暂时没有新的广告，请稍后再试");
       return;
     }
 
@@ -116,10 +153,7 @@ module.exports = {
     return this._showRewardedAdForEntry(loseRewardEntry, {
       entrySource: "lose_view",
       trackExposure: false,
-      onRewardGrantedMessage: "奖励已生效，正在重新开局...",
-      onRewardGranted: function () {
-        this._restartCurrentLevel();
-      }.bind(this)
+      onRewardGrantedMessage: "复活成功"
     });
   },
 
@@ -150,7 +184,13 @@ module.exports = {
       throw new Error("Ad reward flow requires AdRewardQuotaStore.canGrant.");
     }
 
-    this._requireRewardedVideoAdConfig();
+    var adUnitId = this._requireRewardedVideoAdConfig(options);
+    if (!this.adService || typeof this.adService.setAdUnitId !== "function") {
+      throw new Error("Ad reward flow requires AdService.setAdUnitId.");
+    }
+    if (this.adService.adUnitId !== adUnitId) {
+      this.adService.setAdUnitId(adUnitId);
+    }
     if (!this._canShowRewardedVideoAd()) {
       this._setRewardedVideoAdUnavailableStatus();
       return Promise.resolve(false);
@@ -162,7 +202,8 @@ module.exports = {
       return Promise.resolve(false);
     }
 
-    if (this._hasGrantedAttemptReward(entry.rewardType)) {
+    var isCurrentRoundRevive = entry.grantMode === "current_round_revive";
+    if (!isCurrentRoundRevive && this._hasGrantedAttemptReward(entry.rewardType)) {
       this._setStatus("本局该奖励已领取");
       return Promise.resolve(false);
     }
@@ -202,7 +243,9 @@ module.exports = {
         return false;
       }
 
-      var grantResult = this._grantAdEntryReward(entry, options);
+      var grantResult = this._grantAdEntryReward(entry, options, {
+        quotaResult: quotaResult
+      });
       if (!grantResult || !grantResult.accepted) {
         this.adService.reportHostedRewardFailure(safeAdResult);
         this._setStatus(grantResult && grantResult.message ? grantResult.message : "奖励发放失败");
@@ -212,19 +255,22 @@ module.exports = {
       if (this.adRewardQuotaStore && typeof this.adRewardQuotaStore.recordGrant === "function") {
         this.adRewardQuotaStore.recordGrant(entry.quotaType);
       }
-      this._markAttemptRewardGranted(entry.rewardType);
+      if (!isCurrentRoundRevive) {
+        this._markAttemptRewardGranted(entry.rewardType);
+      }
       this._trackTelemetry("ad_reward_grant", {
         entry_key: entry.entryKey,
         reward_type: entry.rewardType,
-        reward_value: entry.rewardValue
+        reward_value: grantResult.rewardValue === undefined ? entry.rewardValue : grantResult.rewardValue
       });
 
       if (grantResult.snapshot && this.currentLevelConfig && !this.isSelectingLevel) {
+        this._handleRuntimeStateTransition(grantResult.snapshot);
         this.levelRenderer.refreshRuntime(this.currentLevelConfig, grantResult.snapshot);
       }
       this._setStatus(grantResult.message || options.onRewardGrantedMessage || "奖励发放成功");
       if (typeof options.onRewardGranted === "function") {
-        options.onRewardGranted();
+        options.onRewardGranted(grantResult);
       }
       this.adService.reportHostedRewardSuccess(safeAdResult);
       return true;
@@ -247,8 +293,11 @@ module.exports = {
     }.bind(this));
   },
 
-  _grantAdEntryReward: function (entry, options) {
+  _grantAdEntryReward: function (entry, options, context) {
     options = options || {};
+    if (!context || typeof context !== "object" || Array.isArray(context)) {
+      throw new Error("Ad reward grant context is required.");
+    }
     if (!entry) {
       return {
         accepted: false,
@@ -264,9 +313,30 @@ module.exports = {
       };
     }
 
+    if (entry.grantMode === "current_round_revive") {
+      if (!this.gameManager || typeof this.gameManager.reviveFromAd !== "function") {
+        throw new Error("Current round revive requires GameManager.reviveFromAd.");
+      }
+      var reviveResult = this.gameManager.reviveFromAd();
+      if (!reviveResult || !reviveResult.accepted) {
+        throw new Error("Current round revive result is invalid.");
+      }
+      return {
+        accepted: true,
+        snapshot: reviveResult.snapshot,
+        rewardValue: entry.rewardValue,
+        message: options.onRewardGrantedMessage || "复活成功"
+      };
+    }
+
     if (entry.staminaGrant) {
       this._refreshPlayerResources();
-      var safeGrant = Math.max(1, Math.floor(Number(entry.staminaGrant) || 1));
+      if (entry.quotaType === "stamina_refill" && (!context.quotaResult || !Number.isInteger(context.quotaResult.grantedToday))) {
+        throw new Error("Stamina recovery grant requires quotaResult.grantedToday.");
+      }
+      var safeGrant = entry.quotaType === "stamina_refill"
+        ? resolveStaminaRecoveryGrantAmount(context.quotaResult.grantedToday)
+        : requirePositiveInteger(entry.staminaGrant, "Ad stamina grant");
       this.playerResources.stamina = Math.max(
         0,
         Math.floor(Number(this.playerResources.stamina) || 0)
@@ -274,9 +344,13 @@ module.exports = {
       if (this.playerResourceStore && typeof this.playerResourceStore.save === "function") {
         this.playerResourceStore.save(this.playerResources);
       }
-      this._updateLevelSelectTopStatus();
+      if (options.deferStaminaTopStatusUpdate !== true) {
+        this._updateLevelSelectTopStatus();
+      }
       return {
         accepted: true,
+        staminaGrant: safeGrant,
+        rewardValue: safeGrant,
         message: "体力补给成功：+" + safeGrant
       };
     }
@@ -385,11 +459,25 @@ module.exports = {
 
     this._showRewardedAdForEntry(rewardEntry, {
       entrySource: "inventory_empty",
+      adUnitId: this.inventoryRewardedVideoAdUnitId,
       onRewardGrantedMessage: "道具补给成功"
     });
   },
 
-  _tryRecoverStaminaByAd: function (onRecovered) {
+  _resolveStaminaRecoveryGrantAmount: function () {
+    if (!this.adRewardQuotaStore || typeof this.adRewardQuotaStore.canGrant !== "function") {
+      throw new Error("Stamina recovery requires AdRewardQuotaStore.canGrant.");
+    }
+
+    var quotaResult = this.adRewardQuotaStore.canGrant("stamina_refill");
+    return resolveStaminaRecoveryGrantAmount(quotaResult.grantedToday);
+  },
+
+  _tryRecoverStaminaByAd: function (onRecovered, options) {
+    if (options !== undefined && (!options || typeof options !== "object" || Array.isArray(options))) {
+      throw new Error("Stamina recovery options must be an object when provided.");
+    }
+    var deferTopStatusUpdate = options && options.deferTopStatusUpdate === true;
     if (this._staminaRecoveryInProgress) {
       return;
     }
@@ -400,13 +488,18 @@ module.exports = {
     }
 
     this._staminaRecoveryInProgress = true;
+    var recoveredGrantResult = null;
     return this._showRewardedAdForEntry(rewardEntry, {
       entrySource: "stamina_insufficient",
-      onRewardGrantedMessage: "体力补给成功，可继续挑战"
+      deferStaminaTopStatusUpdate: deferTopStatusUpdate,
+      onRewardGrantedMessage: "体力补给成功，可继续挑战",
+      onRewardGranted: function (grantResult) {
+        recoveredGrantResult = grantResult;
+      }
     }).then(function (granted) {
       this._staminaRecoveryInProgress = false;
       if (granted && typeof onRecovered === "function") {
-        onRecovered();
+        return onRecovered(recoveredGrantResult);
       }
     }.bind(this));
   }

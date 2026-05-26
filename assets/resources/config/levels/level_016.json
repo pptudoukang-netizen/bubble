@@ -46,9 +46,9 @@
             "B",
             "P"
         ],
-        "shotLimit": 27,
-        "targetScore": 11430,
-        "dropInterval": 4,
+        "shotLimit": 30,
+        "targetScore": 10516,
+        "dropInterval": 5,
         "jarCount": 4,
         "jarColors": [
             "R",
@@ -75,13 +75,23 @@
             {
                 "type": "collect_color",
                 "color": "P",
-                "value": 17
+                "value": 16
             }
         ],
         "bonusObjectives": [
             {
                 "type": "collect_same_color_bonus_hits",
                 "value": 4
+            }
+        ],
+        "clearRewardItems": [
+            {
+                "id": "coin",
+                "count": 190
+            },
+            {
+                "id": "stamina",
+                "count": 1
             }
         ],
         "layout": [
@@ -93,7 +103,7 @@
             "PRGB...."
         ],
         "designNotes": "Ice obstacle is introduced as a two-step problem: thaw first, then clear the inner color.",
-        "difficultyScore": 90,
+        "difficultyScore": 82,
         "specialEntities": [
             {
                 "id": "ice_01",

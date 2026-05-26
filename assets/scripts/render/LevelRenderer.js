@@ -45,6 +45,11 @@ var JAR_MASK_RESOURCES = {
   P: "image/purple_jar_mask"
 };
 
+var REWARD_ITEM_RESOURCES = {
+  coin: "image/props/coin",
+  stamina: "image/props/love"
+};
+
 var PREFAB_PATHS = {
   gameView: "prefabs/ui/GameView",
   hudPanel: "prefabs/ui/HudPanel",
@@ -71,7 +76,6 @@ var GUIDE_DOT_PULSE_SCALE_SMALL = 0.5;
 var TEST_SLOT_RADIUS = Math.floor(BoardLayout.bubbleRadius * 0.88);
 var SHOOTER_MAX_ROTATION = 75;
 var ICE_OVERLAY_OPACITY = 255;
-var REMAINING_SHOTS_OFFSET_Y = 68;
 var NEXT_SHOT_OFFSET_X = 118;
 var NEXT_SHOT_OFFSET_Y = -40;
 var BOARD_BUBBLE_SIZE = new cc.Size(72, 72);
@@ -96,6 +100,8 @@ var IMPACT_DEFAULT_BOUNCE_SPEED = 220;
 var IMPACT_MIN_PUSH_DURATION = 0.028;
 var IMPACT_MIN_RETURN_DURATION = 0.06;
 var IMPACT_RETURN_DURATION_RATIO = 2.2;
+var SHOT_NO_DROP_SHAKE_OFFSET = 10;
+var SHOT_NO_DROP_SHAKE_STEP_DURATION = 0.035;
 var ROUTE_LINE_WIDTH_ACTIVE = 6;
 var ROUTE_LINE_WIDTH_IDLE = 4;
 var ROUTE_POINT_RADIUS_ACTIVE = 7;
@@ -104,6 +110,26 @@ var ICE_THAW_SHAKE_OFFSET = 7;
 var ICE_THAW_SHAKE_STEP_DURATION = 0.04;
 var ICE_COLLECT_FLY_DURATION = 0.34;
 var ICE_COLLECT_BEZIER_ARC = 120;
+var COMMENT_ANIMATION_RESOURCES = {
+  good: "ui/animation/comments/good",
+  great: "ui/animation/comments/great",
+  excellent: "ui/animation/comments/excellent",
+  unbelievable: "ui/animation/comments/unbelievable"
+};
+var COMMENT_ANIMATION_TIERS = [
+  { threshold: 12, key: "unbelievable" },
+  { threshold: 10, key: "excellent" },
+  { threshold: 7, key: "great" },
+  { threshold: 5, key: "good" }
+];
+var COMMENT_ANIMATION_IN_DURATION = 0.2;
+var COMMENT_ANIMATION_SETTLE_DURATION = 0.05;
+var COMMENT_ANIMATION_HOLD_DURATION = 0.5;
+var COMMENT_ANIMATION_OUT_DURATION = 0.3;
+var COMMENT_ANIMATION_START_SCALE = 0.8;
+var COMMENT_ANIMATION_PUNCH_SCALE = 1.1;
+var COMMENT_ANIMATION_NORMAL_SCALE = 1;
+var COMMENT_ANIMATION_OUT_SCALE = 1.3;
 
 var ROUTE_EDITOR_COLORS = [
   { r: 255, g: 195, b: 0 },
@@ -504,7 +530,9 @@ function LevelRenderer(rootNode) {
   this.lastGuidePathKey = "";
   this.guideDotNodes = [];
   this.lastImpactSeq = -1;
+  this.lastNoDropShakeEventId = -1;
   this.lastIceThawShakeSeq = -1;
+  this.lastCommentResolution = null;
   this.boardBubbleNodes = {};
   this.boardBubbleNodePool = [];
   this.boardRenderTick = 1;
@@ -524,21 +552,30 @@ function LevelRenderer(rootNode) {
     onWatchAd: null
   };
   this.loseAdPresentation = {
-    showVideoIcon: true
+    showVideoIcon: true,
+    showCoinIcon: false
   };
   this.gameplayActionHandlers = {
     onBackToLevel: null,
     onUseRainbow: null,
     onUseBlast: null,
     onUseSwap: null,
-    onUseBarrierHammer: null
+    onUseBarrierHammer: null,
+    onSelectRainbowColor: null,
+    onRecoverInventoryByAd: null
   };
 }
 
 LevelRenderer.prototype.setLoseAdPresentation = function (options) {
   options = options || {};
+  var showVideoIcon = options.showVideoIcon === true;
+  var showCoinIcon = options.showCoinIcon === true;
+  if (showVideoIcon && showCoinIcon) {
+    throw new Error("LoseView revive button cannot show video and coin icons at the same time.");
+  }
   this.loseAdPresentation = {
-    showVideoIcon: options.showVideoIcon === true
+    showVideoIcon: showVideoIcon,
+    showCoinIcon: showCoinIcon
   };
 };
 
@@ -582,7 +619,9 @@ LevelRenderer.prototype.setGameplayActionHandlers = function (handlers) {
     onUseRainbow: typeof handlers.onUseRainbow === "function" ? handlers.onUseRainbow : null,
     onUseBlast: typeof handlers.onUseBlast === "function" ? handlers.onUseBlast : null,
     onUseSwap: typeof handlers.onUseSwap === "function" ? handlers.onUseSwap : null,
-    onUseBarrierHammer: typeof handlers.onUseBarrierHammer === "function" ? handlers.onUseBarrierHammer : null
+    onUseBarrierHammer: typeof handlers.onUseBarrierHammer === "function" ? handlers.onUseBarrierHammer : null,
+    onSelectRainbowColor: typeof handlers.onSelectRainbowColor === "function" ? handlers.onSelectRainbowColor : null,
+    onRecoverInventoryByAd: typeof handlers.onRecoverInventoryByAd === "function" ? handlers.onRecoverInventoryByAd : null
   };
 };
 
@@ -632,6 +671,18 @@ LevelRenderer.prototype._invokeGameplayAction = function (action) {
     handler = this.gameplayActionHandlers.onUseSwap;
   } else if (action === "use_barrier_hammer") {
     handler = this.gameplayActionHandlers.onUseBarrierHammer;
+  } else if (action.indexOf("select_rainbow_color:") === 0) {
+    handler = this.gameplayActionHandlers.onSelectRainbowColor;
+    if (typeof handler === "function") {
+      handler(action.slice("select_rainbow_color:".length));
+      return;
+    }
+  } else if (action.indexOf("recover_inventory:") === 0) {
+    handler = this.gameplayActionHandlers.onRecoverInventoryByAd;
+    if (typeof handler === "function") {
+      handler(action.slice("recover_inventory:".length));
+      return;
+    }
   }
 
   if (typeof handler !== "function") {
@@ -658,7 +709,9 @@ LevelRenderer.prototype.renderLevel = function (levelConfig, runtimeSnapshot) {
   this.lastGuidePathKey = "";
   this.guideDotNodes = [];
   this.lastImpactSeq = -1;
+  this.lastNoDropShakeEventId = -1;
   this.lastIceThawShakeSeq = -1;
+  this.lastCommentResolution = null;
   this.boardRenderTick = 1;
   this.testSlotNodes = {};
   this.testSlotNodePool = [];
@@ -687,6 +740,7 @@ LevelRenderer.prototype.renderLevel = function (levelConfig, runtimeSnapshot) {
     clearChildren(this.layers.hud);
     clearChildren(this.layers.dangerLine);
     clearChildren(this.layers.overlay);
+    clearChildren(this.layers.comment);
     clearChildren(this.layers.modal);
     clearChildren(this.layers.routeEditor);
     clearChildren(this.layers.shooter);
@@ -735,7 +789,9 @@ LevelRenderer.prototype.refreshRuntime = function (levelConfig, runtimeSnapshot)
 
   this._renderFallingDrops(runtimeSnapshot);
   this._playIceThawShake(runtimeSnapshot);
+  this._playShotNoDropScreenShake(runtimeSnapshot);
   this._playImpactBounce(runtimeSnapshot);
+  this._playCommentAnimation(runtimeSnapshot);
   this._renderDangerLine(runtimeSnapshot);
   this._renderShooter(runtimeSnapshot.shooter, runtimeSnapshot.activeProjectile, runtimeSnapshot.remainingShots);
   this._renderWinView(runtimeSnapshot);
@@ -762,7 +818,8 @@ LevelRenderer.prototype._ensureLayers = function () {
     testGrid: this._getOrCreateLayer("TestGridLayer", 47),
     routeEditor: this._getOrCreateLayer("RouteEditorLayer", 48),
     hud: this._getOrCreateLayer("HUDLayer", 50),
-    modal: this._getOrCreateLayer("ModalLayer", 90)
+    modal: this._getOrCreateLayer("ModalLayer", 90),
+    comment: this._getOrCreateLayer("CommentLayer", 95)
   };
 };
 LevelRenderer.prototype._getOrCreateLayer = function (name, zIndex) {
@@ -809,10 +866,29 @@ LevelRenderer.prototype._collectSpritePaths = function (levelConfig, runtimeSnap
   if (runtimeSnapshot && runtimeSnapshot.activeProjectile) {
     paths.push(BALL_RESOURCES[resolveBallCode(runtimeSnapshot.activeProjectile.ball || runtimeSnapshot.activeProjectile.color)]);
   }
+  if (
+    runtimeSnapshot &&
+    runtimeSnapshot.shooter &&
+    runtimeSnapshot.shooter.pendingRainbowColorSelection &&
+    Array.isArray(runtimeSnapshot.shooter.pendingRainbowColorSelection.colors)
+  ) {
+    runtimeSnapshot.shooter.pendingRainbowColorSelection.colors.forEach(function (colorCode) {
+      paths.push(BALL_RESOURCES[colorCode]);
+    });
+  }
 
   var objectiveDisplay = buildObjectiveDisplayData(levelConfig, runtimeSnapshot);
   if (objectiveDisplay.iconCode) {
     paths.push(BALL_RESOURCES[objectiveDisplay.iconCode]);
+  }
+
+  if (levelConfig && levelConfig.level && Array.isArray(levelConfig.level.clearRewardItems)) {
+    levelConfig.level.clearRewardItems.forEach(function (rewardItem) {
+      if (!rewardItem || !REWARD_ITEM_RESOURCES[rewardItem.id]) {
+        throw new Error("Unsupported level clear reward item id: " + (rewardItem && rewardItem.id));
+      }
+      paths.push(REWARD_ITEM_RESOURCES[rewardItem.id]);
+    });
   }
 
   return paths.filter(Boolean).filter(function (path, index, list) {
@@ -914,7 +990,11 @@ LevelRenderer.prototype._collectCommonSpritePaths = function () {
     JAR_MASK_RESOURCES.G,
     JAR_MASK_RESOURCES.B,
     JAR_MASK_RESOURCES.Y,
-    JAR_MASK_RESOURCES.P
+    JAR_MASK_RESOURCES.P,
+    COMMENT_ANIMATION_RESOURCES.good,
+    COMMENT_ANIMATION_RESOURCES.great,
+    COMMENT_ANIMATION_RESOURCES.excellent,
+    COMMENT_ANIMATION_RESOURCES.unbelievable
   ];
 };
 
@@ -954,6 +1034,7 @@ var LEVEL_RENDERER_SCENE_DEPS = {
   BALL_RESOURCES: BALL_RESOURCES,
   JAR_RESOURCES: JAR_RESOURCES,
   JAR_MASK_RESOURCES: JAR_MASK_RESOURCES,
+  REWARD_ITEM_RESOURCES: REWARD_ITEM_RESOURCES,
   PREFAB_PATHS: PREFAB_PATHS,
   JAR_RENDER_Y_OFFSET: JAR_RENDER_Y_OFFSET,
   GUIDE_DOT_SPACING: GUIDE_DOT_SPACING,
@@ -966,7 +1047,6 @@ var LEVEL_RENDERER_SCENE_DEPS = {
   GUIDE_DOT_PULSE_SCALE_SMALL: GUIDE_DOT_PULSE_SCALE_SMALL,
   TEST_SLOT_RADIUS: TEST_SLOT_RADIUS,
   ICE_OVERLAY_OPACITY: ICE_OVERLAY_OPACITY,
-  REMAINING_SHOTS_OFFSET_Y: REMAINING_SHOTS_OFFSET_Y,
   NEXT_SHOT_OFFSET_X: NEXT_SHOT_OFFSET_X,
   NEXT_SHOT_OFFSET_Y: NEXT_SHOT_OFFSET_Y,
   BOARD_BUBBLE_SIZE: BOARD_BUBBLE_SIZE,
@@ -988,6 +1068,8 @@ var LEVEL_RENDERER_SCENE_DEPS = {
   IMPACT_MIN_PUSH_DURATION: IMPACT_MIN_PUSH_DURATION,
   IMPACT_MIN_RETURN_DURATION: IMPACT_MIN_RETURN_DURATION,
   IMPACT_RETURN_DURATION_RATIO: IMPACT_RETURN_DURATION_RATIO,
+  SHOT_NO_DROP_SHAKE_OFFSET: SHOT_NO_DROP_SHAKE_OFFSET,
+  SHOT_NO_DROP_SHAKE_STEP_DURATION: SHOT_NO_DROP_SHAKE_STEP_DURATION,
   ROUTE_LINE_WIDTH_ACTIVE: ROUTE_LINE_WIDTH_ACTIVE,
   ROUTE_LINE_WIDTH_IDLE: ROUTE_LINE_WIDTH_IDLE,
   ROUTE_POINT_RADIUS_ACTIVE: ROUTE_POINT_RADIUS_ACTIVE,
@@ -1025,6 +1107,94 @@ var LEVEL_RENDERER_SCENE_DEPS = {
 };
 
 attachLevelRendererSceneMethods(LevelRenderer, LEVEL_RENDERER_SCENE_DEPS);
+
+function resolveCommentAnimationKey(clearedCount) {
+  for (var index = 0; index < COMMENT_ANIMATION_TIERS.length; index += 1) {
+    var tier = COMMENT_ANIMATION_TIERS[index];
+    if (clearedCount >= tier.threshold) {
+      return tier.key;
+    }
+  }
+
+  return null;
+}
+
+LevelRenderer.prototype._playCommentAnimation = function (runtimeSnapshot) {
+  if (!runtimeSnapshot) {
+    throw new Error("Comment animation requires runtime snapshot.");
+  }
+  if (!runtimeSnapshot.lastResolution) {
+    throw new Error("Comment animation requires lastResolution.");
+  }
+
+  var resolution = runtimeSnapshot.lastResolution;
+  if (resolution === this.lastCommentResolution) {
+    return;
+  }
+
+  if (!Array.isArray(resolution.matched)) {
+    throw new Error("Comment animation requires lastResolution.matched array.");
+  }
+  if (!Array.isArray(resolution.floating)) {
+    throw new Error("Comment animation requires lastResolution.floating array.");
+  }
+
+  var matchedCount = resolution.matched.length;
+  var floatingCount = resolution.floating.length;
+  var clearedCount = matchedCount + floatingCount;
+  var commentKey = resolveCommentAnimationKey(clearedCount);
+  if (!commentKey) {
+    return;
+  }
+
+  this.lastCommentResolution = resolution;
+  if (!this.layers || !this.layers.comment) {
+    throw new Error("Comment animation requires CommentLayer.");
+  }
+  if (typeof cc.tween !== "function") {
+    throw new Error("Comment animation requires cc.tween.");
+  }
+
+  var spritePath = COMMENT_ANIMATION_RESOURCES[commentKey];
+  var spriteFrame = this.spriteFrameCache[spritePath];
+  if (!spriteFrame) {
+    throw new Error("Comment animation sprite is not preloaded: " + spritePath);
+  }
+
+  clearChildren(this.layers.comment);
+  var commentNode = new cc.Node("Comment_" + commentKey);
+  commentNode.parent = this.layers.comment;
+  commentNode.setPosition(0, 0);
+  commentNode.setScale(COMMENT_ANIMATION_START_SCALE);
+  commentNode.opacity = 255;
+  ensureSprite(commentNode, spriteFrame);
+  commentNode.setContentSize(spriteFrame.getOriginalSize());
+
+  cc.tween(commentNode)
+    .to(COMMENT_ANIMATION_IN_DURATION, {
+      scale: COMMENT_ANIMATION_PUNCH_SCALE
+    }, {
+      easing: "backOut"
+    })
+    .to(COMMENT_ANIMATION_SETTLE_DURATION, {
+      scale: COMMENT_ANIMATION_NORMAL_SCALE
+    }, {
+      easing: "quadOut"
+    })
+    .delay(COMMENT_ANIMATION_HOLD_DURATION)
+    .to(COMMENT_ANIMATION_OUT_DURATION, {
+      scale: COMMENT_ANIMATION_OUT_SCALE,
+      opacity: 0
+    }, {
+      easing: "quadIn"
+    })
+    .call(function () {
+      if (commentNode && commentNode.isValid) {
+        commentNode.removeFromParent(true);
+      }
+    })
+    .start();
+};
 
 LevelRenderer.prototype._instantiateOrCreate = function (prefabPath, parent, name) {
   var existing = parent && name ? parent.getChildByName(name) : null;

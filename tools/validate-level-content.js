@@ -23,6 +23,8 @@ var ALLOWED_ENTITY_TYPES = {
   skill_ball: ["rainbow", "blast"],
   obstacle_ball: ["stone", "ice"]
 };
+var ALLOWED_CLEAR_REWARD_ITEM_IDS = ["coin", "stamina"];
+var CLEAR_REWARD_START_LEVEL_ID = 5;
 
 function readJson(filePath) {
   var raw = fs.readFileSync(filePath, "utf8");
@@ -155,6 +157,49 @@ function validateSpecialEntities(level, normalizedLayoutRows, issues) {
 
     if (rowString[entity.col] !== ".") {
       issues.push("specialEntities[" + index + "] must be placed on `.` layout slot at " + cellKey);
+    }
+  });
+}
+
+function validateClearRewardItems(level, expectedLevelId, issues) {
+  var rewardItems = level.clearRewardItems;
+  if (expectedLevelId < CLEAR_REWARD_START_LEVEL_ID) {
+    if (rewardItems !== undefined) {
+      issues.push("clearRewardItems must not be configured before level " + CLEAR_REWARD_START_LEVEL_ID);
+    }
+    return;
+  }
+
+  if (!Array.isArray(rewardItems) || rewardItems.length === 0) {
+    issues.push("clearRewardItems must be a non-empty array from level " + CLEAR_REWARD_START_LEVEL_ID);
+    return;
+  }
+
+  var seenIds = {};
+  rewardItems.forEach(function (item, index) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      issues.push("clearRewardItems[" + index + "] must be object");
+      return;
+    }
+
+    if (ALLOWED_CLEAR_REWARD_ITEM_IDS.indexOf(item.id) === -1) {
+      issues.push("clearRewardItems[" + index + "].id must be one of: " + ALLOWED_CLEAR_REWARD_ITEM_IDS.join(", "));
+    } else if (seenIds[item.id]) {
+      issues.push("clearRewardItems[" + index + "] duplicate id: " + item.id);
+    } else {
+      seenIds[item.id] = true;
+    }
+
+    if (!isPositiveInteger(item.count)) {
+      issues.push("clearRewardItems[" + index + "].count must be positive integer");
+      return;
+    }
+
+    if (item.id === "coin" && (item.count < 50 || item.count > 300)) {
+      issues.push("clearRewardItems[" + index + "].count for coin must be in [50, 300]");
+    }
+    if (item.id === "stamina" && (item.count < 1 || item.count > 3)) {
+      issues.push("clearRewardItems[" + index + "].count for stamina must be in [1, 3]");
     }
   });
 }
@@ -304,6 +349,7 @@ function validateLevel(filePath, expectedLevelId) {
 
   validateObjectives(level.winConditions, "win", level, issues);
   validateObjectives(level.bonusObjectives, "bonus", level, issues);
+  validateClearRewardItems(level, expectedLevelId, issues);
 
   return issues;
 }

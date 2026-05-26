@@ -10,39 +10,19 @@ var POWERUP_DISPLAY_NAMES = {
 var LOSE_REWARD_ENTRIES = {
   out_of_shots: {
     entryKey: "lose_out_of_shots",
-    rewardType: "next_round_powerup_swap",
-    rewardValue: 1,
+    rewardType: "current_round_revive_out_of_shots",
+    rewardValue: "revive",
     quotaType: "lose_next_round",
-    grantMode: "next_round",
-    awardTips: "下局补给：换球 +1",
-    inventoryGrant: {
-      powerupType: "swap",
-      amount: 1
-    }
+    grantMode: "current_round_revive",
+    awardTips: "立即复活"
   },
   lost_danger: {
     entryKey: "lose_lost_danger",
-    rewardType: "next_round_powerup_barrier_hammer",
-    rewardValue: 1,
+    rewardType: "current_round_revive_lost_danger",
+    rewardValue: "revive",
     quotaType: "lose_next_round",
-    grantMode: "next_round",
-    awardTips: "下局补给：破障锤 +1",
-    inventoryGrant: {
-      powerupType: "barrier_hammer",
-      amount: 1
-    }
-  },
-  lost_objective: {
-    entryKey: "lose_lost_objective",
-    rewardType: "next_round_jar_score_boost",
-    rewardValue: "x2_5s",
-    quotaType: "lose_next_round",
-    grantMode: "next_round",
-    awardTips: "下局奖励：5秒入缸分数x2",
-    jarScoreBoost: {
-      durationMs: 5000,
-      multiplier: 2
-    }
+    grantMode: "current_round_revive",
+    awardTips: "立即复活"
   }
 };
 

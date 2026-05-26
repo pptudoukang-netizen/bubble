@@ -879,6 +879,72 @@ BubbleGrid.prototype.advanceRows = function (rowCount) {
   return this.dropOffsetRows;
 };
 
+BubbleGrid.prototype.ensureDangerLineSpaceRows = function (minimumRows) {
+  if (!Number.isInteger(minimumRows) || minimumRows <= 0) {
+    throw new Error("Minimum danger line space rows must be a positive integer.");
+  }
+  if (!this.cells.length) {
+    throw new Error("Cannot ensure danger line space without board cells.");
+  }
+
+  var requiredSpacePixels = minimumRows * BoardLayout.rowHeight;
+  var requiredBubbleBottomY = BoardLayout.dangerLineY + requiredSpacePixels;
+  var lowestBubbleBottomY = this.cells.reduce(function (lowestBottomY, cell) {
+    var cellPosition = this.getCellPosition(cell.row, cell.col);
+    var bubbleBottomY = cellPosition.y - BoardLayout.bubbleRadius;
+    return Math.min(lowestBottomY, bubbleBottomY);
+  }.bind(this), Infinity);
+  var currentSpacePixels = lowestBubbleBottomY - BoardLayout.dangerLineY;
+  var requestedShiftRows = currentSpacePixels < requiredSpacePixels
+    ? Math.ceil((requiredSpacePixels - currentSpacePixels) / BoardLayout.rowHeight)
+    : 0;
+  var maxShiftRowsBeforeTopLimit = Math.max(0, this.dropOffsetRows);
+  var shiftRows = Math.min(requestedShiftRows, maxShiftRowsBeforeTopLimit);
+
+  if (shiftRows > 0) {
+    this.dropOffsetRows -= shiftRows;
+    this.version += 1;
+    this._rebuildCaches();
+    lowestBubbleBottomY = this.cells.reduce(function (lowestBottomYAfterShift, cell) {
+      var cellPosition = this.getCellPosition(cell.row, cell.col);
+      var bubbleBottomY = cellPosition.y - BoardLayout.bubbleRadius;
+      return Math.min(lowestBottomYAfterShift, bubbleBottomY);
+    }.bind(this), Infinity);
+    currentSpacePixels = lowestBubbleBottomY - BoardLayout.dangerLineY;
+  }
+
+  var removedCells = [];
+  if (shiftRows < requestedShiftRows) {
+    var cellsInDangerSpace = this.cells.filter(function (cell) {
+      var cellPosition = this.getCellPosition(cell.row, cell.col);
+      return cellPosition.y - BoardLayout.bubbleRadius < requiredBubbleBottomY;
+    }, this);
+    removedCells = this.removeCells(cellsInDangerSpace);
+    if (!removedCells.length) {
+      throw new Error("Danger line space cannot be created after top limit is reached.");
+    }
+    if (!this.cells.length) {
+      throw new Error("Danger line space removal cleared the board.");
+    }
+    lowestBubbleBottomY = this.cells.reduce(function (lowestBottomYAfterRemoval, cell) {
+      var cellPosition = this.getCellPosition(cell.row, cell.col);
+      var bubbleBottomY = cellPosition.y - BoardLayout.bubbleRadius;
+      return Math.min(lowestBottomYAfterRemoval, bubbleBottomY);
+    }.bind(this), Infinity);
+    currentSpacePixels = lowestBubbleBottomY - BoardLayout.dangerLineY;
+    if (currentSpacePixels < requiredSpacePixels) {
+      throw new Error("Danger line space remains below required rows after removal.");
+    }
+  }
+
+  return {
+    shiftRows: shiftRows,
+    removedCells: removedCells,
+    dropOffsetRows: this.dropOffsetRows,
+    spaceRows: currentSpacePixels / BoardLayout.rowHeight
+  };
+};
+
 BubbleGrid.prototype.getTopAttachY = function () {
   return BoardLayout.boardStartY - this.dropOffsetRows * BoardLayout.rowHeight;
 };

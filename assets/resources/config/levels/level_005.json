@@ -44,9 +44,9 @@
             "G",
             "B"
         ],
-        "shotLimit": 21,
-        "targetScore": 5805,
-        "dropInterval": 5,
+        "shotLimit": 23,
+        "targetScore": 5341,
+        "dropInterval": 6,
         "jarCount": 3,
         "jarColors": [
             "R",
@@ -80,6 +80,12 @@
                 "value": 3
             }
         ],
+        "clearRewardItems": [
+            {
+                "id": "coin",
+                "count": 80
+            }
+        ],
         "layout": [
             "BBRRGGBG",
             "BBRRGGBG",
@@ -89,7 +95,7 @@
             "........"
         ],
         "designNotes": "Collection becomes a real requirement while the board leaves less room for inefficient shots.",
-        "difficultyScore": 74
+        "difficultyScore": 68
     },
     "difficultyScaleMax": 100
 }

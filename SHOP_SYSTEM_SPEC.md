@@ -102,7 +102,7 @@ V1 不做：
       "itemCount": 1,
       "price": {
         "currency": "coin",
-        "amount": 200
+        "amount": 300
       },
       "dailyLimit": 3,
       "enabled": true,
@@ -308,7 +308,7 @@ V1 不做：
 首版价格与限购建议（与现有文档保持一致）：
 
 - `swap_ball`：100 金币，日限 5
-- `rainbow_ball`：200 金币，日限 3
+- `rainbow_ball`：300 金币，日限 3
 - `blast_ball`：300 金币，日限 2
 - `barrier_hammer`：300 金币，日限 2
 

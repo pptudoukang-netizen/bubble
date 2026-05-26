@@ -6,16 +6,20 @@ var BundleLoader = require("../utils/BundleLoader");
 var PoolManager = require("../utils/PoolManager");
 var LevelProgressStore = require("../utils/LevelProgressStore");
 var PlayerResourceStore = require("../utils/PlayerResourceStore");
+var DailyTaskStore = require("../utils/DailyTaskStore");
+var StaminaRecoveryStore = require("../utils/StaminaRecoveryStore");
 var InventoryStore = require("../utils/InventoryStore");
 var StarChestStore = require("../utils/StarChestStore");
 var ShopStateStore = require("../utils/ShopStateStore");
 var GameCircleWelfareStore = require("../utils/GameCircleWelfareStore");
 var SelectedPowerupsStore = require("../utils/SelectedPowerupsStore");
 var SignInStore = require("../utils/SignInStore");
+var NewGiftStore = require("../utils/NewGiftStore");
 var RouteConfigStore = require("../utils/RouteConfigStore");
 var AudioManager = require("../audio/AudioManager");
 var BoardLayout = require("../config/BoardLayout");
 var DailySignInConfig = require("../config/DailySignInConfig");
+var DailyTaskConfig = require("../config/DailyTaskConfig");
 var StarChestConfig = require("../config/StarChestConfig");
 var GameCircleWelfareConfig = require("../config/GameCircleWelfareConfig");
 var ShopGoodsConfig = require("../config/ShopGoodsConfig");
@@ -31,16 +35,23 @@ var LevelSelectView = require("./LevelSelectView");
 var BootstrapButtonFactory = require("./BootstrapButtonFactory");
 var LevelRenderer = require("../render/LevelRenderer");
 var LoadingViewController = require("../ui/LoadingViewController");
+var NetworkLoadingOverlay = require("../ui/NetworkLoadingOverlay");
 var TipsPresenter = require("../ui/TipsPresenter");
 var BackpackViewController = require("../ui/BackpackViewController");
+var DailyTaskViewController = require("../ui/DailyTaskViewController");
+var StartGameViewController = require("../ui/StartGameViewController");
 var PopupPanelAnimator = require("../ui/PopupPanelAnimator");
 var StarChestRewardService = require("../services/StarChestRewardService");
 var StarChestService = require("../services/StarChestService");
+var DailyTaskRewardService = require("../services/DailyTaskRewardService");
+var DailyTaskService = require("../services/DailyTaskService");
 var GameCircleButtonAdapter = require("../services/GameCircleButtonAdapter");
 var GameCircleWelfareService = require("../services/GameCircleWelfareService");
 var ShopConfigService = require("../services/ShopConfigService");
 var ShopStateService = require("../services/ShopStateService");
 var ShopPurchaseService = require("../services/ShopPurchaseService");
+var WechatShareService = require("../services/WechatShareService");
+var FriendGiftService = require("../services/FriendGiftService");
 var AdService = require("../services/AdService");
 var TelemetryService = require("../services/TelemetryService");
 var AdRewardQuotaStore = require("../services/AdRewardQuotaStore");
@@ -56,6 +67,7 @@ var BASELINE_JAR_RENDER_Y_OFFSET = Number(BoardLayout.jarRenderYOffset) || 0;
 var BASELINE_SHOOTER_OFFSET_FROM_BOTTOM = (BoardLayout.shooterOrigin.y - (-BASELINE_HALF_HEIGHT)) + SHOOTER_RAISE_FROM_BOTTOM;
 var BASELINE_DANGER_OFFSET_FROM_BOTTOM = 460;
 var INVENTORY_VIEW_PREFAB_PATH = "prefabs/ui/BackpackView";
+var START_GAME_VIEW_PREFAB_PATH = "prefabs/ui/StartGameView";
 var POWER_TIPS_VIEW_PREFAB_PATH = "prefabs/ui/PowerTipsView";
 var POWERUP_TYPE_BY_ITEM_ID = {
   swap_ball: "swap",
@@ -114,16 +126,20 @@ module.exports = {
   PoolManager: PoolManager,
   LevelProgressStore: LevelProgressStore,
   PlayerResourceStore: PlayerResourceStore,
+  DailyTaskStore: DailyTaskStore,
+  StaminaRecoveryStore: StaminaRecoveryStore,
   InventoryStore: InventoryStore,
   StarChestStore: StarChestStore,
   ShopStateStore: ShopStateStore,
   GameCircleWelfareStore: GameCircleWelfareStore,
   SelectedPowerupsStore: SelectedPowerupsStore,
   SignInStore: SignInStore,
+  NewGiftStore: NewGiftStore,
   RouteConfigStore: RouteConfigStore,
   AudioManager: AudioManager,
   BoardLayout: BoardLayout,
   DailySignInConfig: DailySignInConfig,
+  DailyTaskConfig: DailyTaskConfig,
   StarChestConfig: StarChestConfig,
   GameCircleWelfareConfig: GameCircleWelfareConfig,
   ShopGoodsConfig: ShopGoodsConfig,
@@ -139,16 +155,23 @@ module.exports = {
   BootstrapButtonFactory: BootstrapButtonFactory,
   LevelRenderer: LevelRenderer,
   LoadingViewController: LoadingViewController,
+  NetworkLoadingOverlay: NetworkLoadingOverlay,
   TipsPresenter: TipsPresenter,
   BackpackViewController: BackpackViewController,
+  DailyTaskViewController: DailyTaskViewController,
+  StartGameViewController: StartGameViewController,
   PopupPanelAnimator: PopupPanelAnimator,
   StarChestRewardService: StarChestRewardService,
   StarChestService: StarChestService,
+  DailyTaskRewardService: DailyTaskRewardService,
+  DailyTaskService: DailyTaskService,
   GameCircleButtonAdapter: GameCircleButtonAdapter,
   GameCircleWelfareService: GameCircleWelfareService,
   ShopConfigService: ShopConfigService,
   ShopStateService: ShopStateService,
   ShopPurchaseService: ShopPurchaseService,
+  WechatShareService: WechatShareService,
+  FriendGiftService: FriendGiftService,
   AdService: AdService,
   TelemetryService: TelemetryService,
   AdRewardQuotaStore: AdRewardQuotaStore,
@@ -163,6 +186,7 @@ module.exports = {
   BASELINE_SHOOTER_OFFSET_FROM_BOTTOM: BASELINE_SHOOTER_OFFSET_FROM_BOTTOM,
   BASELINE_DANGER_OFFSET_FROM_BOTTOM: BASELINE_DANGER_OFFSET_FROM_BOTTOM,
   INVENTORY_VIEW_PREFAB_PATH: INVENTORY_VIEW_PREFAB_PATH,
+  START_GAME_VIEW_PREFAB_PATH: START_GAME_VIEW_PREFAB_PATH,
   POWER_TIPS_VIEW_PREFAB_PATH: POWER_TIPS_VIEW_PREFAB_PATH,
   POWERUP_TYPE_BY_ITEM_ID: POWERUP_TYPE_BY_ITEM_ID,
   ITEM_ID_BY_POWERUP_TYPE: ITEM_ID_BY_POWERUP_TYPE,

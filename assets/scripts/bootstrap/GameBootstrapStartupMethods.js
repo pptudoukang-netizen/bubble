@@ -182,6 +182,14 @@ module.exports = {
         run: function () {
           return this._preloadStartupLevelConfigs();
         }.bind(this)
+      },
+      {
+        id: "friend_stamina_gift_claim",
+        stage: "检查好友体力赠送...",
+        weight: 0.05,
+        run: function () {
+          return this._claimPendingFriendStaminaGiftFromLaunchOptions();
+        }.bind(this)
       }
     ];
 

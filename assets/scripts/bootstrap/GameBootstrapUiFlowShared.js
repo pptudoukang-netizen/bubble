@@ -8,8 +8,6 @@ var LevelSelectView = require("./LevelSelectView");
 var BootstrapButtonFactory = require("./BootstrapButtonFactory");
 var StarRatingPolicy = require("../core/StarRatingPolicy");
 var BundleLoader = require("../utils/BundleLoader");
-var LeaderboardStore = require("../utils/LeaderboardStore");
-var RankingViewController = require("../ui/RankingViewController");
 var GameCircleWelfareViewController = require("../ui/GameCircleWelfareViewController");
 var ShopViewController = require("../ui/ShopViewController");
 var BuyViewController = require("../ui/BuyViewController");
@@ -20,7 +18,6 @@ var SETTING_STATUS_X_ENABLED = -18;
 var SETTING_STATUS_X_DISABLED = 18;
 var SETTING_VOLUME_ICON_OPEN_PATH = "image/setting/volume_open";
 var SETTING_VOLUME_ICON_CLOSE_PATH = "image/setting/volume_close";
-var RANKING_VIEW_PREFAB_PATH = "prefabs/ui/RankingView";
 var GAME_CIRCLE_WELFARE_VIEW_PREFAB_PATH = "prefabs/ui/GamingCircleView";
 var SHOP_VIEW_PREFAB_PATH = "prefabs/ui/ShopView";
 var BUY_VIEW_PREFAB_PATH = "prefabs/ui/BuyView";
@@ -57,8 +54,8 @@ var SIGN_IN_ITEM_DISPLAY_NAMES = {
 var AWARD_VIEW_PREFAB_PATH = "prefabs/ui/AwardView";
 var AWARD_ITEM_ICON_PATHS = {
   coin: "image/props/coin",
-  stamina: "image/props/treasure_chest",
-  swap_ball: "image/props/gift_pack",
+  stamina: "image/props/love",
+  swap_ball: "image/props/change_ball",
   rainbow_ball: "image/props/rainbow_ball",
   blast_ball: "image/props/blast_ball",
   barrier_hammer: "image/props/barrier_hammer"
@@ -157,6 +154,12 @@ function resolveGameCircleFailMessage(error) {
   if (message === "GAME_CIRCLE_TASK_ALREADY_CLAIMED") {
     return "奖励已领取";
   }
+  if (message === "GAME_CIRCLE_AUTH_DENIED") {
+    return "请在微信小游戏环境下完成授权后再打开游戏圈福利";
+  }
+  if (message === "NETWORK_LOADING_TIMEOUT") {
+    return "网络请求超时，请重试";
+  }
   if (message.indexOf("wx.getGameClubData is unavailable") >= 0) {
     return "游戏圈数据仅微信小游戏环境可刷新";
   }
@@ -223,8 +226,6 @@ module.exports = {
   BootstrapButtonFactory: BootstrapButtonFactory,
   StarRatingPolicy: StarRatingPolicy,
   BundleLoader: BundleLoader,
-  LeaderboardStore: LeaderboardStore,
-  RankingViewController: RankingViewController,
   GameCircleWelfareViewController: GameCircleWelfareViewController,
   ShopViewController: ShopViewController,
   BuyViewController: BuyViewController,
@@ -234,7 +235,6 @@ module.exports = {
   SETTING_STATUS_X_DISABLED: SETTING_STATUS_X_DISABLED,
   SETTING_VOLUME_ICON_OPEN_PATH: SETTING_VOLUME_ICON_OPEN_PATH,
   SETTING_VOLUME_ICON_CLOSE_PATH: SETTING_VOLUME_ICON_CLOSE_PATH,
-  RANKING_VIEW_PREFAB_PATH: RANKING_VIEW_PREFAB_PATH,
   GAME_CIRCLE_WELFARE_VIEW_PREFAB_PATH: GAME_CIRCLE_WELFARE_VIEW_PREFAB_PATH,
   SHOP_VIEW_PREFAB_PATH: SHOP_VIEW_PREFAB_PATH,
   BUY_VIEW_PREFAB_PATH: BUY_VIEW_PREFAB_PATH,

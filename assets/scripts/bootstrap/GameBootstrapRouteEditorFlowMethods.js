@@ -17,11 +17,15 @@ module.exports = {
     if (typeof this._clearPendingLevelEntry === "function") {
       this._clearPendingLevelEntry();
     }
+    if (typeof this._hideStartGameView === "function") {
+      this._hideStartGameView();
+    }
     if (typeof this._hideInventoryView === "function") {
       this._hideInventoryView();
     }
     this.isRestarting = true;
     this._currentLevelEnteredByTestUnlock = false;
+    this._currentLevelAwardedClearRewardItems = [];
     this._setDropTestButtonVisible(false);
     this._lastRuntimeState = null;
     this.levelManager.loadLevel(levelId).then(function (levelConfig) {
@@ -66,6 +70,7 @@ module.exports = {
       }.bind(this));
     }.bind(this)).catch(function (error) {
       this.isRestarting = false;
+      this._pendingStartGamePowerups = [];
       this._pendingRouteEditorAutoEnable = false;
       this._setDropTestButtonVisible(!!this.currentLevelConfig && !this.isSelectingLevel);
       this._refreshRouteEditorButtons();

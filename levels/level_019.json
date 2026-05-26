@@ -46,9 +46,9 @@
             "B",
             "P"
         ],
-        "shotLimit": 29,
-        "targetScore": 12355,
-        "dropInterval": 3,
+        "shotLimit": 32,
+        "targetScore": 11367,
+        "dropInterval": 4,
         "jarCount": 4,
         "jarColors": [
             "R",
@@ -75,13 +75,19 @@
             {
                 "type": "collect_color",
                 "color": "G",
-                "value": 20
+                "value": 18
             }
         ],
         "bonusObjectives": [
             {
                 "type": "clear_with_shots_remaining",
-                "value": 2
+                "value": 1
+            }
+        ],
+        "clearRewardItems": [
+            {
+                "id": "coin",
+                "count": 220
             }
         ],
         "layout": [
@@ -93,7 +99,7 @@
             "BPRGBP.."
         ],
         "designNotes": "Late-game collection pressure now sits behind stone and ice blockers, with a blast pickup as the main escape hatch.",
-        "difficultyScore": 96,
+        "difficultyScore": 88,
         "specialEntities": [
             {
                 "id": "skill_blast_01",

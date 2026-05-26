@@ -46,9 +46,9 @@
             "B",
             "P"
         ],
-        "shotLimit": 26,
-        "targetScore": 8760,
-        "dropInterval": 4,
+        "shotLimit": 29,
+        "targetScore": 8059,
+        "dropInterval": 5,
         "jarCount": 4,
         "jarColors": [
             "R",
@@ -74,7 +74,7 @@
             },
             {
                 "type": "collect_any",
-                "value": 15
+                "value": 14
             }
         ],
         "bonusObjectives": [
@@ -82,6 +82,16 @@
                 "type": "collect_color",
                 "color": "B",
                 "value": 4
+            }
+        ],
+        "clearRewardItems": [
+            {
+                "id": "coin",
+                "count": 170
+            },
+            {
+                "id": "stamina",
+                "count": 1
             }
         ],
         "layout": [
@@ -93,7 +103,7 @@
             "GB......"
         ],
         "designNotes": "Blast skill ball enters alongside stone blockers to teach local structure breaking.",
-        "difficultyScore": 86,
+        "difficultyScore": 78,
         "specialEntities": [
             {
                 "id": "skill_blast_01",
