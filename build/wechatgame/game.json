@@ -15,6 +15,10 @@
     },
     "subpackages": [
         {
+            "name": "map",
+            "root": "subpackages/map"
+        },
+        {
             "name": "resources",
             "root": "subpackages/resources"
         },

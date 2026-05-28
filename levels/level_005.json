@@ -95,7 +95,20 @@
             "........"
         ],
         "designNotes": "Collection becomes a real requirement while the board leaves less room for inefficient shots.",
-        "difficultyScore": 68
+        "difficultyScore": 68,
+        "levelType": "normal",
+        "playMode": "shot_limited",
+        "initialDropSpaceRows": 8,
+        "adPowerupRules": {
+            "allowed": [
+                "three_line_elimination",
+                "plus_three_balls"
+            ],
+            "maxGrantsPerRun": {
+                "three_line_elimination": 1,
+                "plus_three_balls": 1
+            }
+        }
     },
     "difficultyScaleMax": 100
 }

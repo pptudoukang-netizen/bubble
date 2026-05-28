@@ -168,6 +168,30 @@ ShooterController.prototype.addInventory = function (entityType, count) {
   };
 };
 
+ShooterController.prototype.setUpcomingNormalBalls = function (colorCode, count) {
+  if (this.availableColors.indexOf(colorCode) < 0) {
+    throw new Error("ShooterController revive color must exist in availableColors: " + colorCode);
+  }
+  if (!Number.isInteger(count) || count <= 0 || count > 2) {
+    throw new Error("ShooterController revive queue count must be 1 or 2.");
+  }
+
+  if (count >= 1) {
+    this.currentBall = createNormalBall(colorCode);
+  }
+  if (count >= 2) {
+    this.nextBall = createNormalBall(colorCode);
+  }
+  this._syncLegacyColorFields();
+  return {
+    accepted: true,
+    color: colorCode,
+    assignedCount: count,
+    currentBall: clone(this.currentBall),
+    nextBall: clone(this.nextBall)
+  };
+};
+
 ShooterController.prototype.equipSkillBall = function (entityType) {
   if (entityType !== "rainbow" && entityType !== "blast") {
     return {

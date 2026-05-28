@@ -75,6 +75,7 @@ function attachLevelRendererSceneMethods(LevelRenderer, deps) {
   var resolveBallVisualKey = deps.resolveBallVisualKey;
   var computeShooterAngle = deps.computeShooterAngle;
   var createRouteColor = deps.createRouteColor;
+  var buildAdReviveDescription = deps.buildAdReviveDescription;
   var resolveLoseRewardEntry = deps.resolveLoseRewardEntry;
   var clamp = deps.clamp;
   var DANGER_WARNING_SHAKE_LEFT_X = -20;
@@ -97,6 +98,18 @@ function attachLevelRendererSceneMethods(LevelRenderer, deps) {
     var nextX = canRevive ? retryButtonNode._loseRetryOriginalX : LOSE_RETRY_CENTER_X;
     retryButtonNode.setPosition(nextX, retryButtonNode.y);
   }
+
+  function requireChildNode(parentNode, childName, parentDescription) {
+    if (!parentNode || !parentNode.isValid) {
+      throw new Error(parentDescription + " is required.");
+    }
+    var childNode = parentNode.getChildByName(childName);
+    if (!childNode || !childNode.isValid) {
+      throw new Error(parentDescription + "/" + childName + " is required.");
+    }
+    return childNode;
+  }
+
   var DANGER_NORMAL_BAND_OPACITY = 110;
   var DANGER_WARNING_BAND_OPACITY = 215;
   var DANGER_NORMAL_LABEL_COLOR = cc.color(255, 250, 235);
@@ -305,6 +318,114 @@ LevelRenderer.prototype._renderJarScoreBoostTimer = function (runtimeSnapshot) {
   timerLabel.string = String(remainingSeconds);
 };
 
+LevelRenderer.prototype._renderTimedLevelTimer = function (runtimeSnapshot) {
+  var timedLevel = !!(runtimeSnapshot && runtimeSnapshot.timedLevel);
+  var panel = this._getMountedHudPanel();
+  if (!panel) {
+    if (timedLevel) {
+      throw new Error("Timed level requires HudPanel.");
+    }
+    return;
+  }
+
+  var timerNode = panel.getChildByName("timer");
+  if (!timerNode || !timerNode.isValid) {
+    if (timedLevel) {
+      throw new Error("Timed level requires HudPanel.timer node.");
+    }
+    return;
+  }
+
+  var timerLabel = timerNode.getComponent(cc.Label);
+  if (!timerLabel) {
+    if (timedLevel) {
+      throw new Error("HudPanel.timer requires Label component.");
+    }
+    timerNode.active = false;
+    return;
+  }
+
+  if (!timedLevel) {
+    timerNode.active = false;
+    timerLabel.string = "0";
+    return;
+  }
+
+  var remainingMsValue = Number(runtimeSnapshot.remainingTimeMs);
+  if (!Number.isFinite(remainingMsValue)) {
+    throw new Error("Timed level runtime snapshot requires finite remainingTimeMs.");
+  }
+  var remainingMs = Math.max(0, Math.ceil(remainingMsValue));
+  var remainingSeconds = Math.max(0, Math.ceil(remainingMs / 1000));
+  var minutes = Math.floor(remainingSeconds / 60);
+  var seconds = remainingSeconds % 60;
+  timerNode.active = true;
+  timerLabel.string = minutes + ":" + (seconds < 10 ? "0" + seconds : String(seconds));
+};
+
+LevelRenderer.prototype.playThreeLineEliminationAnimation = function (rows) {
+  if (!Array.isArray(rows) || !rows.length) {
+    throw new Error("Three-line elimination animation requires rows.");
+  }
+  if (!this.layers || !this.layers.overlay) {
+    throw new Error("Three-line elimination animation requires overlay layer.");
+  }
+
+  var spritePath = BALL_RESOURCES.LIGHT_EFFECT;
+  var spriteFrame = this.spriteFrameCache[spritePath];
+  if (!spriteFrame) {
+    throw new Error("Three-line elimination animation requires preloaded light effect sprite.");
+  }
+
+  var boardLeft = Number(BoardLayout.boardLeft);
+  var boardRight = Number(BoardLayout.boardRight);
+  if (!Number.isFinite(boardLeft) || !Number.isFinite(boardRight) || boardRight <= boardLeft) {
+    throw new Error("Three-line elimination animation requires valid board bounds.");
+  }
+
+  var duration = 0.18;
+  var lightNodes = rows.map(function (entry, index) {
+    if (!entry || !Number.isFinite(Number(entry.y))) {
+      throw new Error("Three-line elimination row requires finite y.");
+    }
+    var node = new cc.Node("ThreeLineLight_" + index);
+    node.parent = this.layers.overlay;
+    node.zIndex = 200 + index;
+    ensureSprite(node, spriteFrame);
+    node.setContentSize(Math.max(1, boardRight - boardLeft), Math.max(1, BoardLayout.rowHeight));
+    node.setPosition(boardLeft - node.width * 0.5, Number(entry.y));
+    node.opacity = 255;
+    return node;
+  }, this);
+
+  return new Promise(function (resolve) {
+    var remaining = lightNodes.length;
+    lightNodes.forEach(function (node) {
+      var finish = function () {
+        if (node && cc.isValid(node)) {
+          node.removeFromParent();
+        }
+        remaining -= 1;
+        if (remaining === 0) {
+          resolve();
+        }
+      };
+
+      if (typeof cc.tween === "function") {
+        cc.tween(node)
+          .to(duration, { x: boardRight + node.width * 0.5 })
+          .call(finish)
+          .start();
+      } else {
+        node.runAction(cc.sequence(
+          cc.moveTo(duration, boardRight + node.width * 0.5, node.y),
+          cc.callFunc(finish)
+        ));
+      }
+    });
+  });
+};
+
 LevelRenderer.prototype._getMountedHudPanel = function () {
   if (!this.layers || !this.layers.hud) {
     return null;
@@ -452,6 +573,7 @@ LevelRenderer.prototype._setBottomPanelInventoryPresentation = function (buttonN
   }
   var inventoryCount = Math.max(0, Math.floor(numericCount));
   var hasInventory = inventoryCount > 0;
+  buttonNode.active = true;
   numBgNode.active = hasInventory;
   videoButtonNode.active = !hasInventory;
   if (hasInventory) {
@@ -463,6 +585,9 @@ LevelRenderer.prototype._setBottomPanelInventoryPresentation = function (buttonN
 };
 
 LevelRenderer.prototype._renderBottomPanel = function (runtimeSnapshot) {
+  if (!runtimeSnapshot || typeof runtimeSnapshot !== "object") {
+    throw new Error("Bottom panel requires runtime snapshot.");
+  }
   if (!this.layers || !this.layers.hud) {
     return;
   }
@@ -478,17 +603,24 @@ LevelRenderer.prototype._renderBottomPanel = function (runtimeSnapshot) {
     panelWidget.updateAlignment();
   }
 
-  var backButtonNode = panel.getChildByName("back_btn");
-  var rainbowButtonNode = panel.getChildByName("rainbow_btn");
-  var changeButtonNode = panel.getChildByName("change_btn");
-  var destroyButtonNode = panel.getChildByName("destroy_btn");
-  var bombButtonNode = panel.getChildByName("bomb_btn");
+  var backButtonNode = requireChildNode(panel, "back_btn", "BttomPanel");
+  var propsScrollNode = requireChildNode(panel, "props_scroll", "BttomPanel");
+  var propsViewNode = requireChildNode(propsScrollNode, "view", "BttomPanel/props_scroll");
+  var propsContentNode = requireChildNode(propsViewNode, "content", "BttomPanel/props_scroll/view");
+  var rainbowButtonNode = requireChildNode(propsContentNode, "rainbow_btn", "BttomPanel/props_scroll/view/content");
+  var changeButtonNode = requireChildNode(propsContentNode, "change_btn", "BttomPanel/props_scroll/view/content");
+  var destroyButtonNode = requireChildNode(propsContentNode, "destroy_btn", "BttomPanel/props_scroll/view/content");
+  var bombButtonNode = requireChildNode(propsContentNode, "bomb_btn", "BttomPanel/props_scroll/view/content");
+  var threeLineButtonNode = requireChildNode(propsContentNode, "eliminate_three_line_btn", "BttomPanel/props_scroll/view/content");
+  var plusBallButtonNode = requireChildNode(propsContentNode, "plus_ball_btn", "BttomPanel/props_scroll/view/content");
 
   this._bindBottomPanelButton(backButtonNode, "back");
   this._bindBottomPanelButton(rainbowButtonNode, "use_rainbow");
   this._bindBottomPanelButton(changeButtonNode, "use_swap");
   this._bindBottomPanelButton(destroyButtonNode, "use_barrier_hammer");
   this._bindBottomPanelButton(bombButtonNode, "use_blast");
+  this._bindBottomPanelButton(threeLineButtonNode, "use_three_line_elimination");
+  this._bindBottomPanelButton(plusBallButtonNode, "use_plus_three_balls");
 
   var skillInventory = runtimeSnapshot && runtimeSnapshot.shooter && runtimeSnapshot.shooter.skillInventory
     ? runtimeSnapshot.shooter.skillInventory
@@ -497,6 +629,26 @@ LevelRenderer.prototype._renderBottomPanel = function (runtimeSnapshot) {
   var blastCount = Math.max(0, Math.floor(Number(skillInventory.blast) || 0));
   var swapCount = Math.max(0, Math.floor(Number(skillInventory.swap) || 0));
   var destroyCount = Math.max(0, Math.floor(Number(skillInventory.barrier_hammer) || 0));
+  if (!runtimeSnapshot.adRunPowerups || typeof runtimeSnapshot.adRunPowerups !== "object" || Array.isArray(runtimeSnapshot.adRunPowerups)) {
+    throw new Error("Bottom panel requires adRunPowerups snapshot.");
+  }
+  if (!runtimeSnapshot.adRunPowerupAllowed || typeof runtimeSnapshot.adRunPowerupAllowed !== "object" || Array.isArray(runtimeSnapshot.adRunPowerupAllowed)) {
+    throw new Error("Bottom panel requires adRunPowerupAllowed snapshot.");
+  }
+  var adRunPowerups = runtimeSnapshot.adRunPowerups;
+  var adRunPowerupAllowed = runtimeSnapshot.adRunPowerupAllowed;
+  var readAdRunPowerupCount = function (powerupType) {
+    if (!Object.prototype.hasOwnProperty.call(adRunPowerups, powerupType)) {
+      return 0;
+    }
+    var count = Number(adRunPowerups[powerupType]);
+    if (!Number.isInteger(count) || count < 0) {
+      throw new Error("Bottom panel ad run powerup count must be a non-negative integer: " + powerupType);
+    }
+    return count;
+  };
+  var threeLineCount = readAdRunPowerupCount("three_line_elimination");
+  var plusBallCount = readAdRunPowerupCount("plus_three_balls");
   var shooterSnapshot = runtimeSnapshot && runtimeSnapshot.shooter ? runtimeSnapshot.shooter : {};
   var pendingBarrierHammer = !!shooterSnapshot.pendingBarrierHammer;
   var pendingRainbowColorSelection = !!shooterSnapshot.pendingRainbowColorSelection;
@@ -505,11 +657,23 @@ LevelRenderer.prototype._renderBottomPanel = function (runtimeSnapshot) {
   var canUseSwap = canUsePowerup && !pendingBarrierHammer && swapCount > 0;
   var canUseBarrierHammer = pendingBarrierHammer || (canUsePowerup && destroyCount > 0);
   var canUseBlast = canUsePowerup && !pendingBarrierHammer && blastCount > 0;
+  var canUseThreeLine = canUsePowerup && !pendingBarrierHammer && threeLineCount > 0;
+  var canUsePlusBall = canUsePowerup && !pendingBarrierHammer && !runtimeSnapshot.infiniteShots && plusBallCount > 0;
 
   this._setBottomPanelInventoryPresentation(rainbowButtonNode, rainbowCount, "recover_inventory:rainbow");
   this._setBottomPanelInventoryPresentation(changeButtonNode, swapCount, "recover_inventory:swap");
   this._setBottomPanelInventoryPresentation(destroyButtonNode, destroyCount, "recover_inventory:barrier_hammer");
   this._setBottomPanelInventoryPresentation(bombButtonNode, blastCount, "recover_inventory:blast");
+  if (adRunPowerupAllowed.three_line_elimination === true) {
+    this._setBottomPanelInventoryPresentation(threeLineButtonNode, threeLineCount, "recover_ad_powerup:three_line_elimination");
+  } else if (threeLineButtonNode) {
+    threeLineButtonNode.active = false;
+  }
+  if (adRunPowerupAllowed.plus_three_balls === true && !runtimeSnapshot.infiniteShots) {
+    this._setBottomPanelInventoryPresentation(plusBallButtonNode, plusBallCount, "recover_ad_powerup:plus_three_balls");
+  } else if (plusBallButtonNode) {
+    plusBallButtonNode.active = false;
+  }
   this._setBottomPanelButtonEnabled(backButtonNode, true, {
     dimWhenDisabled: false
   });
@@ -523,6 +687,12 @@ LevelRenderer.prototype._renderBottomPanel = function (runtimeSnapshot) {
     dimWhenDisabled: false
   });
   this._setBottomPanelButtonEnabled(bombButtonNode, blastCount > 0 ? canUseBlast : !pendingRainbowColorSelection, {
+    dimWhenDisabled: false
+  });
+  this._setBottomPanelButtonEnabled(threeLineButtonNode, threeLineCount > 0 ? canUseThreeLine : !pendingRainbowColorSelection, {
+    dimWhenDisabled: false
+  });
+  this._setBottomPanelButtonEnabled(plusBallButtonNode, plusBallCount > 0 ? canUsePlusBall : !pendingRainbowColorSelection, {
     dimWhenDisabled: false
   });
 };
@@ -1036,7 +1206,7 @@ LevelRenderer.prototype._playIceThawShake = function (runtimeSnapshot) {
   var offset = Math.max(2, Number(ICE_THAW_SHAKE_OFFSET) || 0);
   var stepDuration = Math.max(0.02, Number(ICE_THAW_SHAKE_STEP_DURATION) || 0.04);
   var objective = runtimeSnapshot && runtimeSnapshot.objectives ? runtimeSnapshot.objectives : null;
-  var shouldFlyToHud = !!(objective && objective.type === "collect_ice");
+  var shouldFlyToHud = !!(objective && objective.type === "collect_ice_snowball");
   var targetBoardPos = shouldFlyToHud ? this._getHudTargetBallPositionInBoard() : null;
   var flyDuration = Math.max(0.18, Number(ICE_COLLECT_FLY_DURATION) || 0.34);
   var bezierArc = Math.max(40, Number(ICE_COLLECT_BEZIER_ARC) || 120);
@@ -1790,7 +1960,7 @@ LevelRenderer.prototype._renderShooter = function (shooterSnapshot, activeProjec
     nextAnchor.x,
     nextAnchor.y + nextAnchorSize.height * 0.5 + surplusSize.height * 0.5 + 8
   );
-  surplusLabel.string = "剩余" + shotsValue;
+  surplusLabel.string = shooterSnapshot && shooterSnapshot.infiniteShots ? "无限" : "剩余" + shotsValue;
 
   var ghost = getOrCreateChild(shooterPanel, "GhostBubble");
   var hasTrajectory = !!(trajectory && trajectory.targetCellPosition && trajectory.pathPoints && trajectory.pathPoints.length >= 2);
@@ -2622,6 +2792,16 @@ LevelRenderer.prototype._renderLoseView = function (runtimeSnapshot) {
       if (awardTipsLabel) {
         awardTipsLabel.string = String(loseRewardEntry.awardTips || "");
       }
+      var describeNode = adButtonNode.getChildByName("describe");
+      var describeLabel = describeNode ? describeNode.getComponent(cc.Label) : null;
+      if (!describeLabel) {
+        throw new Error("LoseView btn_ad requires describe cc.Label.");
+      }
+      if (typeof buildAdReviveDescription !== "function") {
+        throw new Error("LoseView requires buildAdReviveDescription.");
+      }
+      describeNode.active = true;
+      describeLabel.string = buildAdReviveDescription(this.currentLevelConfig, runtimeSnapshot);
       this._bindLoseButton(adButtonNode, "ad");
     }
   }

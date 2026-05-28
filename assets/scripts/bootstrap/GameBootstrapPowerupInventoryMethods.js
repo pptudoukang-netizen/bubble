@@ -34,12 +34,12 @@ var START_GAME_OBJECTIVE_ICON_PATHS = {
   Y: "image/yellow_ball",
   P: "image/purple_ball",
   RAINBOW: "image/rainbow_ball",
-  ICE: "image/ice_ball"
+  ICE_SNOWBALL: "image/snow_cube"
 };
 var START_GAME_COLLECTION_OBJECTIVE_TYPES = {
   collect_any: true,
   collect_color: true,
-  collect_ice: true
+  collect_ice_snowball: true
 };
 
 function requirePositiveInteger(value, fieldName) {
@@ -102,6 +102,7 @@ function buildStartGameObjective(levelConfig) {
 
   if (objective.type === "collect_any") {
     return {
+      type: objective.type,
       iconPath: START_GAME_OBJECTIVE_ICON_PATHS.RAINBOW,
       target: target
     };
@@ -112,14 +113,16 @@ function buildStartGameObjective(levelConfig) {
       throw new Error("StartGameView collect_color objective requires a supported color.");
     }
     return {
+      type: objective.type,
       iconPath: START_GAME_OBJECTIVE_ICON_PATHS[objective.color],
       target: target
     };
   }
 
-  if (objective.type === "collect_ice") {
+  if (objective.type === "collect_ice_snowball") {
     return {
-      iconPath: START_GAME_OBJECTIVE_ICON_PATHS.ICE,
+      type: objective.type,
+      iconPath: START_GAME_OBJECTIVE_ICON_PATHS.ICE_SNOWBALL,
       target: target
     };
   }
@@ -252,6 +255,106 @@ function resolveNodeWorldPositionInParent(node, parentNode) {
 }
 
 module.exports = {
+  _onUseThreeLineEliminationTap: function () {
+    if (!this.currentLevelConfig || this.isRestarting || this.isSelectingLevel) {
+      return;
+    }
+    if (this._isTerminalState()) {
+      return;
+    }
+    if (this._threeLineEliminationInProgress) {
+      return;
+    }
+
+    this._trackTelemetry("powerup_tap", {
+      powerup_type: "three_line_elimination"
+    });
+    this._playSfx("uiClick");
+
+    var preview = this.gameManager.previewThreeLineElimination();
+    if (!preview || !preview.accepted) {
+      var previewReason = preview && typeof preview.reason === "string" ? preview.reason : "preview_failed";
+      if (previewReason === "inventory_empty") {
+        this._setStatusWithTip("three_line_inventory_empty", null, "消三行道具库存不足");
+        this._tryRecoverAdRunPowerupByAd("three_line_elimination");
+        return;
+      }
+      if (previewReason === "no_target") {
+        this._setStatusWithTip("three_line_no_target", null, "当前没有可消除的行");
+        return;
+      }
+      this._setStatusWithTip("three_line_unavailable", null, "当前状态不可使用消三行");
+      return;
+    }
+
+    if (!this.levelRenderer || typeof this.levelRenderer.playThreeLineEliminationAnimation !== "function") {
+      throw new Error("Three-line elimination requires LevelRenderer.playThreeLineEliminationAnimation.");
+    }
+
+    this._threeLineEliminationInProgress = true;
+    return this.levelRenderer.playThreeLineEliminationAnimation(preview.rows).then(function () {
+      var useResult = this.gameManager.useThreeLineElimination(preview.rows);
+      var snapshot = useResult && useResult.snapshot
+        ? useResult.snapshot
+        : this.gameManager.getRuntimeSnapshot();
+      this._handleRuntimeStateTransition(snapshot);
+      this.levelRenderer.refreshRuntime(this.currentLevelConfig, snapshot);
+
+      if (useResult && useResult.accepted) {
+        this._setStatusWithTip("three_line_success", {
+          remaining: useResult.remaining
+        }, "消三行生效，剩余：" + useResult.remaining);
+      } else {
+        this._setStatusWithTip("three_line_failed", null, "消三行失败");
+      }
+    }.bind(this)).then(function () {
+      this._threeLineEliminationInProgress = false;
+    }.bind(this), function (error) {
+      this._threeLineEliminationInProgress = false;
+      throw error;
+    }.bind(this));
+  },
+
+  _onUsePlusThreeBallsTap: function () {
+    if (!this.currentLevelConfig || this.isRestarting || this.isSelectingLevel) {
+      return;
+    }
+    if (this._isTerminalState()) {
+      return;
+    }
+
+    this._trackTelemetry("powerup_tap", {
+      powerup_type: "plus_three_balls"
+    });
+    this._playSfx("uiClick");
+    var useResult = this.gameManager.usePlusThreeBalls();
+    var snapshot = useResult && useResult.snapshot
+      ? useResult.snapshot
+      : this.gameManager.getRuntimeSnapshot();
+
+    this._handleRuntimeStateTransition(snapshot);
+    this.levelRenderer.refreshRuntime(this.currentLevelConfig, snapshot);
+
+    if (useResult && useResult.accepted) {
+      this._setStatusWithTip("plus_three_balls_success", {
+        remaining: useResult.remaining
+      }, "发射球 +3，剩余道具：" + useResult.remaining);
+      return;
+    }
+
+    var reason = useResult && typeof useResult.reason === "string" ? useResult.reason : "plus_three_balls_failed";
+    if (reason === "inventory_empty") {
+      this._setStatusWithTip("plus_three_balls_inventory_empty", null, "加三球道具库存不足");
+      this._tryRecoverAdRunPowerupByAd("plus_three_balls");
+      return;
+    }
+    if (reason === "timed_infinite_shots") {
+      this._setStatusWithTip("plus_three_balls_timed_unavailable", null, "计时关无需加球");
+      return;
+    }
+    this._setStatusWithTip("plus_three_balls_failed", null, "当前状态不可使用加三球");
+  },
+
   _onUseSkillBallTap: function (entityType) {
     if (!this.currentLevelConfig || this.isRestarting || this.isSelectingLevel) {
       return;

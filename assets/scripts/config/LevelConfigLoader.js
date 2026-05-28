@@ -12,6 +12,38 @@ var SPECIAL_ENTITY_TYPES = {
 var ALLOWED_COLORS = ["R", "G", "B", "Y", "P"];
 var ALLOWED_INNER_COLORS = ALLOWED_COLORS.slice();
 var ALLOWED_CLEAR_REWARD_ITEM_IDS = ["coin", "stamina"];
+var COLLECTION_OBJECTIVE_TYPES = {
+  collect_any: true,
+  collect_color: true,
+  collect_ice_snowball: true
+};
+var WIN_CONDITION_TYPES = {
+  clear_all: true,
+  collect_any: true,
+  collect_color: true,
+  collect_ice_snowball: true
+};
+var BONUS_OBJECTIVE_TYPES = {
+  collect_any: true,
+  collect_color: true,
+  collect_ice_snowball: true,
+  collect_same_color_bonus_hits: true,
+  clear_with_shots_remaining: true,
+  single_turn_drop_count: true
+};
+var LEVEL_TYPES = {
+  normal: true,
+  special_floating_island: true
+};
+var PLAY_MODES = {
+  shot_limited: true,
+  timed_infinite_shots: true
+};
+var AD_RUN_POWERUP_TYPES = {
+  three_line_elimination: true,
+  plus_three_balls: true
+};
+var MIN_INITIAL_DROP_SPACE_ROWS = 8;
 var MAX_JAR_COUNT = 4;
 var CLEAR_REWARD_START_LEVEL_ID = 5;
 
@@ -212,6 +244,147 @@ function normalizeSpecialEntities(levelConfig, levelKey) {
   });
 }
 
+function normalizeObjectiveList(objectives, allowedTypes, fieldName, levelConfig, levelKey) {
+  if (!Array.isArray(objectives)) {
+    throw new Error("level." + fieldName + " must be an array: " + levelKey);
+  }
+
+  return objectives.map(function (objective, index) {
+    if (!objective || typeof objective !== "object" || Array.isArray(objective)) {
+      throw new Error("level." + fieldName + "[" + index + "] must be object: " + levelKey);
+    }
+    if (typeof objective.type !== "string" || allowedTypes[objective.type] !== true) {
+      throw new Error("level." + fieldName + "[" + index + "].type unsupported: " + levelKey);
+    }
+    var value = assertPositiveInteger(objective.value, "level." + fieldName + "[" + index + "].value", levelKey);
+    var normalized = {
+      type: objective.type,
+      value: value
+    };
+    if (objective.type === "collect_color") {
+      var color = typeof objective.color === "string" ? objective.color : "";
+      if (levelConfig.colors.indexOf(color) === -1) {
+        throw new Error("level." + fieldName + "[" + index + "].color must exist in level.colors: " + levelKey);
+      }
+      normalized.color = color;
+    }
+    if (objective.type === "clear_all" && value !== 1) {
+      throw new Error("level." + fieldName + "[" + index + "].value for clear_all must be 1: " + levelKey);
+    }
+    return normalized;
+  });
+}
+
+function countCollectableIceSnowballs(levelConfig) {
+  if (!Array.isArray(levelConfig.specialEntities)) {
+    throw new Error("level.specialEntities must be normalized before ice snowball validation.");
+  }
+  return levelConfig.specialEntities.filter(function (entity) {
+    return entity && entity.entityCategory === "obstacle_ball" && entity.entityType === "ice";
+  }).length;
+}
+
+function validateIceSnowballObjectives(levelConfig, levelKey) {
+  if (!Array.isArray(levelConfig.winConditions) || !Array.isArray(levelConfig.bonusObjectives)) {
+    throw new Error("level objectives must be normalized before ice snowball validation: " + levelKey);
+  }
+  var objectives = levelConfig.winConditions.concat(levelConfig.bonusObjectives);
+  var maxRequired = objectives.reduce(function (max, objective) {
+    if (objective && objective.type === "collect_ice_snowball") {
+      return Math.max(max, Math.floor(Number(objective.value)));
+    }
+    return max;
+  }, 0);
+  if (maxRequired <= 0) {
+    return;
+  }
+  var available = countCollectableIceSnowballs(levelConfig);
+  if (available < maxRequired) {
+    throw new Error("level collect_ice_snowball target exceeds ice supply: " + levelKey);
+  }
+}
+
+function normalizeLevelMode(levelConfig, levelKey) {
+  if (typeof levelConfig.levelType !== "string") {
+    throw new Error("level.levelType is required: " + levelKey);
+  }
+  if (typeof levelConfig.playMode !== "string") {
+    throw new Error("level.playMode is required: " + levelKey);
+  }
+  var levelType = levelConfig.levelType;
+  var playMode = levelConfig.playMode;
+  if (LEVEL_TYPES[levelType] !== true) {
+    throw new Error("level.levelType unsupported: " + levelKey);
+  }
+  if (PLAY_MODES[playMode] !== true) {
+    throw new Error("level.playMode unsupported: " + levelKey);
+  }
+  if (levelType === "special_floating_island" && playMode !== "timed_infinite_shots") {
+    throw new Error("special_floating_island must use timed_infinite_shots: " + levelKey);
+  }
+  if (playMode === "timed_infinite_shots") {
+    if (levelType !== "special_floating_island") {
+      throw new Error("timed_infinite_shots must use special_floating_island: " + levelKey);
+    }
+    levelConfig.timeLimitSeconds = assertPositiveInteger(levelConfig.timeLimitSeconds, "level.timeLimitSeconds", levelKey);
+    if (levelConfig.requiredStarCount !== 1) {
+      throw new Error("level.requiredStarCount must be 1 for timed_infinite_shots: " + levelKey);
+    }
+  } else {
+    if (levelConfig.timeLimitSeconds !== undefined) {
+      throw new Error("level.timeLimitSeconds must not be configured for shot_limited: " + levelKey);
+    }
+    if (levelConfig.requiredStarCount !== undefined) {
+      throw new Error("level.requiredStarCount must not be configured for shot_limited: " + levelKey);
+    }
+  }
+  levelConfig.levelType = levelType;
+  levelConfig.playMode = playMode;
+}
+
+function normalizeAdPowerupRules(levelConfig, levelKey) {
+  if (levelConfig.adPowerupRules === undefined) {
+    throw new Error("level.adPowerupRules is required: " + levelKey);
+  }
+  var rules = levelConfig.adPowerupRules;
+  if (!rules || typeof rules !== "object" || Array.isArray(rules)) {
+    throw new Error("level.adPowerupRules must be object: " + levelKey);
+  }
+  if (!Array.isArray(rules.allowed)) {
+    throw new Error("level.adPowerupRules.allowed must be array: " + levelKey);
+  }
+  if (!rules.maxGrantsPerRun || typeof rules.maxGrantsPerRun !== "object" || Array.isArray(rules.maxGrantsPerRun)) {
+    throw new Error("level.adPowerupRules.maxGrantsPerRun must be object: " + levelKey);
+  }
+  var seen = {};
+  rules.allowed.forEach(function (powerupType, index) {
+    if (typeof powerupType !== "string" || AD_RUN_POWERUP_TYPES[powerupType] !== true) {
+      throw new Error("level.adPowerupRules.allowed[" + index + "] unsupported: " + levelKey);
+    }
+    if (seen[powerupType]) {
+      throw new Error("duplicate ad powerup rule: " + powerupType + ": " + levelKey);
+    }
+    seen[powerupType] = true;
+    assertPositiveInteger(rules.maxGrantsPerRun[powerupType], "level.adPowerupRules.maxGrantsPerRun." + powerupType, levelKey);
+    if (levelConfig.playMode === "timed_infinite_shots" && powerupType === "plus_three_balls") {
+      throw new Error("timed_infinite_shots cannot allow plus_three_balls: " + levelKey);
+    }
+  });
+  Object.keys(rules.maxGrantsPerRun).forEach(function (powerupType) {
+    if (seen[powerupType] !== true) {
+      throw new Error("level.adPowerupRules.maxGrantsPerRun contains undeclared powerup: " + levelKey);
+    }
+  });
+}
+
+function validateInitialDropSpaceRows(levelConfig, levelKey) {
+  var rows = assertPositiveInteger(levelConfig.initialDropSpaceRows, "level.initialDropSpaceRows", levelKey);
+  if (rows < MIN_INITIAL_DROP_SPACE_ROWS) {
+    throw new Error("level.initialDropSpaceRows must be >= " + MIN_INITIAL_DROP_SPACE_ROWS + ": " + levelKey);
+  }
+  levelConfig.initialDropSpaceRows = rows;
+}
+
 function normalizeLevelConfig(rawConfig, levelKey) {
   var config = clone(rawConfig);
   var expectedLevelId = resolveExpectedLevelId(levelKey);
@@ -252,7 +425,14 @@ function normalizeLevelConfig(rawConfig, levelKey) {
     throw new Error("level.colorCount must equal level.colors.length: " + levelKey);
   }
 
-  config.level.shotLimit = resolveShotLimit(config.level, levelKey);
+  normalizeLevelMode(config.level, levelKey);
+  if (config.level.playMode === "timed_infinite_shots") {
+    if (config.level.shotLimit !== undefined && config.level.shotLimit !== null) {
+      throw new Error("level.shotLimit must not be configured for timed_infinite_shots: " + levelKey);
+    }
+  } else {
+    config.level.shotLimit = resolveShotLimit(config.level, levelKey);
+  }
   config.level.targetScore = assertPositiveInteger(config.level.targetScore, "level.targetScore", levelKey);
   config.level.dropInterval = assertPositiveInteger(config.level.dropInterval, "level.dropInterval", levelKey);
   var clearRewardItems = normalizeClearRewardItems(config.level, expectedLevelId, levelKey);
@@ -297,7 +477,12 @@ function normalizeLevelConfig(rawConfig, levelKey) {
   assertNumberInRange(config.level.jarRules.collectZoneScale, "level.jarRules.collectZoneScale", 0.7, 1.4, levelKey);
   assertNumberInRange(config.level.jarRules.sameColorBonus, "level.jarRules.sameColorBonus", 1, 3, levelKey);
 
+  config.level.winConditions = normalizeObjectiveList(config.level.winConditions, WIN_CONDITION_TYPES, "winConditions", config.level, levelKey);
+  config.level.bonusObjectives = normalizeObjectiveList(config.level.bonusObjectives, BONUS_OBJECTIVE_TYPES, "bonusObjectives", config.level, levelKey);
   config.level.specialEntities = normalizeSpecialEntities(config.level, levelKey);
+  validateIceSnowballObjectives(config.level, levelKey);
+  normalizeAdPowerupRules(config.level, levelKey);
+  validateInitialDropSpaceRows(config.level, levelKey);
 
   var aimMeta = AimTuningProfiles.applyToLevel(config.level);
 

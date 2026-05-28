@@ -9,11 +9,11 @@ var LEVEL_DIR = path.resolve(__dirname, "../assets/resources/config/levels");
 var ALLOWED_COLORS = ["R", "G", "B", "Y", "P"];
 var MAX_JAR_COUNT = 4;
 var ALLOWED_DIFFICULTY = ["tutorial", "easy", "normal", "hard", "expert", "advanced"];
-var ALLOWED_WIN_TYPES = ["clear_all", "collect_any", "collect_color", "collect_ice"];
+var ALLOWED_WIN_TYPES = ["clear_all", "collect_any", "collect_color", "collect_ice_snowball"];
 var ALLOWED_BONUS_TYPES = [
   "collect_any",
   "collect_color",
-  "collect_ice",
+  "collect_ice_snowball",
   "collect_same_color_bonus_hits",
   "clear_with_shots_remaining",
   "single_turn_drop_count"
@@ -24,6 +24,8 @@ var ALLOWED_ENTITY_TYPES = {
   obstacle_ball: ["stone", "ice"]
 };
 var ALLOWED_CLEAR_REWARD_ITEM_IDS = ["coin", "stamina"];
+var AD_RUN_POWERUP_TYPES = ["three_line_elimination", "plus_three_balls"];
+var MIN_INITIAL_DROP_SPACE_ROWS = 8;
 var CLEAR_REWARD_START_LEVEL_ID = 5;
 
 function readJson(filePath) {
@@ -204,6 +206,126 @@ function validateClearRewardItems(level, expectedLevelId, issues) {
   });
 }
 
+function validateLevelMode(level, issues) {
+  if (typeof level.levelType !== "string") {
+    issues.push("levelType is required");
+    return;
+  }
+  if (typeof level.playMode !== "string") {
+    issues.push("playMode is required");
+    return;
+  }
+  var levelType = level.levelType;
+  var playMode = level.playMode;
+  if (["normal", "special_floating_island"].indexOf(levelType) === -1) {
+    issues.push("levelType unsupported: " + levelType);
+  }
+  if (["shot_limited", "timed_infinite_shots"].indexOf(playMode) === -1) {
+    issues.push("playMode unsupported: " + playMode);
+  }
+  if (levelType === "special_floating_island" && playMode !== "timed_infinite_shots") {
+    issues.push("special_floating_island must use timed_infinite_shots");
+  }
+  if (playMode === "timed_infinite_shots") {
+    if (levelType !== "special_floating_island") {
+      issues.push("timed_infinite_shots must use special_floating_island");
+    }
+    if (!isPositiveInteger(level.timeLimitSeconds)) {
+      issues.push("timeLimitSeconds must be positive integer for timed_infinite_shots");
+    }
+    if (level.requiredStarCount !== 1) {
+      issues.push("requiredStarCount must be 1 for timed_infinite_shots");
+    }
+    if (level.shotLimit !== undefined && level.shotLimit !== null) {
+      issues.push("shotLimit must not be configured for timed_infinite_shots");
+    }
+  } else {
+    if (!isPositiveInteger(level.shotLimit)) {
+      issues.push("shotLimit must be a positive integer");
+    }
+    if (level.timeLimitSeconds !== undefined) {
+      issues.push("timeLimitSeconds must not be configured for shot_limited");
+    }
+    if (level.requiredStarCount !== undefined) {
+      issues.push("requiredStarCount must not be configured for shot_limited");
+    }
+  }
+}
+
+function validateInitialDropSpaceRows(level, issues) {
+  if (!isPositiveInteger(level.initialDropSpaceRows)) {
+    issues.push("initialDropSpaceRows must be a positive integer");
+    return;
+  }
+  if (level.initialDropSpaceRows < MIN_INITIAL_DROP_SPACE_ROWS) {
+    issues.push("initialDropSpaceRows must be >= " + MIN_INITIAL_DROP_SPACE_ROWS);
+  }
+}
+
+function validateAdPowerupRules(level, issues) {
+  if (level.adPowerupRules === undefined) {
+    issues.push("adPowerupRules is required");
+    return;
+  }
+  var rules = level.adPowerupRules;
+  if (!rules || typeof rules !== "object" || Array.isArray(rules)) {
+    issues.push("adPowerupRules must be object");
+    return;
+  }
+  if (!Array.isArray(rules.allowed)) {
+    issues.push("adPowerupRules.allowed must be array");
+    return;
+  }
+  if (!rules.maxGrantsPerRun || typeof rules.maxGrantsPerRun !== "object" || Array.isArray(rules.maxGrantsPerRun)) {
+    issues.push("adPowerupRules.maxGrantsPerRun must be object");
+    return;
+  }
+  var seen = {};
+  rules.allowed.forEach(function (powerupType) {
+    if (AD_RUN_POWERUP_TYPES.indexOf(powerupType) === -1) {
+      issues.push("adPowerupRules unsupported powerup: " + powerupType);
+      return;
+    }
+    if (seen[powerupType]) {
+      issues.push("adPowerupRules duplicate powerup: " + powerupType);
+    }
+    seen[powerupType] = true;
+    if (!isPositiveInteger(rules.maxGrantsPerRun[powerupType])) {
+      issues.push("adPowerupRules.maxGrantsPerRun." + powerupType + " must be positive integer");
+    }
+    if (level.playMode === "timed_infinite_shots" && powerupType === "plus_three_balls") {
+      issues.push("timed_infinite_shots cannot allow plus_three_balls");
+    }
+  });
+  Object.keys(rules.maxGrantsPerRun).forEach(function (powerupType) {
+    if (seen[powerupType] !== true) {
+      issues.push("adPowerupRules.maxGrantsPerRun contains undeclared powerup: " + powerupType);
+    }
+  });
+}
+
+function validateIceSnowballSupply(level, issues) {
+  if (!Array.isArray(level.winConditions) || !Array.isArray(level.bonusObjectives)) {
+    return;
+  }
+  var objectives = level.winConditions.concat(level.bonusObjectives);
+  var required = objectives.reduce(function (max, objective) {
+    if (objective && objective.type === "collect_ice_snowball") {
+      return Math.max(max, Math.floor(Number(objective.value)));
+    }
+    return max;
+  }, 0);
+  if (required <= 0) {
+    return;
+  }
+  var available = (Array.isArray(level.specialEntities) ? level.specialEntities : []).filter(function (entity) {
+    return entity && entity.entityCategory === "obstacle_ball" && entity.entityType === "ice";
+  }).length;
+  if (available < required) {
+    issues.push("collect_ice_snowball target exceeds ice supply");
+  }
+}
+
 function validateLevel(filePath, expectedLevelId) {
   var data = readJson(filePath);
   var issues = [];
@@ -252,9 +374,8 @@ function validateLevel(filePath, expectedLevelId) {
     issues.push("colorCount must equal level.colors.length");
   }
 
-  if (!isPositiveInteger(level.shotLimit)) {
-    issues.push("shotLimit must be a positive integer");
-  }
+  validateLevelMode(level, issues);
+  validateInitialDropSpaceRows(level, issues);
 
   if (!isPositiveInteger(level.targetScore)) {
     issues.push("targetScore must be a positive integer");
@@ -349,6 +470,8 @@ function validateLevel(filePath, expectedLevelId) {
 
   validateObjectives(level.winConditions, "win", level, issues);
   validateObjectives(level.bonusObjectives, "bonus", level, issues);
+  validateIceSnowballSupply(level, issues);
+  validateAdPowerupRules(level, issues);
   validateClearRewardItems(level, expectedLevelId, issues);
 
   return issues;

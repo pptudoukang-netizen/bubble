@@ -116,6 +116,22 @@ function createGameManagerShotResolutionMethods(deps) {
       return gained;
     },
 
+    _ensureMinimumVisibleBoardRows: function (resolution) {
+      var grid = this.systems && this.systems.bubbleGrid ? this.systems.bubbleGrid : null;
+      if (!grid || typeof grid.ensureMinimumVisibleRows !== "function") {
+        throw new Error("Minimum visible board rows require BubbleGrid.ensureMinimumVisibleRows.");
+      }
+      var result = grid.ensureMinimumVisibleRows(6);
+      if (result.shiftRows > 0) {
+        if (resolution) {
+          resolution.boardDropped = true;
+          resolution.visibleRowShiftRows = result.shiftRows;
+        }
+        Logger.info("Board advanced for minimum visible rows", result);
+      }
+      return result;
+    },
+
     _refreshShotPlan: function (force) {
       if (this.state !== "running" || this.activeProjectile || this._isWaitingBoardAdvance()) {
         this.pendingShotPlan = null;
@@ -680,6 +696,7 @@ function createGameManagerShotResolutionMethods(deps) {
         var attachedBubble = grid.addBubble(targetCell, attachedColor);
         this.lastResolution = this._resolveAttachment(attachedBubble);
       }
+      this._ensureMinimumVisibleBoardRows(this.lastResolution);
 
       var noDropTriggered = !(
         this.lastResolution &&
@@ -709,7 +726,7 @@ function createGameManagerShotResolutionMethods(deps) {
         return;
       }
 
-      if (this.remainingShots <= 0) {
+      if (!this.isTimedInfiniteShots && this.remainingShots <= 0) {
         if (this.systems.fallingMarbleSystem.hasActiveDrops() || this._isWaitingBoardAdvance()) {
           this.state = "out_of_shots_pending";
         } else {
@@ -823,6 +840,11 @@ function createGameManagerShotResolutionMethods(deps) {
       }
 
       if (!this._isPrimaryObjectiveCompleted()) {
+        this.state = "lost_objective";
+        return;
+      }
+
+      if (this.isTimedInfiniteShots && !this._isTimedWinCompleted()) {
         this.state = "lost_objective";
         return;
       }

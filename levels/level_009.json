@@ -99,7 +99,20 @@
             "........"
         ],
         "designNotes": "Mixed-color pockets remain available, but the center lane is less forgiving than before.",
-        "difficultyScore": 73
+        "difficultyScore": 73,
+        "levelType": "normal",
+        "playMode": "shot_limited",
+        "initialDropSpaceRows": 8,
+        "adPowerupRules": {
+            "allowed": [
+                "three_line_elimination",
+                "plus_three_balls"
+            ],
+            "maxGrantsPerRun": {
+                "three_line_elimination": 1,
+                "plus_three_balls": 1
+            }
+        }
     },
     "difficultyScaleMax": 100
 }

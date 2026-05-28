@@ -28,6 +28,22 @@ function clamp(value, min, max) {
 }
 
 var EPSILON = 0.000001;
+var MIN_VISIBLE_BOARD_ROWS = 6;
+
+function collectOccupiedRows(cells) {
+  var rowMap = {};
+  (cells || []).forEach(function (cell) {
+    if (!cell || !Number.isInteger(cell.row)) {
+      throw new Error("BubbleGrid cell row must be an integer.");
+    }
+    rowMap[cell.row] = true;
+  });
+  return Object.keys(rowMap).map(function (row) {
+    return Number(row);
+  }).sort(function (a, b) {
+    return a - b;
+  });
+}
 
 function BubbleGrid() {
   BaseSystem.call(this, "BubbleGrid");
@@ -47,6 +63,12 @@ BubbleGrid.prototype.constructor = BubbleGrid;
 
 BubbleGrid.prototype.configureLevel = function (levelConfig) {
   BaseSystem.prototype.configureLevel.call(this, levelConfig);
+  if (!levelConfig || !levelConfig.level) {
+    throw new Error("BubbleGrid.configureLevel requires level config.");
+  }
+  if (!Number.isInteger(levelConfig.level.initialDropSpaceRows) || levelConfig.level.initialDropSpaceRows < 8) {
+    throw new Error("BubbleGrid requires level.initialDropSpaceRows >= 8.");
+  }
   this.layout = levelConfig.level.layout.slice();
   this.specialEntities = Array.isArray(levelConfig.level.specialEntities)
     ? clone(levelConfig.level.specialEntities)
@@ -58,9 +80,10 @@ BubbleGrid.prototype.configureLevel = function (levelConfig) {
   this.maxColumns = Math.max(BoardLayout.defaultColumns || 9, layoutMaxColumns);
   this._normalizeLayoutRows();
   this._rebuildSpecialCellMap();
-  this.dropOffsetRows = 0;
+  this.dropOffsetRows = -levelConfig.level.initialDropSpaceRows;
   this.version = 1;
   this._rebuildCaches();
+  this.ensureMinimumVisibleRows(MIN_VISIBLE_BOARD_ROWS);
   return this;
 };
 
@@ -874,9 +897,71 @@ BubbleGrid.prototype.removeCells = function (cells) {
 };
 
 BubbleGrid.prototype.advanceRows = function (rowCount) {
-  this.dropOffsetRows += rowCount || 1;
+  if (!Number.isInteger(rowCount) || rowCount <= 0) {
+    throw new Error("BubbleGrid.advanceRows requires a positive integer row count.");
+  }
+  this.dropOffsetRows += rowCount;
   this.version += 1;
   return this.dropOffsetRows;
+};
+
+BubbleGrid.prototype.ensureMinimumVisibleRows = function (minimumRows) {
+  if (!Number.isInteger(minimumRows) || minimumRows <= 0) {
+    throw new Error("Minimum visible rows must be a positive integer.");
+  }
+
+  if (!this.cells.length) {
+    return {
+      shiftRows: 0,
+      dropOffsetRows: this.dropOffsetRows,
+      visibleRows: 0,
+      targetVisibleRows: 0
+    };
+  }
+
+  var occupiedRows = collectOccupiedRows(this.cells);
+  var visibleRows = occupiedRows.filter(function (row) {
+    return row + this.dropOffsetRows >= 0;
+  }, this);
+  var offscreenRows = occupiedRows.filter(function (row) {
+    return row + this.dropOffsetRows < 0;
+  }, this);
+  var targetVisibleRows = Math.min(minimumRows, occupiedRows.length);
+
+  if (visibleRows.length >= targetVisibleRows || !offscreenRows.length) {
+    return {
+      shiftRows: 0,
+      dropOffsetRows: this.dropOffsetRows,
+      visibleRows: visibleRows.length,
+      targetVisibleRows: targetVisibleRows
+    };
+  }
+
+  var targetTopVisibleRow = occupiedRows[occupiedRows.length - targetVisibleRows];
+  if (!Number.isInteger(targetTopVisibleRow)) {
+    throw new Error("Minimum visible rows target row is invalid.");
+  }
+  var targetDropOffsetRows = -targetTopVisibleRow;
+  if (targetDropOffsetRows <= this.dropOffsetRows) {
+    return {
+      shiftRows: 0,
+      dropOffsetRows: this.dropOffsetRows,
+      visibleRows: visibleRows.length,
+      targetVisibleRows: targetVisibleRows
+    };
+  }
+
+  var shiftRows = targetDropOffsetRows - this.dropOffsetRows;
+  this.dropOffsetRows = targetDropOffsetRows;
+  this.version += 1;
+
+  return {
+    shiftRows: shiftRows,
+    dropOffsetRows: this.dropOffsetRows,
+    visibleRows: targetVisibleRows,
+    targetVisibleRows: targetVisibleRows,
+    topVisibleRow: targetTopVisibleRow
+  };
 };
 
 BubbleGrid.prototype.ensureDangerLineSpaceRows = function (minimumRows) {

@@ -1,6 +1,7 @@
 "use strict";
 
 var BundleLoader = require("../utils/BundleLoader");
+var FloatingMap = require("./LevelSelectFloatingMap");
 
 function createOrGetChild(parentNode, name) {
   if (!parentNode || !parentNode.isValid) {
@@ -1117,11 +1118,9 @@ function updateTopStatus(levelView, options) {
 function renderLevelSelectContent(options) {
   var hostNode = options.hostNode;
   var levelViewPrefab = options.levelViewPrefab;
-  var mapPrefabs = Array.isArray(options.mapPrefabs) ? options.mapPrefabs.filter(Boolean) : [];
-  var levelIds = Array.isArray(options.levelIds) ? options.levelIds : [];
+  var floatingMapAssets = options.floatingMapAssets;
   var highestUnlocked = Math.max(1, Number(options.highestUnlocked) || 1);
   var highlightedLevelId = Math.max(1, Number(options.highlightedLevelId) || 1);
-  var requestedMapIndex = Number.isInteger(options.currentMapIndex) ? options.currentMapIndex : null;
   var getLevelStarCount = typeof options.getLevelStarCount === "function"
     ? options.getLevelStarCount
     : function () { return 0; };
@@ -1130,9 +1129,6 @@ function renderLevelSelectContent(options) {
     : function () { return false; };
   var onLevelSelectTap = typeof options.onLevelSelectTap === "function"
     ? options.onLevelSelectTap
-    : function () {};
-  var onMapIndexChange = typeof options.onMapIndexChange === "function"
-    ? options.onMapIndexChange
     : function () {};
   var staminaValue = Math.max(0, Math.floor(Number(options.staminaValue) || 0));
   var coinValue = Math.max(0, Math.floor(Number(options.coinValue) || 0));
@@ -1211,87 +1207,42 @@ function renderLevelSelectContent(options) {
     };
   }
   updateLevelSelectLayoutBeforeMapRender(levelView, mapHostNode);
-  bindLevelMapSwipe(mapHostNode, levelView);
-  mapHostNode.__levelMapSwipeDrag = null;
-  mapHostNode.removeAllChildren();
 
-  var baseMapPrefab = mapPrefabs.length > 0 ? mapPrefabs[0] : null;
-  if (!baseMapPrefab) {
-    return {
-      levelViewNode: levelView,
-      currentMapIndex: 0,
-      mapCount: 0
-    };
+  if (!floatingMapAssets || typeof floatingMapAssets !== "object") {
+    throw new Error("LevelSelectView requires preloaded floating map assets.");
   }
-
-  var slotsPerMap = 10;
-  var previewMapNode = instantiateNode(baseMapPrefab, "LevelMapPreview");
-  var previewSlots = collectLevelSlots(previewMapNode);
-  if (previewSlots.length > 0) {
-    slotsPerMap = previewSlots.length;
-  }
-  if (previewMapNode && previewMapNode.isValid) {
-    previewMapNode.destroy();
-  }
-
-  var levelPageCount = Math.max(1, Math.ceil(levelIds.length / slotsPerMap));
-  var mapCount = Math.max(1, mapPrefabs.length, levelPageCount);
-  var lastUnlockableLevelId = 0;
-  levelIds.forEach(function (levelId) {
-    if (levelId <= highestUnlocked && levelId > lastUnlockableLevelId) {
-      lastUnlockableLevelId = levelId;
-    }
-  });
-  var highlightedLevelIndex = Math.max(0, levelIds.indexOf(highlightedLevelId));
-  var highlightedMapIndex = Math.floor(highlightedLevelIndex / slotsPerMap);
-  var currentMapIndex = requestedMapIndex === null ? highlightedMapIndex : requestedMapIndex;
-  currentMapIndex = Math.max(0, Math.min(mapCount - 1, currentMapIndex));
-
-  ensureLevelButtonSkinFrames();
-  levelView.__levelMapRenderContext = {
-    levelView: levelView,
-    mapPrefabs: mapPrefabs,
-    slotsPerMap: slotsPerMap,
-    levelIds: levelIds,
+  var floatingMapResult = FloatingMap.render({
+    mapHostNode: mapHostNode,
+    assets: floatingMapAssets,
     highestUnlocked: highestUnlocked,
     highlightedLevelId: highlightedLevelId,
-    lastUnlockableLevelId: lastUnlockableLevelId,
     getLevelStarCount: getLevelStarCount,
     isLevelCompleted: isLevelCompleted,
-    onLevelSelectTap: onLevelSelectTap,
-    onMapIndexChange: onMapIndexChange
-  };
-
-  var mapNode = instantiateLevelMapNode(mapHostNode, levelView.__levelMapRenderContext, currentMapIndex, "LevelMapRuntime", 0, true);
-  levelView.__levelMapCurrentNode = mapNode;
-  levelView.__levelSelectCurrentMapIndex = currentMapIndex;
-  levelView.__levelSelectMapCount = mapCount;
+    onLevelSelectTap: onLevelSelectTap
+  });
+  levelView.__levelMapCurrentNode = null;
+  levelView.__levelSelectCurrentMapIndex = floatingMapResult.currentNodeIndex;
+  levelView.__levelSelectMapCount = floatingMapResult.nodeCount;
   levelView.__levelMapTransitionActive = false;
   levelView.__levelMapSwipeConsumed = false;
 
   var nextMapNode = levelView.getChildByName("next_map");
   var previousMapNode = levelView.getChildByName("previous_map");
-  updateMapSwitchButtonState(levelView, currentMapIndex, mapCount);
-
   if (previousMapNode) {
-    bindMapSwitchButton(previousMapNode, levelView, function (viewNode) {
-      return requireLevelMapIntegerProperty(viewNode, "__levelSelectCurrentMapIndex") - 1;
-    });
+    previousMapNode.active = false;
   }
-
   if (nextMapNode) {
-    bindMapSwitchButton(nextMapNode, levelView, function (viewNode) {
-      return requireLevelMapIntegerProperty(viewNode, "__levelSelectCurrentMapIndex") + 1;
-    });
+    nextMapNode.active = false;
   }
 
   return {
     levelViewNode: levelView,
-    currentMapIndex: currentMapIndex,
-    mapCount: mapCount
+    currentMapIndex: floatingMapResult.currentNodeIndex,
+    mapCount: floatingMapResult.nodeCount
   };
 }
 
 module.exports = {
+  loadFloatingMapAssets: FloatingMap.loadAssets,
   renderLevelSelectContent: renderLevelSelectContent
 };

@@ -5,6 +5,7 @@ var DebugFlags = require("../utils/DebugFlags");
 var PrefabFactory = require("./PrefabFactory");
 var BoardLayout = require("../config/BoardLayout");
 var StarRatingPolicy = require("../core/StarRatingPolicy");
+var AdRevivePolicy = require("../core/AdRevivePolicy");
 var AdRewardCatalog = require("../services/AdRewardCatalog");
 var RenderNodeHelpers = require("./RenderNodeHelpers");
 var attachLevelRendererSceneMethods = require("./LevelRendererSceneMethods");
@@ -26,7 +27,9 @@ var BALL_RESOURCES = {
   RAINBOW: "image/rainbow_ball",
   BLAST: "image/bomb_ball",
   STONE: "image/stone_ball",
-  ICE: "image/ice_ball"
+  ICE: "image/ice_ball",
+  ICE_SNOWBALL: "image/snow_cube",
+  LIGHT_EFFECT: "image/light_effect"
 };
 
 var JAR_RESOURCES = {
@@ -155,7 +158,7 @@ function findCollectionObjective(levelConfig) {
       continue;
     }
 
-    if (objective.type === "collect_any" || objective.type === "collect_color" || objective.type === "collect_ice") {
+    if (objective.type === "collect_any" || objective.type === "collect_color" || objective.type === "collect_ice_snowball") {
       return objective;
     }
   }
@@ -217,11 +220,11 @@ function buildObjectiveDisplayData(levelConfig, runtimeSnapshot) {
     };
   }
 
-  if (objective.type === "collect_ice") {
+  if (objective.type === "collect_ice_snowball") {
     var iceCollected = objectiveSnapshot ? (Number(objectiveSnapshot.iceCollectedTotal) || 0) : 0;
     var iceProgress = target > 0 ? Math.min(iceCollected, target) : iceCollected;
     return {
-      iconCode: "ICE",
+      iconCode: "ICE_SNOWBALL",
       progress: iceProgress,
       target: target,
       progressText: iceProgress + "/" + target
@@ -561,6 +564,9 @@ function LevelRenderer(rootNode) {
     onUseBlast: null,
     onUseSwap: null,
     onUseBarrierHammer: null,
+    onUseThreeLineElimination: null,
+    onUsePlusThreeBalls: null,
+    onRecoverAdRunPowerupByAd: null,
     onSelectRainbowColor: null,
     onRecoverInventoryByAd: null
   };
@@ -620,6 +626,9 @@ LevelRenderer.prototype.setGameplayActionHandlers = function (handlers) {
     onUseBlast: typeof handlers.onUseBlast === "function" ? handlers.onUseBlast : null,
     onUseSwap: typeof handlers.onUseSwap === "function" ? handlers.onUseSwap : null,
     onUseBarrierHammer: typeof handlers.onUseBarrierHammer === "function" ? handlers.onUseBarrierHammer : null,
+    onUseThreeLineElimination: typeof handlers.onUseThreeLineElimination === "function" ? handlers.onUseThreeLineElimination : null,
+    onUsePlusThreeBalls: typeof handlers.onUsePlusThreeBalls === "function" ? handlers.onUsePlusThreeBalls : null,
+    onRecoverAdRunPowerupByAd: typeof handlers.onRecoverAdRunPowerupByAd === "function" ? handlers.onRecoverAdRunPowerupByAd : null,
     onSelectRainbowColor: typeof handlers.onSelectRainbowColor === "function" ? handlers.onSelectRainbowColor : null,
     onRecoverInventoryByAd: typeof handlers.onRecoverInventoryByAd === "function" ? handlers.onRecoverInventoryByAd : null
   };
@@ -671,6 +680,10 @@ LevelRenderer.prototype._invokeGameplayAction = function (action) {
     handler = this.gameplayActionHandlers.onUseSwap;
   } else if (action === "use_barrier_hammer") {
     handler = this.gameplayActionHandlers.onUseBarrierHammer;
+  } else if (action === "use_three_line_elimination") {
+    handler = this.gameplayActionHandlers.onUseThreeLineElimination;
+  } else if (action === "use_plus_three_balls") {
+    handler = this.gameplayActionHandlers.onUsePlusThreeBalls;
   } else if (action.indexOf("select_rainbow_color:") === 0) {
     handler = this.gameplayActionHandlers.onSelectRainbowColor;
     if (typeof handler === "function") {
@@ -681,6 +694,12 @@ LevelRenderer.prototype._invokeGameplayAction = function (action) {
     handler = this.gameplayActionHandlers.onRecoverInventoryByAd;
     if (typeof handler === "function") {
       handler(action.slice("recover_inventory:".length));
+      return;
+    }
+  } else if (action.indexOf("recover_ad_powerup:") === 0) {
+    handler = this.gameplayActionHandlers.onRecoverAdRunPowerupByAd;
+    if (typeof handler === "function") {
+      handler(action.slice("recover_ad_powerup:".length));
       return;
     }
   }
@@ -750,6 +769,7 @@ LevelRenderer.prototype.renderLevel = function (levelConfig, runtimeSnapshot) {
     this._renderBackground();
     this._renderHud(levelConfig, runtimeSnapshot);
     this._renderJarScoreBoostTimer(runtimeSnapshot);
+    this._renderTimedLevelTimer(runtimeSnapshot);
     this._renderBottomPanel(runtimeSnapshot);
     this._renderBoard(runtimeSnapshot.board);
     this._renderBottomJars(levelConfig, runtimeSnapshot);
@@ -779,6 +799,7 @@ LevelRenderer.prototype.refreshRuntime = function (levelConfig, runtimeSnapshot)
     this.lastHudRenderKey = nextHudKey;
   }
   this._renderJarScoreBoostTimer(runtimeSnapshot);
+  this._renderTimedLevelTimer(runtimeSnapshot);
 
   this._renderBottomPanel(runtimeSnapshot);
   var nextJarKey = buildJarRenderKey(levelConfig, runtimeSnapshot);
@@ -981,6 +1002,8 @@ LevelRenderer.prototype._collectCommonSpritePaths = function () {
     BALL_RESOURCES.BLAST,
     BALL_RESOURCES.STONE,
     BALL_RESOURCES.ICE,
+    BALL_RESOURCES.ICE_SNOWBALL,
+    BALL_RESOURCES.LIGHT_EFFECT,
     JAR_RESOURCES.R,
     JAR_RESOURCES.G,
     JAR_RESOURCES.B,
@@ -1102,6 +1125,7 @@ var LEVEL_RENDERER_SCENE_DEPS = {
   resolveBallVisualKey: resolveBallVisualKey,
   computeShooterAngle: computeShooterAngle,
   createRouteColor: createRouteColor,
+  buildAdReviveDescription: AdRevivePolicy.buildReviveDescription,
   resolveLoseRewardEntry: AdRewardCatalog.resolveLoseRewardEntry,
   clamp: clamp
 };

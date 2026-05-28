@@ -219,6 +219,9 @@ module.exports = {
       placement: options.entrySource || entry.entryKey,
       sceneID: sceneID,
       onShow: function () {
+        if (this.gameManager && typeof this.gameManager.pauseTimedLevelTimer === "function") {
+          this.gameManager.pauseTimedLevelTimer();
+        }
         this._trackTelemetry("ad_show", {
           entry_key: entry.entryKey,
           reward_type: entry.rewardType
@@ -233,6 +236,9 @@ module.exports = {
         is_completed: isCompleted,
         is_simulated: !!(safeAdResult && safeAdResult.mock)
       });
+      if (this.gameManager && typeof this.gameManager.resumeTimedLevelTimer === "function") {
+        this.gameManager.resumeTimedLevelTimer();
+      }
 
       if (!safeAdResult || !safeAdResult.ok) {
         this._setRewardedAdFailureStatus(safeAdResult, "广告加载失败，请稍后重试");
@@ -275,6 +281,9 @@ module.exports = {
       this.adService.reportHostedRewardSuccess(safeAdResult);
       return true;
     }.bind(this), function (error) {
+      if (this.gameManager && typeof this.gameManager.resumeTimedLevelTimer === "function") {
+        this.gameManager.resumeTimedLevelTimer();
+      }
       this._setRewardedAdFailureStatus({
         code: "show_fail",
         error: error
@@ -382,6 +391,30 @@ module.exports = {
       };
     }
 
+    if (entry.adRunPowerupGrant) {
+      var adRunGrant = entry.adRunPowerupGrant;
+      if (!this.gameManager || typeof this.gameManager.grantAdRunPowerup !== "function") {
+        throw new Error("Ad run powerup reward requires GameManager.grantAdRunPowerup.");
+      }
+      var adRunGrantResult = this.gameManager.grantAdRunPowerup(
+        adRunGrant.powerupType,
+        adRunGrant.amount
+      );
+      if (!adRunGrantResult || !adRunGrantResult.accepted) {
+        return {
+          accepted: false,
+          message: "局内道具补给失败"
+        };
+      }
+      return {
+        accepted: true,
+        snapshot: adRunGrantResult.snapshot,
+        message: "补给成功：" +
+          AdRewardCatalog.resolvePowerupDisplayName(adRunGrant.powerupType) +
+          " +" + adRunGrantResult.gained
+      };
+    }
+
     return {
       accepted: false,
       message: "未知奖励类型"
@@ -461,6 +494,23 @@ module.exports = {
       entrySource: "inventory_empty",
       adUnitId: this.inventoryRewardedVideoAdUnitId,
       onRewardGrantedMessage: "道具补给成功"
+    });
+  },
+
+  _tryRecoverAdRunPowerupByAd: function (powerupType) {
+    if (!powerupType || this.isSelectingLevel || this.isRestarting || !this.currentLevelConfig) {
+      return;
+    }
+
+    var rewardEntry = AdRewardCatalog.resolveAdRunPowerupRewardEntry(powerupType);
+    if (!rewardEntry) {
+      return;
+    }
+
+    this._showRewardedAdForEntry(rewardEntry, {
+      entrySource: "ad_run_powerup",
+      adUnitId: this.inventoryRewardedVideoAdUnitId,
+      onRewardGrantedMessage: "局内道具补给成功"
     });
   },
 

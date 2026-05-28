@@ -4,7 +4,9 @@ var POWERUP_DISPLAY_NAMES = {
   rainbow: "彩虹球",
   blast: "炸弹球",
   swap: "换球",
-  barrier_hammer: "破障锤"
+  barrier_hammer: "破障锤",
+  three_line_elimination: "消三行",
+  plus_three_balls: "加三球"
 };
 
 var LOSE_REWARD_ENTRIES = {
@@ -65,6 +67,25 @@ function resolveInventoryEmptyRewardEntry(powerupType) {
   };
 }
 
+function resolveAdRunPowerupRewardEntry(powerupType) {
+  if (typeof powerupType !== "string" || !powerupType) {
+    return null;
+  }
+
+  return {
+    entryKey: "ad_run_powerup_" + powerupType,
+    rewardType: "ad_run_powerup_" + powerupType,
+    rewardValue: 1,
+    quotaType: "inventory_refill",
+    grantMode: "instant",
+    awardTips: "补给：" + resolvePowerupDisplayName(powerupType) + " +1",
+    adRunPowerupGrant: {
+      powerupType: powerupType,
+      amount: 1
+    }
+  };
+}
+
 function resolveStaminaRecoveryEntry() {
   return {
     entryKey: "stamina_recovery",
@@ -80,6 +101,7 @@ function resolveStaminaRecoveryEntry() {
 module.exports = {
   resolveLoseRewardEntry: resolveLoseRewardEntry,
   resolveInventoryEmptyRewardEntry: resolveInventoryEmptyRewardEntry,
+  resolveAdRunPowerupRewardEntry: resolveAdRunPowerupRewardEntry,
   resolveStaminaRecoveryEntry: resolveStaminaRecoveryEntry,
   resolvePowerupDisplayName: resolvePowerupDisplayName
 };

@@ -88,7 +88,20 @@
             "........"
         ],
         "designNotes": "Adds a clearer falling reward. Blue blocks can be dropped in a satisfying early pattern.",
-        "difficultyScore": 10
+        "difficultyScore": 10,
+        "levelType": "normal",
+        "playMode": "shot_limited",
+        "initialDropSpaceRows": 8,
+        "adPowerupRules": {
+            "allowed": [
+                "three_line_elimination",
+                "plus_three_balls"
+            ],
+            "maxGrantsPerRun": {
+                "three_line_elimination": 1,
+                "plus_three_balls": 1
+            }
+        }
     },
     "difficultyScaleMax": 100
 }

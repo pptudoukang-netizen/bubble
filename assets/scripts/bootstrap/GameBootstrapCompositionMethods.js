@@ -227,6 +227,7 @@ module.exports = {
     this._startGameLevelId = 0;
     this._startGameLevelConfig = null;
     this._pendingStartGamePowerups = [];
+    this._threeLineEliminationInProgress = false;
     this._powerTipsViewPrefab = null;
     this._powerTipsViewNode = null;
     this._pendingPowerTipsRecovery = null;
@@ -369,12 +370,22 @@ module.exports = {
       onUseBarrierHammer: function () {
         this._onUseBarrierHammerTap();
       }.bind(this),
+      onUseThreeLineElimination: function () {
+        this._onUseThreeLineEliminationTap();
+      }.bind(this),
+      onUsePlusThreeBalls: function () {
+        this._onUsePlusThreeBallsTap();
+      }.bind(this),
       onSelectRainbowColor: function (colorCode) {
         this._onSelectRainbowColorTap(colorCode);
       }.bind(this),
       onRecoverInventoryByAd: function (powerupType) {
         this._playSfx("uiClick");
         this._tryRecoverInventoryByAd(powerupType);
+      }.bind(this),
+      onRecoverAdRunPowerupByAd: function (powerupType) {
+        this._playSfx("uiClick");
+        this._tryRecoverAdRunPowerupByAd(powerupType);
       }.bind(this)
     });
 

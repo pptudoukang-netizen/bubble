@@ -89,7 +89,20 @@
             "........"
         ],
         "designNotes": "The first true difficulty jump. Bounce lane remains visible, but the center cluster is denser and the collect requirement is mandatory.",
-        "difficultyScore": 64
+        "difficultyScore": 64,
+        "levelType": "normal",
+        "playMode": "shot_limited",
+        "initialDropSpaceRows": 8,
+        "adPowerupRules": {
+            "allowed": [
+                "three_line_elimination",
+                "plus_three_balls"
+            ],
+            "maxGrantsPerRun": {
+                "three_line_elimination": 1,
+                "plus_three_balls": 1
+            }
+        }
     },
     "difficultyScaleMax": 100
 }

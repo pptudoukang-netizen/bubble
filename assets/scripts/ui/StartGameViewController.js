@@ -220,7 +220,9 @@ StartGameViewController.prototype._resolveNodes = function () {
   var titleBgNode = requireChildNode(panelNode, "title_bg", "Panel");
   var playButtonNode = requireChildNode(panelNode, "play_btn", "Panel");
   var targetNode = requireChildNode(panelNode, "target", "Panel");
-  var targetBallNode = requireChildNode(targetNode, "target_ball", "Panel/target");
+  var targetLayoutNode = requireChildNode(targetNode, "traget_layout", "Panel/target");
+  var targetBallNode = requireChildNode(targetLayoutNode, "target_ball", "Panel/target/traget_layout");
+  var targetIceNode = requireChildNode(targetLayoutNode, "target_ice", "Panel/target/traget_layout");
   var propListNode = requireChildNode(panelNode, "prop_listview", "Panel");
   var propTemplateNode = requireChildNode(propListNode, "prop", "Panel/prop_listview");
 
@@ -233,11 +235,43 @@ StartGameViewController.prototype._resolveNodes = function () {
     playButton: playButtonNode,
     staminaCostLabelNode: requireChildNode(playButtonNode, "num", "Panel/play_btn"),
     targetTitleNode: requireChildNode(targetNode, "target_title", "Panel/target"),
+    targetLayoutNode: targetLayoutNode,
     targetBallNode: targetBallNode,
-    targetCountLabelNode: requireChildNode(targetBallNode, "num", "Panel/target/target_ball"),
+    targetBallCountLabelNode: requireChildNode(targetBallNode, "num", "Panel/target/traget_layout/target_ball"),
+    targetIceNode: targetIceNode,
+    targetIceCountLabelNode: requireChildNode(targetIceNode, "num", "Panel/target/traget_layout/target_ice"),
     propListNode: propListNode,
     propTemplateNode: propTemplateNode
   };
+};
+
+StartGameViewController.prototype._selectObjectiveTargetNodes = function (objective) {
+  requireObject(objective, "StartGameView objective");
+  if (typeof objective.type !== "string") {
+    throw new Error("StartGameView objective type must be a string.");
+  }
+
+  if (objective.type === "collect_ice_snowball") {
+    this._nodes.targetBallNode.active = false;
+    this._nodes.targetIceNode.active = true;
+    return {
+      iconNode: this._nodes.targetIceNode,
+      countLabelNode: this._nodes.targetIceCountLabelNode,
+      description: "Panel/target/traget_layout/target_ice"
+    };
+  }
+
+  if (objective.type === "collect_any" || objective.type === "collect_color") {
+    this._nodes.targetBallNode.active = true;
+    this._nodes.targetIceNode.active = false;
+    return {
+      iconNode: this._nodes.targetBallNode,
+      countLabelNode: this._nodes.targetBallCountLabelNode,
+      description: "Panel/target/traget_layout/target_ball"
+    };
+  }
+
+  throw new Error("Unsupported StartGameView objective type: " + objective.type);
 };
 
 StartGameViewController.prototype._bindActions = function () {
@@ -469,6 +503,7 @@ StartGameViewController.prototype._renderContent = function (options) {
   requireObject(options.inventory, "StartGameView inventory");
   requireObject(options.objective, "StartGameView objective");
   requirePositiveInteger(options.objective.target, "StartGameView objective target");
+  var targetNodes = this._selectObjectiveTargetNodes(options.objective);
   if (typeof options.showAwardTips !== "boolean") {
     throw new Error("StartGameView showAwardTips must be boolean.");
   }
@@ -495,8 +530,8 @@ StartGameViewController.prototype._renderContent = function (options) {
   setLabelText(this._nodes.levelLabelNode, "第" + levelId + "关", "Panel/title_bg/level");
   setLabelText(this._nodes.staminaCostLabelNode, String(staminaCost), "Panel/play_btn/num");
   setLabelText(this._nodes.targetTitleNode, "收集目标", "Panel/target/target_title");
-  setLabelText(this._nodes.targetCountLabelNode, String(options.objective.target), "Panel/target/target_ball/num");
-  getSprite(this._nodes.targetBallNode, "Panel/target/target_ball").spriteFrame = this._spriteFrames[options.objective.iconPath];
+  setLabelText(targetNodes.countLabelNode, String(options.objective.target), targetNodes.description + "/num");
+  getSprite(targetNodes.iconNode, targetNodes.description).spriteFrame = this._spriteFrames[options.objective.iconPath];
   this._nodes.awardTipsNode.active = options.showAwardTips;
 
   this._renderPropItems();

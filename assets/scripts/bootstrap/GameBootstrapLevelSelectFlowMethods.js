@@ -5,7 +5,6 @@ var Logger = Shared.Logger;
 var LevelSelectPolicy = Shared.LevelSelectPolicy;
 var LevelSelectView = Shared.LevelSelectView;
 var StarRatingPolicy = Shared.StarRatingPolicy;
-var MAX_LEVEL_MAP_PREFAB_INDEX = Shared.MAX_LEVEL_MAP_PREFAB_INDEX;
 var hideGameCircleWelfareViewNode = Shared.hideGameCircleWelfareViewNode;
 
 function resolveMaxAvailableLevelId(levelIds) {
@@ -170,13 +169,7 @@ module.exports = {
       var prefabs = results[0];
       var levelIds = results[1];
       this._preloadLevelConfigsInBackground(levelIds);
-      var forcedMapIndex = Number.isInteger(options.forcedMapIndex)
-        ? Math.max(0, Math.floor(Number(options.forcedMapIndex) || 0))
-        : null;
-      if (forcedMapIndex === null && targetLevelId > 0) {
-        forcedMapIndex = this._resolveLevelMapIndexByLevelId(levelIds, targetLevelId, prefabs.mapPrefabs);
-      }
-      this._renderLevelSelectContent(prefabs.viewPrefab, prefabs.mapPrefabs, levelIds, forcedMapIndex);
+      this._renderLevelSelectContent(prefabs.viewPrefab, prefabs.floatingMapAssets, levelIds);
       this._ensureStaminaRecoveryTicker();
       this._updateSignInEntryState();
       if (typeof this._updateDailyTaskEntryState === "function") {
@@ -291,37 +284,24 @@ module.exports = {
   _ensureLevelSelectPrefabs: function () {
     if (
       this._levelSelectViewPrefab &&
-      Array.isArray(this._levelMapPrefabs) &&
-      this._levelMapPrefabs.length > 0
+      this._floatingMapAssets &&
+      typeof this._floatingMapAssets === "object"
     ) {
       return Promise.resolve({
         viewPrefab: this._levelSelectViewPrefab,
-        mapPrefabs: this._levelMapPrefabs
+        floatingMapAssets: this._floatingMapAssets
       });
     }
 
-    var prefabLoadTasks = [this._loadPrefab("prefabs/ui/LevelView")];
-    for (var mapIndex = 1; mapIndex <= MAX_LEVEL_MAP_PREFAB_INDEX; mapIndex += 1) {
-      prefabLoadTasks.push(this._tryLoadFirstAvailablePrefab([
-        "prefabs/ui/LevelMap" + mapIndex,
-        "prefabs/ui/levelMap" + mapIndex,
-        "prefabs/game/LevelMap" + mapIndex
-      ], {
-        silent: true
-      }));
-    }
-
-    return Promise.all(prefabLoadTasks).then(function (prefabs) {
-      this._levelSelectViewPrefab = prefabs[0];
-      this._levelMapPrefabs = prefabs.slice(1).filter(function (prefab) {
-        return !!prefab;
-      });
-      if (this._levelMapPrefabs.length === 0) {
-        Logger.warn("No level map prefabs available, LevelView will show without map content.");
-      }
+    return Promise.all([
+      this._loadPrefab("prefabs/ui/LevelView"),
+      LevelSelectView.loadFloatingMapAssets()
+    ]).then(function (results) {
+      this._levelSelectViewPrefab = results[0];
+      this._floatingMapAssets = results[1];
       return {
         viewPrefab: this._levelSelectViewPrefab,
-        mapPrefabs: this._levelMapPrefabs
+        floatingMapAssets: this._floatingMapAssets
       };
     }.bind(this));
   },
@@ -409,13 +389,13 @@ module.exports = {
 
         if (
           !this._levelSelectViewPrefab ||
-          !Array.isArray(this._levelMapPrefabs) ||
-          this._levelMapPrefabs.length === 0
+          !this._floatingMapAssets ||
+          typeof this._floatingMapAssets !== "object"
         ) {
           return resolvedLevelIds;
         }
 
-        this._renderLevelSelectContent(this._levelSelectViewPrefab, this._levelMapPrefabs, resolvedLevelIds);
+        this._renderLevelSelectContent(this._levelSelectViewPrefab, this._floatingMapAssets, resolvedLevelIds);
         this._preloadLevelConfigsInBackground(resolvedLevelIds);
         return resolvedLevelIds;
       }.bind(this)).catch(function (error) {
@@ -457,7 +437,7 @@ module.exports = {
     return LevelSelectPolicy.getLevelIdFromResourcePath(resourcePath);
   },
 
-  _renderLevelSelectContent: function (levelViewPrefab, mapPrefabs, levelIds, forcedMapIndex) {
+  _renderLevelSelectContent: function (levelViewPrefab, floatingMapAssets, levelIds) {
     this._refreshLevelProgress();
 
     var highestUnlocked = Math.max(1, Number(this.levelProgress.highestUnlockedLevel) || 1);
@@ -469,12 +449,11 @@ module.exports = {
       hostNode: this.node,
       existingLevelSelectNode: this._levelSelectNode,
       levelViewPrefab: levelViewPrefab,
-      mapPrefabs: mapPrefabs,
+      floatingMapAssets: floatingMapAssets,
       levelIds: levelIds,
       levelSelectRouteEditorMode: this._levelSelectRouteEditorMode,
       highestUnlocked: highestUnlocked,
       highlightedLevelId: highlightedLevelId,
-      currentMapIndex: Number.isInteger(forcedMapIndex) ? forcedMapIndex : this._levelSelectMapIndex,
       getLevelStarCount: this._getLevelStarCount.bind(this),
       isLevelCompleted: this._isLevelCompleted.bind(this),
       staminaValue: this._getCurrentStamina(),
@@ -485,17 +464,16 @@ module.exports = {
       onOpenStarChest: this._openStarChest.bind(this),
       onOpenShop: this._onLevelSelectShopTap.bind(this),
       onOpenDailyTasks: this._onLevelSelectDailyTasksTap.bind(this),
-      onLevelSelectTap: this._onLevelSelectTap.bind(this),
-      onMapIndexChange: this._onLevelSelectMapIndexChange.bind(this)
+      onLevelSelectTap: this._onLevelSelectTap.bind(this)
     });
     this._levelSelectNode = renderResult.levelViewNode;
     this._levelSelectMapIndex = Number.isInteger(renderResult.currentMapIndex)
       ? renderResult.currentMapIndex
       : 0;
-    this._levelMapPrefabs = Array.isArray(mapPrefabs) ? mapPrefabs.slice() : [];
+    this._floatingMapAssets = floatingMapAssets;
     if (!renderResult || (Number(renderResult.mapCount) || 0) <= 0) {
-      Logger.warn("Level select rendered without map prefab content.");
-      this._setStatus("Level map missing. Please check LevelMap1 prefab resources.");
+      Logger.warn("Level select rendered without floating map content.");
+      this._setStatus("Level map missing. Please check floating map resources.");
     }
 
     this._refreshRouteEditorButtons();
@@ -526,8 +504,8 @@ module.exports = {
 
     if (
       !this._levelSelectViewPrefab ||
-      !Array.isArray(this._levelMapPrefabs) ||
-      this._levelMapPrefabs.length === 0
+      !this._floatingMapAssets ||
+      typeof this._floatingMapAssets !== "object"
     ) {
       return;
     }
@@ -536,7 +514,7 @@ module.exports = {
       if (this.isRestarting || !this.isSelectingLevel) {
         return;
       }
-      this._renderLevelSelectContent(this._levelSelectViewPrefab, this._levelMapPrefabs, levelIds, targetMapIndex);
+      this._renderLevelSelectContent(this._levelSelectViewPrefab, this._floatingMapAssets, levelIds);
     }.bind(this)).catch(function (error) {
       Logger.warn("Switch level map failed", error && error.message ? error.message : error);
     });

@@ -229,12 +229,13 @@ BackpackViewController.prototype._renderPackList = function (inventory) {
       this._packItemNodesByItemId[definition.itemId],
       "pack item node for " + definition.itemId
     );
+    var itemCount = getItemCount(inventory, definition.itemId);
     var iconNode = requireChildNode(itemNode, "icon", itemNode.name);
     var nameNode = requireChildNode(itemNode, "name", itemNode.name);
     var numNode = requireChildNode(itemNode, "num", itemNode.name);
     var selectedNode = itemNode.getChildByName("selected");
 
-    itemNode.active = true;
+    itemNode.active = itemCount > 0;
     itemNode.opacity = 255;
     itemNode.color = cc.color(255, 255, 255);
     if (selectedNode && selectedNode.isValid) {
@@ -242,9 +243,15 @@ BackpackViewController.prototype._renderPackList = function (inventory) {
     }
 
     setLabelText(nameNode, definition.displayName);
-    setLabelText(numNode, String(getItemCount(inventory, definition.itemId)));
+    setLabelText(numNode, String(itemCount));
     setSpriteFrame(iconNode, this._itemSpriteFrames[definition.itemId]);
   }, this);
+
+  var layout = requireValidNode(this._nodes.packListNode, "Panel/pack_listview").getComponent(cc.Layout);
+  if (!layout || typeof layout.updateLayout !== "function") {
+    throw new Error("BackpackView pack_listview Layout.updateLayout is required.");
+  }
+  layout.updateLayout();
 };
 
 BackpackViewController.prototype.render = function (options) {

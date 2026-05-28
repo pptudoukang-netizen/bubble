@@ -6,6 +6,7 @@
     "validate:aim": "node tools/validate-aim-profiles.js",
     "validate:shots": "node tools/validate-shot-regression.js",
     "validate:release": "node tools/validate-release-config.js",
+    "generate:floating-map": "node tools/generate-floating-map-config.js --target 200",
     "validate": "npm run validate:stamina && npm run validate:levels && npm run validate:level-sync && npm run validate:aim && npm run validate:shots && npm run validate:release",
     "chatgpt:images": "node tools/chatgpt-web-image-regenerator.js"
   },

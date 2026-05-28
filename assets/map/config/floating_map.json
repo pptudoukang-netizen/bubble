@@ -1,0 +1,842 @@
+{
+  "schemaVersion": 1,
+  "targetLevelCount": 200,
+  "specialInterval": 20,
+  "verticalPadding": 10,
+  "normalIslandCapacities": {
+    "island1": 3,
+    "island2": 4,
+    "island3": 4,
+    "island4": 4,
+    "island5": 5,
+    "island6": 6,
+    "island7": 6,
+    "island8": 6
+  },
+  "nodes": [
+    {
+      "index": 0,
+      "type": "normal",
+      "prefab": "island1",
+      "capacity": 3,
+      "width": 408,
+      "height": 367,
+      "anchorY": 0.5,
+      "levelIds": [
+        1,
+        2,
+        3
+      ],
+      "y": 183.5
+    },
+    {
+      "index": 1,
+      "type": "normal",
+      "prefab": "island2",
+      "capacity": 4,
+      "width": 433,
+      "height": 308,
+      "anchorY": 0.5,
+      "levelIds": [
+        4,
+        5,
+        6,
+        7
+      ],
+      "y": 541
+    },
+    {
+      "index": 2,
+      "type": "normal",
+      "prefab": "island6",
+      "capacity": 6,
+      "width": 450,
+      "height": 351,
+      "anchorY": 0.5,
+      "levelIds": [
+        8,
+        9,
+        10,
+        11,
+        12,
+        13
+      ],
+      "y": 890.5
+    },
+    {
+      "index": 3,
+      "type": "normal",
+      "prefab": "island7",
+      "capacity": 6,
+      "width": 450,
+      "height": 409,
+      "anchorY": 0.5,
+      "levelIds": [
+        14,
+        15,
+        16,
+        17,
+        18,
+        19
+      ],
+      "y": 1290.5
+    },
+    {
+      "index": 4,
+      "type": "special",
+      "prefab": "landmark1",
+      "capacity": 1,
+      "width": 431,
+      "height": 357,
+      "anchorY": 0.5,
+      "levelIds": [
+        20
+      ],
+      "y": 1693.5
+    },
+    {
+      "index": 5,
+      "type": "normal",
+      "prefab": "island3",
+      "capacity": 4,
+      "width": 461,
+      "height": 310,
+      "anchorY": 0.5,
+      "levelIds": [
+        21,
+        22,
+        23,
+        24
+      ],
+      "y": 2047
+    },
+    {
+      "index": 6,
+      "type": "normal",
+      "prefab": "island4",
+      "capacity": 4,
+      "width": 437,
+      "height": 375,
+      "anchorY": 0.5,
+      "levelIds": [
+        25,
+        26,
+        27,
+        28
+      ],
+      "y": 2409.5
+    },
+    {
+      "index": 7,
+      "type": "normal",
+      "prefab": "island5",
+      "capacity": 5,
+      "width": 455,
+      "height": 405,
+      "anchorY": 0.5,
+      "levelIds": [
+        29,
+        30,
+        31,
+        32,
+        33
+      ],
+      "y": 2819.5
+    },
+    {
+      "index": 8,
+      "type": "normal",
+      "prefab": "island8",
+      "capacity": 6,
+      "width": 453,
+      "height": 424,
+      "anchorY": 0.5,
+      "levelIds": [
+        34,
+        35,
+        36,
+        37,
+        38,
+        39
+      ],
+      "y": 3254
+    },
+    {
+      "index": 9,
+      "type": "special",
+      "prefab": "landmark2",
+      "capacity": 1,
+      "width": 471,
+      "height": 365,
+      "anchorY": 0.5,
+      "levelIds": [
+        40
+      ],
+      "y": 3668.5
+    },
+    {
+      "index": 10,
+      "type": "normal",
+      "prefab": "island5",
+      "capacity": 5,
+      "width": 455,
+      "height": 405,
+      "anchorY": 0.5,
+      "levelIds": [
+        41,
+        42,
+        43,
+        44,
+        45
+      ],
+      "y": 4073.5
+    },
+    {
+      "index": 11,
+      "type": "normal",
+      "prefab": "island1",
+      "capacity": 3,
+      "width": 408,
+      "height": 367,
+      "anchorY": 0.5,
+      "levelIds": [
+        46,
+        47,
+        48
+      ],
+      "y": 4479.5
+    },
+    {
+      "index": 12,
+      "type": "normal",
+      "prefab": "island6",
+      "capacity": 6,
+      "width": 450,
+      "height": 351,
+      "anchorY": 0.5,
+      "levelIds": [
+        49,
+        50,
+        51,
+        52,
+        53,
+        54
+      ],
+      "y": 4858.5
+    },
+    {
+      "index": 13,
+      "type": "normal",
+      "prefab": "island5",
+      "capacity": 5,
+      "width": 455,
+      "height": 405,
+      "anchorY": 0.5,
+      "levelIds": [
+        55,
+        56,
+        57,
+        58,
+        59
+      ],
+      "y": 5256.5
+    },
+    {
+      "index": 14,
+      "type": "special",
+      "prefab": "landmark3",
+      "capacity": 1,
+      "width": 501,
+      "height": 356,
+      "anchorY": 0.5,
+      "levelIds": [
+        60
+      ],
+      "y": 5657
+    },
+    {
+      "index": 15,
+      "type": "normal",
+      "prefab": "island2",
+      "capacity": 4,
+      "width": 433,
+      "height": 308,
+      "anchorY": 0.5,
+      "levelIds": [
+        61,
+        62,
+        63,
+        64
+      ],
+      "y": 6009
+    },
+    {
+      "index": 16,
+      "type": "normal",
+      "prefab": "island3",
+      "capacity": 4,
+      "width": 461,
+      "height": 310,
+      "anchorY": 0.5,
+      "levelIds": [
+        65,
+        66,
+        67,
+        68
+      ],
+      "y": 6338
+    },
+    {
+      "index": 17,
+      "type": "normal",
+      "prefab": "island4",
+      "capacity": 4,
+      "width": 437,
+      "height": 375,
+      "anchorY": 0.5,
+      "levelIds": [
+        69,
+        70,
+        71,
+        72
+      ],
+      "y": 6700.5
+    },
+    {
+      "index": 18,
+      "type": "normal",
+      "prefab": "island4",
+      "capacity": 4,
+      "width": 437,
+      "height": 375,
+      "anchorY": 0.5,
+      "levelIds": [
+        73,
+        74,
+        75,
+        76
+      ],
+      "y": 7095.5
+    },
+    {
+      "index": 19,
+      "type": "normal",
+      "prefab": "island1",
+      "capacity": 3,
+      "width": 408,
+      "height": 367,
+      "anchorY": 0.5,
+      "levelIds": [
+        77,
+        78,
+        79
+      ],
+      "y": 7486.5
+    },
+    {
+      "index": 20,
+      "type": "special",
+      "prefab": "landmark4",
+      "capacity": 1,
+      "width": 390,
+      "height": 642,
+      "anchorY": 0.5,
+      "levelIds": [
+        80
+      ],
+      "y": 8011
+    },
+    {
+      "index": 21,
+      "type": "normal",
+      "prefab": "island1",
+      "capacity": 3,
+      "width": 408,
+      "height": 367,
+      "anchorY": 0.5,
+      "levelIds": [
+        81,
+        82,
+        83
+      ],
+      "y": 8535.5
+    },
+    {
+      "index": 22,
+      "type": "normal",
+      "prefab": "island2",
+      "capacity": 4,
+      "width": 433,
+      "height": 308,
+      "anchorY": 0.5,
+      "levelIds": [
+        84,
+        85,
+        86,
+        87
+      ],
+      "y": 8893
+    },
+    {
+      "index": 23,
+      "type": "normal",
+      "prefab": "island6",
+      "capacity": 6,
+      "width": 450,
+      "height": 351,
+      "anchorY": 0.5,
+      "levelIds": [
+        88,
+        89,
+        90,
+        91,
+        92,
+        93
+      ],
+      "y": 9242.5
+    },
+    {
+      "index": 24,
+      "type": "normal",
+      "prefab": "island7",
+      "capacity": 6,
+      "width": 450,
+      "height": 409,
+      "anchorY": 0.5,
+      "levelIds": [
+        94,
+        95,
+        96,
+        97,
+        98,
+        99
+      ],
+      "y": 9642.5
+    },
+    {
+      "index": 25,
+      "type": "special",
+      "prefab": "landmark5",
+      "capacity": 1,
+      "width": 710,
+      "height": 547,
+      "anchorY": 0.5,
+      "levelIds": [
+        100
+      ],
+      "y": 10140.5
+    },
+    {
+      "index": 26,
+      "type": "normal",
+      "prefab": "island3",
+      "capacity": 4,
+      "width": 461,
+      "height": 310,
+      "anchorY": 0.5,
+      "levelIds": [
+        101,
+        102,
+        103,
+        104
+      ],
+      "y": 10589
+    },
+    {
+      "index": 27,
+      "type": "normal",
+      "prefab": "island4",
+      "capacity": 4,
+      "width": 437,
+      "height": 375,
+      "anchorY": 0.5,
+      "levelIds": [
+        105,
+        106,
+        107,
+        108
+      ],
+      "y": 10951.5
+    },
+    {
+      "index": 28,
+      "type": "normal",
+      "prefab": "island5",
+      "capacity": 5,
+      "width": 455,
+      "height": 405,
+      "anchorY": 0.5,
+      "levelIds": [
+        109,
+        110,
+        111,
+        112,
+        113
+      ],
+      "y": 11361.5
+    },
+    {
+      "index": 29,
+      "type": "normal",
+      "prefab": "island8",
+      "capacity": 6,
+      "width": 453,
+      "height": 424,
+      "anchorY": 0.5,
+      "levelIds": [
+        114,
+        115,
+        116,
+        117,
+        118,
+        119
+      ],
+      "y": 11796
+    },
+    {
+      "index": 30,
+      "type": "special",
+      "prefab": "landmark1",
+      "capacity": 1,
+      "width": 431,
+      "height": 357,
+      "anchorY": 0.5,
+      "levelIds": [
+        120
+      ],
+      "y": 12206.5
+    },
+    {
+      "index": 31,
+      "type": "normal",
+      "prefab": "island5",
+      "capacity": 5,
+      "width": 455,
+      "height": 405,
+      "anchorY": 0.5,
+      "levelIds": [
+        121,
+        122,
+        123,
+        124,
+        125
+      ],
+      "y": 12607.5
+    },
+    {
+      "index": 32,
+      "type": "normal",
+      "prefab": "island1",
+      "capacity": 3,
+      "width": 408,
+      "height": 367,
+      "anchorY": 0.5,
+      "levelIds": [
+        126,
+        127,
+        128
+      ],
+      "y": 13013.5
+    },
+    {
+      "index": 33,
+      "type": "normal",
+      "prefab": "island6",
+      "capacity": 6,
+      "width": 450,
+      "height": 351,
+      "anchorY": 0.5,
+      "levelIds": [
+        129,
+        130,
+        131,
+        132,
+        133,
+        134
+      ],
+      "y": 13392.5
+    },
+    {
+      "index": 34,
+      "type": "normal",
+      "prefab": "island5",
+      "capacity": 5,
+      "width": 455,
+      "height": 405,
+      "anchorY": 0.5,
+      "levelIds": [
+        135,
+        136,
+        137,
+        138,
+        139
+      ],
+      "y": 13790.5
+    },
+    {
+      "index": 35,
+      "type": "special",
+      "prefab": "landmark2",
+      "capacity": 1,
+      "width": 471,
+      "height": 365,
+      "anchorY": 0.5,
+      "levelIds": [
+        140
+      ],
+      "y": 14195.5
+    },
+    {
+      "index": 36,
+      "type": "normal",
+      "prefab": "island2",
+      "capacity": 4,
+      "width": 433,
+      "height": 308,
+      "anchorY": 0.5,
+      "levelIds": [
+        141,
+        142,
+        143,
+        144
+      ],
+      "y": 14552
+    },
+    {
+      "index": 37,
+      "type": "normal",
+      "prefab": "island3",
+      "capacity": 4,
+      "width": 461,
+      "height": 310,
+      "anchorY": 0.5,
+      "levelIds": [
+        145,
+        146,
+        147,
+        148
+      ],
+      "y": 14881
+    },
+    {
+      "index": 38,
+      "type": "normal",
+      "prefab": "island4",
+      "capacity": 4,
+      "width": 437,
+      "height": 375,
+      "anchorY": 0.5,
+      "levelIds": [
+        149,
+        150,
+        151,
+        152
+      ],
+      "y": 15243.5
+    },
+    {
+      "index": 39,
+      "type": "normal",
+      "prefab": "island4",
+      "capacity": 4,
+      "width": 437,
+      "height": 375,
+      "anchorY": 0.5,
+      "levelIds": [
+        153,
+        154,
+        155,
+        156
+      ],
+      "y": 15638.5
+    },
+    {
+      "index": 40,
+      "type": "normal",
+      "prefab": "island1",
+      "capacity": 3,
+      "width": 408,
+      "height": 367,
+      "anchorY": 0.5,
+      "levelIds": [
+        157,
+        158,
+        159
+      ],
+      "y": 16029.5
+    },
+    {
+      "index": 41,
+      "type": "special",
+      "prefab": "landmark3",
+      "capacity": 1,
+      "width": 501,
+      "height": 356,
+      "anchorY": 0.5,
+      "levelIds": [
+        160
+      ],
+      "y": 16411
+    },
+    {
+      "index": 42,
+      "type": "normal",
+      "prefab": "island1",
+      "capacity": 3,
+      "width": 408,
+      "height": 367,
+      "anchorY": 0.5,
+      "levelIds": [
+        161,
+        162,
+        163
+      ],
+      "y": 16792.5
+    },
+    {
+      "index": 43,
+      "type": "normal",
+      "prefab": "island2",
+      "capacity": 4,
+      "width": 433,
+      "height": 308,
+      "anchorY": 0.5,
+      "levelIds": [
+        164,
+        165,
+        166,
+        167
+      ],
+      "y": 17150
+    },
+    {
+      "index": 44,
+      "type": "normal",
+      "prefab": "island6",
+      "capacity": 6,
+      "width": 450,
+      "height": 351,
+      "anchorY": 0.5,
+      "levelIds": [
+        168,
+        169,
+        170,
+        171,
+        172,
+        173
+      ],
+      "y": 17499.5
+    },
+    {
+      "index": 45,
+      "type": "normal",
+      "prefab": "island7",
+      "capacity": 6,
+      "width": 450,
+      "height": 409,
+      "anchorY": 0.5,
+      "levelIds": [
+        174,
+        175,
+        176,
+        177,
+        178,
+        179
+      ],
+      "y": 17899.5
+    },
+    {
+      "index": 46,
+      "type": "special",
+      "prefab": "landmark4",
+      "capacity": 1,
+      "width": 390,
+      "height": 642,
+      "anchorY": 0.5,
+      "levelIds": [
+        180
+      ],
+      "y": 18445
+    },
+    {
+      "index": 47,
+      "type": "normal",
+      "prefab": "island3",
+      "capacity": 4,
+      "width": 461,
+      "height": 310,
+      "anchorY": 0.5,
+      "levelIds": [
+        181,
+        182,
+        183,
+        184
+      ],
+      "y": 18941
+    },
+    {
+      "index": 48,
+      "type": "normal",
+      "prefab": "island4",
+      "capacity": 4,
+      "width": 437,
+      "height": 375,
+      "anchorY": 0.5,
+      "levelIds": [
+        185,
+        186,
+        187,
+        188
+      ],
+      "y": 19303.5
+    },
+    {
+      "index": 49,
+      "type": "normal",
+      "prefab": "island5",
+      "capacity": 5,
+      "width": 455,
+      "height": 405,
+      "anchorY": 0.5,
+      "levelIds": [
+        189,
+        190,
+        191,
+        192,
+        193
+      ],
+      "y": 19713.5
+    },
+    {
+      "index": 50,
+      "type": "normal",
+      "prefab": "island8",
+      "capacity": 6,
+      "width": 453,
+      "height": 424,
+      "anchorY": 0.5,
+      "levelIds": [
+        194,
+        195,
+        196,
+        197,
+        198,
+        199
+      ],
+      "y": 20148
+    },
+    {
+      "index": 51,
+      "type": "special",
+      "prefab": "landmark5",
+      "capacity": 1,
+      "width": 710,
+      "height": 547,
+      "anchorY": 0.5,
+      "levelIds": [
+        200
+      ],
+      "y": 20653.5
+    }
+  ]
+}
