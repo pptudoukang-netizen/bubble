@@ -311,7 +311,7 @@ function resolveLevelMapIndexForLevel(levelConfig) {
 }
 
 function resolveGameBackgroundSpritePath(levelConfig) {
-  return GAME_BG_RESOURCE_PREFIX + resolveLevelMapIndexForLevel(levelConfig);
+  return GAME_BG_RESOURCE_PREFIX;// + resolveLevelMapIndexForLevel(levelConfig);
 }
 
 function buildJarRenderKey(levelConfig, runtimeSnapshot) {

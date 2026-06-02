@@ -119,6 +119,10 @@ function attachLevelRendererSceneMethods(LevelRenderer, deps) {
   var DANGER_WARNING_ROW_THRESHOLD = Math.max(1, Number(BoardLayout.rowHeight) || 64);
   var HUD_STAR_PARTICLE_NODE_NAME = "starParticle";
   var HUD_STAR_PARTICLE_DURATION = 0.7;
+  var RAINBOW_COLOR_SELECTOR_BUTTON_SIZE = 72;
+  var RAINBOW_COLOR_SELECTOR_RADIUS = 142;
+  var RAINBOW_COLOR_SELECTOR_ANGLE_STEP = 35;
+  var RAINBOW_COLOR_SELECTOR_MAX_SPREAD = 140;
   var HUD_STAR_PARTICLE_HOLD_DURATION = 0.5;
   var HUD_STAR_PUNCH_SCALE = 1.35;
   var HUD_STAR_PUNCH_UP_DURATION = 0.12;
@@ -1826,9 +1830,12 @@ LevelRenderer.prototype._renderRainbowColorSelector = function (shooterPanel, sh
   var shouldAnimate = selectorNode.__selectorKey !== selectorKey;
   selectorNode.__selectorKey = selectorKey;
 
-  var buttonSize = new cc.Size(56, 56);
-  var radius = 104;
-  var spread = Math.min(120, Math.max(0, (colors.length - 1) * 30));
+  var buttonSize = new cc.Size(RAINBOW_COLOR_SELECTOR_BUTTON_SIZE, RAINBOW_COLOR_SELECTOR_BUTTON_SIZE);
+  var radius = RAINBOW_COLOR_SELECTOR_RADIUS;
+  var spread = Math.min(
+    RAINBOW_COLOR_SELECTOR_MAX_SPREAD,
+    Math.max(0, (colors.length - 1) * RAINBOW_COLOR_SELECTOR_ANGLE_STEP)
+  );
   var startAngle = 90 + spread * 0.5;
 
   colors.forEach(function (colorCode, index) {

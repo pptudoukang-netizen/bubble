@@ -8,8 +8,8 @@
   "premultiplyAlpha": false,
   "genMipmaps": false,
   "packable": true,
-  "width": 738,
-  "height": 700,
+  "width": 120,
+  "height": 114,
   "platformSettings": {},
   "subMetas": {
     "halo": {
@@ -22,9 +22,9 @@
       "rotated": false,
       "offsetX": 0.5,
       "offsetY": 0,
-      "trimX": 1,
+      "trimX": 2,
       "trimY": 0,
-      "width": 119,
+      "width": 117,
       "height": 114,
       "rawWidth": 120,
       "rawHeight": 114,
