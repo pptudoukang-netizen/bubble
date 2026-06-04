@@ -52,6 +52,8 @@ var ShopStateService = require("../services/ShopStateService");
 var ShopPurchaseService = require("../services/ShopPurchaseService");
 var WechatShareService = require("../services/WechatShareService");
 var FriendGiftService = require("../services/FriendGiftService");
+var PlayerCloudProfileService = require("../services/PlayerCloudProfileService");
+var WorldLeaderboardService = require("../services/WorldLeaderboardService");
 var AdService = require("../services/AdService");
 var TelemetryService = require("../services/TelemetryService");
 var AdRewardQuotaStore = require("../services/AdRewardQuotaStore");
@@ -172,6 +174,8 @@ module.exports = {
   ShopPurchaseService: ShopPurchaseService,
   WechatShareService: WechatShareService,
   FriendGiftService: FriendGiftService,
+  PlayerCloudProfileService: PlayerCloudProfileService,
+  WorldLeaderboardService: WorldLeaderboardService,
   AdService: AdService,
   TelemetryService: TelemetryService,
   AdRewardQuotaStore: AdRewardQuotaStore,

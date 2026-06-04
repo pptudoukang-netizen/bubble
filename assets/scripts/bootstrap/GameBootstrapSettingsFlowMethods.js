@@ -21,6 +21,18 @@ module.exports = {
     this._showSettingView();
   },
 
+  _onGameplaySettingTap: function () {
+    if (this.isRestarting || this.isSelectingLevel) {
+      return;
+    }
+    if (!this.currentLevelConfig || !this.currentLevelConfig.level) {
+      throw new Error("Gameplay settings requires active level config.");
+    }
+
+    this._playSfx("uiClick");
+    this._showSettingView();
+  },
+
   _ensureSettingViewPrefab: function () {
     if (this._settingViewPrefab) {
       return Promise.resolve(this._settingViewPrefab);

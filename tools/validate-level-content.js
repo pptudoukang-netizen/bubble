@@ -6,6 +6,7 @@ var path = require("path");
 var BoardLayout = require("../assets/scripts/config/BoardLayout");
 
 var LEVEL_DIR = path.resolve(__dirname, "../assets/resources/config/levels");
+var REMOTE_PACK_DIR = path.resolve(__dirname, "../remote-level-packs");
 var ALLOWED_COLORS = ["R", "G", "B", "Y", "P"];
 var MAX_JAR_COUNT = 4;
 var ALLOWED_DIFFICULTY = ["tutorial", "easy", "normal", "hard", "expert", "advanced"];
@@ -18,10 +19,13 @@ var ALLOWED_BONUS_TYPES = [
   "clear_with_shots_remaining",
   "single_turn_drop_count"
 ];
-var ALLOWED_ENTITY_CATEGORIES = ["skill_ball", "obstacle_ball"];
+var ALLOWED_ENTITY_CATEGORIES = ["skill_ball", "obstacle_ball", "reactive_ball", "locked_ball", "key_ball"];
 var ALLOWED_ENTITY_TYPES = {
   skill_ball: ["rainbow", "blast"],
-  obstacle_ball: ["stone", "ice"]
+  obstacle_ball: ["stone", "ice"],
+  reactive_ball: ["molotov", "splitter"],
+  locked_ball: ["locked"],
+  key_ball: ["key"]
 };
 var ALLOWED_CLEAR_REWARD_ITEM_IDS = ["coin", "stamina"];
 var AD_RUN_POWERUP_TYPES = ["three_line_elimination", "plus_three_balls"];
@@ -131,6 +135,29 @@ function validateSpecialEntities(level, normalizedLayoutRows, issues) {
     if (entity.entityCategory === "obstacle_ball" && entity.entityType === "ice") {
       if (typeof entity.innerColor !== "string" || ALLOWED_COLORS.indexOf(entity.innerColor) === -1) {
         issues.push("specialEntities[" + index + "].innerColor invalid for ice: " + entity.innerColor);
+      }
+    }
+    if (entity.entityCategory === "reactive_ball" && entity.entityType === "molotov") {
+      if (!Number.isInteger(entity.blastRadius) || entity.blastRadius !== 2) {
+        issues.push("specialEntities[" + index + "].blastRadius must be 2 for molotov");
+      }
+    }
+    if (entity.entityCategory === "reactive_ball" && entity.entityType === "splitter") {
+      if (typeof entity.splitColor !== "string" || level.colors.indexOf(entity.splitColor) === -1) {
+        issues.push("specialEntities[" + index + "].splitColor must use a color from level.colors");
+      }
+    }
+    if (entity.entityCategory === "locked_ball" && entity.entityType === "locked") {
+      if (typeof entity.lockedColor !== "string" || level.colors.indexOf(entity.lockedColor) === -1) {
+        issues.push("specialEntities[" + index + "].lockedColor must use a color from level.colors");
+      }
+      if (typeof entity.lockGroup !== "string" || !entity.lockGroup.trim()) {
+        issues.push("specialEntities[" + index + "].lockGroup must be non-empty string");
+      }
+    }
+    if (entity.entityCategory === "key_ball" && entity.entityType === "key") {
+      if (typeof entity.unlockGroup !== "string" || !entity.unlockGroup.trim()) {
+        issues.push("specialEntities[" + index + "].unlockGroup must be non-empty string");
       }
     }
 
@@ -326,8 +353,7 @@ function validateIceSnowballSupply(level, issues) {
   }
 }
 
-function validateLevel(filePath, expectedLevelId) {
-  var data = readJson(filePath);
+function validateLevelData(data, expectedLevelId) {
   var issues = [];
   var level = data.level || null;
 
@@ -477,52 +503,120 @@ function validateLevel(filePath, expectedLevelId) {
   return issues;
 }
 
-function main() {
-  var expectedLevelCount = Number(process.env.LEVEL_EXPECTED_COUNT || 0);
-  var files = fs.readdirSync(LEVEL_DIR)
+function validateLevel(filePath, expectedLevelId) {
+  return validateLevelData(readJson(filePath), expectedLevelId);
+}
+
+function listLocalLevelEntries() {
+  return fs.readdirSync(LEVEL_DIR)
     .filter(function (fileName) {
       return /^level_\d+\.json$/.test(fileName);
     })
-    .sort(function (a, b) {
-      return getLevelNumber(a) - getLevelNumber(b);
+    .map(function (fileName) {
+      return {
+        levelId: getLevelNumber(fileName),
+        sourceName: fileName,
+        data: readJson(path.join(LEVEL_DIR, fileName))
+      };
+    });
+}
+
+function listRemotePackEntries() {
+  if (!fs.existsSync(REMOTE_PACK_DIR)) {
+    return [];
+  }
+
+  var entries = [];
+  fs.readdirSync(REMOTE_PACK_DIR)
+    .filter(function (fileName) {
+      return /^levels_pack_\d{3,}_\d{3,}\.json$/.test(fileName);
+    })
+    .sort()
+    .forEach(function (fileName) {
+      var pack = readJson(path.join(REMOTE_PACK_DIR, fileName));
+      if (!pack || typeof pack !== "object" || Array.isArray(pack)) {
+        throw new Error("remote level pack must be object: " + fileName);
+      }
+      if (pack.schemaVersion !== 1) {
+        throw new Error("remote level pack schemaVersion must be 1: " + fileName);
+      }
+      if (typeof pack.packId !== "string" || !pack.packId) {
+        throw new Error("remote level pack packId is required: " + fileName);
+      }
+      if (!Number.isInteger(pack.from) || !Number.isInteger(pack.to) || pack.from <= 0 || pack.to < pack.from) {
+        throw new Error("remote level pack range invalid: " + fileName);
+      }
+      if (!pack.levels || typeof pack.levels !== "object" || Array.isArray(pack.levels)) {
+        throw new Error("remote level pack levels must be object: " + fileName);
+      }
+
+      for (var levelId = pack.from; levelId <= pack.to; levelId += 1) {
+        var levelKey = "level_" + String(levelId).padStart(3, "0");
+        if (!pack.levels[levelKey] || typeof pack.levels[levelKey] !== "object" || Array.isArray(pack.levels[levelKey])) {
+          throw new Error("remote level pack missing " + levelKey + ": " + fileName);
+        }
+        entries.push({
+          levelId: levelId,
+          sourceName: fileName + "#" + levelKey,
+          data: pack.levels[levelKey]
+        });
+      }
     });
 
-  if (!files.length) {
-    console.log("No level files found in " + LEVEL_DIR);
+  return entries;
+}
+
+function listAllLevelEntries() {
+  return listLocalLevelEntries().concat(listRemotePackEntries()).sort(function (a, b) {
+    return a.levelId - b.levelId;
+  });
+}
+
+function main() {
+  var expectedLevelCount = Number(process.env.LEVEL_EXPECTED_COUNT || 0);
+  var entries = listAllLevelEntries();
+
+  if (!entries.length) {
+    console.log("No level configs found in " + LEVEL_DIR + " or " + REMOTE_PACK_DIR);
     process.exit(1);
   }
 
   var expectedId = 1;
   var failed = false;
+  var seenLevelIds = {};
 
-  files.forEach(function (fileName) {
-    var levelId = getLevelNumber(fileName);
+  entries.forEach(function (entry) {
+    var levelId = entry.levelId;
+    if (seenLevelIds[levelId]) {
+      failed = true;
+      console.log("[FAIL]", entry.sourceName, "Duplicated level id", levelId);
+    }
+    seenLevelIds[levelId] = true;
     if (levelId !== expectedId) {
       failed = true;
-      console.log("[FAIL]", fileName, "Expected sequential level id", expectedId, "but got", levelId);
+      console.log("[FAIL]", entry.sourceName, "Expected sequential level id", expectedId, "but got", levelId);
       expectedId = levelId + 1;
       return;
     }
 
-    var filePath = path.join(LEVEL_DIR, fileName);
-    var issues = validateLevel(filePath, levelId);
+    var issues = validateLevelData(entry.data, levelId);
 
     if (issues.length) {
       failed = true;
-      console.log("[FAIL]", fileName);
+      console.log("[FAIL]", entry.sourceName);
       issues.forEach(function (issue) {
         console.log("  -", issue);
       });
     } else {
-      console.log("[OK]", fileName);
+      console.log("[OK]", entry.sourceName);
     }
 
     expectedId += 1;
   });
 
-  if (Number.isInteger(expectedLevelCount) && expectedLevelCount > 0 && files.length !== expectedLevelCount) {
+  if (Number.isInteger(expectedLevelCount) && expectedLevelCount > 0 && entries.length !== expectedLevelCount) {
     failed = true;
-    console.log("[FAIL]", "Expected", expectedLevelCount, "levels, found", files.length);
+    console.log("[FAIL]", "Expected", expectedLevelCount, "levels, found", entries.length);
   }
 
   if (failed) {
@@ -530,7 +624,7 @@ function main() {
     process.exit(1);
   }
 
-  console.log("\nLevel content validation passed for", files.length, "levels.");
+  console.log("\nLevel content validation passed for", entries.length, "levels.");
 }
 
 main();

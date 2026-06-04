@@ -4,6 +4,9 @@ var fs = require("fs");
 var path = require("path");
 var AimTuningProfiles = require("../assets/scripts/config/AimTuningProfiles");
 
+var LEVEL_DIR = path.resolve(__dirname, "../assets/resources/config/levels");
+var REMOTE_PACK_DIR = path.resolve(__dirname, "../remote-level-packs");
+
 function readJson(filePath) {
   var raw = fs.readFileSync(filePath, "utf8");
   if (raw.charCodeAt(0) === 0xfeff) {
@@ -18,12 +21,11 @@ function getLevelNumber(fileName) {
   return match ? Number(match[1]) : Number.MAX_SAFE_INTEGER;
 }
 
-function validateLevel(filePath) {
-  var parsed = readJson(filePath);
+function validateLevelData(parsed, sourceName) {
   if (!parsed || !parsed.level) {
     return {
       ok: false,
-      levelCode: path.basename(filePath),
+      levelCode: sourceName,
       issues: ["missing level block"]
     };
   }
@@ -52,13 +54,61 @@ function validateLevel(filePath) {
 
   return {
     ok: issues.length === 0,
-    levelCode: level.code || path.basename(filePath),
+    levelCode: level.code || sourceName,
     difficulty: level.difficulty || "unknown",
     profile: meta.profile,
     explicitCount: explicitCount,
     values: level,
     issues: issues
   };
+}
+
+function validateLevel(filePath) {
+  return validateLevelData(readJson(filePath), path.basename(filePath));
+}
+
+function listRemotePackEntries() {
+  if (!fs.existsSync(REMOTE_PACK_DIR)) {
+    return [];
+  }
+  var entries = [];
+  fs.readdirSync(REMOTE_PACK_DIR)
+    .filter(function (fileName) {
+      return /^levels_pack_\d{3,}_\d{3,}\.json$/.test(fileName);
+    })
+    .sort()
+    .forEach(function (fileName) {
+      var pack = readJson(path.join(REMOTE_PACK_DIR, fileName));
+      if (!pack || typeof pack !== "object" || Array.isArray(pack) || !pack.levels || typeof pack.levels !== "object") {
+        throw new Error("remote level pack invalid: " + fileName);
+      }
+      Object.keys(pack.levels).sort(function (a, b) {
+        return getLevelNumber(a + ".json") - getLevelNumber(b + ".json");
+      }).forEach(function (levelKey) {
+        entries.push({
+          sourceName: fileName + "#" + levelKey,
+          data: pack.levels[levelKey]
+        });
+      });
+    });
+  return entries;
+}
+
+function listAllLevelEntries() {
+  var localEntries = fs.readdirSync(LEVEL_DIR)
+    .filter(function (fileName) {
+      return /^level_\d+\.json$/.test(fileName);
+    })
+    .sort(function (a, b) {
+      return getLevelNumber(a) - getLevelNumber(b);
+    })
+    .map(function (fileName) {
+      return {
+        sourceName: fileName,
+        data: readJson(path.join(LEVEL_DIR, fileName))
+      };
+    });
+  return localEntries.concat(listRemotePackEntries());
 }
 
 function printResult(result) {
@@ -88,23 +138,16 @@ function printResult(result) {
 }
 
 function main() {
-  var levelsDir = path.resolve(__dirname, "../assets/resources/config/levels");
-  var files = fs.readdirSync(levelsDir)
-    .filter(function (fileName) {
-      return /^level_\d+\.json$/.test(fileName);
-    })
-    .sort(function (a, b) {
-      return getLevelNumber(a) - getLevelNumber(b);
-    });
+  var entries = listAllLevelEntries();
 
-  if (!files.length) {
+  if (!entries.length) {
     console.log("No level json files found.");
     process.exit(1);
   }
 
   var failed = false;
-  files.forEach(function (fileName) {
-    var result = validateLevel(path.join(levelsDir, fileName));
+  entries.forEach(function (entry) {
+    var result = validateLevelData(entry.data, entry.sourceName);
     printResult(result);
     if (!result.ok) {
       failed = true;
@@ -116,7 +159,7 @@ function main() {
     process.exit(1);
   }
 
-  console.log("\nAim profile validation passed for", files.length, "levels.");
+  console.log("\nAim profile validation passed for", entries.length, "levels.");
 }
 
 main();

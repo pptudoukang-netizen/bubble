@@ -285,6 +285,70 @@ FallingMarbleSystem.prototype.registerDrops = function (cells, grid) {
   return this.lastDrops;
 };
 
+FallingMarbleSystem.prototype.registerSurplusShotsFromOrigin = function (balls, origin) {
+  if (!balls || !balls.length) {
+    throw new Error("FallingMarbleSystem.registerSurplusShotsFromOrigin requires at least one ball.");
+  }
+  if (!origin || typeof origin.x !== "number" || typeof origin.y !== "number") {
+    throw new Error("FallingMarbleSystem.registerSurplusShotsFromOrigin requires shooter origin.");
+  }
+  if (this.maxDynamicMarbles <= 0) {
+    throw new Error("FallingMarbleSystem.registerSurplusShotsFromOrigin requires positive maxDynamicMarbles.");
+  }
+
+  this.lastDrops = balls.map(function (ball, index) {
+    if (!ball || typeof ball !== "object") {
+      throw new Error("Surplus shot ball must be object at index " + index + ".");
+    }
+
+    var lateralSign = index % 2 === 0 ? -1 : 1;
+    var lateralSpread = 0.65 + Math.random() * 0.85;
+    var upwardSpeed = 520 + Math.random() * 420;
+    var horizontalSpeed = lateralSign * this.horizontalSpeed * lateralSpread * (0.55 + Math.random() * 0.55);
+    var spawnOffsetX = lateralSign * BoardLayout.bubbleRadius * (0.35 + Math.random() * 0.45);
+
+    return {
+      id: "surplus_shot_" + (this._dropSerial += 1),
+      sourceId: "surplus_shot",
+      color: ball.color || null,
+      entityCategory: ball.entityCategory || "normal_ball",
+      entityType: ball.entityType || null,
+      innerColor: ball.innerColor || null,
+      iceSnowballAlreadyCollected: false,
+      row: -1,
+      col: -1,
+      position: {
+        x: origin.x + spawnOffsetX,
+        y: origin.y + BoardLayout.bubbleRadius * 0.15
+      },
+      velocity: {
+        x: horizontalSpeed,
+        y: upwardSpeed
+      },
+      remainingBounces: this.maxBounces,
+      rotation: 0,
+      rotationSpeed: lateralSign * (160 + Math.random() * 120),
+      jarCooldown: 0,
+      rimBounceCount: 0,
+      lastRimBounceSpeed: 0,
+      lifeTime: 0,
+      stuckTimer: 0,
+      lastStuckX: origin.x,
+      lastStuckY: origin.y,
+      inJar: false,
+      jarIndex: -1,
+      jarColor: null,
+      active: true,
+      dropKind: "surplus_shot"
+    };
+  }, this);
+
+  Array.prototype.push.apply(this.activeDrops, this.lastDrops);
+  this.totalFallen += this.lastDrops.length;
+  this._renderSnapshotDirty = true;
+  return this.lastDrops;
+};
+
 FallingMarbleSystem.prototype._getJarZoneByIndex = function (jarIndex) {
   if (!this.jarZones || !this.jarZones.length) {
     return null;

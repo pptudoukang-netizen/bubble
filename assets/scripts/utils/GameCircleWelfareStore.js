@@ -1,6 +1,9 @@
 "use strict";
 
+var StrictStorage = require("./StrictStorage");
+
 var STORAGE_KEY = "bubble_game_circle_welfare_state_v1";
+var NAMESPACE = "GameCircleWelfareStore";
 
 function clone(data) {
   return JSON.parse(JSON.stringify(data));
@@ -97,16 +100,14 @@ GameCircleWelfareStore.prototype.getTodayKey = function (now) {
 };
 
 GameCircleWelfareStore.prototype._getStorage = function () {
-  var storage = cc && cc.sys && cc.sys.localStorage ? cc.sys.localStorage : null;
-  if (!storage) {
-    throw new Error("Local storage is unavailable for game circle welfare state.");
-  }
-  return storage;
+  return StrictStorage.resolveStorage(NAMESPACE);
 };
 
 GameCircleWelfareStore.prototype.load = function (now) {
-  var rawText = this._getStorage().getItem(STORAGE_KEY);
-  var state = normalizeState(rawText ? JSON.parse(rawText) : null, this.activityId);
+  var state = StrictStorage.readJsonOrCreate(STORAGE_KEY, NAMESPACE, function () {
+    return createInitialState(this.activityId);
+  }.bind(this));
+  state = normalizeState(state, this.activityId);
   state = this.ensureCurrentDay(state, now || new Date());
   this.save(state);
   return clone(state);
@@ -114,7 +115,7 @@ GameCircleWelfareStore.prototype.load = function (now) {
 
 GameCircleWelfareStore.prototype.save = function (state) {
   var normalized = normalizeState(state, this.activityId);
-  this._getStorage().setItem(STORAGE_KEY, JSON.stringify(normalized));
+  StrictStorage.writeJson(STORAGE_KEY, NAMESPACE, normalized);
   return true;
 };
 

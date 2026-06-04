@@ -7,7 +7,10 @@ var BoardLayout = require("./BoardLayout");
 
 var SPECIAL_ENTITY_TYPES = {
   skill_ball: ["rainbow", "blast"],
-  obstacle_ball: ["stone", "ice"]
+  obstacle_ball: ["stone", "ice"],
+  reactive_ball: ["molotov", "splitter"],
+  locked_ball: ["locked"],
+  key_ball: ["key"]
 };
 var ALLOWED_COLORS = ["R", "G", "B", "Y", "P"];
 var ALLOWED_INNER_COLORS = ALLOWED_COLORS.slice();
@@ -113,9 +116,9 @@ function resolveExpectedLevelId(levelKey) {
   if (typeof levelKey !== "string") {
     throw new Error("levelKey must be a string.");
   }
-  var match = levelKey.match(/^level_(\d{3})$/);
+  var match = levelKey.match(/^level_(\d{3,})$/);
   if (!match) {
-    throw new Error("levelKey must match level_###: " + levelKey);
+    throw new Error("levelKey must match level_### or higher: " + levelKey);
   }
   return Number(match[1]);
 }
@@ -226,10 +229,43 @@ function normalizeSpecialEntities(levelConfig, levelKey) {
     }
 
     var innerColor = null;
+    var splitColor = null;
+    var lockedColor = null;
+    var blastRadius = null;
+    var lockGroup = null;
+    var unlockGroup = null;
     if (category === "obstacle_ball" && entityType === "ice") {
       innerColor = typeof entity.innerColor === "string" ? entity.innerColor.trim() : "";
       if (ALLOWED_INNER_COLORS.indexOf(innerColor) === -1) {
         throw new Error("specialEntities[" + index + "].innerColor invalid for ice: " + levelKey);
+      }
+    }
+    if (category === "reactive_ball" && entityType === "molotov") {
+      blastRadius = entity.blastRadius;
+      if (!Number.isInteger(blastRadius) || blastRadius !== 2) {
+        throw new Error("specialEntities[" + index + "].blastRadius must be 2 for molotov: " + levelKey);
+      }
+    }
+    if (category === "reactive_ball" && entityType === "splitter") {
+      splitColor = typeof entity.splitColor === "string" ? entity.splitColor.trim() : "";
+      if (levelConfig.colors.indexOf(splitColor) === -1) {
+        throw new Error("specialEntities[" + index + "].splitColor must be in level.colors: " + levelKey);
+      }
+    }
+    if (category === "locked_ball" && entityType === "locked") {
+      lockedColor = typeof entity.lockedColor === "string" ? entity.lockedColor.trim() : "";
+      if (levelConfig.colors.indexOf(lockedColor) === -1) {
+        throw new Error("specialEntities[" + index + "].lockedColor must be in level.colors: " + levelKey);
+      }
+      lockGroup = typeof entity.lockGroup === "string" ? entity.lockGroup.trim() : "";
+      if (!lockGroup) {
+        throw new Error("specialEntities[" + index + "].lockGroup is required for locked ball: " + levelKey);
+      }
+    }
+    if (category === "key_ball" && entityType === "key") {
+      unlockGroup = typeof entity.unlockGroup === "string" ? entity.unlockGroup.trim() : "";
+      if (!unlockGroup) {
+        throw new Error("specialEntities[" + index + "].unlockGroup is required for key: " + levelKey);
       }
     }
 
@@ -239,7 +275,12 @@ function normalizeSpecialEntities(levelConfig, levelKey) {
       entityType: entityType,
       row: row,
       col: col,
-      innerColor: innerColor
+      innerColor: innerColor,
+      splitColor: splitColor,
+      lockedColor: lockedColor,
+      blastRadius: blastRadius,
+      lockGroup: lockGroup,
+      unlockGroup: unlockGroup
     };
   });
 }
@@ -402,7 +443,7 @@ function normalizeLevelConfig(rawConfig, levelKey) {
   if (config.level.levelId !== expectedLevelId) {
     throw new Error("level.levelId mismatch: expected " + expectedLevelId + ", got " + config.level.levelId + ": " + levelKey);
   }
-  var expectedLevelPrefix = "L" + ("000" + expectedLevelId).slice(-3) + "_";
+  var expectedLevelPrefix = "L" + String(expectedLevelId).padStart(3, "0") + "_";
   if (typeof config.level.code !== "string" || !new RegExp("^" + expectedLevelPrefix).test(config.level.code)) {
     throw new Error("level.code must start with " + expectedLevelPrefix + ": " + levelKey);
   }
@@ -520,5 +561,7 @@ LevelConfigLoader.prototype.loadLevelByKey = function (levelKey) {
     });
   });
 };
+
+LevelConfigLoader.normalizeLevelConfig = normalizeLevelConfig;
 
 module.exports = LevelConfigLoader;

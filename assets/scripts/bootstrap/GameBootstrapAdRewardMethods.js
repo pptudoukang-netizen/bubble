@@ -5,10 +5,37 @@ var AdService = Shared.AdService;
 var AdRewardQuotaStore = Shared.AdRewardQuotaStore;
 var AdRewardCatalog = Shared.AdRewardCatalog;
 var ITEM_ID_BY_POWERUP_TYPE = Shared.ITEM_ID_BY_POWERUP_TYPE;
+var Logger = Shared.Logger;
 var clone = Shared.clone;
 var STAMINA_RECOVERY_LOW_GRANT = 1;
 var STAMINA_RECOVERY_HIGH_GRANT = 2;
 var STAMINA_RECOVERY_LOW_GRANT_COUNT = 2;
+var CONSECUTIVE_LOSE_INTERSTITIAL_THRESHOLD = 3;
+
+function resolveWechatPlatform() {
+  if (typeof wx !== "undefined") {
+    return wx;
+  }
+  if (typeof window !== "undefined" && window.wx) {
+    return window.wx;
+  }
+  return null;
+}
+
+function isInterstitialLoseState(state) {
+  return state === "out_of_shots" || state === "lost_danger" || state === "lost_objective";
+}
+
+function requireNonEmptyString(value, fieldName) {
+  if (typeof value !== "string") {
+    throw new Error(fieldName + " must be a string.");
+  }
+  var normalized = value.trim();
+  if (!normalized) {
+    throw new Error(fieldName + " must be non-empty.");
+  }
+  return normalized;
+}
 
 function requirePositiveInteger(value, fieldName) {
   if (!Number.isInteger(value) || value <= 0) {
@@ -85,6 +112,192 @@ module.exports = {
     }
 
     return this.adService.canShowRewarded();
+  },
+
+  _resolveInterstitialAdUnitId: function () {
+    if (typeof this.interstitialAdUnitId !== "string") {
+      throw new Error("interstitialAdUnitId must be a string.");
+    }
+    return this.interstitialAdUnitId.trim();
+  },
+
+  _requireInterstitialAdConfig: function () {
+    var adUnitId = this._resolveInterstitialAdUnitId();
+    if (adUnitId.length <= 0) {
+      throw new Error("Interstitial ad unit id is required.");
+    }
+    return adUnitId;
+  },
+
+  _canShowInterstitialAd: function () {
+    if (!this.adService || typeof this.adService.canShowInterstitial !== "function") {
+      throw new Error("Interstitial ad flow requires AdService.canShowInterstitial.");
+    }
+    return this.adService.canShowInterstitial();
+  },
+
+  _showInterstitialAd: function (placement) {
+    var safePlacement = requireNonEmptyString(placement, "Interstitial ad placement");
+    if (this._interstitialAdInProgress || this._adFlowInProgress) {
+      return Promise.resolve(false);
+    }
+    if (!this.adService || typeof this.adService.showInterstitial !== "function") {
+      throw new Error("Interstitial ad flow requires AdService.showInterstitial.");
+    }
+
+    var adUnitId = this._requireInterstitialAdConfig();
+    if (!this.adService || typeof this.adService.setInterstitialAdUnitId !== "function") {
+      throw new Error("Interstitial ad flow requires AdService.setInterstitialAdUnitId.");
+    }
+    if (this.adService.interstitialAdUnitId !== adUnitId) {
+      this.adService.setInterstitialAdUnitId(adUnitId);
+    }
+    if (!this._canShowInterstitialAd()) {
+      // 模拟器或未接入 wx.createInterstitialAd 时不展示插屏，属预期行为，不打 WARN。
+      return Promise.resolve(false);
+    }
+
+    this._interstitialAdInProgress = true;
+    this._trackTelemetry("interstitial_ad_request", {
+      placement: safePlacement
+    });
+
+    return this.adService.showInterstitial({
+      placement: safePlacement,
+      onShow: function () {
+        if (this.gameManager && typeof this.gameManager.pauseTimedLevelTimer === "function") {
+          this.gameManager.pauseTimedLevelTimer();
+        }
+        this._trackTelemetry("interstitial_ad_show_attempt", {
+          placement: safePlacement
+        });
+      }.bind(this)
+    }).then(function (adResult) {
+      if (this.gameManager && typeof this.gameManager.resumeTimedLevelTimer === "function") {
+        this.gameManager.resumeTimedLevelTimer();
+      }
+      if (!adResult || !adResult.ok) {
+        this._trackTelemetry("interstitial_ad_fail", {
+          placement: safePlacement,
+          code: adResult && typeof adResult.code === "string" ? adResult.code : "show_fail"
+        });
+        return false;
+      }
+      this._trackTelemetry("interstitial_ad_show", {
+        placement: safePlacement,
+        code: adResult.code
+      });
+      return true;
+    }.bind(this), function (error) {
+      if (this.gameManager && typeof this.gameManager.resumeTimedLevelTimer === "function") {
+        this.gameManager.resumeTimedLevelTimer();
+      }
+      Logger.warn("Interstitial ad show failed", error && error.message ? error.message : error);
+      this._trackTelemetry("interstitial_ad_fail", {
+        placement: safePlacement,
+        code: "show_fail"
+      });
+      return false;
+    }.bind(this)).then(function (shown) {
+      this._interstitialAdInProgress = false;
+      return shown;
+    }.bind(this), function (error) {
+      this._interstitialAdInProgress = false;
+      throw error;
+    }.bind(this));
+  },
+
+  _handleInterstitialAdRuntimeStateTransition: function (snapshot, previousState, currentState) {
+    if (!snapshot || currentState === previousState) {
+      return;
+    }
+    if (currentState === "won") {
+      this._consecutiveLoseCountForInterstitial = 0;
+      if (this._canShowInterstitialAd()) {
+        this._showInterstitialAd("level_win").catch(function (error) {
+          Logger.warn("Level win interstitial ad failed", error && error.message ? error.message : error);
+        });
+      }
+      return;
+    }
+
+    if (!isInterstitialLoseState(currentState)) {
+      return;
+    }
+    this._consecutiveLoseCountForInterstitial += 1;
+    if (this._consecutiveLoseCountForInterstitial < CONSECUTIVE_LOSE_INTERSTITIAL_THRESHOLD) {
+      return;
+    }
+    this._consecutiveLoseCountForInterstitial = 0;
+    if (this._canShowInterstitialAd()) {
+      this._showInterstitialAd("three_consecutive_losses").catch(function (error) {
+        Logger.warn("Consecutive lose interstitial ad failed", error && error.message ? error.message : error);
+      });
+    }
+  },
+
+  _bindReturnToForegroundInterstitialAd: function () {
+    if (this._interstitialReturnShowHandler || this._interstitialReturnHideHandler) {
+      return;
+    }
+    var hideHandler = function () {
+      this._interstitialReturnHideObserved = true;
+    }.bind(this);
+    var showHandler = function () {
+      if (this._interstitialReturnHideObserved !== true) {
+        return;
+      }
+      this._interstitialReturnHideObserved = false;
+      if (this._adFlowInProgress) {
+        return;
+      }
+      if (!this._canShowInterstitialAd()) {
+        return;
+      }
+      this._showInterstitialAd("return_to_foreground").catch(function (error) {
+        Logger.warn("Return foreground interstitial ad failed", error && error.message ? error.message : error);
+      });
+    }.bind(this);
+
+    this._interstitialReturnHideHandler = hideHandler;
+    this._interstitialReturnShowHandler = showHandler;
+    if (cc && cc.game && typeof cc.game.on === "function" && cc.game.EVENT_HIDE) {
+      cc.game.on(cc.game.EVENT_HIDE, hideHandler);
+    }
+    if (cc && cc.game && typeof cc.game.on === "function" && cc.game.EVENT_SHOW) {
+      cc.game.on(cc.game.EVENT_SHOW, showHandler);
+    }
+    var platform = resolveWechatPlatform();
+    if (platform && typeof platform.onHide === "function") {
+      platform.onHide(hideHandler);
+    }
+    if (platform && typeof platform.onShow === "function") {
+      platform.onShow(showHandler);
+    }
+  },
+
+  _unbindReturnToForegroundInterstitialAd: function () {
+    var hideHandler = this._interstitialReturnHideHandler;
+    var showHandler = this._interstitialReturnShowHandler;
+    if (!hideHandler && !showHandler) {
+      return;
+    }
+    if (hideHandler && cc && cc.game && typeof cc.game.off === "function" && cc.game.EVENT_HIDE) {
+      cc.game.off(cc.game.EVENT_HIDE, hideHandler);
+    }
+    if (showHandler && cc && cc.game && typeof cc.game.off === "function" && cc.game.EVENT_SHOW) {
+      cc.game.off(cc.game.EVENT_SHOW, showHandler);
+    }
+    var platform = resolveWechatPlatform();
+    if (hideHandler && platform && typeof platform.offHide === "function") {
+      platform.offHide(hideHandler);
+    }
+    if (showHandler && platform && typeof platform.offShow === "function") {
+      platform.offShow(showHandler);
+    }
+    this._interstitialReturnHideHandler = null;
+    this._interstitialReturnShowHandler = null;
+    this._interstitialReturnHideObserved = false;
   },
 
   _setRewardedVideoAdUnavailableStatus: function () {

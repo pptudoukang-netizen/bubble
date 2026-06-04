@@ -28,6 +28,14 @@ var BALL_RESOURCES = {
   BLAST: "image/bomb_ball",
   STONE: "image/stone_ball",
   ICE: "image/ice_ball",
+  MOLOTOV: "image/props/fire_box",
+  KEY: "image/props/key",
+  LOCKED: "image/lock",
+  SPLIT_R: "image/split_red_ball",
+  SPLIT_G: "image/split_green_ball",
+  SPLIT_B: "image/split_blue_ball",
+  SPLIT_Y: "image/split_yellow_ball",
+  SPLIT_P: "image/split_purple_ball",
   ICE_SNOWBALL: "image/snow_cube",
   LIGHT_EFFECT: "image/light_effect"
 };
@@ -60,6 +68,10 @@ var PREFAB_PATHS = {
   loseView: "prefabs/ui/LoseView",
   dangerLine: "prefabs/ui/DangerLine",
   bubbleItem: "prefabs/game/BubbleItem",
+  fireBubbleItem: "prefabs/game/FireBubbleItem",
+  splitBubbleItem: "prefabs/game/SplitBubbleItem",
+  lockingBubbleItem: "prefabs/game/LockingBubbleItem",
+  keyBubbleItem: "prefabs/game/KeyBubbleItem",
   jarItem: "prefabs/game/JarItem",
   shooterPanel: "prefabs/game/ShooterPanel",
   previewBall: "prefabs/game/PreviewBall"
@@ -113,6 +125,8 @@ var ICE_THAW_SHAKE_OFFSET = 7;
 var ICE_THAW_SHAKE_STEP_DURATION = 0.04;
 var ICE_COLLECT_FLY_DURATION = 0.34;
 var ICE_COLLECT_BEZIER_ARC = 120;
+var SPLITTER_SPAWN_FLY_DURATION = 0.36;
+var SPLITTER_SPAWN_BEZIER_ARC = 96;
 var COMMENT_ANIMATION_RESOURCES = {
   good: "ui/animation/comments/good",
   great: "ui/animation/comments/great",
@@ -143,19 +157,27 @@ var ROUTE_EDITOR_COLORS = [
   { r: 255, g: 153, b: 68 }
 ];
 
+function getCollectionObjectiveList(levelConfig) {
+  if (!levelConfig || !levelConfig.level) {
+    throw new Error("Level config is required for collection objectives.");
+  }
+  if (!Array.isArray(levelConfig.level.bonusObjectives)) {
+    throw new Error("level.bonusObjectives must be an array for collection objectives.");
+  }
+  if (!Array.isArray(levelConfig.level.winConditions)) {
+    throw new Error("level.winConditions must be an array for collection objectives.");
+  }
+
+  return levelConfig.level.bonusObjectives.concat(levelConfig.level.winConditions);
+}
+
 function findCollectionObjective(levelConfig) {
-  var bonusObjectives = levelConfig && levelConfig.level && Array.isArray(levelConfig.level.bonusObjectives)
-    ? levelConfig.level.bonusObjectives
-    : [];
-  var winConditions = levelConfig && levelConfig.level && Array.isArray(levelConfig.level.winConditions)
-    ? levelConfig.level.winConditions
-    : [];
-  var allObjectives = bonusObjectives.concat(winConditions);
+  var allObjectives = getCollectionObjectiveList(levelConfig);
 
   for (var i = 0; i < allObjectives.length; i += 1) {
     var objective = allObjectives[i];
     if (!objective || typeof objective.type !== "string") {
-      continue;
+      throw new Error("Collection objective entry must include type.");
     }
 
     if (objective.type === "collect_any" || objective.type === "collect_color" || objective.type === "collect_ice_snowball") {
@@ -166,8 +188,7 @@ function findCollectionObjective(levelConfig) {
   return null;
 }
 
-function buildObjectiveDisplayData(levelConfig, runtimeSnapshot) {
-  var objective = findCollectionObjective(levelConfig);
+function buildObjectiveDisplayForObjective(objective, runtimeSnapshot) {
   var jars = runtimeSnapshot && runtimeSnapshot.jars ? runtimeSnapshot.jars : null;
   var objectiveSnapshot = runtimeSnapshot && runtimeSnapshot.objectives ? runtimeSnapshot.objectives : null;
 
@@ -239,6 +260,37 @@ function buildObjectiveDisplayData(levelConfig, runtimeSnapshot) {
   };
 }
 
+function buildObjectiveDisplayData(levelConfig, runtimeSnapshot) {
+  return buildObjectiveDisplayForObjective(findCollectionObjective(levelConfig), runtimeSnapshot);
+}
+
+function buildHudTargetDisplayData(levelConfig, runtimeSnapshot) {
+  var objectives = getCollectionObjectiveList(levelConfig);
+  var ballObjective = null;
+  var iceSnowballObjective = null;
+
+  for (var i = 0; i < objectives.length; i += 1) {
+    var objective = objectives[i];
+    if (!objective || typeof objective.type !== "string") {
+      throw new Error("HUD target objective entry must include type.");
+    }
+
+    if (
+      !ballObjective &&
+      (objective.type === "collect_any" || objective.type === "collect_color")
+    ) {
+      ballObjective = objective;
+    } else if (!iceSnowballObjective && objective.type === "collect_ice_snowball") {
+      iceSnowballObjective = objective;
+    }
+  }
+
+  return {
+    ball: ballObjective ? buildObjectiveDisplayForObjective(ballObjective, runtimeSnapshot) : null,
+    iceSnowball: iceSnowballObjective ? buildObjectiveDisplayForObjective(iceSnowballObjective, runtimeSnapshot) : null
+  };
+}
+
 function buildStateText(runtimeSnapshot) {
   if (runtimeSnapshot.state === "won") {
     return "";
@@ -258,6 +310,18 @@ function buildStateText(runtimeSnapshot) {
 
   if (runtimeSnapshot.state === "out_of_shots") {
     return "步数耗尽";
+  }
+
+  if (runtimeSnapshot.state === "won_surplus_shots_pending") {
+    return "剩余球结算中";
+  }
+
+  if (runtimeSnapshot.state === "won_pending") {
+    return "清屏结算中";
+  }
+
+  if (runtimeSnapshot.state === "won_settlement_pending") {
+    return "";
   }
 
   var matched = runtimeSnapshot.lastResolution ? runtimeSnapshot.lastResolution.matched.length : 0;
@@ -286,6 +350,7 @@ function buildHudRenderKey(levelConfig, runtimeSnapshot) {
     ? runtimeSnapshot.lastResolution.floating.length
     : 0;
   var objectiveDisplay = buildObjectiveDisplayData(levelConfig, runtimeSnapshot);
+  var hudTargetDisplay = buildHudTargetDisplayData(levelConfig, runtimeSnapshot);
 
   return [
     levelCode,
@@ -296,7 +361,11 @@ function buildHudRenderKey(levelConfig, runtimeSnapshot) {
     floating,
     objectiveDisplay.progress || 0,
     objectiveDisplay.iconCode || "",
-    objectiveDisplay.progressText || ""
+    objectiveDisplay.progressText ? objectiveDisplay.progressText : "",
+    hudTargetDisplay.ball ? hudTargetDisplay.ball.progressText : "",
+    hudTargetDisplay.ball ? hudTargetDisplay.ball.iconCode : "",
+    hudTargetDisplay.iceSnowball ? hudTargetDisplay.iceSnowball.progressText : "",
+    hudTargetDisplay.iceSnowball ? hudTargetDisplay.iceSnowball.iconCode : ""
   ].join("|");
 }
 
@@ -460,6 +529,25 @@ function resolveBallCode(ballLike) {
     if (ballLike.entityType === "stone") {
       return "STONE";
     }
+
+    if (ballLike.entityType === "molotov") {
+      return "MOLOTOV";
+    }
+
+    if (ballLike.entityType === "key") {
+      return "KEY";
+    }
+
+    if (ballLike.entityType === "locked") {
+      return "LOCKED";
+    }
+
+    if (ballLike.entityType === "splitter") {
+      if (typeof ballLike.splitColor !== "string" || !BALL_RESOURCES["SPLIT_" + ballLike.splitColor]) {
+        throw new Error("Splitter visual requires supported splitColor.");
+      }
+      return "SPLIT_" + ballLike.splitColor;
+    }
   }
 
   return null;
@@ -535,16 +623,20 @@ function LevelRenderer(rootNode) {
   this.lastImpactSeq = -1;
   this.lastNoDropShakeEventId = -1;
   this.lastIceThawShakeSeq = -1;
+  this.lastKeyUnlockAnimationKey = "";
+  this.lastSplitterSpawnAnimationKey = "";
+  this.splitterSpawnHiddenCellIds = {};
   this.lastCommentResolution = null;
   this.boardBubbleNodes = {};
-  this.boardBubbleNodePool = [];
+  this.boardBubbleNodePool = {};
   this.boardRenderTick = 1;
   this.testSlotNodes = {};
   this.testSlotNodePool = [];
   this.testGridRenderTick = 1;
   this.fallingDropNodes = {};
-  this.fallingDropNodePool = [];
+  this.fallingDropNodePool = {};
   this.fallingRenderTick = 1;
+  this.jarFractionNodePool = [];
   this.winActionHandlers = {
     onNextLevel: null,
     onRetryLevel: null
@@ -560,6 +652,7 @@ function LevelRenderer(rootNode) {
   };
   this.gameplayActionHandlers = {
     onBackToLevel: null,
+    onOpenSettings: null,
     onUseRainbow: null,
     onUseBlast: null,
     onUseSwap: null,
@@ -622,6 +715,7 @@ LevelRenderer.prototype.setGameplayActionHandlers = function (handlers) {
   handlers = handlers || {};
   this.gameplayActionHandlers = {
     onBackToLevel: typeof handlers.onBackToLevel === "function" ? handlers.onBackToLevel : null,
+    onOpenSettings: typeof handlers.onOpenSettings === "function" ? handlers.onOpenSettings : null,
     onUseRainbow: typeof handlers.onUseRainbow === "function" ? handlers.onUseRainbow : null,
     onUseBlast: typeof handlers.onUseBlast === "function" ? handlers.onUseBlast : null,
     onUseSwap: typeof handlers.onUseSwap === "function" ? handlers.onUseSwap : null,
@@ -672,6 +766,8 @@ LevelRenderer.prototype._invokeGameplayAction = function (action) {
   var handler = null;
   if (action === "back") {
     handler = this.gameplayActionHandlers.onBackToLevel;
+  } else if (action === "open_settings") {
+    handler = this.gameplayActionHandlers.onOpenSettings;
   } else if (action === "use_rainbow") {
     handler = this.gameplayActionHandlers.onUseRainbow;
   } else if (action === "use_blast") {
@@ -730,6 +826,9 @@ LevelRenderer.prototype.renderLevel = function (levelConfig, runtimeSnapshot) {
   this.lastImpactSeq = -1;
   this.lastNoDropShakeEventId = -1;
   this.lastIceThawShakeSeq = -1;
+  this.lastKeyUnlockAnimationKey = "";
+  this.lastSplitterSpawnAnimationKey = "";
+  this.splitterSpawnHiddenCellIds = {};
   this.lastCommentResolution = null;
   this.boardRenderTick = 1;
   this.testSlotNodes = {};
@@ -747,15 +846,16 @@ LevelRenderer.prototype.renderLevel = function (levelConfig, runtimeSnapshot) {
     clearChildren(this.layers.background);
     clearChildren(this.layers.board);
     this.boardBubbleNodes = {};
-    this.boardBubbleNodePool = [];
+    this.boardBubbleNodePool = {};
     clearChildren(this.layers.testGrid);
     this.testSlotNodes = {};
     this.testSlotNodePool = [];
     clearChildren(this.layers.falling);
     this.fallingDropNodes = {};
-    this.fallingDropNodePool = [];
+    this.fallingDropNodePool = {};
     clearChildren(this.layers.jarOcclusion);
     clearChildren(this.layers.jars);
+    this._recycleJarFractionNodesBeforeHudClear();
     clearChildren(this.layers.hud);
     clearChildren(this.layers.dangerLine);
     clearChildren(this.layers.overlay);
@@ -768,10 +868,14 @@ LevelRenderer.prototype.renderLevel = function (levelConfig, runtimeSnapshot) {
     this._mountGameViewScaffold();
     this._renderBackground();
     this._renderHud(levelConfig, runtimeSnapshot);
+    this._initializeComboBatterHud();
+    this._initializeFractionHud();
     this._renderJarScoreBoostTimer(runtimeSnapshot);
     this._renderTimedLevelTimer(runtimeSnapshot);
     this._renderBottomPanel(runtimeSnapshot);
     this._renderBoard(runtimeSnapshot.board);
+    this._renderMainland(runtimeSnapshot.board);
+    this._renderJianbian(runtimeSnapshot.board);
     this._renderBottomJars(levelConfig, runtimeSnapshot);
     this._renderFallingDrops(runtimeSnapshot);
     this._renderTestGrid(runtimeSnapshot.board);
@@ -791,6 +895,8 @@ LevelRenderer.prototype.refreshRuntime = function (levelConfig, runtimeSnapshot)
   if (boardChanged) {
     this._renderBoard(runtimeSnapshot.board);
     this._renderTestGrid(runtimeSnapshot.board);
+    this._renderMainland(runtimeSnapshot.board);
+    this._renderJianbian(runtimeSnapshot.board);
   }
 
   var nextHudKey = buildHudRenderKey(levelConfig, runtimeSnapshot);
@@ -811,7 +917,11 @@ LevelRenderer.prototype.refreshRuntime = function (levelConfig, runtimeSnapshot)
   this._renderFallingDrops(runtimeSnapshot);
   this._playIceThawShake(runtimeSnapshot);
   this._playShotNoDropScreenShake(runtimeSnapshot);
+  this._playComboBatterDisplay(runtimeSnapshot);
+  this._playJarFractionDisplay(runtimeSnapshot);
   this._playImpactBounce(runtimeSnapshot);
+  this._playKeyUnlockAnimation(runtimeSnapshot);
+  this._playSplitterSpawnAnimation(runtimeSnapshot);
   this._playCommentAnimation(runtimeSnapshot);
   this._renderDangerLine(runtimeSnapshot);
   this._renderShooter(runtimeSnapshot.shooter, runtimeSnapshot.activeProjectile, runtimeSnapshot.remainingShots);
@@ -901,6 +1011,13 @@ LevelRenderer.prototype._collectSpritePaths = function (levelConfig, runtimeSnap
   var objectiveDisplay = buildObjectiveDisplayData(levelConfig, runtimeSnapshot);
   if (objectiveDisplay.iconCode) {
     paths.push(BALL_RESOURCES[objectiveDisplay.iconCode]);
+  }
+  var hudTargetDisplay = buildHudTargetDisplayData(levelConfig, runtimeSnapshot);
+  if (hudTargetDisplay.ball && hudTargetDisplay.ball.iconCode) {
+    paths.push(BALL_RESOURCES[hudTargetDisplay.ball.iconCode]);
+  }
+  if (hudTargetDisplay.iceSnowball && hudTargetDisplay.iceSnowball.iconCode) {
+    paths.push(BALL_RESOURCES[hudTargetDisplay.iceSnowball.iconCode]);
   }
 
   if (levelConfig && levelConfig.level && Array.isArray(levelConfig.level.clearRewardItems)) {
@@ -1002,6 +1119,14 @@ LevelRenderer.prototype._collectCommonSpritePaths = function () {
     BALL_RESOURCES.BLAST,
     BALL_RESOURCES.STONE,
     BALL_RESOURCES.ICE,
+    BALL_RESOURCES.MOLOTOV,
+    BALL_RESOURCES.KEY,
+    BALL_RESOURCES.LOCKED,
+    BALL_RESOURCES.SPLIT_R,
+    BALL_RESOURCES.SPLIT_G,
+    BALL_RESOURCES.SPLIT_B,
+    BALL_RESOURCES.SPLIT_Y,
+    BALL_RESOURCES.SPLIT_P,
     BALL_RESOURCES.ICE_SNOWBALL,
     BALL_RESOURCES.LIGHT_EFFECT,
     JAR_RESOURCES.R,
@@ -1028,6 +1153,10 @@ LevelRenderer.prototype._collectPrefabPaths = function () {
     PREFAB_PATHS.loseView,
     PREFAB_PATHS.shooterPanel,
     PREFAB_PATHS.bubbleItem,
+    PREFAB_PATHS.fireBubbleItem,
+    PREFAB_PATHS.splitBubbleItem,
+    PREFAB_PATHS.lockingBubbleItem,
+    PREFAB_PATHS.keyBubbleItem,
     PREFAB_PATHS.jarItem,
     PREFAB_PATHS.previewBall
   ];
@@ -1101,6 +1230,8 @@ var LEVEL_RENDERER_SCENE_DEPS = {
   ICE_THAW_SHAKE_STEP_DURATION: ICE_THAW_SHAKE_STEP_DURATION,
   ICE_COLLECT_FLY_DURATION: ICE_COLLECT_FLY_DURATION,
   ICE_COLLECT_BEZIER_ARC: ICE_COLLECT_BEZIER_ARC,
+  SPLITTER_SPAWN_FLY_DURATION: SPLITTER_SPAWN_FLY_DURATION,
+  SPLITTER_SPAWN_BEZIER_ARC: SPLITTER_SPAWN_BEZIER_ARC,
   loadSpriteFrame: loadSpriteFrame,
   createSolidWhiteSpriteFrame: createSolidWhiteSpriteFrame,
   ensureSprite: ensureSprite,
@@ -1109,6 +1240,7 @@ var LEVEL_RENDERER_SCENE_DEPS = {
   clearChildren: clearChildren,
   getOrCreateChild: getOrCreateChild,
   buildObjectiveDisplayData: buildObjectiveDisplayData,
+  buildHudTargetDisplayData: buildHudTargetDisplayData,
   buildStateText: buildStateText,
   buildResultTexts: buildResultTexts,
   resolveWinStarRating: resolveWinStarRating,

@@ -11,6 +11,9 @@ module.exports = {
     }
     this._bindGameCircleWelfareReturnRefresh();
     this._bindFriendGiftEnterClaim();
+    if (typeof this._bindReturnToForegroundInterstitialAd === "function") {
+      this._bindReturnToForegroundInterstitialAd();
+    }
     if (this.isSelectingLevel && typeof this._ensureStaminaRecoveryTicker === "function") {
       this._ensureStaminaRecoveryTicker();
     }
@@ -23,6 +26,9 @@ module.exports = {
     this._resizeCallback = null;
     this._unbindGameCircleWelfareReturnRefresh();
     this._unbindFriendGiftEnterClaim();
+    if (typeof this._unbindReturnToForegroundInterstitialAd === "function") {
+      this._unbindReturnToForegroundInterstitialAd();
+    }
     if (typeof this._clearStaminaRecoveryTicker === "function") {
       this._clearStaminaRecoveryTicker();
     }
@@ -31,6 +37,9 @@ module.exports = {
   onDestroy: function () {
     this._unbindGameCircleWelfareReturnRefresh();
     this._unbindFriendGiftEnterClaim();
+    if (typeof this._unbindReturnToForegroundInterstitialAd === "function") {
+      this._unbindReturnToForegroundInterstitialAd();
+    }
     if (typeof this._clearStaminaRecoveryTicker === "function") {
       this._clearStaminaRecoveryTicker();
     }

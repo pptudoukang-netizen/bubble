@@ -17,6 +17,7 @@ var INERTIA_DECELERATION = 2600;
 var INERTIA_MIN_VELOCITY = 18;
 var BACKGROUND_SCROLL_RATIO = 0.05;
 var FOCUS_Y_RATIO_FROM_BOTTOM = 0.38;
+var SCROLL_TO_LEVEL_DURATION = 0.32;
 var PROTAGONIST_SIZE = 48;
 var PROTAGONIST_Y = 55;
 var NORMAL_ISLAND_CAPACITIES = {
@@ -717,12 +718,74 @@ function applyContentDelta(state, deltaY) {
   renderVisibleNodes(state);
 }
 
+function easeOutCubic(progress) {
+  var remaining = 1 - progress;
+  return 1 - remaining * remaining * remaining;
+}
+
+function stopScrollAnimation(state) {
+  if (state.scrollAnimTimer) {
+    clearInterval(state.scrollAnimTimer);
+    state.scrollAnimTimer = null;
+  }
+}
+
 function stopInertia(state) {
+  stopScrollAnimation(state);
   if (state.inertiaTimer) {
     clearInterval(state.inertiaTimer);
     state.inertiaTimer = null;
   }
   state.inertiaVelocityY = 0;
+}
+
+function requireFloatingMapState(mapHostNode) {
+  requireNode(mapHostNode, "LevelView/map");
+  var state = mapHostNode.__floatingMapState;
+  if (!state || !state.content || !state.content.isValid) {
+    throw new Error("Floating map runtime state is required before scrolling.");
+  }
+  return state;
+}
+
+function scrollToLevel(mapHostNode, levelId, options) {
+  requireObject(options || {}, "Floating map scroll options");
+  var state = requireFloatingMapState(mapHostNode);
+  requirePositiveInteger(levelId, "scrollToLevel levelId");
+  stopInertia(state);
+
+  var targetY = resolveInitialContentY(state, levelId);
+  var startY = state.content.y;
+  if (Math.abs(targetY - startY) < 0.5) {
+    renderVisibleNodes(state);
+    if (typeof options.onComplete === "function") {
+      options.onComplete();
+    }
+    return;
+  }
+
+  var elapsed = 0;
+  state.scrollAnimTimer = setInterval(function () {
+    if (!state.content || !state.content.isValid) {
+      stopScrollAnimation(state);
+      return;
+    }
+
+    elapsed += INERTIA_FRAME_SECONDS;
+    var progress = Math.min(1, elapsed / SCROLL_TO_LEVEL_DURATION);
+    var easedProgress = easeOutCubic(progress);
+    var desiredY = startY + (targetY - startY) * easedProgress;
+    var deltaY = desiredY - state.content.y;
+    if (deltaY !== 0) {
+      applyContentDelta(state, deltaY);
+    }
+    if (progress >= 1) {
+      stopScrollAnimation(state);
+      if (typeof options.onComplete === "function") {
+        options.onComplete();
+      }
+    }
+  }, INERTIA_FRAME_SECONDS * 1000);
 }
 
 function startInertia(state) {
@@ -893,5 +956,7 @@ function render(options) {
 
 module.exports = {
   loadAssets: loadAssets,
-  render: render
+  render: render,
+  scrollToLevel: scrollToLevel,
+  resolveLatestAccessibleLevelId: resolveLatestAccessibleLevelId
 };

@@ -41,6 +41,20 @@ function ensureDirectory(dirPath) {
   fs.mkdirSync(dirPath, { recursive: true });
 }
 
+function removeDirectoryIfExists(dirPath) {
+  if (!fs.existsSync(dirPath)) {
+    return;
+  }
+  var stat = fs.statSync(dirPath);
+  if (!stat.isDirectory()) {
+    throw new Error("Cloudfunctions target exists but is not a directory: " + dirPath);
+  }
+  fs.rmSync(dirPath, {
+    recursive: true,
+    force: true
+  });
+}
+
 function copyDirectoryContents(sourceDir, targetDir) {
   if (!fs.existsSync(sourceDir)) {
     throw new Error("Missing cloudfunctions source directory: " + sourceDir);
@@ -191,6 +205,7 @@ function fixWeChatProjectConfig(outputDir) {
   console.log("[FIXED]", mainConfigPath);
   assertReleaseSeparateEngine(resolvedOutputDir);
   console.log("[CHECKED] WeChat separate engine plugin is enabled");
+  removeDirectoryIfExists(targetCloudFunctionsDir);
   copyDirectoryContents(sourceCloudFunctionsDir, targetCloudFunctionsDir);
   console.log("[SYNCED]", targetCloudFunctionsDir);
 

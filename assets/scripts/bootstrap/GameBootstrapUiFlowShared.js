@@ -9,6 +9,7 @@ var BootstrapButtonFactory = require("./BootstrapButtonFactory");
 var StarRatingPolicy = require("../core/StarRatingPolicy");
 var BundleLoader = require("../utils/BundleLoader");
 var GameCircleWelfareViewController = require("../ui/GameCircleWelfareViewController");
+var RankingViewController = require("../ui/RankingViewController");
 var ShopViewController = require("../ui/ShopViewController");
 var BuyViewController = require("../ui/BuyViewController");
 var PopupPanelAnimator = require("../ui/PopupPanelAnimator");
@@ -19,6 +20,7 @@ var SETTING_STATUS_X_DISABLED = 18;
 var SETTING_VOLUME_ICON_OPEN_PATH = "image/setting/volume_open";
 var SETTING_VOLUME_ICON_CLOSE_PATH = "image/setting/volume_close";
 var GAME_CIRCLE_WELFARE_VIEW_PREFAB_PATH = "prefabs/ui/GamingCircleView";
+var RANKING_VIEW_PREFAB_PATH = "prefabs/ui/RankingView";
 var SHOP_VIEW_PREFAB_PATH = "prefabs/ui/ShopView";
 var BUY_VIEW_PREFAB_PATH = "prefabs/ui/BuyView";
 var MAX_LEVEL_MAP_PREFAB_INDEX = 10;
@@ -227,6 +229,7 @@ module.exports = {
   StarRatingPolicy: StarRatingPolicy,
   BundleLoader: BundleLoader,
   GameCircleWelfareViewController: GameCircleWelfareViewController,
+  RankingViewController: RankingViewController,
   ShopViewController: ShopViewController,
   BuyViewController: BuyViewController,
   PopupPanelAnimator: PopupPanelAnimator,
@@ -236,6 +239,7 @@ module.exports = {
   SETTING_VOLUME_ICON_OPEN_PATH: SETTING_VOLUME_ICON_OPEN_PATH,
   SETTING_VOLUME_ICON_CLOSE_PATH: SETTING_VOLUME_ICON_CLOSE_PATH,
   GAME_CIRCLE_WELFARE_VIEW_PREFAB_PATH: GAME_CIRCLE_WELFARE_VIEW_PREFAB_PATH,
+  RANKING_VIEW_PREFAB_PATH: RANKING_VIEW_PREFAB_PATH,
   SHOP_VIEW_PREFAB_PATH: SHOP_VIEW_PREFAB_PATH,
   BUY_VIEW_PREFAB_PATH: BUY_VIEW_PREFAB_PATH,
   MAX_LEVEL_MAP_PREFAB_INDEX: MAX_LEVEL_MAP_PREFAB_INDEX,

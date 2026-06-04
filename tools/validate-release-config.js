@@ -69,6 +69,9 @@ function assertSceneConfig() {
   if (typeof component.rewardedVideoAdUnitId !== "string" || component.rewardedVideoAdUnitId.trim().length === 0) {
     throw new Error("Release rewardedVideoAdUnitId must be configured in assets/scens/game.fire.");
   }
+  if (typeof component.interstitialAdUnitId !== "string" || component.interstitialAdUnitId.trim().length === 0) {
+    throw new Error("Release interstitialAdUnitId must be configured in assets/scens/game.fire.");
+  }
 }
 
 function assertBootstrapSource() {

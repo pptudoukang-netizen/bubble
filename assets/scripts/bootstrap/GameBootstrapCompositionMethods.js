@@ -41,6 +41,8 @@ var ShopStateService = Shared.ShopStateService;
 var ShopPurchaseService = Shared.ShopPurchaseService;
 var WechatShareService = Shared.WechatShareService;
 var FriendGiftService = Shared.FriendGiftService;
+var PlayerCloudProfileService = Shared.PlayerCloudProfileService;
+var WorldLeaderboardService = Shared.WorldLeaderboardService;
 var AdService = Shared.AdService;
 var TelemetryService = Shared.TelemetryService;
 var AdRewardQuotaStore = Shared.AdRewardQuotaStore;
@@ -74,6 +76,8 @@ module.exports = {
     this.networkLoadingOverlay = null;
     this.wechatShareService = null;
     this.friendGiftService = null;
+    this.playerCloudProfileService = null;
+    this.worldLeaderboardService = null;
     this._friendGiftEnterShowHandler = null;
     this._wechatShareMenuPromise = null;
     this._startupFlowPromise = null;
@@ -94,6 +98,11 @@ module.exports = {
     this._grantedAttemptRewardKeys = {};
     this._pendingNextRoundRewards = [];
     this._adFlowInProgress = false;
+    this._interstitialAdInProgress = false;
+    this._consecutiveLoseCountForInterstitial = 0;
+    this._interstitialReturnHideObserved = false;
+    this._interstitialReturnHideHandler = null;
+    this._interstitialReturnShowHandler = null;
     this._staminaRecoveryInProgress = false;
     this._staminaRecoveryTicker = null;
     this._pendingLevelEntry = null;
@@ -150,6 +159,7 @@ module.exports = {
     this.starChestStore = new StarChestStore({
       activityId: this.starChestConfig.activityId
     });
+    this.starChestStore.load();
     this.starChestRewardService = new StarChestRewardService({
       getResources: function () {
         return this._refreshPlayerResources();
@@ -176,6 +186,7 @@ module.exports = {
     this.gameCircleWelfareStore = new GameCircleWelfareStore({
       activityId: this.gameCircleWelfareConfig.activityId
     });
+    this.gameCircleWelfareStore.load(new Date());
     this.gameCircleButtonAdapter = new GameCircleButtonAdapter({
       cloud: this.gameCircleWelfareConfig.cloud
     });
@@ -271,6 +282,7 @@ module.exports = {
     });
     this.adService = new AdService({
       adUnitId: this.rewardedVideoAdUnitId,
+      interstitialAdUnitId: this.interstitialAdUnitId,
       logger: Logger,
       mockEnabled: this.enableMockRewardedAdOnUnsupported === true,
       hostedShareBehaviorEnabled: true
@@ -290,6 +302,7 @@ module.exports = {
     this._rankingViewPrefab = null;
     this._rankingViewNode = null;
     this._rankingViewController = null;
+    this._worldLeaderboardUserProfile = null;
     this._gameCircleWelfareViewPrefab = null;
     this._gameCircleWelfareViewNode = null;
     this._gameCircleWelfareViewController = null;
@@ -330,6 +343,19 @@ module.exports = {
     this.friendGiftService = new FriendGiftService({
       cloudEnvId: this.friendGiftCloudEnvId
     });
+    this.worldLeaderboardService = new WorldLeaderboardService({
+      cloudEnvId: this.worldLeaderboardCloudEnvId,
+      functionName: this.worldLeaderboardCloudFunctionName,
+      limit: requireNonNegativeInteger(this.worldLeaderboardLimit, "worldLeaderboardLimit")
+    });
+    if (this.enablePlayerCloudProfile === true) {
+      this.playerCloudProfileService = new PlayerCloudProfileService({
+        cloudEnvId: this.playerProfileCloudEnvId,
+        functionName: this.playerProfileCloudFunctionName,
+        syncDebounceMs: requireNonNegativeInteger(this.playerProfileCloudSyncDebounceMs, "playerProfileCloudSyncDebounceMs"),
+        logger: Logger
+      });
+    }
     this._wechatShareMenuPromise = this._initializeWechatShare();
 
     this._createStatusOverlay();
@@ -357,7 +383,7 @@ module.exports = {
       onWatchAd: this._onLoseWatchAdTap.bind(this)
     });
     this.levelRenderer.setGameplayActionHandlers({
-      onBackToLevel: this._onBackToLevelTap.bind(this),
+      onOpenSettings: this._onGameplaySettingTap.bind(this),
       onUseRainbow: function () {
         this._onUseSkillBallTap("rainbow");
       }.bind(this),
@@ -401,6 +427,7 @@ module.exports = {
         levelRenderer: this.levelRenderer,
         audioManager: this.audioManager,
         gameCircleWelfareService: this.gameCircleWelfareService,
+        playerCloudProfileService: this.playerCloudProfileService,
         routeConfigStore: this.routeConfigStore,
         routeEditor: {
           getState: function () {

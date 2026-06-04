@@ -400,7 +400,7 @@
     "_contentSize": {
       "__type__": "cc.Size",
       "width": 271,
-      "height": 244
+      "height": 243
     },
     "_anchorPoint": {
       "__type__": "cc.Vec2",
@@ -1674,7 +1674,7 @@
     "showDropTestButton": false,
     "enableLevelEditor": false,
     "routePointMinDistance": 18,
-    "levelSelectMaxLevelId": 40,
+    "levelSelectMaxLevelId": 1000,
     "unlockAllLevelsForTest": false,
     "resetLevelProgressOnStart": false,
     "inspectorStaminaValue": 10,
@@ -1686,6 +1686,13 @@
     "shareImageUrl": "",
     "shareQuery": "from=share",
     "friendGiftCloudEnvId": "cloud1-d7gqettx3e9249ca1",
+    "enablePlayerCloudProfile": true,
+    "playerProfileCloudEnvId": "cloud1-d7gqettx3e9249ca1",
+    "playerProfileCloudFunctionName": "playerProfile",
+    "playerProfileCloudSyncDebounceMs": 800,
+    "worldLeaderboardCloudEnvId": "cloud1-d7gqettx3e9249ca1",
+    "worldLeaderboardCloudFunctionName": "worldLeaderboard",
+    "worldLeaderboardLimit": 50,
     "startupPreloadLevelCount": 5,
     "projectileSpeed": 1800,
     "impactBounceSpeed": 300,
@@ -1708,6 +1715,7 @@
     "jarBounceSfxResources": "sound/ding6,sound/ding6,sound/ding6,sound/ding6",
     "jarCollectBottomSfxResource": "sound/ding0",
     "rewardedVideoAdUnitId": "adunit-a6c99a9ee6bc8015",
+    "interstitialAdUnitId": "adunit-a9355409b616c9d3",
     "inventoryRewardedVideoAdUnitId": "adunit-4c8e0cc2b2fc7428",
     "enableMockRewardedAdOnUnsupported": false,
     "staminaAdDailyLimit": 5,

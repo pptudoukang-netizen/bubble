@@ -1115,6 +1115,43 @@ function updateTopStatus(levelView, options) {
   );
 }
 
+function bindQuickStartButton(levelView, onQuickStart) {
+  if (typeof onQuickStart !== "function") {
+    throw new Error("LevelSelectView requires onQuickStart.");
+  }
+
+  bindNamedButtonTap(
+    levelView.getChildByName("quick_start_btn"),
+    "__quickStartTapBound",
+    "__onQuickStart",
+    onQuickStart
+  );
+}
+
+function bindBackToCurrentLevelButton(levelView, onBackToCurrentLevel) {
+  if (typeof onBackToCurrentLevel !== "function") {
+    throw new Error("LevelSelectView requires onBackToCurrentLevel.");
+  }
+
+  bindNamedButtonTap(
+    levelView.getChildByName("back_cur_level"),
+    "__backToCurrentLevelTapBound",
+    "__onBackToCurrentLevel",
+    onBackToCurrentLevel
+  );
+}
+
+function scrollFloatingMapToLevel(levelView, levelId, options) {
+  if (!levelView || !levelView.isValid) {
+    throw new Error("LevelSelectView requires a valid level view node.");
+  }
+  var mapHostNode = levelView.getChildByName("map");
+  if (!mapHostNode || !mapHostNode.isValid) {
+    throw new Error("LevelSelectView/map is required before scrolling.");
+  }
+  FloatingMap.scrollToLevel(mapHostNode, levelId, options || {});
+}
+
 function renderLevelSelectContent(options) {
   var hostNode = options.hostNode;
   var levelViewPrefab = options.levelViewPrefab;
@@ -1151,6 +1188,14 @@ function renderLevelSelectContent(options) {
     throw new Error("LevelSelectView requires onOpenDailyTasks.");
   }
   var onOpenDailyTasks = options.onOpenDailyTasks;
+  if (typeof options.onQuickStart !== "function") {
+    throw new Error("LevelSelectView requires onQuickStart.");
+  }
+  var onQuickStart = options.onQuickStart;
+  if (typeof options.onBackToCurrentLevel !== "function") {
+    throw new Error("LevelSelectView requires onBackToCurrentLevel.");
+  }
+  var onBackToCurrentLevel = options.onBackToCurrentLevel;
 
   if (!hostNode || !hostNode.isValid) {
     logError("Invalid host node when rendering level select.");
@@ -1194,6 +1239,8 @@ function renderLevelSelectContent(options) {
     onOpenShop: onOpenShop,
     onOpenDailyTasks: onOpenDailyTasks
   });
+  bindQuickStartButton(levelView, onQuickStart);
+  bindBackToCurrentLevelButton(levelView, onBackToCurrentLevel);
 
   var mapHostNode = levelView.getChildByName("map");
   if (!mapHostNode) {
@@ -1244,5 +1291,6 @@ function renderLevelSelectContent(options) {
 
 module.exports = {
   loadFloatingMapAssets: FloatingMap.loadAssets,
-  renderLevelSelectContent: renderLevelSelectContent
+  renderLevelSelectContent: renderLevelSelectContent,
+  scrollFloatingMapToLevel: scrollFloatingMapToLevel
 };

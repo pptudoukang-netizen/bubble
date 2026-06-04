@@ -45,6 +45,22 @@ function collectOccupiedRows(cells) {
   });
 }
 
+function createSpecialEntityRecord(entity, row, col) {
+  return {
+    id: entity.id || ("special_" + row + "_" + col),
+    entityCategory: entity.entityCategory,
+    entityType: entity.entityType,
+    innerColor: entity.innerColor || null,
+    splitColor: entity.splitColor || null,
+    lockedColor: entity.lockedColor || null,
+    blastRadius: Number.isInteger(entity.blastRadius) ? entity.blastRadius : null,
+    lockGroup: entity.lockGroup || null,
+    unlockGroup: entity.unlockGroup || null,
+    row: row,
+    col: col
+  };
+}
+
 function BubbleGrid() {
   BaseSystem.call(this, "BubbleGrid");
   this.layout = [];
@@ -121,14 +137,7 @@ BubbleGrid.prototype._rebuildSpecialCellMap = function () {
       return;
     }
 
-    this._specialCellMap[keyFor(entity.row, entity.col)] = {
-      id: entity.id || ("special_" + entity.row + "_" + entity.col),
-      entityCategory: entity.entityCategory,
-      entityType: entity.entityType,
-      innerColor: entity.innerColor || null,
-      row: entity.row,
-      col: entity.col
-    };
+    this._specialCellMap[keyFor(entity.row, entity.col)] = createSpecialEntityRecord(entity, entity.row, entity.col);
   }, this);
 };
 
@@ -153,6 +162,11 @@ BubbleGrid.prototype._createSpecialCell = function (entity, row, col) {
     entityCategory: entity.entityCategory,
     entityType: entity.entityType,
     innerColor: entity.innerColor || null,
+    splitColor: entity.splitColor || null,
+    lockedColor: entity.lockedColor || null,
+    blastRadius: Number.isInteger(entity.blastRadius) ? entity.blastRadius : null,
+    lockGroup: entity.lockGroup || null,
+    unlockGroup: entity.unlockGroup || null,
     isSpecial: true
   };
 };
@@ -836,6 +850,95 @@ BubbleGrid.prototype._findTopSlot = function (impactX) {
   };
 };
 
+BubbleGrid.prototype.getCoordinatesWithinRadius = function (row, col, radius) {
+  if (!Number.isInteger(radius) || radius < 0) {
+    throw new Error("BubbleGrid.getCoordinatesWithinRadius requires a non-negative integer radius.");
+  }
+
+  var visited = {};
+  var queue = [{
+    row: row,
+    col: col,
+    distance: 0
+  }];
+  var result = [];
+
+  for (var cursor = 0; cursor < queue.length; cursor += 1) {
+    var current = queue[cursor];
+    var key = keyFor(current.row, current.col);
+    if (visited[key]) {
+      continue;
+    }
+    visited[key] = true;
+    result.push({
+      row: current.row,
+      col: current.col,
+      distance: current.distance
+    });
+    if (current.distance >= radius) {
+      continue;
+    }
+    this.getNeighborCoordinates(current.row, current.col).forEach(function (neighbor) {
+      var neighborKey = keyFor(neighbor.row, neighbor.col);
+      if (!visited[neighborKey]) {
+        queue.push({
+          row: neighbor.row,
+          col: neighbor.col,
+          distance: current.distance + 1
+        });
+      }
+    });
+  }
+
+  return result;
+};
+
+BubbleGrid.prototype.findSplitterSpawnCell = function (splitterCell) {
+  if (!splitterCell || !Number.isInteger(splitterCell.row) || !Number.isInteger(splitterCell.col)) {
+    throw new Error("BubbleGrid.findSplitterSpawnCell requires splitter cell coordinates.");
+  }
+
+  var splitterPosition = this.getCellPosition(splitterCell.row, splitterCell.col);
+  var openNeighbors = this.getNeighborCoordinates(splitterCell.row, splitterCell.col).filter(function (coord) {
+    return !this.hasCell(coord.row, coord.col);
+  }, this);
+  if (openNeighbors.length) {
+    openNeighbors.sort(function (a, b) {
+      var posA = this.getCellPosition(a.row, a.col);
+      var posB = this.getCellPosition(b.row, b.col);
+      var scoreA = Math.abs(posA.x - splitterPosition.x) + Math.max(0, a.row - splitterCell.row) * BoardLayout.rowHeight;
+      var scoreB = Math.abs(posB.x - splitterPosition.x) + Math.max(0, b.row - splitterCell.row) * BoardLayout.rowHeight;
+      return scoreA - scoreB;
+    }.bind(this));
+    return openNeighbors[0];
+  }
+
+  var best = null;
+  var bestScore = Number.MAX_VALUE;
+  for (var searchRow = Math.max(0, splitterCell.row - 1); searchRow >= 0; searchRow -= 1) {
+    for (var searchCol = 0; searchCol < this.getColumnCountForRow(searchRow); searchCol += 1) {
+      if (this.hasCell(searchRow, searchCol)) {
+        continue;
+      }
+      var position = this.getCellPosition(searchRow, searchCol);
+      var score = (splitterCell.row - searchRow) * BoardLayout.rowHeight + Math.abs(position.x - splitterPosition.x);
+      if (score < bestScore) {
+        bestScore = score;
+        best = {
+          row: searchRow,
+          col: searchCol
+        };
+      }
+    }
+  }
+
+  if (best) {
+    return best;
+  }
+
+  return null;
+};
+
 BubbleGrid.prototype.addBubble = function (cell, colorOrBall) {
   var row = cell.row;
   var col = cell.col;
@@ -844,16 +947,15 @@ BubbleGrid.prototype.addBubble = function (cell, colorOrBall) {
     this._clearSpecialCell(row, col);
     this._setCell(row, col, colorOrBall);
   } else if (colorOrBall && typeof colorOrBall === "object") {
-    if (colorOrBall.entityCategory === "skill_ball" || colorOrBall.entityCategory === "obstacle_ball") {
+    if (
+      colorOrBall.entityCategory === "skill_ball" ||
+      colorOrBall.entityCategory === "obstacle_ball" ||
+      colorOrBall.entityCategory === "reactive_ball" ||
+      colorOrBall.entityCategory === "locked_ball" ||
+      colorOrBall.entityCategory === "key_ball"
+    ) {
       this._setCell(row, col, ".");
-      this._specialCellMap[keyFor(row, col)] = {
-        id: colorOrBall.id || ("special_" + row + "_" + col),
-        entityCategory: colorOrBall.entityCategory,
-        entityType: colorOrBall.entityType,
-        innerColor: colorOrBall.innerColor || null,
-        row: row,
-        col: col
-      };
+      this._specialCellMap[keyFor(row, col)] = createSpecialEntityRecord(colorOrBall, row, col);
     } else {
       this._clearSpecialCell(row, col);
       this._setCell(row, col, colorOrBall.color || ".");

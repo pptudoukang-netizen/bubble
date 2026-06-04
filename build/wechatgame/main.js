@@ -10,7 +10,6 @@ window.boot = function () {
     var launchScene = settings.launchScene; // load scene
 
     cc.director.loadScene(launchScene, null, function () {
-      require('./rank-main-patch').install();
       console.log('Success to load scene: ' + launchScene);
     });
   };

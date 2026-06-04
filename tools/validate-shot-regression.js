@@ -39,7 +39,7 @@ function stableSignature(plan) {
 }
 
 function createLevelConfig(levelId) {
-  var key = "level_" + ("000" + levelId).slice(-3);
+  var key = "level_" + String(levelId).padStart(3, "0");
   var filePath = path.resolve(__dirname, "../assets/resources/config/levels/" + key + ".json");
   var raw = readJson(filePath);
 

@@ -2,28 +2,58 @@
 
 var Shared = require("./GameBootstrapUiFlowShared");
 var Logger = Shared.Logger;
+var RankingViewController = Shared.RankingViewController;
 var ShopViewController = Shared.ShopViewController;
 var BuyViewController = Shared.BuyViewController;
 var PopupPanelAnimator = Shared.PopupPanelAnimator;
+var RANKING_VIEW_PREFAB_PATH = Shared.RANKING_VIEW_PREFAB_PATH;
 var SHOP_VIEW_PREFAB_PATH = Shared.SHOP_VIEW_PREFAB_PATH;
 var BUY_VIEW_PREFAB_PATH = Shared.BUY_VIEW_PREFAB_PATH;
 var formatRewardItems = Shared.formatRewardItems;
 var showStatusAndTip = Shared.showStatusAndTip;
 var hideGameCircleWelfareViewNode = Shared.hideGameCircleWelfareViewNode;
 var resolveStarChestFailMessage = Shared.resolveStarChestFailMessage;
-var WECHAT_RANK_ENV_MESSAGE = "好友排行榜仅微信小游戏环境可开启";
+var WORLD_RANK_LOADING_MESSAGE = "正在加载世界排行榜...";
+
+function resolveWorldLeaderboardFailMessage(error) {
+  var message = error && error.message ? error.message : String(error);
+  if (message.indexOf("wx.getUserProfile failed for world leaderboard") >= 0) {
+    return "授权后可查看世界排行榜";
+  }
+  return "世界排行榜加载失败";
+}
 
 module.exports = {
   _resolveLeaderboardPlayerName: function () {
-    throw new Error("Local ranking data has been removed. Use WeChat friend rank instead.");
+    if (!this._worldLeaderboardUserProfile) {
+      throw new Error("World leaderboard user profile has not been authorized.");
+    }
+    return this._worldLeaderboardUserProfile.nickname;
   },
 
   _refreshLeaderboardEntries: function () {
-    throw new Error("Local ranking data has been removed. Use WeChat friend rank instead.");
+    if (!this.worldLeaderboardService || typeof this.worldLeaderboardService.submitAndList !== "function") {
+      throw new Error("WorldLeaderboardService is not initialized.");
+    }
+    if (!this._worldLeaderboardUserProfile) {
+      throw new Error("World leaderboard user profile has not been authorized.");
+    }
+    this._refreshLevelProgress();
+    return this.worldLeaderboardService.submitAndList(this.levelProgress, this._worldLeaderboardUserProfile)
+      .then(function (result) {
+        return result.entries;
+      });
   },
 
   _ensureRankingViewPrefab: function () {
-    return Promise.reject(new Error("Local RankingView prefab loading has been removed."));
+    if (this._rankingViewPrefab) {
+      return Promise.resolve(this._rankingViewPrefab);
+    }
+
+    return this._loadPrefab(RANKING_VIEW_PREFAB_PATH).then(function (prefab) {
+      this._rankingViewPrefab = prefab;
+      return prefab;
+    }.bind(this));
   },
 
   _onLevelSelectRankingTap: function () {
@@ -32,11 +62,52 @@ module.exports = {
     }
 
     this._playSfx("uiClick");
-    showStatusAndTip(this, WECHAT_RANK_ENV_MESSAGE);
+    this._showRankingView();
   },
 
   _showRankingView: function () {
-    showStatusAndTip(this, WECHAT_RANK_ENV_MESSAGE);
+    this._hideAwardView();
+    this._hideSettingView();
+    this._hideShopView();
+    this._hideSignInView();
+    if (typeof this._hideDailyTaskView === "function") {
+      this._hideDailyTaskView();
+    }
+    hideGameCircleWelfareViewNode(this);
+    if (typeof this._hideInventoryView === "function") {
+      this._hideInventoryView();
+    }
+
+    showStatusAndTip(this, WORLD_RANK_LOADING_MESSAGE);
+    this._ensureRankingViewPrefab().then(function (prefab) {
+      var rankingNode = this._rankingViewNode;
+      if (!rankingNode || !cc.isValid(rankingNode)) {
+        rankingNode = cc.instantiate(prefab);
+        if (!rankingNode) {
+          throw new Error("Instantiate RankingView prefab failed.");
+        }
+        rankingNode.parent = this.node;
+        rankingNode.setPosition(0, 0);
+        rankingNode.zIndex = 340;
+        this._rankingViewNode = rankingNode;
+        this._rankingViewController = new RankingViewController({
+          node: rankingNode,
+          onClose: function () {
+            this._playSfx("uiClick");
+            this._hideRankingView();
+          }.bind(this)
+        });
+      }
+
+      rankingNode.active = true;
+      PopupPanelAnimator.play(rankingNode);
+      this._rankingViewController.render([]);
+      return this._renderRankingView();
+    }.bind(this)).catch(function (error) {
+      Logger.error("Show world leaderboard failed", error && error.stack ? error.stack : error);
+      showStatusAndTip(this, "世界排行榜加载失败");
+      throw error;
+    }.bind(this));
   },
 
   _hideRankingView: function () {
@@ -47,7 +118,31 @@ module.exports = {
   },
 
   _renderRankingView: function () {
-    throw new Error("Local ranking rendering has been removed. Use WeChat friend rank instead.");
+    if (!this._rankingViewController || !this._rankingViewNode || !cc.isValid(this._rankingViewNode)) {
+      throw new Error("RankingView must be visible before rendering world leaderboard.");
+    }
+    if (!this.worldLeaderboardService || typeof this.worldLeaderboardService.requestUserProfile !== "function") {
+      throw new Error("WorldLeaderboardService is not initialized.");
+    }
+
+    var resolveUserProfile = this._worldLeaderboardUserProfile
+      ? Promise.resolve(this._worldLeaderboardUserProfile)
+      : this.worldLeaderboardService.requestUserProfile().then(function (profile) {
+        this._worldLeaderboardUserProfile = profile;
+        return profile;
+      }.bind(this));
+
+    return resolveUserProfile.then(function () {
+      return this._refreshLeaderboardEntries();
+    }.bind(this)).then(function (entries) {
+      this._rankingViewController.render(entries);
+      showStatusAndTip(this, "世界排行榜已更新");
+      return entries;
+    }.bind(this)).catch(function (error) {
+      Logger.error("Render world leaderboard failed", error && error.stack ? error.stack : error);
+      showStatusAndTip(this, resolveWorldLeaderboardFailMessage(error));
+      throw error;
+    }.bind(this));
   },
 
   _ensureShopViewPrefab: function () {

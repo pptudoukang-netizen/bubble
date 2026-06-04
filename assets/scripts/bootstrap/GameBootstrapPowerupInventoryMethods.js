@@ -976,6 +976,9 @@ module.exports = {
     if (!this.levelManager || typeof this.levelManager.loadLevel !== "function") {
       throw new Error("StartGameView requires LevelManager.loadLevel.");
     }
+    if (typeof this.levelManager.preloadRemotePackAfterLevel !== "function") {
+      throw new Error("StartGameView requires LevelManager.preloadRemotePackAfterLevel.");
+    }
     this._pendingStartGamePowerups = options && options.selectedItems !== undefined
       ? validateStartGameSelectedPowerups(this, safeLevelId, options.selectedItems)
       : [];
@@ -992,10 +995,23 @@ module.exports = {
 
     return Promise.all([
       this._ensureStartGameViewPrefab(),
-      this.levelManager.loadLevel(safeLevelId)
+      this.levelManager.loadLevel(safeLevelId),
+      this.levelManager.preloadRemotePackAfterLevel(safeLevelId)
     ]).then(function (results) {
       var prefab = results[0];
       var levelConfig = results[1];
+      var remotePackPreload = results[2];
+      if (!remotePackPreload || typeof remotePackPreload !== "object" || Array.isArray(remotePackPreload)) {
+        throw new Error("StartGameView remote pack preload result is invalid.");
+      }
+      if (remotePackPreload.preloaded === true) {
+        Logger.info("Preloaded next remote level pack", {
+          levelId: safeLevelId,
+          packId: remotePackPreload.packId,
+          from: remotePackPreload.from,
+          to: remotePackPreload.to
+        });
+      }
       var startGameViewNode = this._startGameViewNode;
       if (!startGameViewNode || !startGameViewNode.isValid) {
         startGameViewNode = cc.instantiate(prefab);
@@ -1112,7 +1128,7 @@ module.exports = {
     var safeLevelId = normalizeStartGameLevelId(levelId);
     var preparedItems = validateStartGameSelectedPowerups(this, safeLevelId, selectedItems);
     this._pendingStartGamePowerups = preparedItems.slice();
-    this._setStatus("Loading level_" + ("000" + safeLevelId).slice(-3) + "...");
+    this._setStatus("Loading level_" + String(safeLevelId).padStart(3, "0") + "...");
     this._loadLevelById(safeLevelId, "Level selected", "Load selected level failed. Check console logs.");
   },
 

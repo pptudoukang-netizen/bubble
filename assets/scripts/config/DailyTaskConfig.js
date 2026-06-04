@@ -64,7 +64,7 @@ module.exports = {
       description: "赠送好友体力3次",
       type: "gift_friend_stamina",
       target: 3,
-      sortOrder: 50,
+      sortOrder: 0,
       enabled: true,
       iconPath: "image/dailytask/invite_icon",
       rewardItems: [

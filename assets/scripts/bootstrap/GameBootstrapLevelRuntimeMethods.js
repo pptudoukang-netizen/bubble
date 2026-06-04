@@ -3,7 +3,7 @@
 module.exports = {
   _loadInitialLevel: function () {
     var startupLevelId = this._getStartupLevelId();
-    this._setStatus("Loading level_" + ("000" + startupLevelId).slice(-3) + "...");
+    this._setStatus("Loading level_" + String(startupLevelId).padStart(3, "0") + "...");
     this._loadLevelById(startupLevelId, "Bootstrap finished", "Bootstrap failed. Check console logs.");
   },
 
@@ -44,6 +44,9 @@ module.exports = {
   _isTerminalState: function () {
     var snapshot = this.gameManager.getRuntimeSnapshot();
     return snapshot.state === "won" ||
+      snapshot.state === "won_pending" ||
+      snapshot.state === "won_surplus_shots_pending" ||
+      snapshot.state === "won_settlement_pending" ||
       snapshot.state === "out_of_shots" ||
       snapshot.state === "out_of_shots_pending" ||
       snapshot.state === "lost_danger" ||

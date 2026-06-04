@@ -28,9 +28,18 @@ function hasRewardedVideoApi() {
   );
 }
 
+function hasInterstitialAdApi() {
+  return !!(
+    typeof wx !== "undefined" &&
+    wx &&
+    typeof wx.createInterstitialAd === "function"
+  );
+}
+
 function AdService(options) {
   options = options || {};
   this.adUnitId = typeof options.adUnitId === "string" ? options.adUnitId : "";
+  this.interstitialAdUnitId = typeof options.interstitialAdUnitId === "string" ? options.interstitialAdUnitId : "";
   this.logger = options.logger || null;
   this.mockEnabled = options.mockEnabled === true;
   this.hostedShareBehaviorEnabled = options.hostedShareBehaviorEnabled === true;
@@ -53,7 +62,10 @@ function AdService(options) {
   this._lastHostedRecommendationError = null;
   this._rewardedAdNeedsRecreate = false;
   this._lastRewardedAdDisposeAt = 0;
+  this._interstitialAd = null;
+  this._interstitialAdsByUnitId = {};
   this._isShowing = false;
+  this._isShowingInterstitial = false;
   this._activeShowToken = 0;
 }
 
@@ -71,12 +83,26 @@ AdService.prototype.setAdUnitId = function (adUnitId) {
   this._lastRewardedAdDisposeAt = 0;
 };
 
+AdService.prototype.setInterstitialAdUnitId = function (adUnitId) {
+  var nextAdUnitId = typeof adUnitId === "string" ? adUnitId : "";
+  if (this._isShowingInterstitial && nextAdUnitId !== this.interstitialAdUnitId) {
+    throw new Error("Cannot switch interstitial ad unit while showing.");
+  }
+
+  this.interstitialAdUnitId = nextAdUnitId;
+  this._interstitialAd = this._interstitialAdsByUnitId[nextAdUnitId] || null;
+};
+
 AdService.prototype.isSupported = function () {
   return hasRewardedVideoApi();
 };
 
 AdService.prototype.canShowRewarded = function () {
   return this.isSupported() || this.mockEnabled === true;
+};
+
+AdService.prototype.canShowInterstitial = function () {
+  return hasInterstitialAdApi();
 };
 
 AdService.prototype._logInfo = function () {
@@ -394,6 +420,48 @@ AdService.prototype._ensureRewardedAd = function () {
   return this._rewardedAd;
 };
 
+AdService.prototype._createInterstitialAd = function () {
+  if (!this.canShowInterstitial()) {
+    throw new Error("Interstitial ad API is unavailable.");
+  }
+  if (!this.interstitialAdUnitId) {
+    throw new Error("Interstitial ad unit id is required.");
+  }
+
+  var interstitialAd = wx.createInterstitialAd({
+    adUnitId: this.interstitialAdUnitId
+  });
+  if (!interstitialAd || typeof interstitialAd.show !== "function") {
+    throw new Error("wx.createInterstitialAd returned invalid ad instance.");
+  }
+  if (typeof interstitialAd.onError === "function") {
+    interstitialAd.onError(function (error) {
+      this._logWarn(
+        "Interstitial ad error",
+        mapWxAdErrorCode(error, "ad_error"),
+        error && error.errMsg ? error.errMsg : error
+      );
+    }.bind(this));
+  }
+  this._interstitialAdsByUnitId[this.interstitialAdUnitId] = interstitialAd;
+  return interstitialAd;
+};
+
+AdService.prototype._ensureInterstitialAd = function () {
+  if (this._interstitialAd) {
+    return this._interstitialAd;
+  }
+
+  var cachedAd = this._interstitialAdsByUnitId[this.interstitialAdUnitId];
+  if (cachedAd) {
+    this._interstitialAd = cachedAd;
+    return this._interstitialAd;
+  }
+
+  this._interstitialAd = this._createInterstitialAd();
+  return this._interstitialAd;
+};
+
 AdService.prototype.preloadRewarded = function () {
   if (!this.isSupported()) {
     return Promise.reject(new Error("Rewarded video ad API is unavailable."));
@@ -457,6 +525,90 @@ AdService.prototype._showMockRewarded = function () {
         mock: true
       });
     }, this.mockCloseDelayMs);
+  }.bind(this));
+};
+
+AdService.prototype.showInterstitial = function (options) {
+  options = options || {};
+  if (this._isShowing || this._isShowingInterstitial) {
+    return Promise.resolve({
+      ok: false,
+      code: "busy"
+    });
+  }
+
+  if (!this.canShowInterstitial()) {
+    return Promise.reject(new Error("Interstitial ad API is unavailable."));
+  }
+
+  var interstitialAd = null;
+  try {
+    interstitialAd = this._ensureInterstitialAd();
+  } catch (error) {
+    return Promise.reject(error);
+  }
+
+  this._isShowingInterstitial = true;
+  return new Promise(function (resolve) {
+    var settled = false;
+    var showStarted = false;
+    var closeHandler = null;
+
+    var cleanup = function () {
+      if (closeHandler && typeof interstitialAd.offClose === "function") {
+        interstitialAd.offClose(closeHandler);
+      }
+      this._isShowingInterstitial = false;
+    }.bind(this);
+
+    var finalize = function (result) {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      cleanup();
+      resolve(result);
+    };
+
+    closeHandler = function (result) {
+      finalize({
+        ok: true,
+        code: "close",
+        closePayload: result
+      });
+    };
+
+    if (typeof interstitialAd.onClose === "function") {
+      interstitialAd.onClose(closeHandler);
+    }
+
+    var displayInterstitialAd = function () {
+      if (!showStarted && typeof options.onShow === "function") {
+        showStarted = true;
+        options.onShow();
+      }
+      return interstitialAd.show();
+    };
+
+    displayInterstitialAd().catch(function () {
+      if (typeof interstitialAd.load !== "function") {
+        throw new Error("Interstitial ad load API is unavailable after show failure.");
+      }
+      return interstitialAd.load().then(displayInterstitialAd);
+    }).then(function () {
+      if (typeof interstitialAd.onClose !== "function") {
+        finalize({
+          ok: true,
+          code: "show"
+        });
+      }
+    }).catch(function (error) {
+      finalize({
+        ok: false,
+        code: mapWxAdErrorCode(error, "show_fail"),
+        error: error
+      });
+    });
   }.bind(this));
 };
 

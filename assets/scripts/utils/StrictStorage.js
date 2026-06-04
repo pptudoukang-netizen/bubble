@@ -1,5 +1,8 @@
 "use strict";
 
+var writeObserver = null;
+var observerSuspendDepth = 0;
+
 function assertStorageKey(storageKey) {
   if (typeof storageKey !== "string" || storageKey.length === 0) {
     throw new Error("StrictStorage storageKey must be a non-empty string.");
@@ -68,10 +71,37 @@ function parseStoredJson(rawText, storageKey, namespace) {
   }
 }
 
+function setWriteObserver(observer) {
+  if (observer !== null && typeof observer !== "function") {
+    throw new Error("StrictStorage write observer must be a function or null.");
+  }
+  writeObserver = observer;
+}
+
+function suspendWriteObserver(run) {
+  if (typeof run !== "function") {
+    throw new Error("StrictStorage suspendWriteObserver requires a function.");
+  }
+
+  observerSuspendDepth += 1;
+  try {
+    return run();
+  } finally {
+    observerSuspendDepth -= 1;
+  }
+}
+
 function writeJson(storageKey, namespace, value) {
   assertStorageKey(storageKey);
   var storage = resolveStorage(namespace);
   storage.setItem(storageKey, JSON.stringify(value));
+  if (writeObserver && observerSuspendDepth === 0) {
+    writeObserver({
+      storageKey: storageKey,
+      namespace: namespace,
+      value: value
+    });
+  }
 }
 
 function readJsonOrCreate(storageKey, namespace, createInitialState) {
@@ -93,5 +123,7 @@ module.exports = {
   resolveStorage: resolveStorage,
   readStoredText: readStoredText,
   readJsonOrCreate: readJsonOrCreate,
+  setWriteObserver: setWriteObserver,
+  suspendWriteObserver: suspendWriteObserver,
   writeJson: writeJson
 };

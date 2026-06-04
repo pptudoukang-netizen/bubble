@@ -4,6 +4,18 @@ var Shared = require("./GameBootstrapShared");
 var Logger = Shared.Logger;
 var BundleLoader = Shared.BundleLoader;
 var LoadingViewController = Shared.LoadingViewController;
+var ShopStateService = Shared.ShopStateService;
+
+function isWechatGameRuntime() {
+  return !!(
+    typeof cc !== "undefined" &&
+    cc &&
+    cc.sys &&
+    typeof cc.sys.platform !== "undefined" &&
+    typeof cc.sys.WECHAT_GAME !== "undefined" &&
+    cc.sys.platform === cc.sys.WECHAT_GAME
+  );
+}
 
 module.exports = {
   start: function () {
@@ -152,11 +164,27 @@ module.exports = {
   _runWeightedStartupTasks: function () {
     var tasks = [
       {
+        id: "player_cloud_profile_sync",
+        stage: "同步玩家云端信息...",
+        weight: 0.1,
+        run: function () {
+          return this._syncPlayerProfileFromCloud();
+        }.bind(this)
+      },
+      {
         id: "resources_bundle",
         stage: "准备资源分包...",
         weight: 0.25,
         run: function () {
           return BundleLoader.ensureResourcesBundleLoaded();
+        }
+      },
+      {
+        id: "map_bundle",
+        stage: "准备地图分包...",
+        weight: 0.15,
+        run: function () {
+          return BundleLoader.ensureNamedBundleLoaded("map");
         }
       },
       {
@@ -215,6 +243,94 @@ module.exports = {
     }, this);
 
     return chain;
+  },
+
+  _syncPlayerProfileFromCloud: function () {
+    if (this.enablePlayerCloudProfile !== true) {
+      return Promise.resolve(null);
+    }
+    if (!isWechatGameRuntime()) {
+      Logger.info("Skip player cloud profile sync outside WeChat game runtime.");
+      return Promise.resolve({
+        source: "local",
+        updatedAt: 0,
+        skipped: true
+      });
+    }
+    if (!this.playerCloudProfileService || typeof this.playerCloudProfileService.syncFromCloudOrUploadLocal !== "function") {
+      throw new Error("Player cloud profile sync requires PlayerCloudProfileService.");
+    }
+    return this.playerCloudProfileService.syncFromCloudOrUploadLocal().then(function (result) {
+      if (!result || typeof result !== "object") {
+        throw new Error("Player cloud profile sync result is required.");
+      }
+      if (result.source === "cloud") {
+        this._reloadPlayerInfoFromStores();
+      } else if (result.source !== "local") {
+        throw new Error("Unsupported player cloud profile sync source: " + result.source);
+      }
+      this.playerCloudProfileService.installStorageObserver();
+      return result;
+    }.bind(this));
+  },
+
+  _reloadPlayerInfoFromStores: function () {
+    if (!this.levelProgressStore || typeof this.levelProgressStore.load !== "function") {
+      throw new Error("Reload player profile requires LevelProgressStore.load.");
+    }
+    if (!this.playerResourceStore || typeof this.playerResourceStore.load !== "function") {
+      throw new Error("Reload player profile requires PlayerResourceStore.load.");
+    }
+    if (!this.staminaRecoveryStore || typeof this.staminaRecoveryStore.load !== "function") {
+      throw new Error("Reload player profile requires StaminaRecoveryStore.load.");
+    }
+    if (!this.dailyTaskStore || typeof this.dailyTaskStore.load !== "function") {
+      throw new Error("Reload player profile requires DailyTaskStore.load.");
+    }
+    if (!this.inventoryStore || typeof this.inventoryStore.load !== "function") {
+      throw new Error("Reload player profile requires InventoryStore.load.");
+    }
+    if (!this.selectedPowerupsStore || typeof this.selectedPowerupsStore.load !== "function") {
+      throw new Error("Reload player profile requires SelectedPowerupsStore.load.");
+    }
+    if (!this.signInStore || typeof this.signInStore.load !== "function") {
+      throw new Error("Reload player profile requires SignInStore.load.");
+    }
+    if (!this.newGiftStore || typeof this.newGiftStore.load !== "function") {
+      throw new Error("Reload player profile requires NewGiftStore.load.");
+    }
+    if (!this.starChestStore || typeof this.starChestStore.load !== "function") {
+      throw new Error("Reload player profile requires StarChestStore.load.");
+    }
+    if (!this.gameCircleWelfareStore || typeof this.gameCircleWelfareStore.load !== "function") {
+      throw new Error("Reload player profile requires GameCircleWelfareStore.load.");
+    }
+    if (!this.shopStateStore || typeof this.shopStateStore.load !== "function") {
+      throw new Error("Reload player profile requires ShopStateStore.load.");
+    }
+    if (!this.shopStateService || typeof this.shopStateService.ensureDailyReset !== "function") {
+      throw new Error("Reload player profile requires ShopStateService.ensureDailyReset.");
+    }
+    if (typeof this.shopStateService._buildEmptySkuCounts !== "function") {
+      throw new Error("Reload player profile requires ShopStateService._buildEmptySkuCounts.");
+    }
+
+    var now = new Date();
+    this.levelProgress = this.levelProgressStore.load();
+    this.staminaRecoveryState = this.staminaRecoveryStore.load();
+    this.playerResources = this.playerResourceStore.load(now);
+    this.dailyTaskState = this.dailyTaskStore.load(now);
+    this.playerInventory = this.inventoryStore.load();
+    this.selectedPowerupsState = this.selectedPowerupsStore.load();
+    this.signInState = this.signInStore.load();
+    this.newGiftState = this.newGiftStore.load();
+    this.starChestStore.load();
+    this.gameCircleWelfareStore.load(now);
+    this.shopStateService.state = this.shopStateStore.load(
+      ShopStateService.toDateKey(now),
+      this.shopStateService._buildEmptySkuCounts()
+    );
+    this.shopStateService.ensureDailyReset(now);
   },
 
   _preloadStartupPrefabs: function () {

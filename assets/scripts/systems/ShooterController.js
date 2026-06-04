@@ -305,6 +305,40 @@ ShooterController.prototype.getAimState = function () {
   };
 };
 
+ShooterController.prototype.drainRemainingShotBalls = function (remainingCount) {
+  if (!Number.isInteger(remainingCount) || remainingCount <= 0) {
+    throw new Error("ShooterController.drainRemainingShotBalls requires positive integer remainingCount.");
+  }
+
+  var drained = [];
+  var current = this.currentBall ? clone(this.currentBall) : null;
+  var next = this.nextBall ? clone(this.nextBall) : null;
+
+  for (var index = 0; index < remainingCount; index += 1) {
+    if (!current) {
+      throw new Error("ShooterController.drainRemainingShotBalls requires current ball at index " + index + ".");
+    }
+    drained.push(clone(current));
+    if (index === remainingCount - 1) {
+      break;
+    }
+    current = next ? clone(next) : this._pickNormalBall();
+    if (!current) {
+      throw new Error("ShooterController.drainRemainingShotBalls requires next ball at index " + index + ".");
+    }
+    next = this._pickNormalBall();
+    if (!next) {
+      throw new Error("ShooterController.drainRemainingShotBalls requires generated preview ball at index " + index + ".");
+    }
+  }
+
+  this.currentBall = null;
+  this.nextBall = null;
+  this._syncLegacyColorFields();
+
+  return drained;
+};
+
 ShooterController.prototype.getShooterState = function () {
   return {
     currentBall: clone(this.currentBall),

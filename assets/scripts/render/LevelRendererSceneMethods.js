@@ -51,6 +51,8 @@ function attachLevelRendererSceneMethods(LevelRenderer, deps) {
   var ICE_THAW_SHAKE_STEP_DURATION = deps.ICE_THAW_SHAKE_STEP_DURATION;
   var ICE_COLLECT_FLY_DURATION = deps.ICE_COLLECT_FLY_DURATION;
   var ICE_COLLECT_BEZIER_ARC = deps.ICE_COLLECT_BEZIER_ARC;
+  var SPLITTER_SPAWN_FLY_DURATION = deps.SPLITTER_SPAWN_FLY_DURATION;
+  var SPLITTER_SPAWN_BEZIER_ARC = deps.SPLITTER_SPAWN_BEZIER_ARC;
   var loadSpriteFrame = deps.loadSpriteFrame;
   var createSolidWhiteSpriteFrame = deps.createSolidWhiteSpriteFrame;
   var ensureSprite = deps.ensureSprite;
@@ -59,6 +61,7 @@ function attachLevelRendererSceneMethods(LevelRenderer, deps) {
   var clearChildren = deps.clearChildren;
   var getOrCreateChild = deps.getOrCreateChild;
   var buildObjectiveDisplayData = deps.buildObjectiveDisplayData;
+  var buildHudTargetDisplayData = deps.buildHudTargetDisplayData;
   var buildStateText = deps.buildStateText;
   var buildResultTexts = deps.buildResultTexts;
   var resolveWinStarRating = deps.resolveWinStarRating;
@@ -263,22 +266,149 @@ LevelRenderer.prototype._renderBackground = function () {
   this._applyGameBackground(node, true);
 };
 
+LevelRenderer.prototype._getMountedBgNode = function () {
+  if (!this.layers || !this.layers.background) {
+    throw new Error("Background layer is required.");
+  }
+
+  var bgNode = this.layers.background.getChildByName("bg");
+  if (!bgNode || !bgNode.isValid) {
+    throw new Error("Mounted GameView bg node is required.");
+  }
+
+  return bgNode;
+};
+
+LevelRenderer.prototype._resolveMainlandNode = function () {
+  var mainlandNode = this._getMountedBgNode().getChildByName("mainland");
+  if (!mainlandNode || !mainlandNode.isValid) {
+    throw new Error("GameView bg/mainland node is required.");
+  }
+
+  return mainlandNode;
+};
+
+LevelRenderer.prototype._resolveTopRowBubbleVisualTopY = function (boardSnapshot) {
+  if (!boardSnapshot || typeof boardSnapshot !== "object" || Array.isArray(boardSnapshot)) {
+    throw new Error("Top row bubble visual top requires board snapshot.");
+  }
+  if (typeof boardSnapshot.topAttachY !== "number" || !isFinite(boardSnapshot.topAttachY)) {
+    throw new Error("Board snapshot topAttachY must be a finite number.");
+  }
+  if (typeof boardSnapshot.dropOffsetRows !== "number" || !isFinite(boardSnapshot.dropOffsetRows)) {
+    throw new Error("Board snapshot dropOffsetRows must be a finite number.");
+  }
+  if (!Array.isArray(boardSnapshot.cells)) {
+    throw new Error("Board snapshot cells must be an array.");
+  }
+  if (typeof boardSnapshot.maxColumns !== "number" || !isFinite(boardSnapshot.maxColumns) || boardSnapshot.maxColumns <= 0) {
+    throw new Error("Board snapshot maxColumns must be a positive finite number.");
+  }
+
+  var bubbleRadius = Number(BoardLayout.bubbleRadius);
+  if (!isFinite(bubbleRadius) || bubbleRadius <= 0) {
+    throw new Error("BoardLayout.bubbleRadius must be a positive finite number.");
+  }
+
+  var topRow = null;
+  boardSnapshot.cells.forEach(function (cell) {
+    if (!cell || typeof cell !== "object" || Array.isArray(cell)) {
+      throw new Error("Board snapshot cell entry must be an object.");
+    }
+    var row = Math.floor(Number(cell.row));
+    if (!Number.isInteger(row) || row < 0) {
+      throw new Error("Board snapshot cell row must be a non-negative integer.");
+    }
+    if (topRow === null || row < topRow) {
+      topRow = row;
+    }
+  });
+
+  if (topRow === null) {
+    return boardSnapshot.topAttachY + bubbleRadius;
+  }
+
+  var topRowCenter = BoardLayout.getCellPosition(
+    topRow,
+    0,
+    boardSnapshot.maxColumns,
+    boardSnapshot.dropOffsetRows
+  );
+  return topRowCenter.y + bubbleRadius;
+};
+
+LevelRenderer.prototype._alignNodeYToTopRowBubbleVisualTop = function (node, localSpaceRoot, boardSnapshot) {
+  if (!node || !node.isValid) {
+    throw new Error("Top row bubble alignment requires a valid target node.");
+  }
+  if (!localSpaceRoot || !localSpaceRoot.isValid) {
+    throw new Error("Top row bubble alignment requires a valid local space root node.");
+  }
+  if (!this.layers || !this.layers.board || !this.layers.board.isValid) {
+    throw new Error("Board layer is required for top row bubble alignment.");
+  }
+
+  var topRowVisualTopY = this._resolveTopRowBubbleVisualTopY(boardSnapshot);
+  var boardTopWorld = this.layers.board.convertToWorldSpaceAR(cc.v2(0, topRowVisualTopY));
+  var anchorPosInLocal = localSpaceRoot.convertToNodeSpaceAR(boardTopWorld);
+  node.active = true;
+  node.setPosition(node.x, anchorPosInLocal.y);
+};
+
+LevelRenderer.prototype._renderMainland = function (boardSnapshot) {
+  var mainlandNode = this._resolveMainlandNode();
+  var bgNode = mainlandNode.parent;
+  if (!bgNode || !bgNode.isValid) {
+    throw new Error("Mainland parent bg node is required.");
+  }
+
+  this._alignNodeYToTopRowBubbleVisualTop(mainlandNode, bgNode, boardSnapshot);
+};
+
+LevelRenderer.prototype._resolveJianbianNode = function () {
+  var gameViewNode = this._getGameViewNode();
+  if (!gameViewNode || !gameViewNode.isValid) {
+    throw new Error("GameView node is required for jianbian alignment.");
+  }
+
+  var jianbianNode = gameViewNode.getChildByName("jianbian");
+  if (!jianbianNode || !jianbianNode.isValid) {
+    throw new Error("GameView/jianbian node is required.");
+  }
+
+  return jianbianNode;
+};
+
+LevelRenderer.prototype._renderJianbian = function (boardSnapshot) {
+  var gameViewNode = this._getGameViewNode();
+  if (!gameViewNode || !gameViewNode.isValid) {
+    throw new Error("GameView node is required for jianbian alignment.");
+  }
+
+  var jianbianNode = this._resolveJianbianNode();
+  this._alignNodeYToTopRowBubbleVisualTop(jianbianNode, gameViewNode, boardSnapshot);
+};
+
 LevelRenderer.prototype._renderHud = function (levelConfig, runtimeSnapshot) {
   var panel = this._getMountedHudPanel();
   if (!panel) {
     Logger.warn("HudPanel not found in mounted GameView.");
     return;
   }
-  var objectiveDisplay = buildObjectiveDisplayData(levelConfig, runtimeSnapshot);
+  var hudTargetDisplay = buildHudTargetDisplayData(levelConfig, runtimeSnapshot);
 
-  this._setHudLabel(panel, "LevelTitle", "关卡");
+  // this._setHudLabel(panel, "LevelTitle", "关卡");
   this._setHudLabel(panel, "LevelValue", String(levelConfig.level.levelId));
   // this._setHudLabel(panel, "ScoreTitle", "得分");
   this._setHudLabel(panel, "ScoreValue", String(runtimeSnapshot.score));
   // this._setHudLabel(panel, "TargetTitle", "目标:");
-  this._setHudLabel(panel, "TargetValue", objectiveDisplay.progressText || "-");
-  this._setHudTargetBallIcon(panel, objectiveDisplay.iconCode);
+  this._renderHudTargets(panel, hudTargetDisplay);
   this._renderHudStarProgress(panel, runtimeSnapshot);
+  var setButtonNode = requireChildNode(panel, "set_btn", "HudPanel");
+  this._bindBottomPanelButton(setButtonNode, "open_settings");
+  this._setBottomPanelButtonEnabled(setButtonNode, true, {
+    dimWhenDisabled: false
+  });
   var stateValueNode = panel.getChildByName("StateValue");
   if (stateValueNode) {
     stateValueNode.active = false;
@@ -286,6 +416,382 @@ LevelRenderer.prototype._renderHud = function (levelConfig, runtimeSnapshot) {
   var dropValueNode = panel.getChildByName("DropValue");
   if (dropValueNode) {
     dropValueNode.active = false;
+  }
+};
+
+var COMBO_BATTER_POP_DURATION = 0.15;
+var COMBO_BATTER_SETTLE_DURATION = 0.1;
+var COMBO_BATTER_HOLD_DURATION = 0.85;
+var COMBO_BATTER_FADE_DURATION = 0.25;
+var COMBO_BATTER_POP_SCALE = 1.2;
+
+var JAR_FRACTION_MOUTH_OFFSET_RATIO = 0.24;
+var JAR_FRACTION_POP_DURATION = 0.15;
+var JAR_FRACTION_SETTLE_DURATION = 0.1;
+var JAR_FRACTION_HOLD_DURATION = 0.55;
+var JAR_FRACTION_FADE_DURATION = 0.25;
+var JAR_FRACTION_RISE_DISTANCE = 72;
+var JAR_FRACTION_POP_SCALE = 1.15;
+var JAR_FRACTION_START_SCALE = 0.6;
+
+LevelRenderer.prototype._initializeComboBatterHud = function () {
+  var gameViewNode = this._getGameViewNode();
+  if (!gameViewNode || !gameViewNode.isValid) {
+    throw new Error("GameView node is required for combo batter HUD.");
+  }
+
+  var batterNode = gameViewNode.getChildByName("batter");
+  if (!batterNode || !batterNode.isValid) {
+    throw new Error("GameView.batter node is missing.");
+  }
+
+  var batterLabel = batterNode.getComponent(cc.Label);
+  if (!batterLabel) {
+    throw new Error("GameView.batter label component is missing.");
+  }
+
+  if (typeof cc.Tween === "undefined" || typeof cc.Tween.stopAllByTarget !== "function") {
+    throw new Error("Combo batter HUD requires cc.Tween.stopAllByTarget.");
+  }
+
+  cc.Tween.stopAllByTarget(batterNode);
+  batterNode.active = false;
+  batterNode.opacity = 255;
+  batterNode.setScale(1, 1);
+  batterLabel.string = "0";
+  this.lastComboBatterEventId = -1;
+};
+
+LevelRenderer.prototype._playComboBatterDisplay = function (runtimeSnapshot) {
+  if (!runtimeSnapshot || !Array.isArray(runtimeSnapshot.runtimeEvents)) {
+    return;
+  }
+
+  var comboEvent = null;
+  for (var index = 0; index < runtimeSnapshot.runtimeEvents.length; index += 1) {
+    var event = runtimeSnapshot.runtimeEvents[index];
+    if (event && event.type === "combo_bonus_awarded") {
+      comboEvent = event;
+    }
+  }
+
+  if (!comboEvent) {
+    return;
+  }
+  if (typeof comboEvent.id !== "number" || !isFinite(comboEvent.id)) {
+    throw new Error("combo_bonus_awarded event requires a numeric id.");
+  }
+  if (comboEvent.id === this.lastComboBatterEventId) {
+    return;
+  }
+
+  var comboDisplay = Math.floor(Number(comboEvent.combo_display));
+  if (!Number.isInteger(comboDisplay) || comboDisplay < 1) {
+    throw new Error("combo_bonus_awarded requires positive integer combo_display.");
+  }
+
+  this.lastComboBatterEventId = comboEvent.id;
+
+  var gameViewNode = this._getGameViewNode();
+  if (!gameViewNode || !gameViewNode.isValid) {
+    throw new Error("GameView node is required for combo batter display.");
+  }
+
+  var batterNode = gameViewNode.getChildByName("batter");
+  if (!batterNode || !batterNode.isValid) {
+    throw new Error("GameView.batter node is missing.");
+  }
+
+  var batterLabel = batterNode.getComponent(cc.Label);
+  if (!batterLabel) {
+    throw new Error("GameView.batter label component is missing.");
+  }
+
+  if (typeof cc.tween !== "function") {
+    throw new Error("Combo batter display requires cc.tween.");
+  }
+
+  cc.Tween.stopAllByTarget(batterNode);
+  batterNode.active = true;
+  batterNode.opacity = 255;
+  batterNode.setScale(0.6, 0.6);
+  batterLabel.string = "+" + String(comboDisplay);
+
+  cc.tween(batterNode)
+    .to(COMBO_BATTER_POP_DURATION, {
+      scale: COMBO_BATTER_POP_SCALE
+    }, {
+      easing: "backOut"
+    })
+    .to(COMBO_BATTER_SETTLE_DURATION, {
+      scale: 1
+    })
+    .delay(COMBO_BATTER_HOLD_DURATION)
+    .to(COMBO_BATTER_FADE_DURATION, {
+      opacity: 0
+    })
+    .call(function () {
+      batterNode.active = false;
+      batterLabel.string = "0";
+      batterNode.opacity = 255;
+      batterNode.setScale(1, 1);
+    })
+    .start();
+};
+
+LevelRenderer.prototype._initializeFractionHud = function () {
+  var gameViewNode = this._getGameViewNode();
+  if (!gameViewNode || !gameViewNode.isValid) {
+    throw new Error("GameView node is required for fraction HUD.");
+  }
+
+  var fractionNode = gameViewNode.getChildByName("fraction");
+  if (!fractionNode || !fractionNode.isValid) {
+    throw new Error("GameView.fraction node is missing.");
+  }
+
+  var fractionLabel = fractionNode.getComponent(cc.Label);
+  if (!fractionLabel) {
+    throw new Error("GameView.fraction label component is missing.");
+  }
+
+  if (typeof cc.Tween === "undefined" || typeof cc.Tween.stopAllByTarget !== "function") {
+    throw new Error("Fraction HUD requires cc.Tween.stopAllByTarget.");
+  }
+
+  cc.Tween.stopAllByTarget(fractionNode);
+  fractionNode.active = false;
+  fractionNode.opacity = 255;
+  fractionNode.setScale(1, 1);
+  fractionLabel.string = "+0";
+  this.lastJarCollectScoredEventId = -1;
+  this._recycleJarFractionNodesBeforeHudClear();
+};
+
+LevelRenderer.prototype._pruneJarFractionNodePool = function () {
+  if (!Array.isArray(this.jarFractionNodePool)) {
+    throw new Error("jarFractionNodePool must be an array.");
+  }
+  this.jarFractionNodePool = this.jarFractionNodePool.filter(function (node) {
+    return !!(node && node.isValid);
+  });
+};
+
+LevelRenderer.prototype._recycleJarFractionNode = function (fractionNode) {
+  if (!fractionNode || !fractionNode.isValid) {
+    throw new Error("Jar fraction recycle requires a valid node.");
+  }
+  if (fractionNode.__isJarFractionClone !== true) {
+    throw new Error("Jar fraction recycle requires pooled clone node.");
+  }
+  if (!Array.isArray(this.jarFractionNodePool)) {
+    throw new Error("jarFractionNodePool must be an array.");
+  }
+  if (typeof cc.Tween === "undefined" || typeof cc.Tween.stopAllByTarget !== "function") {
+    throw new Error("Jar fraction recycle requires cc.Tween.stopAllByTarget.");
+  }
+
+  cc.Tween.stopAllByTarget(fractionNode);
+  fractionNode.active = false;
+  fractionNode.opacity = 255;
+  fractionNode.setScale(1, 1);
+  var fractionLabel = fractionNode.getComponent(cc.Label);
+  if (!fractionLabel) {
+    throw new Error("Jar fraction recycle requires cc.Label.");
+  }
+  fractionLabel.string = "+0";
+  fractionNode.removeFromParent(false);
+  this.jarFractionNodePool.push(fractionNode);
+};
+
+LevelRenderer.prototype._recycleJarFractionNodesBeforeHudClear = function () {
+  if (!Array.isArray(this.jarFractionNodePool)) {
+    throw new Error("jarFractionNodePool must be an array.");
+  }
+
+  var gameViewNode = this._getGameViewNode();
+  if (gameViewNode && gameViewNode.isValid) {
+    var children = gameViewNode.children.slice();
+    for (var index = 0; index < children.length; index += 1) {
+      var childNode = children[index];
+      if (!childNode || !childNode.isValid || childNode.__isJarFractionClone !== true) {
+        continue;
+      }
+      this._recycleJarFractionNode(childNode);
+    }
+  }
+
+  this._pruneJarFractionNodePool();
+};
+
+LevelRenderer.prototype._acquireJarFractionNode = function (gameViewNode, templateNode) {
+  if (!gameViewNode || !gameViewNode.isValid) {
+    throw new Error("GameView node is required to acquire jar fraction node.");
+  }
+  if (!templateNode || !templateNode.isValid) {
+    throw new Error("GameView.fraction template node is required.");
+  }
+  if (typeof cc.instantiate !== "function") {
+    throw new Error("Jar fraction display requires cc.instantiate.");
+  }
+  if (!Array.isArray(this.jarFractionNodePool)) {
+    throw new Error("jarFractionNodePool must be an array.");
+  }
+  if (typeof cc.Tween === "undefined" || typeof cc.Tween.stopAllByTarget !== "function") {
+    throw new Error("Jar fraction acquire requires cc.Tween.stopAllByTarget.");
+  }
+
+  this._pruneJarFractionNodePool();
+  var fractionNode = this.jarFractionNodePool.length ? this.jarFractionNodePool.pop() : null;
+  if (!fractionNode) {
+    fractionNode = cc.instantiate(templateNode);
+    fractionNode.__isJarFractionClone = true;
+  }
+  if (!fractionNode.isValid) {
+    throw new Error("Jar fraction pooled node is invalid.");
+  }
+  if (fractionNode.__isJarFractionClone !== true) {
+    throw new Error("Jar fraction pooled node must be marked as clone.");
+  }
+
+  cc.Tween.stopAllByTarget(fractionNode);
+  fractionNode.parent = gameViewNode;
+  fractionNode.active = true;
+  fractionNode.opacity = 255;
+  fractionNode.setScale(JAR_FRACTION_START_SCALE, JAR_FRACTION_START_SCALE);
+  fractionNode.zIndex = 1200;
+  return fractionNode;
+};
+
+LevelRenderer.prototype._resolveJarMouthPositionInGameView = function (jarIndex) {
+  if (!Number.isInteger(jarIndex) || jarIndex < 0) {
+    throw new Error("Jar fraction display requires non-negative integer jarIndex.");
+  }
+  if (!this.layers || !this.layers.jars) {
+    throw new Error("Jar layer is required for fraction display.");
+  }
+
+  var jarNode = this.layers.jars.getChildByName("BottomJar_" + jarIndex);
+  if (!jarNode || !jarNode.isValid) {
+    throw new Error("BottomJar_" + jarIndex + " is missing for fraction display.");
+  }
+
+  var jarHeight = Number(BoardLayout.jarHeight);
+  if (!Number.isFinite(jarHeight) || jarHeight <= 0) {
+    throw new Error("BoardLayout.jarHeight must be a positive number.");
+  }
+
+  var mouthAnchor = jarNode.getChildByName("FractionMouthAnchor");
+  if (!mouthAnchor) {
+    mouthAnchor = new cc.Node("FractionMouthAnchor");
+    mouthAnchor.parent = jarNode;
+    mouthAnchor.setPosition(0, jarHeight * JAR_FRACTION_MOUTH_OFFSET_RATIO);
+  }
+
+  return this._convertNodePositionToGameView(mouthAnchor);
+};
+
+LevelRenderer.prototype._spawnJarFractionDisplay = function (entry) {
+  if (!entry || typeof entry !== "object") {
+    throw new Error("Jar fraction display requires entry object.");
+  }
+  var jarIndex = entry.jar_index;
+  if (!Number.isInteger(jarIndex) || jarIndex < 0) {
+    throw new Error("Jar fraction entry requires non-negative integer jar_index.");
+  }
+  var gained = Math.floor(Number(entry.gained));
+  if (!Number.isInteger(gained) || gained <= 0) {
+    throw new Error("Jar fraction entry requires positive integer gained.");
+  }
+
+  var gameViewNode = this._getGameViewNode();
+  if (!gameViewNode || !gameViewNode.isValid) {
+    throw new Error("GameView node is required for jar fraction display.");
+  }
+
+  var templateNode = gameViewNode.getChildByName("fraction");
+  if (!templateNode || !templateNode.isValid) {
+    throw new Error("GameView.fraction node is missing.");
+  }
+  if (typeof cc.instantiate !== "function") {
+    throw new Error("Jar fraction display requires cc.instantiate.");
+  }
+  if (typeof cc.tween !== "function") {
+    throw new Error("Jar fraction display requires cc.tween.");
+  }
+
+  var renderer = this;
+  var fractionNode = this._acquireJarFractionNode(gameViewNode, templateNode);
+  fractionNode.name = "fraction_" + String(jarIndex);
+
+  var mouthPosition = this._resolveJarMouthPositionInGameView(jarIndex);
+  fractionNode.setPosition(mouthPosition.x, mouthPosition.y);
+
+  var fractionLabel = fractionNode.getComponent(cc.Label);
+  if (!fractionLabel) {
+    throw new Error("Jar fraction clone requires cc.Label.");
+  }
+  fractionLabel.string = "+" + String(gained);
+
+  var startY = fractionNode.y;
+  cc.tween(fractionNode)
+    .to(JAR_FRACTION_POP_DURATION, {
+      scale: JAR_FRACTION_POP_SCALE
+    }, {
+      easing: "backOut"
+    })
+    .to(JAR_FRACTION_SETTLE_DURATION, {
+      scale: 1
+    })
+    .delay(JAR_FRACTION_HOLD_DURATION)
+    .parallel(
+      cc.tween().to(JAR_FRACTION_FADE_DURATION, {
+        opacity: 0
+      }),
+      cc.tween().to(JAR_FRACTION_FADE_DURATION, {
+        y: startY + JAR_FRACTION_RISE_DISTANCE
+      }, {
+        easing: "quadOut"
+      })
+    )
+    .call(function () {
+      renderer._recycleJarFractionNode(fractionNode);
+    })
+    .start();
+};
+
+LevelRenderer.prototype._playJarFractionDisplay = function (runtimeSnapshot) {
+  if (!runtimeSnapshot || !Array.isArray(runtimeSnapshot.runtimeEvents)) {
+    return;
+  }
+
+  var scoreEvent = null;
+  for (var index = 0; index < runtimeSnapshot.runtimeEvents.length; index += 1) {
+    var event = runtimeSnapshot.runtimeEvents[index];
+    if (event && event.type === "jar_collect_scored") {
+      scoreEvent = event;
+    }
+  }
+
+  if (!scoreEvent) {
+    return;
+  }
+  if (typeof scoreEvent.id !== "number" || !isFinite(scoreEvent.id)) {
+    throw new Error("jar_collect_scored event requires a numeric id.");
+  }
+  if (scoreEvent.id === this.lastJarCollectScoredEventId) {
+    return;
+  }
+  if (!Array.isArray(scoreEvent.entries)) {
+    throw new Error("jar_collect_scored event requires entries array.");
+  }
+  if (!scoreEvent.entries.length) {
+    return;
+  }
+
+  this.lastJarCollectScoredEventId = scoreEvent.id;
+  for (var entryIndex = 0; entryIndex < scoreEvent.entries.length; entryIndex += 1) {
+    this._spawnJarFractionDisplay(scoreEvent.entries[entryIndex]);
   }
 };
 
@@ -607,7 +1113,6 @@ LevelRenderer.prototype._renderBottomPanel = function (runtimeSnapshot) {
     panelWidget.updateAlignment();
   }
 
-  var backButtonNode = requireChildNode(panel, "back_btn", "BttomPanel");
   var propsScrollNode = requireChildNode(panel, "props_scroll", "BttomPanel");
   var propsViewNode = requireChildNode(propsScrollNode, "view", "BttomPanel/props_scroll");
   var propsContentNode = requireChildNode(propsViewNode, "content", "BttomPanel/props_scroll/view");
@@ -618,7 +1123,6 @@ LevelRenderer.prototype._renderBottomPanel = function (runtimeSnapshot) {
   var threeLineButtonNode = requireChildNode(propsContentNode, "eliminate_three_line_btn", "BttomPanel/props_scroll/view/content");
   var plusBallButtonNode = requireChildNode(propsContentNode, "plus_ball_btn", "BttomPanel/props_scroll/view/content");
 
-  this._bindBottomPanelButton(backButtonNode, "back");
   this._bindBottomPanelButton(rainbowButtonNode, "use_rainbow");
   this._bindBottomPanelButton(changeButtonNode, "use_swap");
   this._bindBottomPanelButton(destroyButtonNode, "use_barrier_hammer");
@@ -678,9 +1182,6 @@ LevelRenderer.prototype._renderBottomPanel = function (runtimeSnapshot) {
   } else if (plusBallButtonNode) {
     plusBallButtonNode.active = false;
   }
-  this._setBottomPanelButtonEnabled(backButtonNode, true, {
-    dimWhenDisabled: false
-  });
   this._setBottomPanelButtonEnabled(rainbowButtonNode, rainbowCount > 0 ? canUseRainbow : !pendingRainbowColorSelection, {
     dimWhenDisabled: false
   });
@@ -701,21 +1202,58 @@ LevelRenderer.prototype._renderBottomPanel = function (runtimeSnapshot) {
   });
 };
 
-LevelRenderer.prototype._setHudTargetBallIcon = function (panel, iconCode) {
-  var ballNode = panel ? panel.getChildByName("ball") : null;
-  if (!ballNode) {
+LevelRenderer.prototype._getHudTargetLayout = function (panel) {
+  return requireChildNode(panel, "target_layout", "HudPanel");
+};
+
+LevelRenderer.prototype._renderHudTargets = function (panel, targetDisplay) {
+  if (!targetDisplay || typeof targetDisplay !== "object" || Array.isArray(targetDisplay)) {
+    throw new Error("HUD target display data must be an object.");
+  }
+
+  var targetLayout = this._getHudTargetLayout(panel);
+  this._renderHudTargetSlot(targetLayout, "ball", targetDisplay.ball);
+  this._renderHudTargetSlot(targetLayout, "ice_ball", targetDisplay.iceSnowball);
+
+  var layout = targetLayout.getComponent(cc.Layout);
+  if (layout && typeof layout.updateLayout === "function") {
+    layout.updateLayout();
+  }
+};
+
+LevelRenderer.prototype._renderHudTargetSlot = function (targetLayout, slotName, displayData) {
+  var slotNode = requireChildNode(targetLayout, slotName, "HudPanel/target_layout");
+  var valueNode = requireChildNode(slotNode, "TargetValue", "HudPanel/target_layout/" + slotName);
+  var valueLabel = valueNode.getComponent(cc.Label);
+  if (!valueLabel) {
+    throw new Error("HudPanel/target_layout/" + slotName + "/TargetValue requires cc.Label.");
+  }
+
+  if (!displayData) {
+    slotNode.active = false;
+    valueLabel.string = "";
     return;
   }
 
-  var spritePath = iconCode ? BALL_RESOURCES[iconCode] : null;
-  var spriteFrame = spritePath ? this.spriteFrameCache[spritePath] : null;
+  if (typeof displayData.iconCode !== "string" || !displayData.iconCode) {
+    throw new Error("HUD target display iconCode is required: " + slotName);
+  }
+  if (typeof displayData.progressText !== "string" || !displayData.progressText) {
+    throw new Error("HUD target display progressText is required: " + slotName);
+  }
+
+  var spritePath = BALL_RESOURCES[displayData.iconCode];
+  if (!spritePath) {
+    throw new Error("Unsupported HUD target icon code: " + displayData.iconCode);
+  }
+  var spriteFrame = this.spriteFrameCache[spritePath];
   if (!spriteFrame) {
-    ballNode.active = false;
-    return;
+    throw new Error("HUD target sprite frame is missing: " + spritePath);
   }
 
-  ballNode.active = true;
-  ensureSprite(ballNode, spriteFrame);
+  slotNode.active = true;
+  ensureSprite(slotNode, spriteFrame);
+  valueLabel.string = displayData.progressText;
 };
 
 LevelRenderer.prototype._getHudTargetBallPositionInBoard = function () {
@@ -724,7 +1262,8 @@ LevelRenderer.prototype._getHudTargetBallPositionInBoard = function () {
   }
 
   var panel = this._getMountedHudPanel();
-  var ballNode = panel ? panel.getChildByName("ball") : null;
+  var targetLayout = panel ? panel.getChildByName("target_layout") : null;
+  var ballNode = targetLayout ? targetLayout.getChildByName("ice_ball") : null;
   if (!ballNode || !ballNode.active || !ballNode.parent) {
     return null;
   }
@@ -863,13 +1402,8 @@ LevelRenderer.prototype._playHudStarParticleToStar = function (starNode, onArriv
   if (!starNode || !starNode.isValid) {
     throw new Error("HUD star particle requires a valid target star node.");
   }
-  if (
-    typeof cc.bezierTo !== "function" ||
-    typeof cc.sequence !== "function" ||
-    typeof cc.callFunc !== "function" ||
-    typeof cc.delayTime !== "function"
-  ) {
-    throw new Error("HUD star particle requires bezier actions.");
+  if (typeof cc.tween !== "function") {
+    throw new Error("HUD star particle requires cc.tween.");
   }
 
   var particleNode = this._getHudStarParticleNode();
@@ -888,23 +1422,21 @@ LevelRenderer.prototype._playHudStarParticleToStar = function (starNode, onArriv
   }
   particleSystem.resetSystem();
 
-  var moveAction = cc.bezierTo(
-    HUD_STAR_PARTICLE_DURATION,
-    this._buildHudStarBezierPoints(startPosition, endPosition)
-  );
-  if (moveAction && typeof moveAction.easing === "function" && typeof cc.easeOut === "function") {
-    moveAction = moveAction.easing(cc.easeOut(2.6));
-  }
-
-  particleNode.runAction(cc.sequence(
-    moveAction,
-    cc.callFunc(function () {
+  var bezierPoints = this._buildHudStarBezierPoints(startPosition, endPosition);
+  cc.tween(particleNode)
+    .bezierTo(
+      HUD_STAR_PARTICLE_DURATION,
+      bezierPoints[0],
+      bezierPoints[1],
+      bezierPoints[2]
+    )
+    .call(function () {
       if (typeof onArrive === "function") {
         onArrive();
       }
-    }, this),
-    cc.delayTime(HUD_STAR_PARTICLE_HOLD_DURATION),
-    cc.callFunc(function () {
+    })
+    .delay(HUD_STAR_PARTICLE_HOLD_DURATION)
+    .call(function () {
       if (typeof particleSystem.stopSystem === "function") {
         particleSystem.stopSystem();
       }
@@ -912,8 +1444,8 @@ LevelRenderer.prototype._playHudStarParticleToStar = function (starNode, onArriv
       if (typeof onComplete === "function") {
         onComplete();
       }
-    }, this)
-  ));
+    })
+    .start();
 };
 
 LevelRenderer.prototype._runHudStarAnimationQueue = function () {
@@ -1056,6 +1588,167 @@ LevelRenderer.prototype._renderHudStarProgress = function (panel, runtimeSnapsho
   this._queueHudStarUnlockAnimations(starNodes, starRating);
 };
 
+  function isBoardSpecialPrefabCell(cell) {
+    return !!(
+      cell &&
+      (
+        cell.entityType === "molotov" ||
+        cell.entityType === "splitter" ||
+        cell.entityType === "locked" ||
+        cell.entityType === "key"
+      )
+    );
+  }
+
+  function resolveBoardBubblePrefabPath(cell) {
+    if (!cell || !isBoardSpecialPrefabCell(cell)) {
+      return PREFAB_PATHS.bubbleItem;
+    }
+    if (cell.entityType === "molotov") {
+      return PREFAB_PATHS.fireBubbleItem;
+    }
+    if (cell.entityType === "splitter") {
+      return PREFAB_PATHS.splitBubbleItem;
+    }
+    if (cell.entityType === "locked") {
+      return PREFAB_PATHS.lockingBubbleItem;
+    }
+    if (cell.entityType === "key") {
+      return PREFAB_PATHS.keyBubbleItem;
+    }
+    throw new Error("Unsupported board special prefab entityType: " + cell.entityType);
+  }
+
+  function getNodePool(poolMap, prefabPath) {
+    if (!poolMap || typeof poolMap !== "object" || Array.isArray(poolMap)) {
+      throw new Error("Board node pool map is required.");
+    }
+    if (typeof prefabPath !== "string" || !prefabPath) {
+      throw new Error("Board node pool prefabPath is required.");
+    }
+    if (!Array.isArray(poolMap[prefabPath])) {
+      poolMap[prefabPath] = [];
+    }
+    return poolMap[prefabPath];
+  }
+
+  function requireVisualChild(node, childName, ownerName) {
+    if (!node || !node.isValid) {
+      throw new Error(ownerName + " node is required.");
+    }
+    var child = node.getChildByName(childName);
+    if (!child || !child.isValid) {
+      throw new Error(ownerName + " requires child `" + childName + "`.");
+    }
+    return child;
+  }
+
+  function instantiateRequired(prefabFactory, prefabPath, parent, name, ownerName) {
+    if (!prefabFactory || typeof prefabFactory.instantiate !== "function") {
+      throw new Error(ownerName + " requires prefabFactory.instantiate.");
+    }
+    var node = prefabFactory.instantiate(prefabPath, parent, name);
+    if (!node || !node.isValid) {
+      throw new Error(ownerName + " prefab instantiate failed: " + prefabPath);
+    }
+    return node;
+  }
+
+  function requireNodePrefabPath(node, ownerName) {
+    if (!node || typeof node.__bubblePrefabPath !== "string" || !node.__bubblePrefabPath) {
+      throw new Error(ownerName + " requires __bubblePrefabPath.");
+    }
+    return node.__bubblePrefabPath;
+  }
+
+  function findUnlockedTargetsForKey(keyCell, unlockedCells) {
+    if (!keyCell || typeof keyCell.unlockGroup !== "string" || !keyCell.unlockGroup) {
+      throw new Error("Key unlock animation requires key unlockGroup.");
+    }
+    if (!Array.isArray(unlockedCells)) {
+      throw new Error("Key unlock animation requires unlockedCells array.");
+    }
+    var candidates = unlockedCells.filter(function (cell) {
+      return !!(cell && cell.__sourceUnlockGroup === keyCell.unlockGroup);
+    });
+    if (!candidates.length) {
+      throw new Error("Key unlock animation requires unlocked target cells for group: " + keyCell.unlockGroup);
+    }
+    candidates.sort(function (a, b) {
+      var rowDelta = Math.abs(a.row - keyCell.row) - Math.abs(b.row - keyCell.row);
+      if (rowDelta !== 0) {
+        return rowDelta;
+      }
+      return Math.abs(a.col - keyCell.col) - Math.abs(b.col - keyCell.col);
+    });
+    return candidates;
+  }
+
+  function createKeyUnlockAnimationKey(resolution) {
+    var keys = Array.isArray(resolution && resolution.collectedKeys) ? resolution.collectedKeys : [];
+    var unlocked = Array.isArray(resolution && resolution.unlockedLockedBalls) ? resolution.unlockedLockedBalls : [];
+    return keys.map(function (cell) {
+      return cell.id + "@" + cell.row + ":" + cell.col + ":" + cell.unlockGroup;
+    }).join("|") + "->" + unlocked.map(function (cell) {
+      return cell.id + "@" + cell.row + ":" + cell.col + ":" + cell.__sourceUnlockGroup;
+    }).join("|");
+  }
+
+  function createSplitterSpawnAnimationKey(resolution) {
+    var spawned = Array.isArray(resolution && resolution.spawnedBySplitters) ? resolution.spawnedBySplitters : [];
+    return spawned.map(function (cell) {
+      return String(cell.id) + "<-" + String(cell.sourceSplitterId) + "@" + cell.row + ":" + cell.col;
+    }).join("|");
+  }
+
+LevelRenderer.prototype._hideSplitterSpawnTarget = function (cellId) {
+  if (typeof cellId !== "string" && typeof cellId !== "number") {
+    throw new Error("Splitter spawn hide requires cell id.");
+  }
+  var normalizedId = String(cellId);
+  this.splitterSpawnHiddenCellIds[normalizedId] = true;
+  var targetNode = this.boardBubbleNodes[normalizedId];
+  if (targetNode && targetNode.isValid) {
+    targetNode.stopAllActions();
+    targetNode.opacity = 0;
+    targetNode.active = false;
+  }
+};
+
+LevelRenderer.prototype._revealSplitterSpawnTarget = function (cellId) {
+  if (typeof cellId !== "string" && typeof cellId !== "number") {
+    throw new Error("Splitter spawn reveal requires cell id.");
+  }
+  var normalizedId = String(cellId);
+  delete this.splitterSpawnHiddenCellIds[normalizedId];
+  var targetNode = this.boardBubbleNodes[normalizedId];
+  if (!targetNode || !targetNode.isValid) {
+    return;
+  }
+  targetNode.active = true;
+  targetNode.opacity = 255;
+  targetNode.setScale(1);
+  if (typeof cc.tween !== "function") {
+    return;
+  }
+  cc.tween(targetNode)
+    .to(0.08, { scale: 1.12 }, { easing: "quadOut" })
+    .to(0.1, { scale: 1 }, { easing: "quadIn" })
+    .start();
+};
+
+LevelRenderer.prototype._applySplitterSpawnHiddenBoardState = function (bubbleNode, cellId) {
+  if (!bubbleNode || !bubbleNode.isValid) {
+    return;
+  }
+  if (!this.splitterSpawnHiddenCellIds[String(cellId)]) {
+    return;
+  }
+  bubbleNode.stopAllActions();
+  bubbleNode.opacity = 0;
+  bubbleNode.active = false;
+};
+
 LevelRenderer.prototype._renderBoard = function (boardSnapshot) {
   this.lastBoardVersion = boardSnapshot.version;
   this.boardRenderTick += 1;
@@ -1063,28 +1756,48 @@ LevelRenderer.prototype._renderBoard = function (boardSnapshot) {
 
   boardSnapshot.cells.forEach(function (cell) {
     var cellPosition = BoardLayout.getCellPosition(cell.row, cell.col, boardSnapshot.maxColumns, boardSnapshot.dropOffsetRows);
-    var bubbleNode = this._acquireBoardBubbleNode(cell.id);
+    var bubbleNode = this._acquireBoardBubbleNode(cell);
     bubbleNode.__boardTick = currentTick;
     bubbleNode.setPosition(cellPosition.x, cellPosition.y);
     bubbleNode.setScale(1);
-    this._applyBallVisualCached(bubbleNode, cell, BOARD_BUBBLE_SIZE);
+    bubbleNode.opacity = 255;
+    this._applyBoardBubbleVisualCached(bubbleNode, cell, BOARD_BUBBLE_SIZE);
+    this._applySplitterSpawnHiddenBoardState(bubbleNode, cell.id);
   }, this);
 
   this._recycleInactiveBoardBubbleNodes(currentTick);
 };
 
-LevelRenderer.prototype._acquireBoardBubbleNode = function (cellId) {
-  var nodeId = String(cellId);
+LevelRenderer.prototype._acquireBoardBubbleNode = function (cell) {
+  if (!cell || !cell.id) {
+    throw new Error("Board bubble node requires cell id.");
+  }
+  var nodeId = String(cell.id);
   var existing = this.boardBubbleNodes[nodeId];
   if (existing) {
-    return existing;
+    var expectedPath = resolveBoardBubblePrefabPath(cell);
+    if (existing.__bubblePrefabPath !== expectedPath) {
+      existing.stopAllActions();
+      existing.active = false;
+      existing.removeFromParent(false);
+      getNodePool(this.boardBubbleNodePool, requireNodePrefabPath(existing, "Board bubble node")).push(existing);
+      delete this.boardBubbleNodes[nodeId];
+    } else {
+      this._resetBubblePrefabNode(existing, cell);
+      return existing;
+    }
   }
 
-  var node = this.boardBubbleNodePool.length ? this.boardBubbleNodePool.pop() : null;
+  var prefabPath = resolveBoardBubblePrefabPath(cell);
+  var pool = getNodePool(this.boardBubbleNodePool, prefabPath);
+  var node = pool.length ? pool.pop() : null;
   if (!node) {
-    node = this.prefabFactory.instantiate(PREFAB_PATHS.bubbleItem, null, null) || new cc.Node();
+    node = instantiateRequired(this.prefabFactory, prefabPath, null, null, "Board bubble node");
+    node.__bubblePrefabPath = prefabPath;
     node.setScale(1);
   }
+  node.__bubblePrefabPath = prefabPath;
+  this._resetBubblePrefabNode(node, cell);
 
   node.name = "Bubble_" + nodeId;
   if (node.parent !== this.layers.board) {
@@ -1094,6 +1807,50 @@ LevelRenderer.prototype._acquireBoardBubbleNode = function (cellId) {
   node.setScale(1);
   this.boardBubbleNodes[nodeId] = node;
   return node;
+};
+
+LevelRenderer.prototype._resetBubblePrefabNode = function (node, cell) {
+  if (!node || !node.isValid) {
+    throw new Error("Bubble prefab node is required.");
+  }
+  node.stopAllActions();
+  node.angle = 0;
+  node.opacity = 255;
+  node.active = true;
+
+  if (cell && cell.entityType === "key") {
+    requireVisualChild(node, "Icon", "KeyBubbleItem").active = true;
+    requireVisualChild(node, "key", "KeyBubbleItem").active = true;
+  } else if (cell && cell.entityType === "locked") {
+    requireVisualChild(node, "Icon", "LockingBubbleItem").active = true;
+    requireVisualChild(node, "lock", "LockingBubbleItem").active = true;
+  }
+};
+
+LevelRenderer.prototype._applyBoardBubbleVisualCached = function (node, cell, forcedSize) {
+  if (!node || !cell) {
+    throw new Error("Board bubble visual requires node and cell.");
+  }
+
+  if (cell.entityType === "key" || cell.entityType === "molotov") {
+    node.__ballVisualKey = "prefab:" + cell.entityType;
+    return;
+  }
+
+  if (cell.entityType === "locked") {
+    if (typeof cell.lockedColor !== "string" || !cell.lockedColor) {
+      throw new Error("LockingBubbleItem visual requires lockedColor.");
+    }
+    this._applyBallVisualCached(node, { color: cell.lockedColor }, forcedSize);
+    return;
+  }
+
+  if (cell.entityType === "splitter") {
+    this._applyBallVisualCached(node, cell, forcedSize);
+    return;
+  }
+
+  this._applyBallVisualCached(node, cell, forcedSize);
 };
 
 LevelRenderer.prototype._recycleInactiveBoardBubbleNodes = function (activeTick) {
@@ -1111,7 +1868,7 @@ LevelRenderer.prototype._recycleInactiveBoardBubbleNodes = function (activeTick)
       node.stopAllActions();
       node.active = false;
       node.removeFromParent(false);
-      this.boardBubbleNodePool.push(node);
+      getNodePool(this.boardBubbleNodePool, requireNodePrefabPath(node, "Board bubble node")).push(node);
     }
 
     delete this.boardBubbleNodes[cellId];
@@ -1141,28 +1898,47 @@ LevelRenderer.prototype._renderFallingDrops = function (runtimeSnapshot) {
       return;
     }
 
-    var dropNode = this._acquireFallingDropNode(dropId);
+    var dropNode = this._acquireFallingDropNode(drop);
     dropNode.__fallingTick = currentTick;
     dropNode.setPosition(drop.position.x, drop.position.y);
     dropNode.angle = drop.rotation || 0;
     dropNode.opacity = 230;
-    this._applyBallVisualCached(dropNode, drop, BOARD_BUBBLE_SIZE);
+    this._applyBoardBubbleVisualCached(dropNode, drop, BOARD_BUBBLE_SIZE);
   }, this);
   this._recycleInactiveFallingDropNodes(currentTick);
   this.lastRenderedFallingCount = drops.length;
 };
 
-LevelRenderer.prototype._acquireFallingDropNode = function (dropId) {
+LevelRenderer.prototype._acquireFallingDropNode = function (drop) {
+  if (!drop || !drop.id) {
+    throw new Error("Falling drop node requires drop id.");
+  }
+  var dropId = String(drop.id);
   var existing = this.fallingDropNodes[dropId];
   if (existing) {
-    return existing;
+    var expectedPath = resolveBoardBubblePrefabPath(drop);
+    if (existing.__bubblePrefabPath !== expectedPath) {
+      existing.stopAllActions();
+      existing.active = false;
+      existing.removeFromParent(false);
+      getNodePool(this.fallingDropNodePool, requireNodePrefabPath(existing, "Falling drop node")).push(existing);
+      delete this.fallingDropNodes[dropId];
+    } else {
+      this._resetBubblePrefabNode(existing, drop);
+      return existing;
+    }
   }
 
-  var node = this.fallingDropNodePool.length ? this.fallingDropNodePool.pop() : null;
+  var prefabPath = resolveBoardBubblePrefabPath(drop);
+  var pool = getNodePool(this.fallingDropNodePool, prefabPath);
+  var node = pool.length ? pool.pop() : null;
   if (!node) {
-    node = this.prefabFactory.instantiate(PREFAB_PATHS.bubbleItem, null, null) || new cc.Node();
+    node = instantiateRequired(this.prefabFactory, prefabPath, null, null, "Falling drop node");
+    node.__bubblePrefabPath = prefabPath;
     node.setScale(1);
   }
+  node.__bubblePrefabPath = prefabPath;
+  this._resetBubblePrefabNode(node, drop);
 
   node.name = "Falling_" + dropId;
   if (node.parent !== this.layers.falling) {
@@ -1188,10 +1964,267 @@ LevelRenderer.prototype._recycleInactiveFallingDropNodes = function (activeTick)
       node.stopAllActions();
       node.active = false;
       node.removeFromParent(false);
-      this.fallingDropNodePool.push(node);
+      getNodePool(this.fallingDropNodePool, requireNodePrefabPath(node, "Falling drop node")).push(node);
     }
     delete this.fallingDropNodes[dropId];
   }
+};
+
+LevelRenderer.prototype._playKeyUnlockAnimation = function (runtimeSnapshot) {
+  var resolution = runtimeSnapshot && runtimeSnapshot.lastResolution ? runtimeSnapshot.lastResolution : null;
+  var collectedKeys = resolution && Array.isArray(resolution.collectedKeys) ? resolution.collectedKeys : [];
+  var unlockedCells = resolution && Array.isArray(resolution.unlockedLockedBalls) ? resolution.unlockedLockedBalls : [];
+  if (!collectedKeys.length || !unlockedCells.length) {
+    return;
+  }
+
+  var animationKey = createKeyUnlockAnimationKey(resolution);
+  if (!animationKey || animationKey === this.lastKeyUnlockAnimationKey) {
+    return;
+  }
+  this.lastKeyUnlockAnimationKey = animationKey;
+
+  if (!runtimeSnapshot.board || !Number.isInteger(runtimeSnapshot.board.maxColumns)) {
+    throw new Error("Key unlock animation requires board snapshot.");
+  }
+  if (typeof cc === "undefined" || !cc || typeof cc.tween !== "function") {
+    throw new Error("Key unlock animation requires cc.tween.");
+  }
+  if (!this.layers || !this.layers.board || !this.layers.board.isValid) {
+    throw new Error("Key unlock animation requires board layer.");
+  }
+
+  var boardSnapshot = runtimeSnapshot.board;
+  var flyDuration = 0.34;
+  var lockShakeStep = 0.04;
+  var lockShakeOffset = 8;
+  var playedUnlockGroups = {};
+
+  collectedKeys.forEach(function (keyCell) {
+    if (!keyCell || typeof keyCell.unlockGroup !== "string" || !keyCell.unlockGroup) {
+      throw new Error("Key unlock animation requires collected key unlockGroup.");
+    }
+    if (playedUnlockGroups[keyCell.unlockGroup]) {
+      return;
+    }
+    playedUnlockGroups[keyCell.unlockGroup] = true;
+
+    var targetCells = findUnlockedTargetsForKey(keyCell, unlockedCells);
+    var primaryTarget = targetCells[0];
+    var keyPosition = BoardLayout.getCellPosition(keyCell.row, keyCell.col, boardSnapshot.maxColumns, boardSnapshot.dropOffsetRows);
+    var targetPosition = BoardLayout.getCellPosition(primaryTarget.row, primaryTarget.col, boardSnapshot.maxColumns, boardSnapshot.dropOffsetRows);
+
+    var keyFx = instantiateRequired(this.prefabFactory, PREFAB_PATHS.keyBubbleItem, this.layers.board, "KeyUnlockFly_" + keyCell.id, "Key unlock animation KeyBubbleItem");
+    keyFx.setPosition(keyPosition.x, keyPosition.y);
+    keyFx.setScale(1);
+    keyFx.opacity = 255;
+    keyFx.zIndex = 120;
+    requireVisualChild(keyFx, "Icon", "KeyBubbleItem").active = false;
+    requireVisualChild(keyFx, "key", "KeyBubbleItem").active = true;
+
+    var lockFxNodes = targetCells.map(function (targetCell) {
+      var targetNode = this.layers.board.getChildByName("Bubble_" + targetCell.id);
+      if (!targetNode || !targetNode.isValid) {
+        throw new Error("Key unlock animation target node missing: " + targetCell.id);
+      }
+      targetNode.opacity = 0;
+
+      var lockPosition = BoardLayout.getCellPosition(targetCell.row, targetCell.col, boardSnapshot.maxColumns, boardSnapshot.dropOffsetRows);
+      var lockFx = instantiateRequired(this.prefabFactory, PREFAB_PATHS.lockingBubbleItem, this.layers.board, "LockUnlockFx_" + targetCell.id, "Key unlock animation LockingBubbleItem");
+      lockFx.setPosition(lockPosition.x, lockPosition.y);
+      lockFx.setScale(1);
+      lockFx.opacity = 255;
+      lockFx.zIndex = 110;
+      this._applyBoardBubbleVisualCached(lockFx, {
+        entityType: "locked",
+        lockedColor: targetCell.color
+      }, BOARD_BUBBLE_SIZE);
+      return {
+        targetNode: targetNode,
+        lockFx: lockFx,
+        lockNode: requireVisualChild(lockFx, "lock", "LockingBubbleItem")
+      };
+    }, this);
+
+    var cleanup = function () {
+      if (keyFx && keyFx.isValid) {
+        keyFx.removeFromParent(true);
+      }
+      lockFxNodes.forEach(function (entry) {
+        if (entry.targetNode && entry.targetNode.isValid) {
+          entry.targetNode.opacity = 255;
+        }
+        if (entry.lockFx && entry.lockFx.isValid) {
+          entry.lockFx.removeFromParent(true);
+        }
+      });
+    };
+
+    var shakeLocks = function () {
+      var remaining = lockFxNodes.length;
+      var markDone = function () {
+        remaining -= 1;
+        if (remaining <= 0) {
+          cleanup();
+        }
+      };
+
+      lockFxNodes.forEach(function (entry) {
+        var lockNode = entry.lockNode;
+        lockNode.stopAllActions();
+        var baseX = lockNode.x;
+        var baseY = lockNode.y;
+        cc.tween(lockNode)
+          .to(lockShakeStep, { x: baseX - lockShakeOffset, y: baseY })
+          .to(lockShakeStep, { x: baseX + lockShakeOffset, y: baseY })
+          .to(lockShakeStep, { x: baseX - lockShakeOffset * 0.55, y: baseY })
+          .to(lockShakeStep, { x: baseX + lockShakeOffset * 0.55, y: baseY })
+          .to(lockShakeStep, { x: baseX, y: baseY, opacity: 0 })
+          .call(markDone)
+          .start();
+      });
+    };
+
+    cc.tween(keyFx)
+      .to(flyDuration, {
+        x: targetPosition.x,
+        y: targetPosition.y,
+        scale: 0.72
+      }, {
+        easing: "sineInOut"
+      })
+      .to(0.08, {
+        scale: 0.35,
+        opacity: 0
+      }, {
+        easing: "quadIn"
+      })
+      .call(shakeLocks)
+      .start();
+  }, this);
+};
+
+LevelRenderer.prototype._playSplitterSpawnAnimation = function (runtimeSnapshot) {
+  var resolution = runtimeSnapshot && runtimeSnapshot.lastResolution ? runtimeSnapshot.lastResolution : null;
+  var spawnedCells = resolution && Array.isArray(resolution.spawnedBySplitters) ? resolution.spawnedBySplitters : [];
+  if (!spawnedCells.length) {
+    return;
+  }
+
+  var animationKey = createSplitterSpawnAnimationKey(resolution);
+  if (!animationKey || animationKey === this.lastSplitterSpawnAnimationKey) {
+    return;
+  }
+  this.lastSplitterSpawnAnimationKey = animationKey;
+
+  if (!runtimeSnapshot.board || !Number.isInteger(runtimeSnapshot.board.maxColumns)) {
+    throw new Error("Splitter spawn animation requires board snapshot.");
+  }
+  if (!this.layers || !this.layers.board || !this.layers.board.isValid) {
+    throw new Error("Splitter spawn animation requires board layer.");
+  }
+
+  var boardSnapshot = runtimeSnapshot.board;
+  var flyDuration = Math.max(0.2, Number(SPLITTER_SPAWN_FLY_DURATION) || 0.36);
+  var bezierArc = Math.max(36, Number(SPLITTER_SPAWN_BEZIER_ARC) || 96);
+
+  spawnedCells.forEach(function (spawnedCell) {
+    if (!spawnedCell || !spawnedCell.id) {
+      throw new Error("Splitter spawn animation requires spawned cell id.");
+    }
+    if (typeof spawnedCell.sourceSplitterId !== "string" && typeof spawnedCell.sourceSplitterId !== "number") {
+      throw new Error("Splitter spawn animation requires sourceSplitterId.");
+    }
+    if (!Number.isInteger(spawnedCell.sourceSplitterRow) || !Number.isInteger(spawnedCell.sourceSplitterCol)) {
+      throw new Error("Splitter spawn animation requires source splitter coordinates.");
+    }
+    if (!Number.isInteger(spawnedCell.row) || !Number.isInteger(spawnedCell.col)) {
+      throw new Error("Splitter spawn animation requires spawned cell coordinates.");
+    }
+    if (typeof spawnedCell.color !== "string" || !spawnedCell.color) {
+      throw new Error("Splitter spawn animation requires spawned cell color.");
+    }
+
+    var targetNode = this.layers.board.getChildByName("Bubble_" + spawnedCell.id);
+    if (!targetNode || !targetNode.isValid) {
+      throw new Error("Splitter spawn animation target node missing: " + spawnedCell.id);
+    }
+
+    this._hideSplitterSpawnTarget(spawnedCell.id);
+
+    var startPosition = BoardLayout.getCellPosition(
+      spawnedCell.sourceSplitterRow,
+      spawnedCell.sourceSplitterCol,
+      boardSnapshot.maxColumns,
+      boardSnapshot.dropOffsetRows
+    );
+    var endPosition = BoardLayout.getCellPosition(
+      spawnedCell.row,
+      spawnedCell.col,
+      boardSnapshot.maxColumns,
+      boardSnapshot.dropOffsetRows
+    );
+
+    var fxNode = new cc.Node("SplitterSpawnFx_" + spawnedCell.id);
+    fxNode.parent = this.layers.board;
+    fxNode.zIndex = (targetNode.zIndex || 0) + 2;
+    fxNode.setPosition(startPosition.x, startPosition.y);
+    fxNode.setScale(0.82);
+    fxNode.opacity = 255;
+    this._applyBallVisualCached(fxNode, {
+      color: spawnedCell.color
+    }, BOARD_BUBBLE_SIZE);
+
+    var finishFx = function () {
+      if (fxNode && fxNode.isValid) {
+        fxNode.removeFromParent(true);
+      }
+      this._revealSplitterSpawnTarget(spawnedCell.id);
+    }.bind(this);
+
+    var startX = startPosition.x;
+    var startY = startPosition.y;
+    var endX = endPosition.x;
+    var endY = endPosition.y;
+    var controlY = Math.max(startY, endY) + bezierArc;
+    var controlX = (startX + endX) * 0.5;
+
+    fxNode.stopAllActions();
+    if (
+      fxNode.runAction &&
+      typeof cc.bezierTo === "function" &&
+      typeof cc.sequence === "function" &&
+      typeof cc.callFunc === "function" &&
+      typeof cc.v2 === "function"
+    ) {
+      var bezier = [
+        cc.v2(controlX, controlY),
+        cc.v2(controlX, controlY),
+        cc.v2(endX, endY)
+      ];
+      fxNode.runAction(cc.sequence(
+        cc.bezierTo(flyDuration, bezier),
+        cc.callFunc(finishFx)
+      ));
+      return;
+    }
+
+    if (typeof cc.tween !== "function") {
+      finishFx();
+      return;
+    }
+
+    cc.tween(fxNode)
+      .to(flyDuration, {
+        x: endX,
+        y: endY,
+        scale: 1
+      }, {
+        easing: "sineOut"
+      })
+      .call(finishFx)
+      .start();
+  }, this);
 };
 
 LevelRenderer.prototype._playIceThawShake = function (runtimeSnapshot) {
@@ -1917,7 +2950,11 @@ LevelRenderer.prototype._renderShooter = function (shooterSnapshot, activeProjec
   var currentAnchor = getOrCreateChild(shooterPanel, "CurrentBallAnchor");
   currentAnchor.setPosition(aim.origin.x, aim.origin.y);
   currentAnchor.setScale(1);
-  this._applyBallVisualCached(currentAnchor, shooterSnapshot.currentBall || shooterSnapshot.currentColor, BOARD_BUBBLE_SIZE);
+  var currentBallLike = shooterSnapshot.currentBall || shooterSnapshot.currentColor;
+  currentAnchor.active = !!currentBallLike;
+  if (currentAnchor.active) {
+    this._applyBallVisualCached(currentAnchor, currentBallLike, BOARD_BUBBLE_SIZE);
+  }
   this._renderRainbowColorSelector(shooterPanel, shooterSnapshot, aim);
 
   var changeButtonNode = shooterPanel.getChildByName("ChangeBtn");
@@ -1947,7 +2984,11 @@ LevelRenderer.prototype._renderShooter = function (shooterSnapshot, activeProjec
   nextAnchor.setPosition(aim.origin.x + NEXT_SHOT_OFFSET_X, aim.origin.y + NEXT_SHOT_OFFSET_Y);
   nextAnchor.setScale(1);
   nextAnchor.opacity = 200;
-  this._applyBallVisualCached(nextAnchor, shooterSnapshot.nextBall || shooterSnapshot.nextColor, NEXT_SHOT_BUBBLE_SIZE);
+  var nextBallLike = shooterSnapshot.nextBall || shooterSnapshot.nextColor;
+  nextAnchor.active = !!nextBallLike;
+  if (nextAnchor.active) {
+    this._applyBallVisualCached(nextAnchor, nextBallLike, NEXT_SHOT_BUBBLE_SIZE);
+  }
 
   var shotsValue = Math.max(0, Math.floor(Number(remainingShots) || 0));
   var surplusNode = shooterPanel.getChildByName("Surplus");
@@ -1972,12 +3013,12 @@ LevelRenderer.prototype._renderShooter = function (shooterSnapshot, activeProjec
   var ghost = getOrCreateChild(shooterPanel, "GhostBubble");
   var hasTrajectory = !!(trajectory && trajectory.targetCellPosition && trajectory.pathPoints && trajectory.pathPoints.length >= 2);
   var shouldShowGhost = BoardLayout.showGhostBubble !== false;
-  ghost.active = shouldShowGhost && !activeProjectile && hasTrajectory;
+  ghost.active = shouldShowGhost && !activeProjectile && hasTrajectory && !!currentBallLike;
   if (ghost.active) {
     ghost.setPosition(trajectory.targetCellPosition.x, trajectory.targetCellPosition.y);
     ghost.setScale(1);
     ghost.opacity = 140;
-    this._applyBallVisualCached(ghost, shooterSnapshot.currentBall || shooterSnapshot.currentColor, BOARD_BUBBLE_SIZE);
+    this._applyBallVisualCached(ghost, currentBallLike, BOARD_BUBBLE_SIZE);
   }
 
   var projectileNode = getOrCreateChild(this.layers.shooter, "ActiveProjectile");

@@ -11,11 +11,56 @@ function createGameManagerShotResolutionMethods(deps) {
   var isIceBall = deps.isIceBall;
   var isBlastBall = deps.isBlastBall;
   var isRainbowBall = deps.isRainbowBall;
+  var isMolotovBall = deps.isMolotovBall;
+  var isSplitterBall = deps.isSplitterBall;
+  var isLockedBall = deps.isLockedBall;
+  var isKeyBall = deps.isKeyBall;
   var resolveIceInnerColor = deps.resolveIceInnerColor;
   var createEmptyResolution = deps.createEmptyResolution;
   var findPrimaryCollectionObjective = deps.findPrimaryCollectionObjective;
+  var COMBO_BONUS_PER_HIT = deps.COMBO_BONUS_PER_HIT;
 
   return {
+    _resetComboStreak: function () {
+      this.comboStreak = 0;
+    },
+
+    _registerComboElimination: function (resolution) {
+      if (!resolution) {
+        throw new Error("Combo registration requires resolution.");
+      }
+
+      var matchedCount = Array.isArray(resolution.matched) ? resolution.matched.length : 0;
+      var floatingCount = Array.isArray(resolution.floating) ? resolution.floating.length : 0;
+      if (matchedCount + floatingCount <= 0) {
+        return;
+      }
+
+      this.comboStreak += 1;
+      if (this.comboStreak < 2) {
+        return;
+      }
+
+      var comboDisplay = this.comboStreak - 1;
+      var bonusGained = COMBO_BONUS_PER_HIT;
+      this.score += bonusGained;
+      resolution.scoreDelta += bonusGained;
+
+      if (typeof this._pushRuntimeEvent === "function") {
+        this._pushRuntimeEvent("combo_bonus_awarded", {
+          combo_display: comboDisplay,
+          combo_streak: this.comboStreak,
+          bonus_gained: bonusGained
+        });
+      }
+
+      Logger.info("Combo bonus", {
+        comboDisplay: comboDisplay,
+        comboStreak: this.comboStreak,
+        bonusGained: bonusGained
+      });
+    },
+
     _applyJarCollectionScore: function (collectedDrops) {
       if (!collectedDrops || !collectedDrops.length) {
         return 0;
@@ -37,21 +82,36 @@ function createGameManagerShotResolutionMethods(deps) {
         ? Math.max(1, Number(this.jarScoreBoostMultiplier) || 1)
         : 1;
       var isScoreBoosted = scoreBoostMultiplier > 1;
-      var gained = scoredDrops.reduce(function (sum, drop) {
-        var base = jarCollectBase;
+      var computeDropPoints = function (drop) {
         var dropMultiplier = typeof drop.bonusMultiplier === "number" ? Math.max(1, drop.bonusMultiplier) : 1;
         var multiplier = dropMultiplier * scoreBoostMultiplier;
-        return sum + Math.round(base * multiplier);
-      }, 0);
+        return Math.round(jarCollectBase * multiplier);
+      };
+      var gainedByJarIndex = {};
+      var gained = 0;
+      scoredDrops.forEach(function (drop) {
+        if (typeof drop.jarIndex !== "number" || !Number.isInteger(drop.jarIndex) || drop.jarIndex < 0) {
+          throw new Error("Scored jar drop requires non-negative integer jarIndex.");
+        }
+        var dropPoints = computeDropPoints(drop);
+        gained += dropPoints;
+        gainedByJarIndex[drop.jarIndex] = (gainedByJarIndex[drop.jarIndex] || 0) + dropPoints;
+      });
+      var jarScoreEntries = Object.keys(gainedByJarIndex).map(function (jarIndexKey) {
+        return {
+          jar_index: Number(jarIndexKey),
+          gained: gainedByJarIndex[jarIndexKey]
+        };
+      });
+      jarScoreEntries.sort(function (left, right) {
+        return left.jar_index - right.jar_index;
+      });
       var sameColorCount = scoredDrops.reduce(function (count, drop) {
         return count + (drop.sameColor ? 1 : 0);
       }, 0);
       var bonusGained = scoredDrops.reduce(function (sum, drop) {
-        var base = jarCollectBase;
-        var dropMultiplier = typeof drop.bonusMultiplier === "number" ? Math.max(1, drop.bonusMultiplier) : 1;
-        var multiplier = dropMultiplier * scoreBoostMultiplier;
-        var total = Math.round(base * multiplier);
-        return sum + Math.max(0, total - base);
+        var total = computeDropPoints(drop);
+        return sum + Math.max(0, total - jarCollectBase);
       }, 0);
 
       this.score += gained;
@@ -65,6 +125,7 @@ function createGameManagerShotResolutionMethods(deps) {
         this._pushRuntimeEvent("jar_collect_scored", {
           count: scoredDrops.length,
           gained: gained,
+          entries: jarScoreEntries,
           is_score_boosted: isScoreBoosted,
           boost_multiplier: scoreBoostMultiplier
         });
@@ -511,6 +572,223 @@ function createGameManagerShotResolutionMethods(deps) {
       return injectedCount;
     },
 
+    _appendUniqueCells: function (target, cells) {
+      var seen = {};
+      (target || []).forEach(function (cell) {
+        if (cell) {
+          seen[cell.row + ":" + cell.col + ":" + cell.id] = true;
+        }
+      });
+      (cells || []).forEach(function (cell) {
+        if (!cell) {
+          return;
+        }
+        var key = cell.row + ":" + cell.col + ":" + cell.id;
+        if (seen[key]) {
+          return;
+        }
+        seen[key] = true;
+        target.push(cell);
+      });
+      return target;
+    },
+
+    _triggerAdjacentKeys: function (removedCells, grid, resolution) {
+      var touched = {};
+      var keys = [];
+      (removedCells || []).forEach(function (cell) {
+        if (!cell) {
+          return;
+        }
+        if (isKeyBall(cell)) {
+          touched[cell.row + ":" + cell.col] = true;
+          keys.push(cell);
+        }
+        grid.getNeighborCoordinates(cell.row, cell.col).forEach(function (coord) {
+          var key = coord.row + ":" + coord.col;
+          if (touched[key]) {
+            return;
+          }
+          var neighbor = grid.getCell(coord.row, coord.col);
+          if (!isKeyBall(neighbor)) {
+            return;
+          }
+          touched[key] = true;
+          keys.push(neighbor);
+        });
+      });
+
+      if (!keys.length) {
+        return [];
+      }
+
+      var liveKeys = keys.filter(function (keyCell) {
+        return grid.hasCell(keyCell.row, keyCell.col);
+      });
+      var removedKeys = grid.removeCells(liveKeys);
+      this._appendUniqueCells(removedKeys, keys);
+      this._appendUniqueCells(resolution.collectedKeys, removedKeys);
+      var unlocked = [];
+      removedKeys.forEach(function (keyCell) {
+        var unlockGroup = keyCell.unlockGroup;
+        if (typeof unlockGroup !== "string" || !unlockGroup) {
+          throw new Error("Collected key requires unlockGroup.");
+        }
+        grid.getCells().forEach(function (cell) {
+          if (!isLockedBall(cell) || cell.lockGroup !== unlockGroup) {
+            return;
+          }
+          if (typeof cell.lockedColor !== "string" || !cell.lockedColor) {
+            throw new Error("Locked ball requires lockedColor before unlock.");
+          }
+          var unlockedCell = grid.addBubble({ row: cell.row, col: cell.col }, cell.lockedColor);
+          if (unlockedCell) {
+            unlocked.push({
+              id: unlockedCell.id,
+              row: unlockedCell.row,
+              col: unlockedCell.col,
+              color: unlockedCell.color,
+              entityCategory: unlockedCell.entityCategory,
+              entityType: unlockedCell.entityType,
+              __sourceUnlockGroup: unlockGroup
+            });
+          }
+        });
+      });
+      this._appendUniqueCells(resolution.unlockedLockedBalls, unlocked);
+      return removedKeys;
+    },
+
+    _triggerAdjacentSplitters: function (removedCells, grid, resolution, triggeredSplitterIds) {
+      var touched = {};
+      var spawned = [];
+      (removedCells || []).forEach(function (cell) {
+        if (!cell) {
+          return;
+        }
+        grid.getNeighborCoordinates(cell.row, cell.col).forEach(function (coord) {
+          var key = coord.row + ":" + coord.col;
+          if (touched[key]) {
+            return;
+          }
+          var splitter = grid.getCell(coord.row, coord.col);
+          if (!isSplitterBall(splitter)) {
+            return;
+          }
+          touched[key] = true;
+          if (triggeredSplitterIds[splitter.id]) {
+            return;
+          }
+          triggeredSplitterIds[splitter.id] = true;
+          if (typeof splitter.splitColor !== "string" || !splitter.splitColor) {
+            throw new Error("Splitter requires splitColor.");
+          }
+          var spawnCell = grid.findSplitterSpawnCell(splitter);
+          if (!spawnCell) {
+            return;
+          }
+          var spawnedCell = grid.addBubble(spawnCell, splitter.splitColor);
+          spawnedCell.sourceSplitterId = splitter.id;
+          spawnedCell.sourceSplitterRow = splitter.row;
+          spawnedCell.sourceSplitterCol = splitter.col;
+          spawned.push(spawnedCell);
+        });
+      });
+
+      this._appendUniqueCells(resolution.spawnedBySplitters, spawned);
+      return spawned;
+    },
+
+    _collectAdjacentMolotovs: function (removedCells, grid, queuedMolotovIds) {
+      var molotovs = [];
+      (removedCells || []).forEach(function (cell) {
+        if (!cell) {
+          return;
+        }
+        if (isMolotovBall(cell) && !queuedMolotovIds[cell.id]) {
+          queuedMolotovIds[cell.id] = true;
+          molotovs.push(cell);
+        }
+        grid.getNeighborCoordinates(cell.row, cell.col).forEach(function (coord) {
+          var neighbor = grid.getCell(coord.row, coord.col);
+          if (!isMolotovBall(neighbor) || queuedMolotovIds[neighbor.id]) {
+            return;
+          }
+          queuedMolotovIds[neighbor.id] = true;
+          molotovs.push(neighbor);
+        });
+      });
+      return molotovs;
+    },
+
+    _resolveReactiveEntitiesAfterRemoval: function (removedCells, grid, resolution) {
+      if (!removedCells || !removedCells.length) {
+        return [];
+      }
+
+      var collected = [];
+      var triggeredMolotovIds = {};
+      var queuedMolotovIds = {};
+      var triggeredSplitterIds = {};
+      var queue = removedCells.slice();
+
+      for (var cursor = 0; cursor < queue.length; cursor += 1) {
+        var seeds = [queue[cursor]];
+        var removedKeys = this._triggerAdjacentKeys(seeds, grid, resolution);
+        this._appendUniqueCells(collected, removedKeys);
+        this._triggerAdjacentSplitters(seeds, grid, resolution, triggeredSplitterIds);
+
+        var molotovs = this._collectAdjacentMolotovs(seeds, grid, queuedMolotovIds);
+        molotovs.forEach(function (molotov) {
+          if (triggeredMolotovIds[molotov.id]) {
+            return;
+          }
+          triggeredMolotovIds[molotov.id] = true;
+          var liveMolotov = grid.getCell(molotov.row, molotov.col);
+          if (liveMolotov) {
+            var removedMolotov = grid.removeCells([liveMolotov]);
+            this._appendUniqueCells(collected, removedMolotov);
+          }
+          resolution.reactiveTriggered.push({
+            id: molotov.id,
+            entityType: "molotov",
+            row: molotov.row,
+            col: molotov.col
+          });
+
+          var radius = molotov.blastRadius;
+          if (!Number.isInteger(radius) || radius !== 2) {
+            throw new Error("Molotov blastRadius must be 2.");
+          }
+          var blastCells = [];
+          grid.getCoordinatesWithinRadius(molotov.row, molotov.col, radius).forEach(function (coord) {
+            if (coord.distance === 0) {
+              return;
+            }
+            var occupiedCell = grid.getCell(coord.row, coord.col);
+            if (!occupiedCell || isLockedBall(occupiedCell)) {
+              return;
+            }
+            blastCells.push(occupiedCell);
+          });
+          var removedByBlast = grid.removeCells(blastCells);
+          this._appendUniqueCells(collected, removedByBlast);
+          removedByBlast.forEach(function (cell) {
+            queue.push(cell);
+          });
+        }, this);
+      }
+
+      var iceRemoved = collected.filter(function (cell) {
+        return isIceBall(cell);
+      });
+      if (iceRemoved.length && typeof this._registerIceCollection === "function") {
+        resolution.iceCollected += this._registerIceCollection(iceRemoved);
+      }
+
+      return collected;
+    },
+
     _findAdjacentIceCells: function (cells, grid) {
       var touched = {};
       var adjacentIce = [];
@@ -618,6 +896,8 @@ function createGameManagerShotResolutionMethods(deps) {
           if (occupiedCell) {
             if (isIceBall(occupiedCell)) {
               iceCellsToThaw.push(occupiedCell);
+            } else if (isLockedBall(occupiedCell)) {
+              return;
             } else {
               blastCells.push(occupiedCell);
             }
@@ -628,11 +908,12 @@ function createGameManagerShotResolutionMethods(deps) {
       var removedBlastCells = grid.removeCells(blastCells);
       resolution.thawed = this._thawIceCells(iceCellsToThaw, grid);
       if (typeof this._registerIceCollection === "function") {
-        resolution.iceCollected = this._registerIceCollection(resolution.thawed);
+        resolution.iceCollected += this._registerIceCollection(resolution.thawed);
       }
+      var removedReactive = this._resolveReactiveEntitiesAfterRemoval(removedBlastCells, grid, resolution);
       var floatingCells = this.systems.supportSystem.findFloatingCells(grid);
       var removedFloating = grid.removeCells(floatingCells);
-      var removedAll = removedBlastCells.concat(removedFloating);
+      var removedAll = removedBlastCells.concat(removedReactive).concat(removedFloating);
 
       // 玩法调整：炸裂清除与断层清除都进入掉落链路，不再直接消失。
       var fallingCandidates = removedAll;
@@ -640,12 +921,13 @@ function createGameManagerShotResolutionMethods(deps) {
       this.systems.jarCollectorSystem.collect([]);
 
 
-      resolution.matched = removedBlastCells;
+      resolution.matched = removedBlastCells.concat(removedReactive);
       resolution.floating = removedFloating;
       resolution.collected = removedAll;
       resolution.impact = this._createImpactEventFromCell(centerCoordinate);
       resolution.boardCleared = grid.getCells().length === 0;
       this._applyResolutionDropScore(resolution, "blastDrop");
+      this._registerComboElimination(resolution);
 
       Logger.info("Blast resolution", {
         cleared: removedBlastCells.length,
@@ -703,8 +985,11 @@ function createGameManagerShotResolutionMethods(deps) {
         Array.isArray(this.lastResolution.collected) &&
         this.lastResolution.collected.length > 0
       );
-      if (noDropTriggered && typeof this._pushRuntimeEvent === "function") {
-        this._pushRuntimeEvent("shot_no_drop");
+      if (noDropTriggered) {
+        this._resetComboStreak();
+        if (typeof this._pushRuntimeEvent === "function") {
+          this._pushRuntimeEvent("shot_no_drop");
+        }
       }
 
       this.activeProjectile = null;
@@ -755,25 +1040,27 @@ function createGameManagerShotResolutionMethods(deps) {
       }
 
       var removedMatches = grid.removeCells(matchedCells);
+      var removedReactiveMatches = this._resolveReactiveEntitiesAfterRemoval(removedMatches, grid, resolution);
       var adjacentIceCells = this._findAdjacentIceCells(removedMatches, grid);
       resolution.thawed = this._thawIceCells(adjacentIceCells, grid);
       if (typeof this._registerIceCollection === "function") {
-        resolution.iceCollected = this._registerIceCollection(resolution.thawed);
+        resolution.iceCollected += this._registerIceCollection(resolution.thawed);
       }
       var floatingCells = this.systems.supportSystem.findFloatingCells(grid);
       var removedFloating = grid.removeCells(floatingCells);
-      var collectedCells = removedMatches.concat(removedFloating);
+      var collectedCells = removedMatches.concat(removedReactiveMatches).concat(removedFloating);
 
       // 玩法调整：普通三消命中的珠子与断层珠统一按掉落结算。
       var fallingCandidates = collectedCells;
       this.systems.fallingMarbleSystem.registerDrops(fallingCandidates, grid);
       this.systems.jarCollectorSystem.collect([]);
 
-      resolution.matched = removedMatches;
+      resolution.matched = removedMatches.concat(removedReactiveMatches);
       resolution.floating = removedFloating;
       resolution.collected = collectedCells;
       resolution.boardCleared = grid.getCells().length === 0;
       this._applyResolutionDropScore(resolution, "matchedDrop");
+      this._registerComboElimination(resolution);
 
       Logger.info("Resolution", {
         matched: removedMatches.length,
@@ -849,7 +1136,63 @@ function createGameManagerShotResolutionMethods(deps) {
         return;
       }
 
-      this.state = "won";
+      if (!this.isTimedInfiniteShots && this.remainingShots > 0) {
+        this._beginSurplusShotBonus();
+        return;
+      }
+
+      this._scheduleWinSettlement();
+    },
+
+    _beginSurplusShotBonus: function () {
+      if (this.isTimedInfiniteShots) {
+        throw new Error("Surplus shot bonus cannot run in timed infinite-shot mode.");
+      }
+
+      var remainingCount = Math.floor(Number(this.remainingShots) || 0);
+      if (!Number.isInteger(remainingCount) || remainingCount <= 0) {
+        throw new Error("Surplus shot bonus requires positive remainingShots.");
+      }
+
+      var shooterController = this.systems.shooterController;
+      if (!shooterController || typeof shooterController.drainRemainingShotBalls !== "function") {
+        throw new Error("Surplus shot bonus requires ShooterController.drainRemainingShotBalls.");
+      }
+
+      var fallingMarbleSystem = this.systems.fallingMarbleSystem;
+      if (!fallingMarbleSystem || typeof fallingMarbleSystem.registerSurplusShotsFromOrigin !== "function") {
+        throw new Error("Surplus shot bonus requires FallingMarbleSystem.registerSurplusShotsFromOrigin.");
+      }
+
+      if (this.activeProjectile) {
+        throw new Error("Surplus shot bonus cannot start while projectile is active.");
+      }
+      if (fallingMarbleSystem.hasActiveDrops()) {
+        throw new Error("Surplus shot bonus cannot start while board drops are still active.");
+      }
+
+      var aimState = shooterController.getAimState();
+      var origin = aimState && aimState.origin ? aimState.origin : null;
+      if (!origin || typeof origin.x !== "number" || typeof origin.y !== "number") {
+        throw new Error("Surplus shot bonus requires shooter aim origin.");
+      }
+
+      var drainedBalls = shooterController.drainRemainingShotBalls(remainingCount);
+      this.remainingShots = 0;
+      this.isAiming = false;
+      this.pendingShotPlan = null;
+      fallingMarbleSystem.registerSurplusShotsFromOrigin(drainedBalls, origin);
+      this.state = "won_surplus_shots_pending";
+
+      if (typeof this._pushRuntimeEvent === "function") {
+        this._pushRuntimeEvent("surplus_shots_started", {
+          count: drainedBalls.length
+        });
+      }
+
+      Logger.info("Surplus shot bonus started", {
+        count: drainedBalls.length
+      });
     }
   };
 }

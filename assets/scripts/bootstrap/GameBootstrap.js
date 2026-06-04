@@ -49,7 +49,7 @@ cc.Class({
       tooltip: "路线连续采样时，两次记录点之间的最小距离（像素）。"
     },
     levelSelectMaxLevelId: {
-      default: 40,
+      default: 1000,
       tooltip: "关卡选择界面的快速首屏数量（用于避免首次扫描资源目录阻塞展示）。"
     },
     unlockAllLevelsForTest: {
@@ -95,6 +95,34 @@ cc.Class({
     friendGiftCloudEnvId: {
       default: "cloud1-d7gqettx3e9249ca1",
       tooltip: "自研好友体力赠送使用的微信云开发环境 ID。"
+    },
+    enablePlayerCloudProfile: {
+      default: true,
+      tooltip: "是否启用玩家信息微信云端存储。开启后启动阶段必须成功同步云端玩家档案。"
+    },
+    playerProfileCloudEnvId: {
+      default: "cloud1-d7gqettx3e9249ca1",
+      tooltip: "玩家信息云端存储使用的微信云开发环境 ID。"
+    },
+    playerProfileCloudFunctionName: {
+      default: "playerProfile",
+      tooltip: "玩家信息云端存储使用的微信云函数名称。"
+    },
+    playerProfileCloudSyncDebounceMs: {
+      default: 800,
+      tooltip: "玩家信息本地写入后延迟上传云端的合并等待时间（毫秒）。"
+    },
+    worldLeaderboardCloudEnvId: {
+      default: "cloud1-d7gqettx3e9249ca1",
+      tooltip: "世界排行榜使用的微信云开发环境 ID。"
+    },
+    worldLeaderboardCloudFunctionName: {
+      default: "worldLeaderboard",
+      tooltip: "世界排行榜使用的微信云函数名称。"
+    },
+    worldLeaderboardLimit: {
+      default: 50,
+      tooltip: "世界排行榜单次拉取的最大条目数。"
     },
     startupPreloadLevelCount: {
       default: 5,
@@ -184,6 +212,10 @@ cc.Class({
       default: "",
       tooltip: "微信激励视频广告位 ID。发布前必须配置。"
     },
+    interstitialAdUnitId: {
+      default: "adunit-a9355409b616c9d3",
+      tooltip: "微信插屏广告位 ID，用于通关、连续失败和回到前台展示。"
+    },
     inventoryRewardedVideoAdUnitId: {
       default: "adunit-4c8e0cc2b2fc7428",
       tooltip: "局内道具库存不足时补给道具的激励视频广告位 ID。"
@@ -227,6 +259,8 @@ cc.Class({
   _findSceneLoadingViewNode: GameBootstrapStartupMethods._findSceneLoadingViewNode,
   _createFallbackLoadingViewNode: GameBootstrapStartupMethods._createFallbackLoadingViewNode,
   _runWeightedStartupTasks: GameBootstrapStartupMethods._runWeightedStartupTasks,
+  _syncPlayerProfileFromCloud: GameBootstrapStartupMethods._syncPlayerProfileFromCloud,
+  _reloadPlayerInfoFromStores: GameBootstrapStartupMethods._reloadPlayerInfoFromStores,
   _preloadStartupPrefabs: GameBootstrapStartupMethods._preloadStartupPrefabs,
   _buildAudioConfig: GameBootstrapAudioMethods._buildAudioConfig,
   _getLevelSelectBgmPath: GameBootstrapAudioMethods._getLevelSelectBgmPath,
@@ -310,6 +344,13 @@ cc.Class({
   _resolveRewardedVideoAdUnitId: GameBootstrapAdRewardMethods._resolveRewardedVideoAdUnitId,
   _requireRewardedVideoAdConfig: GameBootstrapAdRewardMethods._requireRewardedVideoAdConfig,
   _canShowRewardedVideoAd: GameBootstrapAdRewardMethods._canShowRewardedVideoAd,
+  _resolveInterstitialAdUnitId: GameBootstrapAdRewardMethods._resolveInterstitialAdUnitId,
+  _requireInterstitialAdConfig: GameBootstrapAdRewardMethods._requireInterstitialAdConfig,
+  _canShowInterstitialAd: GameBootstrapAdRewardMethods._canShowInterstitialAd,
+  _showInterstitialAd: GameBootstrapAdRewardMethods._showInterstitialAd,
+  _handleInterstitialAdRuntimeStateTransition: GameBootstrapAdRewardMethods._handleInterstitialAdRuntimeStateTransition,
+  _bindReturnToForegroundInterstitialAd: GameBootstrapAdRewardMethods._bindReturnToForegroundInterstitialAd,
+  _unbindReturnToForegroundInterstitialAd: GameBootstrapAdRewardMethods._unbindReturnToForegroundInterstitialAd,
   _setRewardedVideoAdUnavailableStatus: GameBootstrapAdRewardMethods._setRewardedVideoAdUnavailableStatus,
   _setRewardedAdFailureStatus: GameBootstrapAdRewardMethods._setRewardedAdFailureStatus,
   _setAdQuotaBlockedStatus: GameBootstrapAdRewardMethods._setAdQuotaBlockedStatus,
@@ -480,6 +521,7 @@ cc.Class({
   _syncGameCircleNativeButtons: GameBootstrapUiFlowMethods._syncGameCircleNativeButtons,
   _openGameCircleFromWelfare: GameBootstrapUiFlowMethods._openGameCircleFromWelfare,
   _onLevelSelectSettingTap: GameBootstrapUiFlowMethods._onLevelSelectSettingTap,
+  _onGameplaySettingTap: GameBootstrapUiFlowMethods._onGameplaySettingTap,
   _ensureSettingViewPrefab: GameBootstrapUiFlowMethods._ensureSettingViewPrefab,
   _showSettingView: GameBootstrapUiFlowMethods._showSettingView,
   _hideSettingView: GameBootstrapUiFlowMethods._hideSettingView,
@@ -522,6 +564,11 @@ cc.Class({
   _getLevelStarCount: GameBootstrapUiFlowMethods._getLevelStarCount,
   _isLevelCompleted: GameBootstrapUiFlowMethods._isLevelCompleted,
   _resolveHighlightedLevelId: GameBootstrapUiFlowMethods._resolveHighlightedLevelId,
-  _onLevelSelectTap: GameBootstrapUiFlowMethods._onLevelSelectTap
+  _onLevelSelectTap: GameBootstrapUiFlowMethods._onLevelSelectTap,
+  _resolveHighestUnlockedLevelId: GameBootstrapUiFlowMethods._resolveHighestUnlockedLevelId,
+  _resolveLatestAccessibleLevelId: GameBootstrapUiFlowMethods._resolveLatestAccessibleLevelId,
+  _resolveCurrentMapLevelId: GameBootstrapUiFlowMethods._resolveCurrentMapLevelId,
+  _onLevelSelectQuickStartTap: GameBootstrapUiFlowMethods._onLevelSelectQuickStartTap,
+  _onLevelSelectBackToCurrentLevelTap: GameBootstrapUiFlowMethods._onLevelSelectBackToCurrentLevelTap
 });
 

@@ -4,6 +4,7 @@ var Shared = require("./GameBootstrapUiFlowShared");
 var Logger = Shared.Logger;
 var LevelSelectPolicy = Shared.LevelSelectPolicy;
 var LevelSelectView = Shared.LevelSelectView;
+var LevelSelectFloatingMap = require("./LevelSelectFloatingMap");
 var StarRatingPolicy = Shared.StarRatingPolicy;
 var hideGameCircleWelfareViewNode = Shared.hideGameCircleWelfareViewNode;
 
@@ -293,12 +294,11 @@ module.exports = {
       });
     }
 
-    return Promise.all([
-      this._loadPrefab("prefabs/ui/LevelView"),
-      LevelSelectView.loadFloatingMapAssets()
-    ]).then(function (results) {
-      this._levelSelectViewPrefab = results[0];
-      this._floatingMapAssets = results[1];
+    return LevelSelectView.loadFloatingMapAssets().then(function (floatingMapAssets) {
+      this._floatingMapAssets = floatingMapAssets;
+      return this._loadPrefab("prefabs/ui/LevelView");
+    }.bind(this)).then(function (levelViewPrefab) {
+      this._levelSelectViewPrefab = levelViewPrefab;
       return {
         viewPrefab: this._levelSelectViewPrefab,
         floatingMapAssets: this._floatingMapAssets
@@ -361,23 +361,15 @@ module.exports = {
       return this._availableLevelIdsScanPromise;
     }
 
-    this._availableLevelIdsScanPromise = this.resourceGateway.loadLevelConfigResourceUrls()
-      .then(function (sourceUrls) {
-        var levelIds = sourceUrls.map(this._getLevelIdFromResourcePath, this)
-          .filter(function (id) {
-            return Number.isInteger(id) && id > 0;
-          })
-          .filter(function (id, index, list) {
-            return list.indexOf(id) === index;
-          })
-          .sort(function (a, b) {
-            return a - b;
-          });
+    if (!this.levelManager || typeof this.levelManager.loadAvailableLevelIds !== "function") {
+      throw new Error("Level select requires LevelManager.loadAvailableLevelIds.");
+    }
 
-        if (levelIds.length === 0) {
-          levelIds = [this._getStartupLevelId()];
+    this._availableLevelIdsScanPromise = this.levelManager.loadAvailableLevelIds()
+      .then(function (levelIds) {
+        if (!Array.isArray(levelIds) || levelIds.length === 0) {
+          throw new Error("Level manifest did not provide available level ids.");
         }
-
         return levelIds;
       }.bind(this)).then(function (resolvedLevelIds) {
         this._availableLevelIdsPromise = Promise.resolve(resolvedLevelIds);
@@ -419,6 +411,8 @@ module.exports = {
     var validLevelIds = (levelIds || []).filter(function (levelId, index, list) {
       return Number.isInteger(levelId) && levelId > 0 && list.indexOf(levelId) === index;
     });
+    var preloadLimit = Math.max(1, Math.floor(Number(this.startupPreloadLevelCount) || 1));
+    validLevelIds = validLevelIds.slice(0, preloadLimit);
 
     if (validLevelIds.length === 0) {
       this._levelConfigPreloadPromise = Promise.resolve();
@@ -464,7 +458,9 @@ module.exports = {
       onOpenStarChest: this._openStarChest.bind(this),
       onOpenShop: this._onLevelSelectShopTap.bind(this),
       onOpenDailyTasks: this._onLevelSelectDailyTasksTap.bind(this),
-      onLevelSelectTap: this._onLevelSelectTap.bind(this)
+      onLevelSelectTap: this._onLevelSelectTap.bind(this),
+      onQuickStart: this._onLevelSelectQuickStartTap.bind(this),
+      onBackToCurrentLevel: this._onLevelSelectBackToCurrentLevelTap.bind(this)
     });
     this._levelSelectNode = renderResult.levelViewNode;
     this._levelSelectMapIndex = Number.isInteger(renderResult.currentMapIndex)
@@ -575,6 +571,12 @@ module.exports = {
       typeof this._onRuntimeStateTransition === "function"
     ) {
       this._onRuntimeStateTransition(snapshot, previousState, currentState);
+    }
+    if (
+      currentState !== previousState &&
+      typeof this._handleInterstitialAdRuntimeStateTransition === "function"
+    ) {
+      this._handleInterstitialAdRuntimeStateTransition(snapshot, previousState, currentState);
     }
     this._lastRuntimeState = currentState;
   },
@@ -721,7 +723,7 @@ module.exports = {
     this._playSfx("uiClick");
     if (this._levelSelectRouteEditorMode) {
       this._pendingRouteEditorAutoEnable = true;
-      this._setStatus("Loading level for route editor: level_" + ("000" + levelId).slice(-3));
+      this._setStatus("Loading level for route editor: level_" + String(levelId).padStart(3, "0"));
       this._loadLevelById(levelId, "Route editor level loaded", "Load selected level for route editor failed.");
       return;
     }
@@ -730,5 +732,100 @@ module.exports = {
       throw new Error("Level select requires StartGameView entry method.");
     }
     this._showStartGameView(levelId);
+  },
+
+  _resolveHighestUnlockedLevelId: function (levelIds) {
+    this._refreshLevelProgress();
+    var highestUnlocked = Number(this.levelProgress.highestUnlockedLevel);
+    if (!Number.isInteger(highestUnlocked) || highestUnlocked <= 0) {
+      throw new Error("highestUnlockedLevel must be a positive integer.");
+    }
+    if (this.unlockAllLevelsForTest === true) {
+      return resolveMaxAvailableLevelId(levelIds);
+    }
+    return highestUnlocked;
+  },
+
+  _resolveLatestAccessibleLevelId: function () {
+    if (!this._floatingMapAssets || typeof this._floatingMapAssets !== "object") {
+      throw new Error("Level select quick start requires preloaded floating map assets.");
+    }
+    if (!this._floatingMapAssets.config || typeof this._floatingMapAssets.config !== "object") {
+      throw new Error("Level select quick start requires floating map config.");
+    }
+    var config = this._floatingMapAssets.config;
+    var self = this;
+    return this._loadAvailableLevelIds().then(function (levelIds) {
+      var highestUnlocked = self._resolveHighestUnlockedLevelId(levelIds);
+      return LevelSelectFloatingMap.resolveLatestAccessibleLevelId(config, highestUnlocked);
+    });
+  },
+
+  _resolveCurrentMapLevelId: function () {
+    var self = this;
+    return this._loadAvailableLevelIds().then(function (levelIds) {
+      var highestUnlocked = self._resolveHighestUnlockedLevelId(levelIds);
+      return self._resolveHighlightedLevelId(levelIds, highestUnlocked);
+    });
+  },
+
+  _onLevelSelectQuickStartTap: function () {
+    if (this.isRestarting || !this.isSelectingLevel) {
+      return;
+    }
+    if (this._levelSelectRouteEditorMode === true) {
+      return;
+    }
+    if (!this._levelSelectNode || !this._levelSelectNode.isValid) {
+      throw new Error("Level select quick start requires an active LevelView node.");
+    }
+    if (typeof this._showStartGameView !== "function") {
+      throw new Error("Level select quick start requires StartGameView entry method.");
+    }
+
+    this._playSfx("uiClick");
+    var levelViewNode = this._levelSelectNode;
+    var self = this;
+    this._resolveLatestAccessibleLevelId().then(function (latestLevelId) {
+      if (self.isRestarting || !self.isSelectingLevel) {
+        return;
+      }
+      LevelSelectView.scrollFloatingMapToLevel(levelViewNode, latestLevelId, {
+        onComplete: function () {
+          if (self.isRestarting || !self.isSelectingLevel) {
+            return;
+          }
+          return self._showStartGameView(latestLevelId);
+        }
+      });
+    }).catch(function (error) {
+      Logger.error("Level select quick start failed", error && error.stack ? error.stack : String(error));
+      throw error;
+    });
+  },
+
+  _onLevelSelectBackToCurrentLevelTap: function () {
+    if (this.isRestarting || !this.isSelectingLevel) {
+      return;
+    }
+    if (this._levelSelectRouteEditorMode === true) {
+      return;
+    }
+    if (!this._levelSelectNode || !this._levelSelectNode.isValid) {
+      throw new Error("Level select back to current level requires an active LevelView node.");
+    }
+
+    this._playSfx("uiClick");
+    var levelViewNode = this._levelSelectNode;
+    var self = this;
+    this._resolveCurrentMapLevelId().then(function (currentLevelId) {
+      if (self.isRestarting || !self.isSelectingLevel) {
+        return;
+      }
+      LevelSelectView.scrollFloatingMapToLevel(levelViewNode, currentLevelId, {});
+    }).catch(function (error) {
+      Logger.error("Level select back to current level failed", error && error.stack ? error.stack : String(error));
+      throw error;
+    });
   }
 };

@@ -9,7 +9,7 @@ function clone(data) {
 }
 
 function padLevelId(levelId) {
-  return ("000" + Math.max(0, Math.floor(Number(levelId) || 0))).slice(-3);
+  return String(Math.max(0, Math.floor(Number(levelId) || 0))).padStart(3, "0");
 }
 
 function resolveLevelKey(levelId, levelCode) {

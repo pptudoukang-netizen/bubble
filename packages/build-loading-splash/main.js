@@ -7,10 +7,6 @@ const PLUGIN_TAG = '[build-loading-splash]';
 const WEB_PLATFORMS = new Set(['web-mobile', 'web-desktop']);
 const WECHAT_PLATFORM_NAME = 'wechatgame';
 const MINI_GAME_PLATFORM_NAME = 'mini-game';
-const WECHAT_RANK_OPEN_DATA_CONTEXT = 'bubble';
-const WECHAT_RANK_SOURCE_DIR = ['open-data', 'bubble'];
-const WECHAT_RANK_MAIN_PATCH_SOURCE = ['open-data', 'wechatgame', 'rank-main-patch.js'];
-const WECHAT_RANK_MAIN_PATCH_TARGET = 'rank-main-patch.js';
 const BACKGROUND_SEARCH_DIRS = [
     ['assets', 'image'],
     ['assets', 'resources', 'image'],
@@ -188,7 +184,7 @@ function copyDirectoryStrict(sourceDir, targetDir) {
     });
 }
 
-function patchWeChatGameJsonForRank(buildDestPath) {
+function removeWeChatOpenDataContextForWorldLeaderboard(buildDestPath) {
     const gameJsonPath = path.join(buildDestPath, 'game.json');
     assertExistingFile(gameJsonPath);
 
@@ -197,46 +193,32 @@ function patchWeChatGameJsonForRank(buildDestPath) {
         throw new Error(`${PLUGIN_TAG} invalid game.json object: ${gameJsonPath}`);
     }
 
-    gameJson.openDataContext = WECHAT_RANK_OPEN_DATA_CONTEXT;
-    writeJsonStrict(gameJsonPath, gameJson);
-    Editor.log(`${PLUGIN_TAG} ensured WeChat openDataContext in ${gameJsonPath}`);
+    if (Object.prototype.hasOwnProperty.call(gameJson, 'openDataContext')) {
+        delete gameJson.openDataContext;
+        writeJsonStrict(gameJsonPath, gameJson);
+        Editor.log(`${PLUGIN_TAG} removed legacy WeChat openDataContext in ${gameJsonPath}`);
+    }
 }
 
-function patchWeChatMainForRank(buildDestPath) {
+function removeWeChatRankMainPatchHook(buildDestPath) {
     const mainJsPath = path.join(buildDestPath, 'main.js');
     assertExistingFile(mainJsPath);
 
-    const rankInstallLine = "      require('./rank-main-patch').install();";
-    const sceneLoadedLogLine = "      console.log('Success to load scene: ' + launchScene);";
+    const rankInstallLine = "      require('./rank-main-patch').install();\n";
     const originalText = fs.readFileSync(mainJsPath, 'utf8');
-    if (originalText.indexOf(rankInstallLine) >= 0) {
+    if (originalText.indexOf(rankInstallLine) < 0) {
         return;
     }
-    if (originalText.indexOf(sceneLoadedLogLine) < 0) {
-        throw new Error(`${PLUGIN_TAG} cannot find WeChat main.js scene loaded hook.`);
-    }
 
-    const patchedText = originalText.replace(sceneLoadedLogLine, `${rankInstallLine}\n${sceneLoadedLogLine}`);
-    fs.writeFileSync(mainJsPath, patchedText, 'utf8');
-    Editor.log(`${PLUGIN_TAG} injected WeChat rank main patch in ${mainJsPath}`);
+    fs.writeFileSync(mainJsPath, originalText.replace(rankInstallLine, ''), 'utf8');
+    Editor.log(`${PLUGIN_TAG} removed legacy WeChat rank main patch hook in ${mainJsPath}`);
 }
 
-function copyWeChatRankFiles(buildDestPath) {
-    const openDataSourceDir = path.join(Editor.Project.path, ...WECHAT_RANK_SOURCE_DIR);
-    const openDataTargetDir = path.join(buildDestPath, WECHAT_RANK_OPEN_DATA_CONTEXT);
-    const mainPatchSourcePath = path.join(Editor.Project.path, ...WECHAT_RANK_MAIN_PATCH_SOURCE);
-    const mainPatchTargetPath = path.join(buildDestPath, WECHAT_RANK_MAIN_PATCH_TARGET);
-
-    copyDirectoryStrict(openDataSourceDir, openDataTargetDir);
-    copyFileStrict(mainPatchSourcePath, mainPatchTargetPath);
-    Editor.log(`${PLUGIN_TAG} copied WeChat friend rank files to ${buildDestPath}`);
-}
-
-function patchWeChatFriendRank(buildDestPath) {
+function patchWeChatWorldLeaderboard(buildDestPath) {
     assertExistingDirectory(buildDestPath);
-    patchWeChatGameJsonForRank(buildDestPath);
-    copyWeChatRankFiles(buildDestPath);
-    patchWeChatMainForRank(buildDestPath);
+    removeWeChatOpenDataContextForWorldLeaderboard(buildDestPath);
+    removeWeChatRankMainPatchHook(buildDestPath);
+    Editor.log(`${PLUGIN_TAG} WeChat world leaderboard uses main-domain source code and cloudfunctions.`);
 }
 
 function onBuildFinished(options, callback) {
@@ -266,7 +248,7 @@ function onBuildFinished(options, callback) {
 
         if (isWeChatGameBuild(options)) {
             patchWeChatProjectConfig(options.dest);
-            patchWeChatFriendRank(options.dest);
+            patchWeChatWorldLeaderboard(options.dest);
         }
     } catch (error) {
         Editor.error(`${PLUGIN_TAG} build patch failed: ${error && error.stack ? error.stack : error}`);

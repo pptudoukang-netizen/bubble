@@ -1,17 +1,27 @@
 ﻿"use strict";
 
 var LevelConfigLoader = require("./LevelConfigLoader");
+var RemoteLevelPackLoader = require("./RemoteLevelPackLoader");
+var LevelPackManifest = require("./LevelPackManifest");
 
 function padLevelId(levelId) {
-  return ("000" + levelId).slice(-3);
+  return String(levelId).padStart(3, "0");
 }
 
 function clone(data) {
   return JSON.parse(JSON.stringify(data));
 }
 
-function LevelManager(loader) {
-  this._loader = loader || new LevelConfigLoader();
+function LevelManager(options) {
+  var opts = options || {};
+  if (options && typeof options.loadLevelByKey === "function") {
+    opts = {
+      localLoader: options
+    };
+  }
+  this._loader = opts.localLoader || new LevelConfigLoader();
+  this._remoteLoader = opts.remoteLoader || new RemoteLevelPackLoader();
+  this._localLevelMax = opts.localLevelMax || LevelPackManifest.LOCAL_LEVEL_MAX;
   this._cache = {};
 }
 
@@ -26,7 +36,12 @@ LevelManager.prototype.loadLevel = function (levelId) {
     return Promise.resolve(clone(this._cache[levelKey]));
   }
 
-  return this._loader.loadLevelByKey(levelKey).then(function (config) {
+  var loader = levelId <= this._localLevelMax ? this._loader : this._remoteLoader;
+  if (!loader || typeof loader.loadLevelByKey !== "function") {
+    throw new Error("Level loader missing loadLevelByKey for " + levelKey + ".");
+  }
+
+  return loader.loadLevelByKey(levelKey).then(function (config) {
     this._cache[levelKey] = config;
     return clone(config);
   }.bind(this));
@@ -36,6 +51,20 @@ LevelManager.prototype.preloadLevels = function (levelIds) {
   return Promise.all(levelIds.map(function (levelId) {
     return this.loadLevel(levelId);
   }, this));
+};
+
+LevelManager.prototype.preloadRemotePackAfterLevel = function (levelId) {
+  if (!this._remoteLoader || typeof this._remoteLoader.preloadPackAfterLevelId !== "function") {
+    throw new Error("Remote level loader missing preloadPackAfterLevelId.");
+  }
+  return this._remoteLoader.preloadPackAfterLevelId(levelId);
+};
+
+LevelManager.prototype.loadAvailableLevelIds = function () {
+  if (!this._remoteLoader || typeof this._remoteLoader.loadAvailableLevelIds !== "function") {
+    throw new Error("Remote level loader missing loadAvailableLevelIds.");
+  }
+  return this._remoteLoader.loadAvailableLevelIds();
 };
 
 module.exports = LevelManager;

@@ -85,6 +85,24 @@ def parse_args():
         ),
     )
     parser.add_argument(
+        "--solid-alpha-threshold",
+        type=int,
+        default=48,
+        help=(
+            "Alpha threshold used to detect solid cores inside a connected region. "
+            "When multiple solid cores are found, the region is split into separate "
+            "elements. Use 0 to disable."
+        ),
+    )
+    parser.add_argument(
+        "--solid-core-min-pixels",
+        type=int,
+        default=200,
+        help=(
+            "Only solid cores with at least this many pixels can trigger a split."
+        ),
+    )
+    parser.add_argument(
         "--prefix",
         default="element",
         help="File name prefix for exported slices.",
@@ -113,6 +131,10 @@ def parse_args():
         parser.error("--padding must be >= 0")
     if args.merge_gap < 0:
         parser.error("--merge-gap must be >= 0")
+    if args.solid_alpha_threshold < 0 or args.solid_alpha_threshold > 255:
+        parser.error("--solid-alpha-threshold must be between 0 and 255")
+    if args.solid_core_min_pixels < 1:
+        parser.error("--solid-core-min-pixels must be >= 1")
     if args.min_file_size_kb < 0:
         parser.error("--min-file-size-kb must be >= 0")
     return args
@@ -194,9 +216,9 @@ def open_as_bgra(path):
 def find_connected_components(alpha_channel, threshold):
     mask = np.where(alpha_channel >= threshold, 255, 0).astype(np.uint8)
     if cv2.countNonZero(mask) == 0:
-        return []
+        return [], None
 
-    label_count, _, stats, _ = cv2.connectedComponentsWithStats(mask, 8)
+    label_count, labels, stats, _ = cv2.connectedComponentsWithStats(mask, 8)
     components = []
 
     for label_index in range(1, label_count):
@@ -206,6 +228,7 @@ def find_connected_components(alpha_channel, threshold):
         height = int(stats[label_index, cv2.CC_STAT_HEIGHT])
         pixel_count = int(stats[label_index, cv2.CC_STAT_AREA])
         components.append({
+            "label_id": label_index,
             "x": x,
             "y": y,
             "width": width,
@@ -213,7 +236,7 @@ def find_connected_components(alpha_channel, threshold):
             "pixel_count": pixel_count,
         })
 
-    return components
+    return components, labels
 
 
 def boxes_are_close(left, right, gap):
@@ -280,6 +303,160 @@ def merge_nearby_components(components, gap):
     return merged
 
 
+def assign_pixels_to_solid_cores(parent, alpha_sub, core_labels, major_core_ids):
+    eligible = parent & (alpha_sub >= 1)
+    if not np.any(eligible):
+        raise ValueError("Component has no visible pixels.")
+
+    distance_maps = []
+    for core_id in major_core_ids:
+        core_only = (core_labels == core_id).astype(np.uint8)
+        distance_maps.append(
+            cv2.distanceTransform(1 - core_only, cv2.DIST_L2, 5)
+        )
+
+    assigned_regions = {}
+    for core_id in major_core_ids:
+        assigned_regions[core_id] = np.zeros(parent.shape, dtype=bool)
+
+    ys, xs = np.where(eligible)
+    for y, x in zip(ys, xs):
+        best_index = 0
+        best_distance = distance_maps[0][y, x]
+        for index in range(1, len(major_core_ids)):
+            current_distance = distance_maps[index][y, x]
+            if current_distance < best_distance:
+                best_distance = current_distance
+                best_index = index
+        assigned_regions[major_core_ids[best_index]][y, x] = True
+
+    return assigned_regions
+
+
+def solid_cores_have_vertical_gap(parent, alpha_sub, core_labels, major_core_ids, gap_threshold):
+    cores = []
+    for core_id in major_core_ids:
+        ys, _ = np.where(core_labels == core_id)
+        if ys.size == 0:
+            raise ValueError("Solid core {0} has no pixels.".format(core_id))
+        cores.append((int(ys.min()), int(ys.max()), core_id))
+
+    cores.sort(key=lambda item: item[0])
+    for index in range(len(cores) - 1):
+        gap_start = cores[index][1] + 1
+        gap_end = cores[index + 1][0] - 1
+        if gap_end < gap_start:
+            return False
+
+        gap_alpha = alpha_sub[gap_start:gap_end + 1, :]
+        gap_parent = parent[gap_start:gap_end + 1, :]
+        found_separator = False
+        for row_index in range(gap_alpha.shape[0]):
+            opaque = gap_parent[row_index] & (gap_alpha[row_index] >= gap_threshold)
+            if not np.any(opaque):
+                found_separator = True
+                break
+        if not found_separator:
+            return False
+
+    return True
+
+
+def split_single_component_by_solid_cores(
+    component,
+    labels,
+    alpha_channel,
+    solid_threshold,
+    core_min_pixels,
+):
+    label_id = component["label_id"]
+    ys, xs = np.where(labels == label_id)
+    x0 = int(xs.min())
+    x1 = int(xs.max())
+    y0 = int(ys.min())
+    y1 = int(ys.max())
+
+    parent = labels[y0:y1 + 1, x0:x1 + 1] == label_id
+    alpha_sub = alpha_channel[y0:y1 + 1, x0:x1 + 1]
+    solid = (parent & (alpha_sub >= solid_threshold)).astype(np.uint8)
+    core_count, core_labels, stats, _ = cv2.connectedComponentsWithStats(solid, 8)
+
+    major_core_ids = [
+        index for index in range(1, core_count)
+        if int(stats[index, cv2.CC_STAT_AREA]) >= core_min_pixels
+    ]
+    if len(major_core_ids) <= 1:
+        return [component]
+
+    if not solid_cores_have_vertical_gap(
+        parent,
+        alpha_sub,
+        core_labels,
+        major_core_ids,
+        solid_threshold,
+    ):
+        return [component]
+
+    assigned_regions = assign_pixels_to_solid_cores(
+        parent,
+        alpha_sub,
+        core_labels,
+        major_core_ids,
+    )
+
+    split_components = []
+    for core_id in major_core_ids:
+        region_mask = assigned_regions[core_id]
+        if not np.any(region_mask):
+            raise ValueError(
+                "Solid-core assignment produced an empty region for label {0}.".format(
+                    label_id
+                )
+            )
+
+        ys2, xs2 = np.where(region_mask)
+        local_y0 = int(ys2.min())
+        local_x0 = int(xs2.min())
+        local_y1 = int(ys2.max())
+        local_x1 = int(xs2.max())
+        local_mask = region_mask[local_y0:local_y1 + 1, local_x0:local_x1 + 1]
+
+        split_components.append({
+            "x": x0 + local_x0,
+            "y": y0 + local_y0,
+            "width": local_x1 - local_x0 + 1,
+            "height": local_y1 - local_y0 + 1,
+            "pixel_count": int(region_mask.sum()),
+            "region_mask": local_mask,
+        })
+
+    return split_components
+
+
+def split_merged_components(
+    components,
+    labels,
+    alpha_channel,
+    solid_threshold,
+    core_min_pixels,
+):
+    if solid_threshold <= 0:
+        return list(components)
+
+    split_components = []
+    for component in components:
+        split_components.extend(
+            split_single_component_by_solid_cores(
+                component,
+                labels,
+                alpha_channel,
+                solid_threshold,
+                core_min_pixels,
+            )
+        )
+    return split_components
+
+
 def filter_components(components, min_pixels, min_width, min_height):
     filtered = []
     for component in components:
@@ -310,6 +487,22 @@ def build_export_dir(input_file, input_root, output_root):
     return os.path.join(output_root, safe_stem)
 
 
+def tighten_export_crop(crop, alpha_threshold):
+    alpha = crop[:, :, 3]
+    opaque = alpha >= alpha_threshold
+    if not np.any(opaque):
+        raise ValueError("Export crop has no opaque pixels at alpha threshold {0}.".format(
+            alpha_threshold
+        ))
+
+    ys, xs = np.where(opaque)
+    top = int(ys.min())
+    bottom = int(ys.max())
+    left = int(xs.min())
+    right = int(xs.max())
+    return crop[top:bottom + 1, left:right + 1], left, top
+
+
 def write_png(output_path, image_bgra):
     directory = os.path.dirname(output_path)
     ensure_dir(directory)
@@ -321,7 +514,16 @@ def write_png(output_path, image_bgra):
     encoded.tofile(output_path)
 
 
-def export_components(image, components, export_dir, prefix, padding, min_file_size_kb):
+def export_components(
+    image,
+    labels,
+    components,
+    export_dir,
+    prefix,
+    padding,
+    min_file_size_kb,
+    alpha_threshold,
+):
     ensure_dir(export_dir)
     height, width = image.shape[:2]
     exported = []
@@ -335,6 +537,22 @@ def export_components(image, components, export_dir, prefix, padding, min_file_s
         bottom = min(height, component["y"] + component["height"] + padding)
 
         crop = image[top:bottom, left:right].copy()
+        if "region_mask" in component:
+            local_mask = component["region_mask"]
+            if local_mask.shape[0] != crop.shape[0] or local_mask.shape[1] != crop.shape[1]:
+                raise ValueError(
+                    "Component region_mask shape does not match export crop: {0}".format(
+                        component
+                    )
+                )
+            foreign_pixels = np.logical_not(local_mask)
+        else:
+            label_id = component["label_id"]
+            region_labels = labels[top:bottom, left:right]
+            foreign_pixels = region_labels != label_id
+        crop[foreign_pixels, 3] = 0
+        crop, trim_left, trim_top = tighten_export_crop(crop, alpha_threshold)
+
         file_name = "{0}_{1:03d}.png".format(prefix, export_index)
         output_path = os.path.join(export_dir, file_name)
         write_png(output_path, crop)
@@ -345,18 +563,22 @@ def export_components(image, components, export_dir, prefix, padding, min_file_s
                 os.remove(output_path)
                 continue
 
+        export_x = left + trim_left
+        export_y = top + trim_top
+        export_width = crop.shape[1]
+        export_height = crop.shape[0]
         exported.append({
             "index": export_index,
             "file": output_path,
-            "x": component["x"],
-            "y": component["y"],
-            "width": component["width"],
-            "height": component["height"],
+            "x": export_x,
+            "y": export_y,
+            "width": export_width,
+            "height": export_height,
             "pixel_count": component["pixel_count"],
-            "export_x": left,
-            "export_y": top,
-            "export_width": right - left,
-            "export_height": bottom - top,
+            "export_x": export_x,
+            "export_y": export_y,
+            "export_width": export_width,
+            "export_height": export_height,
         })
         export_index += 1
 
@@ -371,8 +593,17 @@ def process_image(input_file, input_root, output_root, args):
     alpha_channel = image[:, :, 3]
     height, width = image.shape[:2]
 
-    components = find_connected_components(alpha_channel, args.alpha_threshold)
+    components, labels = find_connected_components(alpha_channel, args.alpha_threshold)
+    if labels is None:
+        raise ValueError("No opaque UI pixels were found: {0}".format(input_file))
     components = merge_nearby_components(components, args.merge_gap)
+    components = split_merged_components(
+        components,
+        labels,
+        alpha_channel,
+        args.solid_alpha_threshold,
+        args.solid_core_min_pixels,
+    )
     components = filter_components(
         components,
         args.min_pixels,
@@ -384,11 +615,13 @@ def process_image(input_file, input_root, output_root, args):
     export_dir = build_export_dir(input_file, input_root, output_root)
     exported = export_components(
         image,
+        labels,
         components,
         export_dir,
         args.prefix,
         args.padding,
         args.min_file_size_kb,
+        args.alpha_threshold,
     )
 
     return {
@@ -496,6 +729,8 @@ def main():
             "min_height": args.min_height,
             "padding": args.padding,
             "merge_gap": args.merge_gap,
+            "solid_alpha_threshold": args.solid_alpha_threshold,
+            "solid_core_min_pixels": args.solid_core_min_pixels,
             "prefix": args.prefix,
             "min_file_size_kb": args.min_file_size_kb,
         },

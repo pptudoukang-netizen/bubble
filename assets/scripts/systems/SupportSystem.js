@@ -10,6 +10,14 @@ function keyFor(cell) {
   return cell.row + ":" + cell.col;
 }
 
+function isLockedAnchor(cell) {
+  return !!(
+    cell &&
+    cell.entityCategory === "locked_ball" &&
+    cell.entityType === "locked"
+  );
+}
+
 function SupportSystem() {
   BaseSystem.call(this, "SupportSystem");
   this.anchorRows = 1;
@@ -31,7 +39,7 @@ SupportSystem.prototype.findFloatingCells = function (grid) {
   var queue = [];
 
   grid.getCells().forEach(function (cell) {
-    if (cell.row < this.anchorRows) {
+    if (cell.row < this.anchorRows || isLockedAnchor(cell)) {
       queue.push(cell);
     }
   }, this);

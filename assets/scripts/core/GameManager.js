@@ -74,6 +74,10 @@ function createEmptyResolution() {
     thawed: [],
     iceCollected: 0,
     injectedSkills: [],
+    reactiveTriggered: [],
+    spawnedBySplitters: [],
+    collectedKeys: [],
+    unlockedLockedBalls: [],
     impact: null,
     scoreDelta: 0,
     boardCleared: false,
@@ -131,8 +135,12 @@ var SCORE_HEAT_DIFFICULTY_ALIAS = {
 
 // 碰撞反馈播放完成后再下压，避免命中反馈与网格位移同帧造成视觉偏差。
 var BOARD_ADVANCE_AFTER_IMPACT_DELAY = 0.2;
+// 最后一颗入缸后，延迟再弹出 WinView。
+var WIN_SETTLEMENT_DELAY_SEC = 1;
 var DEFAULT_JAR_SCORE_BOOST_MULTIPLIER = 2;
 var DEFAULT_JAR_SCORE_BOOST_DURATION_MS = 5000;
+// 第二次连消起每次额外 +100，UI 显示为连击+1、+2…
+var COMBO_BONUS_PER_HIT = 100;
 var STAR_SCORE_BAND_RATIOS = {
   min: 0.3,
   target: 0.6,
@@ -158,6 +166,22 @@ function resolveBallDisplayCode(ball) {
 
   if (ball.entityType === "stone") {
     return "STONE";
+  }
+
+  if (ball.entityType === "molotov") {
+    return "MOLOTOV";
+  }
+
+  if (ball.entityType === "splitter") {
+    return "SPLIT_" + ball.splitColor;
+  }
+
+  if (ball.entityType === "locked") {
+    return "LOCKED";
+  }
+
+  if (ball.entityType === "key") {
+    return "KEY";
   }
 
   return null;
@@ -193,6 +217,22 @@ function isBlastBall(ball) {
 
 function isRainbowBall(ball) {
   return !!(ball && ball.entityCategory === "skill_ball" && ball.entityType === "rainbow");
+}
+
+function isMolotovBall(ball) {
+  return !!(ball && ball.entityCategory === "reactive_ball" && ball.entityType === "molotov");
+}
+
+function isSplitterBall(ball) {
+  return !!(ball && ball.entityCategory === "reactive_ball" && ball.entityType === "splitter");
+}
+
+function isLockedBall(ball) {
+  return !!(ball && ball.entityCategory === "locked_ball" && ball.entityType === "locked");
+}
+
+function isKeyBall(ball) {
+  return !!(ball && ball.entityCategory === "key_ball" && ball.entityType === "key");
 }
 
 function resolveIceInnerColor(cellOrBall) {
@@ -400,6 +440,7 @@ function GameManager(options) {
   this.currentLevel = null;
   this.remainingShots = 0;
   this.score = 0;
+  this.comboStreak = 0;
   this.shotsFired = 0;
   this.dropInterval = 0;
   this.lastFiredColor = null;
@@ -428,6 +469,7 @@ function GameManager(options) {
   this.runtimeEventSequence = 0;
   this.pendingRuntimeEvents = [];
   this.pendingBoardAdvanceDelay = 0;
+  this.pendingWinSettlementDelay = 0;
   this.pendingBarrierHammer = false;
   this.pendingRainbowColorSelection = null;
   this.jarScoreBoostActive = false;
@@ -479,6 +521,7 @@ GameManager.prototype.startLevel = function (levelConfig) {
   this.requiredStarCount = this.isTimedInfiniteShots ? assertPositiveInteger(level.requiredStarCount, "level.requiredStarCount") : 0;
   this.remainingShots = this.isTimedInfiniteShots ? 0 : assertPositiveInteger(level.shotLimit, "level.shotLimit");
   this.score = 0;
+  this.comboStreak = 0;
   this.shotsFired = 0;
   this.dropInterval = assertPositiveInteger(level.dropInterval, "level.dropInterval");
   this.lastFiredColor = null;
@@ -502,6 +545,7 @@ GameManager.prototype.startLevel = function (levelConfig) {
   this.runtimeEventSequence = 0;
   this.pendingRuntimeEvents = [];
   this.pendingBoardAdvanceDelay = 0;
+  this.pendingWinSettlementDelay = 0;
   this.pendingBarrierHammer = false;
   this.pendingRainbowColorSelection = null;
   this.jarScoreBoostActive = false;
@@ -598,6 +642,43 @@ GameManager.prototype._updatePendingBoardAdvance = function (dt) {
   }
 
   this._advanceBoardIfNeeded();
+  return true;
+};
+
+GameManager.prototype._scheduleWinSettlement = function () {
+  if (this.state === "won") {
+    throw new Error("Cannot schedule win settlement from won state.");
+  }
+  if (this.pendingWinSettlementDelay > 0) {
+    throw new Error("Win settlement delay is already scheduled.");
+  }
+
+  this.pendingWinSettlementDelay = WIN_SETTLEMENT_DELAY_SEC;
+  this.state = "won_settlement_pending";
+  Logger.info("Win settlement scheduled", {
+    delaySec: WIN_SETTLEMENT_DELAY_SEC
+  });
+};
+
+GameManager.prototype._updatePendingWinSettlement = function (dt) {
+  if (this.state !== "won_settlement_pending") {
+    return false;
+  }
+  if (this.pendingWinSettlementDelay <= 0) {
+    throw new Error("won_settlement_pending requires positive pendingWinSettlementDelay.");
+  }
+
+  var safeDt = Math.max(0, Number(dt) || 0);
+  this.pendingWinSettlementDelay = Math.max(0, this.pendingWinSettlementDelay - safeDt);
+  if (this.pendingWinSettlementDelay > 0) {
+    return false;
+  }
+
+  this.state = "won";
+  if (typeof this._pushRuntimeEvent === "function") {
+    this._pushRuntimeEvent("win_settlement_ready", {});
+  }
+  Logger.info("Win settlement delay finished");
   return true;
 };
 
@@ -1857,6 +1938,19 @@ GameManager.prototype.update = function (dt) {
     return this.getRuntimeSnapshot(runtimeEvents);
   }
 
+  if (this.state === "won_surplus_shots_pending" && !hasProjectile && !hasFallingDrops) {
+    if (typeof this._pushRuntimeEvent === "function") {
+      this._pushRuntimeEvent("surplus_shots_finished", {});
+    }
+    this._scheduleWinSettlement();
+    return this.getRuntimeSnapshot(runtimeEvents);
+  }
+
+  if (this.state === "won_settlement_pending") {
+    this._updatePendingWinSettlement(dt);
+    return this.getRuntimeSnapshot(runtimeEvents);
+  }
+
   if (this.state === "out_of_shots_pending" && !hasProjectile && !hasFallingDrops && !this._isWaitingBoardAdvance()) {
     this._resolveOutOfShotsOutcome();
     return this.getRuntimeSnapshot(runtimeEvents);
@@ -1905,8 +1999,13 @@ Object.assign(GameManager.prototype, createGameManagerShotResolutionMethods({
   isIceBall: isIceBall,
   isBlastBall: isBlastBall,
   isRainbowBall: isRainbowBall,
+  isMolotovBall: isMolotovBall,
+  isSplitterBall: isSplitterBall,
+  isLockedBall: isLockedBall,
+  isKeyBall: isKeyBall,
   resolveIceInnerColor: resolveIceInnerColor,
   createEmptyResolution: createEmptyResolution,
+  COMBO_BONUS_PER_HIT: COMBO_BONUS_PER_HIT,
   findPrimaryCollectionObjective: findPrimaryCollectionObjective
 }));
 
@@ -2012,6 +2111,7 @@ GameManager.prototype.getRuntimeSnapshot = function (runtimeEvents) {
 
   return {
     state: this.state,
+    surplusShotsSettling: this.state === "won_surplus_shots_pending",
     levelCode: this.currentLevel ? this.currentLevel.level.code : null,
     remainingShots: this.remainingShots,
     infiniteShots: !!this.isTimedInfiniteShots,
