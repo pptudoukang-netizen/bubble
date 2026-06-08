@@ -19,6 +19,7 @@ var BACKGROUND_SCROLL_RATIO = 0.05;
 var FOCUS_Y_RATIO_FROM_BOTTOM = 0.38;
 var FIRST_ISLAND_BOTTOM_SCROLL_PADDING = 300;
 var SCROLL_TO_LEVEL_DURATION = 0.32;
+var BACK_BUTTON_SYNC_SCROLL_INTERVAL = 6;
 var PROTAGONIST_WIDTH = 63;
 var PROTAGONIST_HEIGHT = 67;
 var PROTAGONIST_Y = 57;
@@ -686,6 +687,18 @@ function configureSpecialDoor(islandNode, nodeConfig, state) {
   doorNode.active = state.isLevelCompleted(nodeConfig.levelIds[0]) === true;
 }
 
+function markIslandConfigured(islandNode, state) {
+  islandNode.__floatingMapConfiguredRevision = state.islandDataRevision;
+}
+
+function configureIslandNodeIfStale(islandNode, nodeConfig, state) {
+  if (islandNode.__floatingMapConfiguredRevision === state.islandDataRevision) {
+    return;
+  }
+  configureIslandNode(islandNode, nodeConfig, state);
+  markIslandConfigured(islandNode, state);
+}
+
 function configureIslandNode(islandNode, nodeConfig, state) {
   var size = islandNode.getContentSize();
   if (!size || Math.abs(size.width - nodeConfig.width) > 0.001 || Math.abs(size.height - nodeConfig.height) > 0.001) {
@@ -730,7 +743,20 @@ function createIslandNode(state, nodeConfig) {
     widget.enabled = false;
   }
   configureIslandNode(islandNode, nodeConfig, state);
+  markIslandConfigured(islandNode, state);
   return islandNode;
+}
+
+function refreshConfiguredIslands(state) {
+  state.islandDataRevision += 1;
+  state.config.nodes.forEach(function (nodeConfig) {
+    var islandNode = state.renderedNodes[String(nodeConfig.index)];
+    if (!islandNode || !islandNode.isValid) {
+      return;
+    }
+    configureIslandNodeIfStale(islandNode, nodeConfig, state);
+  });
+  syncBackToCurrentLevelButtonVisibility(state);
 }
 
 function renderVisibleNodes(state) {
@@ -744,7 +770,7 @@ function renderVisibleNodes(state) {
       if (!state.renderedNodes[String(nodeConfig.index)] || !state.renderedNodes[String(nodeConfig.index)].isValid) {
         state.renderedNodes[String(nodeConfig.index)] = createIslandNode(state, nodeConfig);
       } else {
-        configureIslandNode(state.renderedNodes[String(nodeConfig.index)], nodeConfig, state);
+        configureIslandNodeIfStale(state.renderedNodes[String(nodeConfig.index)], nodeConfig, state);
       }
     }
   });
@@ -798,7 +824,11 @@ function applyContentDelta(state, deltaY) {
   state.content.y = nextY;
   moveBackground(state, appliedDeltaY);
   renderVisibleNodes(state);
-  syncBackToCurrentLevelButtonVisibility(state);
+  state.scrollFrameCounter = (state.scrollFrameCounter || 0) + 1;
+  if (state.scrollFrameCounter >= BACK_BUTTON_SYNC_SCROLL_INTERVAL) {
+    state.scrollFrameCounter = 0;
+    syncBackToCurrentLevelButtonVisibility(state);
+  }
 }
 
 function easeOutCubic(progress) {
@@ -820,6 +850,8 @@ function stopInertia(state) {
     state.inertiaTimer = null;
   }
   state.inertiaVelocityY = 0;
+  state.scrollFrameCounter = 0;
+  syncBackToCurrentLevelButtonVisibility(state);
 }
 
 function requireFloatingMapState(mapHostNode) {
@@ -865,6 +897,8 @@ function scrollToLevel(mapHostNode, levelId, options) {
     }
     if (progress >= 1) {
       stopScrollAnimation(state);
+      state.scrollFrameCounter = 0;
+      syncBackToCurrentLevelButtonVisibility(state);
       if (typeof options.onComplete === "function") {
         options.onComplete();
       }
@@ -1021,6 +1055,8 @@ function render(options) {
     onLevelSelectTap: options.onLevelSelectTap,
     backToCurrentLevelButtonNode: options.backToCurrentLevelButtonNode,
     renderedNodes: {},
+    islandDataRevision: 0,
+    scrollFrameCounter: 0,
     dragTracking: false,
     dragConsumed: false,
     lastTouchY: 0,
@@ -1041,9 +1077,27 @@ function render(options) {
   };
 }
 
+function refreshIslandProgress(mapHostNode, options) {
+  requireObject(options || {}, "Floating map refresh options");
+  var state = requireFloatingMapState(mapHostNode);
+  if (typeof options.highestUnlocked === "number") {
+    requirePositiveInteger(options.highestUnlocked, "highestUnlocked");
+    state.highestUnlocked = options.highestUnlocked;
+    state.latestAccessibleLevelId = resolveLatestAccessibleLevelId(state.config, options.highestUnlocked);
+  }
+  if (typeof options.getLevelStarCount === "function") {
+    state.getLevelStarCount = options.getLevelStarCount;
+  }
+  if (typeof options.isLevelCompleted === "function") {
+    state.isLevelCompleted = options.isLevelCompleted;
+  }
+  refreshConfiguredIslands(state);
+}
+
 module.exports = {
   loadAssets: loadAssets,
   render: render,
   scrollToLevel: scrollToLevel,
+  refreshIslandProgress: refreshIslandProgress,
   resolveLatestAccessibleLevelId: resolveLatestAccessibleLevelId
 };

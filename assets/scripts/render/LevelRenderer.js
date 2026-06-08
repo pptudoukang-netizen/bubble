@@ -404,6 +404,113 @@ function resolveGameBackgroundSpritePath(levelConfig) {
   return GAME_BG_RESOURCE_PREFIX;// + resolveLevelMapIndexForLevel(levelConfig);
 }
 
+function quantizeRenderValue(value, step) {
+  return Math.round(value / step) * step;
+}
+
+function resolveRuntimeBallKey(ballLike) {
+  if (!ballLike || typeof ballLike !== "object") {
+    return "";
+  }
+  if (typeof ballLike.color === "string" && ballLike.color) {
+    return ballLike.color;
+  }
+  if (typeof ballLike.entityType === "string" && ballLike.entityType) {
+    return ballLike.entityType;
+  }
+  return "";
+}
+
+function buildBottomPanelRenderKey(runtimeSnapshot) {
+  if (!runtimeSnapshot || typeof runtimeSnapshot !== "object") {
+    return "";
+  }
+  var shooter = runtimeSnapshot.shooter ? runtimeSnapshot.shooter : {};
+  var skillInventory = shooter.skillInventory ? shooter.skillInventory : {};
+  var adRunPowerups = runtimeSnapshot.adRunPowerups ? runtimeSnapshot.adRunPowerups : {};
+  var adRunPowerupAllowed = runtimeSnapshot.adRunPowerupAllowed ? runtimeSnapshot.adRunPowerupAllowed : {};
+  return [
+    runtimeSnapshot.state || "",
+    shooter.canUsePowerups ? 1 : 0,
+    shooter.pendingBarrierHammer ? 1 : 0,
+    shooter.pendingRainbowColorSelection ? 1 : 0,
+    runtimeSnapshot.infiniteShots ? 1 : 0,
+    Math.max(0, Math.floor(Number(skillInventory.rainbow) || 0)),
+    Math.max(0, Math.floor(Number(skillInventory.blast) || 0)),
+    Math.max(0, Math.floor(Number(skillInventory.swap) || 0)),
+    Math.max(0, Math.floor(Number(skillInventory.barrier_hammer) || 0)),
+    Math.max(0, Math.floor(Number(adRunPowerups.three_line_elimination) || 0)),
+    Math.max(0, Math.floor(Number(adRunPowerups.plus_three_balls) || 0)),
+    adRunPowerupAllowed.three_line_elimination === true ? 1 : 0,
+    adRunPowerupAllowed.plus_three_balls === true ? 1 : 0
+  ].join("|");
+}
+
+function buildShooterRenderKey(runtimeSnapshot) {
+  if (!runtimeSnapshot || typeof runtimeSnapshot !== "object") {
+    return "";
+  }
+  var shooter = runtimeSnapshot.shooter ? runtimeSnapshot.shooter : {};
+  var aim = shooter.aim ? shooter.aim : { origin: {}, direction: {} };
+  var origin = aim.origin ? aim.origin : {};
+  var direction = aim.direction ? aim.direction : {};
+  var trajectory = shooter.trajectory;
+  var projectile = runtimeSnapshot.activeProjectile;
+  var rainbowSelection = shooter.pendingRainbowColorSelection;
+  var rainbowColorsKey = rainbowSelection && Array.isArray(rainbowSelection.colors)
+    ? rainbowSelection.colors.join(",")
+    : "";
+  return [
+    runtimeSnapshot.remainingShots,
+    shooter.infiniteShots ? 1 : 0,
+    shooter.isAiming ? 1 : 0,
+    shooter.canUsePowerups ? 1 : 0,
+    shooter.pendingBarrierHammer ? 1 : 0,
+    rainbowColorsKey,
+    quantizeRenderValue(origin.x || 0, 0.5).toFixed(1),
+    quantizeRenderValue(origin.y || 0, 0.5).toFixed(1),
+    quantizeRenderValue(direction.x || 0, 0.001).toFixed(3),
+    quantizeRenderValue(direction.y || 0, 0.001).toFixed(3),
+    resolveRuntimeBallKey(shooter.currentBall || shooter.currentColor),
+    resolveRuntimeBallKey(shooter.nextBall || shooter.nextColor),
+    Math.max(0, Math.floor(Number(shooter.skillInventory && shooter.skillInventory.swap) || 0)),
+    trajectory && trajectory.targetCell ? (trajectory.targetCell.row + ":" + trajectory.targetCell.col) : "",
+    projectile && projectile.position
+      ? (Math.round(projectile.position.x) + ":" + Math.round(projectile.position.y))
+      : ""
+  ].join("|");
+}
+
+function buildDangerLineRenderKey(runtimeSnapshot) {
+  var board = runtimeSnapshot && runtimeSnapshot.board ? runtimeSnapshot.board : null;
+  if (!board) {
+    return "";
+  }
+  return [
+    board.version,
+    board.dropOffsetRows || 0,
+    board.dangerReached ? 1 : 0
+  ].join("|");
+}
+
+function buildTimerRenderKey(runtimeSnapshot) {
+  if (!runtimeSnapshot || typeof runtimeSnapshot !== "object") {
+    return "";
+  }
+  var jarSeconds = runtimeSnapshot.jarScoreBoostActive
+    ? Math.ceil(Math.max(0, Number(runtimeSnapshot.jarScoreBoostRemainingMs) || 0) / 1000)
+    : 0;
+  var timedTick = runtimeSnapshot.timedLevel
+    ? Math.ceil(Math.max(0, Number(runtimeSnapshot.remainingTimeMs) || 0) / 250)
+    : -1;
+  return [
+    runtimeSnapshot.jarScoreBoostActive ? 1 : 0,
+    jarSeconds,
+    runtimeSnapshot.timedLevel ? 1 : 0,
+    timedTick
+  ].join("|");
+}
+
 function buildJarRenderKey(levelConfig, runtimeSnapshot) {
   var jarColors = levelConfig && levelConfig.level && Array.isArray(levelConfig.level.jarColors)
     ? levelConfig.level.jarColors
@@ -635,6 +742,10 @@ function LevelRenderer(rootNode) {
   this.hudStarAnimationQueue = [];
   this.hudStarAnimationActive = false;
   this.lastJarRenderKey = "";
+  this.lastBottomPanelRenderKey = "";
+  this.lastShooterRenderKey = "";
+  this.lastDangerLineRenderKey = "";
+  this.lastTimerRenderKey = "";
   this.lastRenderedFallingCount = 0;
   this.dangerLineReady = false;
   this.dangerLineWarningActive = false;
@@ -838,6 +949,10 @@ LevelRenderer.prototype.renderLevel = function (levelConfig, runtimeSnapshot) {
   this.hudStarAnimationQueue = [];
   this.hudStarAnimationActive = false;
   this.lastJarRenderKey = "";
+  this.lastBottomPanelRenderKey = "";
+  this.lastShooterRenderKey = "";
+  this.lastDangerLineRenderKey = "";
+  this.lastTimerRenderKey = "";
   this.lastRenderedFallingCount = 0;
   this.dangerLineReady = false;
   this.dangerLineWarningActive = false;
@@ -907,6 +1022,10 @@ LevelRenderer.prototype.renderLevel = function (levelConfig, runtimeSnapshot) {
     this._renderResultPopup(runtimeSnapshot);
     this.lastHudRenderKey = buildHudRenderKey(levelConfig, runtimeSnapshot);
     this.lastJarRenderKey = buildJarRenderKey(levelConfig, runtimeSnapshot);
+    this.lastBottomPanelRenderKey = buildBottomPanelRenderKey(runtimeSnapshot);
+    this.lastShooterRenderKey = buildShooterRenderKey(runtimeSnapshot);
+    this.lastDangerLineRenderKey = buildDangerLineRenderKey(runtimeSnapshot);
+    this.lastTimerRenderKey = buildTimerRenderKey(runtimeSnapshot);
     Logger.info("Rendered runtime view", levelConfig.level.code);
   }.bind(this));
 };
@@ -925,17 +1044,34 @@ LevelRenderer.prototype.refreshRuntime = function (levelConfig, runtimeSnapshot)
     this._renderHud(levelConfig, runtimeSnapshot);
     this.lastHudRenderKey = nextHudKey;
   }
-  this._renderJarScoreBoostTimer(runtimeSnapshot);
-  this._renderTimedLevelTimer(runtimeSnapshot);
 
-  this._renderBottomPanel(runtimeSnapshot);
+  var nextTimerKey = buildTimerRenderKey(runtimeSnapshot);
+  if (nextTimerKey !== this.lastTimerRenderKey) {
+    this._renderJarScoreBoostTimer(runtimeSnapshot);
+    this._renderTimedLevelTimer(runtimeSnapshot);
+    this.lastTimerRenderKey = nextTimerKey;
+  }
+
+  var nextBottomPanelKey = buildBottomPanelRenderKey(runtimeSnapshot);
+  if (nextBottomPanelKey !== this.lastBottomPanelRenderKey) {
+    this._renderBottomPanel(runtimeSnapshot);
+    this.lastBottomPanelRenderKey = nextBottomPanelKey;
+  }
+
   var nextJarKey = buildJarRenderKey(levelConfig, runtimeSnapshot);
   if (nextJarKey !== this.lastJarRenderKey) {
     this._renderBottomJars(levelConfig, runtimeSnapshot);
     this.lastJarRenderKey = nextJarKey;
   }
 
-  this._renderFallingDrops(runtimeSnapshot);
+  var fallingSnapshot = runtimeSnapshot.systems && runtimeSnapshot.systems.fallingMarbleSystem
+    ? runtimeSnapshot.systems.fallingMarbleSystem
+    : null;
+  var activeFallingCount = fallingSnapshot ? Math.max(0, Math.floor(Number(fallingSnapshot.activeDropCount) || 0)) : 0;
+  if (activeFallingCount > 0 || this.lastRenderedFallingCount > 0) {
+    this._renderFallingDrops(runtimeSnapshot);
+  }
+
   this._playIceThawShake(runtimeSnapshot);
   this._playShotNoDropScreenShake(runtimeSnapshot);
   this._playComboBatterDisplay(runtimeSnapshot);
@@ -944,8 +1080,22 @@ LevelRenderer.prototype.refreshRuntime = function (levelConfig, runtimeSnapshot)
   this._playKeyUnlockAnimation(runtimeSnapshot);
   this._playSplitterSpawnAnimation(runtimeSnapshot);
   this._playCommentAnimation(runtimeSnapshot);
-  this._renderDangerLine(runtimeSnapshot);
-  this._renderShooter(runtimeSnapshot.shooter, runtimeSnapshot.activeProjectile, runtimeSnapshot.remainingShots);
+
+  var nextDangerKey = buildDangerLineRenderKey(runtimeSnapshot);
+  if (nextDangerKey !== this.lastDangerLineRenderKey) {
+    this._renderDangerLine(runtimeSnapshot);
+    this.lastDangerLineRenderKey = nextDangerKey;
+  }
+
+  var hasActiveProjectile = !!(runtimeSnapshot.activeProjectile);
+  var nextShooterKey = buildShooterRenderKey(runtimeSnapshot);
+  if (hasActiveProjectile || nextShooterKey !== this.lastShooterRenderKey) {
+    this._renderShooter(runtimeSnapshot.shooter, runtimeSnapshot.activeProjectile, runtimeSnapshot.remainingShots);
+    if (!hasActiveProjectile) {
+      this.lastShooterRenderKey = nextShooterKey;
+    }
+  }
+
   this._renderWinView(runtimeSnapshot);
   this._renderLoseView(runtimeSnapshot);
   this._renderResultPopup(runtimeSnapshot);

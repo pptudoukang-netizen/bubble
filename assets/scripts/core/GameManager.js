@@ -452,6 +452,9 @@ function GameManager(options) {
   this.isAiming = false;
   this.trajectoryCacheKey = null;
   this.trajectoryCachePlan = null;
+  this._aimGuidePathCacheKey = "";
+  this._aimGuidePathCache = null;
+  this._cachedAdRunPowerupAllowed = null;
   this.cachedBoardVersion = -1;
   this.cachedBoardSnapshot = null;
   this.cachedJarSnapshotKey = "";
@@ -534,6 +537,9 @@ GameManager.prototype.startLevel = function (levelConfig) {
   this.isAiming = false;
   this.trajectoryCacheKey = null;
   this.trajectoryCachePlan = null;
+  this._aimGuidePathCacheKey = "";
+  this._aimGuidePathCache = null;
+  this._cachedAdRunPowerupAllowed = null;
   this.cachedBoardVersion = -1;
   this.cachedBoardSnapshot = null;
   this.cachedJarSnapshotKey = "";
@@ -561,6 +567,10 @@ GameManager.prototype.startLevel = function (levelConfig) {
   Object.keys(this.systems).forEach(function (key) {
     this.systems[key].configureLevel(levelConfig);
   }, this);
+
+  this._rebuildCachedAdRunPowerupAllowed();
+  this._aimGuidePathCacheKey = "";
+  this._aimGuidePathCache = null;
 
   this.state = "running";
   Logger.info("Level started", levelConfig.level.code);
@@ -2237,6 +2247,35 @@ GameManager.prototype.debugDropBottomRow = function () {
   return this.getRuntimeSnapshot();
 };
 
+GameManager.prototype._rebuildCachedAdRunPowerupAllowed = function () {
+  var adRules = this._getAdPowerupRules();
+  var allowed = {};
+  if (adRules && Array.isArray(adRules.allowed)) {
+    adRules.allowed.forEach(function (powerupType) {
+      allowed[powerupType] = true;
+    });
+  }
+  this._cachedAdRunPowerupAllowed = allowed;
+};
+
+GameManager.prototype._getCachedAimGuidePath = function (origin, direction, maxBounces, topAttachY) {
+  var safeOrigin = origin ? origin : BoardLayout.shooterOrigin;
+  var safeDirection = direction ? direction : { x: 0, y: 1 };
+  var cacheKey = [
+    topAttachY,
+    maxBounces,
+    quantize(safeOrigin.x, 0.1).toFixed(1),
+    quantize(safeOrigin.y, 0.1).toFixed(1),
+    quantize(safeDirection.x, 0.001).toFixed(3),
+    quantize(safeDirection.y, 0.001).toFixed(3)
+  ].join("|");
+  if (this._aimGuidePathCacheKey !== cacheKey) {
+    this._aimGuidePathCacheKey = cacheKey;
+    this._aimGuidePathCache = buildAimGuidePath(safeOrigin, safeDirection, maxBounces, topAttachY);
+  }
+  return this._aimGuidePathCache;
+};
+
 GameManager.prototype.getTurnsUntilDrop = function () {
   return null;
 };
@@ -2251,19 +2290,17 @@ GameManager.prototype.getRuntimeSnapshot = function (runtimeEvents) {
   };
   var jarsSnapshot = this._getCachedJarSnapshot();
   var objectiveSnapshot = this._buildPrimaryObjectiveSnapshot(jarsSnapshot);
-  var adRules = this._getAdPowerupRules();
-  var adRunPowerupAllowed = {};
-  if (adRules && Array.isArray(adRules.allowed)) {
-    adRules.allowed.forEach(function (powerupType) {
-      adRunPowerupAllowed[powerupType] = true;
-    });
+  if (!this._cachedAdRunPowerupAllowed) {
+    this._rebuildCachedAdRunPowerupAllowed();
   }
+  var adRunPowerupAllowed = this._cachedAdRunPowerupAllowed;
 
-  var shooterSnapshot = this.systems.shooterController.getShooterState();
+  var shooterController = this.systems.shooterController;
+  var shooterSnapshot = shooterController.getShooterStateForRender();
   var topAttachY = this.systems.bubbleGrid && typeof this.systems.bubbleGrid.getTopAttachY === "function"
     ? this.systems.bubbleGrid.getTopAttachY()
     : (BoardLayout.boardStartY + BoardLayout.bubbleRadius);
-  shooterSnapshot.aimGuidePath = buildAimGuidePath(
+  shooterSnapshot.aimGuidePath = this._getCachedAimGuidePath(
     shooterSnapshot.aim ? shooterSnapshot.aim.origin : BoardLayout.shooterOrigin,
     shooterSnapshot.aim ? shooterSnapshot.aim.direction : { x: 0, y: 1 },
     this.systems.trajectoryPredictor ? this.systems.trajectoryPredictor.maxBounces : 0,
@@ -2273,7 +2310,7 @@ GameManager.prototype.getRuntimeSnapshot = function (runtimeEvents) {
   shooterSnapshot.infiniteShots = !!this.isTimedInfiniteShots;
   shooterSnapshot.pendingBarrierHammer = this.state === "running" && this.pendingBarrierHammer;
   shooterSnapshot.pendingRainbowColorSelection = this.state === "running" && this.pendingRainbowColorSelection
-    ? clone(this.pendingRainbowColorSelection)
+    ? this.pendingRainbowColorSelection
     : null;
   shooterSnapshot.canUsePowerups = !!(
     this.state === "running" &&
@@ -2281,7 +2318,9 @@ GameManager.prototype.getRuntimeSnapshot = function (runtimeEvents) {
     !this._isWaitingBoardAdvance() &&
     !this.pendingRainbowColorSelection
   );
-  shooterSnapshot.trajectory = this.isAiming && this.pendingShotPlan && !this.activeProjectile && !this.pendingRainbowColorSelection ? clone(this.pendingShotPlan) : null;
+  shooterSnapshot.trajectory = this.isAiming && this.pendingShotPlan && !this.activeProjectile && !this.pendingRainbowColorSelection
+    ? this.pendingShotPlan
+    : null;
 
   return {
     state: this.state,
@@ -2309,7 +2348,7 @@ GameManager.prototype.getRuntimeSnapshot = function (runtimeEvents) {
     shooter: shooterSnapshot,
     jars: jarsSnapshot,
     objectives: objectiveSnapshot,
-    adRunPowerups: clone(this.adRunPowerupInventory),
+    adRunPowerups: this.adRunPowerupInventory,
     adRunPowerupAllowed: adRunPowerupAllowed,
     winStats: {
       totalScore: this.score,
@@ -2320,7 +2359,7 @@ GameManager.prototype.getRuntimeSnapshot = function (runtimeEvents) {
       starRating: calculateStarRating(this.score, this.scoreHeatBand),
       starProgress: calculateStarProgress(this.score, this.scoreHeatBand),
       starThresholds: normalizeStarThresholds(this.scoreHeatBand),
-      scoreHeatBand: clone(this.scoreHeatBand),
+      scoreHeatBand: this.scoreHeatBand,
       scoreDifficulty: this.scoreHeatBand ? this.scoreHeatBand.difficulty : "normal"
     },
     runtimeEvents: Array.isArray(runtimeEvents) ? runtimeEvents.slice() : [],

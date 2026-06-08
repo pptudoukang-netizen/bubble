@@ -383,6 +383,21 @@ ShooterController.prototype.drainRemainingShotBalls = function (remainingCount) 
   return drained;
 };
 
+ShooterController.prototype.getShooterStateForRender = function () {
+  return {
+    currentBall: this.currentBall,
+    nextBall: this.nextBall,
+    skillInventory: this.skillInventory,
+    currentColor: this.currentColor,
+    nextColor: this.nextColor,
+    aim: {
+      origin: this.origin,
+      direction: this.aimDirection
+    },
+    shotLimit: this.shotLimit
+  };
+};
+
 ShooterController.prototype.getShooterState = function () {
   return {
     currentBall: clone(this.currentBall),

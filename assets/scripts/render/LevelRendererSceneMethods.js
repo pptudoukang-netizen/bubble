@@ -1137,9 +1137,12 @@ LevelRenderer.prototype._renderBottomPanel = function (runtimeSnapshot) {
   }
 
   panel.active = true;
-  var panelWidget = panel.getComponent(cc.Widget);
-  if (panelWidget && panelWidget.updateAlignment) {
-    panelWidget.updateAlignment();
+  if (!panel.__bottomPanelLayoutInitialized) {
+    var panelWidget = panel.getComponent(cc.Widget);
+    if (panelWidget && panelWidget.updateAlignment) {
+      panelWidget.updateAlignment();
+    }
+    panel.__bottomPanelLayoutInitialized = true;
   }
 
   var propsScrollNode = requireChildNode(panel, "props_scroll", "BttomPanel");

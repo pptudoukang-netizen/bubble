@@ -205,18 +205,23 @@ function createGameManagerShotResolutionMethods(deps) {
         return;
       }
 
-      var shooterSnapshot = this.systems.shooterController.getShooterState();
-      var cacheKey = this._buildShotPlanCacheKey(shooterSnapshot);
+      var shooterController = this.systems.shooterController;
+      var cacheKey = this._buildShotPlanCacheKey({
+        aim: {
+          origin: shooterController.origin,
+          direction: shooterController.aimDirection
+        }
+      });
 
       if (this.trajectoryCacheKey === cacheKey && this.trajectoryCachePlan) {
-        this.pendingShotPlan = clone(this.trajectoryCachePlan);
+        this.pendingShotPlan = this.trajectoryCachePlan;
         return;
       }
 
       var planned = this.systems.trajectoryPredictor.predictShotPlan(
         this.systems.bubbleGrid,
-        shooterSnapshot.aim.origin,
-        shooterSnapshot.aim.direction
+        shooterController.origin,
+        shooterController.aimDirection
       );
 
       if (planned && planned.valid) {
@@ -232,7 +237,7 @@ function createGameManagerShotResolutionMethods(deps) {
 
       this.pendingShotPlan = planned || null;
       this.trajectoryCacheKey = cacheKey;
-      this.trajectoryCachePlan = planned ? clone(planned) : null;
+      this.trajectoryCachePlan = planned || null;
     },
 
     _buildShotPlanCacheKey: function (shooterSnapshot) {
