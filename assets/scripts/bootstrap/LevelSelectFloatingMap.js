@@ -17,9 +17,12 @@ var INERTIA_DECELERATION = 2600;
 var INERTIA_MIN_VELOCITY = 18;
 var BACKGROUND_SCROLL_RATIO = 0.05;
 var FOCUS_Y_RATIO_FROM_BOTTOM = 0.38;
+var FIRST_ISLAND_BOTTOM_SCROLL_PADDING = 300;
 var SCROLL_TO_LEVEL_DURATION = 0.32;
-var PROTAGONIST_SIZE = 48;
-var PROTAGONIST_Y = 55;
+var PROTAGONIST_WIDTH = 63;
+var PROTAGONIST_HEIGHT = 67;
+var PROTAGONIST_Y = 57;
+var PROTAGONIST_Z_INDEX = 1000;
 var NORMAL_ISLAND_CAPACITIES = {
   island1: 3,
   island2: 4,
@@ -468,6 +471,62 @@ function resolveNodeTopY(nodeConfig) {
   return nodeConfig.y + (1 - nodeConfig.anchorY) * nodeConfig.height;
 }
 
+function findRenderedLevelButton(state, levelId) {
+  var renderedNodeKeys = Object.keys(state.renderedNodes);
+  for (var index = 0; index < renderedNodeKeys.length; index += 1) {
+    var islandNode = state.renderedNodes[renderedNodeKeys[index]];
+    if (!islandNode || !islandNode.isValid) {
+      continue;
+    }
+    var buttons = collectLevelButtons(islandNode);
+    for (var buttonIndex = 0; buttonIndex < buttons.length; buttonIndex += 1) {
+      if (buttons[buttonIndex].node.__floatingMapLevelId === levelId) {
+        return buttons[buttonIndex].node;
+      }
+    }
+  }
+  return null;
+}
+
+function resolveNodeVerticalBoundsInMapHost(mapHostNode, node) {
+  requireNode(node, "Floating map visibility target");
+  var size = node.getContentSize();
+  if (!size || !Number.isFinite(size.height) || size.height <= 0) {
+    throw new Error("Floating map visibility target height must be valid.");
+  }
+  var anchor = node.getAnchorPoint();
+  if (!anchor || !Number.isFinite(anchor.y)) {
+    throw new Error("Floating map visibility target anchorY must be valid.");
+  }
+  var centerInMap = mapHostNode.convertToNodeSpaceAR(node.convertToWorldSpaceAR(cc.v2(0, 0)));
+  return {
+    bottom: centerInMap.y - anchor.y * size.height,
+    top: centerInMap.y + (1 - anchor.y) * size.height
+  };
+}
+
+function isVerticalRangeVisibleInMapBounds(bounds, targetBottom, targetTop) {
+  return targetBottom < bounds.top && targetTop > bounds.bottom;
+}
+
+function isLevelVisibleInMapHost(state, levelId) {
+  requirePositiveInteger(levelId, "Floating map visibility levelId");
+  var buttonNode = findRenderedLevelButton(state, levelId);
+  if (buttonNode) {
+    var buttonBounds = resolveNodeVerticalBoundsInMapHost(state.mapHostNode, buttonNode);
+    return isVerticalRangeVisibleInMapBounds(state.bounds, buttonBounds.bottom, buttonBounds.top);
+  }
+  var nodeConfig = state.config.nodes[findNodeIndexByLevelId(state.config, levelId)];
+  var islandBottom = state.content.y + resolveNodeBottomY(nodeConfig);
+  var islandTop = state.content.y + resolveNodeTopY(nodeConfig);
+  return isVerticalRangeVisibleInMapBounds(state.bounds, islandBottom, islandTop);
+}
+
+function syncBackToCurrentLevelButtonVisibility(state) {
+  requireNode(state.backToCurrentLevelButtonNode, "LevelView/back_cur_level");
+  state.backToCurrentLevelButtonNode.active = !isLevelVisibleInMapHost(state, state.latestAccessibleLevelId);
+}
+
 function getVisibleRange(state) {
   return {
     minY: state.bounds.bottom - state.content.y - MAP_BUFFER_Y,
@@ -509,53 +568,80 @@ function requirePositiveOrZeroStarCount(value) {
   return value;
 }
 
-function bindLevelButton(buttonNode, state) {
-  buttonNode.__floatingMapState = state;
-  if (buttonNode.__floatingMapTapBound === true) {
+function bindLevelTapNode(tapNode, state) {
+  requireNode(tapNode, "floating map level tap node");
+  tapNode.__floatingMapState = state;
+  if (tapNode.__floatingMapTapBound === true) {
     return;
   }
-  buttonNode.__floatingMapTapBound = true;
-  buttonNode.on(cc.Node.EventType.TOUCH_END, function (event) {
+  tapNode.__floatingMapTapBound = true;
+  tapNode.on(cc.Node.EventType.TOUCH_END, function (event) {
     if (event) {
       event.stopPropagation();
     }
-    var buttonState = buttonNode.__floatingMapState;
+    var buttonState = tapNode.__floatingMapState;
     if (!buttonState || buttonState.dragConsumed === true) {
       return;
     }
-    if (buttonNode.__floatingMapUnlocked !== true) {
+    if (tapNode.__floatingMapUnlocked !== true) {
       return;
     }
-    var levelId = buttonNode.__floatingMapLevelId;
+    var levelId = tapNode.__floatingMapLevelId;
     if (!Number.isInteger(levelId) || levelId <= 0) {
-      throw new Error("Floating map button level id is invalid.");
+      throw new Error("Floating map tap node level id is invalid.");
     }
     buttonState.onLevelSelectTap(levelId);
   });
 }
 
-function attachProtagonist(buttonNode, state) {
-  var existingNode = buttonNode.getChildByName(PROTAGONIST_NODE_NAME);
+function bindLevelButton(buttonNode, state) {
+  bindLevelTapNode(buttonNode, state);
+}
+
+function removeProtagonistFromIsland(islandNode) {
+  requireNode(islandNode, "protagonist island");
+  var existingNode = islandNode.getChildByName(PROTAGONIST_NODE_NAME);
   if (existingNode && existingNode.isValid) {
     existingNode.destroy();
-  }
-  var protagonistNode = new cc.Node(PROTAGONIST_NODE_NAME);
-  protagonistNode.parent = buttonNode;
-  protagonistNode.setPosition(0, PROTAGONIST_Y);
-  protagonistNode.setContentSize(PROTAGONIST_SIZE, PROTAGONIST_SIZE);
-  protagonistNode.zIndex = 1000;
-  var sprite = protagonistNode.addComponent(cc.Sprite);
-  sprite.spriteFrame = state.assets.protagonistSpriteFrame;
-  if (cc.Sprite && cc.Sprite.SizeMode && cc.Sprite.SizeMode.CUSTOM !== undefined) {
-    sprite.sizeMode = cc.Sprite.SizeMode.CUSTOM;
   }
 }
 
-function removeProtagonist(buttonNode) {
-  var existingNode = buttonNode.getChildByName(PROTAGONIST_NODE_NAME);
-  if (existingNode && existingNode.isValid) {
-    existingNode.destroy();
+function attachProtagonist(buttonNode, state) {
+  requireNode(buttonNode, "protagonist level button");
+  var islandNode = buttonNode.parent;
+  requireNode(islandNode, "protagonist island parent");
+  removeProtagonistFromIsland(islandNode);
+  var protagonistNode = new cc.Node(PROTAGONIST_NODE_NAME);
+  protagonistNode.parent = islandNode;
+  var localPosition = islandNode.convertToNodeSpaceAR(
+    buttonNode.convertToWorldSpaceAR(cc.v2(0, PROTAGONIST_Y))
+  );
+  protagonistNode.setPosition(localPosition.x, localPosition.y);
+  protagonistNode.setContentSize(PROTAGONIST_WIDTH, PROTAGONIST_HEIGHT);
+  protagonistNode.zIndex = PROTAGONIST_Z_INDEX;
+  var sprite = protagonistNode.addComponent(cc.Sprite);
+  sprite.sizeMode = cc.Sprite.SizeMode.CUSTOM;
+  sprite.spriteFrame = state.assets.protagonistSpriteFrame;
+  protagonistNode.setContentSize(PROTAGONIST_WIDTH, PROTAGONIST_HEIGHT);
+  protagonistNode.__floatingMapLevelId = buttonNode.__floatingMapLevelId;
+  protagonistNode.__floatingMapUnlocked = buttonNode.__floatingMapUnlocked;
+  if (!Number.isInteger(protagonistNode.__floatingMapLevelId) || protagonistNode.__floatingMapLevelId <= 0) {
+    throw new Error("Floating map protagonist level id is invalid.");
   }
+  if (typeof protagonistNode.__floatingMapUnlocked !== "boolean") {
+    throw new Error("Floating map protagonist unlock state must be boolean.");
+  }
+  bindLevelTapNode(protagonistNode, state);
+}
+
+function syncIslandProtagonist(islandNode, nodeConfig, state) {
+  removeProtagonistFromIsland(islandNode);
+  var buttons = collectLevelButtons(islandNode);
+  buttons.forEach(function (button, index) {
+    if (nodeConfig.levelIds[index] === state.latestAccessibleLevelId) {
+      attachProtagonist(button.node, state);
+    }
+  });
 }
 
 function configureLevelButton(buttonNode, levelId, state) {
@@ -568,11 +654,6 @@ function configureLevelButton(buttonNode, levelId, state) {
   configureButtonLock(buttonNode, isUnlocked);
   configureButtonStars(buttonNode, starCount, isCompleted);
   bindLevelButton(buttonNode, state);
-  if (levelId === state.latestAccessibleLevelId) {
-    attachProtagonist(buttonNode, state);
-  } else {
-    removeProtagonist(buttonNode);
-  }
 }
 
 function clearTeleportArray(teleportPointNode) {
@@ -623,6 +704,7 @@ function configureIslandNode(islandNode, nodeConfig, state) {
     }
     configureLevelButton(button.node, nodeConfig.levelIds[index], state);
   });
+  syncIslandProtagonist(islandNode, nodeConfig, state);
   if (nodeConfig.type === "normal") {
     configureNormalTeleport(islandNode, nodeConfig, state);
     return;
@@ -716,6 +798,7 @@ function applyContentDelta(state, deltaY) {
   state.content.y = nextY;
   moveBackground(state, appliedDeltaY);
   renderVisibleNodes(state);
+  syncBackToCurrentLevelButtonVisibility(state);
 }
 
 function easeOutCubic(progress) {
@@ -758,6 +841,7 @@ function scrollToLevel(mapHostNode, levelId, options) {
   var startY = state.content.y;
   if (Math.abs(targetY - startY) < 0.5) {
     renderVisibleNodes(state);
+    syncBackToCurrentLevelButtonVisibility(state);
     if (typeof options.onComplete === "function") {
       options.onComplete();
     }
@@ -903,6 +987,7 @@ function requireRenderOptions(options) {
   if (typeof options.onLevelSelectTap !== "function") {
     throw new Error("Floating map requires onLevelSelectTap.");
   }
+  requireNode(options.backToCurrentLevelButtonNode, "LevelView/back_cur_level");
 }
 
 function render(options) {
@@ -927,13 +1012,14 @@ function render(options) {
     config: config,
     bounds: bounds,
     focusY: focusY,
-    maxContentY: bounds.bottom - resolveNodeBottomY(firstNode),
+    maxContentY: bounds.bottom - resolveNodeBottomY(firstNode) + FIRST_ISLAND_BOTTOM_SCROLL_PADDING,
     minContentY: bounds.top - resolveNodeTopY(lastNode),
     latestAccessibleLevelId: latestAccessibleLevelId,
     highestUnlocked: options.highestUnlocked,
     getLevelStarCount: options.getLevelStarCount,
     isLevelCompleted: options.isLevelCompleted,
     onLevelSelectTap: options.onLevelSelectTap,
+    backToCurrentLevelButtonNode: options.backToCurrentLevelButtonNode,
     renderedNodes: {},
     dragTracking: false,
     dragConsumed: false,
@@ -947,6 +1033,7 @@ function render(options) {
   mapHostNode.__floatingMapState = state;
   bindTouch(mapHostNode, state);
   renderVisibleNodes(state);
+  syncBackToCurrentLevelButtonVisibility(state);
   return {
     nodeCount: config.nodes.length,
     currentNodeIndex: findNodeIndexByLevelId(config, latestAccessibleLevelId),

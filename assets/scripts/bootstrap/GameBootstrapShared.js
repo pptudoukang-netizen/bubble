@@ -14,6 +14,7 @@ var ShopStateStore = require("../utils/ShopStateStore");
 var GameCircleWelfareStore = require("../utils/GameCircleWelfareStore");
 var SelectedPowerupsStore = require("../utils/SelectedPowerupsStore");
 var SignInStore = require("../utils/SignInStore");
+var NewUserGuideStore = require("../utils/NewUserGuideStore");
 var NewGiftStore = require("../utils/NewGiftStore");
 var RouteConfigStore = require("../utils/RouteConfigStore");
 var AudioManager = require("../audio/AudioManager");
@@ -136,6 +137,7 @@ module.exports = {
   GameCircleWelfareStore: GameCircleWelfareStore,
   SelectedPowerupsStore: SelectedPowerupsStore,
   SignInStore: SignInStore,
+  NewUserGuideStore: NewUserGuideStore,
   NewGiftStore: NewGiftStore,
   RouteConfigStore: RouteConfigStore,
   AudioManager: AudioManager,

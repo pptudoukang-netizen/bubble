@@ -45,7 +45,10 @@ function findNodeByNameRecursive(rootNode, name) {
     return rootNode;
   }
 
-  var children = rootNode.children || [];
+  var children = rootNode.children;
+  if (!Array.isArray(children)) {
+    throw new Error("RankingView node children must be an array: " + rootNode.name);
+  }
   for (var i = 0; i < children.length; i += 1) {
     var found = findNodeByNameRecursive(children[i], name);
     if (found) {
@@ -152,6 +155,54 @@ function setSpriteFrame(sprite, spriteFrame) {
   }
 }
 
+function createSpriteFrameFromRemoteAsset(imageAsset, imageUrl) {
+  if (imageAsset instanceof cc.SpriteFrame) {
+    return imageAsset;
+  }
+  if (imageAsset instanceof cc.Texture2D) {
+    return new cc.SpriteFrame(imageAsset);
+  }
+  if (imageAsset._texture instanceof cc.Texture2D) {
+    return new cc.SpriteFrame(imageAsset._texture);
+  }
+  if (imageAsset._nativeAsset) {
+    return createSpriteFrameFromImage(imageAsset._nativeAsset);
+  }
+  throw new Error("Unsupported ranking avatar asset: " + imageUrl);
+}
+
+function loadSpriteFrameFromWxImage(imageUrl) {
+  return new Promise(function (resolve, reject) {
+    var image = wx.createImage();
+    image.onload = function () {
+      resolve(createSpriteFrameFromImage(image));
+    };
+    image.onerror = function (error) {
+      reject(new Error("Load ranking avatar with wx.createImage failed: " + imageUrl + ", " + JSON.stringify(error)));
+    };
+    image.src = imageUrl;
+  });
+}
+
+function loadSpriteFrameFromAssetManager(imageUrl) {
+  return new Promise(function (resolve, reject) {
+    cc.assetManager.loadRemote(imageUrl, function (error, imageAsset) {
+      if (error || !imageAsset) {
+        reject(new Error("Load ranking avatar failed: " + imageUrl));
+        return;
+      }
+      resolve(createSpriteFrameFromRemoteAsset(imageAsset, imageUrl));
+    });
+  });
+}
+
+function loadAvatarSpriteFrame(imageUrl) {
+  if (typeof wx !== "undefined" && wx && typeof wx.createImage === "function") {
+    return loadSpriteFrameFromWxImage(imageUrl);
+  }
+  return loadSpriteFrameFromAssetManager(imageUrl);
+}
+
 function setSpriteRemoteImage(sprite, imageUrl) {
   if (!sprite || !sprite.node || !sprite.node.isValid) {
     throw new Error("Ranking avatar sprite is required.");
@@ -174,37 +225,17 @@ function setSpriteRemoteImage(sprite, imageUrl) {
   }
 
   if (!AVATAR_LOAD_PROMISES[imageUrl]) {
-    AVATAR_LOAD_PROMISES[imageUrl] = new Promise(function (resolve, reject) {
-      cc.assetManager.loadRemote(imageUrl, { ext: ".png" }, function (error, imageAsset) {
-        if (error || !imageAsset) {
-          delete AVATAR_LOAD_PROMISES[imageUrl];
-          reject(new Error("Load ranking avatar failed: " + imageUrl));
-          return;
-        }
-
-        var spriteFrame = null;
-        if (imageAsset instanceof cc.SpriteFrame) {
-          spriteFrame = imageAsset;
-        } else if (imageAsset instanceof cc.Texture2D) {
-          spriteFrame = new cc.SpriteFrame(imageAsset);
-        } else if (imageAsset._texture instanceof cc.Texture2D) {
-          spriteFrame = new cc.SpriteFrame(imageAsset._texture);
-        } else if (imageAsset._nativeAsset) {
-          spriteFrame = createSpriteFrameFromImage(imageAsset._nativeAsset);
-        }
-        if (!spriteFrame) {
-          delete AVATAR_LOAD_PROMISES[imageUrl];
-          reject(new Error("Unsupported ranking avatar asset: " + imageUrl));
-          return;
-        }
-
-        AVATAR_SPRITE_FRAME_CACHE[imageUrl] = spriteFrame;
-        delete AVATAR_LOAD_PROMISES[imageUrl];
-        resolve(spriteFrame);
-      });
+    AVATAR_LOAD_PROMISES[imageUrl] = loadAvatarSpriteFrame(imageUrl).then(function (spriteFrame) {
+      AVATAR_SPRITE_FRAME_CACHE[imageUrl] = spriteFrame;
+      delete AVATAR_LOAD_PROMISES[imageUrl];
+      return spriteFrame;
+    }).catch(function (error) {
+      delete AVATAR_LOAD_PROMISES[imageUrl];
+      throw error;
     });
   }
 
+  sprite.spriteFrame = null;
   AVATAR_LOAD_PROMISES[imageUrl].then(function (spriteFrame) {
     if (!targetNode.isValid || targetNode.__rankingAvatarUrl !== imageUrl) {
       return;

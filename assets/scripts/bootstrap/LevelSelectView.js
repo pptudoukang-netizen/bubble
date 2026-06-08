@@ -1240,6 +1240,10 @@ function renderLevelSelectContent(options) {
     onOpenDailyTasks: onOpenDailyTasks
   });
   bindQuickStartButton(levelView, onQuickStart);
+  var backToCurrentLevelButtonNode = levelView.getChildByName("back_cur_level");
+  if (!backToCurrentLevelButtonNode || !backToCurrentLevelButtonNode.isValid) {
+    throw new Error("LevelView/back_cur_level is required.");
+  }
   bindBackToCurrentLevelButton(levelView, onBackToCurrentLevel);
 
   var mapHostNode = levelView.getChildByName("map");
@@ -1262,7 +1266,7 @@ function renderLevelSelectContent(options) {
     mapHostNode: mapHostNode,
     assets: floatingMapAssets,
     highestUnlocked: highestUnlocked,
-    highlightedLevelId: highlightedLevelId,
+    backToCurrentLevelButtonNode: backToCurrentLevelButtonNode,
     getLevelStarCount: getLevelStarCount,
     isLevelCompleted: isLevelCompleted,
     onLevelSelectTap: onLevelSelectTap

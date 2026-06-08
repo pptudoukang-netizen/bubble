@@ -189,7 +189,7 @@ BuyViewController.prototype.render = function (options) {
   }.bind(this));
   setLabelText(this._nodes.name, options.goods.displayName);
   setLabelText(this._nodes.functionText, options.goods.functionText);
-  setLabelText(this._nodes.todayLimit, options.remaining + "/" + options.goods.dailyLimit);
+  setLabelText(this._nodes.todayLimit, options.goods.dailyLimit === 0 ? "不限购" : options.remaining + "/" + options.goods.dailyLimit);
   this._syncQuantity();
   return iconLoadPromise;
 };

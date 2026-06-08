@@ -90,6 +90,8 @@ function validateObjectives(objectives, objectiveType, level, issues) {
     if (condition.type === "collect_color") {
       if (typeof condition.color !== "string" || level.colors.indexOf(condition.color) === -1) {
         issues.push(objectiveType + " condition #" + index + " collect_color must use a color from level.colors");
+      } else if (!Array.isArray(level.jarColors) || level.jarColors.indexOf(condition.color) === -1) {
+        issues.push(objectiveType + " condition #" + index + " collect_color must use a color from level.jarColors");
       }
     }
   });
@@ -353,6 +355,21 @@ function validateIceSnowballSupply(level, issues) {
   }
 }
 
+function validateInitialShotBalls(level, issues) {
+  if (level.initialShotBalls === undefined) {
+    return;
+  }
+  if (!Array.isArray(level.initialShotBalls) || level.initialShotBalls.length <= 0 || level.initialShotBalls.length > 2) {
+    issues.push("initialShotBalls must contain 1 or 2 colors");
+    return;
+  }
+  level.initialShotBalls.forEach(function (color, index) {
+    if (typeof color !== "string" || level.colors.indexOf(color) === -1) {
+      issues.push("initialShotBalls[" + index + "] must use a color from level.colors");
+    }
+  });
+}
+
 function validateLevelData(data, expectedLevelId) {
   var issues = [];
   var level = data.level || null;
@@ -496,6 +513,7 @@ function validateLevelData(data, expectedLevelId) {
 
   validateObjectives(level.winConditions, "win", level, issues);
   validateObjectives(level.bonusObjectives, "bonus", level, issues);
+  validateInitialShotBalls(level, issues);
   validateIceSnowballSupply(level, issues);
   validateAdPowerupRules(level, issues);
   validateClearRewardItems(level, expectedLevelId, issues);

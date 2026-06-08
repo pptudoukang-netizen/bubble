@@ -487,6 +487,13 @@ module.exports = {
       this._ensureGameCircleEntryButton();
     }
     this._ensureStaminaRecoveryTicker();
+    var guideShowResult = this._showNewUserGuideForQuickStart();
+    if (guideShowResult && typeof guideShowResult.catch === "function") {
+      guideShowResult.catch(function (error) {
+        Logger.error("Show quick start new user guide failed", error && error.stack ? error.stack : String(error));
+        throw error;
+      });
+    }
   },
 
   _onLevelSelectMapIndexChange: function (nextMapIndex) {
@@ -762,11 +769,7 @@ module.exports = {
   },
 
   _resolveCurrentMapLevelId: function () {
-    var self = this;
-    return this._loadAvailableLevelIds().then(function (levelIds) {
-      var highestUnlocked = self._resolveHighestUnlockedLevelId(levelIds);
-      return self._resolveHighlightedLevelId(levelIds, highestUnlocked);
-    });
+    return this._resolveLatestAccessibleLevelId();
   },
 
   _onLevelSelectQuickStartTap: function () {
@@ -784,6 +787,7 @@ module.exports = {
     }
 
     this._playSfx("uiClick");
+    this._advanceNewUserGuideToStartGame();
     var levelViewNode = this._levelSelectNode;
     var self = this;
     this._resolveLatestAccessibleLevelId().then(function (latestLevelId) {

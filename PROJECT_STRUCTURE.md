@@ -34,6 +34,7 @@
 - `GameBootstrapCompositionMethods.js`：`onLoad` 初始化中枢，创建 Store、Service、Manager、Renderer、Audio、Tips、NetworkLoading 等。
 - `GameBootstrapStartupMethods.js`：启动加载流程，预加载分包、选关预制体、关卡配置，并展示 LoadingView。
 - `GameBootstrapGameplayInputMethods.js`：局内触摸输入、瞄准、发射、update 驱动。
+- `GameBootstrapNewUserGuideMethods.js`：新账号首次进入的新手引导覆盖层，使用 `resources/image/finger.png` 指引快速开始、开局按钮和首次局内发射操作。
 - `GameBootstrapLevelRuntimeMethods.js`：启动关卡、重开、终态判断。
 - `GameBootstrapLevelSelectFlowMethods.js`：选关页面、关卡进度、胜利记录、星级，并预加载 `map` 分包浮岛地图资源。
 - `GameBootstrapRouteEditorFlowMethods.js`：加载关卡与路线编辑器流程。
@@ -126,7 +127,7 @@
 - 星星宝箱：`StarChestService.js`、`StarChestRewardService.js`
 - 微信能力：`WechatShareService.js`、`FriendGiftService.js`、`GameCircleButtonAdapter.js`、`WorldLeaderboardService.js`
 - 玩家云端档案：`PlayerCloudProfileService.js` 通过 `playerProfile` 微信云函数同步本地玩家状态到云数据库 `player_profiles`
-- 世界排行榜：`WorldLeaderboardService.js` 在点击排行榜入口时通过 `wx.getUserProfile` 获取昵称头像，调用 `worldLeaderboard` 微信云函数把本地最佳成绩汇总写入云数据库 `world_leaderboard` 并拉取榜单。
+- 世界排行榜：`WorldLeaderboardService.js` 优先读取本地缓存的排行榜昵称头像；缓存不存在时在点击排行榜入口后通过 `wx.getUserProfile` 获取并写入 `bubble_world_leaderboard_profile_v1`，再调用 `worldLeaderboard` 微信云函数把本地最佳成绩汇总写入云数据库 `world_leaderboard` 并拉取榜单。
 - 游戏圈福利：`GameCircleWelfareService.js`
 - 埋点：`TelemetryService.js`
 
@@ -140,6 +141,7 @@
 - `BundleLoader.js`：分包/资源加载。
 - `Logger.js`、`DebugFlags.js`：日志和调试开关。
 - 各种 Store：`LevelProgressStore.js`、`PlayerResourceStore.js`、`InventoryStore.js`、`SelectedPowerupsStore.js`、`DailyTaskStore.js`、`SignInStore.js`、`StarChestStore.js`、`ShopStateStore.js`、`StaminaRecoveryStore.js`、`NewGiftStore.js`、`RouteConfigStore.js`、`GameCircleWelfareStore.js`、`LeaderboardStore.js`。
+- `NewUserGuideStore.js`：记录新账号新手引导步骤，未完成引导时阻止签到弹窗自动弹出。
 
 ### ui
 
@@ -192,6 +194,13 @@
 6. 无剩余发射球时，清屏掉落结算完成后同样先 `won_settlement_pending` 停顿 1 秒，再 `won`。
 7. `GameBootstrap.update` 刷新 `GameManager.update(dt)`，再让 `LevelRenderer.refreshRuntime` 同步画面。
 8. runtime event 驱动音效、震动、埋点、结果弹窗和奖励流程；`WinView` 仅在 `state === "won"` 时弹出。
+
+### 新手引导
+
+1. 新账号首次进入选关页时，`NewUserGuideStore` 进入 `quick_start` 步骤，`GameBootstrapNewUserGuideMethods` 在 `quick_start_btn` 上显示手指呼吸动画。
+2. 点击快速开始后进入 `start_game` 步骤，开局准备弹窗渲染完成后在 `play_btn` 上显示手指呼吸动画。
+3. 开局成功并渲染第一关后进入 `game_fire` 步骤，在游戏区域中间显示手指和弧形滑动轨迹，引导旋转炮台并完成一次发射。
+4. 第一次真实发射成功后标记引导完成；引导未完成期间，签到界面不会自动弹出。
 
 ## 关卡配置
 

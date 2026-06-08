@@ -1,5 +1,7 @@
 "use strict";
 
+var UNLIMITED_REMAINING_COUNT = Number.MAX_SAFE_INTEGER;
+
 function clone(data) {
   return JSON.parse(JSON.stringify(data));
 }
@@ -123,6 +125,9 @@ ShopStateService.prototype.getDailyPurchasedCount = function (skuId) {
 
 ShopStateService.prototype.getRemainingCount = function (skuId) {
   var goods = this.configService.getGoodsBySkuId(skuId);
+  if (goods.dailyLimit === 0) {
+    return UNLIMITED_REMAINING_COUNT;
+  }
   var purchasedCount = this.getDailyPurchasedCount(skuId);
   if (purchasedCount > goods.dailyLimit) {
     throw new Error("Shop purchased count exceeds dailyLimit: " + skuId);
@@ -154,5 +159,6 @@ ShopStateService.prototype.getState = function () {
 };
 
 ShopStateService.toDateKey = toDateKey;
+ShopStateService.UNLIMITED_REMAINING_COUNT = UNLIMITED_REMAINING_COUNT;
 
 module.exports = ShopStateService;

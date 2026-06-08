@@ -76,6 +76,22 @@ function getRuntimeBoardCells(runtimeSnapshot) {
   return runtimeSnapshot.board.cells;
 }
 
+function getRuntimeObjectiveSnapshot(runtimeSnapshot) {
+  requireObject(runtimeSnapshot, "Ad revive runtime snapshot");
+  return requireObject(runtimeSnapshot.objectives, "Ad revive runtime objectives");
+}
+
+function isObjectiveCompleted(runtimeSnapshot) {
+  var objectives = getRuntimeObjectiveSnapshot(runtimeSnapshot);
+  if (!Number.isFinite(objectives.progress) || objectives.progress < 0) {
+    throw new Error("Ad revive objective progress must be a non-negative number.");
+  }
+  if (!Number.isFinite(objectives.target) || objectives.target <= 0) {
+    throw new Error("Ad revive objective target must be a positive number.");
+  }
+  return objectives.progress >= objectives.target;
+}
+
 function chooseColorByCounts(level, counts, fieldName) {
   var colors = requireAvailableColors(level);
   var bestColor = null;
@@ -148,14 +164,20 @@ function resolveReviveTargetColor(levelConfig, runtimeSnapshot) {
 }
 
 function buildRevivePlan(levelConfig, runtimeSnapshot) {
-  var targetColor = resolveReviveTargetColor(levelConfig, runtimeSnapshot);
+  var objectiveCompleted = isObjectiveCompleted(runtimeSnapshot);
+  var targetColor = objectiveCompleted ? null : resolveReviveTargetColor(levelConfig, runtimeSnapshot);
   return {
     dangerLineSpaceRows: AD_REVIVE_DANGER_LINE_SPACE_ROWS,
     grantedShots: AD_REVIVE_GRANTED_SHOTS,
     targetColor: targetColor,
-    targetColorBallCount: AD_REVIVE_TARGET_COLOR_BALLS,
-    description: buildReviveDescriptionFromColor(targetColor)
+    targetColorBallCount: objectiveCompleted ? 0 : AD_REVIVE_TARGET_COLOR_BALLS,
+    randomBallCount: objectiveCompleted ? AD_REVIVE_TARGET_COLOR_BALLS : 0,
+    description: objectiveCompleted ? buildRandomReviveDescription() : buildReviveDescriptionFromColor(targetColor)
   };
+}
+
+function buildRandomReviveDescription() {
+  return "上移" + AD_REVIVE_DANGER_LINE_SPACE_ROWS + "行、增加随机球x" + AD_REVIVE_GRANTED_SHOTS;
 }
 
 function buildReviveDescriptionFromColor(targetColor) {

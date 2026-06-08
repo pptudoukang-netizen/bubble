@@ -29,12 +29,14 @@ var SIGN_IN_PREFAB_CANDIDATES = [
   "prefabs/ui/SignInView"
 ];
 var SIGN_IN_BUTTON_SPRITE_PATHS = {
-  claimed: "image/btn1",
-  claimable: "image/btn2"
+  claimed: "image/sign/btn_cyan",
+  claimable: "image/sign/btn_green",
+  locked: "image/sign/btn_blue"
 };
 var SIGN_IN_ITEM_ICON_PATHS = {
   coin: "image/props/coin",
   stamina: "image/props/treasure_chest",
+  gift_pack: "image/props/gift_pack",
   swap_ball: "image/props/gift_pack",
   rainbow_ball: "image/props/rainbow_ball",
   blast_ball: "image/props/blast_ball",
@@ -48,6 +50,7 @@ var SIGN_IN_DAY_ITEM_ICON_PATHS = {
 var SIGN_IN_ITEM_DISPLAY_NAMES = {
   coin: "金币",
   stamina: "体力",
+  gift_pack: "大礼包",
   swap_ball: "换球",
   rainbow_ball: "彩虹球",
   blast_ball: "炸裂球",
@@ -69,11 +72,6 @@ var AWARD_ITEM_DISPLAY_NAMES = {
   rainbow_ball: "彩虹球",
   blast_ball: "炸裂球",
   barrier_hammer: "破障锤"
-};
-var SIGN_IN_STATUS_TEXT = {
-  claimed: "已领",
-  claimable: "可领",
-  locked: "未领"
 };
 var hasOwn = Object.prototype.hasOwnProperty;
 
@@ -251,7 +249,6 @@ module.exports = {
   AWARD_VIEW_PREFAB_PATH: AWARD_VIEW_PREFAB_PATH,
   AWARD_ITEM_ICON_PATHS: AWARD_ITEM_ICON_PATHS,
   AWARD_ITEM_DISPLAY_NAMES: AWARD_ITEM_DISPLAY_NAMES,
-  SIGN_IN_STATUS_TEXT: SIGN_IN_STATUS_TEXT,
   hasOwn: hasOwn,
   formatRewardItems: formatRewardItems,
   showStatusAndTip: showStatusAndTip,

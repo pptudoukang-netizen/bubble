@@ -11,6 +11,7 @@ var GameBootstrapPowerupInventoryMethods = require("./GameBootstrapPowerupInvent
 var GameBootstrapTelemetryMethods = require("./GameBootstrapTelemetryMethods");
 var GameBootstrapAdRewardMethods = require("./GameBootstrapAdRewardMethods");
 var GameBootstrapLevelRuntimeMethods = require("./GameBootstrapLevelRuntimeMethods");
+var GameBootstrapNewUserGuideMethods = require("./GameBootstrapNewUserGuideMethods");
 
 cc.Class({
   extends: cc.Component,
@@ -283,6 +284,24 @@ cc.Class({
   _onAimMove: GameBootstrapGameplayInputMethods._onAimMove,
   _onFireTouch: GameBootstrapGameplayInputMethods._onFireTouch,
   _onAimCancel: GameBootstrapGameplayInputMethods._onAimCancel,
+  _refreshNewUserGuideState: GameBootstrapNewUserGuideMethods._refreshNewUserGuideState,
+  _saveNewUserGuideState: GameBootstrapNewUserGuideMethods._saveNewUserGuideState,
+  _isNewUserGuideActive: GameBootstrapNewUserGuideMethods._isNewUserGuideActive,
+  _isNewUserGuideStep: GameBootstrapNewUserGuideMethods._isNewUserGuideStep,
+  _ensureNewUserGuideSpriteFrame: GameBootstrapNewUserGuideMethods._ensureNewUserGuideSpriteFrame,
+  _ensureNewUserGuideLayer: GameBootstrapNewUserGuideMethods._ensureNewUserGuideLayer,
+  _ensureNewUserGuideFingerNode: GameBootstrapNewUserGuideMethods._ensureNewUserGuideFingerNode,
+  _hideNewUserGuide: GameBootstrapNewUserGuideMethods._hideNewUserGuide,
+  _runNewUserGuideFingerBreath: GameBootstrapNewUserGuideMethods._runNewUserGuideFingerBreath,
+  _showNewUserGuideFingerAtTip: GameBootstrapNewUserGuideMethods._showNewUserGuideFingerAtTip,
+  _clearNewUserGuideArc: GameBootstrapNewUserGuideMethods._clearNewUserGuideArc,
+  _showNewUserGuideForQuickStart: GameBootstrapNewUserGuideMethods._showNewUserGuideForQuickStart,
+  _showNewUserGuideForStartGame: GameBootstrapNewUserGuideMethods._showNewUserGuideForStartGame,
+  _showNewUserGuideForGameplay: GameBootstrapNewUserGuideMethods._showNewUserGuideForGameplay,
+  _advanceNewUserGuideToStartGame: GameBootstrapNewUserGuideMethods._advanceNewUserGuideToStartGame,
+  _rewindNewUserGuideToQuickStart: GameBootstrapNewUserGuideMethods._rewindNewUserGuideToQuickStart,
+  _advanceNewUserGuideToGameplay: GameBootstrapNewUserGuideMethods._advanceNewUserGuideToGameplay,
+  _completeNewUserGuide: GameBootstrapNewUserGuideMethods._completeNewUserGuide,
   _onUseSkillBallTap: GameBootstrapPowerupInventoryMethods._onUseSkillBallTap,
   _onUseThreeLineEliminationTap: GameBootstrapPowerupInventoryMethods._onUseThreeLineEliminationTap,
   _onUsePlusThreeBallsTap: GameBootstrapPowerupInventoryMethods._onUsePlusThreeBallsTap,
@@ -442,6 +461,10 @@ cc.Class({
   _resolveSignInIconPath: GameBootstrapUiFlowMethods._resolveSignInIconPath,
   _ensureSignInIconSpriteFrame: GameBootstrapUiFlowMethods._ensureSignInIconSpriteFrame,
   _resolveSignInDayUiState: GameBootstrapUiFlowMethods._resolveSignInDayUiState,
+  _isSignInAutoPopupEnabled: GameBootstrapUiFlowMethods._isSignInAutoPopupEnabled,
+  _setSignInAutoPopupEnabled: GameBootstrapUiFlowMethods._setSignInAutoPopupEnabled,
+  _renderSignInAutoPopupCheckbox: GameBootstrapUiFlowMethods._renderSignInAutoPopupCheckbox,
+  _renderSignInGiftList: GameBootstrapUiFlowMethods._renderSignInGiftList,
   _bindSignInViewActions: GameBootstrapUiFlowMethods._bindSignInViewActions,
   _renderSignInView: GameBootstrapUiFlowMethods._renderSignInView,
   _showSignInView: GameBootstrapUiFlowMethods._showSignInView,

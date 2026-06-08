@@ -11,6 +11,7 @@ var STAMINA_RECOVERY_LOW_GRANT = 1;
 var STAMINA_RECOVERY_HIGH_GRANT = 2;
 var STAMINA_RECOVERY_LOW_GRANT_COUNT = 2;
 var CONSECUTIVE_LOSE_INTERSTITIAL_THRESHOLD = 3;
+var REWARDED_AD_UNAVAILABLE_MESSAGE = "目前没有合适的广告，请稍后再试";
 
 function resolveWechatPlatform() {
   if (typeof wx !== "undefined") {
@@ -313,10 +314,10 @@ module.exports = {
     var code = adResult && typeof adResult.code === "string" ? adResult.code : "";
     if (code === "no_fill") {
       if (typeof this._setStatusWithTip === "function") {
-        this._setStatusWithTip("rewarded_ad_no_fill", null, "暂时没有新的广告，请稍后再试");
+        this._setStatusWithTip("rewarded_ad_no_fill", null, REWARDED_AD_UNAVAILABLE_MESSAGE);
         return;
       }
-      this._setStatus("暂时没有新的广告，请稍后再试");
+      this._setStatus(REWARDED_AD_UNAVAILABLE_MESSAGE);
       return;
     }
 
@@ -329,7 +330,8 @@ module.exports = {
 
   _setAdQuotaBlockedStatus: function (quotaResult) {
     if (quotaResult.reason === "daily_limit") {
-      this._setStatus("今日奖励次数已达上限");
+      this._setStatusWithTip("rewarded_ad_daily_limit", null, REWARDED_AD_UNAVAILABLE_MESSAGE);
+      return;
     } else if (quotaResult.reason === "cooldown") {
       this._setStatus("操作过快，请" + quotaResult.cooldownRemainingSec + "秒后重试");
     } else {

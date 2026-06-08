@@ -4,6 +4,7 @@ var RESOURCES_BUNDLE_NAME = "resources";
 var UI_BUNDLE_NAME = "ui";
 var UI_PREFAB_LEGACY_PREFIX = "prefabs/ui/";
 var UI_PREFAB_BUNDLE_PREFIX = "prefabs/";
+var UI_IMAGE_SIGN_PREFIX = "image/sign/";
 var UI_COMMENT_ANIMATION_LEGACY_PREFIX = "ui/animation/comments/";
 var UI_COMMENT_ANIMATION_BUNDLE_PREFIX = "animation/comments/";
 var UI_BUNDLE_PREFABS = {
@@ -243,6 +244,13 @@ function resolveLoadRoute(path) {
     return {
       bundleName: UI_BUNDLE_NAME,
       path: UI_COMMENT_ANIMATION_BUNDLE_PREFIX + path.slice(UI_COMMENT_ANIMATION_LEGACY_PREFIX.length)
+    };
+  }
+
+  if (path.indexOf(UI_IMAGE_SIGN_PREFIX) === 0) {
+    return {
+      bundleName: UI_BUNDLE_NAME,
+      path: path
     };
   }
 

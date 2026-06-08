@@ -14,6 +14,7 @@ var ShopStateStore = Shared.ShopStateStore;
 var GameCircleWelfareStore = Shared.GameCircleWelfareStore;
 var SelectedPowerupsStore = Shared.SelectedPowerupsStore;
 var SignInStore = Shared.SignInStore;
+var NewUserGuideStore = Shared.NewUserGuideStore;
 var NewGiftStore = Shared.NewGiftStore;
 var RouteConfigStore = Shared.RouteConfigStore;
 var AudioManager = Shared.AudioManager;
@@ -48,6 +49,19 @@ var TelemetryService = Shared.TelemetryService;
 var AdRewardQuotaStore = Shared.AdRewardQuotaStore;
 var clone = Shared.clone;
 var requireNonNegativeInteger = Shared.requireNonNegativeInteger;
+
+function isNewAccountProgress(levelProgress) {
+  if (!levelProgress || typeof levelProgress !== "object" || Array.isArray(levelProgress)) {
+    throw new Error("New user guide requires level progress.");
+  }
+  if (!Number.isInteger(levelProgress.highestUnlockedLevel) || levelProgress.highestUnlockedLevel <= 0) {
+    throw new Error("New user guide requires positive highestUnlockedLevel.");
+  }
+  if (!levelProgress.completedLevels || typeof levelProgress.completedLevels !== "object" || Array.isArray(levelProgress.completedLevels)) {
+    throw new Error("New user guide requires completedLevels.");
+  }
+  return levelProgress.highestUnlockedLevel === 1 && Object.keys(levelProgress.completedLevels).length === 0;
+}
 
 module.exports = {
   onLoad: function () {
@@ -228,6 +242,16 @@ module.exports = {
     });
     this.selectedPowerupsStore = new SelectedPowerupsStore();
     this.selectedPowerupsState = this.selectedPowerupsStore.load();
+    this.newUserGuideStore = new NewUserGuideStore({
+      initialActive: isNewAccountProgress(this.levelProgress)
+    });
+    this.newUserGuideState = this.newUserGuideStore.load();
+    this.newUserGuideStore.save(this.newUserGuideState);
+    this._newUserGuideLayer = null;
+    this._newUserGuideFingerNode = null;
+    this._newUserGuideFingerSpriteFrame = null;
+    this._newUserGuideFingerSpriteFramePromise = null;
+    this._newUserGuideFingerSize = null;
     this._inventoryViewPrefab = null;
     this._inventoryViewNode = null;
     this._inventoryViewController = null;
@@ -255,7 +279,8 @@ module.exports = {
     this.dailySignInConfig = clone(DailySignInConfig);
     this.signInStore = new SignInStore({
       cycleLength: this.dailySignInConfig.cycleLength,
-      autoPopupOnFirstLogin: this.dailySignInConfig.autoPopupOnFirstLogin
+      autoPopupOnFirstLogin: this.dailySignInConfig.autoPopupOnFirstLogin,
+      autoPopupUserDefault: this.dailySignInConfig.autoPopupUserDefault
     });
     this.signInState = this.signInStore.load();
     this.signInStore.save(this.signInState);
@@ -348,6 +373,7 @@ module.exports = {
       functionName: this.worldLeaderboardCloudFunctionName,
       limit: requireNonNegativeInteger(this.worldLeaderboardLimit, "worldLeaderboardLimit")
     });
+    this._worldLeaderboardUserProfile = this.worldLeaderboardService.loadCachedUserProfile();
     if (this.enablePlayerCloudProfile === true) {
       this.playerCloudProfileService = new PlayerCloudProfileService({
         cloudEnvId: this.playerProfileCloudEnvId,

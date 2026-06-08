@@ -3,6 +3,7 @@
 var StrictStorage = require("./StrictStorage");
 
 var STORAGE_KEY = "bubble_sign_in_state_v1";
+var AUTO_POPUP_PREFERENCE_STORAGE_KEY = "bubble_sign_in_auto_popup_preference_v1";
 var NAMESPACE = "SignInStore";
 
 function clone(data) {
@@ -89,6 +90,13 @@ function createInitialState() {
   };
 }
 
+function createInitialAutoPopupPreference(defaultEnabled) {
+  return {
+    version: 1,
+    enabled: requireBoolean(defaultEnabled, "Sign-in auto popup default")
+  };
+}
+
 function normalizeState(raw, cycleLength) {
   assertObject(raw, "Sign-in state must be an object.");
   if (raw.version !== 1) {
@@ -110,10 +118,23 @@ function normalizeState(raw, cycleLength) {
   };
 }
 
+function normalizeAutoPopupPreference(raw) {
+  assertObject(raw, "Sign-in auto popup preference must be an object.");
+  if (raw.version !== 1) {
+    throw new Error("Sign-in auto popup preference version must be 1.");
+  }
+
+  return {
+    version: 1,
+    enabled: requireBoolean(raw.enabled, "Sign-in auto popup enabled")
+  };
+}
+
 function SignInStore(options) {
   assertObject(options, "SignInStore options are required.");
   this.cycleLength = requirePositiveInteger(options.cycleLength, "SignInStore cycleLength");
   this.autoPopupOnFirstLogin = requireBoolean(options.autoPopupOnFirstLogin, "SignInStore autoPopupOnFirstLogin");
+  this.autoPopupUserDefault = requireBoolean(options.autoPopupUserDefault, "SignInStore autoPopupUserDefault");
 }
 
 SignInStore.prototype.getTodayKey = function (now) {
@@ -132,6 +153,35 @@ SignInStore.prototype.save = function (state) {
   StrictStorage.writeJson(STORAGE_KEY, NAMESPACE, normalized);
 };
 
+SignInStore.prototype.loadAutoPopupPreference = function () {
+  var preference = StrictStorage.readJsonOrCreate(AUTO_POPUP_PREFERENCE_STORAGE_KEY, NAMESPACE, function () {
+    return createInitialAutoPopupPreference(this.autoPopupUserDefault);
+  }.bind(this));
+  var normalized = normalizeAutoPopupPreference(preference);
+  this.saveAutoPopupPreference(normalized);
+  return clone(normalized);
+};
+
+SignInStore.prototype.saveAutoPopupPreference = function (preference) {
+  var normalized = normalizeAutoPopupPreference(preference);
+  StrictStorage.writeJson(AUTO_POPUP_PREFERENCE_STORAGE_KEY, NAMESPACE, normalized);
+};
+
+SignInStore.prototype.isAutoPopupEnabled = function () {
+  return this.loadAutoPopupPreference().enabled;
+};
+
+SignInStore.prototype.setAutoPopupEnabled = function (enabled) {
+  var normalized = {
+    version: 1,
+    enabled: requireBoolean(enabled, "Sign-in auto popup enabled")
+  };
+  this.saveAutoPopupPreference(normalized);
+  return {
+    preference: clone(normalized)
+  };
+};
+
 SignInStore.prototype.isClaimedToday = function (state, now) {
   var normalized = normalizeState(state, this.cycleLength);
   return normalized.lastClaimDate === this.getTodayKey(now);
@@ -143,6 +193,9 @@ SignInStore.prototype.canClaimToday = function (state, now) {
 
 SignInStore.prototype.shouldAutoPopupToday = function (state, now) {
   if (!this.autoPopupOnFirstLogin) {
+    return false;
+  }
+  if (!this.isAutoPopupEnabled()) {
     return false;
   }
 

@@ -1,5 +1,11 @@
 "use strict";
 
+var StrictStorage = require("../utils/StrictStorage");
+
+var PROFILE_STORAGE_KEY = "bubble_world_leaderboard_profile_v1";
+var PROFILE_STORAGE_NAMESPACE = "WorldLeaderboardService";
+var PROFILE_STORAGE_VERSION = 1;
+
 function resolvePlatform(explicitPlatform) {
   if (explicitPlatform) {
     return explicitPlatform;
@@ -81,6 +87,22 @@ function normalizeUserProfile(userInfo) {
   };
 }
 
+function normalizeCachedUserProfileRecord(record) {
+  requireObject(record, "World leaderboard cached profile record");
+  if (record.version !== PROFILE_STORAGE_VERSION) {
+    throw new Error("World leaderboard cached profile version must be " + PROFILE_STORAGE_VERSION + ".");
+  }
+  requireObject(record.profile, "World leaderboard cached profile");
+  return {
+    version: PROFILE_STORAGE_VERSION,
+    profile: {
+      nickname: requireNonEmptyString(record.profile.nickname, "World leaderboard cached nickname"),
+      avatarUrl: requireNonEmptyString(record.profile.avatarUrl, "World leaderboard cached avatarUrl")
+    },
+    updatedAt: requireNonNegativeInteger(record.updatedAt, "World leaderboard cached updatedAt")
+  };
+}
+
 function normalizeEntry(entry, index) {
   requireObject(entry, "World leaderboard entry");
   return {
@@ -150,6 +172,28 @@ WorldLeaderboardService.prototype.requestUserProfile = function () {
       }
     });
   }.bind(this));
+};
+
+WorldLeaderboardService.prototype.loadCachedUserProfile = function () {
+  var rawText = StrictStorage.readStoredText(PROFILE_STORAGE_KEY, PROFILE_STORAGE_NAMESPACE);
+  if (rawText === null) {
+    return null;
+  }
+  return normalizeCachedUserProfileRecord(JSON.parse(rawText)).profile;
+};
+
+WorldLeaderboardService.prototype.saveCachedUserProfile = function (profile) {
+  requireObject(profile, "World leaderboard cached profile");
+  var normalizedProfile = {
+    nickname: requireNonEmptyString(profile.nickname, "World leaderboard cached nickname"),
+    avatarUrl: requireNonEmptyString(profile.avatarUrl, "World leaderboard cached avatarUrl")
+  };
+  StrictStorage.writeJson(PROFILE_STORAGE_KEY, PROFILE_STORAGE_NAMESPACE, {
+    version: PROFILE_STORAGE_VERSION,
+    profile: normalizedProfile,
+    updatedAt: Date.now()
+  });
+  return normalizedProfile;
 };
 
 WorldLeaderboardService.prototype.buildSubmission = function (progress, userProfile) {

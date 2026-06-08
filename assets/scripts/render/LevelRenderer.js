@@ -37,7 +37,7 @@ var BALL_RESOURCES = {
   SPLIT_Y: "image/split_yellow_ball",
   SPLIT_P: "image/split_purple_ball",
   ICE_SNOWBALL: "image/snow_cube",
-  LIGHT_EFFECT: "image/light_effect"
+  BLOCKADE_LINE: "image/blockade_line"
 };
 
 var JAR_RESOURCES = {
@@ -59,6 +59,11 @@ var JAR_MASK_RESOURCES = {
 var REWARD_ITEM_RESOURCES = {
   coin: "image/props/coin",
   stamina: "image/props/love"
+};
+
+var HUD_STAR_RESOURCES = {
+  lit: "image/img101",
+  unlit: "image/img106"
 };
 
 var PREFAB_PATHS = {
@@ -197,6 +202,8 @@ function buildObjectiveDisplayForObjective(objective, runtimeSnapshot) {
       iconCode: null,
       progress: 0,
       target: 0,
+      remaining: 0,
+      remainingText: "0",
       progressText: "-"
     };
   }
@@ -208,10 +215,13 @@ function buildObjectiveDisplayForObjective(objective, runtimeSnapshot) {
   ) {
     var snapshotProgress = Math.max(0, Number(objectiveSnapshot.progress) || 0);
     var snapshotTarget = Math.max(0, Number(objectiveSnapshot.target) || 0);
+    var snapshotRemaining = Math.max(0, snapshotTarget - snapshotProgress);
     return {
       iconCode: objectiveSnapshot.iconCode || null,
       progress: snapshotProgress,
       target: snapshotTarget,
+      remaining: snapshotRemaining,
+      remainingText: String(snapshotRemaining),
       progressText: snapshotTarget > 0 ? (snapshotProgress + "/" + snapshotTarget) : String(snapshotProgress)
     };
   }
@@ -224,6 +234,8 @@ function buildObjectiveDisplayForObjective(objective, runtimeSnapshot) {
       iconCode: "RAINBOW",
       progress: progressAny,
       target: target,
+      remaining: Math.max(0, target - progressAny),
+      remainingText: String(Math.max(0, target - progressAny)),
       progressText: progressAny + "/" + target
     };
   }
@@ -237,6 +249,8 @@ function buildObjectiveDisplayForObjective(objective, runtimeSnapshot) {
       iconCode: colorCode,
       progress: progressColor,
       target: target,
+      remaining: Math.max(0, target - progressColor),
+      remainingText: String(Math.max(0, target - progressColor)),
       progressText: progressColor + "/" + target
     };
   }
@@ -248,6 +262,8 @@ function buildObjectiveDisplayForObjective(objective, runtimeSnapshot) {
       iconCode: "ICE_SNOWBALL",
       progress: iceProgress,
       target: target,
+      remaining: Math.max(0, target - iceProgress),
+      remainingText: String(Math.max(0, target - iceProgress)),
       progressText: iceProgress + "/" + target
     };
   }
@@ -256,6 +272,8 @@ function buildObjectiveDisplayForObjective(objective, runtimeSnapshot) {
     iconCode: null,
     progress: 0,
     target: 0,
+    remaining: 0,
+    remainingText: "0",
     progressText: "-"
   };
 }
@@ -356,14 +374,17 @@ function buildHudRenderKey(levelConfig, runtimeSnapshot) {
     levelCode,
     runtimeSnapshot ? runtimeSnapshot.state : "",
     runtimeSnapshot ? runtimeSnapshot.score : 0,
+    runtimeSnapshot ? runtimeSnapshot.remainingShots : "",
     runtimeSnapshot ? runtimeSnapshot.turnsUntilDrop : "",
     matched,
     floating,
     objectiveDisplay.progress || 0,
     objectiveDisplay.iconCode || "",
     objectiveDisplay.progressText ? objectiveDisplay.progressText : "",
+    hudTargetDisplay.ball ? hudTargetDisplay.ball.remainingText : "",
     hudTargetDisplay.ball ? hudTargetDisplay.ball.progressText : "",
     hudTargetDisplay.ball ? hudTargetDisplay.ball.iconCode : "",
+    hudTargetDisplay.iceSnowball ? hudTargetDisplay.iceSnowball.remainingText : "",
     hudTargetDisplay.iceSnowball ? hudTargetDisplay.iceSnowball.progressText : "",
     hudTargetDisplay.iceSnowball ? hudTargetDisplay.iceSnowball.iconCode : ""
   ].join("|");
@@ -1128,7 +1149,7 @@ LevelRenderer.prototype._collectCommonSpritePaths = function () {
     BALL_RESOURCES.SPLIT_Y,
     BALL_RESOURCES.SPLIT_P,
     BALL_RESOURCES.ICE_SNOWBALL,
-    BALL_RESOURCES.LIGHT_EFFECT,
+    BALL_RESOURCES.BLOCKADE_LINE,
     JAR_RESOURCES.R,
     JAR_RESOURCES.G,
     JAR_RESOURCES.B,
@@ -1139,6 +1160,8 @@ LevelRenderer.prototype._collectCommonSpritePaths = function () {
     JAR_MASK_RESOURCES.B,
     JAR_MASK_RESOURCES.Y,
     JAR_MASK_RESOURCES.P,
+    HUD_STAR_RESOURCES.lit,
+    HUD_STAR_RESOURCES.unlit,
     COMMENT_ANIMATION_RESOURCES.good,
     COMMENT_ANIMATION_RESOURCES.great,
     COMMENT_ANIMATION_RESOURCES.excellent,
@@ -1187,6 +1210,7 @@ var LEVEL_RENDERER_SCENE_DEPS = {
   JAR_RESOURCES: JAR_RESOURCES,
   JAR_MASK_RESOURCES: JAR_MASK_RESOURCES,
   REWARD_ITEM_RESOURCES: REWARD_ITEM_RESOURCES,
+  HUD_STAR_RESOURCES: HUD_STAR_RESOURCES,
   PREFAB_PATHS: PREFAB_PATHS,
   JAR_RENDER_Y_OFFSET: JAR_RENDER_Y_OFFSET,
   GUIDE_DOT_SPACING: GUIDE_DOT_SPACING,

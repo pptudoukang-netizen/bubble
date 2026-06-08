@@ -5,6 +5,7 @@ module.exports = {
   resetMode: "loop_after_day_7",
   missedDayPolicy: "keep_progress",
   autoPopupOnFirstLogin: true,
+  autoPopupUserDefault: true,
   rewards: [
     {
       day: 1,
@@ -47,10 +48,11 @@ module.exports = {
     },
     {
       day: 7,
+      displayItem: { id: "gift_pack", count: 1 },
       items: [
-        { id: "coin", count: 500 },
-        { id: "blast_ball", count: 1 },
-        { id: "barrier_hammer", count: 1 }
+        { id: "blast_ball", count: 2 },
+        { id: "rainbow_ball", count: 2 },
+        { id: "coin", count: 1000 }
       ]
     }
   ]

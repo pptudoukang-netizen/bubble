@@ -14,7 +14,7 @@ module.exports = {
         currency: "coin",
         amount: 100
       },
-      dailyLimit: 5,
+      dailyLimit: 0,
       enabled: true,
       sortOrder: 5,
       tags: ["recommended"]
@@ -30,7 +30,7 @@ module.exports = {
         currency: "coin",
         amount: 100
       },
-      dailyLimit: 5,
+      dailyLimit: 0,
       enabled: true,
       sortOrder: 10,
       tags: ["recommended"]
@@ -44,9 +44,9 @@ module.exports = {
       iconPath: "image/props/rainbow_ball",
       price: {
         currency: "coin",
-        amount: 300
+        amount: 500
       },
-      dailyLimit: 3,
+      dailyLimit: 0,
       enabled: true,
       sortOrder: 20,
       tags: []
@@ -60,9 +60,9 @@ module.exports = {
       iconPath: "image/props/blast_ball",
       price: {
         currency: "coin",
-        amount: 300
+        amount: 500
       },
-      dailyLimit: 2,
+      dailyLimit: 0,
       enabled: true,
       sortOrder: 30,
       tags: ["hot"]
@@ -78,7 +78,7 @@ module.exports = {
         currency: "coin",
         amount: 300
       },
-      dailyLimit: 2,
+      dailyLimit: 0,
       enabled: true,
       sortOrder: 40,
       tags: []

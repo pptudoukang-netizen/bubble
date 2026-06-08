@@ -357,6 +357,10 @@ function makeLevel(levelId) {
   var shotLimit = 34 + Math.floor(progress * 42) + Math.min(12, specialEntities.length);
   var collectTarget = Math.min(62, 16 + Math.floor(progress * 40) + Math.floor(specialEntities.length / 2));
   var collectColor = colors[levelId % colors.length];
+  var jarColors = colors.slice(0, Math.min(4, colors.length));
+  if (levelId % 4 === 0 && jarColors.indexOf(collectColor) === -1) {
+    jarColors[jarColors.length - 1] = collectColor;
+  }
   var rewardItems = [{
     id: "coin",
     count: Math.min(300, 80 + Math.floor(progress * 220))
@@ -408,7 +412,7 @@ function makeLevel(levelId) {
       targetScore: Math.round(5200 + progress * 43500 + specialEntities.length * 180),
       dropInterval: Math.max(3, 6 - Math.floor(progress * 4)),
       jarCount: Math.min(4, colors.length),
-      jarColors: colors.slice(0, Math.min(4, colors.length)),
+      jarColors: jarColors,
       spawnWeights: spawnWeights,
       jarRules: {
         rimBounce: Math.min(0.92, 0.68 + progress * 0.22),

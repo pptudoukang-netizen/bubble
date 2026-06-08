@@ -19,6 +19,7 @@ function createGameManagerShotResolutionMethods(deps) {
   var createEmptyResolution = deps.createEmptyResolution;
   var findPrimaryCollectionObjective = deps.findPrimaryCollectionObjective;
   var COMBO_BONUS_PER_HIT = deps.COMBO_BONUS_PER_HIT;
+  var MOLOTOV_BLAST_DROP_DELAY_SECONDS = 0.5;
 
   return {
     _resetComboStreak: function () {
@@ -194,7 +195,7 @@ function createGameManagerShotResolutionMethods(deps) {
     },
 
     _refreshShotPlan: function (force) {
-      if (this.state !== "running" || this.activeProjectile || this._isWaitingBoardAdvance()) {
+      if (this.state !== "running" || this.activeProjectile || this._isWaitingBoardAdvance() || this._hasPendingSplitterSpawns()) {
         this.pendingShotPlan = null;
         return;
       }
@@ -593,6 +594,50 @@ function createGameManagerShotResolutionMethods(deps) {
       return target;
     },
 
+    _splitMolotovDropCandidates: function (cells) {
+      if (!Array.isArray(cells)) {
+        throw new Error("Molotov drop candidate split requires cells array.");
+      }
+      var immediate = [];
+      var delayed = [];
+      for (var index = 0; index < cells.length; index += 1) {
+        var cell = cells[index];
+        if (!cell) {
+          throw new Error("Molotov drop candidate cell is required.");
+        }
+        if (isMolotovBall(cell) || isKeyBall(cell)) {
+          continue;
+        } else if (cell.__molotovBlastDropDelay === MOLOTOV_BLAST_DROP_DELAY_SECONDS) {
+          delayed.push(cell);
+        } else {
+          immediate.push(cell);
+        }
+      }
+      return {
+        immediate: immediate,
+        delayed: delayed
+      };
+    },
+
+    _cancelPendingSplitterSpawnsForDroppedCells: function (cells) {
+      if (!Array.isArray(cells)) {
+        throw new Error("Cancel pending splitter spawns requires cells array.");
+      }
+      if (typeof this._cancelPendingSplitterSpawn !== "function") {
+        throw new Error("Cancel pending splitter spawns requires GameManager._cancelPendingSplitterSpawn.");
+      }
+
+      for (var index = 0; index < cells.length; index += 1) {
+        var cell = cells[index];
+        if (!cell) {
+          throw new Error("Cancel pending splitter spawns requires cell.");
+        }
+        if (isSplitterBall(cell)) {
+          this._cancelPendingSplitterSpawn(cell);
+        }
+      }
+    },
+
     _triggerAdjacentKeys: function (removedCells, grid, resolution) {
       var touched = {};
       var keys = [];
@@ -660,11 +705,15 @@ function createGameManagerShotResolutionMethods(deps) {
     },
 
     _triggerAdjacentSplitters: function (removedCells, grid, resolution, triggeredSplitterIds) {
+      if (!Array.isArray(removedCells)) {
+        throw new Error("Adjacent splitter trigger requires removedCells array.");
+      }
+      var manager = this;
       var touched = {};
-      var spawned = [];
-      (removedCells || []).forEach(function (cell) {
+      var triggered = [];
+      removedCells.forEach(function (cell) {
         if (!cell) {
-          return;
+          throw new Error("Adjacent splitter trigger requires removed cell.");
         }
         grid.getNeighborCoordinates(cell.row, cell.col).forEach(function (coord) {
           var key = coord.row + ":" + coord.col;
@@ -683,20 +732,15 @@ function createGameManagerShotResolutionMethods(deps) {
           if (typeof splitter.splitColor !== "string" || !splitter.splitColor) {
             throw new Error("Splitter requires splitColor.");
           }
-          var spawnCell = grid.findSplitterSpawnCell(splitter);
-          if (!spawnCell) {
-            return;
+          if (typeof manager._queuePendingSplitterSpawn !== "function") {
+            throw new Error("Splitter trigger requires GameManager._queuePendingSplitterSpawn.");
           }
-          var spawnedCell = grid.addBubble(spawnCell, splitter.splitColor);
-          spawnedCell.sourceSplitterId = splitter.id;
-          spawnedCell.sourceSplitterRow = splitter.row;
-          spawnedCell.sourceSplitterCol = splitter.col;
-          spawned.push(spawnedCell);
+          manager._queuePendingSplitterSpawn(splitter, resolution);
+          triggered.push(splitter);
         });
       });
 
-      this._appendUniqueCells(resolution.spawnedBySplitters, spawned);
-      return spawned;
+      return triggered;
     },
 
     _collectAdjacentMolotovs: function (removedCells, grid, queuedMolotovIds) {
@@ -772,6 +816,9 @@ function createGameManagerShotResolutionMethods(deps) {
             blastCells.push(occupiedCell);
           });
           var removedByBlast = grid.removeCells(blastCells);
+          removedByBlast.forEach(function (cell) {
+            cell.__molotovBlastDropDelay = MOLOTOV_BLAST_DROP_DELAY_SECONDS;
+          });
           this._appendUniqueCells(collected, removedByBlast);
           removedByBlast.forEach(function (cell) {
             queue.push(cell);
@@ -914,10 +961,14 @@ function createGameManagerShotResolutionMethods(deps) {
       var floatingCells = this.systems.supportSystem.findFloatingCells(grid);
       var removedFloating = grid.removeCells(floatingCells);
       var removedAll = removedBlastCells.concat(removedReactive).concat(removedFloating);
+      this._cancelPendingSplitterSpawnsForDroppedCells(removedAll);
 
       // 玩法调整：炸裂清除与断层清除都进入掉落链路，不再直接消失。
-      var fallingCandidates = removedAll;
-      this.systems.fallingMarbleSystem.registerDrops(fallingCandidates, grid);
+      var fallingCandidates = this._splitMolotovDropCandidates(removedAll);
+      this.systems.fallingMarbleSystem.registerDrops(fallingCandidates.immediate, grid);
+      this.systems.fallingMarbleSystem.registerDrops(fallingCandidates.delayed, grid, {
+        startDelay: MOLOTOV_BLAST_DROP_DELAY_SECONDS
+      });
       this.systems.jarCollectorSystem.collect([]);
 
 
@@ -1012,7 +1063,7 @@ function createGameManagerShotResolutionMethods(deps) {
       }
 
       if (!this.isTimedInfiniteShots && this.remainingShots <= 0) {
-        if (this.systems.fallingMarbleSystem.hasActiveDrops() || this._isWaitingBoardAdvance()) {
+        if (this.systems.fallingMarbleSystem.hasActiveDrops() || this._isWaitingBoardAdvance() || this._hasPendingSplitterSpawns()) {
           this.state = "out_of_shots_pending";
         } else {
           this._resolveOutOfShotsOutcome();
@@ -1049,10 +1100,14 @@ function createGameManagerShotResolutionMethods(deps) {
       var floatingCells = this.systems.supportSystem.findFloatingCells(grid);
       var removedFloating = grid.removeCells(floatingCells);
       var collectedCells = removedMatches.concat(removedReactiveMatches).concat(removedFloating);
+      this._cancelPendingSplitterSpawnsForDroppedCells(collectedCells);
 
       // 玩法调整：普通三消命中的珠子与断层珠统一按掉落结算。
-      var fallingCandidates = collectedCells;
-      this.systems.fallingMarbleSystem.registerDrops(fallingCandidates, grid);
+      var fallingCandidates = this._splitMolotovDropCandidates(collectedCells);
+      this.systems.fallingMarbleSystem.registerDrops(fallingCandidates.immediate, grid);
+      this.systems.fallingMarbleSystem.registerDrops(fallingCandidates.delayed, grid, {
+        startDelay: MOLOTOV_BLAST_DROP_DELAY_SECONDS
+      });
       this.systems.jarCollectorSystem.collect([]);
 
       resolution.matched = removedMatches.concat(removedReactiveMatches);
@@ -1110,7 +1165,7 @@ function createGameManagerShotResolutionMethods(deps) {
     _resolveBoardClearedOutcome: function () {
       // 清屏后若仍有掉落中的玻璃球，先进入等待态；
       // 等掉落完成并计分后，再决定本局最终胜负。
-      if (this.systems.fallingMarbleSystem.hasActiveDrops()) {
+      if (this.systems.fallingMarbleSystem.hasActiveDrops() || this._hasPendingSplitterSpawns()) {
         this.state = "won_pending";
         return;
       }

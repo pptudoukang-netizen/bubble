@@ -11,13 +11,26 @@ var SIGN_IN_ITEM_DISPLAY_NAMES = Shared.SIGN_IN_ITEM_DISPLAY_NAMES;
 var AWARD_VIEW_PREFAB_PATH = Shared.AWARD_VIEW_PREFAB_PATH;
 var AWARD_ITEM_ICON_PATHS = Shared.AWARD_ITEM_ICON_PATHS;
 var AWARD_ITEM_DISPLAY_NAMES = Shared.AWARD_ITEM_DISPLAY_NAMES;
-var SIGN_IN_STATUS_TEXT = Shared.SIGN_IN_STATUS_TEXT;
 var hasOwn = Shared.hasOwn;
 var normalizeAwardPopupItems = Shared.normalizeAwardPopupItems;
 var PopupPanelAnimator = Shared.PopupPanelAnimator;
 var AWARD_LIST_ITEM_SPACING = 10;
 var AWARD_LIST_MIN_VIEWPORT_WIDTH = 160;
 var AWARD_LIST_MAX_VIEWPORT_WIDTH = 450;
+var SIGN_IN_GIFT_ICON_WIDTH = 70;
+var SIGN_IN_GIFT_ITEM_WIDTH = 70;
+var SIGN_IN_GIFT_ITEM_HEIGHT = 110;
+var SIGN_IN_GIFT_ITEM_SPACING = 8;
+var SIGN_IN_DAY_TEXT = [
+  "",
+  "第一天",
+  "第二天",
+  "第三天",
+  "第四天",
+  "第五天",
+  "第六天",
+  "第七天"
+];
 
 function requireValidNode(node, description) {
   if (!node || !node.isValid) {
@@ -106,6 +119,20 @@ function requireSignInDisplayRewardItem(rewardEntry, day) {
     throw new Error("Sign-in display reward config is missing for day " + day + ".");
   }
 
+  if (rewardEntry.displayItem) {
+    if (typeof rewardEntry.displayItem.id !== "string" || !rewardEntry.displayItem.id) {
+      throw new Error("Sign-in displayItem id is missing at day " + day + ".");
+    }
+    var displayCount = Math.floor(Number(rewardEntry.displayItem.count));
+    if (!Number.isFinite(displayCount) || displayCount < 1) {
+      throw new Error("Sign-in displayItem count is invalid at day " + day + ".");
+    }
+    return {
+      id: rewardEntry.displayItem.id,
+      count: displayCount
+    };
+  }
+
   for (var i = 0; i < rewardEntry.items.length; i += 1) {
     var item = rewardEntry.items[i];
     if (!item || typeof item.id !== "string" || !item.id) {
@@ -129,6 +156,49 @@ function requireSignInDisplayRewardItem(rewardEntry, day) {
     id: rewardEntry.items[0].id,
     count: Math.floor(Number(rewardEntry.items[0].count))
   };
+}
+
+function formatSignInDayText(day) {
+  if (!Number.isInteger(day) || day < 1 || day >= SIGN_IN_DAY_TEXT.length) {
+    throw new Error("Sign-in day text requires day within cycle: " + day);
+  }
+  return SIGN_IN_DAY_TEXT[day];
+}
+
+function resolveSignInStatusText(day, dayState) {
+  if (dayState === "claimed") {
+    return "已领取";
+  }
+  if (dayState === "claimable" || dayState === "locked") {
+    return formatSignInDayText(day);
+  }
+  throw new Error("Sign-in day state is invalid: " + dayState);
+}
+
+function requireCustomSpriteSizeMode(description) {
+  if (!cc || !cc.Sprite || !cc.Sprite.SizeMode || !Number.isInteger(cc.Sprite.SizeMode.CUSTOM)) {
+    throw new Error(description + " requires cc.Sprite.SizeMode.CUSTOM.");
+  }
+  return cc.Sprite.SizeMode.CUSTOM;
+}
+
+function resizeSpriteNodeToSpriteFrameWidth(node, sprite, spriteFrame, targetWidth, description) {
+  requireValidNode(node, description + " node");
+  if (!sprite || !sprite.node || !sprite.node.isValid) {
+    throw new Error(description + " sprite is invalid.");
+  }
+  if (!spriteFrame || typeof spriteFrame.getRect !== "function") {
+    throw new Error(description + " sprite frame must expose rect.");
+  }
+
+  var rect = spriteFrame.getRect();
+  var frameWidth = requirePositiveNumber(rect && rect.width, description + " frame width");
+  var frameHeight = requirePositiveNumber(rect && rect.height, description + " frame height");
+  var safeTargetWidth = requirePositiveNumber(targetWidth, description + " target width");
+  sprite.sizeMode = requireCustomSpriteSizeMode(description);
+  node.scaleX = 1;
+  node.scaleY = 1;
+  node.setContentSize(safeTargetWidth, (safeTargetWidth * frameHeight) / frameWidth);
 }
 
 module.exports = {
@@ -243,7 +313,8 @@ module.exports = {
     if (
       this._signInButtonSpriteFrames &&
       this._signInButtonSpriteFrames.claimed &&
-      this._signInButtonSpriteFrames.claimable
+      this._signInButtonSpriteFrames.claimable &&
+      this._signInButtonSpriteFrames.locked
     ) {
       return Promise.resolve(this._signInButtonSpriteFrames);
     }
@@ -267,11 +338,13 @@ module.exports = {
 
     this._signInButtonSpriteLoadPromise = Promise.all([
       loadSpriteFrame(SIGN_IN_BUTTON_SPRITE_PATHS.claimed),
-      loadSpriteFrame(SIGN_IN_BUTTON_SPRITE_PATHS.claimable)
+      loadSpriteFrame(SIGN_IN_BUTTON_SPRITE_PATHS.claimable),
+      loadSpriteFrame(SIGN_IN_BUTTON_SPRITE_PATHS.locked)
     ]).then(function (results) {
       this._signInButtonSpriteFrames = {
         claimed: results[0] || null,
-        claimable: results[1] || null
+        claimable: results[1] || null,
+        locked: results[2] || null
       };
       this._signInButtonSpriteLoadPromise = null;
       return this._signInButtonSpriteFrames;
@@ -280,7 +353,8 @@ module.exports = {
       Logger.warn("Load sign-in button sprites failed", error && error.message ? error.message : error);
       return {
         claimed: null,
-        claimable: null
+        claimable: null,
+        locked: null
       };
     }.bind(this));
 
@@ -348,6 +422,125 @@ module.exports = {
     return "locked";
   },
 
+  _isSignInAutoPopupEnabled: function () {
+    if (!this.signInStore || typeof this.signInStore.isAutoPopupEnabled !== "function") {
+      throw new Error("GameBootstrap requires SignInStore.isAutoPopupEnabled.");
+    }
+    return this.signInStore.isAutoPopupEnabled();
+  },
+
+  _setSignInAutoPopupEnabled: function (enabled) {
+    if (!this.signInStore || typeof this.signInStore.setAutoPopupEnabled !== "function") {
+      throw new Error("GameBootstrap requires SignInStore.setAutoPopupEnabled.");
+    }
+    this.signInStore.setAutoPopupEnabled(enabled);
+  },
+
+  _renderSignInAutoPopupCheckbox: function (signInViewNode) {
+    var checkBoxNode = this._findNodeByNameRecursive(signInViewNode, "check_box");
+    if (!checkBoxNode || !checkBoxNode.isValid) {
+      throw new Error("SignInView requires check_box.");
+    }
+    var selectNode = checkBoxNode.getChildByName("select");
+    if (!selectNode || !selectNode.isValid) {
+      throw new Error("SignInView check_box requires select.");
+    }
+
+    selectNode.active = this._isSignInAutoPopupEnabled();
+  },
+
+  _renderSignInGiftList: function (dayNode, rewardEntry, iconLoadTasks) {
+    if (!dayNode || !dayNode.isValid) {
+      throw new Error("SignInView day7 node is invalid.");
+    }
+    if (!rewardEntry || !Array.isArray(rewardEntry.items) || rewardEntry.items.length <= 0) {
+      throw new Error("SignInView day7 gift_list requires reward items.");
+    }
+    if (!Array.isArray(iconLoadTasks)) {
+      throw new Error("SignInView day7 gift_list requires icon load task list.");
+    }
+
+    var giftListNode = dayNode.getChildByName("gift_list");
+    if (!giftListNode || !giftListNode.isValid) {
+      throw new Error("SignInView day7 requires gift_list.");
+    }
+    var itemTemplateNode = giftListNode.getChildByName("item");
+    if (!itemTemplateNode || !itemTemplateNode.isValid) {
+      throw new Error("SignInView day7 gift_list requires item template.");
+    }
+
+    var layout = giftListNode.getComponent(cc.Layout);
+    if (layout) {
+      layout.enabled = false;
+    }
+
+    for (var childIndex = giftListNode.children.length - 1; childIndex >= 0; childIndex -= 1) {
+      var child = giftListNode.children[childIndex];
+      if (!child || !child.isValid || child === itemTemplateNode) {
+        continue;
+      }
+      child.destroy();
+    }
+
+    var itemCount = rewardEntry.items.length;
+    if (itemCount !== 3) {
+      throw new Error("SignInView day7 gift_list requires exactly 3 reward items.");
+    }
+    var totalWidth = (itemCount * SIGN_IN_GIFT_ITEM_WIDTH) + ((itemCount - 1) * SIGN_IN_GIFT_ITEM_SPACING);
+    giftListNode.setContentSize(totalWidth, SIGN_IN_GIFT_ITEM_HEIGHT);
+    itemTemplateNode.active = false;
+
+    var startX = -totalWidth / 2 + SIGN_IN_GIFT_ITEM_WIDTH / 2;
+    for (var i = 0; i < itemCount; i += 1) {
+      var rewardItem = rewardEntry.items[i];
+      if (!rewardItem || typeof rewardItem.id !== "string" || !rewardItem.id) {
+        throw new Error("SignInView day7 gift item id is missing at index " + i + ".");
+      }
+      var count = Math.floor(Number(rewardItem.count));
+      if (!Number.isFinite(count) || count < 1) {
+        throw new Error("SignInView day7 gift item count is invalid at index " + i + ".");
+      }
+
+      var itemNode = cc.instantiate(itemTemplateNode);
+      if (!itemNode || !itemNode.isValid) {
+        throw new Error("SignInView day7 gift item instantiate failed at index " + i + ".");
+      }
+      itemNode.name = "item_" + (i + 1);
+      itemNode.parent = giftListNode;
+      itemNode.active = true;
+      itemNode.setContentSize(SIGN_IN_GIFT_ITEM_WIDTH, SIGN_IN_GIFT_ITEM_HEIGHT);
+      itemNode.x = startX + (i * (SIGN_IN_GIFT_ITEM_WIDTH + SIGN_IN_GIFT_ITEM_SPACING));
+      itemNode.y = 0;
+
+      var iconNode = itemNode.getChildByName("icon");
+      var iconSprite = iconNode ? iconNode.getComponent(cc.Sprite) : null;
+      var numNode = itemNode.getChildByName("num");
+      var numLabel = numNode ? numNode.getComponent(cc.Label) : null;
+      if (!iconNode || !iconNode.isValid || !iconSprite || !numLabel) {
+        throw new Error("SignInView day7 gift item structure is incomplete.");
+      }
+      iconSprite.sizeMode = requireCustomSpriteSizeMode("Sign-in gift icon");
+      iconNode.scaleX = 1;
+      iconNode.scaleY = 1;
+      iconNode.width = SIGN_IN_GIFT_ICON_WIDTH;
+
+      numLabel.string = "x" + count;
+      (function (targetIconNode, targetSprite, targetItemId) {
+        iconLoadTasks.push(this._ensureSignInIconSpriteFrame(targetItemId, 7).then(function (spriteFrame) {
+          if (!targetSprite || !targetSprite.node || !targetSprite.node.isValid) {
+            throw new Error("SignInView day7 gift icon node invalid while rendering.");
+          }
+          if (!spriteFrame) {
+            throw new Error("SignInView day7 gift icon sprite frame is empty: " + targetItemId);
+          }
+          targetSprite.sizeMode = requireCustomSpriteSizeMode("Sign-in gift icon");
+          targetSprite.spriteFrame = spriteFrame;
+          resizeSpriteNodeToSpriteFrameWidth(targetIconNode, targetSprite, spriteFrame, SIGN_IN_GIFT_ICON_WIDTH, "Sign-in gift icon");
+        }));
+      }.bind(this))(iconNode, iconSprite, rewardItem.id);
+    }
+  },
+
   _bindSignInViewActions: function (signInViewNode) {
     if (!signInViewNode || !signInViewNode.isValid) {
       return;
@@ -356,6 +549,7 @@ module.exports = {
     var closeButtonNode = this._findNodeByNameRecursive(signInViewNode, "btn_close");
     var claimButtonNode = this._findNodeByNameRecursive(signInViewNode, "btn_award");
     var claimAdButtonNode = this._findNodeByNameRecursive(signInViewNode, "btn_award_ad");
+    var checkBoxNode = this._findNodeByNameRecursive(signInViewNode, "check_box");
     var maskNode = this._findNodeByNameRecursive(signInViewNode, "mask");
 
     this._bindNodeTapOnce(closeButtonNode, function () {
@@ -373,6 +567,13 @@ module.exports = {
     this._bindNodeTapOnce(claimAdButtonNode, function () {
       this._playSfx("uiClick");
       this._claimTodaySignInRewardByAd();
+    }.bind(this));
+    this._bindNodeTapOnce(checkBoxNode, function () {
+      this._playSfx("uiClick");
+      var nextEnabled = !this._isSignInAutoPopupEnabled();
+      this._setSignInAutoPopupEnabled(nextEnabled);
+      this._renderSignInAutoPopupCheckbox(signInViewNode);
+      this._setStatus(nextEnabled ? "已开启签到自动弹出" : "已关闭签到自动弹出");
     }.bind(this));
   },
 
@@ -399,7 +600,7 @@ module.exports = {
       var dayLabelNode = dayNode.getChildByName("day");
       var dayLabel = dayLabelNode ? dayLabelNode.getComponent(cc.Label) : null;
       if (dayLabel) {
-        dayLabel.string = "第" + day + "天";
+        dayLabel.string = formatSignInDayText(day);
       }
 
       var rewardEntry = this._resolveSignInRewardByDay(day);
@@ -419,49 +620,57 @@ module.exports = {
 
       var numNode = dayNode.getChildByName("num");
       var numLabel = numNode ? numNode.getComponent(cc.Label) : null;
-      if (!numLabel) {
+      if (!numLabel && day < 7) {
         throw new Error("SignInView day" + day + " requires num label.");
       }
-      numLabel.string = "x" + displayItem.count;
+      if (numLabel) {
+        numLabel.string = "x" + displayItem.count;
+      }
 
       var dayState = this._resolveSignInDayUiState(day, currentState, canClaimToday);
       var awardButtonNode = dayNode.getChildByName("award_btn");
       var statusNode = awardButtonNode ? awardButtonNode.getChildByName("status") : null;
       var statusLabel = statusNode ? statusNode.getComponent(cc.Label) : null;
       if (statusLabel) {
-        statusLabel.string = SIGN_IN_STATUS_TEXT[dayState] || SIGN_IN_STATUS_TEXT.locked;
+        statusLabel.string = resolveSignInStatusText(day, dayState);
       }
       if (awardButtonNode && awardButtonNode.isValid) {
         var awardButton = awardButtonNode.getComponent(cc.Button);
         if (awardButton) {
-          awardButton.interactable = false;
+          awardButton.enableAutoGrayEffect = false;
+          awardButton.interactable = true;
         }
+        awardButtonNode.color = cc.color(255, 255, 255, 255);
         var awardSprite = awardButtonNode.getComponent(cc.Sprite);
         if (awardSprite && this._signInButtonSpriteFrames) {
-          awardSprite.spriteFrame = dayState === "claimed"
-            ? this._signInButtonSpriteFrames.claimed
-            : this._signInButtonSpriteFrames.claimable;
+          awardSprite.spriteFrame = this._signInButtonSpriteFrames[dayState];
         }
       }
+
+      if (day === 7) {
+        this._renderSignInGiftList(dayNode, rewardEntry, iconLoadTasks);
+      }
     }
+
+    this._renderSignInAutoPopupCheckbox(signInViewNode);
 
     var claimButtonNode = this._findNodeByNameRecursive(signInViewNode, "btn_award");
     if (claimButtonNode && claimButtonNode.isValid) {
       var claimButton = claimButtonNode.getComponent(cc.Button);
       if (claimButton) {
-        claimButton.enableAutoGrayEffect = true;
-        claimButton.interactable = canClaimToday;
+        claimButton.enableAutoGrayEffect = false;
+        claimButton.interactable = true;
       }
-      claimButtonNode.color = canClaimToday ? cc.color(255, 255, 255, 255) : cc.color(170, 170, 170, 255);
+      claimButtonNode.color = cc.color(255, 255, 255, 255);
     }
     var claimAdButtonNode = this._findNodeByNameRecursive(signInViewNode, "btn_award_ad");
     if (claimAdButtonNode && claimAdButtonNode.isValid) {
       var claimAdButton = claimAdButtonNode.getComponent(cc.Button);
       if (claimAdButton) {
-        claimAdButton.enableAutoGrayEffect = true;
-        claimAdButton.interactable = canClaimToday;
+        claimAdButton.enableAutoGrayEffect = false;
+        claimAdButton.interactable = true;
       }
-      claimAdButtonNode.color = canClaimToday ? cc.color(255, 255, 255, 255) : cc.color(170, 170, 170, 255);
+      claimAdButtonNode.color = cc.color(255, 255, 255, 255);
     }
 
     Promise.all(iconLoadTasks).catch(function (error) {
@@ -938,6 +1147,12 @@ module.exports = {
       return;
     }
     if (!this.isSelectingLevel || this.isRestarting) {
+      return;
+    }
+    if (typeof this._isNewUserGuideActive !== "function") {
+      throw new Error("Sign-in auto popup requires new user guide state method.");
+    }
+    if (this._isNewUserGuideActive()) {
       return;
     }
     if (!this.signInStore || typeof this.signInStore.shouldAutoPopupToday !== "function") {

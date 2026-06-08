@@ -63,7 +63,7 @@ function normalizeGoods(rawGoods, index) {
     throw new Error("Shop V1 only supports coin currency: " + rawGoods.skuId);
   }
   assertPositiveInteger(rawGoods.price.amount, "Shop goods price amount must be a positive integer: " + rawGoods.skuId);
-  assertPositiveInteger(rawGoods.dailyLimit, "Shop goods dailyLimit must be a positive integer: " + rawGoods.skuId);
+  assertNonNegativeInteger(rawGoods.dailyLimit, "Shop goods dailyLimit must be a non-negative integer: " + rawGoods.skuId);
   if (typeof rawGoods.enabled !== "boolean") {
     throw new Error("Shop goods enabled must be boolean: " + rawGoods.skuId);
   }

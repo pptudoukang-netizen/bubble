@@ -8,6 +8,7 @@ function attachLevelRendererSceneMethods(LevelRenderer, deps) {
   var JAR_RESOURCES = deps.JAR_RESOURCES;
   var JAR_MASK_RESOURCES = deps.JAR_MASK_RESOURCES;
   var REWARD_ITEM_RESOURCES = deps.REWARD_ITEM_RESOURCES;
+  var HUD_STAR_RESOURCES = deps.HUD_STAR_RESOURCES;
   var PREFAB_PATHS = deps.PREFAB_PATHS;
   var JAR_RENDER_Y_OFFSET = deps.JAR_RENDER_Y_OFFSET;
   var GUIDE_DOT_SPACING = deps.GUIDE_DOT_SPACING;
@@ -187,31 +188,57 @@ LevelRenderer.prototype._mountGameViewScaffold = function () {
   gameViewNode.setPosition(0, 0);
   gameViewNode.active = true;
 
-  var mountedCount = 0;
-  mountedCount += this._moveGameViewChildToLayer(gameViewNode, "bg", this.layers.background, "bg");
-  mountedCount += this._moveGameViewChildToLayer(gameViewNode, "DangerLine", this.layers.dangerLine, "DangerLine");
-  mountedCount += this._moveGameViewChildToLayer(gameViewNode, "BttomPanel", this.layers.hud, "BttomPanel");
-
-  if (mountedCount <= 0) {
-    Logger.warn("GameView prefab mounted but required nodes are missing");
-  }
+  var mountedBgNode = this._moveGameViewChildToLayer(gameViewNode, "bg", this.layers.background, "bg");
+  var mountedDangerLineNode = this._moveGameViewChildToLayer(gameViewNode, "DangerLine", this.layers.dangerLine, "DangerLine");
+  var mountedBottomPanelNode = this._moveGameViewChildToLayer(gameViewNode, "BttomPanel", this.layers.hud, "BttomPanel");
+  this._flushGameViewScaffoldLayout([
+    gameViewNode,
+    mountedBgNode,
+    mountedDangerLineNode,
+    mountedBottomPanelNode
+  ]);
 };
 
 LevelRenderer.prototype._moveGameViewChildToLayer = function (gameViewNode, childName, targetLayer, targetName) {
-  if (!gameViewNode || !targetLayer) {
-    return 0;
+  if (!gameViewNode || !gameViewNode.isValid) {
+    throw new Error("GameView node is required before moving child: " + childName);
+  }
+  if (!targetLayer || !targetLayer.isValid) {
+    throw new Error("GameView child target layer is required: " + childName);
   }
 
   var child = gameViewNode.getChildByName(childName);
-  if (!child) {
-    return 0;
+  if (!child || !child.isValid) {
+    throw new Error("GameView requires child node: " + childName);
   }
 
   child.removeFromParent(false);
   child.name = targetName || childName;
   child.parent = targetLayer;
   child.active = true;
-  return 1;
+  return child;
+};
+
+LevelRenderer.prototype._flushGameViewScaffoldLayout = function (nodes) {
+  if (!Array.isArray(nodes)) {
+    throw new Error("GameView scaffold layout nodes must be an array.");
+  }
+
+  nodes.forEach(function (node) {
+    if (!node || !node.isValid) {
+      throw new Error("GameView scaffold layout node is invalid.");
+    }
+
+    var safeArea = node.getComponent(cc.SafeArea);
+    if (safeArea && safeArea.enabled && typeof safeArea.updateArea === "function") {
+      safeArea.updateArea();
+    }
+
+    var widget = node.getComponent(cc.Widget);
+    if (widget && widget.enabled && typeof widget.updateAlignment === "function") {
+      widget.updateAlignment();
+    }
+  });
 };
 
 LevelRenderer.prototype._applyGameBackground = function (backgroundNode, syncToRoot) {
@@ -401,6 +428,7 @@ LevelRenderer.prototype._renderHud = function (levelConfig, runtimeSnapshot) {
   this._setHudLabel(panel, "LevelValue", String(levelConfig.level.levelId));
   // this._setHudLabel(panel, "ScoreTitle", "得分");
   this._setHudLabel(panel, "ScoreValue", String(runtimeSnapshot.score));
+  this._renderHudLeftBall(panel, runtimeSnapshot);
   // this._setHudLabel(panel, "TargetTitle", "目标:");
   this._renderHudTargets(panel, hudTargetDisplay);
   this._renderHudStarProgress(panel, runtimeSnapshot);
@@ -426,6 +454,7 @@ var COMBO_BATTER_FADE_DURATION = 0.25;
 var COMBO_BATTER_POP_SCALE = 1.2;
 
 var JAR_FRACTION_MOUTH_OFFSET_RATIO = 0.24;
+var JAR_FRACTION_START_Y_OFFSET = 20;
 var JAR_FRACTION_POP_DURATION = 0.15;
 var JAR_FRACTION_SETTLE_DURATION = 0.1;
 var JAR_FRACTION_HOLD_DURATION = 0.55;
@@ -725,7 +754,7 @@ LevelRenderer.prototype._spawnJarFractionDisplay = function (entry) {
   fractionNode.name = "fraction_" + String(jarIndex);
 
   var mouthPosition = this._resolveJarMouthPositionInGameView(jarIndex);
-  fractionNode.setPosition(mouthPosition.x, mouthPosition.y);
+  fractionNode.setPosition(mouthPosition.x, mouthPosition.y + JAR_FRACTION_START_Y_OFFSET);
 
   var fractionLabel = fractionNode.getComponent(cc.Label);
   if (!fractionLabel) {
@@ -881,10 +910,10 @@ LevelRenderer.prototype.playThreeLineEliminationAnimation = function (rows) {
     throw new Error("Three-line elimination animation requires overlay layer.");
   }
 
-  var spritePath = BALL_RESOURCES.LIGHT_EFFECT;
+  var spritePath = BALL_RESOURCES.BLOCKADE_LINE;
   var spriteFrame = this.spriteFrameCache[spritePath];
   if (!spriteFrame) {
-    throw new Error("Three-line elimination animation requires preloaded light effect sprite.");
+    throw new Error("Three-line elimination animation requires preloaded blockade line sprite.");
   }
 
   var boardLeft = Number(BoardLayout.boardLeft);
@@ -1206,6 +1235,39 @@ LevelRenderer.prototype._getHudTargetLayout = function (panel) {
   return requireChildNode(panel, "target_layout", "HudPanel");
 };
 
+LevelRenderer.prototype._resolveHudTargetSlot = function (targetLayout, slotName) {
+  var cardName = "";
+  if (slotName === "ball") {
+    cardName = "item_ball";
+  } else if (slotName === "ice_ball") {
+    cardName = "item_ice_ball";
+  } else {
+    throw new Error("Unsupported HUD target slot: " + slotName);
+  }
+
+  var cardNode = requireChildNode(targetLayout, cardName, "HudPanel/target_layout");
+  var targetNode = requireChildNode(cardNode, slotName, "HudPanel/target_layout/" + cardName);
+  return {
+    cardNode: cardNode,
+    targetNode: targetNode,
+    description: "HudPanel/target_layout/" + cardName + "/" + slotName
+  };
+};
+
+LevelRenderer.prototype._renderHudLeftBall = function (panel, runtimeSnapshot) {
+  var leftBallNode = requireChildNode(panel, "LeftBall", "HudPanel");
+  var leftBallLabel = leftBallNode.getComponent(cc.Label);
+  if (!leftBallLabel) {
+    throw new Error("HudPanel/LeftBall requires cc.Label.");
+  }
+  if (!runtimeSnapshot || !Number.isInteger(runtimeSnapshot.remainingShots) || runtimeSnapshot.remainingShots < 0) {
+    throw new Error("HUD LeftBall requires non-negative integer remainingShots.");
+  }
+
+  leftBallNode.active = true;
+  leftBallLabel.string = String(runtimeSnapshot.remainingShots);
+};
+
 LevelRenderer.prototype._renderHudTargets = function (panel, targetDisplay) {
   if (!targetDisplay || typeof targetDisplay !== "object" || Array.isArray(targetDisplay)) {
     throw new Error("HUD target display data must be an object.");
@@ -1222,15 +1284,21 @@ LevelRenderer.prototype._renderHudTargets = function (panel, targetDisplay) {
 };
 
 LevelRenderer.prototype._renderHudTargetSlot = function (targetLayout, slotName, displayData) {
-  var slotNode = requireChildNode(targetLayout, slotName, "HudPanel/target_layout");
-  var valueNode = requireChildNode(slotNode, "TargetValue", "HudPanel/target_layout/" + slotName);
+  var slot = this._resolveHudTargetSlot(targetLayout, slotName);
+  var cardNode = slot.cardNode;
+  var targetNode = slot.targetNode;
+  var valueNode = requireChildNode(targetNode, "TargetValue", slot.description);
+  var completeNode = requireChildNode(targetNode, "complete", slot.description);
   var valueLabel = valueNode.getComponent(cc.Label);
   if (!valueLabel) {
-    throw new Error("HudPanel/target_layout/" + slotName + "/TargetValue requires cc.Label.");
+    throw new Error(slot.description + "/TargetValue requires cc.Label.");
   }
 
   if (!displayData) {
-    slotNode.active = false;
+    cardNode.active = false;
+    targetNode.active = false;
+    valueNode.active = false;
+    completeNode.active = false;
     valueLabel.string = "";
     return;
   }
@@ -1238,8 +1306,11 @@ LevelRenderer.prototype._renderHudTargetSlot = function (targetLayout, slotName,
   if (typeof displayData.iconCode !== "string" || !displayData.iconCode) {
     throw new Error("HUD target display iconCode is required: " + slotName);
   }
-  if (typeof displayData.progressText !== "string" || !displayData.progressText) {
-    throw new Error("HUD target display progressText is required: " + slotName);
+  if (typeof displayData.remaining !== "number" || !isFinite(displayData.remaining) || displayData.remaining < 0) {
+    throw new Error("HUD target display remaining is required: " + slotName);
+  }
+  if (typeof displayData.remainingText !== "string" || !displayData.remainingText) {
+    throw new Error("HUD target display remainingText is required: " + slotName);
   }
 
   var spritePath = BALL_RESOURCES[displayData.iconCode];
@@ -1251,9 +1322,13 @@ LevelRenderer.prototype._renderHudTargetSlot = function (targetLayout, slotName,
     throw new Error("HUD target sprite frame is missing: " + spritePath);
   }
 
-  slotNode.active = true;
-  ensureSprite(slotNode, spriteFrame);
-  valueLabel.string = displayData.progressText;
+  cardNode.active = true;
+  targetNode.active = true;
+  ensureSprite(targetNode, spriteFrame);
+  var targetComplete = displayData.remaining <= 0;
+  valueNode.active = !targetComplete;
+  completeNode.active = targetComplete;
+  valueLabel.string = displayData.remainingText;
 };
 
 LevelRenderer.prototype._getHudTargetBallPositionInBoard = function () {
@@ -1263,8 +1338,9 @@ LevelRenderer.prototype._getHudTargetBallPositionInBoard = function () {
 
   var panel = this._getMountedHudPanel();
   var targetLayout = panel ? panel.getChildByName("target_layout") : null;
-  var ballNode = targetLayout ? targetLayout.getChildByName("ice_ball") : null;
-  if (!ballNode || !ballNode.active || !ballNode.parent) {
+  var iceCardNode = targetLayout ? targetLayout.getChildByName("item_ice_ball") : null;
+  var ballNode = iceCardNode ? iceCardNode.getChildByName("ice_ball") : null;
+  if (!iceCardNode || !iceCardNode.active || !ballNode || !ballNode.active || !ballNode.parent) {
     return null;
   }
 
@@ -1313,9 +1389,16 @@ LevelRenderer.prototype._setHudStarLit = function (starNode, lit) {
     return;
   }
 
+  var spritePath = lit ? HUD_STAR_RESOURCES.lit : HUD_STAR_RESOURCES.unlit;
+  var spriteFrame = this.spriteFrameCache[spritePath];
+  if (!spriteFrame) {
+    throw new Error("HUD star sprite frame is missing: " + spritePath);
+  }
+
   starNode.active = true;
-  starNode.color = lit ? cc.color(255, 255, 255) : cc.color(125, 125, 125);
-  starNode.opacity = lit ? 255 : 190;
+  ensureSprite(starNode, spriteFrame);
+  starNode.color = cc.color(255, 255, 255);
+  starNode.opacity = 255;
 };
 
 LevelRenderer.prototype._getGameViewNode = function () {

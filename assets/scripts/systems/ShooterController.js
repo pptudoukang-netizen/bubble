@@ -98,6 +98,9 @@ ShooterController.prototype.configureLevel = function (levelConfig) {
   this.skillInventory.barrier_hammer = Math.max(0, Math.floor(Number(initialPowerups.barrier_hammer) || 0));
   this.currentBall = this._pickNormalBall();
   this.nextBall = this._pickNormalBall();
+  if (Array.isArray(levelConfig.level.initialShotBalls)) {
+    this._applyInitialShotBalls(levelConfig.level.initialShotBalls);
+  }
   this._syncLegacyColorFields();
   this.aimDirection = { x: 0, y: 1 };
   var configuredMaxAimAngle = levelConfig.level && typeof levelConfig.level.aimMaxAngleDeg === "number"
@@ -105,6 +108,21 @@ ShooterController.prototype.configureLevel = function (levelConfig) {
     : 75;
   this.maxAimAngleDeg = clamp(configuredMaxAimAngle, 35, 85);
   return this;
+};
+
+ShooterController.prototype._applyInitialShotBalls = function (initialShotBalls) {
+  if (!Array.isArray(initialShotBalls) || initialShotBalls.length <= 0 || initialShotBalls.length > 2) {
+    throw new Error("ShooterController initialShotBalls must contain 1 or 2 colors.");
+  }
+  initialShotBalls.forEach(function (colorCode, index) {
+    if (this.availableColors.indexOf(colorCode) === -1) {
+      throw new Error("ShooterController initialShotBalls[" + index + "] must exist in availableColors: " + colorCode);
+    }
+  }, this);
+  this.currentBall = createNormalBall(initialShotBalls[0]);
+  if (initialShotBalls.length >= 2) {
+    this.nextBall = createNormalBall(initialShotBalls[1]);
+  }
 };
 
 ShooterController.prototype.setAimFromPoint = function (point) {
@@ -186,6 +204,32 @@ ShooterController.prototype.setUpcomingNormalBalls = function (colorCode, count)
   return {
     accepted: true,
     color: colorCode,
+    assignedCount: count,
+    currentBall: clone(this.currentBall),
+    nextBall: clone(this.nextBall)
+  };
+};
+
+ShooterController.prototype.setUpcomingRandomNormalBalls = function (count) {
+  if (!Number.isInteger(count) || count <= 0 || count > 2) {
+    throw new Error("ShooterController revive random queue count must be 1 or 2.");
+  }
+
+  if (count >= 1) {
+    this.currentBall = this._pickNormalBall();
+    if (!this.currentBall) {
+      throw new Error("ShooterController revive random current ball is missing.");
+    }
+  }
+  if (count >= 2) {
+    this.nextBall = this._pickNormalBall();
+    if (!this.nextBall) {
+      throw new Error("ShooterController revive random next ball is missing.");
+    }
+  }
+  this._syncLegacyColorFields();
+  return {
+    accepted: true,
     assignedCount: count,
     currentBall: clone(this.currentBall),
     nextBall: clone(this.nextBall)

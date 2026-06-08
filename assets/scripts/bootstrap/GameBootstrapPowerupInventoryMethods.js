@@ -254,6 +254,18 @@ function resolveNodeWorldPositionInParent(node, parentNode) {
   return parentNode.convertToNodeSpaceAR(worldPosition);
 }
 
+function waitMilliseconds(durationMs) {
+  if (!Number.isFinite(durationMs) || durationMs < 0) {
+    throw new Error("waitMilliseconds requires a non-negative finite duration.");
+  }
+  if (typeof setTimeout !== "function") {
+    throw new Error("waitMilliseconds requires setTimeout.");
+  }
+  return new Promise(function (resolve) {
+    setTimeout(resolve, durationMs);
+  });
+}
+
 module.exports = {
   _onUseThreeLineEliminationTap: function () {
     if (!this.currentLevelConfig || this.isRestarting || this.isSelectingLevel) {
@@ -293,6 +305,8 @@ module.exports = {
 
     this._threeLineEliminationInProgress = true;
     return this.levelRenderer.playThreeLineEliminationAnimation(preview.rows).then(function () {
+      return waitMilliseconds(200);
+    }).then(function () {
       var useResult = this.gameManager.useThreeLineElimination(preview.rows);
       var snapshot = useResult && useResult.snapshot
         ? useResult.snapshot
@@ -1026,7 +1040,15 @@ module.exports = {
           node: startGameViewNode,
           onClose: function () {
             this._playSfx("uiClick");
+            this._rewindNewUserGuideToQuickStart();
             this._hideStartGameView();
+            var guideShowResult = this._showNewUserGuideForQuickStart();
+            if (guideShowResult && typeof guideShowResult.catch === "function") {
+              guideShowResult.catch(function (error) {
+                Logger.error("Show quick start new user guide after StartGameView close failed", error && error.stack ? error.stack : String(error));
+                throw error;
+              });
+            }
           }.bind(this),
           onPlay: function (selectedItems) {
             this._playSfx("uiClick");
@@ -1056,7 +1078,9 @@ module.exports = {
       this._startGameLevelConfig = levelConfig;
       startGameViewNode.active = true;
       PopupPanelAnimator.play(startGameViewNode);
-      return this._renderStartGameView();
+      return this._renderStartGameView().then(function () {
+        return this._showNewUserGuideForStartGame();
+      }.bind(this));
     }.bind(this)).catch(function (error) {
       Logger.error("Show StartGameView failed", error && error.stack ? error.stack : String(error));
       throw error;
@@ -1118,6 +1142,7 @@ module.exports = {
   _hideStartGameView: function () {
     this._startGameLevelId = 0;
     this._startGameLevelConfig = null;
+    this._hideNewUserGuide();
     if (!this._startGameViewNode || !this._startGameViewNode.isValid) {
       return;
     }
@@ -1146,6 +1171,7 @@ module.exports = {
       return false;
     }
 
+    this._advanceNewUserGuideToGameplay();
     this._loadPreparedLevelFromLevelSelect(safeLevelId, preparedItems);
     return true;
   },

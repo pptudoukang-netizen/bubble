@@ -307,6 +307,9 @@ function normalizeObjectiveList(objectives, allowedTypes, fieldName, levelConfig
       if (levelConfig.colors.indexOf(color) === -1) {
         throw new Error("level." + fieldName + "[" + index + "].color must exist in level.colors: " + levelKey);
       }
+      if (!Array.isArray(levelConfig.jarColors) || levelConfig.jarColors.indexOf(color) === -1) {
+        throw new Error("level." + fieldName + "[" + index + "].color must exist in level.jarColors: " + levelKey);
+      }
       normalized.color = color;
     }
     if (objective.type === "clear_all" && value !== 1) {
@@ -343,6 +346,21 @@ function validateIceSnowballObjectives(levelConfig, levelKey) {
   if (available < maxRequired) {
     throw new Error("level collect_ice_snowball target exceeds ice supply: " + levelKey);
   }
+}
+
+function normalizeInitialShotBalls(levelConfig, levelKey) {
+  if (levelConfig.initialShotBalls === undefined) {
+    return;
+  }
+  if (!Array.isArray(levelConfig.initialShotBalls) || levelConfig.initialShotBalls.length <= 0 || levelConfig.initialShotBalls.length > 2) {
+    throw new Error("level.initialShotBalls must contain 1 or 2 colors: " + levelKey);
+  }
+  levelConfig.initialShotBalls = levelConfig.initialShotBalls.map(function (colorCode, index) {
+    if (typeof colorCode !== "string" || levelConfig.colors.indexOf(colorCode) === -1) {
+      throw new Error("level.initialShotBalls[" + index + "] must exist in level.colors: " + levelKey);
+    }
+    return colorCode;
+  });
 }
 
 function normalizeLevelMode(levelConfig, levelKey) {
@@ -510,6 +528,7 @@ function normalizeLevelConfig(rawConfig, levelKey) {
       throw new Error("level.spawnWeights contains color not in level.colors `" + colorCode + "`: " + levelKey);
     }
   });
+  normalizeInitialShotBalls(config.level, levelKey);
 
   if (!config.level.jarRules || typeof config.level.jarRules !== "object" || Array.isArray(config.level.jarRules)) {
     throw new Error("level.jarRules must be an object: " + levelKey);

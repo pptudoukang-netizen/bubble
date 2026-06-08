@@ -29,6 +29,7 @@ function clamp(value, min, max) {
 
 var EPSILON = 0.000001;
 var MIN_VISIBLE_BOARD_ROWS = 6;
+var MIN_VISUAL_CELL_DISTANCE = BoardLayout.bubbleDiameter - 0.5;
 
 function collectOccupiedRows(cells) {
   var rowMap = {};
@@ -42,6 +43,20 @@ function collectOccupiedRows(cells) {
     return Number(row);
   }).sort(function (a, b) {
     return a - b;
+  });
+}
+
+function assertNoDuplicateCellCoordinates(cells) {
+  var occupied = {};
+  (cells || []).forEach(function (cell) {
+    if (!cell || !Number.isInteger(cell.row) || !Number.isInteger(cell.col)) {
+      throw new Error("BubbleGrid cell coordinates must be integers.");
+    }
+    var key = keyFor(cell.row, cell.col);
+    if (occupied[key]) {
+      throw new Error("BubbleGrid contains duplicate cell coordinates: " + key);
+    }
+    occupied[key] = true;
   });
 }
 
@@ -100,6 +115,7 @@ BubbleGrid.prototype.configureLevel = function (levelConfig) {
   this.version = 1;
   this._rebuildCaches();
   this.ensureMinimumVisibleRows(MIN_VISIBLE_BOARD_ROWS);
+  this.assertNoVisualOverlap("configureLevel");
   return this;
 };
 
@@ -233,6 +249,28 @@ BubbleGrid.prototype.getRowCount = function () {
 
 BubbleGrid.prototype.getCells = function () {
   return clone(this.cells);
+};
+
+BubbleGrid.prototype.assertNoVisualOverlap = function (source) {
+  assertNoDuplicateCellCoordinates(this.cells);
+  for (var leftIndex = 0; leftIndex < this.cells.length; leftIndex += 1) {
+    var leftCell = this.cells[leftIndex];
+    var leftPosition = this.getCellPosition(leftCell.row, leftCell.col);
+    for (var rightIndex = leftIndex + 1; rightIndex < this.cells.length; rightIndex += 1) {
+      var rightCell = this.cells[rightIndex];
+      var rightPosition = this.getCellPosition(rightCell.row, rightCell.col);
+      var dx = leftPosition.x - rightPosition.x;
+      var dy = leftPosition.y - rightPosition.y;
+      var distance = Math.sqrt(dx * dx + dy * dy);
+      if (distance < MIN_VISUAL_CELL_DISTANCE) {
+        throw new Error(
+          "BubbleGrid visual overlap after " + source + ": " +
+          keyFor(leftCell.row, leftCell.col) + " and " + keyFor(rightCell.row, rightCell.col)
+        );
+      }
+    }
+  }
+  return true;
 };
 
 BubbleGrid.prototype.getMaxColumns = function () {
@@ -898,45 +936,23 @@ BubbleGrid.prototype.findSplitterSpawnCell = function (splitterCell) {
     throw new Error("BubbleGrid.findSplitterSpawnCell requires splitter cell coordinates.");
   }
 
-  var splitterPosition = this.getCellPosition(splitterCell.row, splitterCell.col);
-  var openNeighbors = this.getNeighborCoordinates(splitterCell.row, splitterCell.col).filter(function (coord) {
-    return !this.hasCell(coord.row, coord.col);
-  }, this);
-  if (openNeighbors.length) {
-    openNeighbors.sort(function (a, b) {
-      var posA = this.getCellPosition(a.row, a.col);
-      var posB = this.getCellPosition(b.row, b.col);
-      var scoreA = Math.abs(posA.x - splitterPosition.x) + Math.max(0, a.row - splitterCell.row) * BoardLayout.rowHeight;
-      var scoreB = Math.abs(posB.x - splitterPosition.x) + Math.max(0, b.row - splitterCell.row) * BoardLayout.rowHeight;
-      return scoreA - scoreB;
-    }.bind(this));
-    return openNeighbors[0];
-  }
-
-  var best = null;
-  var bestScore = Number.MAX_VALUE;
-  for (var searchRow = Math.max(0, splitterCell.row - 1); searchRow >= 0; searchRow -= 1) {
-    for (var searchCol = 0; searchCol < this.getColumnCountForRow(searchRow); searchCol += 1) {
-      if (this.hasCell(searchRow, searchCol)) {
-        continue;
-      }
-      var position = this.getCellPosition(searchRow, searchCol);
-      var score = (splitterCell.row - searchRow) * BoardLayout.rowHeight + Math.abs(position.x - splitterPosition.x);
-      if (score < bestScore) {
-        bestScore = score;
-        best = {
-          row: searchRow,
-          col: searchCol
-        };
+  var candidates = [];
+  for (var row = 0; row < this.getRowCount(); row += 1) {
+    for (var col = 0; col < this.getColumnCountForRow(row); col += 1) {
+      if (this.isAttachableCell(row, col, { x: 0, y: 1 }, { allowTopRow: true })) {
+        candidates.push({
+          row: row,
+          col: col
+        });
       }
     }
   }
 
-  if (best) {
-    return best;
+  if (!candidates.length) {
+    return null;
   }
 
-  return null;
+  return candidates[Math.floor(Math.random() * candidates.length)];
 };
 
 BubbleGrid.prototype.addBubble = function (cell, colorOrBall) {
@@ -967,6 +983,7 @@ BubbleGrid.prototype.addBubble = function (cell, colorOrBall) {
 
   this.version += 1;
   this._rebuildCaches();
+  this.assertNoVisualOverlap("addBubble");
   return this.getCell(row, col);
 };
 
@@ -993,6 +1010,7 @@ BubbleGrid.prototype.removeCells = function (cells) {
   if (removed.length) {
     this.version += 1;
     this._rebuildCaches();
+    this.assertNoVisualOverlap("removeCells");
   }
 
   return removed;
@@ -1004,6 +1022,7 @@ BubbleGrid.prototype.advanceRows = function (rowCount) {
   }
   this.dropOffsetRows += rowCount;
   this.version += 1;
+  this.assertNoVisualOverlap("advanceRows");
   return this.dropOffsetRows;
 };
 
@@ -1056,6 +1075,7 @@ BubbleGrid.prototype.ensureMinimumVisibleRows = function (minimumRows) {
   var shiftRows = targetDropOffsetRows - this.dropOffsetRows;
   this.dropOffsetRows = targetDropOffsetRows;
   this.version += 1;
+  this.assertNoVisualOverlap("ensureMinimumVisibleRows");
 
   return {
     shiftRows: shiftRows,
@@ -1092,6 +1112,7 @@ BubbleGrid.prototype.ensureDangerLineSpaceRows = function (minimumRows) {
     this.dropOffsetRows -= shiftRows;
     this.version += 1;
     this._rebuildCaches();
+    this.assertNoVisualOverlap("ensureDangerLineSpaceRows shift");
     lowestBubbleBottomY = this.cells.reduce(function (lowestBottomYAfterShift, cell) {
       var cellPosition = this.getCellPosition(cell.row, cell.col);
       var bubbleBottomY = cellPosition.y - BoardLayout.bubbleRadius;

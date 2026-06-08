@@ -128,8 +128,8 @@ module.exports = {
     var resolveUserProfile = this._worldLeaderboardUserProfile
       ? Promise.resolve(this._worldLeaderboardUserProfile)
       : this.worldLeaderboardService.requestUserProfile().then(function (profile) {
-        this._worldLeaderboardUserProfile = profile;
-        return profile;
+        this._worldLeaderboardUserProfile = this.worldLeaderboardService.saveCachedUserProfile(profile);
+        return this._worldLeaderboardUserProfile;
       }.bind(this));
 
     return resolveUserProfile.then(function () {
@@ -425,16 +425,17 @@ module.exports = {
     }
 
     var summary = this._getStarChestSummary();
-    var starsPerChest = Math.max(1, Math.floor(Number(summary.starsPerChest) || 15));
-    var progressStars = Math.max(0, Math.floor(Number(summary.progressStars) || 0));
-    if (Math.max(0, Math.floor(Number(summary.openableCount) || 0)) > 0) {
-      progressStars = starsPerChest;
+    if (!Number.isInteger(summary.availableStars) || summary.availableStars < 0) {
+      throw new Error("Star chest summary availableStars must be a non-negative integer.");
+    }
+    if (!Number.isInteger(summary.starsPerChest) || summary.starsPerChest <= 0) {
+      throw new Error("Star chest summary starsPerChest must be a positive integer.");
     }
 
     var labelNode = entryNode.getChildByName("satr_num") || entryNode.getChildByName("star_num");
     var label = labelNode ? labelNode.getComponent(cc.Label) : null;
     if (label) {
-      label.string = progressStars + "/" + starsPerChest;
+      label.string = summary.availableStars + "/" + summary.starsPerChest;
     }
 
     var button = entryNode.getComponent(cc.Button);

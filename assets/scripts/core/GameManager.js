@@ -34,6 +34,7 @@ var AD_RUN_POWERUP_TYPES = {
   plus_three_balls: true
 };
 var PLUS_THREE_BALLS_AMOUNT = 3;
+var SPLITTER_SPAWN_DELAY_SEC = 0.2;
 
 function assertFiniteNumber(value, fieldName) {
   var numberValue = Number(value);
@@ -470,6 +471,7 @@ function GameManager(options) {
   this.pendingRuntimeEvents = [];
   this.pendingBoardAdvanceDelay = 0;
   this.pendingWinSettlementDelay = 0;
+  this.pendingSplitterSpawns = [];
   this.pendingBarrierHammer = false;
   this.pendingRainbowColorSelection = null;
   this.jarScoreBoostActive = false;
@@ -546,6 +548,7 @@ GameManager.prototype.startLevel = function (levelConfig) {
   this.pendingRuntimeEvents = [];
   this.pendingBoardAdvanceDelay = 0;
   this.pendingWinSettlementDelay = 0;
+  this.pendingSplitterSpawns = [];
   this.pendingBarrierHammer = false;
   this.pendingRainbowColorSelection = null;
   this.jarScoreBoostActive = false;
@@ -619,6 +622,141 @@ GameManager.prototype._getScoreRule = function (key) {
 
 GameManager.prototype._isWaitingBoardAdvance = function () {
   return this.pendingBoardAdvanceDelay > 0;
+};
+
+GameManager.prototype._hasPendingSplitterSpawns = function () {
+  if (!Array.isArray(this.pendingSplitterSpawns)) {
+    throw new Error("GameManager pendingSplitterSpawns must be an array.");
+  }
+  return this.pendingSplitterSpawns.length > 0;
+};
+
+GameManager.prototype._queuePendingSplitterSpawn = function (splitterCell, resolution) {
+  if (!splitterCell || !Number.isInteger(splitterCell.row) || !Number.isInteger(splitterCell.col)) {
+    throw new Error("Pending splitter spawn requires splitter cell coordinates.");
+  }
+  if (typeof splitterCell.splitColor !== "string" || !splitterCell.splitColor) {
+    throw new Error("Pending splitter spawn requires splitColor.");
+  }
+  if (!resolution || !Array.isArray(resolution.spawnedBySplitters)) {
+    throw new Error("Pending splitter spawn requires resolution.spawnedBySplitters.");
+  }
+  if (!Array.isArray(resolution.reactiveTriggered)) {
+    throw new Error("Pending splitter spawn requires resolution.reactiveTriggered.");
+  }
+
+  var pendingId = splitterCell.id;
+  if (typeof pendingId !== "string" && typeof pendingId !== "number") {
+    throw new Error("Pending splitter spawn requires splitter id.");
+  }
+  for (var index = 0; index < this.pendingSplitterSpawns.length; index += 1) {
+    if (this.pendingSplitterSpawns[index].id === pendingId) {
+      throw new Error("Duplicate pending splitter spawn: " + pendingId);
+    }
+  }
+
+  this.pendingSplitterSpawns.push({
+    id: pendingId,
+    row: splitterCell.row,
+    col: splitterCell.col,
+    splitColor: splitterCell.splitColor,
+    remainingDelay: SPLITTER_SPAWN_DELAY_SEC
+  });
+  resolution.reactiveTriggered.push({
+    id: pendingId,
+    entityType: "splitter",
+    row: splitterCell.row,
+    col: splitterCell.col
+  });
+};
+
+GameManager.prototype._cancelPendingSplitterSpawn = function (splitterCell) {
+  if (!splitterCell || (typeof splitterCell.id !== "string" && typeof splitterCell.id !== "number")) {
+    throw new Error("Cancel pending splitter spawn requires splitter id.");
+  }
+  if (!Array.isArray(this.pendingSplitterSpawns)) {
+    throw new Error("GameManager pendingSplitterSpawns must be an array.");
+  }
+
+  var pendingId = splitterCell.id;
+  var nextPending = [];
+  var canceled = false;
+  for (var index = 0; index < this.pendingSplitterSpawns.length; index += 1) {
+    var pending = this.pendingSplitterSpawns[index];
+    if (!pending || typeof pending !== "object") {
+      throw new Error("Pending splitter spawn entry must be object.");
+    }
+    if (pending.id === pendingId) {
+      canceled = true;
+      continue;
+    }
+    nextPending.push(pending);
+  }
+  this.pendingSplitterSpawns = nextPending;
+  return canceled;
+};
+
+GameManager.prototype._updatePendingSplitterSpawns = function (dt) {
+  if (!this._hasPendingSplitterSpawns()) {
+    return false;
+  }
+  if (this._isWaitingBoardAdvance()) {
+    return false;
+  }
+
+  var safeDt = Number(dt);
+  if (!Number.isFinite(safeDt) || safeDt < 0) {
+    throw new Error("Pending splitter spawn update requires non-negative finite dt.");
+  }
+
+  var grid = this.systems.bubbleGrid;
+  var nextPending = [];
+  var spawnedCells = [];
+  for (var index = 0; index < this.pendingSplitterSpawns.length; index += 1) {
+    var pending = this.pendingSplitterSpawns[index];
+    if (!pending || typeof pending !== "object") {
+      throw new Error("Pending splitter spawn entry must be object.");
+    }
+
+    pending.remainingDelay -= safeDt;
+    if (pending.remainingDelay > 0) {
+      nextPending.push(pending);
+      continue;
+    }
+
+    var spawnCell = grid.findSplitterSpawnCell(pending);
+    if (!spawnCell) {
+      throw new Error("Pending splitter spawn requires an available spawn cell.");
+    }
+    var spawnedCell = grid.addBubble(spawnCell, pending.splitColor);
+    if (!spawnedCell) {
+      throw new Error("Pending splitter spawn failed to add bubble.");
+    }
+    spawnedCell.sourceSplitterId = pending.id;
+    spawnedCell.sourceSplitterRow = pending.row;
+    spawnedCell.sourceSplitterCol = pending.col;
+    spawnedCells.push(spawnedCell);
+  }
+
+  this.pendingSplitterSpawns = nextPending;
+  if (!spawnedCells.length) {
+    return false;
+  }
+
+  if (!this.lastResolution || !Array.isArray(this.lastResolution.spawnedBySplitters)) {
+    throw new Error("Pending splitter spawn requires lastResolution.spawnedBySplitters.");
+  }
+  Array.prototype.push.apply(this.lastResolution.spawnedBySplitters, spawnedCells);
+  if (this.state === "won_pending" && grid.getCells().length > 0) {
+    this.state = "running";
+  }
+  if (this.state === "out_of_shots_pending" && !this.systems.fallingMarbleSystem.hasActiveDrops() && !this._hasPendingSplitterSpawns() && !this._isWaitingBoardAdvance()) {
+    this._resolveOutOfShotsOutcome();
+  }
+  if (grid && typeof grid.assertNoVisualOverlap === "function") {
+    grid.assertNoVisualOverlap("pending splitter spawn");
+  }
+  return true;
 };
 
 GameManager.prototype._scheduleBoardAdvanceAfterImpact = function () {
@@ -911,6 +1049,7 @@ GameManager.prototype.setAim = function (point, options) {
     this.state !== "running" ||
     this.activeProjectile ||
     this._isWaitingBoardAdvance() ||
+    this._hasPendingSplitterSpawns() ||
     this.pendingBarrierHammer ||
     this.pendingRainbowColorSelection
   ) {
@@ -930,6 +1069,7 @@ GameManager.prototype.beginAim = function (point) {
     this.state !== "running" ||
     this.activeProjectile ||
     this._isWaitingBoardAdvance() ||
+    this._hasPendingSplitterSpawns() ||
     this.pendingBarrierHammer ||
     this.pendingRainbowColorSelection
   ) {
@@ -956,6 +1096,7 @@ GameManager.prototype.fireShot = function () {
     this.state !== "running" ||
     this.activeProjectile ||
     this._isWaitingBoardAdvance() ||
+    this._hasPendingSplitterSpawns() ||
     this.pendingBarrierHammer ||
     this.pendingRainbowColorSelection
   ) {
@@ -1034,6 +1175,7 @@ GameManager.prototype._isInstantAdPowerupBusy = function () {
     this.state !== "running" ||
     this.activeProjectile ||
     this._isWaitingBoardAdvance() ||
+    this._hasPendingSplitterSpawns() ||
     this.pendingBarrierHammer ||
     this.pendingRainbowColorSelection ||
     this.systems.fallingMarbleSystem.hasActiveDrops()
@@ -1326,21 +1468,27 @@ GameManager.prototype.reviveFromAd = function () {
   if (!this.systems.shooterController || typeof this.systems.shooterController.setUpcomingNormalBalls !== "function") {
     throw new Error("Ad revive requires ShooterController.setUpcomingNormalBalls.");
   }
+  if (typeof this.systems.shooterController.setUpcomingRandomNormalBalls !== "function") {
+    throw new Error("Ad revive requires ShooterController.setUpcomingRandomNormalBalls.");
+  }
 
   var revivePlan = AdRevivePolicy.buildRevivePlan(this.currentLevel, {
     board: {
       cells: this.systems.bubbleGrid.getCells()
-    }
+    },
+    objectives: this._buildPrimaryObjectiveSnapshot(this._getCachedJarSnapshot())
   });
   var gridSpaceResult = this.systems.bubbleGrid.ensureDangerLineSpaceRows(revivePlan.dangerLineSpaceRows);
   var previousRemainingShots = this.remainingShots;
   this.remainingShots = previousRemainingShots + revivePlan.grantedShots;
-  var queueResult = this.systems.shooterController.setUpcomingNormalBalls(
-    revivePlan.targetColor,
-    revivePlan.targetColorBallCount
-  );
+  var queueResult = revivePlan.targetColorBallCount > 0
+    ? this.systems.shooterController.setUpcomingNormalBalls(
+      revivePlan.targetColor,
+      revivePlan.targetColorBallCount
+    )
+    : this.systems.shooterController.setUpcomingRandomNormalBalls(revivePlan.randomBallCount);
   if (!queueResult || queueResult.accepted !== true) {
-    throw new Error("Ad revive failed to assign target color balls.");
+    throw new Error("Ad revive failed to assign supply balls.");
   }
 
   this.state = "running";
@@ -1354,6 +1502,7 @@ GameManager.prototype.reviveFromAd = function () {
     granted_shots: revivePlan.grantedShots,
     target_color: revivePlan.targetColor,
     target_color_ball_count: revivePlan.targetColorBallCount,
+    random_ball_count: revivePlan.randomBallCount,
     danger_space_shift_rows: gridSpaceResult.shiftRows,
     danger_space_removed_cells: gridSpaceResult.removedCells.length,
     danger_space_rows: gridSpaceResult.spaceRows
@@ -1366,6 +1515,7 @@ GameManager.prototype.reviveFromAd = function () {
     grantedShots: revivePlan.grantedShots,
     targetColor: revivePlan.targetColor,
     targetColorBallCount: revivePlan.targetColorBallCount,
+    randomBallCount: revivePlan.randomBallCount,
     dangerSpaceShiftRows: gridSpaceResult.shiftRows,
     dangerSpaceRemovedCells: gridSpaceResult.removedCells,
     dangerSpaceRows: gridSpaceResult.spaceRows,
@@ -1898,6 +2048,7 @@ GameManager.prototype.update = function (dt) {
           color: drop.color,
           entityCategory: drop.entityCategory || "normal_ball",
           entityType: drop.entityType || null,
+          splitColor: typeof drop.splitColor === "string" ? drop.splitColor : null,
           innerColor: drop.innerColor || null,
           row: drop.row,
           col: drop.col,
@@ -1918,8 +2069,23 @@ GameManager.prototype.update = function (dt) {
   var scoreBoostChanged = this._updateJarScoreBoost(dt);
   runtimeEvents = runtimeEvents.concat(this._drainRuntimeEvents());
   var boardAdvancedThisFrame = this._updatePendingBoardAdvance(dt);
+  var splitterSpawned = boardAdvancedThisFrame ? false : this._updatePendingSplitterSpawns(dt);
+  runtimeEvents = runtimeEvents.concat(this._drainRuntimeEvents());
   var hasProjectile = !!this.activeProjectile;
   var hasFallingDrops = this.systems.fallingMarbleSystem.hasActiveDrops();
+  var hasPendingSplitterSpawns = this._hasPendingSplitterSpawns();
+
+  if (
+    splitterSpawned &&
+    this.state === "running" &&
+    !this.isTimedInfiniteShots &&
+    this.remainingShots <= 0 &&
+    !hasFallingDrops &&
+    !hasPendingSplitterSpawns &&
+    !this._isWaitingBoardAdvance()
+  ) {
+    this._resolveOutOfShotsOutcome();
+  }
 
   if (boardAdvancedThisFrame && (this.state === "running" || this.state === "out_of_shots_pending")) {
     var grid = this.systems.bubbleGrid;
@@ -1933,12 +2099,18 @@ GameManager.prototype.update = function (dt) {
     }
   }
 
-  if (this.state === "won_pending" && !hasProjectile && !hasFallingDrops) {
+  if (this.state === "won_pending" && !hasProjectile && !hasFallingDrops && !hasPendingSplitterSpawns) {
     this._resolveBoardClearedOutcome();
     return this.getRuntimeSnapshot(runtimeEvents);
   }
 
-  if (this.state === "won_surplus_shots_pending" && !hasProjectile && !hasFallingDrops) {
+  if (
+    this.state === "won_surplus_shots_pending" &&
+    !hasProjectile &&
+    !hasFallingDrops &&
+    !hasPendingSplitterSpawns &&
+    !this.systems.fallingMarbleSystem.hasPendingSurplusShots()
+  ) {
     if (typeof this._pushRuntimeEvent === "function") {
       this._pushRuntimeEvent("surplus_shots_finished", {});
     }
@@ -1951,7 +2123,7 @@ GameManager.prototype.update = function (dt) {
     return this.getRuntimeSnapshot(runtimeEvents);
   }
 
-  if (this.state === "out_of_shots_pending" && !hasProjectile && !hasFallingDrops && !this._isWaitingBoardAdvance()) {
+  if (this.state === "out_of_shots_pending" && !hasProjectile && !hasFallingDrops && !hasPendingSplitterSpawns && !this._isWaitingBoardAdvance()) {
     this._resolveOutOfShotsOutcome();
     return this.getRuntimeSnapshot(runtimeEvents);
   }
@@ -1963,6 +2135,7 @@ GameManager.prototype.update = function (dt) {
     !hadFallingDrops &&
     !collectedDrops.length &&
     !scoreBoostChanged &&
+    !splitterSpawned &&
     !boardAdvancedThisFrame &&
     !runtimeEvents.length &&
     !timerChanged
@@ -1978,6 +2151,7 @@ GameManager.prototype.update = function (dt) {
     hadFallingDrops ||
     collectedDrops.length ||
     scoreBoostChanged ||
+    splitterSpawned ||
     boardAdvancedThisFrame ||
     runtimeEvents.length ||
     timerChanged

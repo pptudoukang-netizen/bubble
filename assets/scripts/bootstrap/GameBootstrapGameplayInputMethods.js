@@ -182,6 +182,7 @@ module.exports = {
     this._lastAimRefreshScreenPoint = null;
     if (snapshot && Math.max(0, Number(snapshot.remainingShots) || 0) < shotsBeforeFire) {
       this._playSfx("shot");
+      this._completeNewUserGuide();
     }
     this._handleRuntimeStateTransition(snapshot);
     this.levelRenderer.refreshRuntime(this.currentLevelConfig, snapshot);
