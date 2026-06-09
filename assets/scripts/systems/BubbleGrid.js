@@ -2,6 +2,7 @@
 
 var BaseSystem = require("./BaseSystem");
 var BoardLayout = require("../config/BoardLayout");
+var DebugFlags = require("../utils/DebugFlags");
 
 function clone(data) {
   return JSON.parse(JSON.stringify(data));
@@ -86,6 +87,7 @@ function BubbleGrid() {
   this.version = 0;
   this.dropOffsetRows = 0;
   this._cellMap = {};
+  this._cellsByRow = {};
   this._specialCellMap = {};
 }
 
@@ -190,6 +192,7 @@ BubbleGrid.prototype._createSpecialCell = function (entity, row, col) {
 BubbleGrid.prototype._rebuildCaches = function () {
   this.cells = [];
   this._cellMap = {};
+  this._cellsByRow = {};
 
   this.layout.forEach(function (row, rowIndex) {
     var normalizedRow = this._normalizeRowString(rowIndex, row);
@@ -203,6 +206,7 @@ BubbleGrid.prototype._rebuildCaches = function () {
 
       this.cells.push(cell);
       this._cellMap[keyFor(rowIndex, columnIndex)] = cell;
+      this._pushCellToRowBucket(cell);
     }, this);
   }, this);
 
@@ -216,7 +220,144 @@ BubbleGrid.prototype._rebuildCaches = function () {
     var specialCell = this._createSpecialCell(entity, entity.row, entity.col);
     this.cells.push(specialCell);
     this._cellMap[key] = specialCell;
+    this._pushCellToRowBucket(specialCell);
   }, this);
+};
+
+BubbleGrid.prototype._pushCellToRowBucket = function (cell) {
+  if (!cell || !Number.isInteger(cell.row)) {
+    throw new Error("BubbleGrid row bucket requires integer cell.row.");
+  }
+  var rowKey = String(cell.row);
+  if (!this._cellsByRow[rowKey]) {
+    this._cellsByRow[rowKey] = [];
+  }
+  this._cellsByRow[rowKey].push(cell);
+};
+
+BubbleGrid.prototype._resolveSegmentPaddingRows = function (collisionRadius) {
+  var radius = typeof collisionRadius === "number" ? collisionRadius : BoardLayout.bubbleDiameter;
+  if (!Number.isFinite(radius) || radius <= 0) {
+    throw new Error("BubbleGrid segment padding requires positive collision radius.");
+  }
+  var rowHeight = BoardLayout.rowHeight;
+  if (typeof rowHeight !== "number" || !Number.isFinite(rowHeight) || rowHeight <= 0) {
+    throw new Error("BoardLayout.rowHeight must be a positive number.");
+  }
+  return Math.ceil(radius / rowHeight) + 1;
+};
+
+BubbleGrid.prototype._resolveSegmentRowBounds = function (startPoint, endPoint, paddingRows) {
+  if (!startPoint || !endPoint) {
+    throw new Error("BubbleGrid segment row bounds require start and end points.");
+  }
+  var rowHeight = BoardLayout.rowHeight;
+  if (typeof rowHeight !== "number" || !Number.isFinite(rowHeight) || rowHeight <= 0) {
+    throw new Error("BoardLayout.rowHeight must be a positive number.");
+  }
+  var padding = Math.max(0, Math.floor(Number(paddingRows) || 0));
+  var minSegmentY = Math.min(startPoint.y, endPoint.y);
+  var maxSegmentY = Math.max(startPoint.y, endPoint.y);
+  var minRow = Math.floor((BoardLayout.boardStartY - maxSegmentY) / rowHeight - this.dropOffsetRows) - padding;
+  var maxRow = Math.ceil((BoardLayout.boardStartY - minSegmentY) / rowHeight - this.dropOffsetRows) + padding;
+  return {
+    minRow: Math.max(0, minRow),
+    maxRow: Math.min(this.getRowCount() + 1, maxRow)
+  };
+};
+
+BubbleGrid.prototype._iterateCellsNearSegment = function (startPoint, endPoint, paddingRows, callback) {
+  if (typeof callback !== "function") {
+    throw new Error("BubbleGrid segment iteration requires callback.");
+  }
+  var bounds = this._resolveSegmentRowBounds(startPoint, endPoint, paddingRows);
+  for (var row = bounds.minRow; row <= bounds.maxRow; row += 1) {
+    var rowCells = this._cellsByRow[String(row)];
+    if (!rowCells || !rowCells.length) {
+      continue;
+    }
+    for (var cellIndex = 0; cellIndex < rowCells.length; cellIndex += 1) {
+      callback.call(this, rowCells[cellIndex]);
+    }
+  }
+};
+
+BubbleGrid.prototype._testSegmentCircleHit = function (cell, startPoint, segment, segmentLengthSq, radius) {
+  var center = this.getCellPosition(cell.row, cell.col);
+  var startToCenter = {
+    x: startPoint.x - center.x,
+    y: startPoint.y - center.y
+  };
+  var radiusSq = radius * radius;
+  var c = dot(startToCenter, startToCenter) - radiusSq;
+  var hitT = null;
+
+  if (c <= 0) {
+    hitT = 0;
+  } else if (segmentLengthSq > EPSILON) {
+    var b = 2 * dot(segment, startToCenter);
+    var discriminant = b * b - 4 * segmentLengthSq * c;
+    if (discriminant >= 0) {
+      var sqrtDiscriminant = Math.sqrt(discriminant);
+      var t1 = (-b - sqrtDiscriminant) / (2 * segmentLengthSq);
+      var t2 = (-b + sqrtDiscriminant) / (2 * segmentLengthSq);
+
+      if (t1 >= -EPSILON && t1 <= 1 + EPSILON) {
+        hitT = clamp(t1, 0, 1);
+      } else if (t2 >= -EPSILON && t2 <= 1 + EPSILON) {
+        hitT = clamp(t2, 0, 1);
+      }
+    }
+  }
+
+  if (hitT === null) {
+    return null;
+  }
+
+  return {
+    cell: cell,
+    center: center,
+    t: hitT,
+    distanceToStartSq: c
+  };
+};
+
+BubbleGrid.prototype._shouldReplaceSegmentHit = function (currentBest, candidate) {
+  if (!candidate) {
+    return false;
+  }
+  if (!currentBest) {
+    return true;
+  }
+  return (
+    candidate.t < currentBest.t - EPSILON ||
+    (Math.abs(candidate.t - currentBest.t) <= EPSILON && candidate.distanceToStartSq < currentBest.distanceToStartSq)
+  );
+};
+
+BubbleGrid.prototype._buildSegmentCollisionResult = function (bestHit, startPoint, segment) {
+  var hitPoint = {
+    x: startPoint.x + segment.x * bestHit.t,
+    y: startPoint.y + segment.y * bestHit.t
+  };
+  var hitNormal = normalize({
+    x: hitPoint.x - bestHit.center.x,
+    y: hitPoint.y - bestHit.center.y
+  });
+
+  if (Math.abs(hitNormal.x) <= 0.0001 && Math.abs(hitNormal.y) <= 0.0001) {
+    hitNormal = normalize({
+      x: -segment.x,
+      y: -segment.y
+    });
+  }
+
+  return {
+    cell: clone(bestHit.cell),
+    point: hitPoint,
+    normal: hitNormal,
+    t: bestHit.t
+  };
 };
 
 BubbleGrid.prototype._ensureRow = function (rowIndex) {
@@ -253,6 +394,10 @@ BubbleGrid.prototype.getCells = function () {
 
 BubbleGrid.prototype.assertNoVisualOverlap = function (source) {
   assertNoDuplicateCellCoordinates(this.cells);
+  if (!DebugFlags.get("gridOverlapCheck")) {
+    return true;
+  }
+
   for (var leftIndex = 0; leftIndex < this.cells.length; leftIndex += 1) {
     var leftCell = this.cells[leftIndex];
     var leftPosition = this.getCellPosition(leftCell.row, leftCell.col);
@@ -416,10 +561,11 @@ BubbleGrid.prototype.findFirstAttachableSlotOnSegment = function (startPoint, en
     ? clamp(this.levelConfig.level.aimSlotOpenMinAlignment, -0.2, 0.95)
     : 0.2;
 
-  var maxRowToCheck = this.getRowCount() + 1;
+  var slotPaddingRows = Math.ceil(radius / BoardLayout.rowHeight) + 2;
+  var rowBounds = this._resolveSegmentRowBounds(startPoint, endPoint, slotPaddingRows);
   var best = null;
 
-  for (var row = 0; row <= maxRowToCheck; row += 1) {
+  for (var row = rowBounds.minRow; row <= rowBounds.maxRow; row += 1) {
     for (var col = 0; col < this.getColumnCountForRow(row); col += 1) {
       if (!this.isAttachableCell(row, col, direction, { minOccupiedNeighbors: 2, minUpperOccupiedNeighbors: 1, allowTopRow: true })) {
         continue;
@@ -616,76 +762,89 @@ BubbleGrid.prototype.findCollisionOnSegment = function (startPoint, endPoint, co
 
   var radius = typeof collisionRadius === "number" ? collisionRadius : BoardLayout.bubbleDiameter;
   var bestHit = null;
+  var paddingRows = this._resolveSegmentPaddingRows(radius);
 
-  this.cells.forEach(function (cell) {
-    var center = this.getCellPosition(cell.row, cell.col);
-    var startToCenter = {
-      x: startPoint.x - center.x,
-      y: startPoint.y - center.y
-    };
-    var c = dot(startToCenter, startToCenter) - radius * radius;
-    var hitT = null;
-
-    if (c <= 0) {
-      hitT = 0;
-    } else {
-      var b = 2 * dot(segment, startToCenter);
-      var discriminant = b * b - 4 * a * c;
-      if (discriminant < 0) {
-        return;
-      }
-
-      var sqrtDiscriminant = Math.sqrt(discriminant);
-      var t1 = (-b - sqrtDiscriminant) / (2 * a);
-      var t2 = (-b + sqrtDiscriminant) / (2 * a);
-
-      if (t1 >= -EPSILON && t1 <= 1 + EPSILON) {
-        hitT = clamp(t1, 0, 1);
-      } else if (t2 >= -EPSILON && t2 <= 1 + EPSILON) {
-        hitT = clamp(t2, 0, 1);
-      }
+  this._iterateCellsNearSegment(startPoint, endPoint, paddingRows, function (cell) {
+    var candidate = this._testSegmentCircleHit(cell, startPoint, segment, a, radius);
+    if (this._shouldReplaceSegmentHit(bestHit, candidate)) {
+      bestHit = candidate;
     }
-
-    if (hitT === null) {
-      return;
-    }
-
-    if (!bestHit || hitT < bestHit.t - EPSILON || (Math.abs(hitT - bestHit.t) <= EPSILON && c < bestHit.distanceToStartSq)) {
-      bestHit = {
-        cell: clone(cell),
-        center: center,
-        t: hitT,
-        distanceToStartSq: c
-      };
-    }
-  }, this);
+  });
 
   if (!bestHit) {
     return null;
   }
 
-  var hitPoint = {
-    x: startPoint.x + segment.x * bestHit.t,
-    y: startPoint.y + segment.y * bestHit.t
-  };
-  var hitNormal = normalize({
-    x: hitPoint.x - bestHit.center.x,
-    y: hitPoint.y - bestHit.center.y
-  });
+  return this._buildSegmentCollisionResult(bestHit, startPoint, segment);
+};
 
-  if (Math.abs(hitNormal.x) <= 0.0001 && Math.abs(hitNormal.y) <= 0.0001) {
-    hitNormal = normalize({
-      x: -segment.x,
-      y: -segment.y
-    });
+BubbleGrid.prototype.findCollisionsOnSegmentForRadii = function (startPoint, endPoint, radii) {
+  if (!startPoint || !endPoint) {
+    return null;
+  }
+  if (!Array.isArray(radii) || !radii.length) {
+    throw new Error("BubbleGrid.findCollisionsOnSegmentForRadii requires non-empty radii.");
   }
 
-  return {
-    cell: bestHit.cell,
-    point: hitPoint,
-    normal: hitNormal,
-    t: bestHit.t
+  var segment = {
+    x: endPoint.x - startPoint.x,
+    y: endPoint.y - startPoint.y
   };
+  var segmentLengthSq = dot(segment, segment);
+  if (segmentLengthSq <= EPSILON) {
+    var staticHits = {};
+    radii.forEach(function (radiusValue) {
+      var radius = typeof radiusValue === "number" ? radiusValue : BoardLayout.bubbleDiameter;
+      var staticCollision = this.findCollision(endPoint, radius);
+      staticHits[radius] = staticCollision ? {
+        cell: staticCollision,
+        point: clone(endPoint),
+        normal: normalize({
+          x: endPoint.x - this.getCellPosition(staticCollision.row, staticCollision.col).x,
+          y: endPoint.y - this.getCellPosition(staticCollision.row, staticCollision.col).y
+        }),
+        t: 1
+      } : null;
+    }, this);
+    return staticHits;
+  }
+
+  var uniqueRadii = [];
+  var maxRadius = 0;
+  radii.forEach(function (radiusValue) {
+    var radius = typeof radiusValue === "number" ? radiusValue : BoardLayout.bubbleDiameter;
+    if (!Number.isFinite(radius) || radius <= 0) {
+      throw new Error("BubbleGrid.findCollisionsOnSegmentForRadii requires positive radius.");
+    }
+    if (uniqueRadii.indexOf(radius) === -1) {
+      uniqueRadii.push(radius);
+    }
+    if (radius > maxRadius) {
+      maxRadius = radius;
+    }
+  });
+
+  var bestHits = {};
+  uniqueRadii.forEach(function (radius) {
+    bestHits[radius] = null;
+  });
+  var paddingRows = this._resolveSegmentPaddingRows(maxRadius);
+
+  this._iterateCellsNearSegment(startPoint, endPoint, paddingRows, function (cell) {
+    uniqueRadii.forEach(function (radius) {
+      var candidate = this._testSegmentCircleHit(cell, startPoint, segment, segmentLengthSq, radius);
+      if (this._shouldReplaceSegmentHit(bestHits[radius], candidate)) {
+        bestHits[radius] = candidate;
+      }
+    }, this);
+  });
+
+  var results = {};
+  uniqueRadii.forEach(function (radius) {
+    var bestHit = bestHits[radius];
+    results[radius] = bestHit ? this._buildSegmentCollisionResult(bestHit, startPoint, segment) : null;
+  }, this);
+  return results;
 };
 
 BubbleGrid.prototype.findAttachmentCell = function (point, collidedCell, direction, previousPoint) {

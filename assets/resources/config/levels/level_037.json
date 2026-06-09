@@ -89,14 +89,14 @@
             }
         ],
         "layout": [
-            "RRGGYYBB",
-            "R.G.YYBR",
-            "GGG.RY.B",
-            "BBRRGG.R",
-            "YBBR.GY.",
-            "YRGB.R..",
-            "RGBY.G..",
-            "Y......."
+            "R....YBB",
+            "R...YY.R",
+            "GGG.R..B",
+            "...R.G.R",
+            "......Y.",
+            ".RGB.R..",
+            "RGB..G..",
+            "........"
         ],
         "designNotes": "The board looks open on top, but the lower cluster is a compact lock that rewards delayed combo timing over fast collection.",
         "difficultyScore": 90,
@@ -105,88 +105,88 @@
                 "id": "skill_blast_01",
                 "entityCategory": "skill_ball",
                 "entityType": "blast",
-                "row": 1,
+                "row": 4,
                 "col": 1
             },
             {
                 "id": "stone_01",
                 "entityCategory": "obstacle_ball",
                 "entityType": "stone",
-                "row": 1,
+                "row": 4,
                 "col": 3
             },
             {
                 "id": "skill_rainbow_01",
                 "entityCategory": "skill_ball",
                 "entityType": "rainbow",
-                "row": 2,
-                "col": 6
+                "row": 4,
+                "col": 0
             },
             {
                 "id": "ice_01",
                 "entityCategory": "obstacle_ball",
                 "entityType": "ice",
-                "row": 3,
-                "col": 6,
+                "row": 4,
+                "col": 7,
                 "innerColor": "Y"
             },
             {
                 "id": "stone_02",
                 "entityCategory": "obstacle_ball",
                 "entityType": "stone",
-                "row": 4,
+                "row": 3,
                 "col": 4
             },
             {
                 "id": "skill_blast_02",
                 "entityCategory": "skill_ball",
                 "entityType": "blast",
-                "row": 4,
-                "col": 7
+                "row": 7,
+                "col": 0
             },
             {
                 "id": "ice_02",
                 "entityCategory": "obstacle_ball",
                 "entityType": "ice",
-                "row": 5,
-                "col": 4,
+                "row": 3,
+                "col": 1,
                 "innerColor": "G"
             },
             {
                 "id": "stone_03",
                 "entityCategory": "obstacle_ball",
                 "entityType": "stone",
-                "row": 6,
-                "col": 4
+                "row": 2,
+                "col": 5
             },
             {
                 "id": "skill_rainbow_02",
                 "entityCategory": "skill_ball",
                 "entityType": "rainbow",
-                "row": 7,
-                "col": 1
+                "row": 1,
+                "col": 2
             },
             {
                 "id": "stone_04",
                 "entityCategory": "obstacle_ball",
                 "entityType": "stone",
                 "row": 7,
-                "col": 2
+                "col": 3
             },
             {
                 "id": "ice_03",
                 "entityCategory": "obstacle_ball",
                 "entityType": "ice",
-                "row": 7,
-                "col": 3,
+                "row": 4,
+                "col": 5,
                 "innerColor": "B"
             },
             {
                 "id": "skill_blast_03",
                 "entityCategory": "skill_ball",
                 "entityType": "blast",
-                "row": 7,
-                "col": 4
+                "row": 4,
+                "col": 2
             }
         ],
         "levelType": "normal",

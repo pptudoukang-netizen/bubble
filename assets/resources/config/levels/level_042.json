@@ -91,12 +91,12 @@
         ],
         "layout": [
             "BYRGBYRGBY",
-            "G.YRGB.RG",
-            "RGB.RG.YRG",
-            "YR.BY.GBY",
-            "B.RG.YR.BY",
-            "GBY.GB.RG",
-            "RG.YRGBYRG",
+            "GBY.GBYRG",
+            "RGBYRGBYRG",
+            "YRGBYRGBY",
+            "BYRGBYRGBY",
+            "GBY.GBYRG",
+            "RGBYRGBYRG",
             "YRGBYRGBY"
         ],
         "designNotes": "Generated 1000-level campaign stage. Chapter `molotov_intro` uses molotov with a diamond board silhouette.",
@@ -108,14 +108,14 @@
                 "entityType": "molotov",
                 "blastRadius": 2,
                 "row": 1,
-                "col": 1
+                "col": 3
             },
             {
                 "id": "skill_blast_01",
                 "entityCategory": "skill_ball",
                 "entityType": "blast",
-                "row": 1,
-                "col": 6
+                "row": 5,
+                "col": 3
             }
         ],
         "levelType": "normal",

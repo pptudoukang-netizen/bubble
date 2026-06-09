@@ -43,6 +43,17 @@ function readText(filePath) {
   return fs.readFileSync(filePath, "utf8");
 }
 
+function toDateKey(date) {
+  var year = date.getFullYear();
+  var month = date.getMonth() + 1;
+  var day = date.getDate();
+  return [
+    String(year),
+    month < 10 ? ("0" + month) : String(month),
+    day < 10 ? ("0" + day) : String(day)
+  ].join("-");
+}
+
 function createStore() {
   var PlayerResourceStore = require(PLAYER_RESOURCE_STORE_PATH);
   return new PlayerResourceStore({
@@ -114,11 +125,12 @@ function assertSameDayDoesNotRefill() {
 
 function assertConsumeRules() {
   var store = createStore();
+  var todayKey = toDateKey(new Date());
   var accepted = store.consumeStamina({
     version: 1,
     stamina: 1,
     coins: 0,
-    lastDailyResetDate: "2026-05-25"
+    lastDailyResetDate: todayKey
   }, 1);
   assert(accepted.accepted === true, "consumeStamina must accept when stamina is enough.");
   assert(accepted.resources.stamina === 0, "consumeStamina must deduct exactly the requested amount.");
@@ -127,7 +139,7 @@ function assertConsumeRules() {
     version: 1,
     stamina: 0,
     coins: 0,
-    lastDailyResetDate: "2026-05-25"
+    lastDailyResetDate: todayKey
   }, 1);
   assert(rejected.accepted === false, "consumeStamina must reject when stamina is insufficient.");
   assert(rejected.resources.stamina === 0, "consumeStamina must not make stamina negative.");

@@ -94,11 +94,11 @@
         ],
         "layout": [
             "GGGGGGGGGG",
-            "B.BBBB.PB",
-            "RBR.RR.RBR",
-            "YR.YY.YRY",
-            "G.GG.GG.YG",
-            "PGP.PP.GP",
+            "BPBBB.BPB",
+            "RBRRRRRRBR",
+            "YRYYYYYRY",
+            "GYGGGGGGYG",
+            "PGPPPPPGP",
             "BP.BBBBBPB",
             "RBRRRRRBR"
         ],
@@ -111,7 +111,7 @@
                 "entityType": "key",
                 "unlockGroup": "g2",
                 "row": 1,
-                "col": 1
+                "col": 5
             },
             {
                 "id": "locked_g2_01",
@@ -119,8 +119,8 @@
                 "entityType": "locked",
                 "lockedColor": "R",
                 "lockGroup": "g2",
-                "row": 1,
-                "col": 6
+                "row": 6,
+                "col": 2
             }
         ],
         "levelType": "normal",

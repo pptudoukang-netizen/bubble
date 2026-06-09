@@ -73,8 +73,9 @@
                 "value": 1
             },
             {
-                "type": "collect_any",
-                "value": 18
+                "type": "collect_color",
+                "color": "B",
+                "value": 9
             }
         ],
         "bonusObjectives": [
@@ -91,12 +92,12 @@
         ],
         "layout": [
             "RGBYRGBYRG",
-            "G.YRGB.BG",
-            "RYB.RG.YBG",
-            "YB.BY.GRY",
-            "B.RG.YR.RY",
-            "GRY.GB.BG",
-            "RY.YRGBYBG",
+            "GRYRGB.BG",
+            "RYBYRGBYBG",
+            "YBGBYRGRY",
+            "BGRGBYRGRY",
+            "GRYRGBYBG",
+            "RYBYRGBYBG",
             "YBGBYRGRY"
         ],
         "designNotes": "Generated 1000-level campaign stage. Chapter `splitter_intro` uses splitter with a gate board silhouette.",
@@ -108,7 +109,7 @@
                 "entityType": "splitter",
                 "splitColor": "B",
                 "row": 1,
-                "col": 1
+                "col": 6
             }
         ],
         "levelType": "normal",

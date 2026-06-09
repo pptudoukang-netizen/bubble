@@ -17,6 +17,62 @@ function isWechatGameRuntime() {
   );
 }
 
+function requireStartupTask(task, index) {
+  if (!task || typeof task !== "object" || Array.isArray(task)) {
+    throw new Error("Startup task " + index + " must be an object.");
+  }
+  if (typeof task.id !== "string" || task.id.trim().length === 0) {
+    throw new Error("Startup task " + index + " requires id.");
+  }
+  if (typeof task.stage !== "string" || task.stage.trim().length === 0) {
+    throw new Error("Startup task `" + task.id + "` requires stage.");
+  }
+  if (typeof task.run !== "function") {
+    throw new Error("Startup task `" + task.id + "` requires run function.");
+  }
+  return task;
+}
+
+function setStartupStage(host, stage) {
+  if (host._loadingViewController && host._loadingViewController.setStage) {
+    host._loadingViewController.setStage(stage);
+  }
+  host._setStatus(stage);
+}
+
+function runParallelStartupTasks(host, tasks, initialStage) {
+  var taskList = tasks.map(requireStartupTask);
+  if (taskList.length === 0) {
+    throw new Error("Startup task list must not be empty.");
+  }
+
+  var totalWeight = taskList.reduce(function (sum, task) {
+    return sum + Math.max(0, Number(task.weight) || 0);
+  }, 0);
+  var doneWeight = 0;
+
+  setStartupStage(host, initialStage);
+  if (host._loadingViewController && host._loadingViewController.setProgress) {
+    host._loadingViewController.setProgress(0, true);
+  }
+
+  return Promise.all(taskList.map(function (task) {
+    return Promise.resolve().then(function () {
+      return task.run();
+    }).then(function () {
+      doneWeight += Math.max(0, Number(task.weight) || 0);
+      if (host._loadingViewController && host._loadingViewController.setProgress) {
+        host._loadingViewController.setProgress(totalWeight > 0 ? (doneWeight / totalWeight) : 1, false);
+      }
+      return {
+        id: task.id
+      };
+    });
+  })).then(function () {
+    return null;
+  });
+}
+
 module.exports = {
   start: function () {
     this._applyViewportLayout();
@@ -202,47 +258,13 @@ module.exports = {
         run: function () {
           return this._preloadStartupPrefabs();
         }.bind(this)
-      },
-      {
-        id: "level_configs",
-        stage: "初始化首关配置...",
-        weight: 0.2,
-        run: function () {
-          return this._preloadStartupLevelConfigs();
-        }.bind(this)
-      },
-      {
-        id: "friend_stamina_gift_claim",
-        stage: "检查好友体力赠送...",
-        weight: 0.05,
-        run: function () {
-          return this._claimPendingFriendStaminaGiftFromLaunchOptions();
-        }.bind(this)
       }
     ];
 
-    var totalWeight = tasks.reduce(function (sum, task) {
-      return sum + Math.max(0, Number(task.weight) || 0);
-    }, 0);
-    var doneWeight = 0;
-    var chain = Promise.resolve();
-
-    tasks.forEach(function (task) {
-      chain = chain.then(function () {
-        if (this._loadingViewController && this._loadingViewController.setStage) {
-          this._loadingViewController.setStage(task.stage);
-        }
-        this._setStatus(task.stage);
-        return Promise.resolve().then(task.run).then(function () {
-          doneWeight += Math.max(0, Number(task.weight) || 0);
-          if (this._loadingViewController && this._loadingViewController.setProgress) {
-            this._loadingViewController.setProgress(totalWeight > 0 ? (doneWeight / totalWeight) : 1, false);
-          }
-        }.bind(this));
-      }.bind(this));
-    }, this);
-
-    return chain;
+    return runParallelStartupTasks(this, tasks, "并行准备启动资源...").then(function () {
+      setStartupStage(this, "检查好友体力赠送...");
+      return this._claimPendingFriendStaminaGiftFromLaunchOptions();
+    }.bind(this));
   },
 
   _syncPlayerProfileFromCloud: function () {

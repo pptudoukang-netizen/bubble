@@ -56,7 +56,7 @@
             "R",
             "G",
             "B",
-            "Y"
+            "P"
         ],
         "spawnWeights": {
             "R": 1.15,
@@ -76,8 +76,9 @@
                 "value": 1
             },
             {
-                "type": "collect_any",
-                "value": 19
+                "type": "collect_color",
+                "color": "P",
+                "value": 10
             }
         ],
         "bonusObjectives": [
@@ -93,13 +94,13 @@
             }
         ],
         "layout": [
-            "PRPPPRPPPR",
-            "Y.BBYB.BY",
-            "RRR.RR.GRR",
-            "YY.YY.PYY",
-            "G.GG.BG.GB",
-            "RPP.RP.PR",
-            "BB.YBBBYBB",
+            "PRPPPR.PPR",
+            "YBBBYBBBY",
+            "RRRGRRRGRR",
+            "YYPYYYPYY",
+            "GBGGGBGGGB",
+            "RPPPRPPPR",
+            "BBBYBBBYBB",
             "RRGRRRGRR"
         ],
         "designNotes": "Generated 1000-level campaign stage. Chapter `splitter_intro` uses splitter with a wave board silhouette.",
@@ -110,8 +111,8 @@
                 "entityCategory": "reactive_ball",
                 "entityType": "splitter",
                 "splitColor": "P",
-                "row": 1,
-                "col": 1
+                "row": 0,
+                "col": 6
             }
         ],
         "levelType": "normal",

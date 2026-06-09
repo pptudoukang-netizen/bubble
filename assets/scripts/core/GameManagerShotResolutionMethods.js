@@ -38,6 +38,9 @@ function createGameManagerShotResolutionMethods(deps) {
       }
 
       this.comboStreak += 1;
+      if (this.comboStreak > this.maxComboStreak) {
+        this.maxComboStreak = this.comboStreak;
+      }
       if (this.comboStreak < 2) {
         return;
       }
@@ -185,6 +188,10 @@ function createGameManagerShotResolutionMethods(deps) {
       }
       var result = grid.ensureMinimumVisibleRows(6);
       if (result.shiftRows > 0) {
+        if (typeof this._markBoardAdvancedThisFrame !== "function") {
+          throw new Error("Board advance tracking requires GameManager._markBoardAdvancedThisFrame.");
+        }
+        this._markBoardAdvancedThisFrame();
         if (resolution) {
           resolution.boardDropped = true;
           resolution.visibleRowShiftRows = result.shiftRows;
@@ -195,7 +202,7 @@ function createGameManagerShotResolutionMethods(deps) {
     },
 
     _refreshShotPlan: function (force) {
-      if (this.state !== "running" || this.activeProjectile || this._isWaitingBoardAdvance() || this._hasPendingSplitterSpawns()) {
+      if (this.state !== "running" || this.activeProjectile || this._isBoardAdvanceBusy() || this._hasPendingSplitterSpawns()) {
         this.pendingShotPlan = null;
         return;
       }
@@ -1068,7 +1075,7 @@ function createGameManagerShotResolutionMethods(deps) {
       }
 
       if (!this.isTimedInfiniteShots && this.remainingShots <= 0) {
-        if (this.systems.fallingMarbleSystem.hasActiveDrops() || this._isWaitingBoardAdvance() || this._hasPendingSplitterSpawns()) {
+        if (this.systems.fallingMarbleSystem.hasActiveDrops() || this._isBoardAdvanceBusy() || this._hasPendingSplitterSpawns()) {
           this.state = "out_of_shots_pending";
         } else {
           this._resolveOutOfShotsOutcome();
@@ -1140,8 +1147,13 @@ function createGameManagerShotResolutionMethods(deps) {
       }
 
       this.systems.bubbleGrid.advanceRows(1);
+      if (typeof this._markBoardAdvancedThisFrame !== "function") {
+        throw new Error("Board advance tracking requires GameManager._markBoardAdvancedThisFrame.");
+      }
+      this._markBoardAdvancedThisFrame();
       this.lastResolution.boardDropped = true;
       Logger.info("Board advanced", this.systems.bubbleGrid.getDropOffsetRows());
+      return true;
     },
 
     _isPrimaryObjectiveCompleted: function () {

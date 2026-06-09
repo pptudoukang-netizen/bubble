@@ -91,11 +91,11 @@
             }
         ],
         "layout": [
-            "RRGBPPBB",
-            "RPR.PPBB",
-            "GGG.GBPR",
+            "RR.BPPBB",
+            "R.R.PP.B",
+            "G.G.GBP.",
             "RGB.RGBP",
-            "PRBBPRGB",
+            "..BBPRGB",
             "BPRGBP.."
         ],
         "designNotes": "Late-game collection pressure now sits behind stone and ice blockers, with a blast pickup as the main escape hatch.",
@@ -105,22 +105,22 @@
                 "id": "skill_blast_01",
                 "entityCategory": "skill_ball",
                 "entityType": "blast",
-                "row": 1,
-                "col": 3
+                "row": 2,
+                "col": 7
             },
             {
                 "id": "stone_01",
                 "entityCategory": "obstacle_ball",
                 "entityType": "stone",
                 "row": 2,
-                "col": 3
+                "col": 1
             },
             {
                 "id": "ice_01",
                 "entityCategory": "obstacle_ball",
                 "entityType": "ice",
-                "row": 3,
-                "col": 3,
+                "row": 0,
+                "col": 2,
                 "innerColor": "G"
             }
         ],

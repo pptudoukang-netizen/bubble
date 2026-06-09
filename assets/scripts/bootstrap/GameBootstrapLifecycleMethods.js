@@ -17,6 +17,9 @@ module.exports = {
     if (this.isSelectingLevel && typeof this._ensureStaminaRecoveryTicker === "function") {
       this._ensureStaminaRecoveryTicker();
     }
+    if (typeof this._syncDebugOverlayVisibility === "function") {
+      this._syncDebugOverlayVisibility();
+    }
   },
 
   onDisable: function () {

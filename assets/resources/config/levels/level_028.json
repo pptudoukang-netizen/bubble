@@ -94,14 +94,14 @@
             }
         ],
         "layout": [
-            "RRGGYYBB",
-            "R.GYYYBY",
+            "..G..YB.",
+            "R..YYYBY",
             "RGG.RY.G",
-            "BBRYGGRY",
+            "B.RYGGR.",
             "RBBG.G..",
-            "YRGB.R..",
-            "RGBY.G..",
-            "YRGBY..."
+            "YRGB....",
+            "..BY....",
+            "Y......."
         ],
         "designNotes": "Green collection becomes the main route, but frozen and stone blockers force precise sequencing.",
         "difficultyScore": 90,
@@ -110,44 +110,44 @@
                 "id": "skill_rainbow_01",
                 "entityCategory": "skill_ball",
                 "entityType": "rainbow",
-                "row": 1,
-                "col": 1
+                "row": 5,
+                "col": 5
             },
             {
                 "id": "skill_blast_01",
                 "entityCategory": "skill_ball",
                 "entityType": "blast",
-                "row": 2,
-                "col": 3
+                "row": 3,
+                "col": 7
             },
             {
                 "id": "stone_01",
                 "entityCategory": "obstacle_ball",
                 "entityType": "stone",
-                "row": 2,
-                "col": 6
+                "row": 3,
+                "col": 1
             },
             {
                 "id": "ice_01",
                 "entityCategory": "obstacle_ball",
                 "entityType": "ice",
-                "row": 4,
-                "col": 4,
+                "row": 1,
+                "col": 2,
                 "innerColor": "G"
             },
             {
                 "id": "stone_02",
                 "entityCategory": "obstacle_ball",
                 "entityType": "stone",
-                "row": 5,
-                "col": 4
+                "row": 0,
+                "col": 7
             },
             {
                 "id": "ice_02",
                 "entityCategory": "obstacle_ball",
                 "entityType": "ice",
                 "row": 6,
-                "col": 4,
+                "col": 1,
                 "innerColor": "Y"
             }
         ],

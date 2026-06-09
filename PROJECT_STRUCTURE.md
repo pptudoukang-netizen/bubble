@@ -170,8 +170,8 @@
 2. 场景挂载 `GameBootstrap`。
 3. `GameBootstrap.onLoad` 初始化中枢对象和业务状态。
 4. `GameBootstrap.start` 调用启动加载流程。
-5. 启动任务预加载 resources/ui/map 分包、选关预制体、浮岛地图配置与关卡配置，并检查好友体力领取。
-6. 加载完成后进入选关页。
+5. 启动关键任务并行加载玩家云端档案、resources/ui/map 分包、选关预制体和浮岛地图配置；云档案同步完成后检查好友体力领取。
+6. 关键任务完成后进入选关页；首批关卡配置在选关页渲染后按 `startupPreloadLevelCount` 后台预热。
 
 ### 选关到开局
 

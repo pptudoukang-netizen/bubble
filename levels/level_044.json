@@ -92,13 +92,13 @@
         ],
         "layout": [
             "BYRGBYRGBY",
-            "Y.GBYR.RY",
-            "BGR.BY.GRY",
-            "GR.RG.YBG",
-            "R.BY.GB.BG",
-            "YBG.YR.RY",
-            "BG.GBYRGRY",
-            "GRYRGBYBG"
+            "YBGBYRGRY",
+            "BGRGBYRGRY",
+            "GRYRGBYBG",
+            "RYBYRGBYBG",
+            "YBGBYR.RY",
+            "BGRGBYRGRY",
+            "GRYR.BYBG"
         ],
         "designNotes": "Generated 1000-level campaign stage. Chapter `molotov_intro` uses molotov with a gate board silhouette.",
         "difficultyScore": 36,
@@ -108,15 +108,15 @@
                 "entityCategory": "reactive_ball",
                 "entityType": "molotov",
                 "blastRadius": 2,
-                "row": 1,
-                "col": 1
+                "row": 7,
+                "col": 4
             },
             {
                 "id": "ice_01",
                 "entityCategory": "obstacle_ball",
                 "entityType": "ice",
                 "innerColor": "R",
-                "row": 1,
+                "row": 5,
                 "col": 6
             }
         ],

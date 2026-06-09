@@ -76,8 +76,9 @@
                 "value": 1
             },
             {
-                "type": "collect_any",
-                "value": 19
+                "type": "collect_color",
+                "color": "R",
+                "value": 10
             }
         ],
         "bonusObjectives": [
@@ -94,12 +95,12 @@
         ],
         "layout": [
             "RRRRRRRRRR",
-            "Y.YYYY.YY",
-            "GGY.YY.GGG",
-            "PP.BB.PPP",
-            "B.GG.GB.BB",
-            "RRR.RR.RR",
-            "YY.PPPYYYY",
+            "YYYYYYYYY",
+            "GGYYYYGGGG",
+            "PPBBBBPPP",
+            "BBGGGG.BBB",
+            "RRRRRRRRR",
+            "YYPPP.YYYY",
             "GGYYYYGGG"
         ],
         "designNotes": "Generated 1000-level campaign stage. Chapter `splitter_intro` uses splitter with a flame board silhouette.",
@@ -110,15 +111,15 @@
                 "entityCategory": "reactive_ball",
                 "entityType": "splitter",
                 "splitColor": "R",
-                "row": 1,
-                "col": 1
+                "row": 4,
+                "col": 6
             },
             {
                 "id": "stone_01",
                 "entityCategory": "obstacle_ball",
                 "entityType": "stone",
-                "row": 1,
-                "col": 6
+                "row": 6,
+                "col": 5
             }
         ],
         "levelType": "normal",

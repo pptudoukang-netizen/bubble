@@ -73,8 +73,9 @@
                 "value": 1
             },
             {
-                "type": "collect_any",
-                "value": 18
+                "type": "collect_color",
+                "color": "G",
+                "value": 9
             }
         ],
         "bonusObjectives": [
@@ -91,12 +92,12 @@
         ],
         "layout": [
             "GBYGGBYGGB",
-            "R.YYRG.YR",
-            "YGG.YG.BYG",
-            "YY.GY.RGY",
-            "G.YG.BY.GB",
-            "RGY.RG.YR",
-            "YG.BYGGBYG",
+            "RGYYRGYYR",
+            "YGGBYG.BYG",
+            "YYRGYYRGY",
+            "GBYGGBYGGB",
+            "RGYYRGYYR",
+            "YGGBYGGBYG",
             "YYRGYYRGY"
         ],
         "designNotes": "Generated 1000-level campaign stage. Chapter `splitter_intro` uses splitter with a wave board silhouette.",
@@ -107,8 +108,8 @@
                 "entityCategory": "reactive_ball",
                 "entityType": "splitter",
                 "splitColor": "G",
-                "row": 1,
-                "col": 1
+                "row": 2,
+                "col": 6
             }
         ],
         "levelType": "normal",

@@ -75,7 +75,7 @@
             {
                 "type": "collect_color",
                 "color": "R",
-                "value": 8
+                "value": 10
             }
         ],
         "bonusObjectives": [
@@ -92,12 +92,12 @@
         ],
         "layout": [
             "RGBYRGBYRG",
-            "Y.GBYR.BY",
-            "BYR.BY.GBY",
-            "GB.RG.YRG",
-            "R.BY.GB.RG",
-            "YRG.YR.BY",
-            "BY.GBYRGBY",
+            "YRGBYRGBY",
+            "BYRGBYRGBY",
+            "GBYRG.YR.",
+            "RGBYRGBYRG",
+            "YRGBYRGBY",
+            "BYRGBYRGBY",
             "GBYRGBYRG"
         ],
         "designNotes": "Generated 1000-level campaign stage. Chapter `splitter_intro` uses splitter with a diamond board silhouette.",
@@ -108,15 +108,15 @@
                 "entityCategory": "reactive_ball",
                 "entityType": "splitter",
                 "splitColor": "R",
-                "row": 1,
-                "col": 1
+                "row": 3,
+                "col": 5
             },
             {
                 "id": "skill_rainbow_01",
                 "entityCategory": "skill_ball",
                 "entityType": "rainbow",
-                "row": 1,
-                "col": 6
+                "row": 3,
+                "col": 8
             }
         ],
         "levelType": "normal",

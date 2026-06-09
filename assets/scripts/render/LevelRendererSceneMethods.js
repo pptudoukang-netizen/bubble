@@ -5,6 +5,7 @@ function attachLevelRendererSceneMethods(LevelRenderer, deps) {
   var DebugFlags = deps.DebugFlags;
   var BoardLayout = deps.BoardLayout;
   var BALL_RESOURCES = deps.BALL_RESOURCES;
+  var WIN_BOTTLE_RESOURCES = deps.WIN_BOTTLE_RESOURCES;
   var JAR_RESOURCES = deps.JAR_RESOURCES;
   var JAR_MASK_RESOURCES = deps.JAR_MASK_RESOURCES;
   var REWARD_ITEM_RESOURCES = deps.REWARD_ITEM_RESOURCES;
@@ -62,6 +63,8 @@ function attachLevelRendererSceneMethods(LevelRenderer, deps) {
   var clearChildren = deps.clearChildren;
   var getOrCreateChild = deps.getOrCreateChild;
   var buildObjectiveDisplayData = deps.buildObjectiveDisplayData;
+  var buildWinCompletedTargetEntries = deps.buildWinCompletedTargetEntries;
+  var buildWinCollectEntries = deps.buildWinCollectEntries;
   var buildHudTargetDisplayData = deps.buildHudTargetDisplayData;
   var buildStateText = deps.buildStateText;
   var buildResultTexts = deps.buildResultTexts;
@@ -1686,6 +1689,24 @@ LevelRenderer.prototype._renderHudStarProgress = function (panel, runtimeSnapsho
     );
   }
 
+  function buildBoardCellRenderKey(cell, boardSnapshot) {
+    if (!cell || !cell.id) {
+      throw new Error("Board cell render key requires cell id.");
+    }
+    if (!boardSnapshot || typeof boardSnapshot !== "object") {
+      throw new Error("Board cell render key requires board snapshot.");
+    }
+    return [
+      String(cell.id),
+      cell.row,
+      cell.col,
+      boardSnapshot.maxColumns,
+      boardSnapshot.dropOffsetRows,
+      resolveBoardBubblePrefabPath(cell),
+      resolveBallVisualKey(cell)
+    ].join("|");
+  }
+
   function resolveBoardBubblePrefabPath(cell) {
     if (!cell || !isBoardSpecialPrefabCell(cell)) {
       return PREFAB_PATHS.bubbleItem;
@@ -1780,6 +1801,48 @@ LevelRenderer.prototype._renderHudStarProgress = function (panel, runtimeSnapsho
     }).join("|");
   }
 
+  function resolveKeyUnlockTargetNode(renderer, targetCell) {
+    if (!targetCell || !targetCell.id) {
+      throw new Error("Key unlock animation requires target cell id.");
+    }
+    var normalizedId = String(targetCell.id);
+    var targetNode = renderer.boardBubbleNodes[normalizedId];
+    if (targetNode && targetNode.isValid) {
+      return targetNode;
+    }
+    targetNode = renderer.layers.board.getChildByName("Bubble_" + normalizedId);
+    if (targetNode && targetNode.isValid) {
+      return targetNode;
+    }
+    return null;
+  }
+
+  function resolveKeyUnlockMotionProgress(linearProgress) {
+    if (typeof linearProgress !== "number" || !isFinite(linearProgress)) {
+      throw new Error("Key unlock motion progress must be finite.");
+    }
+    var strength = 0.72;
+    return linearProgress + Math.sin(linearProgress * Math.PI * 2) * strength / (Math.PI * 2);
+  }
+
+  function applyKeyUnlockFlyFrame(keyFx, startPosition, targetPosition, linearProgress, arcHeight) {
+    if (!keyFx || !keyFx.isValid) {
+      throw new Error("Key unlock fly node must remain valid during animation.");
+    }
+    if (!startPosition || !targetPosition) {
+      throw new Error("Key unlock fly animation requires start and target positions.");
+    }
+    if (typeof arcHeight !== "number" || !isFinite(arcHeight)) {
+      throw new Error("Key unlock fly arc height must be finite.");
+    }
+
+    var motionProgress = resolveKeyUnlockMotionProgress(linearProgress);
+    var arcProgress = Math.sin(motionProgress * Math.PI);
+    keyFx.x = startPosition.x + (targetPosition.x - startPosition.x) * motionProgress;
+    keyFx.y = startPosition.y + (targetPosition.y - startPosition.y) * motionProgress + arcHeight * arcProgress;
+    keyFx.scale = 1 + (0.72 - 1) * motionProgress;
+  }
+
   function createSplitterSpawnAnimationKey(resolution) {
     var spawned = Array.isArray(resolution && resolution.spawnedBySplitters) ? resolution.spawnedBySplitters : [];
     return spawned.map(function (cell) {
@@ -1839,8 +1902,22 @@ LevelRenderer.prototype._renderBoard = function (boardSnapshot) {
   this.lastBoardVersion = boardSnapshot.version;
   this.boardRenderTick += 1;
   var currentTick = this.boardRenderTick;
+  if (!this.boardCellRenderKeys || typeof this.boardCellRenderKeys !== "object") {
+    this.boardCellRenderKeys = {};
+  }
 
   boardSnapshot.cells.forEach(function (cell) {
+    var cellId = String(cell.id);
+    var renderKey = buildBoardCellRenderKey(cell, boardSnapshot);
+    var cachedRenderKey = this.boardCellRenderKeys[cellId];
+    var existingNode = this.boardBubbleNodes[cellId];
+    if (existingNode && cachedRenderKey === renderKey) {
+      existingNode.__boardTick = currentTick;
+      this._applySplitterSpawnHiddenBoardState(existingNode, cell.id);
+      return;
+    }
+
+    this.boardCellRenderKeys[cellId] = renderKey;
     var cellPosition = BoardLayout.getCellPosition(cell.row, cell.col, boardSnapshot.maxColumns, boardSnapshot.dropOffsetRows);
     var bubbleNode = this._acquireBoardBubbleNode(cell);
     bubbleNode.__boardTick = currentTick;
@@ -1958,6 +2035,9 @@ LevelRenderer.prototype._recycleInactiveBoardBubbleNodes = function (activeTick)
     }
 
     delete this.boardBubbleNodes[cellId];
+    if (this.boardCellRenderKeys && Object.prototype.hasOwnProperty.call(this.boardCellRenderKeys, cellId)) {
+      delete this.boardCellRenderKeys[cellId];
+    }
   }
 };
 
@@ -2081,7 +2161,7 @@ LevelRenderer.prototype._playKeyUnlockAnimation = function (runtimeSnapshot) {
   }
 
   var boardSnapshot = runtimeSnapshot.board;
-  var flyDuration = 0.34;
+  var flyDuration = 0.62;
   var lockShakeStep = 0.04;
   var lockShakeOffset = 8;
   var playedUnlockGroups = {};
@@ -2099,6 +2179,8 @@ LevelRenderer.prototype._playKeyUnlockAnimation = function (runtimeSnapshot) {
     var primaryTarget = targetCells[0];
     var keyPosition = BoardLayout.getCellPosition(keyCell.row, keyCell.col, boardSnapshot.maxColumns, boardSnapshot.dropOffsetRows);
     var targetPosition = BoardLayout.getCellPosition(primaryTarget.row, primaryTarget.col, boardSnapshot.maxColumns, boardSnapshot.dropOffsetRows);
+    var travelDistance = pointDistance(keyPosition, targetPosition);
+    var arcHeight = Math.max(64, Math.min(140, travelDistance * 0.28));
 
     var keyFx = instantiateRequired(this.prefabFactory, PREFAB_PATHS.keyBubbleItem, this.layers.board, "KeyUnlockFly_" + keyCell.id, "Key unlock animation KeyBubbleItem");
     keyFx.setPosition(keyPosition.x, keyPosition.y);
@@ -2109,11 +2191,10 @@ LevelRenderer.prototype._playKeyUnlockAnimation = function (runtimeSnapshot) {
     requireVisualChild(keyFx, "key", "KeyBubbleItem").active = true;
 
     var lockFxNodes = targetCells.map(function (targetCell) {
-      var targetNode = this.layers.board.getChildByName("Bubble_" + targetCell.id);
-      if (!targetNode || !targetNode.isValid) {
-        throw new Error("Key unlock animation target node missing: " + targetCell.id);
+      var targetNode = resolveKeyUnlockTargetNode(this, targetCell);
+      if (targetNode) {
+        targetNode.opacity = 0;
       }
-      targetNode.opacity = 0;
 
       var lockPosition = BoardLayout.getCellPosition(targetCell.row, targetCell.col, boardSnapshot.maxColumns, boardSnapshot.dropOffsetRows);
       var lockFx = instantiateRequired(this.prefabFactory, PREFAB_PATHS.lockingBubbleItem, this.layers.board, "LockUnlockFx_" + targetCell.id, "Key unlock animation LockingBubbleItem");
@@ -2171,21 +2252,29 @@ LevelRenderer.prototype._playKeyUnlockAnimation = function (runtimeSnapshot) {
       });
     };
 
-    cc.tween(keyFx)
+    var flyState = { progress: 0 };
+    cc.tween(flyState)
       .to(flyDuration, {
-        x: targetPosition.x,
-        y: targetPosition.y,
-        scale: 0.72
+        progress: 1
       }, {
-        easing: "sineInOut"
+        progress: function (start, end, current, ratio) {
+          var linearProgress = start + (end - start) * ratio;
+          applyKeyUnlockFlyFrame(keyFx, keyPosition, targetPosition, linearProgress, arcHeight);
+          return linearProgress;
+        }
       })
-      .to(0.08, {
-        scale: 0.35,
-        opacity: 0
-      }, {
-        easing: "quadIn"
+      .call(function () {
+        applyKeyUnlockFlyFrame(keyFx, keyPosition, targetPosition, 1, arcHeight);
+        cc.tween(keyFx)
+          .to(0.08, {
+            scale: 0.35,
+            opacity: 0
+          }, {
+            easing: "quadIn"
+          })
+          .call(shakeLocks)
+          .start();
       })
-      .call(shakeLocks)
       .start();
   }, this);
 };
@@ -3458,16 +3547,6 @@ LevelRenderer.prototype._setWinValueText = function (valueNode, text) {
     return childNode;
   }
 
-LevelRenderer.prototype._setWinScoreBgPosition = function (scoreBgNode, hasRewardItems) {
-  if (!scoreBgNode) {
-    throw new Error("WinView requires score_bg.");
-  }
-  if (typeof hasRewardItems !== "boolean") {
-    throw new Error("WinView score_bg position requires reward state.");
-  }
-  scoreBgNode.setPosition(scoreBgNode.x, hasRewardItems ? 65 : 30);
-};
-
 LevelRenderer.prototype._renderWinAwardInfo = function (winContent, rewardItems) {
   if (!Array.isArray(rewardItems)) {
     throw new Error("WinView award_info requires reward items array.");
@@ -3561,6 +3640,154 @@ LevelRenderer.prototype._renderWinMaxScoreStamp = function (scoreBgNode, runtime
     throw new Error("WinView max_score requires boolean winStats.isPersonalBestScore.");
   }
   maxScoreNode.active = runtimeSnapshot.winStats.isPersonalBestScore;
+};
+
+LevelRenderer.prototype._renderWinMaxCombo = function (scoreBgNode, runtimeSnapshot) {
+  var batterValueNode = requireWinChild(scoreBgNode, "batter_value", "score_bg");
+  if (!runtimeSnapshot || runtimeSnapshot.state !== "won") {
+    batterValueNode.active = false;
+    return;
+  }
+  if (!runtimeSnapshot.winStats || typeof runtimeSnapshot.winStats !== "object") {
+    throw new Error("WinView batter_value requires runtimeSnapshot.winStats.");
+  }
+  if (typeof runtimeSnapshot.winStats.maxComboStreak !== "number") {
+    throw new Error("WinView batter_value requires winStats.maxComboStreak.");
+  }
+
+  var maxComboStreak = Math.floor(runtimeSnapshot.winStats.maxComboStreak);
+  if (!Number.isInteger(maxComboStreak) || maxComboStreak < 0) {
+    throw new Error("WinView batter_value maxComboStreak must be non-negative integer.");
+  }
+
+  batterValueNode.active = true;
+  var comboDisplay = maxComboStreak >= 2 ? maxComboStreak - 1 : 0;
+  this._setWinValueText(batterValueNode, String(comboDisplay));
+};
+
+LevelRenderer.prototype._renderWinCollectList = function (winContent, levelConfig, runtimeSnapshot) {
+  var collectBgNode = winContent ? winContent.getChildByName("collect_bg") : null;
+  if (!collectBgNode) {
+    throw new Error("WinView requires collect_bg.");
+  }
+
+  var collectListNode = requireWinChild(collectBgNode, "collect_list", "collect_bg");
+  var templateNode = requireWinChild(collectListNode, "bottle", "collect_list");
+  var entries = buildWinCollectEntries(levelConfig, runtimeSnapshot);
+
+  if (entries.length === 0) {
+    collectBgNode.active = false;
+    return;
+  }
+
+  collectBgNode.active = true;
+  var activeNodes = [];
+
+  entries.forEach(function (entry, index) {
+    var bottleNode = null;
+    if (index === 0) {
+      bottleNode = templateNode;
+    } else {
+      bottleNode = collectListNode.getChildByName("bottle_" + index);
+      if (!bottleNode) {
+        if (typeof cc.instantiate !== "function") {
+          throw new Error("WinView multiple collect bottles require cc.instantiate.");
+        }
+        bottleNode = cc.instantiate(templateNode);
+        bottleNode.name = "bottle_" + index;
+        bottleNode.parent = collectListNode;
+      }
+    }
+
+    bottleNode.active = true;
+    activeNodes.push(bottleNode);
+
+    var spritePath = WIN_BOTTLE_RESOURCES[entry.colorCode];
+    var spriteFrame = this.spriteFrameCache[spritePath];
+    if (!spriteFrame) {
+      throw new Error("WinView collect bottle sprite is not preloaded: " + spritePath);
+    }
+
+    ensureSprite(bottleNode, spriteFrame);
+    var numNode = requireWinChild(bottleNode, "num", bottleNode.name);
+    this._setWinValueText(numNode, String(entry.count));
+  }, this);
+
+  collectListNode.children.forEach(function (child) {
+    if (activeNodes.indexOf(child) === -1) {
+      child.active = false;
+    }
+  });
+
+  var layout = collectListNode.getComponent(cc.Layout);
+  if (layout && typeof layout.updateLayout === "function") {
+    layout.updateLayout();
+  }
+};
+
+LevelRenderer.prototype._renderWinTargetList = function (winContent, levelConfig, runtimeSnapshot) {
+  var targetBgNode = winContent ? winContent.getChildByName("target_bg") : null;
+  if (!targetBgNode) {
+    throw new Error("WinView requires target_bg.");
+  }
+
+  var targetListNode = requireWinChild(targetBgNode, "target_list", "target_bg");
+  var templateNode = requireWinChild(targetListNode, "target", "target_list");
+  var entries = buildWinCompletedTargetEntries(levelConfig, runtimeSnapshot);
+
+  if (entries.length === 0) {
+    targetBgNode.active = false;
+    return;
+  }
+
+  targetBgNode.active = true;
+  var activeNodes = [];
+
+  entries.forEach(function (entry, index) {
+    var targetNode = null;
+    if (index === 0) {
+      targetNode = templateNode;
+    } else {
+      targetNode = targetListNode.getChildByName("target_" + index);
+      if (!targetNode) {
+        if (typeof cc.instantiate !== "function") {
+          throw new Error("WinView multiple targets require cc.instantiate.");
+        }
+        targetNode = cc.instantiate(templateNode);
+        targetNode.name = "target_" + index;
+        targetNode.parent = targetListNode;
+      }
+    }
+
+    targetNode.active = true;
+    activeNodes.push(targetNode);
+
+    var spritePath = BALL_RESOURCES[entry.iconCode];
+    if (!spritePath) {
+      throw new Error("WinView unsupported target icon code: " + entry.iconCode);
+    }
+    var spriteFrame = this.spriteFrameCache[spritePath];
+    if (!spriteFrame) {
+      throw new Error("WinView target sprite is not preloaded: " + spritePath);
+    }
+
+    ensureSprite(targetNode, spriteFrame);
+    var targetDesNode = requireWinChild(targetNode, "target_des", targetNode.name);
+    var gouNode = requireWinChild(targetNode, "gou", targetNode.name);
+    this._setWinValueText(targetDesNode, entry.description);
+    gouNode.active = true;
+  }, this);
+
+  targetListNode.children.forEach(function (child) {
+    if (activeNodes.indexOf(child) === -1) {
+      child.active = false;
+    }
+  });
+
+  var layout = targetListNode.getComponent(cc.Layout);
+  if (layout && typeof layout.updateLayout === "function") {
+    layout.updateLayout();
+  }
 };
 
 LevelRenderer.prototype._ensurePopupMaskVisible = function (popupNode, opacity) {
@@ -3802,10 +4029,12 @@ LevelRenderer.prototype._renderWinView = function (runtimeSnapshot) {
   var totalScore = Number(winStats.totalScore) || runtimeSnapshot.score || 0;
   var scoreBgNode = winContent ? winContent.getChildByName("score_bg") : null;
   var rewardItems = getRuntimeWinClearRewardItems(runtimeSnapshot);
-  this._setWinScoreBgPosition(scoreBgNode, rewardItems.length > 0);
   this._setWinValueText(requireWinChild(scoreBgNode, "score_value", "score_bg"), String(totalScore));
   this._renderWinAwardInfo(winContent, rewardItems);
   this._renderWinMaxScoreStamp(scoreBgNode, runtimeSnapshot);
+  this._renderWinMaxCombo(scoreBgNode, runtimeSnapshot);
+  this._renderWinCollectList(winContent, this.currentLevelConfig, runtimeSnapshot);
+  this._renderWinTargetList(winContent, this.currentLevelConfig, runtimeSnapshot);
 
   var starRating = resolveWinStarRating(this.currentLevelConfig, runtimeSnapshot);
   this._renderWinStars(winContent, starRating);

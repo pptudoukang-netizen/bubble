@@ -1,6 +1,7 @@
 "use strict";
 
 var BundleLoader = require("../utils/BundleLoader");
+var LevelSelectMemoryDiagnostics = require("../utils/LevelSelectMemoryDiagnostics");
 
 var MAP_BUNDLE_NAME = "map";
 var CONFIG_PATH = "config/floating_map";
@@ -15,6 +16,7 @@ var TOUCH_DRAG_THRESHOLD = 12;
 var INERTIA_FRAME_SECONDS = 1 / 60;
 var INERTIA_DECELERATION = 2600;
 var INERTIA_MIN_VELOCITY = 18;
+var INERTIA_SCHEDULE_REPEAT = cc.macro.REPEAT_FOREVER;
 var BACKGROUND_SCROLL_RATIO = 0.05;
 var FOCUS_Y_RATIO_FROM_BOTTOM = 0.38;
 var FIRST_ISLAND_BOTTOM_SCROLL_PADDING = 300;
@@ -97,6 +99,7 @@ function loadBundleAsset(bundle, assetPath, assetType, description) {
       reject(new Error("Map bundle is not loaded before loading " + description + "."));
       return;
     }
+    LevelSelectMemoryDiagnostics.increment("map.bundle.load:" + assetPath);
     bundle.load(assetPath, assetType, function (error, asset) {
       if (error) {
         reject(new Error("Load " + description + " failed: " + error.message));
@@ -355,12 +358,15 @@ function validateLoadedPrefabs(config, prefabs) {
 
 function loadAssets() {
   if (cachedAssets) {
+    LevelSelectMemoryDiagnostics.increment("map.assets.cache");
     return Promise.resolve(cachedAssets);
   }
   if (assetLoadPromise) {
+    LevelSelectMemoryDiagnostics.increment("map.assets.pending");
     return assetLoadPromise;
   }
 
+  LevelSelectMemoryDiagnostics.increment("map.assets.load");
   assetLoadPromise = BundleLoader.ensureNamedBundleLoaded(MAP_BUNDLE_NAME).then(function (bundle) {
     return loadConfig(bundle).then(function (config) {
       return Promise.all([
@@ -388,8 +394,10 @@ function loadAssets() {
 }
 
 function destroyExistingRuntimeRoot(mapHostNode) {
+  LevelSelectMemoryDiagnostics.increment("floatingMap.destroyExistingRuntimeRoot");
   if (mapHostNode.__floatingMapState) {
     stopInertia(mapHostNode.__floatingMapState);
+    mapHostNode.__floatingMapState = null;
   }
   var existingRoot = mapHostNode.getChildByName(ROOT_NODE_NAME);
   if (existingRoot && existingRoot.isValid) {
@@ -398,7 +406,24 @@ function destroyExistingRuntimeRoot(mapHostNode) {
   }
 }
 
+function disposeRuntime(mapHostNode) {
+  requireNode(mapHostNode, "LevelView/map");
+  destroyExistingRuntimeRoot(mapHostNode);
+}
+
+function configureMapLevelLabel(label, levelId, description) {
+  if (!label) {
+    throw new Error(description + " is required.");
+  }
+  if (!cc || !cc.Label || !cc.Label.CacheMode || cc.Label.CacheMode.BITMAP === undefined) {
+    throw new Error(description + " requires cc.Label.CacheMode.BITMAP.");
+  }
+  label.cacheMode = cc.Label.CacheMode.BITMAP;
+  label.string = String(levelId);
+}
+
 function createRuntimeRoot(mapHostNode) {
+  LevelSelectMemoryDiagnostics.increment("floatingMap.createRuntimeRoot");
   var root = new cc.Node(ROOT_NODE_NAME);
   root.parent = mapHostNode;
   root.setContentSize(mapHostNode.getContentSize());
@@ -538,7 +563,7 @@ function getVisibleRange(state) {
 function configureButtonLabel(buttonNode, levelId) {
   var labelNode = requireChild(buttonNode, "level", buttonNode.name);
   var label = requireComponent(labelNode, cc.Label, buttonNode.name + "/level");
-  label.string = String(levelId);
+  configureMapLevelLabel(label, levelId, buttonNode.name + "/level");
   labelNode.active = buttonNode.__floatingMapUnlocked === true;
 }
 
@@ -608,6 +633,7 @@ function removeProtagonistFromIsland(islandNode) {
 }
 
 function attachProtagonist(buttonNode, state) {
+  LevelSelectMemoryDiagnostics.increment("floatingMap.createProtagonist");
   requireNode(buttonNode, "protagonist level button");
   var islandNode = buttonNode.parent;
   requireNode(islandNode, "protagonist island parent");
@@ -675,6 +701,7 @@ function configureNormalTeleport(islandNode, nodeConfig, state) {
   if (!arrayNode || !arrayNode.isValid) {
     throw new Error("Instantiate TeleportationArray failed.");
   }
+  LevelSelectMemoryDiagnostics.increment("floatingMap.createTeleportArray");
   arrayNode.name = TELEPORT_ARRAY_NODE_NAME;
   arrayNode.parent = teleportPointNode;
   arrayNode.setPosition(0, 0);
@@ -726,6 +753,7 @@ function configureIslandNode(islandNode, nodeConfig, state) {
 }
 
 function createIslandNode(state, nodeConfig) {
+  LevelSelectMemoryDiagnostics.increment("floatingMap.createIsland:" + nodeConfig.prefab);
   var prefab = state.assets.prefabs[nodeConfig.prefab];
   if (!prefab) {
     throw new Error("Floating map prefab missing: " + nodeConfig.prefab);
@@ -748,6 +776,7 @@ function createIslandNode(state, nodeConfig) {
 }
 
 function refreshConfiguredIslands(state) {
+  LevelSelectMemoryDiagnostics.increment("floatingMap.refreshConfiguredIslands");
   state.islandDataRevision += 1;
   state.config.nodes.forEach(function (nodeConfig) {
     var islandNode = state.renderedNodes[String(nodeConfig.index)];
@@ -759,27 +788,64 @@ function refreshConfiguredIslands(state) {
   syncBackToCurrentLevelButtonVisibility(state);
 }
 
+function findFirstVisibleNodeIndex(nodes, minY) {
+  var left = 0;
+  var right = nodes.length - 1;
+  var result = nodes.length;
+  while (left <= right) {
+    var mid = (left + right) >> 1;
+    var nodeTopY = resolveNodeTopY(nodes[mid]);
+    if (nodeTopY >= minY) {
+      result = mid;
+      right = mid - 1;
+    } else {
+      left = mid + 1;
+    }
+  }
+  return result;
+}
+
+function findLastVisibleNodeIndex(nodes, maxY) {
+  var left = 0;
+  var right = nodes.length - 1;
+  var result = -1;
+  while (left <= right) {
+    var mid = (left + right) >> 1;
+    var nodeBottomY = resolveNodeBottomY(nodes[mid]);
+    if (nodeBottomY <= maxY) {
+      result = mid;
+      left = mid + 1;
+    } else {
+      right = mid - 1;
+    }
+  }
+  return result;
+}
+
 function renderVisibleNodes(state) {
+  LevelSelectMemoryDiagnostics.increment("floatingMap.renderVisibleNodes");
   var range = getVisibleRange(state);
   var requiredIndexes = {};
-  state.config.nodes.forEach(function (nodeConfig) {
-    var nodeBottomY = resolveNodeBottomY(nodeConfig);
-    var nodeTopY = resolveNodeTopY(nodeConfig);
-    if (nodeTopY >= range.minY && nodeBottomY <= range.maxY) {
-      requiredIndexes[String(nodeConfig.index)] = true;
-      if (!state.renderedNodes[String(nodeConfig.index)] || !state.renderedNodes[String(nodeConfig.index)].isValid) {
-        state.renderedNodes[String(nodeConfig.index)] = createIslandNode(state, nodeConfig);
-      } else {
-        configureIslandNodeIfStale(state.renderedNodes[String(nodeConfig.index)], nodeConfig, state);
-      }
+  var nodes = state.config.nodes;
+  var firstIndex = findFirstVisibleNodeIndex(nodes, range.minY);
+  var lastIndex = findLastVisibleNodeIndex(nodes, range.maxY);
+  for (var index = firstIndex; index <= lastIndex; index += 1) {
+    var nodeConfig = nodes[index];
+    var nodeKey = String(nodeConfig.index);
+    requiredIndexes[nodeKey] = true;
+    if (!state.renderedNodes[nodeKey] || !state.renderedNodes[nodeKey].isValid) {
+      state.renderedNodes[nodeKey] = createIslandNode(state, nodeConfig);
+    } else {
+      configureIslandNodeIfStale(state.renderedNodes[nodeKey], nodeConfig, state);
     }
-  });
+  }
   Object.keys(state.renderedNodes).forEach(function (key) {
     if (requiredIndexes[key] === true) {
       return;
     }
     var node = state.renderedNodes[key];
     if (node && node.isValid) {
+      LevelSelectMemoryDiagnostics.increment("floatingMap.destroyIsland");
       node.destroy();
     }
     delete state.renderedNodes[key];
@@ -815,6 +881,7 @@ function moveBackground(state, deltaY) {
 }
 
 function applyContentDelta(state, deltaY) {
+  LevelSelectMemoryDiagnostics.increment("floatingMap.applyContentDelta");
   var currentY = state.content.y;
   var nextY = clampContentY(state, currentY + deltaY);
   var appliedDeltaY = nextY - currentY;
@@ -836,18 +903,57 @@ function easeOutCubic(progress) {
   return 1 - remaining * remaining * remaining;
 }
 
+function requireDirectorScheduler(description) {
+  if (!cc || !cc.director || typeof cc.director.getScheduler !== "function") {
+    throw new Error(description + " requires cc.director.getScheduler.");
+  }
+  var scheduler = cc.director.getScheduler();
+  if (!scheduler || typeof scheduler.schedule !== "function" || typeof scheduler.unschedule !== "function") {
+    throw new Error(description + " requires director scheduler APIs.");
+  }
+  return scheduler;
+}
+
+function requireScheduleTarget(state, description) {
+  if (!state || !state.content || !state.content.isValid) {
+    throw new Error(description + " requires valid floating map content node.");
+  }
+  return state.content;
+}
+
+function scheduleFloatingMapTick(state, tickPropertyName, tick, description) {
+  var scheduler = requireDirectorScheduler(description);
+  var target = requireScheduleTarget(state, description);
+  scheduler.schedule(tick, target, INERTIA_FRAME_SECONDS, INERTIA_SCHEDULE_REPEAT, 0, false);
+  state[tickPropertyName] = tick;
+}
+
+function clearScheduledTick(state, tickPropertyName) {
+  if (!state || !state[tickPropertyName]) {
+    return;
+  }
+  var tick = state[tickPropertyName];
+  state[tickPropertyName] = null;
+  if (!state.content) {
+    return;
+  }
+  var scheduler = requireDirectorScheduler("Floating map tick cleanup");
+  scheduler.unschedule(tick, state.content);
+}
+
 function stopScrollAnimation(state) {
   if (state.scrollAnimTimer) {
-    clearInterval(state.scrollAnimTimer);
-    state.scrollAnimTimer = null;
+    LevelSelectMemoryDiagnostics.increment("floatingMap.stopScrollAnimation");
+    clearScheduledTick(state, "scrollAnimTimer");
   }
 }
 
 function stopInertia(state) {
+  LevelSelectMemoryDiagnostics.increment("floatingMap.stopInertia");
   stopScrollAnimation(state);
   if (state.inertiaTimer) {
-    clearInterval(state.inertiaTimer);
-    state.inertiaTimer = null;
+    LevelSelectMemoryDiagnostics.increment("floatingMap.stopInertiaTimer");
+    clearScheduledTick(state, "inertiaTimer");
   }
   state.inertiaVelocityY = 0;
   state.scrollFrameCounter = 0;
@@ -864,6 +970,7 @@ function requireFloatingMapState(mapHostNode) {
 }
 
 function scrollToLevel(mapHostNode, levelId, options) {
+  LevelSelectMemoryDiagnostics.increment("floatingMap.scrollToLevel");
   requireObject(options || {}, "Floating map scroll options");
   var state = requireFloatingMapState(mapHostNode);
   requirePositiveInteger(levelId, "scrollToLevel levelId");
@@ -881,7 +988,8 @@ function scrollToLevel(mapHostNode, levelId, options) {
   }
 
   var elapsed = 0;
-  state.scrollAnimTimer = setInterval(function () {
+  state.scrollAnimTimer = function () {
+    LevelSelectMemoryDiagnostics.increment("floatingMap.scrollTimerTick");
     if (!state.content || !state.content.isValid) {
       stopScrollAnimation(state);
       return;
@@ -903,17 +1011,20 @@ function scrollToLevel(mapHostNode, levelId, options) {
         options.onComplete();
       }
     }
-  }, INERTIA_FRAME_SECONDS * 1000);
+  };
+  scheduleFloatingMapTick(state, "scrollAnimTimer", state.scrollAnimTimer, "Floating map scroll animation");
 }
 
 function startInertia(state) {
+  LevelSelectMemoryDiagnostics.increment("floatingMap.startInertia");
   stopInertia(state);
   var velocityY = state.dragVelocityY;
   if (!Number.isFinite(velocityY) || Math.abs(velocityY) < INERTIA_MIN_VELOCITY) {
     return;
   }
   state.inertiaVelocityY = velocityY;
-  state.inertiaTimer = setInterval(function () {
+  state.inertiaTimer = function () {
+    LevelSelectMemoryDiagnostics.increment("floatingMap.inertiaTimerTick");
     if (!state.root || !state.root.isValid || !state.content || !state.content.isValid) {
       stopInertia(state);
       return;
@@ -932,7 +1043,8 @@ function startInertia(state) {
       return;
     }
     state.inertiaVelocityY = direction * nextSpeed;
-  }, INERTIA_FRAME_SECONDS * 1000);
+  };
+  scheduleFloatingMapTick(state, "inertiaTimer", state.inertiaTimer, "Floating map inertia");
 }
 
 function getTouchLocation(event) {
@@ -1025,6 +1137,7 @@ function requireRenderOptions(options) {
 }
 
 function render(options) {
+  LevelSelectMemoryDiagnostics.increment("floatingMap.render");
   requireRenderOptions(options);
   var mapHostNode = options.mapHostNode;
   var backgroundNode = requireChild(mapHostNode, "bg", "LevelView/map");
@@ -1099,5 +1212,6 @@ module.exports = {
   render: render,
   scrollToLevel: scrollToLevel,
   refreshIslandProgress: refreshIslandProgress,
+  disposeRuntime: disposeRuntime,
   resolveLatestAccessibleLevelId: resolveLatestAccessibleLevelId
 };

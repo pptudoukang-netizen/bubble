@@ -1,10 +1,13 @@
 "use strict";
 
+var LevelSelectMemoryDiagnostics = require("./LevelSelectMemoryDiagnostics");
+
 var RESOURCES_BUNDLE_NAME = "resources";
 var UI_BUNDLE_NAME = "ui";
 var UI_PREFAB_LEGACY_PREFIX = "prefabs/ui/";
 var UI_PREFAB_BUNDLE_PREFIX = "prefabs/";
 var UI_IMAGE_SIGN_PREFIX = "image/sign/";
+var UI_IMAGE_WIN_PREFIX = "image/win/";
 var UI_COMMENT_ANIMATION_LEGACY_PREFIX = "ui/animation/comments/";
 var UI_COMMENT_ANIMATION_BUNDLE_PREFIX = "animation/comments/";
 var UI_BUNDLE_PREFABS = {
@@ -74,6 +77,7 @@ function runBundleLoad(bundle, bundleName, path, type, callback) {
     return;
   }
 
+  LevelSelectMemoryDiagnostics.increment("bundle.load:" + bundleName + "/" + path);
   if (type) {
     bundle.load(path, type, callback);
     return;
@@ -113,6 +117,7 @@ function runBundleLoadDir(bundle, bundleName, path, type, callback) {
     callback(error, assets, urls);
   };
 
+  LevelSelectMemoryDiagnostics.increment("bundle.loadDir:" + bundleName + "/" + path);
   if (type) {
     bundle.loadDir(path, type, wrappedCallback);
     return;
@@ -123,6 +128,7 @@ function runBundleLoadDir(bundle, bundleName, path, type, callback) {
 
 function ensureResourcesBundleLoaded() {
   if (resourcesBundle) {
+    LevelSelectMemoryDiagnostics.increment("bundle.cache:resources");
     return Promise.resolve(resourcesBundle);
   }
 
@@ -135,13 +141,16 @@ function ensureResourcesBundleLoaded() {
     : null;
   if (existingBundle && typeof existingBundle.load === "function") {
     resourcesBundle = existingBundle;
+    LevelSelectMemoryDiagnostics.increment("bundle.existing:resources");
     return Promise.resolve(resourcesBundle);
   }
 
   if (resourcesBundlePromise) {
+    LevelSelectMemoryDiagnostics.increment("bundle.pending:resources");
     return resourcesBundlePromise;
   }
 
+  LevelSelectMemoryDiagnostics.increment("bundle.loadBundle:resources");
   resourcesBundlePromise = new Promise(function (resolve, reject) {
     cc.assetManager.loadBundle(RESOURCES_BUNDLE_NAME, function (error, bundle) {
       if (error) {
@@ -202,6 +211,7 @@ function ensureNamedBundleLoaded(bundleName) {
   }
 
   if (namedBundleCache[bundleName]) {
+    LevelSelectMemoryDiagnostics.increment("bundle.cache:" + bundleName);
     return Promise.resolve(namedBundleCache[bundleName]);
   }
 
@@ -210,9 +220,11 @@ function ensureNamedBundleLoaded(bundleName) {
   }
 
   if (namedBundlePromises[bundleName]) {
+    LevelSelectMemoryDiagnostics.increment("bundle.pending:" + bundleName);
     return namedBundlePromises[bundleName];
   }
 
+  LevelSelectMemoryDiagnostics.increment("bundle.loadBundle:" + bundleName);
   namedBundlePromises[bundleName] = ensureWeChatSubpackageLoaded(bundleName).then(function () {
     return new Promise(function (resolve, reject) {
       cc.assetManager.loadBundle(bundleName, function (error, bundle) {
@@ -248,6 +260,13 @@ function resolveLoadRoute(path) {
   }
 
   if (path.indexOf(UI_IMAGE_SIGN_PREFIX) === 0) {
+    return {
+      bundleName: UI_BUNDLE_NAME,
+      path: path
+    };
+  }
+
+  if (path.indexOf(UI_IMAGE_WIN_PREFIX) === 0) {
     return {
       bundleName: UI_BUNDLE_NAME,
       path: path

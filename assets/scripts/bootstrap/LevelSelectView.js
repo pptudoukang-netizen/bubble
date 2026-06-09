@@ -28,6 +28,24 @@ function logError(message, detail) {
   }
 }
 
+function configureDynamicLabelTextureCache(label, description) {
+  if (!label) {
+    throw new Error(description + " is required.");
+  }
+  if (!cc || !cc.Label || !cc.Label.CacheMode || cc.Label.CacheMode.CHAR === undefined) {
+    throw new Error(description + " requires cc.Label.CacheMode.CHAR.");
+  }
+  label.cacheMode = cc.Label.CacheMode.CHAR;
+}
+
+function setDynamicLabelString(label, value, description) {
+  configureDynamicLabelTextureCache(label, description);
+  var nextValue = String(value);
+  if (label.string !== nextValue) {
+    label.string = nextValue;
+  }
+}
+
 var LEVEL_BUTTON_SKIN_PATHS = {
   locked: "image/level_lock",
   unlocked: "image/level_lock1"
@@ -48,6 +66,7 @@ var STAR_NODE_NAME = "star";
 var STAR_TWINKLE_DIM_OPACITY = 120;
 var STAR_TWINKLE_SCALE = 1.18;
 var STAR_TWINKLE_DURATION = 0.45;
+var LEVEL_SELECT_IDLE_ANIMATIONS_ENABLED = false;
 
 var levelButtonSkinFrames = null;
 var levelButtonSkinLoadPromise = null;
@@ -146,6 +165,9 @@ function attachRunAnimationToLevelSlot(slotNode, levelMapRootNode) {
   }
   if (!levelMapRootNode || !levelMapRootNode.isValid) {
     throw new Error("Run animation level map root node is invalid.");
+  }
+  if (LEVEL_SELECT_IDLE_ANIMATIONS_ENABLED !== true) {
+    return Promise.resolve(null);
   }
 
   return ensureRunAnimationClip().then(function (clip) {
@@ -449,8 +471,12 @@ function requireTweenForLevelMapDecoration() {
 }
 
 function playFloatingIslandAnimation(islandNode, phaseIndex) {
-  requireTweenForLevelMapDecoration();
   requireValidLevelMapNode(islandNode, "floating island node");
+  if (LEVEL_SELECT_IDLE_ANIMATIONS_ENABLED !== true) {
+    islandNode.stopAllActions();
+    return;
+  }
+  requireTweenForLevelMapDecoration();
   if (!Number.isFinite(islandNode.y)) {
     throw new Error("Floating island y must be a valid number.");
   }
@@ -474,8 +500,12 @@ function playFloatingIslandAnimation(islandNode, phaseIndex) {
 }
 
 function playStarTwinkleAnimation(starNode) {
-  requireTweenForLevelMapDecoration();
   requireValidLevelMapNode(starNode, "star node");
+  if (LEVEL_SELECT_IDLE_ANIMATIONS_ENABLED !== true) {
+    starNode.stopAllActions();
+    return;
+  }
+  requireTweenForLevelMapDecoration();
   if (!Number.isFinite(starNode.opacity) || !Number.isFinite(starNode.scale)) {
     throw new Error("Star opacity and scale must be valid numbers.");
   }
@@ -1064,10 +1094,10 @@ function updateTopStatus(levelView, options) {
   var coinLabel = coinLabelNode ? coinLabelNode.getComponent(cc.Label) : null;
 
   if (staminaLabel) {
-    staminaLabel.string = String(staminaValue);
+    setDynamicLabelString(staminaLabel, staminaValue, "LevelView stamina label");
   }
   if (coinLabel) {
-    coinLabel.string = String(coinValue);
+    setDynamicLabelString(coinLabel, coinValue, "LevelView coin label");
   }
 
   var bottomLayerNode = levelView.getChildByName("bottom_layer");

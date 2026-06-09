@@ -89,14 +89,14 @@
             }
         ],
         "layout": [
-            "RRGGYYBB",
-            "R.GGYYBR",
-            "BGG.BY.Y",
-            "BBRGGGBG",
-            "BBBY.GRY",
+            "RRGGYYB.",
+            "...G....",
+            ".......Y",
+            "..RGGG.G",
+            ".BBY.GRY",
             "YRGB.R..",
             "RGBY.G..",
-            "YRGB...."
+            ".R.B...."
         ],
         "designNotes": "LevelMap4 starts with familiar endgame density, then asks the player to preserve a late rainbow route instead of spending every skill pickup immediately.",
         "difficultyScore": 90,
@@ -105,59 +105,59 @@
                 "id": "skill_blast_01",
                 "entityCategory": "skill_ball",
                 "entityType": "blast",
-                "row": 1,
-                "col": 1
+                "row": 2,
+                "col": 3
             },
             {
                 "id": "skill_rainbow_01",
                 "entityCategory": "skill_ball",
                 "entityType": "rainbow",
-                "row": 2,
-                "col": 3
+                "row": 0,
+                "col": 7
             },
             {
                 "id": "stone_01",
                 "entityCategory": "obstacle_ball",
                 "entityType": "stone",
-                "row": 2,
-                "col": 6
+                "row": 4,
+                "col": 0
             },
             {
                 "id": "ice_01",
                 "entityCategory": "obstacle_ball",
                 "entityType": "ice",
-                "row": 4,
-                "col": 4,
+                "row": 2,
+                "col": 1,
                 "innerColor": "Y"
             },
             {
                 "id": "stone_02",
                 "entityCategory": "obstacle_ball",
                 "entityType": "stone",
-                "row": 5,
-                "col": 4
+                "row": 1,
+                "col": 6
             },
             {
                 "id": "ice_02",
                 "entityCategory": "obstacle_ball",
                 "entityType": "ice",
-                "row": 6,
-                "col": 4,
+                "row": 7,
+                "col": 0,
                 "innerColor": "B"
             },
             {
                 "id": "skill_rainbow_02",
                 "entityCategory": "skill_ball",
                 "entityType": "rainbow",
-                "row": 7,
-                "col": 4
+                "row": 3,
+                "col": 6
             },
             {
                 "id": "stone_03",
                 "entityCategory": "obstacle_ball",
                 "entityType": "stone",
-                "row": 7,
-                "col": 5
+                "row": 1,
+                "col": 0
             }
         ],
         "levelType": "normal",

@@ -94,13 +94,13 @@
             }
         ],
         "layout": [
-            "RRGGYYBB",
-            "RG.GYY.B",
-            "BGG.BYRY",
-            "BBR.GGB.",
-            "GBBB.G..",
-            "YRGB.R..",
-            "RGBY.G..",
+            ".RGG..BB",
+            "R..G.Y.B",
+            "BGG.B..Y",
+            ".B....B.",
+            "G.B..G..",
+            "..G..R..",
+            "R....G..",
             "........"
         ],
         "designNotes": "Blue collection becomes the pressure target while a long bottom tail of entities tests whether the player can keep clear_all progress visible.",
@@ -110,50 +110,50 @@
                 "id": "skill_rainbow_01",
                 "entityCategory": "skill_ball",
                 "entityType": "rainbow",
-                "row": 1,
-                "col": 2
+                "row": 3,
+                "col": 7
             },
             {
                 "id": "stone_01",
                 "entityCategory": "obstacle_ball",
                 "entityType": "stone",
-                "row": 1,
-                "col": 6
+                "row": 7,
+                "col": 0
             },
             {
                 "id": "skill_blast_01",
                 "entityCategory": "skill_ball",
                 "entityType": "blast",
-                "row": 2,
-                "col": 3
+                "row": 3,
+                "col": 4
             },
             {
                 "id": "ice_01",
                 "entityCategory": "obstacle_ball",
                 "entityType": "ice",
-                "row": 3,
-                "col": 3,
+                "row": 7,
+                "col": 4,
                 "innerColor": "B"
             },
             {
                 "id": "stone_02",
                 "entityCategory": "obstacle_ball",
                 "entityType": "stone",
-                "row": 3,
-                "col": 7
+                "row": 6,
+                "col": 1
             },
             {
                 "id": "stone_03",
                 "entityCategory": "obstacle_ball",
                 "entityType": "stone",
-                "row": 4,
+                "row": 1,
                 "col": 4
             },
             {
                 "id": "ice_02",
                 "entityCategory": "obstacle_ball",
                 "entityType": "ice",
-                "row": 4,
+                "row": 6,
                 "col": 6,
                 "innerColor": "Y"
             },
@@ -161,51 +161,51 @@
                 "id": "skill_blast_02",
                 "entityCategory": "skill_ball",
                 "entityType": "blast",
-                "row": 4,
-                "col": 7
+                "row": 6,
+                "col": 3
             },
             {
                 "id": "stone_04",
                 "entityCategory": "obstacle_ball",
                 "entityType": "stone",
-                "row": 5,
-                "col": 4
+                "row": 0,
+                "col": 5
             },
             {
                 "id": "skill_rainbow_02",
                 "entityCategory": "skill_ball",
                 "entityType": "rainbow",
                 "row": 6,
-                "col": 4
+                "col": 2
             },
             {
                 "id": "skill_blast_03",
                 "entityCategory": "skill_ball",
                 "entityType": "blast",
-                "row": 7,
-                "col": 0
+                "row": 5,
+                "col": 4
             },
             {
                 "id": "stone_05",
                 "entityCategory": "obstacle_ball",
                 "entityType": "stone",
                 "row": 7,
-                "col": 1
+                "col": 6
             },
             {
                 "id": "ice_03",
                 "entityCategory": "obstacle_ball",
                 "entityType": "ice",
-                "row": 7,
-                "col": 2,
+                "row": 3,
+                "col": 0,
                 "innerColor": "B"
             },
             {
                 "id": "skill_rainbow_03",
                 "entityCategory": "skill_ball",
                 "entityType": "rainbow",
-                "row": 7,
-                "col": 3
+                "row": 1,
+                "col": 1
             }
         ],
         "levelType": "normal",

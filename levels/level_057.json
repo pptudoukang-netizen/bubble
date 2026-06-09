@@ -91,12 +91,12 @@
         ],
         "layout": [
             "RGBYRGBYRG",
-            "Y.GBYR.BY",
-            "BYR.BY.GBY",
-            "BY.RG.RGB",
-            "G.YY.BY.GB",
-            "RGB.YG.YR",
-            "YR.GBRGBYR",
+            ".RGBYRGBY",
+            "BYRGBYRGBY",
+            "BYRRGYRGB",
+            "GBYYRBYRGB",
+            "RGBBYGBYR",
+            "YRG.BRGBYR",
             "BYRRGYRGB"
         ],
         "designNotes": "Generated 1000-level campaign stage. Chapter `molotov_intro` uses molotov with a keyhole board silhouette.",
@@ -107,8 +107,8 @@
                 "entityCategory": "reactive_ball",
                 "entityType": "molotov",
                 "blastRadius": 2,
-                "row": 1,
-                "col": 1
+                "row": 6,
+                "col": 3
             },
             {
                 "id": "molotov_02",
@@ -116,7 +116,7 @@
                 "entityType": "molotov",
                 "blastRadius": 2,
                 "row": 1,
-                "col": 6
+                "col": 0
             }
         ],
         "levelType": "normal",

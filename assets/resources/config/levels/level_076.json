@@ -78,7 +78,7 @@
             {
                 "type": "collect_color",
                 "color": "G",
-                "value": 8
+                "value": 10
             }
         ],
         "bonusObjectives": [
@@ -95,13 +95,13 @@
         ],
         "layout": [
             "GGRGGRGGGG",
-            "P.YPPY.PP",
-            "GGG.GG.GGG",
-            "RR.RR.RRR",
-            "Y.BY.BY.YY",
-            "RRR.RR.RR",
-            "PP.PPYPPPP",
-            "BBGBBGBBB"
+            "PPYPPYPPP",
+            "GGGGGGGGGG",
+            "RRPRRPRRR",
+            "YYBYYBYYYY",
+            "RRRRRRRRR",
+            "PPYPPYPPPP",
+            "BBGBBGB.B"
         ],
         "designNotes": "Generated 1000-level campaign stage. Chapter `splitter_intro` uses splitter with a flower board silhouette.",
         "difficultyScore": 38,
@@ -111,8 +111,8 @@
                 "entityCategory": "reactive_ball",
                 "entityType": "splitter",
                 "splitColor": "G",
-                "row": 1,
-                "col": 1
+                "row": 7,
+                "col": 7
             }
         ],
         "levelType": "normal",

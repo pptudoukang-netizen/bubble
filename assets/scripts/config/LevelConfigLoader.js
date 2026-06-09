@@ -48,7 +48,7 @@ var AD_RUN_POWERUP_TYPES = {
 };
 var MIN_INITIAL_DROP_SPACE_ROWS = 8;
 var MAX_JAR_COUNT = 4;
-var CLEAR_REWARD_START_LEVEL_ID = 5;
+var CLEAR_REWARD_START_LEVEL_ID = 1;
 
 function clone(data) {
   return JSON.parse(JSON.stringify(data));
@@ -141,7 +141,8 @@ function normalizeClearRewardItems(levelConfig, levelId, levelKey) {
   }
 
   var seenIds = {};
-  return rewardItems.map(function (item, index) {
+  var hasCoinReward = false;
+  var normalizedRewardItems = rewardItems.map(function (item, index) {
     if (!item || typeof item !== "object" || Array.isArray(item)) {
       throw new Error("level.clearRewardItems[" + index + "] must be object: " + levelKey);
     }
@@ -154,6 +155,9 @@ function normalizeClearRewardItems(levelConfig, levelId, levelKey) {
       throw new Error("duplicate level.clearRewardItems id `" + id + "`: " + levelKey);
     }
     seenIds[id] = true;
+    if (id === "coin") {
+      hasCoinReward = true;
+    }
 
     var count = assertPositiveInteger(item.count, "level.clearRewardItems[" + index + "].count", levelKey);
     if (id === "coin" && (count < 50 || count > 300)) {
@@ -168,6 +172,10 @@ function normalizeClearRewardItems(levelConfig, levelId, levelKey) {
       count: count
     };
   });
+  if (!hasCoinReward) {
+    throw new Error("level.clearRewardItems must include coin reward: " + levelKey);
+  }
+  return normalizedRewardItems;
 }
 
 function normalizeSpecialEntities(levelConfig, levelKey) {
@@ -346,6 +354,73 @@ function validateIceSnowballObjectives(levelConfig, levelKey) {
   if (available < maxRequired) {
     throw new Error("level collect_ice_snowball target exceeds ice supply: " + levelKey);
   }
+}
+
+function validateSplitterObjectives(levelConfig, levelKey) {
+  if (!Array.isArray(levelConfig.specialEntities) || !Array.isArray(levelConfig.winConditions)) {
+    throw new Error("level must be normalized before splitter objective validation: " + levelKey);
+  }
+  var splitterColor = null;
+  levelConfig.specialEntities.forEach(function (entity) {
+    if (!entity || entity.entityCategory !== "reactive_ball" || entity.entityType !== "splitter") {
+      return;
+    }
+    if (typeof entity.splitColor !== "string" || !entity.splitColor) {
+      throw new Error("splitter requires splitColor before objective validation: " + levelKey);
+    }
+    if (splitterColor !== null && splitterColor !== entity.splitColor) {
+      throw new Error("all splitters in one level must use the collect target color: " + levelKey);
+    }
+    splitterColor = entity.splitColor;
+  });
+  if (splitterColor === null) {
+    return;
+  }
+
+  var collectColorConditions = levelConfig.winConditions.filter(function (objective) {
+    return objective && objective.type === "collect_color";
+  });
+  if (collectColorConditions.length !== 1) {
+    throw new Error("splitter level winConditions must contain exactly one collect_color objective: " + levelKey);
+  }
+  if (collectColorConditions[0].color !== splitterColor) {
+    throw new Error("splitter level collect_color must match splitColor `" + splitterColor + "`: " + levelKey);
+  }
+}
+
+function validateKeyLockGroups(levelConfig, levelKey) {
+  if (!Array.isArray(levelConfig.specialEntities)) {
+    throw new Error("level.specialEntities must be normalized before key-lock validation: " + levelKey);
+  }
+  var keyGroups = {};
+  var lockGroups = {};
+  levelConfig.specialEntities.forEach(function (entity) {
+    if (!entity) {
+      throw new Error("key-lock validation received empty special entity: " + levelKey);
+    }
+    if (entity.entityCategory === "key_ball" && entity.entityType === "key") {
+      if (typeof entity.unlockGroup !== "string" || !entity.unlockGroup) {
+        throw new Error("key requires unlockGroup before key-lock validation: " + levelKey);
+      }
+      keyGroups[entity.unlockGroup] = true;
+    }
+    if (entity.entityCategory === "locked_ball" && entity.entityType === "locked") {
+      if (typeof entity.lockGroup !== "string" || !entity.lockGroup) {
+        throw new Error("locked ball requires lockGroup before key-lock validation: " + levelKey);
+      }
+      lockGroups[entity.lockGroup] = true;
+    }
+  });
+  Object.keys(lockGroups).forEach(function (group) {
+    if (keyGroups[group] !== true) {
+      throw new Error("locked ball group missing matching key unlockGroup `" + group + "`: " + levelKey);
+    }
+  });
+  Object.keys(keyGroups).forEach(function (group) {
+    if (lockGroups[group] !== true) {
+      throw new Error("key unlockGroup missing matching locked ball group `" + group + "`: " + levelKey);
+    }
+  });
 }
 
 function normalizeInitialShotBalls(levelConfig, levelKey) {
@@ -541,6 +616,8 @@ function normalizeLevelConfig(rawConfig, levelKey) {
   config.level.bonusObjectives = normalizeObjectiveList(config.level.bonusObjectives, BONUS_OBJECTIVE_TYPES, "bonusObjectives", config.level, levelKey);
   config.level.specialEntities = normalizeSpecialEntities(config.level, levelKey);
   validateIceSnowballObjectives(config.level, levelKey);
+  validateSplitterObjectives(config.level, levelKey);
+  validateKeyLockGroups(config.level, levelKey);
   normalizeAdPowerupRules(config.level, levelKey);
   validateInitialDropSpaceRows(config.level, levelKey);
 

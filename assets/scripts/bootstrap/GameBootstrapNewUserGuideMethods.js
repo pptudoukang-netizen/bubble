@@ -9,10 +9,15 @@ var FINGER_SPRITE_PATH = "image/finger";
 var GUIDE_LAYER_NAME = "NewUserGuideLayer";
 var GUIDE_FINGER_NAME = "NewUserGuideFinger";
 var GUIDE_ARC_NAME = "NewUserGuideArc";
+var GUIDE_MASK_PREFIX = "NewUserGuideMask";
 var STEP_QUICK_START = NewUserGuideStore.STEP_QUICK_START;
 var STEP_START_GAME = NewUserGuideStore.STEP_START_GAME;
 var STEP_GAME_FIRE = NewUserGuideStore.STEP_GAME_FIRE;
 var FINGER_BASE_SCALE = 0.82;
+var MASK_OPACITY = 150;
+var BUTTON_HOLE_PADDING = 24;
+var GAMEPLAY_HOLE_PADDING = 96;
+var START_GAME_GUIDE_SHOW_DELAY_MS = 300;
 
 function requireValidNode(node, description) {
   if (!node || !node.isValid) {
@@ -55,18 +60,162 @@ function resolveSpriteSize(spriteFrame) {
   return size;
 }
 
-function resolveNodePositionInRoot(targetNode, rootNode) {
+function resolveRootRect(rootNode) {
+  requireValidNode(rootNode, "New user guide root node");
+  if (typeof rootNode.getContentSize !== "function") {
+    throw new Error("New user guide root node must expose content size.");
+  }
+  var size = rootNode.getContentSize();
+  if (!size || !Number.isFinite(size.width) || !Number.isFinite(size.height) || size.width <= 0 || size.height <= 0) {
+    throw new Error("New user guide root size is invalid.");
+  }
+  var anchorX = Number.isFinite(rootNode.anchorX) ? rootNode.anchorX : 0.5;
+  var anchorY = Number.isFinite(rootNode.anchorY) ? rootNode.anchorY : 0.5;
+  return {
+    left: -size.width * anchorX,
+    right: size.width * (1 - anchorX),
+    bottom: -size.height * anchorY,
+    top: size.height * (1 - anchorY)
+  };
+}
+
+function normalizeRect(rect, description) {
+  if (!rect || !Number.isFinite(rect.left) || !Number.isFinite(rect.right) || !Number.isFinite(rect.bottom) || !Number.isFinite(rect.top)) {
+    throw new Error(description + " must be a finite rect.");
+  }
+  if (rect.right <= rect.left || rect.top <= rect.bottom) {
+    throw new Error(description + " must have positive size.");
+  }
+  return {
+    left: rect.left,
+    right: rect.right,
+    bottom: rect.bottom,
+    top: rect.top
+  };
+}
+
+function expandRect(rect, padding) {
+  var safeRect = normalizeRect(rect, "New user guide rect");
+  if (!Number.isFinite(padding) || padding < 0) {
+    throw new Error("New user guide rect padding must be non-negative.");
+  }
+  return {
+    left: safeRect.left - padding,
+    right: safeRect.right + padding,
+    bottom: safeRect.bottom - padding,
+    top: safeRect.top + padding
+  };
+}
+
+function resolveRectCenter(rect) {
+  var safeRect = normalizeRect(rect, "New user guide center rect");
+  return cc.v2((safeRect.left + safeRect.right) * 0.5, (safeRect.bottom + safeRect.top) * 0.5);
+}
+
+function resolveNodeRectInRoot(targetNode, rootNode) {
   requireValidNode(targetNode, "New user guide target node");
   requireValidNode(rootNode, "New user guide root node");
-  if (!targetNode.parent || typeof targetNode.parent.convertToWorldSpaceAR !== "function") {
-    throw new Error("New user guide target parent cannot convert to world space.");
+  if (typeof targetNode.getContentSize !== "function" || typeof targetNode.convertToWorldSpaceAR !== "function") {
+    throw new Error("New user guide target node must expose bounds conversion.");
   }
   if (typeof rootNode.convertToNodeSpaceAR !== "function") {
     throw new Error("New user guide root node cannot convert to local space.");
   }
+  var size = targetNode.getContentSize();
+  if (!size || !Number.isFinite(size.width) || !Number.isFinite(size.height) || size.width <= 0 || size.height <= 0) {
+    throw new Error("New user guide target node size is invalid.");
+  }
+  var left = -targetNode.anchorX * size.width;
+  var right = (1 - targetNode.anchorX) * size.width;
+  var bottom = -targetNode.anchorY * size.height;
+  var top = (1 - targetNode.anchorY) * size.height;
+  var localCorners = [
+    cc.v2(left, bottom),
+    cc.v2(left, top),
+    cc.v2(right, bottom),
+    cc.v2(right, top)
+  ];
+  var rootCorners = localCorners.map(function (corner) {
+    return rootNode.convertToNodeSpaceAR(targetNode.convertToWorldSpaceAR(corner));
+  });
+  var xs = rootCorners.map(function (point) { return point.x; });
+  var ys = rootCorners.map(function (point) { return point.y; });
+  return normalizeRect({
+    left: Math.min.apply(Math, xs),
+    right: Math.max.apply(Math, xs),
+    bottom: Math.min.apply(Math, ys),
+    top: Math.max.apply(Math, ys)
+  }, "New user guide target rect");
+}
 
-  var worldPosition = targetNode.parent.convertToWorldSpaceAR(targetNode.getPosition());
-  return rootNode.convertToNodeSpaceAR(worldPosition);
+function syncGuideTargetWidgetAlignment(targetNode, rootNode) {
+  requireValidNode(targetNode, "New user guide widget sync target");
+  requireValidNode(rootNode, "New user guide widget sync root");
+  if (!cc || !cc.Widget) {
+    throw new Error("New user guide widget sync requires cc.Widget.");
+  }
+
+  var chain = [];
+  var current = targetNode;
+  while (current && current.isValid) {
+    chain.push(current);
+    if (current === rootNode) {
+      break;
+    }
+    current = current.parent;
+  }
+  if (chain.length === 0 || chain[chain.length - 1] !== rootNode) {
+    throw new Error("New user guide widget sync target must be under root node.");
+  }
+
+  chain.reverse().forEach(function (node) {
+    var widget = node.getComponent(cc.Widget);
+    if (!widget || widget.enabled !== true) {
+      return;
+    }
+    if (typeof widget.updateAlignment !== "function") {
+      throw new Error("New user guide widget sync requires updateAlignment on " + node.name + ".");
+    }
+    widget.updateAlignment();
+  });
+}
+
+function resolveGuideTargetRectInRoot(targetNode, rootNode) {
+  syncGuideTargetWidgetAlignment(targetNode, rootNode);
+  return resolveNodeRectInRoot(targetNode, rootNode);
+}
+
+function clampRectToRoot(rect, rootRect) {
+  var safeRect = normalizeRect(rect, "New user guide hole rect");
+  var safeRoot = normalizeRect(rootRect, "New user guide root rect");
+  var clamped = {
+    left: Math.max(safeRoot.left, safeRect.left),
+    right: Math.min(safeRoot.right, safeRect.right),
+    bottom: Math.max(safeRoot.bottom, safeRect.bottom),
+    top: Math.min(safeRoot.top, safeRect.top)
+  };
+  return normalizeRect(clamped, "New user guide clamped hole rect");
+}
+
+function buildRectFromPoints(points) {
+  if (!Array.isArray(points) || points.length === 0) {
+    throw new Error("New user guide point rect requires points.");
+  }
+  var xs = points.map(function (point) {
+    if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) {
+      throw new Error("New user guide rect point is invalid.");
+    }
+    return point.x;
+  });
+  var ys = points.map(function (point) {
+    return point.y;
+  });
+  return normalizeRect({
+    left: Math.min.apply(Math, xs),
+    right: Math.max.apply(Math, xs),
+    bottom: Math.min.apply(Math, ys),
+    top: Math.max.apply(Math, ys)
+  }, "New user guide point rect");
 }
 
 function resolveFingerCenterForTip(tipPoint, fingerSize) {
@@ -85,6 +234,53 @@ function resolveFingerCenterForTip(tipPoint, fingerSize) {
 function stopGuideNodeActions(node) {
   if (node && node.isValid) {
     node.stopAllActions();
+  }
+}
+
+function waitMilliseconds(durationMs) {
+  if (!Number.isFinite(durationMs) || durationMs < 0) {
+    throw new Error("New user guide wait duration must be non-negative.");
+  }
+  if (typeof setTimeout !== "function") {
+    throw new Error("New user guide requires setTimeout.");
+  }
+  return new Promise(function (resolve) {
+    setTimeout(resolve, durationMs);
+  });
+}
+
+function ensureMaskBlockNode(layerNode, name, rect) {
+  requireValidNode(layerNode, "New user guide layer");
+  var safeRect = normalizeRect(rect, "New user guide mask block rect");
+  var node = layerNode.getChildByName(name);
+  if (!node || !node.isValid) {
+    node = new cc.Node(name);
+    node.parent = layerNode;
+    node.anchorX = 0.5;
+    node.anchorY = 0.5;
+    node.addComponent(cc.BlockInputEvents);
+  }
+  node.zIndex = -10;
+  node.active = true;
+  node.setPosition((safeRect.left + safeRect.right) * 0.5, (safeRect.bottom + safeRect.top) * 0.5);
+  node.setContentSize(safeRect.right - safeRect.left, safeRect.top - safeRect.bottom);
+  var graphics = node.getComponent(cc.Graphics) || node.addComponent(cc.Graphics);
+  graphics.clear();
+  graphics.fillColor = cc.color(0, 0, 0, MASK_OPACITY);
+  graphics.rect(
+    -(safeRect.right - safeRect.left) * 0.5,
+    -(safeRect.top - safeRect.bottom) * 0.5,
+    safeRect.right - safeRect.left,
+    safeRect.top - safeRect.bottom
+  );
+  graphics.fill();
+  return node;
+}
+
+function hideMaskBlockNode(layerNode, name) {
+  var node = layerNode.getChildByName(name);
+  if (node && node.isValid) {
+    node.active = false;
   }
 }
 
@@ -201,6 +397,37 @@ module.exports = {
     }.bind(this));
   },
 
+  _applyNewUserGuideMask: function (holeRect) {
+    var layerNode = this._ensureNewUserGuideLayer();
+    var rootRect = resolveRootRect(this.node);
+    var hole = clampRectToRoot(holeRect, rootRect);
+    var blocks = [
+      {
+        name: GUIDE_MASK_PREFIX + "Top",
+        rect: { left: rootRect.left, right: rootRect.right, bottom: hole.top, top: rootRect.top }
+      },
+      {
+        name: GUIDE_MASK_PREFIX + "Bottom",
+        rect: { left: rootRect.left, right: rootRect.right, bottom: rootRect.bottom, top: hole.bottom }
+      },
+      {
+        name: GUIDE_MASK_PREFIX + "Left",
+        rect: { left: rootRect.left, right: hole.left, bottom: hole.bottom, top: hole.top }
+      },
+      {
+        name: GUIDE_MASK_PREFIX + "Right",
+        rect: { left: hole.right, right: rootRect.right, bottom: hole.bottom, top: hole.top }
+      }
+    ];
+    blocks.forEach(function (entry) {
+      if (entry.rect.right > entry.rect.left && entry.rect.top > entry.rect.bottom) {
+        ensureMaskBlockNode(layerNode, entry.name, entry.rect);
+        return;
+      }
+      hideMaskBlockNode(layerNode, entry.name);
+    });
+  },
+
   _clearNewUserGuideArc: function () {
     if (!this._newUserGuideLayer || !this._newUserGuideLayer.isValid) {
       return;
@@ -222,21 +449,30 @@ module.exports = {
     if (!quickStartNode || !quickStartNode.isValid) {
       throw new Error("New user guide requires quick_start_btn.");
     }
-    return this._showNewUserGuideFingerAtTip(resolveNodePositionInRoot(quickStartNode, this.node));
+    var quickStartRect = resolveGuideTargetRectInRoot(quickStartNode, this.node);
+    this._applyNewUserGuideMask(expandRect(quickStartRect, BUTTON_HOLE_PADDING));
+    return this._showNewUserGuideFingerAtTip(resolveRectCenter(quickStartRect));
   },
 
   _showNewUserGuideForStartGame: function () {
     if (!this._isNewUserGuideStep(STEP_START_GAME)) {
       return;
     }
-    if (!this._startGameViewNode || !this._startGameViewNode.isValid || !this._startGameViewNode.active) {
-      throw new Error("New user guide start game step requires active StartGameView.");
-    }
-    var playButtonNode = this._findNodeByNameRecursive(this._startGameViewNode, "play_btn");
-    if (!playButtonNode || !playButtonNode.isValid) {
-      throw new Error("New user guide requires StartGameView play_btn.");
-    }
-    return this._showNewUserGuideFingerAtTip(resolveNodePositionInRoot(playButtonNode, this.node));
+    return waitMilliseconds(START_GAME_GUIDE_SHOW_DELAY_MS).then(function () {
+      if (!this._isNewUserGuideStep(STEP_START_GAME)) {
+        return null;
+      }
+      if (!this._startGameViewNode || !this._startGameViewNode.isValid || !this._startGameViewNode.active) {
+        throw new Error("New user guide start game step requires active StartGameView.");
+      }
+      var playButtonNode = this._findNodeByNameRecursive(this._startGameViewNode, "play_btn");
+      if (!playButtonNode || !playButtonNode.isValid) {
+        throw new Error("New user guide requires StartGameView play_btn.");
+      }
+      var playButtonRect = resolveGuideTargetRectInRoot(playButtonNode, this.node);
+      this._applyNewUserGuideMask(expandRect(playButtonRect, BUTTON_HOLE_PADDING));
+      return this._showNewUserGuideFingerAtTip(resolveRectCenter(playButtonRect));
+    }.bind(this));
   },
 
   _showNewUserGuideForGameplay: function () {
@@ -277,6 +513,7 @@ module.exports = {
       var middleCenter = resolveFingerCenterForTip(middleTip, this._newUserGuideFingerSize);
       var leftCenter = resolveFingerCenterForTip(leftTip, this._newUserGuideFingerSize);
       var rightCenter = resolveFingerCenterForTip(rightTip, this._newUserGuideFingerSize);
+      this._applyNewUserGuideMask(expandRect(buildRectFromPoints([leftTip, rightTip, middleTip]), GAMEPLAY_HOLE_PADDING));
 
       fingerNode.setPosition(middleCenter);
       fingerNode.scale = FINGER_BASE_SCALE;

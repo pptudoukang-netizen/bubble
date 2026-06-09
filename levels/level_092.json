@@ -95,13 +95,13 @@
         ],
         "layout": [
             "BBBGGBBBBB",
-            "R.RPPR.RR",
-            "YYB.BB.YYY",
-            "GR.RR.RGG",
-            "P.YY.YY.PP",
-            "BBG.GG.BB",
-            "RR.PPRRRRR",
-            "YYYBBYYYY"
+            "RRRPPRRRR",
+            "Y.BBBBYYYY",
+            "GRRRRRRGG",
+            "PYYYYYYPPP",
+            "BBGGGGBBB",
+            "RRRPPRRRRR",
+            "Y.YBBYYYY"
         ],
         "designNotes": "Generated 1000-level campaign stage. Chapter `lock_key_intro` uses locked with a diamond board silhouette.",
         "difficultyScore": 40,
@@ -111,7 +111,7 @@
                 "entityCategory": "key_ball",
                 "entityType": "key",
                 "unlockGroup": "g3",
-                "row": 1,
+                "row": 2,
                 "col": 1
             },
             {
@@ -120,8 +120,8 @@
                 "entityType": "locked",
                 "lockedColor": "Y",
                 "lockGroup": "g3",
-                "row": 1,
-                "col": 6
+                "row": 7,
+                "col": 1
             }
         ],
         "levelType": "normal",

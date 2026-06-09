@@ -71,7 +71,9 @@ module.exports = {
     DebugFlags.setAll({
       logs: RuntimeModeConfig.isRelease() !== true,
       overlay: this.showDebugOverlay,
-      testLayer: this.showGridTestLayer
+      levelSelectMemory: true,
+      testLayer: this.showGridTestLayer,
+      gridOverlapCheck: RuntimeModeConfig.isRelease() !== true || this.showDebugOverlay === true
     });
 
     this.currentLevelConfig = null;
@@ -368,6 +370,7 @@ module.exports = {
     this.friendGiftService = new FriendGiftService({
       cloudEnvId: this.friendGiftCloudEnvId
     });
+    this._bindFriendGiftEnterClaim();
     this.worldLeaderboardService = new WorldLeaderboardService({
       cloudEnvId: this.worldLeaderboardCloudEnvId,
       functionName: this.worldLeaderboardCloudFunctionName,

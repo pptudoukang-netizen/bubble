@@ -89,14 +89,14 @@
             }
         ],
         "layout": [
-            "RRGGYYBB",
-            "R.GGYY.B",
-            "BGG.BYRY",
-            "BBRRGG.B",
-            "GBBB.GY.",
-            "YRGB.R..",
-            "RGBY.G..",
-            "YRGBY..."
+            "R.G..YB.",
+            "R.GGY...",
+            ".GG.BYRY",
+            "B.R..G..",
+            "........",
+            ".R.B.R..",
+            ".GBY.G..",
+            "...BY..."
         ],
         "designNotes": "Both skill balls are useful, but each sits behind a different blocker pattern so the best route depends on which color pressure the player solves first.",
         "difficultyScore": 90,
@@ -105,44 +105,44 @@
                 "id": "skill_rainbow_01",
                 "entityCategory": "skill_ball",
                 "entityType": "rainbow",
-                "row": 1,
-                "col": 1
+                "row": 4,
+                "col": 6
             },
             {
                 "id": "stone_01",
                 "entityCategory": "obstacle_ball",
                 "entityType": "stone",
-                "row": 1,
-                "col": 6
+                "row": 0,
+                "col": 7
             },
             {
                 "id": "skill_blast_01",
                 "entityCategory": "skill_ball",
                 "entityType": "blast",
-                "row": 2,
+                "row": 4,
                 "col": 3
             },
             {
                 "id": "ice_01",
                 "entityCategory": "obstacle_ball",
                 "entityType": "ice",
-                "row": 3,
-                "col": 6,
+                "row": 0,
+                "col": 3,
                 "innerColor": "B"
             },
             {
                 "id": "stone_02",
                 "entityCategory": "obstacle_ball",
                 "entityType": "stone",
-                "row": 4,
-                "col": 4
+                "row": 7,
+                "col": 0
             },
             {
                 "id": "ice_02",
                 "entityCategory": "obstacle_ball",
                 "entityType": "ice",
-                "row": 4,
-                "col": 7,
+                "row": 5,
+                "col": 2,
                 "innerColor": "G"
             },
             {
@@ -150,20 +150,20 @@
                 "entityCategory": "obstacle_ball",
                 "entityType": "stone",
                 "row": 5,
-                "col": 4
+                "col": 0
             },
             {
                 "id": "skill_rainbow_02",
                 "entityCategory": "skill_ball",
                 "entityType": "rainbow",
-                "row": 6,
-                "col": 4
+                "row": 3,
+                "col": 3
             },
             {
                 "id": "skill_blast_02",
                 "entityCategory": "skill_ball",
                 "entityType": "blast",
-                "row": 7,
+                "row": 1,
                 "col": 5
             }
         ],

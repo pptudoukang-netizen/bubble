@@ -269,8 +269,9 @@ TrajectoryPredictor.prototype.predictShotPlan = function (grid, origin, directio
           position: bubbleTargetPosition
         };
 
+        var collisionsByRadius = grid.findCollisionsOnSegmentForRadii(currentPoint, probeEnd, uniqueRadii);
         uniqueRadii.forEach(function (radius) {
-          var candidateCollision = grid.findCollisionOnSegment(currentPoint, probeEnd, radius);
+          var candidateCollision = collisionsByRadius ? collisionsByRadius[radius] : null;
           if (!candidateCollision) {
             return;
           }

@@ -91,11 +91,11 @@
             }
         ],
         "layout": [
-            "GGGBYRBB",
+            "GGGB.R.B",
             "GYRGBBBB",
-            "GRRR.BYR",
-            "RGRY.GBY",
-            "YRGRYRGB",
+            "GRRR.B.R",
+            "R.RY.GBY",
+            "YRGR.RG.",
             "........"
         ],
         "designNotes": "Red collection now happens around two blocking stones, pushing players to read structure instead of color alone.",
@@ -105,15 +105,15 @@
                 "id": "stone_01",
                 "entityCategory": "obstacle_ball",
                 "entityType": "stone",
-                "row": 2,
-                "col": 4
+                "row": 0,
+                "col": 6
             },
             {
                 "id": "stone_02",
                 "entityCategory": "obstacle_ball",
                 "entityType": "stone",
                 "row": 3,
-                "col": 4
+                "col": 1
             }
         ],
         "levelType": "normal",

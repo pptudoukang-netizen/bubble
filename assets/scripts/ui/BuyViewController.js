@@ -2,6 +2,8 @@
 
 var BundleLoader = require("../utils/BundleLoader");
 
+var BUY_ICON_WIDTH = 143;
+
 function assertObject(value, message) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new Error(message);
@@ -48,15 +50,26 @@ function setLabelText(node, text) {
   label.string = String(text);
 }
 
-function setSpriteFrame(node, spriteFrame) {
+function setSpriteFrame(node, spriteFrame, targetWidth) {
   var sprite = node.getComponent(cc.Sprite);
   if (!sprite) {
     throw new Error("BuyView node requires cc.Sprite: " + node.name);
+  }
+  if (typeof spriteFrame.getRect !== "function") {
+    throw new Error("BuyView spriteFrame requires getRect: " + node.name);
+  }
+  if (!Number.isFinite(targetWidth) || targetWidth <= 0) {
+    throw new Error("BuyView sprite target width must be positive: " + node.name);
+  }
+  var rect = spriteFrame.getRect();
+  if (!rect || !Number.isFinite(rect.width) || !Number.isFinite(rect.height) || rect.width <= 0 || rect.height <= 0) {
+    throw new Error("BuyView spriteFrame has invalid rect: " + node.name);
   }
   sprite.spriteFrame = spriteFrame;
   if (cc.Sprite.SizeMode && cc.Sprite.SizeMode.CUSTOM !== undefined) {
     sprite.sizeMode = cc.Sprite.SizeMode.CUSTOM;
   }
+  node.setContentSize(targetWidth, targetWidth * rect.height / rect.width);
 }
 
 function bindTapOnce(node, key, onTap) {
@@ -185,7 +198,7 @@ BuyViewController.prototype.render = function (options) {
   this.quantity = 1;
   var iconLoadPromise = loadSpriteFrame(options.goods.iconPath).then(function (spriteFrame) {
     this._spriteFrameByPath[options.goods.iconPath] = spriteFrame;
-    setSpriteFrame(this._nodes.icon, spriteFrame);
+    setSpriteFrame(this._nodes.icon, spriteFrame, BUY_ICON_WIDTH);
   }.bind(this));
   setLabelText(this._nodes.name, options.goods.displayName);
   setLabelText(this._nodes.functionText, options.goods.functionText);

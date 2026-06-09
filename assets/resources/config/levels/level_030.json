@@ -93,13 +93,13 @@
             }
         ],
         "layout": [
-            "RRGGYYBB",
-            "R.GGYYBG",
-            "BGG.BY.Y",
-            "BBRGGGBG",
-            "BBBY.GRY",
-            "YRGB.R..",
-            "RGBY.G..",
+            "R.GGYY..",
+            "......B.",
+            "BGG.....",
+            "BBR.GGB.",
+            "BBB..GRY",
+            "YR.B.R..",
+            "R.BY.G..",
             "YRG....."
         ],
         "designNotes": "Final expansion level. All major systems appear together and the route should feel like a deliberate exam of the entire chapter.",
@@ -109,28 +109,28 @@
                 "id": "skill_blast_01",
                 "entityCategory": "skill_ball",
                 "entityType": "blast",
-                "row": 1,
-                "col": 1
+                "row": 7,
+                "col": 6
             },
             {
                 "id": "skill_rainbow_01",
                 "entityCategory": "skill_ball",
                 "entityType": "rainbow",
-                "row": 2,
-                "col": 3
+                "row": 5,
+                "col": 2
             },
             {
                 "id": "stone_01",
                 "entityCategory": "obstacle_ball",
                 "entityType": "stone",
-                "row": 2,
-                "col": 6
+                "row": 1,
+                "col": 3
             },
             {
                 "id": "ice_01",
                 "entityCategory": "obstacle_ball",
                 "entityType": "ice",
-                "row": 4,
+                "row": 7,
                 "col": 4,
                 "innerColor": "Y"
             },
@@ -138,29 +138,29 @@
                 "id": "stone_02",
                 "entityCategory": "obstacle_ball",
                 "entityType": "stone",
-                "row": 5,
-                "col": 4
+                "row": 6,
+                "col": 1
             },
             {
                 "id": "ice_02",
                 "entityCategory": "obstacle_ball",
                 "entityType": "ice",
-                "row": 6,
-                "col": 4,
+                "row": 4,
+                "col": 3,
                 "innerColor": "B"
             },
             {
                 "id": "stone_03",
                 "entityCategory": "obstacle_ball",
                 "entityType": "stone",
-                "row": 7,
-                "col": 3
+                "row": 3,
+                "col": 7
             },
             {
                 "id": "skill_rainbow_02",
                 "entityCategory": "skill_ball",
                 "entityType": "rainbow",
-                "row": 7,
+                "row": 2,
                 "col": 4
             }
         ],

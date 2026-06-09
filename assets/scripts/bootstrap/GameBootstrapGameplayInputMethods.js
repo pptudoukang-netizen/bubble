@@ -5,7 +5,11 @@ var BoardLayout = Shared.BoardLayout;
 
 module.exports = {
   update: function (dt) {
-    if (!this.currentLevelConfig || this.isRestarting || this.isSelectingLevel) {
+    if (this.isSelectingLevel) {
+      return;
+    }
+
+    if (!this.currentLevelConfig || this.isRestarting) {
       return;
     }
 
@@ -80,6 +84,7 @@ module.exports = {
     }
 
     var snapshot = this.gameManager.beginAim(localPoint);
+    this._lastAimPlanRefreshTime = Date.now();
     this._lastAimRefreshPoint = {
       x: localPoint.x,
       y: localPoint.y
@@ -115,18 +120,29 @@ module.exports = {
     }
 
     var minDistance = Math.max(0, Number(this.aimRefreshMinDistance) || 0);
-    var shouldRefreshPlan = true;
+    var minIntervalMs = Math.max(0, Math.floor(Number(this.aimRefreshMinIntervalMs) || 0));
+    var now = Date.now();
+    var shouldRefreshByDistance = true;
     if (minDistance > 0 && this._lastAimRefreshScreenPoint) {
       var dx = touchLocation.x - this._lastAimRefreshScreenPoint.x;
       var dy = touchLocation.y - this._lastAimRefreshScreenPoint.y;
       if (dx * dx + dy * dy < minDistance * minDistance) {
-        shouldRefreshPlan = false;
+        shouldRefreshByDistance = false;
       }
     }
+    var shouldRefreshByTime = true;
+    if (minIntervalMs > 0 && this._lastAimPlanRefreshTime) {
+      shouldRefreshByTime = (now - this._lastAimPlanRefreshTime) >= minIntervalMs;
+    }
+    var shouldRefreshPlan = shouldRefreshByDistance && shouldRefreshByTime;
 
     var snapshot = this.gameManager.isAiming
       ? this.gameManager.setAim(localPoint, { skipPlanRefresh: !shouldRefreshPlan })
       : this.gameManager.beginAim(localPoint);
+
+    if (shouldRefreshPlan) {
+      this._lastAimPlanRefreshTime = now;
+    }
 
     if (shouldRefreshPlan || !this._lastAimRefreshScreenPoint) {
       this._lastAimRefreshPoint = {
@@ -180,6 +196,7 @@ module.exports = {
     var snapshot = this.gameManager.fireShot();
     this._lastAimRefreshPoint = null;
     this._lastAimRefreshScreenPoint = null;
+    this._lastAimPlanRefreshTime = 0;
     if (snapshot && Math.max(0, Number(snapshot.remainingShots) || 0) < shotsBeforeFire) {
       this._playSfx("shot");
       this._completeNewUserGuide();
@@ -206,6 +223,7 @@ module.exports = {
     var snapshot = this.gameManager.endAim();
     this._lastAimRefreshPoint = null;
     this._lastAimRefreshScreenPoint = null;
+    this._lastAimPlanRefreshTime = 0;
     this._handleRuntimeStateTransition(snapshot);
     this.levelRenderer.refreshRuntime(this.currentLevelConfig, snapshot);
     this._setStatus(this._formatStatus(this.currentLevelConfig, snapshot));

@@ -89,14 +89,14 @@
             }
         ],
         "layout": [
-            "RRGGYYBB",
-            "R.GGYYBB",
-            "GGG.GYBB",
-            "BBRRGG.R",
-            "GBB..G..",
-            "YRGBYR..",
+            "RRG.YYBB",
+            "R.GGYY.B",
+            ".G..GYBB",
+            "BBRR.G.R",
+            "G.B..G..",
+            "..GBYR..",
             "RGBY.G..",
-            "YRGB...."
+            ".RG....."
         ],
         "designNotes": "A denser expert board where preserving skill value matters more than simply reaching any match.",
         "difficultyScore": 90,
@@ -105,37 +105,37 @@
                 "id": "skill_rainbow_01",
                 "entityCategory": "skill_ball",
                 "entityType": "rainbow",
-                "row": 1,
-                "col": 1
+                "row": 4,
+                "col": 6
             },
             {
                 "id": "skill_blast_01",
                 "entityCategory": "skill_ball",
                 "entityType": "blast",
                 "row": 2,
-                "col": 3
+                "col": 0
             },
             {
                 "id": "stone_01",
                 "entityCategory": "obstacle_ball",
                 "entityType": "stone",
-                "row": 3,
-                "col": 6
+                "row": 2,
+                "col": 2
             },
             {
                 "id": "ice_01",
                 "entityCategory": "obstacle_ball",
                 "entityType": "ice",
-                "row": 4,
-                "col": 4,
+                "row": 0,
+                "col": 3,
                 "innerColor": "B"
             },
             {
                 "id": "stone_02",
                 "entityCategory": "obstacle_ball",
                 "entityType": "stone",
-                "row": 6,
-                "col": 4
+                "row": 7,
+                "col": 0
             }
         ],
         "levelType": "normal",

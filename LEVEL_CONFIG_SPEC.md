@@ -8,7 +8,7 @@
 
 - 正式关卡：`1~40`
 - 示例关卡：`level_021_special_entities_example.json`
-- 过关奖励：从第 `5` 关开始配置
+- 过关奖励：每个正式关卡都必须配置金币奖励
 - 特殊实体：
   - `彩虹技能球`
   - `炸裂技能球`
@@ -290,8 +290,8 @@
 
 当前正式关卡规则：
 
-- 第 `1~4` 关不配置 `clearRewardItems`
-- 从第 `5` 关开始必须配置 `clearRewardItems`
+- 每个正式关卡都必须配置 `clearRewardItems`
+- `clearRewardItems` 必须包含金币奖励 `coin`
 - 只允许配置：
   - `coin`
   - `stamina`
@@ -430,8 +430,8 @@
 7. `specialEntities` 坐标不能越界
 8. `specialEntities` 不应和 `layout` 普通球重叠
 9. `ice` 类型必须带 `innerColor`
-10. 第 `1~4` 关不能配置 `clearRewardItems`
-11. 第 `5` 关开始必须配置 `clearRewardItems`
+10. 每个正式关卡都必须配置 `clearRewardItems`
+11. `clearRewardItems` 必须包含 `coin`
 12. `clearRewardItems` 只能包含 `coin` 和 `stamina`
 
 ## 11. 推荐编辑流程

@@ -94,13 +94,13 @@
             }
         ],
         "layout": [
-            "RRGGYYBB",
-            "R.G.YYBR",
-            "GGG.RY.B",
-            "BBRRGGGR",
-            "YBBR.G..",
-            "YRGB.RB.",
-            "RGBY.G..",
+            "RRGGY.B.",
+            "R.G...BR",
+            "GGG.R..B",
+            ".....GGR",
+            ".B......",
+            "...B..B.",
+            ".GB..G..",
             "YR......"
         ],
         "designNotes": "A green-heavy target is split across the upper core and lower recovery lane; spending the bottom skill too early leaves the clear_all route awkward.",
@@ -110,73 +110,73 @@
                 "id": "skill_blast_01",
                 "entityCategory": "skill_ball",
                 "entityType": "blast",
-                "row": 1,
-                "col": 1
+                "row": 3,
+                "col": 2
             },
             {
                 "id": "stone_01",
                 "entityCategory": "obstacle_ball",
                 "entityType": "stone",
-                "row": 1,
-                "col": 3
+                "row": 3,
+                "col": 4
             },
             {
                 "id": "skill_rainbow_01",
                 "entityCategory": "skill_ball",
                 "entityType": "rainbow",
-                "row": 2,
-                "col": 6
+                "row": 3,
+                "col": 1
             },
             {
                 "id": "ice_01",
                 "entityCategory": "obstacle_ball",
                 "entityType": "ice",
-                "row": 4,
-                "col": 4,
+                "row": 3,
+                "col": 0,
                 "innerColor": "G"
             },
             {
                 "id": "stone_02",
                 "entityCategory": "obstacle_ball",
                 "entityType": "stone",
-                "row": 4,
-                "col": 6
+                "row": 2,
+                "col": 5
             },
             {
                 "id": "ice_02",
                 "entityCategory": "obstacle_ball",
                 "entityType": "ice",
-                "row": 5,
-                "col": 4,
+                "row": 0,
+                "col": 7,
                 "innerColor": "R"
             },
             {
                 "id": "stone_03",
                 "entityCategory": "obstacle_ball",
                 "entityType": "stone",
-                "row": 5,
-                "col": 7
+                "row": 7,
+                "col": 3
             },
             {
                 "id": "skill_rainbow_02",
                 "entityCategory": "skill_ball",
                 "entityType": "rainbow",
                 "row": 6,
-                "col": 4
+                "col": 0
             },
             {
                 "id": "skill_blast_02",
                 "entityCategory": "skill_ball",
                 "entityType": "blast",
-                "row": 7,
+                "row": 4,
                 "col": 2
             },
             {
                 "id": "stone_04",
                 "entityCategory": "obstacle_ball",
                 "entityType": "stone",
-                "row": 7,
-                "col": 3
+                "row": 6,
+                "col": 4
             }
         ],
         "levelType": "normal",

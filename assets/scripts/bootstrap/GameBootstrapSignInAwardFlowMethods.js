@@ -21,6 +21,9 @@ var SIGN_IN_GIFT_ICON_WIDTH = 70;
 var SIGN_IN_GIFT_ITEM_WIDTH = 70;
 var SIGN_IN_GIFT_ITEM_HEIGHT = 110;
 var SIGN_IN_GIFT_ITEM_SPACING = 8;
+var SIGN_IN_BUTTON_BREATH_SCALE = 1.08;
+var SIGN_IN_BUTTON_BREATH_UP_DURATION = 0.48;
+var SIGN_IN_BUTTON_BREATH_DOWN_DURATION = 0.54;
 var SIGN_IN_DAY_TEXT = [
   "",
   "第一天",
@@ -180,6 +183,61 @@ function requireCustomSpriteSizeMode(description) {
     throw new Error(description + " requires cc.Sprite.SizeMode.CUSTOM.");
   }
   return cc.Sprite.SizeMode.CUSTOM;
+}
+
+function requireBreathActionApi(description) {
+  if (
+    !cc ||
+    typeof cc.repeatForever !== "function" ||
+    typeof cc.sequence !== "function" ||
+    typeof cc.scaleTo !== "function"
+  ) {
+    throw new Error(description + " requires Cocos scale action APIs.");
+  }
+}
+
+function playSignInButtonBreath(node, description) {
+  requireValidNode(node, description);
+  requireBreathActionApi(description);
+  if (node.__signInBreathPlaying === true) {
+    return;
+  }
+
+  if (!Number.isFinite(node.__signInBreathBaseScaleX)) {
+    node.__signInBreathBaseScaleX = node.scaleX;
+  }
+  if (!Number.isFinite(node.__signInBreathBaseScaleY)) {
+    node.__signInBreathBaseScaleY = node.scaleY;
+  }
+
+  node.__signInBreathPlaying = true;
+  node.stopAllActions();
+  node.scaleX = node.__signInBreathBaseScaleX;
+  node.scaleY = node.__signInBreathBaseScaleY;
+  node.runAction(cc.repeatForever(cc.sequence(
+    cc.scaleTo(
+      SIGN_IN_BUTTON_BREATH_UP_DURATION,
+      node.__signInBreathBaseScaleX * SIGN_IN_BUTTON_BREATH_SCALE,
+      node.__signInBreathBaseScaleY * SIGN_IN_BUTTON_BREATH_SCALE
+    ),
+    cc.scaleTo(
+      SIGN_IN_BUTTON_BREATH_DOWN_DURATION,
+      node.__signInBreathBaseScaleX,
+      node.__signInBreathBaseScaleY
+    )
+  )));
+}
+
+function stopSignInButtonBreath(node, description) {
+  requireValidNode(node, description);
+  if (node.__signInBreathPlaying !== true) {
+    return;
+  }
+
+  node.stopAllActions();
+  node.scaleX = node.__signInBreathBaseScaleX;
+  node.scaleY = node.__signInBreathBaseScaleY;
+  node.__signInBreathPlaying = false;
 }
 
 function resizeSpriteNodeToSpriteFrameWidth(node, sprite, spriteFrame, targetWidth, description) {
@@ -645,6 +703,11 @@ module.exports = {
         if (awardSprite && this._signInButtonSpriteFrames) {
           awardSprite.spriteFrame = this._signInButtonSpriteFrames[dayState];
         }
+        if (dayState === "claimable") {
+          playSignInButtonBreath(awardButtonNode, "Sign-in claimable day button breath");
+        } else {
+          stopSignInButtonBreath(awardButtonNode, "Sign-in inactive day button breath");
+        }
       }
 
       if (day === 7) {
@@ -671,6 +734,11 @@ module.exports = {
         claimAdButton.interactable = true;
       }
       claimAdButtonNode.color = cc.color(255, 255, 255, 255);
+      if (canClaimToday) {
+        playSignInButtonBreath(claimAdButtonNode, "Sign-in double reward button breath");
+      } else {
+        stopSignInButtonBreath(claimAdButtonNode, "Sign-in double reward button breath");
+      }
     }
 
     Promise.all(iconLoadTasks).catch(function (error) {

@@ -95,12 +95,12 @@
         ],
         "layout": [
             "GGGGGGGGGG",
-            "B.BBBB.PB",
-            "RBR.RR.RBR",
-            "YR.YY.YRY",
-            "G.GG.GG.YG",
-            "PGP.PP.GP",
-            "BP.BBBBBPB",
+            "B.BBBBBPB",
+            "RBRRRRRRBR",
+            "YRYYYYYRY",
+            "GYGG.GGGYG",
+            ".GPPPPPGP",
+            "BPBBBBBBPB",
             "RBRRRRRBR"
         ],
         "designNotes": "Generated 1000-level campaign stage. Chapter `lock_key_intro` uses locked with a gate board silhouette.",
@@ -111,8 +111,8 @@
                 "entityCategory": "key_ball",
                 "entityType": "key",
                 "unlockGroup": "g1",
-                "row": 1,
-                "col": 1
+                "row": 4,
+                "col": 4
             },
             {
                 "id": "locked_g1_01",
@@ -121,14 +121,14 @@
                 "lockedColor": "R",
                 "lockGroup": "g1",
                 "row": 1,
-                "col": 6
+                "col": 1
             },
             {
                 "id": "skill_blast_01",
                 "entityCategory": "skill_ball",
                 "entityType": "blast",
-                "row": 2,
-                "col": 3
+                "row": 5,
+                "col": 0
             }
         ],
         "levelType": "normal",

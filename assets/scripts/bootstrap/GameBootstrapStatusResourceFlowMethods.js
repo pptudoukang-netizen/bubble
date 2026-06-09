@@ -3,10 +3,12 @@
 var Shared = require("./GameBootstrapUiFlowShared");
 var DebugFlags = Shared.DebugFlags;
 var Logger = Shared.Logger;
+var LevelSelectMemoryDiagnostics = require("../utils/LevelSelectMemoryDiagnostics");
 var NEW_GIFT_INVENTORY_ITEMS = ["swap_ball", "rainbow_ball", "blast_ball", "barrier_hammer"];
 var NEW_GIFT_STAMINA_COUNT = 5;
 var NEW_GIFT_SHAKE_IDLE_DURATION = 0.55;
 var NEW_GIFT_SHAKE_ANGLE = 10;
+var NEW_GIFT_ENTRY_ANIMATION_ENABLED = false;
 var STAMINA_NATURAL_RECOVERY_INTERVAL_MS = 30 * 60 * 1000;
 var STAMINA_NATURAL_RECOVERY_MAX = 20;
 var STAMINA_FULL_TEXT = "体力已满";
@@ -47,6 +49,78 @@ function formatCountdownText(remainingMs) {
   return String(minutes) + ":" + (seconds < 10 ? "0" + seconds : String(seconds));
 }
 
+function configureDebugOverlayLabel(label) {
+  if (!label) {
+    throw new Error("Debug overlay label is required.");
+  }
+  label.useSystemFont = true;
+  label.fontFamily = "Arial";
+  label.fontSize = 20;
+  label.lineHeight = 26;
+  label.horizontalAlign = cc.Label.HorizontalAlign.LEFT;
+  label.verticalAlign = cc.Label.VerticalAlign.TOP;
+  label.overflow = cc.Label.Overflow.CLAMP;
+  label.enableWrapText = true;
+  configureDynamicLabelTextureCache(label, "Debug overlay label");
+}
+
+function configureDynamicLabelTextureCache(label, description) {
+  if (!label) {
+    throw new Error(description + " is required.");
+  }
+  if (!cc || !cc.Label || !cc.Label.CacheMode || cc.Label.CacheMode.CHAR === undefined) {
+    throw new Error(description + " requires cc.Label.CacheMode.CHAR.");
+  }
+  label.cacheMode = cc.Label.CacheMode.CHAR;
+}
+
+function configureCountdownLabelTextureCache(label, description) {
+  if (!label) {
+    throw new Error(description + " is required.");
+  }
+  if (!cc || !cc.Label || !cc.Label.CacheMode || cc.Label.CacheMode.BITMAP === undefined) {
+    throw new Error(description + " requires cc.Label.CacheMode.BITMAP.");
+  }
+  label.cacheMode = cc.Label.CacheMode.BITMAP;
+}
+
+function setDynamicLabelString(label, value, description) {
+  configureDynamicLabelTextureCache(label, description);
+  var nextValue = String(value);
+  if (label.string !== nextValue) {
+    label.string = nextValue;
+  }
+}
+
+function setCountdownLabelString(label, value, description) {
+  configureCountdownLabelTextureCache(label, description);
+  var nextValue = String(value);
+  if (label.string !== nextValue) {
+    label.string = nextValue;
+  }
+}
+
+function shouldUpdateLevelSelectEntryStates(options) {
+  if (options === undefined) {
+    return true;
+  }
+  if (!options || typeof options !== "object" || Array.isArray(options)) {
+    throw new Error("Level select top status options must be an object.");
+  }
+  if (typeof options.updateEntryStates !== "boolean") {
+    throw new Error("Level select top status options.updateEntryStates must be boolean.");
+  }
+  return options.updateEntryStates;
+}
+
+function isNaturalStaminaRecoveryRequired(playerResources) {
+  if (!playerResources || typeof playerResources !== "object") {
+    throw new Error("Player resources are required for stamina recovery ticker.");
+  }
+  var stamina = requireNonNegativeInteger(playerResources.stamina, "Player stamina");
+  return stamina < STAMINA_NATURAL_RECOVERY_MAX;
+}
+
 module.exports = {
   _getLevelSelectTopLayerNode: function () {
     if (!this._levelSelectNode || !cc.isValid(this._levelSelectNode)) {
@@ -71,26 +145,101 @@ module.exports = {
     if (!DebugFlags.get("overlay")) {
       return;
     }
+    if (this._statusOverlayNode && cc.isValid(this._statusOverlayNode)) {
+      this._statusOverlayNode.active = true;
+      if (this._statusLabel) {
+        configureDebugOverlayLabel(this._statusLabel);
+      }
+      return;
+    }
+
+    var panelWidth = 680;
+    var panelHeight = 280;
 
     var node = new cc.Node("BootstrapStatus");
     node.parent = this.node;
-    node.zIndex = 100;
+    node.zIndex = 10000;
+    node.setAnchorPoint(0, 1);
 
     var widget = node.addComponent(cc.Widget);
     widget.isAlignTop = true;
     widget.isAlignLeft = true;
     widget.top = 32;
     widget.left = 24;
+    if (typeof widget.updateAlignment === "function") {
+      widget.updateAlignment();
+    }
 
-    var label = node.addComponent(cc.Label);
-    label.fontSize = 24;
-    label.lineHeight = 32;
-    label.horizontalAlign = cc.Label.HorizontalAlign.LEFT;
-    label.verticalAlign = cc.Label.VerticalAlign.TOP;
-    label.string = "";
+    var bgNode = new cc.Node("Background");
+    bgNode.parent = node;
+    bgNode.setAnchorPoint(0, 1);
+    bgNode.setPosition(0, 0);
+    var bgGraphics = bgNode.addComponent(cc.Graphics);
+    bgGraphics.fillColor = cc.color(0, 0, 0, 168);
+    bgGraphics.roundRect(0, -panelHeight, panelWidth, panelHeight, 8);
+    bgGraphics.fill();
 
-    node.color = cc.color(255, 255, 255);
+    var labelNode = new cc.Node("Label");
+    labelNode.parent = node;
+    labelNode.setAnchorPoint(0, 1);
+    labelNode.setPosition(12, -12);
+    labelNode.setContentSize(panelWidth - 24, panelHeight - 24);
+
+    var label = labelNode.addComponent(cc.Label);
+    configureDebugOverlayLabel(label);
+    label.string = "Debug Overlay";
+
+    var outline = labelNode.addComponent(cc.LabelOutline);
+    outline.color = cc.color(0, 0, 0, 255);
+    outline.width = 2;
+    labelNode.color = cc.color(255, 255, 255);
+
+    this._statusOverlayNode = node;
     this._statusLabel = label;
+  },
+
+  _syncDebugOverlayVisibility: function () {
+    DebugFlags.set("overlay", this.showDebugOverlay === true);
+    if (this.showDebugOverlay !== true) {
+      if (this._statusOverlayNode && cc.isValid(this._statusOverlayNode)) {
+        this._statusOverlayNode.active = false;
+      }
+      return;
+    }
+
+    this._createStatusOverlay();
+    if (typeof this._formatLevelSelectDebugStatus === "function" && this.isSelectingLevel) {
+      this._setStatus(this._formatLevelSelectDebugStatus());
+      return;
+    }
+    if (this._lastStatusMessage) {
+      var lastMessage = this._lastStatusMessage;
+      this._lastStatusMessage = null;
+      this._setStatus(lastMessage);
+    }
+  },
+
+  _formatLevelSelectDebugStatus: function () {
+    var targetLevelId = Math.max(0, Math.floor(Number(this._currentLevelId) || 0));
+    var highestUnlockedLevel = this.levelProgress
+      ? Math.max(1, Math.floor(Number(this.levelProgress.highestUnlockedLevel) || 1))
+      : 1;
+    var stamina = this.playerResources
+      ? Math.max(0, Math.floor(Number(this.playerResources.stamina) || 0))
+      : 0;
+    var availableLevelCount = Array.isArray(this._startupResolvedLevelIds)
+      ? this._startupResolvedLevelIds.length
+      : 0;
+
+    return [
+      "Debug Overlay",
+      "Screen: Level Select",
+      "Target Level: " + (targetLevelId > 0 ? targetLevelId : "-"),
+      "Highest Unlocked: " + highestUnlockedLevel,
+      "Stamina: " + stamina,
+      "Available Levels: " + availableLevelCount,
+      "Restarting: " + (this.isRestarting === true)
+    ].join("\n");
   },
 
   _onNextLevelTap: function () {
@@ -359,7 +508,8 @@ module.exports = {
     return true;
   },
 
-  _updateLevelSelectTopStatus: function () {
+  _updateLevelSelectTopStatus: function (options) {
+    LevelSelectMemoryDiagnostics.increment("levelSelect.updateTopStatus");
     if (!this._levelSelectNode || !cc.isValid(this._levelSelectNode)) {
       return;
     }
@@ -383,11 +533,15 @@ module.exports = {
     }
     this._refreshPlayerResources();
     if (loveLabel) {
-      loveLabel.string = String(this.playerResources.stamina);
+      setDynamicLabelString(loveLabel, this.playerResources.stamina, "LevelView love label");
     }
-    timeLabel.string = this._getStaminaRecoveryCountdownText(new Date());
+    setCountdownLabelString(timeLabel, this._getStaminaRecoveryCountdownText(new Date()), "LevelView time label");
     if (goldLabel) {
-      goldLabel.string = String(this.playerResources.coins);
+      setDynamicLabelString(goldLabel, this.playerResources.coins, "LevelView gold label");
+    }
+
+    if (!shouldUpdateLevelSelectEntryStates(options)) {
+      return;
     }
 
     this._updateSignInEntryState();
@@ -409,15 +563,30 @@ module.exports = {
   },
 
   _ensureStaminaRecoveryTicker: function () {
+    LevelSelectMemoryDiagnostics.increment("levelSelect.ensureStaminaTicker");
+    this._refreshPlayerResources();
+    if (!isNaturalStaminaRecoveryRequired(this.playerResources)) {
+      this._clearStaminaRecoveryTicker();
+      return;
+    }
     if (this._staminaRecoveryTicker !== null) {
       return;
     }
 
     this._staminaRecoveryTicker = setInterval(function () {
+      LevelSelectMemoryDiagnostics.increment("levelSelect.staminaTickerTick");
       if (!this.isSelectingLevel || !this._levelSelectNode || !cc.isValid(this._levelSelectNode)) {
         return;
       }
-      this._updateLevelSelectTopStatus();
+      this._updateLevelSelectTopStatus({
+        updateEntryStates: false
+      });
+      if (this.showDebugOverlay === true && this._statusLabel) {
+        this._setStatus(this._formatLevelSelectDebugStatus());
+      }
+      if (!isNaturalStaminaRecoveryRequired(this.playerResources)) {
+        this._clearStaminaRecoveryTicker();
+      }
     }.bind(this), 1000);
   },
 
@@ -425,6 +594,7 @@ module.exports = {
     if (this._staminaRecoveryTicker === null) {
       return;
     }
+    LevelSelectMemoryDiagnostics.increment("levelSelect.clearStaminaTicker");
     clearInterval(this._staminaRecoveryTicker);
     this._staminaRecoveryTicker = null;
   },
@@ -482,6 +652,10 @@ module.exports = {
     }
     if (typeof cc.tween !== "function") {
       throw new Error("New gift animation requires cc.tween.");
+    }
+    if (NEW_GIFT_ENTRY_ANIMATION_ENABLED !== true) {
+      this._stopNewGiftEntryAnimation(entryNode);
+      return;
     }
     if (entryNode.__newGiftShakePlaying === true) {
       return;
@@ -588,7 +762,10 @@ module.exports = {
     this._lastStatusMessage = message;
 
     if (this._statusLabel) {
-      this._statusLabel.string = String(message || "");
+      setDynamicLabelString(this._statusLabel, message || "", "Debug overlay label");
+      if (typeof this._statusLabel._forceUpdateRenderData === "function") {
+        this._statusLabel._forceUpdateRenderData();
+      }
     }
 
     Logger.info(message);

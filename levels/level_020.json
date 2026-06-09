@@ -96,11 +96,11 @@
         ],
         "layout": [
             "RRGGPPBB",
-            "RRGB.PGB",
+            "..GB...B",
             "BGG.B.BG",
-            "GBBR.PPR",
-            "RBB.RGBP",
-            "PRGBPRGB"
+            ".B.R..PR",
+            "..B.....",
+            "PRGB.RGB"
         ],
         "designNotes": "Final prototype board mixes every core pressure: dense colors, route blockers, skill pickups and a two-step ice target.",
         "difficultyScore": 90,
@@ -109,36 +109,36 @@
                 "id": "skill_blast_01",
                 "entityCategory": "skill_ball",
                 "entityType": "blast",
-                "row": 1,
+                "row": 5,
                 "col": 4
             },
             {
                 "id": "skill_rainbow_01",
                 "entityCategory": "skill_ball",
                 "entityType": "rainbow",
-                "row": 2,
-                "col": 3
+                "row": 1,
+                "col": 0
             },
             {
                 "id": "stone_01",
                 "entityCategory": "obstacle_ball",
                 "entityType": "stone",
-                "row": 2,
-                "col": 5
+                "row": 1,
+                "col": 1
             },
             {
                 "id": "stone_02",
                 "entityCategory": "obstacle_ball",
                 "entityType": "stone",
-                "row": 3,
+                "row": 4,
                 "col": 4
             },
             {
                 "id": "ice_01",
                 "entityCategory": "obstacle_ball",
                 "entityType": "ice",
-                "row": 4,
-                "col": 3,
+                "row": 1,
+                "col": 5,
                 "innerColor": "P"
             }
         ],

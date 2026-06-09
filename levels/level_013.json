@@ -90,9 +90,9 @@
             }
         ],
         "layout": [
-            "RBYRGBYR",
+            "RBYRGB.R",
             "RRB.RYYY",
-            "YGGBYBBB",
+            "YG.BYB.B",
             "BYGGBBBG",
             "GBYGGBYR",
             "R......."
@@ -104,8 +104,8 @@
                 "id": "skill_rainbow_01",
                 "entityCategory": "skill_ball",
                 "entityType": "rainbow",
-                "row": 1,
-                "col": 3
+                "row": 2,
+                "col": 2
             }
         ],
         "levelType": "normal",

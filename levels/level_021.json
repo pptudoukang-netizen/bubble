@@ -91,13 +91,13 @@
             }
         ],
         "layout": [
-            "RRGGYYBB",
+            "RR..YY.B",
             "R.GGYYBB",
-            ".GGBYYBB",
+            ".GGBY.BB",
             "BBR.GGY.",
-            ".BB..GY.",
+            ".....GY.",
             "YRGBYRG.",
-            "RGBY.GB.",
+            "RGBY.G..",
             "........"
         ],
         "designNotes": "First post-MVP level. Dense board with all core late-game pieces but still readable routing.",
@@ -107,7 +107,7 @@
                 "id": "skill_blast_01",
                 "entityCategory": "skill_ball",
                 "entityType": "blast",
-                "row": 1,
+                "row": 4,
                 "col": 1
             },
             {
@@ -115,21 +115,21 @@
                 "entityCategory": "skill_ball",
                 "entityType": "rainbow",
                 "row": 2,
-                "col": 0
+                "col": 5
             },
             {
                 "id": "stone_01",
                 "entityCategory": "obstacle_ball",
                 "entityType": "stone",
-                "row": 3,
-                "col": 3
+                "row": 6,
+                "col": 6
             },
             {
                 "id": "ice_01",
                 "entityCategory": "obstacle_ball",
                 "entityType": "ice",
                 "row": 4,
-                "col": 4,
+                "col": 7,
                 "innerColor": "Y"
             }
         ],

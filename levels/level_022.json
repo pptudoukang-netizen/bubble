@@ -94,12 +94,12 @@
             }
         ],
         "layout": [
-            "RRGGYYBB",
-            "RRG.YYBB",
+            "RRGG.YBB",
+            "..G.YYBB",
             ".GG.YYBB",
-            "BBR.GGYB",
-            ".BB..GY.",
-            "YRGBYRG.",
+            "B.R.GGYB",
+            ".BB..G..",
+            "...BY.G.",
             "RGBY.GB.",
             "........"
         ],
@@ -110,30 +110,30 @@
                 "id": "stone_01",
                 "entityCategory": "obstacle_ball",
                 "entityType": "stone",
-                "row": 1,
-                "col": 3
+                "row": 5,
+                "col": 5
             },
             {
                 "id": "skill_blast_01",
                 "entityCategory": "skill_ball",
                 "entityType": "blast",
-                "row": 2,
-                "col": 0
+                "row": 1,
+                "col": 1
             },
             {
                 "id": "ice_01",
                 "entityCategory": "obstacle_ball",
                 "entityType": "ice",
-                "row": 4,
-                "col": 4,
+                "row": 5,
+                "col": 1,
                 "innerColor": "B"
             },
             {
                 "id": "skill_rainbow_01",
                 "entityCategory": "skill_ball",
                 "entityType": "rainbow",
-                "row": 6,
-                "col": 4
+                "row": 1,
+                "col": 0
             }
         ],
         "levelType": "normal",

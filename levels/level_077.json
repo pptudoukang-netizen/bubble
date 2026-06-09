@@ -76,8 +76,9 @@
                 "value": 1
             },
             {
-                "type": "collect_any",
-                "value": 20
+                "type": "collect_color",
+                "color": "B",
+                "value": 11
             }
         ],
         "bonusObjectives": [
@@ -94,12 +95,12 @@
         ],
         "layout": [
             "RRRRRRRRRR",
-            "Y.YYYY.YY",
-            "GGG.GG.GGG",
-            "GG.PP.GGG",
-            "P.PB.PP.PP",
-            "BBB.RB.BB",
-            "RR.YYRRRRR",
+            "YYYYYYYYY",
+            "GG.GGG.GGG",
+            "GGGPPGGGG",
+            "PPPBBPPPPP",
+            "BBBRRBBBB",
+            "RRRYYRRR.R",
             "YYYGGYYYY"
         ],
         "designNotes": "Generated 1000-level campaign stage. Chapter `splitter_intro` uses splitter with a keyhole board silhouette.",
@@ -110,15 +111,15 @@
                 "entityCategory": "reactive_ball",
                 "entityType": "splitter",
                 "splitColor": "B",
-                "row": 1,
-                "col": 1
+                "row": 2,
+                "col": 6
             },
             {
                 "id": "skill_blast_01",
                 "entityCategory": "skill_ball",
                 "entityType": "blast",
-                "row": 1,
-                "col": 6
+                "row": 6,
+                "col": 8
             },
             {
                 "id": "ice_01",
@@ -126,7 +127,7 @@
                 "entityType": "ice",
                 "innerColor": "G",
                 "row": 2,
-                "col": 3
+                "col": 2
             }
         ],
         "levelType": "normal",

@@ -89,11 +89,11 @@
             }
         ],
         "layout": [
-            "RRGGYYBB",
-            "R.GRYYBR",
-            "GGG.GY.B",
-            "BBRRGGGR",
-            "GBBB.GYB",
+            "R.......",
+            "R..RYY.R",
+            "G.G.G..B",
+            "BBRR.GGR",
+            "...B.G..",
             "YRGB.R..",
             "RGBY.G..",
             "YRGB...."
@@ -105,7 +105,7 @@
                 "id": "skill_blast_01",
                 "entityCategory": "skill_ball",
                 "entityType": "blast",
-                "row": 1,
+                "row": 4,
                 "col": 1
             },
             {
@@ -113,13 +113,13 @@
                 "entityCategory": "skill_ball",
                 "entityType": "rainbow",
                 "row": 2,
-                "col": 3
+                "col": 5
             },
             {
                 "id": "stone_01",
                 "entityCategory": "obstacle_ball",
                 "entityType": "stone",
-                "row": 2,
+                "row": 6,
                 "col": 6
             },
             {
@@ -127,30 +127,30 @@
                 "entityCategory": "obstacle_ball",
                 "entityType": "ice",
                 "row": 4,
-                "col": 4,
+                "col": 7,
                 "innerColor": "G"
             },
             {
                 "id": "stone_02",
                 "entityCategory": "obstacle_ball",
                 "entityType": "stone",
-                "row": 5,
+                "row": 3,
                 "col": 4
             },
             {
                 "id": "ice_02",
                 "entityCategory": "obstacle_ball",
                 "entityType": "ice",
-                "row": 6,
-                "col": 4,
+                "row": 1,
+                "col": 6,
                 "innerColor": "B"
             },
             {
                 "id": "stone_03",
                 "entityCategory": "obstacle_ball",
                 "entityType": "stone",
-                "row": 7,
-                "col": 5
+                "row": 0,
+                "col": 2
             }
         ],
         "levelType": "normal",

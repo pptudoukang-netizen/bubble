@@ -412,7 +412,7 @@ module.exports = {
       return;
     }
     if (!this.friendGiftService || typeof this.friendGiftService.getPlatform !== "function") {
-      throw new Error("FriendGiftService.getPlatform is required.");
+      return;
     }
     var handler = function () {
       this._claimPendingFriendStaminaGiftFromLaunchOptions().catch(function (error) {
@@ -439,12 +439,11 @@ module.exports = {
     if (cc && cc.game && typeof cc.game.off === "function" && cc.game.EVENT_SHOW) {
       cc.game.off(cc.game.EVENT_SHOW, handler);
     }
-    if (!this.friendGiftService || typeof this.friendGiftService.getPlatform !== "function") {
-      throw new Error("FriendGiftService.getPlatform is required.");
-    }
-    var platform = this.friendGiftService.getPlatform();
-    if (platform && typeof platform.offShow === "function") {
-      platform.offShow(handler);
+    if (this.friendGiftService && typeof this.friendGiftService.getPlatform === "function") {
+      var platform = this.friendGiftService.getPlatform();
+      if (platform && typeof platform.offShow === "function") {
+        platform.offShow(handler);
+      }
     }
     this._friendGiftEnterShowHandler = null;
   },

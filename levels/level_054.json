@@ -91,12 +91,12 @@
         ],
         "layout": [
             "RGBYRGBYRG",
-            "G.YRGB.BG",
-            "RYB.RG.YBG",
-            "YB.BY.GRY",
-            "B.RG.YR.RY",
-            "GRY.GB.BG",
-            "RY.YRGBYBG",
+            "GRYRGBYBG",
+            "RYBYRGBYBG",
+            "YBGBYRGRY",
+            "BGRGBYRGRY",
+            ".RYRGBYB.",
+            "RYBYRGBYBG",
             "YBGBYRGRY"
         ],
         "designNotes": "Generated 1000-level campaign stage. Chapter `molotov_intro` uses molotov with a gate board silhouette.",
@@ -107,15 +107,15 @@
                 "entityCategory": "reactive_ball",
                 "entityType": "molotov",
                 "blastRadius": 2,
-                "row": 1,
-                "col": 1
+                "row": 5,
+                "col": 0
             },
             {
                 "id": "skill_rainbow_01",
                 "entityCategory": "skill_ball",
                 "entityType": "rainbow",
-                "row": 1,
-                "col": 6
+                "row": 5,
+                "col": 8
             }
         ],
         "levelType": "normal",

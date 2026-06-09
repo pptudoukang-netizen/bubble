@@ -442,6 +442,7 @@ function GameManager(options) {
   this.remainingShots = 0;
   this.score = 0;
   this.comboStreak = 0;
+  this.maxComboStreak = 0;
   this.shotsFired = 0;
   this.dropInterval = 0;
   this.lastFiredColor = null;
@@ -473,6 +474,7 @@ function GameManager(options) {
   this.runtimeEventSequence = 0;
   this.pendingRuntimeEvents = [];
   this.pendingBoardAdvanceDelay = 0;
+  this.boardAdvancedThisFrame = false;
   this.pendingWinSettlementDelay = 0;
   this.pendingSplitterSpawns = [];
   this.pendingBarrierHammer = false;
@@ -527,6 +529,7 @@ GameManager.prototype.startLevel = function (levelConfig) {
   this.remainingShots = this.isTimedInfiniteShots ? 0 : assertPositiveInteger(level.shotLimit, "level.shotLimit");
   this.score = 0;
   this.comboStreak = 0;
+  this.maxComboStreak = 0;
   this.shotsFired = 0;
   this.dropInterval = assertPositiveInteger(level.dropInterval, "level.dropInterval");
   this.lastFiredColor = null;
@@ -553,6 +556,7 @@ GameManager.prototype.startLevel = function (levelConfig) {
   this.runtimeEventSequence = 0;
   this.pendingRuntimeEvents = [];
   this.pendingBoardAdvanceDelay = 0;
+  this.boardAdvancedThisFrame = false;
   this.pendingWinSettlementDelay = 0;
   this.pendingSplitterSpawns = [];
   this.pendingBarrierHammer = false;
@@ -634,6 +638,21 @@ GameManager.prototype._isWaitingBoardAdvance = function () {
   return this.pendingBoardAdvanceDelay > 0;
 };
 
+GameManager.prototype._hasBoardAdvancedThisFrame = function () {
+  if (typeof this.boardAdvancedThisFrame !== "boolean") {
+    throw new Error("GameManager boardAdvancedThisFrame must be boolean.");
+  }
+  return this.boardAdvancedThisFrame;
+};
+
+GameManager.prototype._markBoardAdvancedThisFrame = function () {
+  this.boardAdvancedThisFrame = true;
+};
+
+GameManager.prototype._isBoardAdvanceBusy = function () {
+  return this._isWaitingBoardAdvance() || this._hasBoardAdvancedThisFrame();
+};
+
 GameManager.prototype._hasPendingSplitterSpawns = function () {
   if (!Array.isArray(this.pendingSplitterSpawns)) {
     throw new Error("GameManager pendingSplitterSpawns must be an array.");
@@ -710,7 +729,7 @@ GameManager.prototype._updatePendingSplitterSpawns = function (dt) {
   if (!this._hasPendingSplitterSpawns()) {
     return false;
   }
-  if (this._isWaitingBoardAdvance()) {
+  if (this._isBoardAdvanceBusy()) {
     return false;
   }
 
@@ -760,7 +779,7 @@ GameManager.prototype._updatePendingSplitterSpawns = function (dt) {
   if (this.state === "won_pending" && grid.getCells().length > 0) {
     this.state = "running";
   }
-  if (this.state === "out_of_shots_pending" && !this.systems.fallingMarbleSystem.hasActiveDrops() && !this._hasPendingSplitterSpawns() && !this._isWaitingBoardAdvance()) {
+  if (this.state === "out_of_shots_pending" && !this.systems.fallingMarbleSystem.hasActiveDrops() && !this._hasPendingSplitterSpawns() && !this._isBoardAdvanceBusy()) {
     this._resolveOutOfShotsOutcome();
   }
   if (grid && typeof grid.assertNoVisualOverlap === "function") {
@@ -1058,7 +1077,7 @@ GameManager.prototype.setAim = function (point, options) {
   if (
     this.state !== "running" ||
     this.activeProjectile ||
-    this._isWaitingBoardAdvance() ||
+    this._isBoardAdvanceBusy() ||
     this._hasPendingSplitterSpawns() ||
     this.pendingBarrierHammer ||
     this.pendingRainbowColorSelection
@@ -1078,7 +1097,7 @@ GameManager.prototype.beginAim = function (point) {
   if (
     this.state !== "running" ||
     this.activeProjectile ||
-    this._isWaitingBoardAdvance() ||
+    this._isBoardAdvanceBusy() ||
     this._hasPendingSplitterSpawns() ||
     this.pendingBarrierHammer ||
     this.pendingRainbowColorSelection
@@ -1105,7 +1124,7 @@ GameManager.prototype.fireShot = function () {
   if (
     this.state !== "running" ||
     this.activeProjectile ||
-    this._isWaitingBoardAdvance() ||
+    this._isBoardAdvanceBusy() ||
     this._hasPendingSplitterSpawns() ||
     this.pendingBarrierHammer ||
     this.pendingRainbowColorSelection
@@ -1184,7 +1203,7 @@ GameManager.prototype._isInstantAdPowerupBusy = function () {
   return !!(
     this.state !== "running" ||
     this.activeProjectile ||
-    this._isWaitingBoardAdvance() ||
+    this._isBoardAdvanceBusy() ||
     this._hasPendingSplitterSpawns() ||
     this.pendingBarrierHammer ||
     this.pendingRainbowColorSelection ||
@@ -1489,6 +1508,9 @@ GameManager.prototype.reviveFromAd = function () {
     objectives: this._buildPrimaryObjectiveSnapshot(this._getCachedJarSnapshot())
   });
   var gridSpaceResult = this.systems.bubbleGrid.ensureDangerLineSpaceRows(revivePlan.dangerLineSpaceRows);
+  if (gridSpaceResult.shiftRows > 0) {
+    this._markBoardAdvancedThisFrame();
+  }
   var previousRemainingShots = this.remainingShots;
   this.remainingShots = previousRemainingShots + revivePlan.grantedShots;
   var queueResult = revivePlan.targetColorBallCount > 0
@@ -1542,7 +1564,7 @@ GameManager.prototype.useSkillBall = function (entityType) {
     };
   }
 
-  if (this.activeProjectile || this._isWaitingBoardAdvance()) {
+  if (this.activeProjectile || this._isBoardAdvanceBusy()) {
     return {
       accepted: false,
       reason: "busy",
@@ -1609,7 +1631,7 @@ GameManager.prototype.useSwapBall = function () {
     };
   }
 
-  if (this.activeProjectile || this._isWaitingBoardAdvance()) {
+  if (this.activeProjectile || this._isBoardAdvanceBusy()) {
     return {
       accepted: false,
       reason: "busy",
@@ -1662,7 +1684,7 @@ GameManager.prototype.beginBarrierHammer = function () {
     };
   }
 
-  if (this.activeProjectile || this._isWaitingBoardAdvance()) {
+  if (this.activeProjectile || this._isBoardAdvanceBusy()) {
     return {
       accepted: false,
       reason: "busy",
@@ -1789,7 +1811,7 @@ GameManager.prototype.useBarrierHammerAt = function (point) {
     };
   }
 
-  if (this.activeProjectile || this._isWaitingBoardAdvance()) {
+  if (this.activeProjectile || this._isBoardAdvanceBusy()) {
     return {
       accepted: false,
       reason: "busy",
@@ -1940,6 +1962,7 @@ GameManager.prototype.update = function (dt) {
   if (safeDt < 0) {
     throw new Error("GameManager.update dt must be non-negative.");
   }
+  this.boardAdvancedThisFrame = false;
   var timerChanged = false;
   if (this.state === "running" && this.isTimedInfiniteShots && !this.timerPaused) {
     var previousRemainingTimeMs = this.remainingTimeMs;
@@ -2078,7 +2101,7 @@ GameManager.prototype.update = function (dt) {
 
   var scoreBoostChanged = this._updateJarScoreBoost(dt);
   runtimeEvents = runtimeEvents.concat(this._drainRuntimeEvents());
-  var boardAdvancedThisFrame = this._updatePendingBoardAdvance(dt);
+  var boardAdvancedThisFrame = this._updatePendingBoardAdvance(dt) || this._hasBoardAdvancedThisFrame();
   var splitterSpawned = boardAdvancedThisFrame ? false : this._updatePendingSplitterSpawns(dt);
   runtimeEvents = runtimeEvents.concat(this._drainRuntimeEvents());
   var hasProjectile = !!this.activeProjectile;
@@ -2092,7 +2115,7 @@ GameManager.prototype.update = function (dt) {
     this.remainingShots <= 0 &&
     !hasFallingDrops &&
     !hasPendingSplitterSpawns &&
-    !this._isWaitingBoardAdvance()
+    !this._isBoardAdvanceBusy()
   ) {
     this._resolveOutOfShotsOutcome();
   }
@@ -2133,7 +2156,7 @@ GameManager.prototype.update = function (dt) {
     return this.getRuntimeSnapshot(runtimeEvents);
   }
 
-  if (this.state === "out_of_shots_pending" && !hasProjectile && !hasFallingDrops && !hasPendingSplitterSpawns && !this._isWaitingBoardAdvance()) {
+  if (this.state === "out_of_shots_pending" && !hasProjectile && !hasFallingDrops && !hasPendingSplitterSpawns && !this._isBoardAdvanceBusy()) {
     this._resolveOutOfShotsOutcome();
     return this.getRuntimeSnapshot(runtimeEvents);
   }
@@ -2315,7 +2338,7 @@ GameManager.prototype.getRuntimeSnapshot = function (runtimeEvents) {
   shooterSnapshot.canUsePowerups = !!(
     this.state === "running" &&
     !this.activeProjectile &&
-    !this._isWaitingBoardAdvance() &&
+    !this._isBoardAdvanceBusy() &&
     !this.pendingRainbowColorSelection
   );
   shooterSnapshot.trajectory = this.isAiming && this.pendingShotPlan && !this.activeProjectile && !this.pendingRainbowColorSelection
@@ -2360,7 +2383,8 @@ GameManager.prototype.getRuntimeSnapshot = function (runtimeEvents) {
       starProgress: calculateStarProgress(this.score, this.scoreHeatBand),
       starThresholds: normalizeStarThresholds(this.scoreHeatBand),
       scoreHeatBand: this.scoreHeatBand,
-      scoreDifficulty: this.scoreHeatBand ? this.scoreHeatBand.difficulty : "normal"
+      scoreDifficulty: this.scoreHeatBand ? this.scoreHeatBand.difficulty : "normal",
+      maxComboStreak: this.maxComboStreak
     },
     runtimeEvents: Array.isArray(runtimeEvents) ? runtimeEvents.slice() : [],
     systems: systemSnapshots

@@ -75,7 +75,7 @@
             {
                 "type": "collect_color",
                 "color": "R",
-                "value": 8
+                "value": 9
             }
         ],
         "bonusObjectives": [
@@ -92,13 +92,13 @@
         ],
         "layout": [
             "BYRGBYRGBY",
-            "Y.GRYR.BY",
-            "BYR.BY.GBY",
-            "GB.RG.YRG",
-            "R.BY.GB.RG",
-            "YRG.YR.BY",
-            "BY.GBYRGBY",
-            "GBYRGBYRG"
+            "YBGRYRYBY",
+            "BYRGBYRGBY",
+            "GBYRGBYRG",
+            "RGBYRGBYRG",
+            "YRGBYRGBY",
+            "BYRGBYRGBY",
+            "GBY.GBYRG"
         ],
         "designNotes": "Generated 1000-level campaign stage. Chapter `splitter_intro` uses splitter with a crown board silhouette.",
         "difficultyScore": 38,
@@ -108,8 +108,8 @@
                 "entityCategory": "reactive_ball",
                 "entityType": "splitter",
                 "splitColor": "R",
-                "row": 1,
-                "col": 1
+                "row": 7,
+                "col": 3
             }
         ],
         "levelType": "normal",

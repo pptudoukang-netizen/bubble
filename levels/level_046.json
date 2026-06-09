@@ -91,12 +91,12 @@
         ],
         "layout": [
             "BYRGBYRGBY",
-            "G.YRGB.RG",
-            "RGB.RG.YRG",
-            "YR.BY.GBY",
-            "B.RG.YR.BY",
-            "GBY.GB.RG",
-            "RG.YRGBYRG",
+            "GBYRGBYRG",
+            "RGBYRGBYRG",
+            "YRGBYRGBY",
+            "BYRGBYRGBY",
+            "GBYRG.YRG",
+            "RGBYRGBYRG",
             "YRGBYRGBY"
         ],
         "designNotes": "Generated 1000-level campaign stage. Chapter `molotov_intro` uses molotov with a flower board silhouette.",
@@ -107,8 +107,8 @@
                 "entityCategory": "reactive_ball",
                 "entityType": "molotov",
                 "blastRadius": 2,
-                "row": 1,
-                "col": 1
+                "row": 5,
+                "col": 5
             }
         ],
         "levelType": "normal",

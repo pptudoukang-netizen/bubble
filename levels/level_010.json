@@ -96,8 +96,8 @@
         "layout": [
             "RRGGYYRG",
             "RBGGYYYR",
-            "RBB.RGGY",
-            "YRBBYRGB",
+            ".BB.RGGY",
+            "Y.BBYRGB",
             "BYRBBYR.",
             "........"
         ],
@@ -108,8 +108,8 @@
                 "id": "stone_01",
                 "entityCategory": "obstacle_ball",
                 "entityType": "stone",
-                "row": 2,
-                "col": 3
+                "row": 3,
+                "col": 1
             }
         ],
         "levelType": "normal",

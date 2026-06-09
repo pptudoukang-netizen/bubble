@@ -94,12 +94,12 @@
             }
         ],
         "layout": [
-            "RRGGPPBB",
-            "RBGG.BBB",
+            "RRGGP.BB",
+            "RB.G.BBB",
             "RGG.RPPP",
-            "PRBBPRPB",
+            "P.B.PRPB",
             "BPRBBPRG",
-            "GBPRG..."
+            "..PRG..."
         ],
         "designNotes": "Dense reading now includes both hard and soft blockers, reducing clean direct clears.",
         "difficultyScore": 86,
@@ -108,15 +108,15 @@
                 "id": "stone_01",
                 "entityCategory": "obstacle_ball",
                 "entityType": "stone",
-                "row": 1,
-                "col": 4
+                "row": 3,
+                "col": 1
             },
             {
                 "id": "ice_01",
                 "entityCategory": "obstacle_ball",
                 "entityType": "ice",
-                "row": 2,
-                "col": 3,
+                "row": 1,
+                "col": 2,
                 "innerColor": "B"
             }
         ],

@@ -94,12 +94,12 @@
         ],
         "layout": [
             "PRPPPRPPPR",
-            "Y.BBYB.BY",
-            "RRR.RR.GRR",
-            "YY.YY.PYY",
-            "G.GG.BG.GB",
-            "RPP.RP.PR",
-            "BB.YBBBYBB",
+            "YBBBYB.BY",
+            "RRRGRRRGRR",
+            "YYPYYYPYY",
+            "GBGGGBGGGB",
+            "RPPPRPPPR",
+            "BB..B.BYBB",
             "RRGRRRGRR"
         ],
         "designNotes": "Generated 1000-level campaign stage. Chapter `lock_key_intro` uses locked with a wave board silhouette.",
@@ -111,7 +111,7 @@
                 "entityType": "key",
                 "unlockGroup": "g1",
                 "row": 1,
-                "col": 1
+                "col": 6
             },
             {
                 "id": "locked_g1_01",
@@ -119,23 +119,23 @@
                 "entityType": "locked",
                 "lockedColor": "R",
                 "lockGroup": "g1",
-                "row": 1,
-                "col": 6
+                "row": 6,
+                "col": 3
             },
             {
                 "id": "skill_rainbow_01",
                 "entityCategory": "skill_ball",
                 "entityType": "rainbow",
-                "row": 2,
-                "col": 3
+                "row": 6,
+                "col": 2
             },
             {
                 "id": "ice_01",
                 "entityCategory": "obstacle_ball",
                 "entityType": "ice",
                 "innerColor": "Y",
-                "row": 2,
-                "col": 6
+                "row": 6,
+                "col": 5
             }
         ],
         "levelType": "normal",

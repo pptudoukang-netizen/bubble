@@ -136,7 +136,6 @@ module.exports = {
       return this._refreshLeaderboardEntries();
     }.bind(this)).then(function (entries) {
       this._rankingViewController.render(entries);
-      showStatusAndTip(this, "世界排行榜已更新");
       return entries;
     }.bind(this)).catch(function (error) {
       Logger.error("Render world leaderboard failed", error && error.stack ? error.stack : error);

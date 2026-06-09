@@ -2,7 +2,8 @@
 
 var flags = {
   logs: true,
-  overlay: true
+  overlay: true,
+  levelSelectMemory: false
 };
 
 module.exports = {

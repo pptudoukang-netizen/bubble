@@ -95,10 +95,10 @@
             }
         ],
         "layout": [
-            "RRPPGGBP",
+            "RRPP.GBP",
             "RRPPGGGB",
             "BPB.BPPG",
-            "GBBRGBPR",
+            "G.BRGBPR",
             "RGBBRGBP",
             "PRGB...."
         ],
@@ -109,8 +109,8 @@
                 "id": "ice_01",
                 "entityCategory": "obstacle_ball",
                 "entityType": "ice",
-                "row": 2,
-                "col": 3,
+                "row": 5,
+                "col": 5,
                 "innerColor": "P"
             }
         ],

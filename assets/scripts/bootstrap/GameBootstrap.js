@@ -145,6 +145,10 @@ cc.Class({
       default: 6,
       tooltip: "瞄准拖动时触发辅助线刷新的最小位移阈值（像素）。"
     },
+    aimRefreshMinIntervalMs: {
+      default: 33,
+      tooltip: "瞄准拖动时触发轨迹重算的最小时间间隔（毫秒）。"
+    },
     showGhostBubble: {
       default: true,
       tooltip: "是否显示幽灵球（预测落点虚拟球）。"
@@ -294,6 +298,7 @@ cc.Class({
   _hideNewUserGuide: GameBootstrapNewUserGuideMethods._hideNewUserGuide,
   _runNewUserGuideFingerBreath: GameBootstrapNewUserGuideMethods._runNewUserGuideFingerBreath,
   _showNewUserGuideFingerAtTip: GameBootstrapNewUserGuideMethods._showNewUserGuideFingerAtTip,
+  _applyNewUserGuideMask: GameBootstrapNewUserGuideMethods._applyNewUserGuideMask,
   _clearNewUserGuideArc: GameBootstrapNewUserGuideMethods._clearNewUserGuideArc,
   _showNewUserGuideForQuickStart: GameBootstrapNewUserGuideMethods._showNewUserGuideForQuickStart,
   _showNewUserGuideForStartGame: GameBootstrapNewUserGuideMethods._showNewUserGuideForStartGame,
@@ -388,6 +393,8 @@ cc.Class({
   _restartCurrentLevel: GameBootstrapLevelRuntimeMethods._restartCurrentLevel,
   _isTerminalState: GameBootstrapLevelRuntimeMethods._isTerminalState,
   _createStatusOverlay: GameBootstrapUiFlowMethods._createStatusOverlay,
+  _syncDebugOverlayVisibility: GameBootstrapUiFlowMethods._syncDebugOverlayVisibility,
+  _formatLevelSelectDebugStatus: GameBootstrapUiFlowMethods._formatLevelSelectDebugStatus,
   _showNetworkLoading: GameBootstrapUiFlowMethods._showNetworkLoading,
   _hideNetworkLoading: GameBootstrapUiFlowMethods._hideNetworkLoading,
   _runWithNetworkLoading: GameBootstrapUiFlowMethods._runWithNetworkLoading,

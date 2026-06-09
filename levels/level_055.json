@@ -90,13 +90,13 @@
             }
         ],
         "layout": [
-            "YRGBYRGBYR",
-            "B.RGBY.GB",
-            "GBG.YR.RGB",
-            "RG.BY.BYR",
-            "Y.GB.RG.YR",
-            "BYG.YR.GB",
-            "GB.BYRYRGB",
+            "YRG.YRGBYR",
+            "BYRGBYRGB",
+            "GBGBY.YRGB",
+            "RGGBYRBY.",
+            "YRGBYRGB.R",
+            "BYGBYRRGB",
+            "GBGBYRYRGB",
             "RGGBYRBYR"
         ],
         "designNotes": "Generated 1000-level campaign stage. Chapter `molotov_intro` uses molotov with a flame board silhouette.",
@@ -107,23 +107,23 @@
                 "entityCategory": "reactive_ball",
                 "entityType": "molotov",
                 "blastRadius": 2,
-                "row": 1,
-                "col": 1
+                "row": 0,
+                "col": 3
             },
             {
                 "id": "molotov_02",
                 "entityCategory": "reactive_ball",
                 "entityType": "molotov",
                 "blastRadius": 2,
-                "row": 1,
-                "col": 6
+                "row": 3,
+                "col": 8
             },
             {
                 "id": "stone_01",
                 "entityCategory": "obstacle_ball",
                 "entityType": "stone",
-                "row": 2,
-                "col": 3
+                "row": 4,
+                "col": 8
             },
             {
                 "id": "ice_01",
@@ -131,7 +131,7 @@
                 "entityType": "ice",
                 "innerColor": "Y",
                 "row": 2,
-                "col": 6
+                "col": 5
             }
         ],
         "levelType": "normal",

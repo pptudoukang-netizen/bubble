@@ -90,11 +90,11 @@
             }
         ],
         "layout": [
-            "RBPRGBPP",
+            ".BPRG.PP",
             "RRBPRGPP",
-            "PGG..GGB",
+            "PGG...GB",
             "BPBGBBRG",
-            "GBPBBBPR",
+            ".B.BB.PR",
             "RGBP...."
         ],
         "designNotes": "A long bridge now mixes blast value with an ice delay, turning the collapse into a multi-step setup.",
@@ -105,14 +105,14 @@
                 "entityCategory": "skill_ball",
                 "entityType": "blast",
                 "row": 2,
-                "col": 3
+                "col": 5
             },
             {
                 "id": "ice_01",
                 "entityCategory": "obstacle_ball",
                 "entityType": "ice",
-                "row": 2,
-                "col": 4,
+                "row": 4,
+                "col": 5,
                 "innerColor": "G"
             }
         ],

@@ -94,13 +94,13 @@
             }
         ],
         "layout": [
-            "RRGGYYBB",
+            "RRGGYY.B",
             "RGG.YYBR",
-            ".GGYRY.B",
-            "BBR.GGBG",
-            "YBBR.GY.",
-            "YRGB.R..",
-            "RGBY.G..",
+            ".G.Y....",
+            "..R..G.G",
+            "YBB..GY.",
+            "...B.R..",
+            ".GB..G..",
             "YRG....."
         ],
         "designNotes": "Yellow collection is intentionally split by stones and ice, forcing the player to clear lanes before committing to same-color jar chains.",
@@ -110,29 +110,29 @@
                 "id": "skill_blast_01",
                 "entityCategory": "skill_ball",
                 "entityType": "blast",
-                "row": 1,
-                "col": 3
+                "row": 5,
+                "col": 0
             },
             {
                 "id": "stone_01",
                 "entityCategory": "obstacle_ball",
                 "entityType": "stone",
-                "row": 2,
-                "col": 0
+                "row": 5,
+                "col": 2
             },
             {
                 "id": "skill_rainbow_01",
                 "entityCategory": "skill_ball",
                 "entityType": "rainbow",
-                "row": 2,
-                "col": 6
+                "row": 5,
+                "col": 7
             },
             {
                 "id": "ice_01",
                 "entityCategory": "obstacle_ball",
                 "entityType": "ice",
-                "row": 3,
-                "col": 3,
+                "row": 5,
+                "col": 6,
                 "innerColor": "Y"
             },
             {
@@ -140,36 +140,36 @@
                 "entityCategory": "obstacle_ball",
                 "entityType": "stone",
                 "row": 4,
-                "col": 4
+                "col": 3
             },
             {
                 "id": "ice_02",
                 "entityCategory": "obstacle_ball",
                 "entityType": "ice",
-                "row": 5,
-                "col": 4,
+                "row": 2,
+                "col": 5,
                 "innerColor": "R"
             },
             {
                 "id": "skill_blast_02",
                 "entityCategory": "skill_ball",
                 "entityType": "blast",
-                "row": 6,
-                "col": 4
+                "row": 2,
+                "col": 2
             },
             {
                 "id": "skill_rainbow_02",
                 "entityCategory": "skill_ball",
                 "entityType": "rainbow",
-                "row": 7,
-                "col": 3
+                "row": 0,
+                "col": 6
             },
             {
                 "id": "stone_03",
                 "entityCategory": "obstacle_ball",
                 "entityType": "stone",
-                "row": 7,
-                "col": 4
+                "row": 6,
+                "col": 0
             }
         ],
         "levelType": "normal",

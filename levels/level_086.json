@@ -93,13 +93,13 @@
             }
         ],
         "layout": [
-            "GGRGGRGGGG",
-            "P.YPPY.PP",
-            "GGG.GG.GGG",
-            "RR.RR.RRR",
-            "Y.BY.BY.YY",
-            "RRR.RR.RR",
-            "PP.PPYPPPP",
+            "G.RGGRGGGG",
+            "PPYPPYPPP",
+            "GGGGGGGGGG",
+            "RRPRRPRRR",
+            "YYBYYBYYYY",
+            "RRRRRRR.R",
+            "PPYPPYPPPP",
             "BBGBBGBBB"
         ],
         "designNotes": "Generated 1000-level campaign stage. Chapter `lock_key_intro` uses locked with a flower board silhouette.",
@@ -110,7 +110,7 @@
                 "entityCategory": "key_ball",
                 "entityType": "key",
                 "unlockGroup": "g3",
-                "row": 1,
+                "row": 0,
                 "col": 1
             },
             {
@@ -119,8 +119,8 @@
                 "entityType": "locked",
                 "lockedColor": "B",
                 "lockGroup": "g3",
-                "row": 1,
-                "col": 6
+                "row": 5,
+                "col": 7
             }
         ],
         "levelType": "normal",

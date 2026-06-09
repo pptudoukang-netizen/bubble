@@ -73,8 +73,9 @@
                 "value": 1
             },
             {
-                "type": "collect_any",
-                "value": 18
+                "type": "collect_color",
+                "color": "Y",
+                "value": 9
             }
         ],
         "bonusObjectives": [
@@ -90,13 +91,13 @@
             }
         ],
         "layout": [
-            "YYRBYYRBYR",
-            "B.YGBB.GB",
-            "GGB.GG.RGB",
-            "RG.YR.BYR",
-            "Y.GB.RG.YR",
-            "BYR.BY.GB",
-            "GB.RGBYRGB",
+            "YYRBYY.BYR",
+            "BBYGBBYGB",
+            "GGBRGGBRGB",
+            "RGBYRGBYR",
+            "YRGBYRGBYR",
+            "BYRGBYRGB",
+            "GBYRGBYRGB",
             "RGBYRGBYR"
         ],
         "designNotes": "Generated 1000-level campaign stage. Chapter `splitter_intro` uses splitter with a heart board silhouette.",
@@ -107,8 +108,8 @@
                 "entityCategory": "reactive_ball",
                 "entityType": "splitter",
                 "splitColor": "Y",
-                "row": 1,
-                "col": 1
+                "row": 0,
+                "col": 6
             }
         ],
         "levelType": "normal",

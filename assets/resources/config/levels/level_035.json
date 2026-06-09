@@ -89,13 +89,13 @@
             }
         ],
         "layout": [
-            "RRGGYYBB",
-            "RG.GYYBR",
-            "BGG.BY.Y",
-            "BBR.GGBG",
-            "YBBBYG..",
-            "YRGB.R..",
-            "RGBY.G..",
+            ".RGGYYB.",
+            "R..G..BR",
+            "..G....Y",
+            "BBR..G.G",
+            "Y.BBYG..",
+            "........",
+            "..B.....",
             "YRG....."
         ],
         "designNotes": "The midpoint of the fourth page keeps the total ball count high while using stacked obstacles to test cleanup planning rather than pure shooting volume.",
@@ -105,73 +105,73 @@
                 "id": "skill_rainbow_01",
                 "entityCategory": "skill_ball",
                 "entityType": "rainbow",
-                "row": 1,
-                "col": 2
+                "row": 2,
+                "col": 0
             },
             {
                 "id": "stone_01",
                 "entityCategory": "obstacle_ball",
                 "entityType": "stone",
-                "row": 2,
-                "col": 3
+                "row": 6,
+                "col": 1
             },
             {
                 "id": "skill_blast_01",
                 "entityCategory": "skill_ball",
                 "entityType": "blast",
                 "row": 2,
-                "col": 6
+                "col": 5
             },
             {
                 "id": "ice_01",
                 "entityCategory": "obstacle_ball",
                 "entityType": "ice",
-                "row": 3,
-                "col": 3,
+                "row": 6,
+                "col": 5,
                 "innerColor": "B"
             },
             {
                 "id": "stone_02",
                 "entityCategory": "obstacle_ball",
                 "entityType": "stone",
-                "row": 4,
-                "col": 6
+                "row": 5,
+                "col": 2
             },
             {
                 "id": "ice_02",
                 "entityCategory": "obstacle_ball",
                 "entityType": "ice",
-                "row": 4,
-                "col": 7,
+                "row": 3,
+                "col": 4,
                 "innerColor": "Y"
             },
             {
                 "id": "stone_03",
                 "entityCategory": "obstacle_ball",
                 "entityType": "stone",
-                "row": 5,
-                "col": 4
+                "row": 2,
+                "col": 1
             },
             {
                 "id": "skill_rainbow_02",
                 "entityCategory": "skill_ball",
                 "entityType": "rainbow",
-                "row": 6,
-                "col": 4
+                "row": 1,
+                "col": 5
             },
             {
                 "id": "skill_blast_02",
                 "entityCategory": "skill_ball",
                 "entityType": "blast",
                 "row": 7,
-                "col": 3
+                "col": 7
             },
             {
                 "id": "stone_04",
                 "entityCategory": "obstacle_ball",
                 "entityType": "stone",
-                "row": 7,
-                "col": 4
+                "row": 1,
+                "col": 1
             }
         ],
         "levelType": "normal",

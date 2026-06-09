@@ -1,10 +1,12 @@
 "use strict";
 
 var Shared = require("./GameBootstrapUiFlowShared");
+var DebugFlags = Shared.DebugFlags;
 var Logger = Shared.Logger;
 var LevelSelectPolicy = Shared.LevelSelectPolicy;
 var LevelSelectView = Shared.LevelSelectView;
 var LevelSelectFloatingMap = require("./LevelSelectFloatingMap");
+var LevelSelectMemoryDiagnostics = require("../utils/LevelSelectMemoryDiagnostics");
 var StarRatingPolicy = Shared.StarRatingPolicy;
 var hideGameCircleWelfareViewNode = Shared.hideGameCircleWelfareViewNode;
 
@@ -98,11 +100,18 @@ function resolveAwardedClearRewardItems(rewardItems, isFirstCompletion) {
   }
 
   return rewardItems.filter(function (item) {
-    return item.id !== "stamina" || isFirstCompletion;
+    return item.id === "coin" || isFirstCompletion;
   }).map(function (item) {
+    var count = item.count;
+    if (item.id === "coin" && !isFirstCompletion) {
+      count = Math.floor(item.count * 0.3);
+      if (!Number.isInteger(count) || count <= 0) {
+        throw new Error("Repeat level clear coin reward must be a positive integer.");
+      }
+    }
     return {
       id: item.id,
-      count: item.count
+      count: count
     };
   });
 }
@@ -113,6 +122,10 @@ module.exports = {
     if (this.isRestarting) {
       return;
     }
+    if (DebugFlags.get("levelSelectMemory") === true) {
+      LevelSelectMemoryDiagnostics.start(this.node);
+    }
+    LevelSelectMemoryDiagnostics.increment("levelSelect.show");
 
     var prepareLevelId = normalizeOptionalPrepareLevelId(options);
     var targetLevelId = Math.max(0, Math.floor(Number(options.targetLevelId) || 0));
@@ -256,6 +269,8 @@ module.exports = {
   },
 
   _hideLevelSelectView: function () {
+    LevelSelectMemoryDiagnostics.increment("levelSelect.hide");
+    LevelSelectMemoryDiagnostics.stop();
     this._clearStaminaRecoveryTicker();
     this._hideAwardView();
     this._hideSettingView();
@@ -279,6 +294,10 @@ module.exports = {
       return;
     }
 
+    var mapHostNode = this._levelSelectNode.getChildByName("map");
+    if (mapHostNode && mapHostNode.isValid) {
+      LevelSelectFloatingMap.disposeRuntime(mapHostNode);
+    }
     this._levelSelectNode.active = false;
   },
 
@@ -379,15 +398,6 @@ module.exports = {
           return resolvedLevelIds;
         }
 
-        if (
-          !this._levelSelectViewPrefab ||
-          !this._floatingMapAssets ||
-          typeof this._floatingMapAssets !== "object"
-        ) {
-          return resolvedLevelIds;
-        }
-
-        this._renderLevelSelectContent(this._levelSelectViewPrefab, this._floatingMapAssets, resolvedLevelIds);
         this._preloadLevelConfigsInBackground(resolvedLevelIds);
         return resolvedLevelIds;
       }.bind(this)).catch(function (error) {
@@ -432,6 +442,7 @@ module.exports = {
   },
 
   _renderLevelSelectContent: function (levelViewPrefab, floatingMapAssets, levelIds) {
+    LevelSelectMemoryDiagnostics.increment("levelSelect.renderContent");
     this._refreshLevelProgress();
 
     var highestUnlocked = Math.max(1, Number(this.levelProgress.highestUnlockedLevel) || 1);
@@ -773,6 +784,7 @@ module.exports = {
   },
 
   _onLevelSelectQuickStartTap: function () {
+    LevelSelectMemoryDiagnostics.increment("levelSelect.quickStartTap");
     if (this.isRestarting || !this.isSelectingLevel) {
       return;
     }
@@ -809,6 +821,7 @@ module.exports = {
   },
 
   _onLevelSelectBackToCurrentLevelTap: function () {
+    LevelSelectMemoryDiagnostics.increment("levelSelect.backToCurrentTap");
     if (this.isRestarting || !this.isSelectingLevel) {
       return;
     }

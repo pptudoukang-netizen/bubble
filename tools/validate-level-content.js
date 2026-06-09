@@ -30,7 +30,7 @@ var ALLOWED_ENTITY_TYPES = {
 var ALLOWED_CLEAR_REWARD_ITEM_IDS = ["coin", "stamina"];
 var AD_RUN_POWERUP_TYPES = ["three_line_elimination", "plus_three_balls"];
 var MIN_INITIAL_DROP_SPACE_ROWS = 8;
-var CLEAR_REWARD_START_LEVEL_ID = 5;
+var CLEAR_REWARD_START_LEVEL_ID = 1;
 
 function readJson(filePath) {
   var raw = fs.readFileSync(filePath, "utf8");
@@ -207,6 +207,7 @@ function validateClearRewardItems(level, expectedLevelId, issues) {
   }
 
   var seenIds = {};
+  var hasCoinReward = false;
   rewardItems.forEach(function (item, index) {
     if (!item || typeof item !== "object" || Array.isArray(item)) {
       issues.push("clearRewardItems[" + index + "] must be object");
@@ -219,6 +220,9 @@ function validateClearRewardItems(level, expectedLevelId, issues) {
       issues.push("clearRewardItems[" + index + "] duplicate id: " + item.id);
     } else {
       seenIds[item.id] = true;
+      if (item.id === "coin") {
+        hasCoinReward = true;
+      }
     }
 
     if (!isPositiveInteger(item.count)) {
@@ -231,6 +235,73 @@ function validateClearRewardItems(level, expectedLevelId, issues) {
     }
     if (item.id === "stamina" && (item.count < 1 || item.count > 3)) {
       issues.push("clearRewardItems[" + index + "].count for stamina must be in [1, 3]");
+    }
+  });
+  if (!hasCoinReward) {
+    issues.push("clearRewardItems must include coin reward");
+  }
+}
+
+function collectSpecialEntities(level, category, entityType) {
+  return (Array.isArray(level.specialEntities) ? level.specialEntities : []).filter(function (entity) {
+    return entity && entity.entityCategory === category && entity.entityType === entityType;
+  });
+}
+
+function validateSplitterObjectives(level, issues) {
+  var splitters = collectSpecialEntities(level, "reactive_ball", "splitter");
+  if (!splitters.length) {
+    return;
+  }
+
+  var splitterColor = null;
+  splitters.forEach(function (entity) {
+    if (typeof entity.splitColor !== "string" || !entity.splitColor) {
+      issues.push("splitter requires splitColor before objective validation");
+      return;
+    }
+    if (splitterColor !== null && splitterColor !== entity.splitColor) {
+      issues.push("all splitters in one level must use the collect target color");
+    }
+    splitterColor = splitterColor || entity.splitColor;
+  });
+
+  var collectColorConditions = Array.isArray(level.winConditions)
+    ? level.winConditions.filter(function (condition) {
+      return condition && condition.type === "collect_color";
+    })
+    : [];
+  if (collectColorConditions.length !== 1) {
+    issues.push("splitter level winConditions must contain exactly one collect_color objective");
+    return;
+  }
+  if (collectColorConditions[0].color !== splitterColor) {
+    issues.push("splitter level collect_color must match splitColor: " + splitterColor);
+  }
+}
+
+function validateKeyLockGroups(level, issues) {
+  var keyGroups = {};
+  var lockGroups = {};
+  (Array.isArray(level.specialEntities) ? level.specialEntities : []).forEach(function (entity) {
+    if (!entity) {
+      return;
+    }
+    if (entity.entityCategory === "key_ball" && entity.entityType === "key" && typeof entity.unlockGroup === "string" && entity.unlockGroup.trim()) {
+      keyGroups[entity.unlockGroup] = true;
+    }
+    if (entity.entityCategory === "locked_ball" && entity.entityType === "locked" && typeof entity.lockGroup === "string" && entity.lockGroup.trim()) {
+      lockGroups[entity.lockGroup] = true;
+    }
+  });
+  Object.keys(lockGroups).forEach(function (group) {
+    if (keyGroups[group] !== true) {
+      issues.push("locked ball group missing matching key unlockGroup: " + group);
+    }
+  });
+  Object.keys(keyGroups).forEach(function (group) {
+    if (lockGroups[group] !== true) {
+      issues.push("key unlockGroup missing matching locked ball group: " + group);
     }
   });
 }
@@ -513,6 +584,8 @@ function validateLevelData(data, expectedLevelId) {
 
   validateObjectives(level.winConditions, "win", level, issues);
   validateObjectives(level.bonusObjectives, "bonus", level, issues);
+  validateSplitterObjectives(level, issues);
+  validateKeyLockGroups(level, issues);
   validateInitialShotBalls(level, issues);
   validateIceSnowballSupply(level, issues);
   validateAdPowerupRules(level, issues);
@@ -523,6 +596,68 @@ function validateLevelData(data, expectedLevelId) {
 
 function validateLevel(filePath, expectedLevelId) {
   return validateLevelData(readJson(filePath), expectedLevelId);
+}
+
+function buildSpecialPositionSignatures(level) {
+  var grouped = {};
+  (Array.isArray(level.specialEntities) ? level.specialEntities : []).forEach(function (entity) {
+    if (!entity || typeof entity.entityCategory !== "string" || typeof entity.entityType !== "string") {
+      return;
+    }
+    if (!Number.isInteger(entity.row) || !Number.isInteger(entity.col)) {
+      return;
+    }
+    var key = entity.entityCategory + ":" + entity.entityType;
+    if (!grouped[key]) {
+      grouped[key] = [];
+    }
+    grouped[key].push(entity.row + ":" + entity.col);
+  });
+
+  var signatures = {};
+  Object.keys(grouped).forEach(function (key) {
+    signatures[key] = grouped[key].sort().join(",");
+  });
+  return signatures;
+}
+
+function validateCrossLevelSpecialPositions(entries) {
+  var issues = [];
+  var previous = null;
+  var recentByType = {};
+
+  entries.forEach(function (entry) {
+    var signatures = buildSpecialPositionSignatures(entry.data.level || {});
+    if (previous) {
+      Object.keys(signatures).forEach(function (typeKey) {
+        if (previous.signatures[typeKey] && previous.signatures[typeKey] === signatures[typeKey]) {
+          issues.push(entry.sourceName + " repeats adjacent " + typeKey + " special positions from level " + previous.levelId);
+        }
+      });
+    }
+
+    Object.keys(signatures).forEach(function (typeKey) {
+      var history = recentByType[typeKey] || [];
+      var sameCount = history.filter(function (item) {
+        return item.signature === signatures[typeKey];
+      }).length;
+      if (sameCount >= 2) {
+        issues.push(entry.sourceName + " repeats " + typeKey + " special positions more than twice within 5 levels");
+      }
+      history.push({
+        levelId: entry.levelId,
+        signature: signatures[typeKey]
+      });
+      recentByType[typeKey] = history.slice(-4);
+    });
+
+    previous = {
+      levelId: entry.levelId,
+      signatures: signatures
+    };
+  });
+
+  return issues;
 }
 
 function listLocalLevelEntries() {
@@ -630,6 +765,11 @@ function main() {
     }
 
     expectedId += 1;
+  });
+
+  validateCrossLevelSpecialPositions(entries).forEach(function (issue) {
+    failed = true;
+    console.log("[FAIL]", issue);
   });
 
   if (Number.isInteger(expectedLevelCount) && expectedLevelCount > 0 && entries.length !== expectedLevelCount) {

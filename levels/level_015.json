@@ -93,10 +93,10 @@
         "layout": [
             "RRGBPGPP",
             "RPG.BGRP",
-            "GBB.GBBR",
+            "G.....BR",
             "RBBP.BBP",
-            "PRBBPRGB",
-            "BPR....."
+            "PR.BPR.B",
+            ".PR....."
         ],
         "designNotes": "The board is more symmetrical, but a blast pickup and stone blocker force stronger path commitment.",
         "difficultyScore": 80,
@@ -112,15 +112,15 @@
                 "id": "stone_01",
                 "entityCategory": "obstacle_ball",
                 "entityType": "stone",
-                "row": 1,
-                "col": 3
+                "row": 2,
+                "col": 5
             },
             {
                 "id": "stone_02",
                 "entityCategory": "obstacle_ball",
                 "entityType": "stone",
-                "row": 3,
-                "col": 4
+                "row": 5,
+                "col": 0
             }
         ],
         "levelType": "normal",

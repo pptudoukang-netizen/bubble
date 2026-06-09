@@ -91,12 +91,12 @@
         ],
         "layout": [
             "GBYGGBYGGB",
-            "R.YYRG.YR",
-            "YGG.YG.BYG",
-            "YY.GY.RGY",
-            "G.YG.BY.GB",
-            "RGY.RG.YR",
-            "YG.BYGGBYG",
+            "RGYYRGYYR",
+            "YGGBYGGB.G",
+            "YYRGYYRGY",
+            "GBYGGBYGGB",
+            "RGYYRGYYR",
+            "YGG.YGGBYG",
             "YYRGYYRGY"
         ],
         "designNotes": "Generated 1000-level campaign stage. Chapter `molotov_intro` uses molotov with a wave board silhouette.",
@@ -107,15 +107,15 @@
                 "entityCategory": "reactive_ball",
                 "entityType": "molotov",
                 "blastRadius": 2,
-                "row": 1,
-                "col": 1
+                "row": 6,
+                "col": 3
             },
             {
                 "id": "skill_blast_01",
                 "entityCategory": "skill_ball",
                 "entityType": "blast",
-                "row": 1,
-                "col": 6
+                "row": 2,
+                "col": 8
             }
         ],
         "levelType": "normal",

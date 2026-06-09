@@ -45,7 +45,7 @@
             "B"
         ],
         "shotLimit": 2,
-        "targetScore": 3870,
+        "targetScore": 100,
         "dropInterval": 8,
         "jarCount": 2,
         "jarColors": [
@@ -65,6 +65,16 @@
             "collectZoneScale": 1.12,
             "sameColorBonus": 1.5
         },
+        "clearRewardItems": [
+            {
+                "id": "coin",
+                "count": 50
+            },
+            {
+                "id": "stamina",
+                "count": 1
+            }
+        ],
         "winConditions": [
             {
                 "type": "clear_all",

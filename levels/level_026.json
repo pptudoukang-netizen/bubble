@@ -94,14 +94,14 @@
             }
         ],
         "layout": [
-            "RRGGYYBB",
+            "RRGGYY.B",
             "RRG.YYBG",
-            ".GG.BYBY",
-            "BBRGGGBG",
-            "BBBY.G..",
-            "YRGB.R..",
+            ".GG.B..Y",
+            "...G..BG",
+            "B.BY.G..",
+            "YRGB....",
             "RGBY.G..",
-            "YRGB...."
+            "Y.GB...."
         ],
         "designNotes": "Red collection is gated behind a frozen red core and forces a choice between early blast and late rainbow recovery.",
         "difficultyScore": 90,
@@ -110,37 +110,37 @@
                 "id": "skill_blast_01",
                 "entityCategory": "skill_ball",
                 "entityType": "blast",
-                "row": 1,
-                "col": 3
+                "row": 3,
+                "col": 2
             },
             {
                 "id": "stone_01",
                 "entityCategory": "obstacle_ball",
                 "entityType": "stone",
-                "row": 2,
-                "col": 0
+                "row": 3,
+                "col": 4
             },
             {
                 "id": "skill_rainbow_01",
                 "entityCategory": "skill_ball",
                 "entityType": "rainbow",
-                "row": 2,
-                "col": 3
+                "row": 3,
+                "col": 1
             },
             {
                 "id": "ice_01",
                 "entityCategory": "obstacle_ball",
                 "entityType": "ice",
-                "row": 4,
-                "col": 4,
+                "row": 3,
+                "col": 0,
                 "innerColor": "R"
             },
             {
                 "id": "stone_02",
                 "entityCategory": "obstacle_ball",
                 "entityType": "stone",
-                "row": 5,
-                "col": 4
+                "row": 2,
+                "col": 5
             }
         ],
         "levelType": "normal",

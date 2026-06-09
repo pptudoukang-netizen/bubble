@@ -98,12 +98,12 @@
         ],
         "layout": [
             "RRRRRRRRRR",
-            "Y.YRRY.YY",
-            "GGY.YY.GGG",
-            "PG.GG.GPP",
-            "P.PP.PP.BB",
-            "BBB.BB.BB",
-            "RR.RRRRRRR",
+            "YYYRRYYYY",
+            "GGYYYYGGGG",
+            "PGGG.GGPP",
+            "PPPPPPPPBB",
+            "BBBBB..BB",
+            "RRRR.RRRRR",
             "YYYYYYYYY"
         ],
         "designNotes": "Generated 1000-level campaign stage. Chapter `lock_key_intro` uses locked with a arrow board silhouette.",
@@ -114,8 +114,8 @@
                 "entityCategory": "key_ball",
                 "entityType": "key",
                 "unlockGroup": "g1",
-                "row": 1,
-                "col": 1
+                "row": 6,
+                "col": 4
             },
             {
                 "id": "locked_g1_01",
@@ -123,22 +123,22 @@
                 "entityType": "locked",
                 "lockedColor": "G",
                 "lockGroup": "g1",
-                "row": 1,
-                "col": 6
+                "row": 3,
+                "col": 4
             },
             {
                 "id": "stone_01",
                 "entityCategory": "obstacle_ball",
                 "entityType": "stone",
-                "row": 2,
-                "col": 3
+                "row": 5,
+                "col": 6
             },
             {
                 "id": "skill_rainbow_01",
                 "entityCategory": "skill_ball",
                 "entityType": "rainbow",
-                "row": 2,
-                "col": 6
+                "row": 5,
+                "col": 5
             }
         ],
         "levelType": "normal",

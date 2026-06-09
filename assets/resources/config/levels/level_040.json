@@ -93,13 +93,13 @@
             }
         ],
         "layout": [
-            "RRGGYYBB",
-            "R.G.YY.R",
-            "BGG.BY.B",
-            "BBR.GG.R",
-            "YBBR.G..",
-            "YRGB....",
-            "RGBY....",
+            "........",
+            ".....Y.R",
+            "........",
+            "..R..G.R",
+            "..B.....",
+            "........",
+            "RG.Y....",
             "........"
         ],
         "designNotes": "Final LevelMap4 exam. The board deliberately compresses every major entity into a long unlock chain while leaving enough shots for correct sequencing to matter.",
@@ -109,95 +109,95 @@
                 "id": "skill_blast_01",
                 "entityCategory": "skill_ball",
                 "entityType": "blast",
-                "row": 1,
-                "col": 1
+                "row": 5,
+                "col": 0
             },
             {
                 "id": "stone_01",
                 "entityCategory": "obstacle_ball",
                 "entityType": "stone",
-                "row": 1,
-                "col": 3
+                "row": 5,
+                "col": 2
             },
             {
                 "id": "skill_rainbow_01",
                 "entityCategory": "skill_ball",
                 "entityType": "rainbow",
-                "row": 1,
-                "col": 6
+                "row": 5,
+                "col": 7
             },
             {
                 "id": "ice_01",
                 "entityCategory": "obstacle_ball",
                 "entityType": "ice",
-                "row": 2,
-                "col": 3,
+                "row": 5,
+                "col": 6,
                 "innerColor": "B"
             },
             {
                 "id": "stone_02",
                 "entityCategory": "obstacle_ball",
                 "entityType": "stone",
-                "row": 2,
-                "col": 6
+                "row": 4,
+                "col": 3
             },
             {
                 "id": "skill_blast_02",
                 "entityCategory": "skill_ball",
                 "entityType": "blast",
-                "row": 3,
-                "col": 3
+                "row": 0,
+                "col": 7
             },
             {
                 "id": "ice_02",
                 "entityCategory": "obstacle_ball",
                 "entityType": "ice",
-                "row": 3,
-                "col": 6,
+                "row": 4,
+                "col": 0,
                 "innerColor": "G"
             },
             {
                 "id": "stone_03",
                 "entityCategory": "obstacle_ball",
                 "entityType": "stone",
-                "row": 4,
+                "row": 3,
                 "col": 4
             },
             {
                 "id": "skill_rainbow_02",
                 "entityCategory": "skill_ball",
                 "entityType": "rainbow",
-                "row": 4,
-                "col": 6
+                "row": 2,
+                "col": 1
             },
             {
                 "id": "ice_03",
                 "entityCategory": "obstacle_ball",
                 "entityType": "ice",
-                "row": 4,
-                "col": 7,
+                "row": 3,
+                "col": 1,
                 "innerColor": "Y"
             },
             {
                 "id": "stone_04",
                 "entityCategory": "obstacle_ball",
                 "entityType": "stone",
-                "row": 5,
-                "col": 4
+                "row": 2,
+                "col": 5
             },
             {
                 "id": "skill_blast_03",
                 "entityCategory": "skill_ball",
                 "entityType": "blast",
                 "row": 5,
-                "col": 5
+                "col": 1
             },
             {
                 "id": "ice_04",
                 "entityCategory": "obstacle_ball",
                 "entityType": "ice",
-                "row": 5,
-                "col": 6,
+                "row": 2,
+                "col": 2,
                 "innerColor": "R"
             },
             {
@@ -205,42 +205,42 @@
                 "entityCategory": "skill_ball",
                 "entityType": "rainbow",
                 "row": 5,
-                "col": 7
+                "col": 4
             },
             {
                 "id": "stone_05",
                 "entityCategory": "obstacle_ball",
                 "entityType": "stone",
-                "row": 6,
-                "col": 4
+                "row": 3,
+                "col": 3
             },
             {
                 "id": "skill_blast_04",
                 "entityCategory": "skill_ball",
                 "entityType": "blast",
                 "row": 6,
-                "col": 5
+                "col": 6
             },
             {
                 "id": "skill_rainbow_04",
                 "entityCategory": "skill_ball",
                 "entityType": "rainbow",
-                "row": 7,
-                "col": 0
+                "row": 4,
+                "col": 1
             },
             {
                 "id": "stone_06",
                 "entityCategory": "obstacle_ball",
                 "entityType": "stone",
-                "row": 7,
-                "col": 1
+                "row": 2,
+                "col": 3
             },
             {
                 "id": "ice_05",
                 "entityCategory": "obstacle_ball",
                 "entityType": "ice",
                 "row": 7,
-                "col": 2,
+                "col": 4,
                 "innerColor": "B"
             },
             {
@@ -248,7 +248,7 @@
                 "entityCategory": "skill_ball",
                 "entityType": "blast",
                 "row": 7,
-                "col": 3
+                "col": 2
             }
         ],
         "levelType": "normal",

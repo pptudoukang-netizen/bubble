@@ -7,6 +7,7 @@ var TAG_SPRITE_PATHS = {
   recommended: "image/shop/recommended_badge",
   hot: "image/shop/popular_badge"
 };
+var SHOP_ICON_WIDTH = 110;
 
 function assertObject(value, message) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -63,6 +64,24 @@ function setSpriteFrame(node, spriteFrame) {
   if (cc.Sprite.SizeMode && cc.Sprite.SizeMode.CUSTOM !== undefined) {
     sprite.sizeMode = cc.Sprite.SizeMode.CUSTOM;
   }
+}
+
+function setSpriteFrameToWidth(node, spriteFrame, targetWidth) {
+  if (!spriteFrame) {
+    throw new Error("ShopView spriteFrame missing for node: " + node.name);
+  }
+  if (typeof spriteFrame.getRect !== "function") {
+    throw new Error("ShopView spriteFrame requires getRect: " + node.name);
+  }
+  if (!Number.isFinite(targetWidth) || targetWidth <= 0) {
+    throw new Error("ShopView sprite target width must be positive: " + node.name);
+  }
+  var rect = spriteFrame.getRect();
+  if (!rect || !Number.isFinite(rect.width) || !Number.isFinite(rect.height) || rect.width <= 0 || rect.height <= 0) {
+    throw new Error("ShopView spriteFrame has invalid rect: " + node.name);
+  }
+  setSpriteFrame(node, spriteFrame);
+  node.setContentSize(targetWidth, targetWidth * rect.height / rect.width);
 }
 
 function bindTapOnce(node, key, onTap) {
@@ -218,7 +237,7 @@ ShopViewController.prototype._renderItem = function (goods, index, purchaseState
 
   setLabelText(nameNode, goods.displayName);
   setLabelText(priceNode, remaining > 0 ? String(goods.price.amount) : "售罄");
-  setSpriteFrame(iconNode, this._spriteFrames[goods.iconPath]);
+  setSpriteFrameToWidth(iconNode, this._spriteFrames[goods.iconPath], SHOP_ICON_WIDTH);
 
   if (tag.length > 0) {
     var tagSpriteFrame = this._spriteFrames[TAG_SPRITE_PATHS[tag]];

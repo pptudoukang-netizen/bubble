@@ -96,11 +96,11 @@
         ],
         "layout": [
             "RPRGGPRP",
-            "RRPG.BPP",
+            "RRPG..PP",
             "RGB.RGBP",
             "PRGBPGGB",
-            "BPRBBPRG",
-            "GB......"
+            "BPRBBPR.",
+            ".B......"
         ],
         "designNotes": "Blast skill ball enters alongside stone blockers to teach local structure breaking.",
         "difficultyScore": 78,
@@ -109,15 +109,15 @@
                 "id": "skill_blast_01",
                 "entityCategory": "skill_ball",
                 "entityType": "blast",
-                "row": 1,
-                "col": 4
+                "row": 5,
+                "col": 6
             },
             {
                 "id": "stone_01",
                 "entityCategory": "obstacle_ball",
                 "entityType": "stone",
-                "row": 2,
-                "col": 3
+                "row": 5,
+                "col": 0
             }
         ],
         "levelType": "normal",

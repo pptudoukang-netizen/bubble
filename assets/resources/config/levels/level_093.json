@@ -94,13 +94,13 @@
         ],
         "layout": [
             "PPPPPPPPPP",
-            "B.GGGG.GB",
-            "RPP.PP.PPR",
-            "YB.BB.BBY",
-            "G.RR.RR.RG",
-            "PYY.YY.YP",
-            "BG.GGGGGGB",
-            "RRRRRRRRR"
+            "BGGGGGGGB",
+            "RPPPPPPPPR",
+            "YBBBBBBBY",
+            "GRR.RRRRRG",
+            "PYYYYYYYP",
+            "BGGGGGGGGB",
+            "RRR.RRRRR"
         ],
         "designNotes": "Generated 1000-level campaign stage. Chapter `lock_key_intro` uses locked with a spiral board silhouette.",
         "difficultyScore": 40,
@@ -110,8 +110,8 @@
                 "entityCategory": "key_ball",
                 "entityType": "key",
                 "unlockGroup": "g1",
-                "row": 1,
-                "col": 1
+                "row": 7,
+                "col": 3
             },
             {
                 "id": "locked_g1_01",
@@ -119,8 +119,8 @@
                 "entityType": "locked",
                 "lockedColor": "P",
                 "lockGroup": "g1",
-                "row": 1,
-                "col": 6
+                "row": 4,
+                "col": 3
             }
         ],
         "levelType": "normal",

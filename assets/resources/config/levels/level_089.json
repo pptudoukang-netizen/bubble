@@ -94,12 +94,12 @@
         ],
         "layout": [
             "PPPRPPPRPP",
-            "B.YBBB.BB",
-            "RGR.RG.RRG",
-            "PY.YP.YYP",
-            "G.GB.GG.GG",
-            "PPR.PP.PP",
-            "BY.BBYBBBY",
+            "BBYBB.YBB",
+            "RGRRRGRRRG",
+            "PYYYPYYYP",
+            "GGGBGGGBGG",
+            "PPRPPPRPP",
+            "B.BBBYBBBY",
             "GRRRGRRRG"
         ],
         "designNotes": "Generated 1000-level campaign stage. Chapter `lock_key_intro` uses locked with a wave board silhouette.",
@@ -111,7 +111,7 @@
                 "entityType": "key",
                 "unlockGroup": "g3",
                 "row": 1,
-                "col": 1
+                "col": 5
             },
             {
                 "id": "locked_g3_01",
@@ -119,8 +119,8 @@
                 "entityType": "locked",
                 "lockedColor": "R",
                 "lockGroup": "g3",
-                "row": 1,
-                "col": 6
+                "row": 6,
+                "col": 1
             }
         ],
         "levelType": "normal",

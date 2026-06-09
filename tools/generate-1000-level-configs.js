@@ -160,23 +160,82 @@ function fillRows(levelId, colors, patternName) {
   return rows;
 }
 
-function reserveSpecialSlots(rows, count) {
+function buildSpecialSlotPool(rows) {
+  var seen = {};
   var slots = [];
-  for (var index = 0; index < SPECIAL_SLOTS.length && slots.length < count; index += 1) {
-    var slot = SPECIAL_SLOTS[index];
-    if (slot.row >= rows.length || slot.col >= rows[slot.row].length) {
-      continue;
+
+  function pushSlot(row, col) {
+    if (row >= rows.length || col >= rows[row].length) {
+      return;
     }
-    setCell(rows, slot.row, slot.col, ".");
+    var key = row + ":" + col;
+    if (seen[key]) {
+      return;
+    }
+    seen[key] = true;
     slots.push({
-      row: slot.row,
-      col: slot.col
+      row: row,
+      col: col
     });
   }
-  if (slots.length !== count) {
-    throw new Error("Not enough special slots for generated level.");
+
+  SPECIAL_SLOTS.forEach(function (slot) {
+    pushSlot(slot.row, slot.col);
+  });
+  for (var row = 0; row < rows.length; row += 1) {
+    for (var col = 0; col < rows[row].length; col += 1) {
+      pushSlot(row, col);
+    }
   }
+
   return slots;
+}
+
+function hashString(value) {
+  var text = String(value);
+  var hash = 0;
+  for (var index = 0; index < text.length; index += 1) {
+    hash = ((hash * 31) + text.charCodeAt(index)) >>> 0;
+  }
+  return hash;
+}
+
+function assignSpecialEntitySlot(rows, slotPool, usedSlotIndexes, entity, levelId, entityIndex) {
+  if (!Array.isArray(slotPool) || slotPool.length <= 0) {
+    throw new Error("Special entity slot pool is empty.");
+  }
+  if (!Array.isArray(rows) || rows.length <= 0) {
+    throw new Error("Special entity rows are required.");
+  }
+  var entityHash = hashString(entity.entityCategory + ":" + entity.entityType + ":" + entity.id);
+  var rowStep = rows.length % 2 === 0 ? 3 : 2;
+  var preferredRow = (entityHash + levelId * rowStep + entityIndex * 2) % rows.length;
+  var preferredCol = ((entityHash >>> 3) + levelId * 5 + entityIndex * 3) % rows[preferredRow].length;
+  var baseIndex = -1;
+  for (var index = 0; index < slotPool.length; index += 1) {
+    if (slotPool[index].row === preferredRow && slotPool[index].col === preferredCol) {
+      baseIndex = index;
+      break;
+    }
+  }
+  if (baseIndex < 0) {
+    throw new Error("Special entity preferred slot is missing from slot pool.");
+  }
+  var selectedIndex = -1;
+  for (var offset = 0; offset < slotPool.length; offset += 1) {
+    var candidateIndex = (baseIndex + offset) % slotPool.length;
+    if (usedSlotIndexes[candidateIndex] !== true) {
+      selectedIndex = candidateIndex;
+      break;
+    }
+  }
+  if (selectedIndex < 0) {
+    throw new Error("Special entity could not resolve an unused slot.");
+  }
+  usedSlotIndexes[selectedIndex] = true;
+  var slot = slotPool[selectedIndex];
+  setCell(rows, slot.row, slot.col, ".");
+  return slot;
 }
 
 function getChapter(levelId) {
@@ -232,22 +291,22 @@ function getMechanics(levelId) {
 }
 
 function makeSpecialEntities(levelId, rows, colors, mechanics) {
-  var count = 12;
-  var slots = reserveSpecialSlots(rows, count);
+  var slots = buildSpecialSlotPool(rows);
   var entities = [];
   var slotIndex = 0;
+  var usedSlotIndexes = {};
 
-  function nextSlot() {
+  function nextSlot(entity) {
     if (slotIndex >= slots.length) {
-      throw new Error("Generated special entity exceeded reserved slot count.");
+      throw new Error("Generated special entity exceeded available slot count.");
     }
-    var slot = slots[slotIndex];
+    var slot = assignSpecialEntitySlot(rows, slots, usedSlotIndexes, entity, levelId, slotIndex);
     slotIndex += 1;
     return slot;
   }
 
   function pushEntity(entity) {
-    var slot = nextSlot();
+    var slot = nextSlot(entity);
     entity.row = slot.row;
     entity.col = slot.col;
     entities.push(entity);
@@ -271,18 +330,19 @@ function makeSpecialEntities(levelId, rows, colors, mechanics) {
   }
 
   if (mechanics.indexOf("splitter") >= 0) {
+    var splitterColor = colors[levelId % colors.length];
     pushEntity({
       id: "splitter_01",
       entityCategory: "reactive_ball",
       entityType: "splitter",
-      splitColor: colors[levelId % colors.length]
+      splitColor: splitterColor
     });
     if (levelId >= 120) {
       pushEntity({
         id: "splitter_02",
         entityCategory: "reactive_ball",
         entityType: "splitter",
-        splitColor: colors[(levelId + 2) % colors.length]
+        splitColor: splitterColor
       });
     }
   }
@@ -346,6 +406,52 @@ function makeSpecialEntities(levelId, rows, colors, mechanics) {
   return entities;
 }
 
+function findSplitterCollectColor(specialEntities) {
+  var splitterColor = null;
+  specialEntities.forEach(function (entity) {
+    if (!entity || entity.entityCategory !== "reactive_ball" || entity.entityType !== "splitter") {
+      return;
+    }
+    if (typeof entity.splitColor !== "string" || !entity.splitColor) {
+      throw new Error("Generated splitter requires splitColor.");
+    }
+    if (splitterColor !== null && splitterColor !== entity.splitColor) {
+      throw new Error("Generated splitter colors must match within one level.");
+    }
+    splitterColor = entity.splitColor;
+  });
+  return splitterColor;
+}
+
+function ensureJarContainsCollectColor(jarColors, collectColor) {
+  if (typeof collectColor !== "string" || !collectColor) {
+    throw new Error("Collect color is required.");
+  }
+  if (jarColors.indexOf(collectColor) >= 0) {
+    return jarColors;
+  }
+  if (!jarColors.length) {
+    throw new Error("jarColors must be non-empty before collect color injection.");
+  }
+  jarColors[jarColors.length - 1] = collectColor;
+  return jarColors;
+}
+
+function buildWinConditions(levelId, collectTarget, collectColor, splitterCollectColor) {
+  if (splitterCollectColor) {
+    return [
+      { type: "clear_all", value: 1 },
+      { type: "collect_color", color: splitterCollectColor, value: Math.max(8, Math.floor(collectTarget * 0.55)) }
+    ];
+  }
+  return [
+    { type: "clear_all", value: 1 },
+    levelId % 4 === 0
+      ? { type: "collect_color", color: collectColor, value: Math.max(8, Math.floor(collectTarget * 0.45)) }
+      : { type: "collect_any", value: collectTarget }
+  ];
+}
+
 function makeLevel(levelId) {
   var progress = (levelId - 1) / (TARGET_LEVEL_COUNT - 1);
   var colorCount = levelId < 75 ? 4 : 5;
@@ -357,9 +463,13 @@ function makeLevel(levelId) {
   var shotLimit = 34 + Math.floor(progress * 42) + Math.min(12, specialEntities.length);
   var collectTarget = Math.min(62, 16 + Math.floor(progress * 40) + Math.floor(specialEntities.length / 2));
   var collectColor = colors[levelId % colors.length];
+  var splitterCollectColor = findSplitterCollectColor(specialEntities);
   var jarColors = colors.slice(0, Math.min(4, colors.length));
+  if (splitterCollectColor) {
+    ensureJarContainsCollectColor(jarColors, splitterCollectColor);
+  }
   if (levelId % 4 === 0 && jarColors.indexOf(collectColor) === -1) {
-    jarColors[jarColors.length - 1] = collectColor;
+    ensureJarContainsCollectColor(jarColors, collectColor);
   }
   var rewardItems = [{
     id: "coin",
@@ -419,12 +529,7 @@ function makeLevel(levelId) {
         collectZoneScale: Math.max(0.78, 1.1 - progress * 0.25),
         sameColorBonus: Math.min(2.5, 1.5 + progress * 0.8)
       },
-      winConditions: [
-        { type: "clear_all", value: 1 },
-        levelId % 4 === 0
-          ? { type: "collect_color", color: collectColor, value: Math.max(8, Math.floor(collectTarget * 0.45)) }
-          : { type: "collect_any", value: collectTarget }
-      ],
+      winConditions: buildWinConditions(levelId, collectTarget, collectColor, splitterCollectColor),
       bonusObjectives: [
         levelId % 3 === 0
           ? { type: "single_turn_drop_count", value: Math.min(18, 6 + Math.floor(progress * 10)) }
@@ -448,6 +553,99 @@ function makeLevel(levelId) {
     },
     difficultyScaleMax: 100
   };
+}
+
+function resolveManualCoinRewardCount(levelId) {
+  var progress = (levelId - 1) / Math.max(1, LOCAL_LEVEL_MAX - 1);
+  return Math.min(300, 50 + Math.floor(progress * 250));
+}
+
+function ensureLevelCoinReward(config) {
+  if (!config || !config.level || typeof config.level !== "object") {
+    throw new Error("Manual level config missing level.");
+  }
+  var level = config.level;
+  if (!Array.isArray(level.clearRewardItems)) {
+    level.clearRewardItems = [];
+  }
+  var hasCoin = false;
+  level.clearRewardItems.forEach(function (item) {
+    if (item && item.id === "coin") {
+      hasCoin = true;
+    }
+  });
+  if (!hasCoin) {
+    level.clearRewardItems.unshift({
+      id: "coin",
+      count: resolveManualCoinRewardCount(level.levelId)
+    });
+  }
+}
+
+function repositionManualSpecialEntities(config) {
+  var level = config.level;
+  if (!Array.isArray(level.specialEntities) || level.specialEntities.length === 0) {
+    return;
+  }
+  if (!Array.isArray(level.layout) || level.layout.length === 0) {
+    throw new Error("Manual special entity reposition requires layout.");
+  }
+
+  var rows = level.layout.slice();
+  var slots = buildSpecialSlotPool(rows);
+  var usedSlotIndexes = {};
+  level.specialEntities.forEach(function (entity, index) {
+    var slot = assignSpecialEntitySlot(rows, slots, usedSlotIndexes, entity, level.levelId, index);
+    entity.row = slot.row;
+    entity.col = slot.col;
+  });
+  level.layout = rows;
+}
+
+function normalizeManualSplitterObjectives(config) {
+  var level = config.level;
+  var splitterColor = findSplitterCollectColor(level.specialEntities || []);
+  if (!splitterColor) {
+    return;
+  }
+  ensureJarContainsCollectColor(level.jarColors, splitterColor);
+  if (!Array.isArray(level.winConditions)) {
+    throw new Error("Manual splitter level requires winConditions.");
+  }
+  var collectTarget = 0;
+  var nextWinConditions = level.winConditions.filter(function (condition) {
+    if (!condition || condition.type === "clear_all") {
+      return true;
+    }
+    if (condition.type === "collect_any" || condition.type === "collect_color") {
+      collectTarget = Math.max(collectTarget, Math.floor(Number(condition.value)));
+      return false;
+    }
+    return true;
+  });
+  if (collectTarget <= 0) {
+    throw new Error("Manual splitter level requires positive collection target.");
+  }
+  nextWinConditions.push({
+    type: "collect_color",
+    color: splitterColor,
+    value: collectTarget
+  });
+  level.winConditions = nextWinConditions;
+}
+
+function normalizeManualLocalLevels() {
+  for (var levelId = 1; levelId < START_GENERATED_LEVEL_ID; levelId += 1) {
+    var filePath = path.join(RESOURCE_LEVEL_DIR, getLevelFileName(levelId));
+    if (!fs.existsSync(filePath)) {
+      throw new Error("Missing manual local level: " + filePath);
+    }
+    var config = JSON.parse(fs.readFileSync(filePath, "utf8"));
+    ensureLevelCoinReward(config);
+    repositionManualSpecialEntities(config);
+    normalizeManualSplitterObjectives(config);
+    writeJson(filePath, config);
+  }
 }
 
 function writeMeta(levelId) {
@@ -557,6 +755,7 @@ function main() {
     throw new Error("Missing resources config directory.");
   }
 
+  normalizeManualLocalLevels();
   for (var levelId = START_GENERATED_LEVEL_ID; levelId <= LOCAL_LEVEL_MAX; levelId += 1) {
     var levelConfig = makeLevel(levelId);
     writeJson(path.join(RESOURCE_LEVEL_DIR, getLevelFileName(levelId)), levelConfig);

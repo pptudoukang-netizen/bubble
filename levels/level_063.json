@@ -73,8 +73,9 @@
                 "value": 1
             },
             {
-                "type": "collect_any",
-                "value": 19
+                "type": "collect_color",
+                "color": "Y",
+                "value": 10
             }
         ],
         "bonusObjectives": [
@@ -90,13 +91,13 @@
             }
         ],
         "layout": [
-            "RGBYRGBYRG",
-            "Y.RGBY.GY",
-            "BBY.GB.RGY",
-            "GG.YR.BYG",
-            "R.GB.RG.YG",
-            "YYR.BY.GY",
+            "RGBYRG.YRG",
+            "YYRGBYRGY",
             "BB.RGBYRGY",
+            "GGBYRGBYG",
+            "RRGBYRGB.G",
+            "YYRGBYRGY",
+            "BBYRGBYRGY",
             "GBYRGBYRG"
         ],
         "designNotes": "Generated 1000-level campaign stage. Chapter `splitter_intro` uses splitter with a spiral board silhouette.",
@@ -107,22 +108,22 @@
                 "entityCategory": "reactive_ball",
                 "entityType": "splitter",
                 "splitColor": "Y",
-                "row": 1,
-                "col": 1
+                "row": 0,
+                "col": 6
             },
             {
                 "id": "skill_blast_01",
                 "entityCategory": "skill_ball",
                 "entityType": "blast",
-                "row": 1,
-                "col": 6
+                "row": 4,
+                "col": 8
             },
             {
                 "id": "skill_rainbow_01",
                 "entityCategory": "skill_ball",
                 "entityType": "rainbow",
                 "row": 2,
-                "col": 3
+                "col": 2
             }
         ],
         "levelType": "normal",

@@ -6,8 +6,8 @@ function clone(data) {
   return JSON.parse(JSON.stringify(data));
 }
 
-function keyFor(cell) {
-  return cell.row + ":" + cell.col;
+function keyFor(row, col) {
+  return row + ":" + col;
 }
 
 function isLockedAnchor(cell) {
@@ -35,34 +35,55 @@ SupportSystem.prototype.configureLevel = function (levelConfig) {
 };
 
 SupportSystem.prototype.findFloatingCells = function (grid) {
+  if (!grid || !Array.isArray(grid.cells)) {
+    throw new Error("SupportSystem.findFloatingCells requires grid.cells.");
+  }
+
+  var cells = grid.cells;
   var visited = {};
   var queue = [];
+  var queueIndex = 0;
 
-  grid.getCells().forEach(function (cell) {
-    if (cell.row < this.anchorRows || isLockedAnchor(cell)) {
-      queue.push(cell);
+  for (var seedIndex = 0; seedIndex < cells.length; seedIndex += 1) {
+    var seedCell = cells[seedIndex];
+    if (seedCell.row < this.anchorRows || isLockedAnchor(seedCell)) {
+      queue.push({
+        row: seedCell.row,
+        col: seedCell.col
+      });
     }
-  }, this);
+  }
 
-  while (queue.length) {
-    var current = queue.shift();
-    var key = keyFor(current);
-    if (visited[key]) {
+  while (queueIndex < queue.length) {
+    var current = queue[queueIndex];
+    queueIndex += 1;
+    var currentKey = keyFor(current.row, current.col);
+    if (visited[currentKey]) {
       continue;
     }
 
-    visited[key] = true;
-    grid.getNeighborCells(current.row, current.col).forEach(function (neighbor) {
-      var neighborKey = keyFor(neighbor);
-      if (!visited[neighborKey]) {
-        queue.push(neighbor);
+    visited[currentKey] = true;
+    var neighborCoords = grid.getNeighborCoordinates(current.row, current.col);
+    for (var neighborIndex = 0; neighborIndex < neighborCoords.length; neighborIndex += 1) {
+      var neighbor = neighborCoords[neighborIndex];
+      var neighborKey = keyFor(neighbor.row, neighbor.col);
+      if (visited[neighborKey]) {
+        continue;
       }
-    });
+      if (!grid.hasCell(neighbor.row, neighbor.col)) {
+        continue;
+      }
+      queue.push(neighbor);
+    }
   }
 
-  this.lastFloatingCells = grid.getCells().filter(function (cell) {
-    return !visited[keyFor(cell)];
-  });
+  this.lastFloatingCells = [];
+  for (var cellIndex = 0; cellIndex < cells.length; cellIndex += 1) {
+    var cell = cells[cellIndex];
+    if (!visited[keyFor(cell.row, cell.col)]) {
+      this.lastFloatingCells.push(cell);
+    }
+  }
 
   return clone(this.lastFloatingCells);
 };

@@ -1698,6 +1698,7 @@
     "impactBounceSpeed": 300,
     "jarRimBounceSpeed": 1500,
     "aimRefreshMinDistance": 2,
+    "aimRefreshMinIntervalMs": 33,
     "showGhostBubble": false,
     "guideFrontClipRadiusScale": 0.01,
     "guideDotPulseSpeedScale": 0.5,
