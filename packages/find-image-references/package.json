@@ -1,0 +1,20 @@
+{
+  "name": "find-image-references",
+  "version": "1.0.1",
+  "description": "在资源面板右键图片或顶部菜单执行，查找引用该图片的预制体、场景、动画与图集引用并输出到控制台。",
+  "author": "bubble",
+  "main": "main.js",
+  "main-menu": {
+    "i18n:menu.extension/查找图片引用": {
+      "message": "find-image-references:find-selected"
+    }
+  },
+  "contributions": {
+    "assets": {
+      "menu": {
+        "methods": "./assets-menu.js",
+        "assetMenu": "onAssetMenu"
+      }
+    }
+  }
+}

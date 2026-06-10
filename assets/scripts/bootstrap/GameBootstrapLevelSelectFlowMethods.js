@@ -3,6 +3,7 @@
 var Shared = require("./GameBootstrapUiFlowShared");
 var DebugFlags = Shared.DebugFlags;
 var Logger = Shared.Logger;
+var BundleLoader = Shared.BundleLoader;
 var LevelSelectPolicy = Shared.LevelSelectPolicy;
 var LevelSelectView = Shared.LevelSelectView;
 var LevelSelectFloatingMap = require("./LevelSelectFloatingMap");
@@ -155,6 +156,7 @@ module.exports = {
     }
     this.isSelectingLevel = true;
     this.currentLevelConfig = null;
+    this.levelRenderer.setGameplayLayersVisible(false);
     this._currentLevelId = targetLevelId > 0 ? targetLevelId : 0;
     this._lastRuntimeState = null;
     this._currentAttemptId = "";

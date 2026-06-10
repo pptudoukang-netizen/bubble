@@ -2,6 +2,7 @@
 
 var Logger = require("../utils/Logger");
 var DebugFlags = require("../utils/DebugFlags");
+var BundleLoader = require("../utils/BundleLoader");
 var PrefabFactory = require("./PrefabFactory");
 var BoardLayout = require("../config/BoardLayout");
 var StarRatingPolicy = require("../core/StarRatingPolicy");
@@ -19,41 +20,41 @@ var clearChildren = RenderNodeHelpers.clearChildren;
 var getOrCreateChild = RenderNodeHelpers.getOrCreateChild;
 
 var BALL_RESOURCES = {
-  R: "image/red_ball",
-  G: "image/green_ball",
-  B: "image/blue_ball",
-  Y: "image/yellow_ball",
-  P: "image/purple_ball",
-  RAINBOW: "image/rainbow_ball",
-  BLAST: "image/bomb_ball",
-  STONE: "image/stone_ball",
-  ICE: "image/ice_ball",
+  R: "image/ball/red_ball",
+  G: "image/ball/green_ball",
+  B: "image/ball/blue_ball",
+  Y: "image/ball/yellow_ball",
+  P: "image/ball/purple_ball",
+  RAINBOW: "image/ball/rainbow_ball",
+  BLAST: "image/ball/bomb_ball",
+  STONE: "image/ball/stone_ball",
+  ICE: "image/ball/ice_ball",
   MOLOTOV: "image/props/fire_box",
   KEY: "image/props/key",
-  LOCKED: "image/lock",
-  SPLIT_R: "image/split_red_ball",
-  SPLIT_G: "image/split_green_ball",
-  SPLIT_B: "image/split_blue_ball",
-  SPLIT_Y: "image/split_yellow_ball",
-  SPLIT_P: "image/split_purple_ball",
-  ICE_SNOWBALL: "image/snow_cube",
-  BLOCKADE_LINE: "image/blockade_line"
+  LOCKED: "image/commone/lock",
+  SPLIT_R: "image/ball/split_red_ball",
+  SPLIT_G: "image/ball/split_green_ball",
+  SPLIT_B: "image/ball/split_blue_ball",
+  SPLIT_Y: "image/ball/split_yellow_ball",
+  SPLIT_P: "image/ball/split_purple_ball",
+  ICE_SNOWBALL: "image/ball/snow_cube",
+  BLOCKADE_LINE: "image/ball/blockade_line"
 };
 
 var JAR_RESOURCES = {
-  R: "image/red_jar",
-  G: "image/green_jar",
-  B: "image/blue_jar",
-  Y: "image/yellow_jar",
-  P: "image/purple_jar"
+  R: "image/jar/red_jar",
+  G: "image/jar/green_jar",
+  B: "image/jar/blue_jar",
+  Y: "image/jar/yellow_jar",
+  P: "image/jar/purple_jar"
 };
 
 var JAR_MASK_RESOURCES = {
-  R: "image/red_jar_mask",
-  G: "image/green_jar_mask",
-  B: "image/blue_jar_mask",
-  Y: "image/yellow_jar_mask",
-  P: "image/purple_jar_mask"
+  R: "image/jar/red_jar_mask",
+  G: "image/jar/green_jar_mask",
+  B: "image/jar/blue_jar_mask",
+  Y: "image/jar/yellow_jar_mask",
+  P: "image/jar/purple_jar_mask"
 };
 
 var REWARD_ITEM_RESOURCES = {
@@ -78,8 +79,8 @@ var WIN_TARGET_COLOR_NAMES = {
 };
 
 var HUD_STAR_RESOURCES = {
-  lit: "image/img101",
-  unlit: "image/img106"
+  lit: "image/ball/img101",
+  unlit: "image/ball/img106"
 };
 
 var PREFAB_PATHS = {
@@ -103,9 +104,7 @@ var GUIDE_DOT_SPACING = 42;
 var GUIDE_DOT_RADIUS = 4;
 var GUIDE_DOT_SIZE = GUIDE_DOT_RADIUS * 2;
 var GUIDE_DOT_MAX_COUNT = 64;
-var GUIDE_DOT_SPRITE_PATH = "image/white_point";
-var GAME_BG_RESOURCE_PREFIX = "image/game_bg/game_bg";
-var LEVEL_MAP_SLOT_COUNT = 10;
+var GUIDE_DOT_SPRITE_PATH = "image/ball/white_point";
 var GUIDE_DOT_PULSE_DURATION = 0.36;
 var GUIDE_DOT_PULSE_SCALE_LARGE = 1.5;
 var GUIDE_DOT_PULSE_SCALE_SMALL = 0.5;
@@ -503,20 +502,6 @@ function buildHudRenderKey(levelConfig, runtimeSnapshot) {
     hudTargetDisplay.iceSnowball ? hudTargetDisplay.iceSnowball.progressText : "",
     hudTargetDisplay.iceSnowball ? hudTargetDisplay.iceSnowball.iconCode : ""
   ].join("|");
-}
-
-function resolveLevelMapIndexForLevel(levelConfig) {
-  var levelId = levelConfig && levelConfig.level
-    ? Math.floor(Number(levelConfig.level.levelId))
-    : 0;
-  if (!Number.isInteger(levelId) || levelId <= 0) {
-    throw new Error("Level background requires positive integer level.levelId.");
-  }
-  return Math.ceil(levelId / LEVEL_MAP_SLOT_COUNT);
-}
-
-function resolveGameBackgroundSpritePath(levelConfig) {
-  return GAME_BG_RESOURCE_PREFIX;// + resolveLevelMapIndexForLevel(levelConfig);
 }
 
 function quantizeRenderValue(value, step) {
@@ -1088,6 +1073,7 @@ LevelRenderer.prototype.renderLevel = function (levelConfig, runtimeSnapshot) {
   this.testGridRenderTick = 1;
   this.fallingRenderTick = 1;
   this._ensureLayers();
+  this.setGameplayLayersVisible(true);
 
   var spritePaths = this._collectSpritePaths(levelConfig, runtimeSnapshot);
 
@@ -1218,6 +1204,39 @@ LevelRenderer.prototype.refreshRuntime = function (levelConfig, runtimeSnapshot)
   this._renderResultPopup(runtimeSnapshot);
 };
 
+LevelRenderer.prototype._forEachGameplayLayer = function (callback) {
+  if (typeof callback !== "function") {
+    throw new Error("Gameplay layer callback must be a function.");
+  }
+  if (!this.layers) {
+    return;
+  }
+
+  Object.keys(this.layers).forEach(function (layerKey) {
+    var layerNode = this.layers[layerKey];
+    if (!layerNode || !layerNode.isValid) {
+      throw new Error("Gameplay layer node is missing or invalid: " + layerKey);
+    }
+    callback(layerNode, layerKey);
+  }.bind(this));
+};
+
+LevelRenderer.prototype.setGameplayLayersVisible = function (visible) {
+  if (typeof visible !== "boolean") {
+    throw new Error("setGameplayLayersVisible requires boolean visible.");
+  }
+  if (!this.layers) {
+    if (visible) {
+      this._ensureLayers();
+    }
+    return;
+  }
+
+  this._forEachGameplayLayer(function (layerNode) {
+    layerNode.active = visible;
+  });
+};
+
 LevelRenderer.prototype._ensureLayers = function () {
   if (this.layers) {
     return;
@@ -1262,7 +1281,6 @@ LevelRenderer.prototype._getOrCreateLayer = function (name, zIndex) {
 
 LevelRenderer.prototype._collectSpritePaths = function (levelConfig, runtimeSnapshot) {
   var paths = this._collectCommonSpritePaths().slice();
-  paths.push(resolveGameBackgroundSpritePath(levelConfig));
 
   (levelConfig.level.colors || []).forEach(function (colorCode) {
     paths.push(BALL_RESOURCES[colorCode]);
@@ -1416,7 +1434,7 @@ LevelRenderer.prototype._applyGuideDotPulse = function (dotNode, pointIndex) {
 
 LevelRenderer.prototype._collectCommonSpritePaths = function () {
   return [
-    "image/fort",
+    "image/ball/fort",
     GUIDE_DOT_SPRITE_PATH,
     BALL_RESOURCES.R,
     BALL_RESOURCES.G,
@@ -1449,6 +1467,8 @@ LevelRenderer.prototype._collectCommonSpritePaths = function () {
     JAR_MASK_RESOURCES.P,
     HUD_STAR_RESOURCES.lit,
     HUD_STAR_RESOURCES.unlit,
+    REWARD_ITEM_RESOURCES.coin,
+    REWARD_ITEM_RESOURCES.stamina,
     COMMENT_ANIMATION_RESOURCES.good,
     COMMENT_ANIMATION_RESOURCES.great,
     COMMENT_ANIMATION_RESOURCES.excellent,
@@ -1516,7 +1536,6 @@ var LEVEL_RENDERER_SCENE_DEPS = {
   BOARD_BUBBLE_SIZE: BOARD_BUBBLE_SIZE,
   NEXT_SHOT_BUBBLE_SIZE: NEXT_SHOT_BUBBLE_SIZE,
   JAR_RENDER_SIZE: JAR_RENDER_SIZE,
-  resolveGameBackgroundSpritePath: resolveGameBackgroundSpritePath,
   POPUP_CONTENT_CONTAINER_NAME: POPUP_CONTENT_CONTAINER_NAME,
   POPUP_OPEN_ANIM_DURATION: POPUP_OPEN_ANIM_DURATION,
   POPUP_OPEN_ANIM_FROM_SCALE: POPUP_OPEN_ANIM_FROM_SCALE,

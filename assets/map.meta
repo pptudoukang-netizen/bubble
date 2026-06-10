@@ -4,7 +4,7 @@
   "importer": "folder",
   "isBundle": true,
   "bundleName": "map",
-  "priority": "9",
+  "priority": 6,
   "compressionType": {
     "wechatgame": "subpackage"
   },

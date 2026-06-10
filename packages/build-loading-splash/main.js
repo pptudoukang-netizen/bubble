@@ -7,105 +7,75 @@ const PLUGIN_TAG = '[build-loading-splash]';
 const WEB_PLATFORMS = new Set(['web-mobile', 'web-desktop']);
 const WECHAT_PLATFORM_NAME = 'wechatgame';
 const MINI_GAME_PLATFORM_NAME = 'mini-game';
-const BACKGROUND_SEARCH_DIRS = [
-    ['assets', 'image'],
-    ['assets', 'resources', 'image'],
-];
-const BACKGROUND_CANDIDATE_FILE_NAMES = [
-    'loading_bg.jpg',
-    'loading_bg.png',
-    'loading_bg.jpeg',
-    'loading_bg.webp',
-    'game_bg.jpg',
-    'game_bg.png',
-    'game_bg.jpeg',
-    'game_bg.webp',
-];
-
-function replaceSplashBackground(cssContent, backgroundFileName) {
-    const splashBlockPattern = /#splash\s*\{[\s\S]*?\}/m;
-    if (!splashBlockPattern.test(cssContent)) {
-        return cssContent;
-    }
-
-    return cssContent.replace(splashBlockPattern, (block) => {
-        let updatedBlock = block;
-        const backgroundRule = `background: #171717 url(./${backgroundFileName}) no-repeat center center;`;
-
-        if (/background\s*:/.test(updatedBlock)) {
-            updatedBlock = updatedBlock.replace(/background\s*:[^;]*;/, backgroundRule);
-        } else {
-            updatedBlock = updatedBlock.replace(/#splash\s*\{/, (matched) => `${matched}\n  ${backgroundRule}`);
-        }
-
-        if (/background-size\s*:/.test(updatedBlock)) {
-            updatedBlock = updatedBlock.replace(/background-size\s*:[^;]*;/, 'background-size: cover;');
-        } else {
-            updatedBlock = updatedBlock.replace(/\}$/, '  background-size: cover;\n}');
-        }
-
-        return updatedBlock;
-    });
-}
-
-function hideProgressBar(cssContent) {
-    const progressBarPattern = /\.progress-bar\s*\{[\s\S]*?\}/m;
-    if (!progressBarPattern.test(cssContent)) {
-        return `${cssContent}\n\n.progress-bar {\n    display: none;\n}\n`;
-    }
-
-    return cssContent.replace(progressBarPattern, (block) => {
-        if (/display\s*:\s*none\s*;/.test(block)) {
-            return block;
-        }
-        return block.replace('{', '{\n    display: none;');
-    });
-}
-
-function patchStyleFile(styleFilePath, backgroundFileName) {
-    const originalContent = fs.readFileSync(styleFilePath, 'utf8');
-    const splashReplaced = replaceSplashBackground(originalContent, backgroundFileName);
-    const updatedContent = hideProgressBar(splashReplaced);
-
-    if (updatedContent !== originalContent) {
-        fs.writeFileSync(styleFilePath, updatedContent, 'utf8');
-        Editor.log(`${PLUGIN_TAG} patched ${path.basename(styleFilePath)}`);
-    } else {
-        Editor.warn(`${PLUGIN_TAG} no splash/progress styles changed in ${path.basename(styleFilePath)}`);
-    }
-}
+const BUILD_TEMPLATE_PLATFORMS = ['web-mobile', 'web-desktop'];
+const LOADING_BG_RELATIVE_PARTS = ['assets', 'loading', 'loading_bg.jpg'];
+const SPLASH_CSS_FILE_NAME = 'splash.css';
+const SPLASH_STYLESHEET_LINK = '<link rel="stylesheet" type="text/css" href="./splash.css"/>';
 
 function resolveBackgroundImageSource() {
-    const searchPaths = [];
-    for (let i = 0; i < BACKGROUND_SEARCH_DIRS.length; i += 1) {
-        const dirParts = BACKGROUND_SEARCH_DIRS[i];
-        const baseDir = path.join(Editor.Project.path, ...dirParts);
-
-        for (let j = 0; j < BACKGROUND_CANDIDATE_FILE_NAMES.length; j += 1) {
-            const fileName = BACKGROUND_CANDIDATE_FILE_NAMES[j];
-            const filePath = path.join(baseDir, fileName);
-            searchPaths.push(filePath);
-            if (fs.existsSync(filePath)) {
-                return {
-                    sourcePath: filePath,
-                    fileName: fileName,
-                };
-            }
-        }
+    const sourcePath = path.join(Editor.Project.path, ...LOADING_BG_RELATIVE_PARTS);
+    if (!fs.existsSync(sourcePath) || !fs.statSync(sourcePath).isFile()) {
+        throw new Error(`${PLUGIN_TAG} required loading background is missing: ${sourcePath}`);
     }
 
-    Editor.warn(`${PLUGIN_TAG} source image not found. searched:\n${searchPaths.join('\n')}`);
-    return null;
+    return {
+        sourcePath: sourcePath,
+        fileName: path.basename(sourcePath),
+    };
+}
+
+function syncLoadingBackgroundToBuildTemplates(resolvedImage) {
+    if (!resolvedImage || !resolvedImage.sourcePath || !resolvedImage.fileName) {
+        throw new Error(`${PLUGIN_TAG} resolved loading background is invalid.`);
+    }
+
+    BUILD_TEMPLATE_PLATFORMS.forEach((platformName) => {
+        const targetDir = path.join(Editor.Project.path, 'build-templates', platformName);
+        fs.mkdirSync(targetDir, { recursive: true });
+        fs.copyFileSync(resolvedImage.sourcePath, path.join(targetDir, resolvedImage.fileName));
+    });
+}
+
+function injectSplashStylesheetLink(buildDestPath) {
+    const indexHtmlPath = path.join(buildDestPath, 'index.html');
+    assertExistingFile(indexHtmlPath);
+
+    const splashCssPath = path.join(buildDestPath, SPLASH_CSS_FILE_NAME);
+    assertExistingFile(splashCssPath);
+
+    const originalHtml = fs.readFileSync(indexHtmlPath, 'utf8');
+    if (originalHtml.indexOf('href="./splash.css"') >= 0 || originalHtml.indexOf('href="splash.css"') >= 0) {
+        return;
+    }
+
+    const headCloseTag = '</head>';
+    const headCloseIndex = originalHtml.indexOf(headCloseTag);
+    if (headCloseIndex < 0) {
+        throw new Error(`${PLUGIN_TAG} index.html is missing </head>: ${indexHtmlPath}`);
+    }
+
+    const updatedHtml = [
+        originalHtml.slice(0, headCloseIndex),
+        `  ${SPLASH_STYLESHEET_LINK}\n`,
+        originalHtml.slice(headCloseIndex),
+    ].join('');
+    fs.writeFileSync(indexHtmlPath, updatedHtml, 'utf8');
+    Editor.log(`${PLUGIN_TAG} linked ${SPLASH_CSS_FILE_NAME} in ${path.basename(indexHtmlPath)}`);
 }
 
 function copyBackgroundImage(buildDestPath, resolvedImage) {
     if (!resolvedImage || !resolvedImage.sourcePath || !resolvedImage.fileName) {
-        return;
+        throw new Error(`${PLUGIN_TAG} resolved loading background is invalid.`);
     }
 
     const targetBgPath = path.join(buildDestPath, resolvedImage.fileName);
     fs.copyFileSync(resolvedImage.sourcePath, targetBgPath);
     Editor.log(`${PLUGIN_TAG} copied ${resolvedImage.fileName} to build output`);
+}
+
+function patchWebSplashTemplate(buildDestPath, resolvedImage) {
+    injectSplashStylesheetLink(buildDestPath);
+    copyBackgroundImage(buildDestPath, resolvedImage);
 }
 
 function isWeChatGameBuild(options) {
@@ -223,27 +193,11 @@ function patchWeChatWorldLeaderboard(buildDestPath) {
 
 function onBuildFinished(options, callback) {
     try {
+        const resolvedImage = resolveBackgroundImageSource();
+        syncLoadingBackgroundToBuildTemplates(resolvedImage);
+
         if (WEB_PLATFORMS.has(options.platform)) {
-            const buildDestPath = options.dest;
-            const files = fs.readdirSync(buildDestPath);
-            const styleFileNames = files.filter((name) => /^style-(mobile|desktop)(\.[^.]+)?\.css$/.test(name));
-
-            if (styleFileNames.length === 0) {
-                Editor.warn(`${PLUGIN_TAG} no style css found in ${buildDestPath}`);
-                callback();
-                return;
-            }
-
-            const resolvedImage = resolveBackgroundImageSource();
-            if (!resolvedImage) {
-                callback();
-                return;
-            }
-
-            styleFileNames.forEach((fileName) => {
-                patchStyleFile(path.join(buildDestPath, fileName), resolvedImage.fileName);
-            });
-            copyBackgroundImage(buildDestPath, resolvedImage);
+            patchWebSplashTemplate(options.dest, resolvedImage);
         }
 
         if (isWeChatGameBuild(options)) {
@@ -261,6 +215,8 @@ function onBuildFinished(options, callback) {
 
 module.exports = {
     load() {
+        const resolvedImage = resolveBackgroundImageSource();
+        syncLoadingBackgroundToBuildTemplates(resolvedImage);
         Editor.Builder.on('build-finished', onBuildFinished);
         Editor.log(`${PLUGIN_TAG} loaded`);
     },

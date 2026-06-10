@@ -40,12 +40,36 @@ function setStartupStage(host, stage) {
   host._setStatus(stage);
 }
 
-function runParallelStartupTasks(host, tasks, initialStage) {
+function normalizeStartupProgressRange(progressRange) {
+  if (!progressRange || typeof progressRange !== "object" || Array.isArray(progressRange)) {
+    return {
+      base: 0,
+      span: 1
+    };
+  }
+
+  var base = Number(progressRange.base);
+  var span = Number(progressRange.span);
+  if (!Number.isFinite(base) || base < 0 || base > 1) {
+    throw new Error("Startup progress range base must be a number between 0 and 1.");
+  }
+  if (!Number.isFinite(span) || span <= 0 || base + span > 1.000001) {
+    throw new Error("Startup progress range span must keep base + span within [0, 1].");
+  }
+
+  return {
+    base: base,
+    span: span
+  };
+}
+
+function runParallelStartupTasks(host, tasks, initialStage, progressRange) {
   var taskList = tasks.map(requireStartupTask);
   if (taskList.length === 0) {
     throw new Error("Startup task list must not be empty.");
   }
 
+  var range = normalizeStartupProgressRange(progressRange);
   var totalWeight = taskList.reduce(function (sum, task) {
     return sum + Math.max(0, Number(task.weight) || 0);
   }, 0);
@@ -53,7 +77,7 @@ function runParallelStartupTasks(host, tasks, initialStage) {
 
   setStartupStage(host, initialStage);
   if (host._loadingViewController && host._loadingViewController.setProgress) {
-    host._loadingViewController.setProgress(0, true);
+    host._loadingViewController.setProgress(range.base, true);
   }
 
   return Promise.all(taskList.map(function (task) {
@@ -62,7 +86,8 @@ function runParallelStartupTasks(host, tasks, initialStage) {
     }).then(function () {
       doneWeight += Math.max(0, Number(task.weight) || 0);
       if (host._loadingViewController && host._loadingViewController.setProgress) {
-        host._loadingViewController.setProgress(totalWeight > 0 ? (doneWeight / totalWeight) : 1, false);
+        var ratio = totalWeight > 0 ? (doneWeight / totalWeight) : 1;
+        host._loadingViewController.setProgress(range.base + ratio * range.span, false);
       }
       return {
         id: task.id
@@ -218,53 +243,54 @@ module.exports = {
   },
 
   _runWeightedStartupTasks: function () {
-    var tasks = [
-      {
-        id: "player_cloud_profile_sync",
-        stage: "同步玩家云端信息...",
-        weight: 0.1,
-        run: function () {
-          return this._syncPlayerProfileFromCloud();
-        }.bind(this)
-      },
-      {
-        id: "resources_bundle",
-        stage: "准备资源分包...",
-        weight: 0.25,
-        run: function () {
-          return BundleLoader.ensureResourcesBundleLoaded();
-        }
-      },
-      {
-        id: "map_bundle",
-        stage: "准备地图分包...",
-        weight: 0.15,
-        run: function () {
-          return BundleLoader.ensureNamedBundleLoaded("map");
-        }
-      },
-      {
-        id: "ui_bundle",
-        stage: "准备界面分包...",
-        weight: 0.2,
-        run: function () {
-          return BundleLoader.ensureNamedBundleLoaded("ui");
-        }
-      },
-      {
-        id: "level_select_prefabs",
-        stage: "加载选关界面...",
-        weight: 0.35,
-        run: function () {
-          return this._preloadStartupPrefabs();
-        }.bind(this)
-      }
-    ];
+    var host = this;
 
-    return runParallelStartupTasks(this, tasks, "并行准备启动资源...").then(function () {
-      setStartupStage(this, "检查好友体力赠送...");
-      return this._claimPendingFriendStaminaGiftFromLaunchOptions();
-    }.bind(this));
+    setStartupStage(host, "准备资源分包...");
+    if (host._loadingViewController && host._loadingViewController.setProgress) {
+      host._loadingViewController.setProgress(0, true);
+    }
+
+    return BundleLoader.ensureResourcesBundleLoaded().then(function () {
+      if (host._loadingViewController && host._loadingViewController.setProgress) {
+        host._loadingViewController.setProgress(0.35, false);
+      }
+      setStartupStage(host, "准备地图分包...");
+      return BundleLoader.ensureNamedBundleLoaded("map");
+    }).then(function () {
+      if (host._loadingViewController && host._loadingViewController.setProgress) {
+        host._loadingViewController.setProgress(0.55, false);
+      }
+
+      var tasks = [
+        {
+          id: "player_cloud_profile_sync",
+          stage: "同步玩家云端信息...",
+          weight: 0.2,
+          run: function () {
+            return host._syncPlayerProfileFromCloud();
+          }
+        },
+        {
+          id: "level_select_prefabs",
+          stage: "加载选关界面...",
+          weight: 0.8,
+          run: function () {
+            return host._preloadStartupPrefabs();
+          }
+        }
+      ];
+
+      return runParallelStartupTasks(host, tasks, "并行准备启动资源...", {
+        base: 0.55,
+        span: 0.45
+      });
+    }).then(function () {
+      if (host._loadingViewController && host._loadingViewController.setProgress) {
+        host._loadingViewController.setProgress(1, false);
+      }
+      setStartupStage(host, "检查好友体力赠送...");
+      return host._claimPendingFriendStaminaGiftFromLaunchOptions();
+    });
   },
 
   _syncPlayerProfileFromCloud: function () {

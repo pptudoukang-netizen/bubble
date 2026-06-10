@@ -13,13 +13,18 @@
 - `assets/scripts/`：运行时脚本主体。
 - `assets/resources/`：Resources 分包资源，包含局内和选关预制体。
 - `assets/map/`：地图分包资源，包含无限浮岛选关地图配置、浮岛预制体、地标预制体、传送阵和主角图片。
-- `assets/ui/`：UI 分包资源，包含弹窗预制体与 UI 图片。
+- `assets/ui/`：UI 分包资源，包含弹窗预制体与 UI 图片；`assets/ui/image/commone/` 存放被 `assets/ui/prefabs/` 下两个及以上预制体共同引用的图片，其余按界面分子目录（如 `win/`、`shop/`、`sign/`）。
+- `assets/image/`：主场景图片资源，按引用范围分子目录：`common/`（选关 `LevelView` 与局内 `GameView` 共用）、`game/`（仅局内）、`level_view/`（仅选关）、`icon/`（选关入口图标）。
 - `assets/resources/config/levels/`：本地内置关卡 JSON 配置，文件名形如 `level_001.json`；当前只内置 `level_001.json` 到 `level_100.json`。
 - `assets/resources/config/level_manifest.json`：101-1000 关远程包清单，包含云环境、包范围、云存储 fileID、sha256 与字节数。
 - `remote-level-packs/`：待上传到微信云存储的远程关卡包，当前为 `levels_pack_101_200.json` 到 `levels_pack_901_1000.json`。
 - `docs/LEVEL_1000_DESIGN.md`：1000 关长线关卡设计、特殊球投放节奏、图案化棋盘策略和生成规则。
 - `cloudfunctions/`：微信云开发函数源码。
 - `build-templates/wechatgame/`：微信小游戏构建模板与云函数模板。
+- `build-templates/web-mobile/`、`build-templates/web-desktop/`：Web 构建模板，包含引擎启动页 `splash.css` 与 `loading_bg.jpg`（源图来自 `assets/loading/loading_bg.jpg`）。
+- `packages/build-loading-splash/`：构建完成后同步启动页模板，并为 Web 产物注入 `splash.css` 引用。
+- `packages/find-image-references/`：Cocos Creator 2.4 编辑器扩展。资源面板右键图片（若编辑器支持）或顶部菜单「扩展 -> 查找图片引用」（需先选中图片）可查找引用，输出所属自动图集，并将引用该图片的预制体、场景、动画与图集引用名称输出到控制台；对预制体/场景会额外打印具体节点路径。
+- `tools/sync-loading-splash-template.js`：将 `assets/loading/loading_bg.jpg` 同步到 Web 构建模板目录。
 - `open-data/`：历史微信开放数据域逻辑。当前世界排行榜由主域源码和云函数实现，不再依赖开放数据域读取好友云存储。
 - `tools/`：校验、同步、构建修复、调试辅助脚本。
 - `settings/`：Cocos Creator 项目设置。
@@ -28,6 +33,8 @@
 ## 运行入口
 
 主入口是 `assets/scripts/bootstrap/GameBootstrap.js`。
+
+`DynamicAtlasBootstrap.js` 是引擎插件脚本（`isPlugin: true`），在普通业务脚本之前执行，强制开启动态合图：`cc.macro.CLEANUP_IMAGE_CACHE = false` 且 `cc.dynamicAtlasManager.enabled = true`。微信小游戏默认会清 Image 缓存，必须在此阶段关闭清理后才能参与动态合图。
 
 `GameBootstrap.js` 是 Cocos 组件声明文件，负责暴露 Inspector 属性，并把实际实现挂载到组件方法上。具体业务实现拆在多个 `GameBootstrap*Methods.js` 文件中：
 

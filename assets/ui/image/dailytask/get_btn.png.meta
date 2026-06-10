@@ -10,7 +10,11 @@
   "packable": true,
   "width": 161,
   "height": 81,
-  "platformSettings": {},
+  "platformSettings": {
+    "minigame": {
+      "formats": []
+    }
+  },
   "subMetas": {
     "get_btn": {
       "ver": "1.0.6",

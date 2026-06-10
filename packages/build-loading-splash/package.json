@@ -1,6 +1,6 @@
 {
   "name": "build-loading-splash",
   "version": "1.0.0",
-  "description": "Customize web build splash background and hide progress bar.",
+  "description": "Sync engine splash background from assets/loading via build-templates.",
   "main": "main.js"
 }

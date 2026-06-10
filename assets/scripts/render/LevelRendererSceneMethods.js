@@ -27,7 +27,6 @@ function attachLevelRendererSceneMethods(LevelRenderer, deps) {
   var BOARD_BUBBLE_SIZE = deps.BOARD_BUBBLE_SIZE;
   var NEXT_SHOT_BUBBLE_SIZE = deps.NEXT_SHOT_BUBBLE_SIZE;
   var JAR_RENDER_SIZE = deps.JAR_RENDER_SIZE;
-  var resolveGameBackgroundSpritePath = deps.resolveGameBackgroundSpritePath;
   var POPUP_CONTENT_CONTAINER_NAME = deps.POPUP_CONTENT_CONTAINER_NAME;
   var POPUP_OPEN_ANIM_DURATION = deps.POPUP_OPEN_ANIM_DURATION;
   var POPUP_OPEN_ANIM_FROM_SCALE = deps.POPUP_OPEN_ANIM_FROM_SCALE;
@@ -244,40 +243,15 @@ LevelRenderer.prototype._flushGameViewScaffoldLayout = function (nodes) {
   });
 };
 
-LevelRenderer.prototype._applyGameBackground = function (backgroundNode, syncToRoot) {
-  if (!backgroundNode || !backgroundNode.isValid) {
-    throw new Error("Game background node is required.");
-  }
-  if (typeof syncToRoot !== "boolean") {
-    throw new Error("Game background syncToRoot flag is required.");
-  }
-
-  var backgroundSpritePath = resolveGameBackgroundSpritePath(this.currentLevelConfig);
-  var frame = this.spriteFrameCache[backgroundSpritePath];
-  if (!frame) {
-    throw new Error("Game background sprite frame is missing: " + backgroundSpritePath);
-  }
-
-  ensureSprite(backgroundNode, frame);
-  if (syncToRoot) {
-    if (!this.rootNode || typeof this.rootNode.getContentSize !== "function") {
-      throw new Error("Root node size is required for runtime game background.");
-    }
-    backgroundNode.setContentSize(this.rootNode.getContentSize());
-    backgroundNode.setPosition(0, 0);
-  }
-};
-
 LevelRenderer.prototype._renderBackground = function () {
   var mountedBgNode = this.layers && this.layers.background
     ? (this.layers.background.getChildByName("bg") || this.layers.background.getChildByName("Background"))
     : null;
   if (mountedBgNode) {
-    this._applyGameBackground(mountedBgNode, false);
+    mountedBgNode.active = true;
     return;
   }
 
-  // Scene already has a static `bg` node; avoid drawing a second runtime background.
   var sceneBgNode = this.rootNode
     ? (this.rootNode.getChildByName("bg") || this.rootNode.getChildByName("Bg"))
     : null;
@@ -285,15 +259,14 @@ LevelRenderer.prototype._renderBackground = function () {
     ? this.layers.background.getChildByName("Background")
     : null;
   if (sceneBgNode) {
-    this._applyGameBackground(sceneBgNode, false);
+    sceneBgNode.active = true;
     if (runtimeBgNode) {
       runtimeBgNode.active = false;
     }
     return;
   }
 
-  var node = this._instantiateOrCreate(null, this.layers.background, "Background");
-  this._applyGameBackground(node, true);
+  throw new Error("Game background node is required. Mount GameView prefab with static bg sprite.");
 };
 
 LevelRenderer.prototype._getMountedBgNode = function () {

@@ -415,11 +415,23 @@ module.exports = {
       return;
     }
     var handler = function () {
-      this._claimPendingFriendStaminaGiftFromLaunchOptions().catch(function (error) {
-        Logger.error("Claim friend stamina gift on enter failed", error && error.stack ? error.stack : error);
-        this._setStatus("好友体力领取失败");
-        throw error;
-      }.bind(this));
+      var claimGift = function () {
+        return this._claimPendingFriendStaminaGiftFromLaunchOptions();
+      }.bind(this);
+
+      var runClaim = function () {
+        return claimGift().catch(function (error) {
+          Logger.error("Claim friend stamina gift on enter failed", error && error.stack ? error.stack : error);
+          this._setStatus("好友体力领取失败");
+          throw error;
+        }.bind(this));
+      }.bind(this);
+
+      if (this._startupFlowPromise) {
+        return this._startupFlowPromise.then(runClaim);
+      }
+
+      return runClaim();
     }.bind(this);
     this._friendGiftEnterShowHandler = handler;
     if (cc && cc.game && typeof cc.game.on === "function" && cc.game.EVENT_SHOW) {

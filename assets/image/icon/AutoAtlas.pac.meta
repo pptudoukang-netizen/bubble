@@ -1,0 +1,32 @@
+{
+  "ver": "1.2.5",
+  "uuid": "d32d70af-4e89-4099-bd32-203a6ec255e5",
+  "importer": "auto-atlas",
+  "maxWidth": 1024,
+  "maxHeight": 1024,
+  "padding": 2,
+  "compressionLevel": 6,
+  "allowRotation": true,
+  "forceSquared": false,
+  "powerOfTwo": true,
+  "algorithm": "MaxRects",
+  "format": "png",
+  "quality": 80,
+  "contourBleed": true,
+  "paddingBleed": true,
+  "filterUnused": true,
+  "packable": false,
+  "premultiplyAlpha": false,
+  "filterMode": "bilinear",
+  "platformSettings": {
+    "minigame": {
+      "formats": [
+        {
+          "name": "astc_8x8",
+          "quality": "medium"
+        }
+      ]
+    }
+  },
+  "subMetas": {}
+}

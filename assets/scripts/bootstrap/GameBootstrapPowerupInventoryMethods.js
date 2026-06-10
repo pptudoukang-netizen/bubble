@@ -28,13 +28,13 @@ var START_GAME_POWERUP_UNLOCK_LEVEL_BY_ITEM_ID = {
   barrier_hammer: 20
 };
 var START_GAME_OBJECTIVE_ICON_PATHS = {
-  R: "image/red_ball",
-  G: "image/green_ball",
-  B: "image/blue_ball",
-  Y: "image/yellow_ball",
-  P: "image/purple_ball",
-  RAINBOW: "image/rainbow_ball",
-  ICE_SNOWBALL: "image/snow_cube"
+  R: "image/ball/red_ball",
+  G: "image/ball/green_ball",
+  B: "image/ball/blue_ball",
+  Y: "image/ball/yellow_ball",
+  P: "image/ball/purple_ball",
+  RAINBOW: "image/ball/rainbow_ball",
+  ICE_SNOWBALL: "image/ball/snow_cube"
 };
 var START_GAME_COLLECTION_OBJECTIVE_TYPES = {
   collect_any: true,

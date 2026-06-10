@@ -9,7 +9,7 @@
     "plugins": {
         "cocos": {
             "provider": "wx7095f7fa398a2f30",
-            "version": "2.4.11",
+            "version": "2.4.18",
             "path": "cocos"
         }
     },

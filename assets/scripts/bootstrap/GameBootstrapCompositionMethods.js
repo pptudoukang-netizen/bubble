@@ -71,7 +71,7 @@ module.exports = {
     DebugFlags.setAll({
       logs: RuntimeModeConfig.isRelease() !== true,
       overlay: this.showDebugOverlay,
-      levelSelectMemory: true,
+      levelSelectMemory: false,
       testLayer: this.showGridTestLayer,
       gridOverlapCheck: RuntimeModeConfig.isRelease() !== true || this.showDebugOverlay === true
     });

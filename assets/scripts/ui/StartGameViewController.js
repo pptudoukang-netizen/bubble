@@ -8,7 +8,7 @@ var POWERUP_DEFINITIONS = [
   { itemId: "blast_ball", unlockLevel: 15, iconPath: "image/props/blast_ball" },
   { itemId: "barrier_hammer", unlockLevel: 20, iconPath: "image/props/barrier_hammer" }
 ];
-var LOCK_ICON_PATH = "image/lock";
+var LOCK_ICON_PATH = "image/commone/lock";
 
 function findNodeByNameRecursive(rootNode, name) {
   if (!rootNode || !rootNode.isValid) {

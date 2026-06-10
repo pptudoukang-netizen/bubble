@@ -3,8 +3,8 @@
   "uuid": "9ea63cc3-9e31-4e0f-9de2-801aa4db926a",
   "importer": "folder",
   "isBundle": true,
-  "bundleName": "",
-  "priority": "10",
+  "bundleName": "ui",
+  "priority": 4,
   "compressionType": {
     "wechatgame": "subpackage"
   },
