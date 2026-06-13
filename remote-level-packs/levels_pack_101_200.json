@@ -1015,8 +1015,8 @@
                     }
                 ],
                 "layout": [
-                    "RR.RRRRRRR",
-                    "YYYYYYYYY",
+                    "RRRRRRRRRR",
+                    ".YYYYYYYY",
                     "GGGGGGGGGG",
                     "GGGPPGGGG",
                     "PPP.BPPPPP",
@@ -1048,8 +1048,8 @@
                         "entityCategory": "reactive_ball",
                         "entityType": "splitter",
                         "splitColor": "B",
-                        "row": 0,
-                        "col": 2
+                        "row": 1,
+                        "col": 0
                     }
                 ],
                 "levelType": "normal",
@@ -2248,8 +2248,8 @@
                     }
                 ],
                 "layout": [
-                    "RR.RRRRRRR",
-                    "YYYYYYYYY",
+                    "RRRRRRRRRR",
+                    ".YYYYYYYY",
                     "G.YYYYGGGG",
                     "PPBBBBPPP",
                     "BBG.GGBBBB",
@@ -2281,8 +2281,8 @@
                         "entityCategory": "reactive_ball",
                         "entityType": "splitter",
                         "splitColor": "R",
-                        "row": 0,
-                        "col": 2
+                        "row": 1,
+                        "col": 0
                     },
                     {
                         "id": "stone_01",
@@ -3354,8 +3354,8 @@
                     }
                 ],
                 "layout": [
-                    ".BBGGBBBBB",
-                    "RRRPPRR.R",
+                    "BBBGGBBBBB",
+                    ".RRPPRR.R",
                     "YYBBBBYYYY",
                     "GRRRRRRGG",
                     "P.YYYYYPPP",
@@ -3395,7 +3395,7 @@
                         "entityCategory": "reactive_ball",
                         "entityType": "splitter",
                         "splitColor": "B",
-                        "row": 0,
+                        "row": 1,
                         "col": 0
                     }
                 ],
@@ -3512,8 +3512,8 @@
                     }
                 ],
                 "layout": [
-                    "PP.PPPPPPP",
-                    "BGGGGGGGB",
+                    "PPPPPPPPPP",
+                    ".GGGGGGGB",
                     "RPPPPPPPPR",
                     "YBBBBBBB.",
                     "GRR.RRRRRG",
@@ -3545,8 +3545,8 @@
                         "entityCategory": "reactive_ball",
                         "entityType": "splitter",
                         "splitColor": "Y",
-                        "row": 0,
-                        "col": 2
+                        "row": 1,
+                        "col": 0
                     },
                     {
                         "id": "splitter_02",
@@ -4643,8 +4643,8 @@
                     }
                 ],
                 "layout": [
-                    ".RRRRRRRRR",
-                    "YY.RR.YYY",
+                    "RRRRRRRRRR",
+                    ".Y.RR.YYY",
                     "GGYYYYGGGG",
                     "PGGGGGGPP",
                     "P.PPPPPPBB",
@@ -4684,7 +4684,7 @@
                         "entityCategory": "reactive_ball",
                         "entityType": "splitter",
                         "splitColor": "R",
-                        "row": 0,
+                        "row": 1,
                         "col": 0
                     },
                     {
@@ -4808,8 +4808,8 @@
                     }
                 ],
                 "layout": [
-                    "GP.GGPPGGG",
-                    "PBBPPBBPP",
+                    "GPPGGPPGGG",
+                    ".BBPPBBPP",
                     "BRRBBRRBBB",
                     "RRR.RRRRR",
                     "YYY.YYYYYY",
@@ -4841,8 +4841,8 @@
                         "entityCategory": "reactive_ball",
                         "entityType": "splitter",
                         "splitColor": "G",
-                        "row": 0,
-                        "col": 2
+                        "row": 1,
+                        "col": 0
                     },
                     {
                         "id": "splitter_02",
@@ -5943,8 +5943,8 @@
                     }
                 ],
                 "layout": [
-                    ".RRRRRRRRR",
-                    "GYGYGG.GG",
+                    "RRRRRRRRRR",
+                    ".YGYGG.GG",
                     "PPPPPPPPPP",
                     "BBBBBBBBB",
                     "R.RRRRRRRR",
@@ -5984,7 +5984,7 @@
                         "entityCategory": "reactive_ball",
                         "entityType": "splitter",
                         "splitColor": "Y",
-                        "row": 0,
+                        "row": 1,
                         "col": 0
                     }
                 ],
@@ -6101,8 +6101,8 @@
                     }
                 ],
                 "layout": [
-                    "PR.PPRPPPR",
-                    "YBBBYBBBY",
+                    "PRPPPRPPPR",
+                    ".BBBYBBBY",
                     "RRRGRRRGRR",
                     "YYPYYYP.Y",
                     "GBG.GBGGGB",
@@ -6134,8 +6134,8 @@
                         "entityCategory": "reactive_ball",
                         "entityType": "splitter",
                         "splitColor": "P",
-                        "row": 0,
-                        "col": 2
+                        "row": 1,
+                        "col": 0
                     },
                     {
                         "id": "splitter_02",
@@ -6594,8 +6594,8 @@
                     }
                 ],
                 "layout": [
-                    "BBBG.BBBBB",
-                    "RRRPPRRRR",
+                    "BBBGGBBBBB",
+                    ".RRPPRRRR",
                     "YYBBBBYY.Y",
                     "GRRRRRRGG",
                     "PYYYYYYPPP",
@@ -6619,8 +6619,8 @@
                         "entityCategory": "reactive_ball",
                         "entityType": "splitter",
                         "splitColor": "B",
-                        "row": 0,
-                        "col": 4
+                        "row": 1,
+                        "col": 0
                     },
                     {
                         "id": "key_g2_01",
@@ -6753,8 +6753,8 @@
                     }
                 ],
                 "layout": [
-                    "PPPPPP.PPP",
-                    "BGGGGGGGB",
+                    "PPPPPPPPPP",
+                    ".GGGGGGGB",
                     "RPPPPPPPPR",
                     "YBB.BBBBY",
                     "GRRRRRR..G",
@@ -6770,8 +6770,8 @@
                         "entityCategory": "reactive_ball",
                         "entityType": "splitter",
                         "splitColor": "Y",
-                        "row": 0,
-                        "col": 6
+                        "row": 1,
+                        "col": 0
                     },
                     {
                         "id": "splitter_02",
@@ -7899,8 +7899,8 @@
                     }
                 ],
                 "layout": [
-                    "RRRR.RRRRR",
-                    "YYYRRYYYY",
+                    "RRRRRRRRRR",
+                    ".YYRRYYYY",
                     "GGYYYYGGGG",
                     "PGGG.GGPP",
                     "PPPPPPPPBB",
@@ -7924,8 +7924,8 @@
                         "entityCategory": "reactive_ball",
                         "entityType": "splitter",
                         "splitColor": "R",
-                        "row": 0,
-                        "col": 4
+                        "row": 1,
+                        "col": 0
                     },
                     {
                         "id": "key_g1_01",
@@ -8065,8 +8065,8 @@
                     }
                 ],
                 "layout": [
-                    "GPPGGP.G.G",
-                    "PBBPPBBPP",
+                    "GPPGGPPG.G",
+                    ".BBPPBBPP",
                     "BRRBBRRBBB",
                     "RRRRRRR.R",
                     "YYYYYYYYYY",
@@ -8082,8 +8082,8 @@
                         "entityCategory": "reactive_ball",
                         "entityType": "splitter",
                         "splitColor": "G",
-                        "row": 0,
-                        "col": 6
+                        "row": 1,
+                        "col": 0
                     },
                     {
                         "id": "splitter_02",
@@ -9207,8 +9207,8 @@
                     }
                 ],
                 "layout": [
-                    "RRRR.RRRRR",
-                    "GYGY.GYGG",
+                    "RRRRRRRRRR",
+                    ".YGY.GYGG",
                     "PPPPPPPPPP",
                     "BBBBBBBBB",
                     "RRRRRRR.RR",
@@ -9232,8 +9232,8 @@
                         "entityCategory": "reactive_ball",
                         "entityType": "splitter",
                         "splitColor": "Y",
-                        "row": 0,
-                        "col": 4
+                        "row": 1,
+                        "col": 0
                     },
                     {
                         "id": "key_g3_01",
@@ -9366,8 +9366,8 @@
                     }
                 ],
                 "layout": [
-                    "PRPPPR.PPR",
-                    "YBBBYB.BY",
+                    "PRPPPRPPPR",
+                    ".BBBYB.BY",
                     "RRRGRRRGRR",
                     "YY.YYYPYY",
                     "GBGGGBGGGB",
@@ -9383,8 +9383,8 @@
                         "entityCategory": "reactive_ball",
                         "entityType": "splitter",
                         "splitColor": "P",
-                        "row": 0,
-                        "col": 6
+                        "row": 1,
+                        "col": 0
                     },
                     {
                         "id": "splitter_02",
@@ -9479,8 +9479,8 @@
                     "Y",
                     "P"
                 ],
-                "shotLimit": 46,
-                "targetScore": 13203,
+                "shotLimit": 47,
+                "targetScore": 13383,
                 "dropInterval": 6,
                 "jarCount": 4,
                 "jarColors": [
@@ -9529,14 +9529,14 @@
                     }
                 ],
                 "layout": [
-                    "RRRRRRRR.R",
+                    ".RRRRRRR.R",
                     "YYYRRYYYY",
                     "GGYYYYGGGG",
-                    "P.GG.GGP.",
+                    "PGGG.GGP.",
                     "PPPPPPPPBB",
-                    "BBBBB.BBB",
+                    "BBBB.BBBB",
                     "RRRR.RRRRR",
-                    "YYYYYYYYY"
+                    "YYYYYYYY."
                 ],
                 "designNotes": "Generated 1000-level campaign stage. Chapter `splitter_lock_combo` uses splitter, locked with a arrow board silhouette.",
                 "difficultyScore": 44,
@@ -9575,20 +9575,28 @@
                         "col": 8
                     },
                     {
+                        "id": "key_g2_02",
+                        "entityCategory": "key_ball",
+                        "entityType": "key",
+                        "unlockGroup": "g2",
+                        "row": 0,
+                        "col": 0
+                    },
+                    {
                         "id": "locked_g2_02",
                         "entityCategory": "locked_ball",
                         "entityType": "locked",
                         "lockedColor": "Y",
                         "lockGroup": "g2",
-                        "row": 3,
-                        "col": 1
+                        "row": 5,
+                        "col": 4
                     },
                     {
                         "id": "stone_01",
                         "entityCategory": "obstacle_ball",
                         "entityType": "stone",
-                        "row": 5,
-                        "col": 5
+                        "row": 7,
+                        "col": 8
                     }
                 ],
                 "levelType": "normal",
@@ -9658,8 +9666,8 @@
                     "Y",
                     "P"
                 ],
-                "shotLimit": 46,
-                "targetScore": 13247,
+                "shotLimit": 47,
+                "targetScore": 13427,
                 "dropInterval": 6,
                 "jarCount": 4,
                 "jarColors": [
@@ -9706,12 +9714,12 @@
                 "layout": [
                     "GPPGGPPGGG",
                     "PBB.PBBPP",
-                    ".RRBBRR.BB",
+                    "BRRBBRR..B",
                     "RRRRRRRRR",
-                    "YYYYYYYYYY",
-                    "GG.G.GGGG",
+                    "YYY.YYYYYY",
+                    "GG.GGGGGG",
                     "PPPPPP.PPP",
-                    "BBBBBBBBB"
+                    "BBBBBBB.B"
                 ],
                 "designNotes": "Generated 1000-level campaign stage. Chapter `splitter_lock_combo` uses splitter, locked with a heart board silhouette.",
                 "difficultyScore": 44,
@@ -9750,20 +9758,28 @@
                         "col": 7
                     },
                     {
+                        "id": "key_g3_02",
+                        "entityCategory": "key_ball",
+                        "entityType": "key",
+                        "unlockGroup": "g3",
+                        "row": 2,
+                        "col": 8
+                    },
+                    {
                         "id": "locked_g3_02",
                         "entityCategory": "locked_ball",
                         "entityType": "locked",
                         "lockedColor": "P",
                         "lockGroup": "g3",
-                        "row": 5,
-                        "col": 4
+                        "row": 7,
+                        "col": 7
                     },
                     {
                         "id": "skill_blast_01",
                         "entityCategory": "skill_ball",
                         "entityType": "blast",
-                        "row": 2,
-                        "col": 0
+                        "row": 4,
+                        "col": 3
                     }
                 ],
                 "levelType": "normal",
@@ -9833,8 +9849,8 @@
                     "Y",
                     "P"
                 ],
-                "shotLimit": 46,
-                "targetScore": 13291,
+                "shotLimit": 47,
+                "targetScore": 13471,
                 "dropInterval": 6,
                 "jarCount": 4,
                 "jarColors": [
@@ -9880,13 +9896,13 @@
                 ],
                 "layout": [
                     "BBBGGBBBBB",
-                    "RR.PP.RRR",
-                    ".YBBBBY.YY",
-                    "GRRRRRRGG",
-                    "PYYY.YYPPP",
+                    "RRRPP.RRR",
+                    ".YBBBBYYYY",
+                    "GRRRR.RGG",
+                    ".YYY.YYPPP",
                     "BBGGGGBBB",
                     "RRRPPRRRRR",
-                    "Y.YBBYYYY"
+                    "..YBBYYYY"
                 ],
                 "designNotes": "Generated 1000-level campaign stage. Chapter `splitter_lock_combo` uses splitter, locked with a diamond board silhouette.",
                 "difficultyScore": 44,
@@ -9925,20 +9941,28 @@
                         "col": 1
                     },
                     {
+                        "id": "key_g1_02",
+                        "entityCategory": "key_ball",
+                        "entityType": "key",
+                        "unlockGroup": "g1",
+                        "row": 7,
+                        "col": 0
+                    },
+                    {
                         "id": "locked_g1_02",
                         "entityCategory": "locked_ball",
                         "entityType": "locked",
                         "lockedColor": "R",
                         "lockGroup": "g1",
-                        "row": 2,
-                        "col": 7
+                        "row": 4,
+                        "col": 0
                     },
                     {
                         "id": "skill_rainbow_01",
                         "entityCategory": "skill_ball",
                         "entityType": "rainbow",
-                        "row": 1,
-                        "col": 2
+                        "row": 3,
+                        "col": 5
                     }
                 ],
                 "levelType": "normal",
@@ -10008,8 +10032,8 @@
                     "Y",
                     "P"
                 ],
-                "shotLimit": 45,
-                "targetScore": 13154,
+                "shotLimit": 46,
+                "targetScore": 13334,
                 "dropInterval": 6,
                 "jarCount": 4,
                 "jarColors": [
@@ -10055,12 +10079,12 @@
                 ],
                 "layout": [
                     "PPPPPPPPPP",
-                    "BGGG.GGGB",
+                    "BGG..GGGB",
                     "RPPPPPPPPR",
                     "YBBBBBBBY",
-                    "GRRRRR.R..",
+                    "GRRRRR.R.G",
                     "PYYYYYYYP",
-                    "BGGGGGGGGB",
+                    "BGGGGGGGG.",
                     "RRRR.RRRR"
                 ],
                 "designNotes": "Generated 1000-level campaign stage. Chapter `splitter_lock_combo` uses splitter, locked with a spiral board silhouette.",
@@ -10100,12 +10124,20 @@
                         "col": 4
                     },
                     {
+                        "id": "key_g2_02",
+                        "entityCategory": "key_ball",
+                        "entityType": "key",
+                        "unlockGroup": "g2",
+                        "row": 1,
+                        "col": 3
+                    },
+                    {
                         "id": "locked_g2_02",
                         "entityCategory": "locked_ball",
                         "entityType": "locked",
                         "lockedColor": "G",
                         "lockGroup": "g2",
-                        "row": 4,
+                        "row": 6,
                         "col": 9
                     }
                 ],
@@ -10176,8 +10208,8 @@
                     "Y",
                     "P"
                 ],
-                "shotLimit": 45,
-                "targetScore": 13198,
+                "shotLimit": 46,
+                "targetScore": 13378,
                 "dropInterval": 6,
                 "jarCount": 4,
                 "jarColors": [
@@ -10222,13 +10254,13 @@
                     }
                 ],
                 "layout": [
-                    "GGGGGGGGGG",
+                    "GGGGGGGG.G",
                     "BPBBBBBPB",
                     "RBRR.RRRBR",
-                    "YRYYYYY.Y",
+                    "YRYYY.Y.Y",
                     "GYGGGGGGYG",
                     "PGPPPPPGP",
-                    "BPBBB.B.PB",
+                    "BPBBBBB.PB",
                     "RBRRRR.BR"
                 ],
                 "designNotes": "Generated 1000-level campaign stage. Chapter `splitter_lock_combo` uses splitter, locked with a gate board silhouette.",
@@ -10268,13 +10300,21 @@
                         "col": 7
                     },
                     {
+                        "id": "key_g3_02",
+                        "entityCategory": "key_ball",
+                        "entityType": "key",
+                        "unlockGroup": "g3",
+                        "row": 3,
+                        "col": 5
+                    },
+                    {
                         "id": "locked_g3_02",
                         "entityCategory": "locked_ball",
                         "entityType": "locked",
                         "lockedColor": "B",
                         "lockGroup": "g3",
-                        "row": 6,
-                        "col": 5
+                        "row": 0,
+                        "col": 8
                     }
                 ],
                 "levelType": "normal",
@@ -10344,8 +10384,8 @@
                     "Y",
                     "P"
                 ],
-                "shotLimit": 47,
-                "targetScore": 13601,
+                "shotLimit": 48,
+                "targetScore": 13781,
                 "dropInterval": 6,
                 "jarCount": 4,
                 "jarColors": [
@@ -10374,7 +10414,7 @@
                     {
                         "type": "collect_color",
                         "color": "R",
-                        "value": 13
+                        "value": 14
                     }
                 ],
                 "bonusObjectives": [
@@ -10390,13 +10430,13 @@
                     }
                 ],
                 "layout": [
-                    "RRRRRRRRR.",
+                    "R.RRRRRRR.",
                     "YYYYYYYYY",
-                    "GGYY.Y.GGG",
-                    "..BBBBPPP",
+                    "GGYYYY.GGG",
+                    ".PBBBBPPP",
                     "BBGGGGB.BB",
-                    "RRRRR.RRR",
-                    "YYPPPPYYYY",
+                    "RRRR..RRR",
+                    ".YPPPPYYYY",
                     "GGYYYYGGG"
                 ],
                 "designNotes": "Generated 1000-level campaign stage. Chapter `splitter_lock_combo` uses splitter, locked with a flame board silhouette.",
@@ -10436,28 +10476,36 @@
                         "col": 9
                     },
                     {
+                        "id": "key_g1_02",
+                        "entityCategory": "key_ball",
+                        "entityType": "key",
+                        "unlockGroup": "g1",
+                        "row": 0,
+                        "col": 1
+                    },
+                    {
                         "id": "locked_g1_02",
                         "entityCategory": "locked_ball",
                         "entityType": "locked",
                         "lockedColor": "Y",
                         "lockGroup": "g1",
-                        "row": 3,
-                        "col": 1
+                        "row": 5,
+                        "col": 4
                     },
                     {
                         "id": "stone_01",
                         "entityCategory": "obstacle_ball",
                         "entityType": "stone",
-                        "row": 4,
-                        "col": 7
+                        "row": 6,
+                        "col": 0
                     },
                     {
                         "id": "ice_01",
                         "entityCategory": "obstacle_ball",
                         "entityType": "ice",
                         "innerColor": "P",
-                        "row": 2,
-                        "col": 4
+                        "row": 4,
+                        "col": 7
                     }
                 ],
                 "levelType": "normal",
@@ -10527,8 +10575,8 @@
                     "Y",
                     "P"
                 ],
-                "shotLimit": 45,
-                "targetScore": 13285,
+                "shotLimit": 46,
+                "targetScore": 13465,
                 "dropInterval": 6,
                 "jarCount": 4,
                 "jarColors": [
@@ -10573,14 +10621,14 @@
                     }
                 ],
                 "layout": [
-                    "GGRG.RGGGG",
-                    "PPYPPYPPP",
-                    "GGGGGGGG.G",
+                    "GGRGGRGGGG",
+                    ".PYPPYPPP",
+                    ".GGGGGGG.G",
                     "RRPRRPRRR",
                     "YYBYYBYYYY",
-                    "RR.R.RR.R",
+                    "RR.RRRR.R",
                     "PPYPPYPPPP",
-                    "BBGBBGBBB"
+                    "BBGBBGB.B"
                 ],
                 "designNotes": "Generated 1000-level campaign stage. Chapter `splitter_lock_combo` uses splitter, locked with a flower board silhouette.",
                 "difficultyScore": 44,
@@ -10598,8 +10646,8 @@
                         "entityCategory": "reactive_ball",
                         "entityType": "splitter",
                         "splitColor": "G",
-                        "row": 0,
-                        "col": 4
+                        "row": 1,
+                        "col": 0
                     },
                     {
                         "id": "key_g2_01",
@@ -10619,13 +10667,21 @@
                         "col": 8
                     },
                     {
+                        "id": "key_g2_02",
+                        "entityCategory": "key_ball",
+                        "entityType": "key",
+                        "unlockGroup": "g2",
+                        "row": 2,
+                        "col": 0
+                    },
+                    {
                         "id": "locked_g2_02",
                         "entityCategory": "locked_ball",
                         "entityType": "locked",
                         "lockedColor": "P",
                         "lockGroup": "g2",
-                        "row": 5,
-                        "col": 4
+                        "row": 7,
+                        "col": 7
                     }
                 ],
                 "levelType": "normal",
@@ -10695,8 +10751,8 @@
                     "Y",
                     "P"
                 ],
-                "shotLimit": 45,
-                "targetScore": 13328,
+                "shotLimit": 46,
+                "targetScore": 13508,
                 "dropInterval": 6,
                 "jarCount": 4,
                 "jarColors": [
@@ -10741,14 +10797,14 @@
                     }
                 ],
                 "layout": [
-                    "RRRRRR.RRR",
-                    "YYYYYYYYY",
+                    "RRRRRRRRRR",
+                    "..YYYYYYY",
                     "GGGGGGGGGG",
                     "GGGPPG.GG",
-                    "PPPBBPP.PP",
+                    "PPPBBPP..P",
                     "BBBRRBBBB",
                     "RRRYYRRRRR",
-                    "YYYGG.Y.Y"
+                    "YYYGG.YYY"
                 ],
                 "designNotes": "Generated 1000-level campaign stage. Chapter `splitter_lock_combo` uses splitter, locked with a keyhole board silhouette.",
                 "difficultyScore": 44,
@@ -10758,8 +10814,8 @@
                         "entityCategory": "reactive_ball",
                         "entityType": "splitter",
                         "splitColor": "B",
-                        "row": 0,
-                        "col": 6
+                        "row": 1,
+                        "col": 0
                     },
                     {
                         "id": "splitter_02",
@@ -10787,13 +10843,21 @@
                         "col": 7
                     },
                     {
+                        "id": "key_g3_02",
+                        "entityCategory": "key_ball",
+                        "entityType": "key",
+                        "unlockGroup": "g3",
+                        "row": 4,
+                        "col": 8
+                    },
+                    {
                         "id": "locked_g3_02",
                         "entityCategory": "locked_ball",
                         "entityType": "locked",
                         "lockedColor": "R",
                         "lockGroup": "g3",
-                        "row": 7,
-                        "col": 7
+                        "row": 1,
+                        "col": 1
                     }
                 ],
                 "levelType": "normal",
@@ -10863,8 +10927,8 @@
                     "Y",
                     "P"
                 ],
-                "shotLimit": 47,
-                "targetScore": 13552,
+                "shotLimit": 48,
+                "targetScore": 13732,
                 "dropInterval": 6,
                 "jarCount": 4,
                 "jarColors": [
@@ -10910,13 +10974,13 @@
                 ],
                 "layout": [
                     "RRRRRRRRRR",
-                    "GYGY.GYGG",
+                    ".YG..GYGG",
                     "PPPPPPPPPP",
                     "BBBBBBBB.",
-                    ".RRRRRR.RR",
+                    ".RRRRRRRRR",
                     "YYYYYYYYY",
-                    "GGGG.GGGGG",
-                    "PPPPPP.PP"
+                    ".GGG.GGGGG",
+                    "PPPPPPPPP"
                 ],
                 "designNotes": "Generated 1000-level campaign stage. Chapter `splitter_lock_combo` uses splitter, locked with a crown board silhouette.",
                 "difficultyScore": 45,
@@ -10955,20 +11019,28 @@
                         "col": 4
                     },
                     {
+                        "id": "key_g1_02",
+                        "entityCategory": "key_ball",
+                        "entityType": "key",
+                        "unlockGroup": "g1",
+                        "row": 1,
+                        "col": 3
+                    },
+                    {
                         "id": "locked_g1_02",
                         "entityCategory": "locked_ball",
                         "entityType": "locked",
                         "lockedColor": "G",
                         "lockGroup": "g1",
-                        "row": 4,
-                        "col": 7
+                        "row": 6,
+                        "col": 0
                     },
                     {
                         "id": "skill_blast_01",
                         "entityCategory": "skill_ball",
                         "entityType": "blast",
-                        "row": 7,
-                        "col": 6
+                        "row": 1,
+                        "col": 0
                     }
                 ],
                 "levelType": "normal",
@@ -11038,8 +11110,8 @@
                     "Y",
                     "P"
                 ],
-                "shotLimit": 46,
-                "targetScore": 13415,
+                "shotLimit": 47,
+                "targetScore": 13595,
                 "dropInterval": 6,
                 "jarCount": 4,
                 "jarColors": [
@@ -11084,13 +11156,13 @@
                     }
                 ],
                 "layout": [
-                    "PPPRPPPRPP",
+                    "PPPRPPPRP.",
                     "BBYBBBY.B",
                     "RGRRRGRRRG",
-                    "PYYYPYY.P",
+                    "PYYYPY..P",
                     "GGGBGGGBGG",
                     "PPRPPPRPP",
-                    "BYBBBY...Y",
+                    "BYBBBY.B.Y",
                     "GRRRGRRRG"
                 ],
                 "designNotes": "Generated 1000-level campaign stage. Chapter `splitter_lock_combo` uses splitter, locked with a wave board silhouette.",
@@ -11130,13 +11202,21 @@
                         "col": 7
                     },
                     {
+                        "id": "key_g2_02",
+                        "entityCategory": "key_ball",
+                        "entityType": "key",
+                        "unlockGroup": "g2",
+                        "row": 3,
+                        "col": 6
+                    },
+                    {
                         "id": "locked_g2_02",
                         "entityCategory": "locked_ball",
                         "entityType": "locked",
                         "lockedColor": "B",
                         "lockGroup": "g2",
-                        "row": 6,
-                        "col": 7
+                        "row": 0,
+                        "col": 9
                     }
                 ],
                 "levelType": "normal",
@@ -11206,8 +11286,8 @@
                     "Y",
                     "P"
                 ],
-                "shotLimit": 47,
-                "targetScore": 13639,
+                "shotLimit": 48,
+                "targetScore": 13819,
                 "dropInterval": 6,
                 "jarCount": 4,
                 "jarColors": [
@@ -11256,12 +11336,12 @@
                     }
                 ],
                 "layout": [
-                    "RRRRR.R.RR",
+                    "RRRRRRR.RR",
                     ".YYRRYYYY",
-                    "GGYYYYGGGG",
-                    "P.GGGGGPP",
+                    "GGYYYYGG.G",
+                    "PGGGGGGPP",
                     "PPPP.PPPBB",
-                    "B.BBBBBBB",
+                    "B.BB.BBB.",
                     "RRRRRRRRRR",
                     "YYYYYYYYY"
                 ],
@@ -11302,20 +11382,28 @@
                         "col": 1
                     },
                     {
+                        "id": "key_g3_02",
+                        "entityCategory": "key_ball",
+                        "entityType": "key",
+                        "unlockGroup": "g3",
+                        "row": 5,
+                        "col": 8
+                    },
+                    {
                         "id": "locked_g3_02",
                         "entityCategory": "locked_ball",
                         "entityType": "locked",
                         "lockedColor": "Y",
                         "lockGroup": "g3",
-                        "row": 0,
-                        "col": 5
+                        "row": 2,
+                        "col": 8
                     },
                     {
                         "id": "stone_01",
                         "entityCategory": "obstacle_ball",
                         "entityType": "stone",
-                        "row": 3,
-                        "col": 1
+                        "row": 5,
+                        "col": 4
                     }
                 ],
                 "levelType": "normal",
@@ -11385,8 +11473,8 @@
                     "Y",
                     "P"
                 ],
-                "shotLimit": 47,
-                "targetScore": 13682,
+                "shotLimit": 48,
+                "targetScore": 13862,
                 "dropInterval": 6,
                 "jarCount": 4,
                 "jarColors": [
@@ -11433,12 +11521,12 @@
                 "layout": [
                     "GPPGGPPGGG",
                     "PBBPPBBPP",
-                    "BRRBBRRBB.",
+                    "B.RBBRRBB.",
                     "RRRRRRRRR",
-                    "Y.YYYY.YYY",
-                    "GGG..GGGG",
-                    "PPPPPPPPPP",
-                    "BBBBBBBB."
+                    "YYYYYY.YYY",
+                    "GGG.GGGGG",
+                    "PPPP.PPPPP",
+                    "BBBBBBB.."
                 ],
                 "designNotes": "Generated 1000-level campaign stage. Chapter `splitter_lock_combo` uses splitter, locked with a heart board silhouette.",
                 "difficultyScore": 45,
@@ -11477,20 +11565,28 @@
                         "col": 9
                     },
                     {
+                        "id": "key_g1_02",
+                        "entityCategory": "key_ball",
+                        "entityType": "key",
+                        "unlockGroup": "g1",
+                        "row": 2,
+                        "col": 1
+                    },
+                    {
                         "id": "locked_g1_02",
                         "entityCategory": "locked_ball",
                         "entityType": "locked",
                         "lockedColor": "P",
                         "lockGroup": "g1",
-                        "row": 5,
-                        "col": 4
+                        "row": 7,
+                        "col": 7
                     },
                     {
                         "id": "skill_rainbow_01",
                         "entityCategory": "skill_ball",
                         "entityType": "rainbow",
-                        "row": 4,
-                        "col": 1
+                        "row": 6,
+                        "col": 4
                     }
                 ],
                 "levelType": "normal",
@@ -11560,8 +11656,8 @@
                     "Y",
                     "P"
                 ],
-                "shotLimit": 46,
-                "targetScore": 13546,
+                "shotLimit": 47,
+                "targetScore": 13726,
                 "dropInterval": 6,
                 "jarCount": 4,
                 "jarColors": [
@@ -11607,13 +11703,13 @@
                 ],
                 "layout": [
                     "BBBGGBBBBB",
-                    "RRRPPRRRR",
+                    "R.RPPRRRR",
                     "YYBB.BYYYY",
                     "GRRRRRRGG",
-                    "PYYYYYYP.P",
+                    ".YYYYYYP.P",
                     "BBGGGGBBB",
                     "RRRPPRRRRR",
-                    "Y.YBB.Y.Y"
+                    "Y.YBB.YYY"
                 ],
                 "designNotes": "Generated 1000-level campaign stage. Chapter `splitter_lock_combo` uses splitter, locked with a diamond board silhouette.",
                 "difficultyScore": 45,
@@ -11652,13 +11748,21 @@
                         "col": 8
                     },
                     {
+                        "id": "key_g2_02",
+                        "entityCategory": "key_ball",
+                        "entityType": "key",
+                        "unlockGroup": "g2",
+                        "row": 4,
+                        "col": 0
+                    },
+                    {
                         "id": "locked_g2_02",
                         "entityCategory": "locked_ball",
                         "entityType": "locked",
                         "lockedColor": "R",
                         "lockGroup": "g2",
-                        "row": 7,
-                        "col": 7
+                        "row": 1,
+                        "col": 1
                     }
                 ],
                 "levelType": "normal",
@@ -11728,8 +11832,8 @@
                     "Y",
                     "P"
                 ],
-                "shotLimit": 46,
-                "targetScore": 13589,
+                "shotLimit": 47,
+                "targetScore": 13769,
                 "dropInterval": 6,
                 "jarCount": 4,
                 "jarColors": [
@@ -11775,12 +11879,12 @@
                 ],
                 "layout": [
                     "PPPPPPPPPP",
-                    "B.GGGGGG.",
+                    "BGGGGGGG.",
                     "RPPPPP.PPR",
-                    "YBBBBBBBY",
+                    "YBBB.BBBY",
                     "GRRRRRRRRG",
                     ".YYYYYYYP",
-                    "BGGGGGG.GB",
+                    "BGGGGGG..B",
                     "RRRRRRRRR"
                 ],
                 "designNotes": "Generated 1000-level campaign stage. Chapter `splitter_lock_combo` uses splitter, locked with a spiral board silhouette.",
@@ -11820,13 +11924,21 @@
                         "col": 7
                     },
                     {
+                        "id": "key_g3_02",
+                        "entityCategory": "key_ball",
+                        "entityType": "key",
+                        "unlockGroup": "g3",
+                        "row": 6,
+                        "col": 8
+                    },
+                    {
                         "id": "locked_g3_02",
                         "entityCategory": "locked_ball",
                         "entityType": "locked",
                         "lockedColor": "G",
                         "lockGroup": "g3",
-                        "row": 1,
-                        "col": 1
+                        "row": 3,
+                        "col": 4
                     }
                 ],
                 "levelType": "normal",
@@ -11896,8 +12008,8 @@
                     "Y",
                     "P"
                 ],
-                "shotLimit": 46,
-                "targetScore": 13633,
+                "shotLimit": 47,
+                "targetScore": 13813,
                 "dropInterval": 6,
                 "jarCount": 4,
                 "jarColors": [
@@ -11942,13 +12054,13 @@
                     }
                 ],
                 "layout": [
-                    "GGGG.GGGGG",
-                    "BPBBBBBPB",
+                    ".GGGGGGGGG",
+                    ".PBBBBBPB",
                     "RBRRRRRRBR",
-                    "YRYYYYY.Y",
+                    "YRYYYY..Y",
                     "GYGGGGGGYG",
                     "PG.PPPPGP",
-                    ".PBBBBB.PB",
+                    ".PBBBBBBPB",
                     "RBRRRRRBR"
                 ],
                 "designNotes": "Generated 1000-level campaign stage. Chapter `splitter_lock_combo` uses splitter, locked with a gate board silhouette.",
@@ -11967,8 +12079,8 @@
                         "entityCategory": "reactive_ball",
                         "entityType": "splitter",
                         "splitColor": "P",
-                        "row": 0,
-                        "col": 4
+                        "row": 1,
+                        "col": 0
                     },
                     {
                         "id": "key_g1_01",
@@ -11988,13 +12100,21 @@
                         "col": 7
                     },
                     {
+                        "id": "key_g1_02",
+                        "entityCategory": "key_ball",
+                        "entityType": "key",
+                        "unlockGroup": "g1",
+                        "row": 3,
+                        "col": 6
+                    },
+                    {
                         "id": "locked_g1_02",
                         "entityCategory": "locked_ball",
                         "entityType": "locked",
                         "lockedColor": "B",
                         "lockGroup": "g1",
-                        "row": 6,
-                        "col": 7
+                        "row": 0,
+                        "col": 0
                     }
                 ],
                 "levelType": "normal",
@@ -12064,8 +12184,8 @@
                     "Y",
                     "P"
                 ],
-                "shotLimit": 48,
-                "targetScore": 14037,
+                "shotLimit": 49,
+                "targetScore": 14217,
                 "dropInterval": 6,
                 "jarCount": 4,
                 "jarColors": [
@@ -12094,7 +12214,7 @@
                     {
                         "type": "collect_color",
                         "color": "R",
-                        "value": 13
+                        "value": 14
                     }
                 ],
                 "bonusObjectives": [
@@ -12110,13 +12230,13 @@
                     }
                 ],
                 "layout": [
-                    "RRRRRR...R",
-                    "YYYYYYYYY",
-                    "GGYYYYG.GG",
+                    "RRRRRR.R.R",
+                    ".YYYYYYYY",
+                    "GGYYYYGGG.",
                     "P.BBBBPPP",
-                    "BBGGGGBBBB",
-                    "R.RRRRRRR",
-                    "YYP.PPYYYY",
+                    ".BGGGGBBBB",
+                    "..RRRRRRR",
+                    "YYPPPPYYYY",
                     "GGYYYYGGG"
                 ],
                 "designNotes": "Generated 1000-level campaign stage. Chapter `splitter_lock_combo` uses splitter, locked with a flame board silhouette.",
@@ -12127,8 +12247,8 @@
                         "entityCategory": "reactive_ball",
                         "entityType": "splitter",
                         "splitColor": "R",
-                        "row": 0,
-                        "col": 6
+                        "row": 1,
+                        "col": 0
                     },
                     {
                         "id": "splitter_02",
@@ -12156,27 +12276,35 @@
                         "col": 1
                     },
                     {
+                        "id": "key_g2_02",
+                        "entityCategory": "key_ball",
+                        "entityType": "key",
+                        "unlockGroup": "g2",
+                        "row": 5,
+                        "col": 0
+                    },
+                    {
                         "id": "locked_g2_02",
                         "entityCategory": "locked_ball",
                         "entityType": "locked",
                         "lockedColor": "Y",
                         "lockGroup": "g2",
-                        "row": 0,
-                        "col": 7
+                        "row": 2,
+                        "col": 9
                     },
                     {
                         "id": "stone_01",
                         "entityCategory": "obstacle_ball",
                         "entityType": "stone",
-                        "row": 2,
-                        "col": 7
+                        "row": 4,
+                        "col": 0
                     },
                     {
                         "id": "skill_blast_01",
                         "entityCategory": "skill_ball",
                         "entityType": "blast",
-                        "row": 6,
-                        "col": 3
+                        "row": 0,
+                        "col": 6
                     }
                 ],
                 "levelType": "normal",
@@ -12246,8 +12374,8 @@
                     "Y",
                     "P"
                 ],
-                "shotLimit": 47,
-                "targetScore": 13900,
+                "shotLimit": 48,
+                "targetScore": 14080,
                 "dropInterval": 6,
                 "jarCount": 4,
                 "jarColors": [
@@ -12293,13 +12421,13 @@
                 ],
                 "layout": [
                     "GGRGGRGGGG",
-                    "PPY.PYPPP",
-                    "GGGGG.G.GG",
-                    "RRP.RPRRR",
-                    "YYBYYBYYYY",
+                    "PPYPPYPPP",
+                    "GGGGGGG.GG",
+                    "RRP.RP.RR",
+                    "YYBYYBYY.Y",
                     "RRRRRRRRR",
                     "PPYP.YPPPP",
-                    "BBGB.GBBB"
+                    "BB.B.GBBB"
                 ],
                 "designNotes": "Generated 1000-level campaign stage. Chapter `splitter_lock_combo` uses splitter, locked with a flower board silhouette.",
                 "difficultyScore": 45,
@@ -12338,21 +12466,29 @@
                         "col": 4
                     },
                     {
+                        "id": "key_g3_02",
+                        "entityCategory": "key_ball",
+                        "entityType": "key",
+                        "unlockGroup": "g3",
+                        "row": 7,
+                        "col": 2
+                    },
+                    {
                         "id": "locked_g3_02",
                         "entityCategory": "locked_ball",
                         "entityType": "locked",
                         "lockedColor": "P",
                         "lockGroup": "g3",
-                        "row": 2,
-                        "col": 5
+                        "row": 4,
+                        "col": 8
                     },
                     {
                         "id": "ice_01",
                         "entityCategory": "obstacle_ball",
                         "entityType": "ice",
                         "innerColor": "R",
-                        "row": 1,
-                        "col": 3
+                        "row": 3,
+                        "col": 6
                     }
                 ],
                 "levelType": "normal",
@@ -12422,8 +12558,8 @@
                     "Y",
                     "P"
                 ],
-                "shotLimit": 46,
-                "targetScore": 13764,
+                "shotLimit": 47,
+                "targetScore": 13944,
                 "dropInterval": 6,
                 "jarCount": 4,
                 "jarColors": [
@@ -12452,7 +12588,7 @@
                     {
                         "type": "collect_color",
                         "color": "B",
-                        "value": 13
+                        "value": 14
                     }
                 ],
                 "bonusObjectives": [
@@ -12469,13 +12605,13 @@
                 ],
                 "layout": [
                     "RRRRRRRRRR",
-                    "YY.YYYYYY",
+                    "Y..YYYYYY",
                     "GGGGGGGGGG",
                     "GGGPPGGGG",
-                    "PPPBBPPPP.",
+                    "P.PBBPPPP.",
                     "BBBRRBBBB",
                     "RRRYYR.RRR",
-                    "YYYGGY..Y"
+                    "YYYGGY.YY"
                 ],
                 "designNotes": "Generated 1000-level campaign stage. Chapter `splitter_lock_combo` uses splitter, locked with a keyhole board silhouette.",
                 "difficultyScore": 45,
@@ -12514,13 +12650,21 @@
                         "col": 9
                     },
                     {
+                        "id": "key_g1_02",
+                        "entityCategory": "key_ball",
+                        "entityType": "key",
+                        "unlockGroup": "g1",
+                        "row": 4,
+                        "col": 1
+                    },
+                    {
                         "id": "locked_g1_02",
                         "entityCategory": "locked_ball",
                         "entityType": "locked",
                         "lockedColor": "R",
                         "lockGroup": "g1",
-                        "row": 7,
-                        "col": 7
+                        "row": 1,
+                        "col": 1
                     }
                 ],
                 "levelType": "normal",
@@ -12590,8 +12734,8 @@
                     "Y",
                     "P"
                 ],
-                "shotLimit": 46,
-                "targetScore": 13807,
+                "shotLimit": 47,
+                "targetScore": 13987,
                 "dropInterval": 6,
                 "jarCount": 4,
                 "jarColors": [
@@ -12620,7 +12764,7 @@
                     {
                         "type": "collect_color",
                         "color": "Y",
-                        "value": 13
+                        "value": 14
                     }
                 ],
                 "bonusObjectives": [
@@ -12637,12 +12781,12 @@
                 ],
                 "layout": [
                     "RRRRRRRRRR",
-                    "G.GY.GYG.",
+                    "GYGY.GYG.",
                     "PPPPPPPPPP",
-                    "BBBBBBBBB",
+                    "BBBB.BBBB",
                     "RRRR.RRRRR",
                     "YYYYYYYYY",
-                    "GGGGGGGG.G",
+                    ".GGGGGGG.G",
                     "PPPPPPPPP"
                 ],
                 "designNotes": "Generated 1000-level campaign stage. Chapter `splitter_lock_combo` uses splitter, locked with a crown board silhouette.",
@@ -12682,13 +12826,21 @@
                         "col": 8
                     },
                     {
+                        "id": "key_g2_02",
+                        "entityCategory": "key_ball",
+                        "entityType": "key",
+                        "unlockGroup": "g2",
+                        "row": 6,
+                        "col": 0
+                    },
+                    {
                         "id": "locked_g2_02",
                         "entityCategory": "locked_ball",
                         "entityType": "locked",
                         "lockedColor": "G",
                         "lockGroup": "g2",
-                        "row": 1,
-                        "col": 1
+                        "row": 3,
+                        "col": 4
                     }
                 ],
                 "levelType": "normal",
@@ -12758,8 +12910,8 @@
                     "Y",
                     "P"
                 ],
-                "shotLimit": 46,
-                "targetScore": 13851,
+                "shotLimit": 47,
+                "targetScore": 14031,
                 "dropInterval": 6,
                 "jarCount": 4,
                 "jarColors": [
@@ -12788,7 +12940,7 @@
                     {
                         "type": "collect_color",
                         "color": "P",
-                        "value": 13
+                        "value": 14
                     }
                 ],
                 "bonusObjectives": [
@@ -12804,12 +12956,12 @@
                     }
                 ],
                 "layout": [
-                    "PRPPPRP.PR",
+                    "PRPPPRP..R",
                     "YBBBYBBBY",
                     "RRRGRRRGRR",
-                    "YY.Y.YPYY",
+                    "YY.YYYPYY",
                     "GBGGGB.GGB",
-                    "RPPPRPPPR",
+                    "RPPPRPP.R",
                     "BBBYBBBYBB",
                     "RRG.RRGRR"
                 ],
@@ -12850,13 +13002,21 @@
                         "col": 7
                     },
                     {
+                        "id": "key_g3_02",
+                        "entityCategory": "key_ball",
+                        "entityType": "key",
+                        "unlockGroup": "g3",
+                        "row": 0,
+                        "col": 8
+                    },
+                    {
                         "id": "locked_g3_02",
                         "entityCategory": "locked_ball",
                         "entityType": "locked",
                         "lockedColor": "B",
                         "lockGroup": "g3",
-                        "row": 3,
-                        "col": 4
+                        "row": 5,
+                        "col": 7
                     }
                 ],
                 "levelType": "normal",
@@ -12926,8 +13086,8 @@
                     "Y",
                     "P"
                 ],
-                "shotLimit": 48,
-                "targetScore": 14254,
+                "shotLimit": 49,
+                "targetScore": 14434,
                 "dropInterval": 6,
                 "jarCount": 4,
                 "jarColors": [
@@ -12976,12 +13136,12 @@
                     }
                 ],
                 "layout": [
-                    ".RRRRRR.RR",
-                    "YYYRR..YY",
-                    "GGYY.YGGGG",
-                    "PGGGGGGPP",
+                    ".RRRRRRRRR",
+                    "YYYRRYYYY",
+                    ".GYY.YGGGG",
+                    ".GGGGGGP.",
                     "PPPPPPPPBB",
-                    "B.BBBBBBB",
+                    "..BBBBBBB",
                     "RRRRRRRRRR",
                     "YYYYY.YYY"
                 ],
@@ -13022,27 +13182,35 @@
                         "col": 1
                     },
                     {
+                        "id": "key_g1_02",
+                        "entityCategory": "key_ball",
+                        "entityType": "key",
+                        "unlockGroup": "g1",
+                        "row": 5,
+                        "col": 0
+                    },
+                    {
                         "id": "locked_g1_02",
                         "entityCategory": "locked_ball",
                         "entityType": "locked",
                         "lockedColor": "Y",
                         "lockGroup": "g1",
-                        "row": 0,
-                        "col": 7
+                        "row": 2,
+                        "col": 0
                     },
                     {
                         "id": "stone_01",
                         "entityCategory": "obstacle_ball",
                         "entityType": "stone",
-                        "row": 1,
-                        "col": 6
+                        "row": 3,
+                        "col": 0
                     },
                     {
                         "id": "skill_rainbow_01",
                         "entityCategory": "skill_ball",
                         "entityType": "rainbow",
-                        "row": 1,
-                        "col": 5
+                        "row": 3,
+                        "col": 8
                     }
                 ],
                 "levelType": "normal",
@@ -13113,8 +13281,8 @@
                     "Y",
                     "P"
                 ],
-                "shotLimit": 48,
-                "targetScore": 14298,
+                "shotLimit": 49,
+                "targetScore": 14478,
                 "dropInterval": 6,
                 "jarCount": 4,
                 "jarColors": [
@@ -13159,13 +13327,13 @@
                     }
                 ],
                 "layout": [
-                    "GPPGGPPGGG",
+                    "GPPGG.PGGG",
                     "P.BPPBBPP",
                     "BRR.BRRBBB",
-                    "R.RRRRRRR",
+                    "..RRRRRRR",
                     "YYYYYYYYYY",
                     "GGGGGGGG.",
-                    "PP.P..PPPP",
+                    "PP.P.PPPPP",
                     "BBBBBBBBB"
                 ],
                 "designNotes": "Generated 1000-level campaign stage. Chapter `full_reactive_exam` uses molotov, splitter, locked with a heart board silhouette.",
@@ -13221,12 +13389,20 @@
                         "col": 1
                     },
                     {
+                        "id": "key_g2_02",
+                        "entityCategory": "key_ball",
+                        "entityType": "key",
+                        "unlockGroup": "g2",
+                        "row": 3,
+                        "col": 0
+                    },
+                    {
                         "id": "locked_g2_02",
                         "entityCategory": "locked_ball",
                         "entityType": "locked",
                         "lockedColor": "P",
                         "lockGroup": "g2",
-                        "row": 6,
+                        "row": 0,
                         "col": 5
                     }
                 ],
@@ -13298,8 +13474,8 @@
                     "Y",
                     "P"
                 ],
-                "shotLimit": 49,
-                "targetScore": 14521,
+                "shotLimit": 50,
+                "targetScore": 14701,
                 "dropInterval": 6,
                 "jarCount": 4,
                 "jarColors": [
@@ -13344,14 +13520,14 @@
                     }
                 ],
                 "layout": [
-                    "B...GBBBBB",
+                    "B.B.GBBBBB",
                     "RRR.PRRRR",
-                    "YYBBBBYYYY",
+                    "YYBB.BYYYY",
                     "GRRRRRRGG",
                     ".YYYYYYPPP",
                     "B..G.GBBB",
                     "RRRPPRRRRR",
-                    "YYYBBYYYY"
+                    "YYYB.YYYY"
                 ],
                 "designNotes": "Generated 1000-level campaign stage. Chapter `full_reactive_exam` uses molotov, splitter, locked with a diamond board silhouette.",
                 "difficultyScore": 45,
@@ -13406,20 +13582,28 @@
                         "col": 4
                     },
                     {
+                        "id": "key_g3_02",
+                        "entityCategory": "key_ball",
+                        "entityType": "key",
+                        "unlockGroup": "g3",
+                        "row": 5,
+                        "col": 2
+                    },
+                    {
                         "id": "locked_g3_02",
                         "entityCategory": "locked_ball",
                         "entityType": "locked",
                         "lockedColor": "R",
                         "lockGroup": "g3",
-                        "row": 0,
-                        "col": 2
+                        "row": 2,
+                        "col": 4
                     },
                     {
                         "id": "skill_blast_01",
                         "entityCategory": "skill_ball",
                         "entityType": "blast",
-                        "row": 5,
-                        "col": 2
+                        "row": 7,
+                        "col": 4
                     }
                 ],
                 "levelType": "normal",
@@ -13490,8 +13674,8 @@
                     "Y",
                     "P"
                 ],
-                "shotLimit": 48,
-                "targetScore": 14385,
+                "shotLimit": 49,
+                "targetScore": 14565,
                 "dropInterval": 6,
                 "jarCount": 4,
                 "jarColors": [
@@ -13538,12 +13722,12 @@
                 "layout": [
                     "PPP.PPPPPP",
                     "BGGGGGGGB",
-                    "RPPPP.PPPR",
+                    "RPPPP.P.PR",
                     ".BBBBBBBY",
                     "GR.RRRRRRG",
-                    "PYYYYY..P",
+                    "PYYYYY.YP",
                     "BGGGGGGGGB",
-                    "RR.RRRRRR"
+                    "R..RRRRRR"
                 ],
                 "designNotes": "Generated 1000-level campaign stage. Chapter `full_reactive_exam` uses molotov, splitter, locked with a spiral board silhouette.",
                 "difficultyScore": 46,
@@ -13598,13 +13782,21 @@
                         "col": 5
                     },
                     {
+                        "id": "key_g1_02",
+                        "entityCategory": "key_ball",
+                        "entityType": "key",
+                        "unlockGroup": "g1",
+                        "row": 2,
+                        "col": 7
+                    },
+                    {
                         "id": "locked_g1_02",
                         "entityCategory": "locked_ball",
                         "entityType": "locked",
                         "lockedColor": "G",
                         "lockGroup": "g1",
-                        "row": 5,
-                        "col": 7
+                        "row": 7,
+                        "col": 1
                     }
                 ],
                 "levelType": "normal",
@@ -13675,8 +13867,8 @@
                     "Y",
                     "P"
                 ],
-                "shotLimit": 48,
-                "targetScore": 14428,
+                "shotLimit": 49,
+                "targetScore": 14608,
                 "dropInterval": 6,
                 "jarCount": 4,
                 "jarColors": [
@@ -13722,13 +13914,13 @@
                 ],
                 "layout": [
                     "GGGGGGGGGG",
-                    "BPBBBBBPB",
+                    "BPBB.BBPB",
                     ".BRRRRRRBR",
                     "YR.YYYYRY",
-                    "GYGG.GGGYG",
+                    "GYGG.G.GYG",
                     "PGPPPPPGP",
                     "B.BBBBBBPB",
-                    "R.RR.RRB."
+                    "RBRR.RRB."
                 ],
                 "designNotes": "Generated 1000-level campaign stage. Chapter `full_reactive_exam` uses molotov, splitter, locked with a gate board silhouette.",
                 "difficultyScore": 46,
@@ -13783,13 +13975,21 @@
                         "col": 4
                     },
                     {
+                        "id": "key_g2_02",
+                        "entityCategory": "key_ball",
+                        "entityType": "key",
+                        "unlockGroup": "g2",
+                        "row": 4,
+                        "col": 6
+                    },
+                    {
                         "id": "locked_g2_02",
                         "entityCategory": "locked_ball",
                         "entityType": "locked",
                         "lockedColor": "B",
                         "lockGroup": "g2",
-                        "row": 7,
-                        "col": 1
+                        "row": 1,
+                        "col": 4
                     }
                 ],
                 "levelType": "normal",
@@ -13860,8 +14060,8 @@
                     "Y",
                     "P"
                 ],
-                "shotLimit": 49,
-                "targetScore": 14652,
+                "shotLimit": 50,
+                "targetScore": 14832,
                 "dropInterval": 6,
                 "jarCount": 4,
                 "jarColors": [
@@ -13907,12 +14107,12 @@
                 ],
                 "layout": [
                     "RRRRRRRRRR",
-                    "Y..Y.YYYY",
+                    "Y..YYYYYY",
                     "GG.YYYGGGG",
-                    "PPBBBBPPP",
-                    "BBG.GGBBBB",
+                    "PPBBBBP.P",
+                    "BBGGGGBBBB",
                     "RRR.RRRRR",
-                    "YYP..PYYYY",
+                    "YYP..P..YY",
                     "GGYYYYGGG"
                 ],
                 "designNotes": "Generated 1000-level campaign stage. Chapter `full_reactive_exam` uses molotov, splitter, locked with a flame board silhouette.",
@@ -13968,20 +14168,28 @@
                         "col": 4
                     },
                     {
+                        "id": "key_g3_02",
+                        "entityCategory": "key_ball",
+                        "entityType": "key",
+                        "unlockGroup": "g3",
+                        "row": 6,
+                        "col": 6
+                    },
+                    {
                         "id": "locked_g3_02",
                         "entityCategory": "locked_ball",
                         "entityType": "locked",
                         "lockedColor": "Y",
                         "lockGroup": "g3",
-                        "row": 1,
-                        "col": 4
+                        "row": 3,
+                        "col": 7
                     },
                     {
                         "id": "stone_01",
                         "entityCategory": "obstacle_ball",
                         "entityType": "stone",
-                        "row": 4,
-                        "col": 3
+                        "row": 6,
+                        "col": 7
                     }
                 ],
                 "levelType": "normal",
@@ -14052,8 +14260,8 @@
                     "Y",
                     "P"
                 ],
-                "shotLimit": 48,
-                "targetScore": 14516,
+                "shotLimit": 49,
+                "targetScore": 14696,
                 "dropInterval": 6,
                 "jarCount": 4,
                 "jarColors": [
@@ -14098,13 +14306,13 @@
                     }
                 ],
                 "layout": [
-                    ".GRGGRGGGG",
-                    "PPY.PYPPP",
+                    "GGRGGR.GGG",
+                    ".PY.PYPPP",
                     "GGGGGGGGGG",
-                    "R.PRRPRRR",
+                    "..PRRPRRR",
                     "Y.BYYBYYYY",
                     "RRRRR.RRR",
-                    "PPY.PY.PPP",
+                    "PPYPPY.PPP",
                     "BBGBBGBBB"
                 ],
                 "designNotes": "Generated 1000-level campaign stage. Chapter `full_reactive_exam` uses molotov, splitter, locked with a flower board silhouette.",
@@ -14139,7 +14347,7 @@
                         "entityCategory": "reactive_ball",
                         "entityType": "splitter",
                         "splitColor": "G",
-                        "row": 0,
+                        "row": 1,
                         "col": 0
                     },
                     {
@@ -14160,13 +14368,21 @@
                         "col": 1
                     },
                     {
+                        "id": "key_g1_02",
+                        "entityCategory": "key_ball",
+                        "entityType": "key",
+                        "unlockGroup": "g1",
+                        "row": 3,
+                        "col": 0
+                    },
+                    {
                         "id": "locked_g1_02",
                         "entityCategory": "locked_ball",
                         "entityType": "locked",
                         "lockedColor": "P",
                         "lockGroup": "g1",
-                        "row": 6,
-                        "col": 3
+                        "row": 0,
+                        "col": 6
                     }
                 ],
                 "levelType": "normal",
@@ -14237,8 +14453,8 @@
                     "Y",
                     "P"
                 ],
-                "shotLimit": 49,
-                "targetScore": 14739,
+                "shotLimit": 50,
+                "targetScore": 14919,
                 "dropInterval": 6,
                 "jarCount": 4,
                 "jarColors": [
@@ -14283,13 +14499,13 @@
                     }
                 ],
                 "layout": [
-                    "RR...RRRRR",
-                    "YYYYYYYYY",
-                    "GGGGGGGGGG",
+                    ".RRR.RRRRR",
+                    ".YYYYYYYY",
+                    "GGGGG.GGGG",
                     "GGGP.GGGG",
                     "PPP.BPPPPP",
-                    "BBBR.BBBB",
-                    "RRRYYRR.RR",
+                    "BBB..BBBB",
+                    "RRRYYRRRRR",
                     "YY.GGYYYY"
                 ],
                 "designNotes": "Generated 1000-level campaign stage. Chapter `full_reactive_exam` uses molotov, splitter, locked with a keyhole board silhouette.",
@@ -14316,8 +14532,8 @@
                         "entityCategory": "reactive_ball",
                         "entityType": "splitter",
                         "splitColor": "B",
-                        "row": 0,
-                        "col": 2
+                        "row": 1,
+                        "col": 0
                     },
                     {
                         "id": "splitter_02",
@@ -14345,21 +14561,29 @@
                         "col": 4
                     },
                     {
+                        "id": "key_g2_02",
+                        "entityCategory": "key_ball",
+                        "entityType": "key",
+                        "unlockGroup": "g2",
+                        "row": 5,
+                        "col": 3
+                    },
+                    {
                         "id": "locked_g2_02",
                         "entityCategory": "locked_ball",
                         "entityType": "locked",
                         "lockedColor": "R",
                         "lockGroup": "g2",
-                        "row": 0,
-                        "col": 3
+                        "row": 2,
+                        "col": 5
                     },
                     {
                         "id": "ice_01",
                         "entityCategory": "obstacle_ball",
                         "entityType": "ice",
                         "innerColor": "G",
-                        "row": 6,
-                        "col": 7
+                        "row": 0,
+                        "col": 0
                     }
                 ],
                 "levelType": "normal",
@@ -14430,8 +14654,8 @@
                     "Y",
                     "P"
                 ],
-                "shotLimit": 48,
-                "targetScore": 14603,
+                "shotLimit": 49,
+                "targetScore": 14783,
                 "dropInterval": 6,
                 "jarCount": 4,
                 "jarColors": [
@@ -14478,12 +14702,12 @@
                 "layout": [
                     "RRRRRRRRRR",
                     "GYGYGGYGG",
-                    "P...PPPPPP",
+                    "P.P.PPPPPP",
                     "BBBBBB.BB",
-                    "RRRRRRRRRR",
+                    "RRRR.RRRRR",
                     "YYYYYYYYY",
                     ".GGGGGGGGG",
-                    "PPPP.PP.P"
+                    "PPPP..P.P"
                 ],
                 "designNotes": "Generated 1000-level campaign stage. Chapter `full_reactive_exam` uses molotov, splitter, locked with a crown board silhouette.",
                 "difficultyScore": 46,
@@ -14538,13 +14762,21 @@
                         "col": 7
                     },
                     {
+                        "id": "key_g3_02",
+                        "entityCategory": "key_ball",
+                        "entityType": "key",
+                        "unlockGroup": "g3",
+                        "row": 7,
+                        "col": 5
+                    },
+                    {
                         "id": "locked_g3_02",
                         "entityCategory": "locked_ball",
                         "entityType": "locked",
                         "lockedColor": "G",
                         "lockGroup": "g3",
-                        "row": 2,
-                        "col": 2
+                        "row": 4,
+                        "col": 4
                     }
                 ],
                 "levelType": "normal",
@@ -14615,8 +14847,8 @@
                     "Y",
                     "P"
                 ],
-                "shotLimit": 50,
-                "targetScore": 15006,
+                "shotLimit": 51,
+                "targetScore": 15186,
                 "dropInterval": 6,
                 "jarCount": 4,
                 "jarColors": [
@@ -14645,7 +14877,7 @@
                     {
                         "type": "collect_color",
                         "color": "P",
-                        "value": 14
+                        "value": 15
                     }
                 ],
                 "bonusObjectives": [
@@ -14661,14 +14893,14 @@
                     }
                 ],
                 "layout": [
-                    ".PPRPPPRPP",
-                    "BBYBB.YBB",
+                    "PPPRPPPRPP",
+                    "BBYB..YBB",
                     "RGR.RG.RRG",
                     "PYYYPYYYP",
-                    "GGGBG.GBGG",
+                    "GGGBG.G.G.",
                     "PPR.PPRPP",
                     "BY.BBYBBBY",
-                    "..RRGRRRG"
+                    ".RRRGRRRG"
                 ],
                 "designNotes": "Generated 1000-level campaign stage. Chapter `full_reactive_exam` uses molotov, splitter, locked with a wave board silhouette.",
                 "difficultyScore": 46,
@@ -14723,27 +14955,35 @@
                         "col": 5
                     },
                     {
+                        "id": "key_g1_02",
+                        "entityCategory": "key_ball",
+                        "entityType": "key",
+                        "unlockGroup": "g1",
+                        "row": 4,
+                        "col": 7
+                    },
+                    {
                         "id": "locked_g1_02",
                         "entityCategory": "locked_ball",
                         "entityType": "locked",
                         "lockedColor": "B",
                         "lockGroup": "g1",
-                        "row": 7,
-                        "col": 1
+                        "row": 1,
+                        "col": 4
                     },
                     {
                         "id": "skill_blast_01",
                         "entityCategory": "skill_ball",
                         "entityType": "blast",
-                        "row": 2,
-                        "col": 6
+                        "row": 4,
+                        "col": 9
                     },
                     {
                         "id": "skill_rainbow_01",
                         "entityCategory": "skill_ball",
                         "entityType": "rainbow",
-                        "row": 0,
-                        "col": 0
+                        "row": 2,
+                        "col": 6
                     }
                 ],
                 "levelType": "normal",
@@ -14814,8 +15054,8 @@
                     "Y",
                     "P"
                 ],
-                "shotLimit": 49,
-                "targetScore": 14870,
+                "shotLimit": 50,
+                "targetScore": 15050,
                 "dropInterval": 6,
                 "jarCount": 4,
                 "jarColors": [
@@ -14865,12 +15105,12 @@
                 ],
                 "layout": [
                     "R.RRRRRRRR",
-                    "YY.R.YY.Y",
+                    "YY.RRYY.Y",
                     "GGYYYYGGGG",
-                    "PGGGGGGP.",
+                    "PGGGGGG.P",
                     ".PPPPPPPBB",
-                    "BBBBB.BBB",
-                    "RRRR.RRRRR",
+                    "BB.BB.BBB",
+                    "RRRR.R.RRR",
                     "YYYYYYYYY"
                 ],
                 "designNotes": "Generated 1000-level campaign stage. Chapter `full_reactive_exam` uses molotov, splitter, locked with a arrow board silhouette.",
@@ -14926,20 +15166,28 @@
                         "col": 4
                     },
                     {
+                        "id": "key_g2_02",
+                        "entityCategory": "key_ball",
+                        "entityType": "key",
+                        "unlockGroup": "g2",
+                        "row": 6,
+                        "col": 6
+                    },
+                    {
                         "id": "locked_g2_02",
                         "entityCategory": "locked_ball",
                         "entityType": "locked",
                         "lockedColor": "Y",
                         "lockGroup": "g2",
-                        "row": 1,
-                        "col": 4
+                        "row": 3,
+                        "col": 7
                     },
                     {
                         "id": "stone_01",
                         "entityCategory": "obstacle_ball",
                         "entityType": "stone",
-                        "row": 3,
-                        "col": 8
+                        "row": 5,
+                        "col": 2
                     }
                 ],
                 "levelType": "normal",
@@ -15010,8 +15258,8 @@
                     "Y",
                     "P"
                 ],
-                "shotLimit": 48,
-                "targetScore": 14733,
+                "shotLimit": 49,
+                "targetScore": 14913,
                 "dropInterval": 6,
                 "jarCount": 4,
                 "jarColors": [
@@ -15056,12 +15304,12 @@
                     }
                 ],
                 "layout": [
-                    "GPP..PPGGG",
+                    "GPP...PGGG",
                     "PBBPPBBPP",
                     "BRRBBRRBBB",
-                    "RRRR..R.R",
+                    "RRRR..RRR",
                     "YY.YYYYYYY",
-                    "GGGGGGGGG",
+                    "G.GGGGGGG",
                     "PPPPPPPPPP",
                     "BBBBBB.BB"
                 ],
@@ -15118,13 +15366,21 @@
                         "col": 4
                     },
                     {
+                        "id": "key_g3_02",
+                        "entityCategory": "key_ball",
+                        "entityType": "key",
+                        "unlockGroup": "g3",
+                        "row": 0,
+                        "col": 5
+                    },
+                    {
                         "id": "locked_g3_02",
                         "entityCategory": "locked_ball",
                         "entityType": "locked",
                         "lockedColor": "P",
                         "lockGroup": "g3",
-                        "row": 3,
-                        "col": 7
+                        "row": 5,
+                        "col": 1
                     }
                 ],
                 "levelType": "normal",
@@ -15195,8 +15451,8 @@
                     "Y",
                     "P"
                 ],
-                "shotLimit": 49,
-                "targetScore": 14777,
+                "shotLimit": 50,
+                "targetScore": 14957,
                 "dropInterval": 6,
                 "jarCount": 4,
                 "jarColors": [
@@ -15241,12 +15497,12 @@
                     }
                 ],
                 "layout": [
-                    "BBB.GB.BBB",
+                    "BBBGGB.BBB",
                     "RRRPPRRRR",
-                    ".YBBBBYYYY",
+                    ".YBBBB.YYY",
                     "GRRRRR.GG",
                     "PYYYYYYPPP",
-                    "BBGG.GBBB",
+                    "BBG..GBBB",
                     "R.RPPRRRRR",
                     "YYYBBYYY."
                 ],
@@ -15303,13 +15559,21 @@
                         "col": 4
                     },
                     {
+                        "id": "key_g1_02",
+                        "entityCategory": "key_ball",
+                        "entityType": "key",
+                        "unlockGroup": "g1",
+                        "row": 5,
+                        "col": 3
+                    },
+                    {
                         "id": "locked_g1_02",
                         "entityCategory": "locked_ball",
                         "entityType": "locked",
                         "lockedColor": "R",
                         "lockGroup": "g1",
-                        "row": 0,
-                        "col": 3
+                        "row": 2,
+                        "col": 6
                     }
                 ],
                 "levelType": "normal",
@@ -15380,8 +15644,8 @@
                     "Y",
                     "P"
                 ],
-                "shotLimit": 49,
-                "targetScore": 14820,
+                "shotLimit": 50,
+                "targetScore": 15000,
                 "dropInterval": 6,
                 "jarCount": 4,
                 "jarColors": [
@@ -15428,12 +15692,12 @@
                 "layout": [
                     "PPPPPPPPPP",
                     "BGGGG.GGB",
-                    "RP.P..PPPR",
+                    "RP.P.PPPPR",
                     "YBBBBBBBY",
-                    "GRRRRRRRRG",
+                    "GRRRR.RRRG",
                     "PYYYYYY.P",
                     "BGG.GGGGGB",
-                    "RRRRRRR.R"
+                    "RRRRRR..R"
                 ],
                 "designNotes": "Generated 1000-level campaign stage. Chapter `full_reactive_exam` uses molotov, splitter, locked with a spiral board silhouette.",
                 "difficultyScore": 46,
@@ -15488,12 +15752,20 @@
                         "col": 7
                     },
                     {
+                        "id": "key_g2_02",
+                        "entityCategory": "key_ball",
+                        "entityType": "key",
+                        "unlockGroup": "g2",
+                        "row": 7,
+                        "col": 6
+                    },
+                    {
                         "id": "locked_g2_02",
                         "entityCategory": "locked_ball",
                         "entityType": "locked",
                         "lockedColor": "G",
                         "lockGroup": "g2",
-                        "row": 2,
+                        "row": 4,
                         "col": 5
                     }
                 ],
@@ -15565,8 +15837,8 @@
                     "Y",
                     "P"
                 ],
-                "shotLimit": 49,
-                "targetScore": 14864,
+                "shotLimit": 50,
+                "targetScore": 15044,
                 "dropInterval": 6,
                 "jarCount": 4,
                 "jarColors": [
@@ -15611,13 +15883,13 @@
                     }
                 ],
                 "layout": [
-                    ".GGGGGGGGG",
-                    "B.BBBBB.B",
+                    "GGGGGGGGGG",
+                    "..BBBBB..",
                     "RBRRRRRRBR",
                     "YRYYYYYRY",
-                    "G.G..GGGYG",
+                    "G.G.GGGGYG",
                     ".GPPPPPGP",
-                    "BPBBBBBBPB",
+                    "BPBB.BBBPB",
                     "RBRRRRRBR"
                 ],
                 "designNotes": "Generated 1000-level campaign stage. Chapter `full_reactive_exam` uses molotov, splitter, locked with a gate board silhouette.",
@@ -15652,7 +15924,7 @@
                         "entityCategory": "reactive_ball",
                         "entityType": "splitter",
                         "splitColor": "P",
-                        "row": 0,
+                        "row": 1,
                         "col": 0
                     },
                     {
@@ -15673,12 +15945,20 @@
                         "col": 1
                     },
                     {
+                        "id": "key_g3_02",
+                        "entityCategory": "key_ball",
+                        "entityType": "key",
+                        "unlockGroup": "g3",
+                        "row": 1,
+                        "col": 8
+                    },
+                    {
                         "id": "locked_g3_02",
                         "entityCategory": "locked_ball",
                         "entityType": "locked",
                         "lockedColor": "B",
                         "lockGroup": "g3",
-                        "row": 4,
+                        "row": 6,
                         "col": 4
                     }
                 ],
@@ -15750,8 +16030,8 @@
                     "Y",
                     "P"
                 ],
-                "shotLimit": 50,
-                "targetScore": 15087,
+                "shotLimit": 51,
+                "targetScore": 15267,
                 "dropInterval": 6,
                 "jarCount": 4,
                 "jarColors": [
@@ -15796,13 +16076,13 @@
                     }
                 ],
                 "layout": [
-                    "RR.RRRRRRR",
-                    "YYY..YYYY",
-                    "GGY.YYGGGG",
-                    "PPBBBBPP.",
-                    "BBG.GGBBBB",
+                    "RRRRRRRRRR",
+                    ".YY.YYYYY",
+                    "GGYYYYGGGG",
+                    "PPBBBBP..",
+                    "BBG.GG.BBB",
                     "RRRRRRRRR",
-                    "YYPPP.YYYY",
+                    "YYPPP.Y.YY",
                     "GGYYYY.GG"
                 ],
                 "designNotes": "Generated 1000-level campaign stage. Chapter `full_reactive_exam` uses molotov, splitter, locked with a flame board silhouette.",
@@ -15829,8 +16109,8 @@
                         "entityCategory": "reactive_ball",
                         "entityType": "splitter",
                         "splitColor": "R",
-                        "row": 0,
-                        "col": 2
+                        "row": 1,
+                        "col": 0
                     },
                     {
                         "id": "splitter_02",
@@ -15858,20 +16138,28 @@
                         "col": 5
                     },
                     {
+                        "id": "key_g1_02",
+                        "entityCategory": "key_ball",
+                        "entityType": "key",
+                        "unlockGroup": "g1",
+                        "row": 6,
+                        "col": 7
+                    },
+                    {
                         "id": "locked_g1_02",
                         "entityCategory": "locked_ball",
                         "entityType": "locked",
                         "lockedColor": "Y",
                         "lockGroup": "g1",
-                        "row": 1,
-                        "col": 4
+                        "row": 3,
+                        "col": 7
                     },
                     {
                         "id": "stone_01",
                         "entityCategory": "obstacle_ball",
                         "entityType": "stone",
-                        "row": 2,
-                        "col": 3
+                        "row": 4,
+                        "col": 6
                     }
                 ],
                 "levelType": "normal",
@@ -15942,8 +16230,8 @@
                     "Y",
                     "P"
                 ],
-                "shotLimit": 50,
-                "targetScore": 15131,
+                "shotLimit": 51,
+                "targetScore": 15311,
                 "dropInterval": 6,
                 "jarCount": 4,
                 "jarColors": [
@@ -15988,12 +16276,12 @@
                     }
                 ],
                 "layout": [
-                    "GGRG.RGGGG",
-                    "P.YPPYPPP",
+                    "GGRG.R.GGG",
+                    "PP.PPYPPP",
                     "G.GGGGGGGG",
-                    "R.PRR.R.R",
+                    "R.PRR.RRR",
                     "YYBYYBYYYY",
-                    "RRRRRRRRR",
+                    "R.RRRRRRR",
                     ".PYPPYPPPP",
                     "BBGBBGBB."
                 ],
@@ -16050,20 +16338,28 @@
                         "col": 4
                     },
                     {
+                        "id": "key_g2_02",
+                        "entityCategory": "key_ball",
+                        "entityType": "key",
+                        "unlockGroup": "g2",
+                        "row": 0,
+                        "col": 6
+                    },
+                    {
                         "id": "locked_g2_02",
                         "entityCategory": "locked_ball",
                         "entityType": "locked",
                         "lockedColor": "P",
                         "lockGroup": "g2",
-                        "row": 3,
-                        "col": 7
+                        "row": 5,
+                        "col": 1
                     },
                     {
                         "id": "skill_blast_01",
                         "entityCategory": "skill_ball",
                         "entityType": "blast",
                         "row": 1,
-                        "col": 1
+                        "col": 2
                     }
                 ],
                 "levelType": "normal",
@@ -16134,8 +16430,8 @@
                     "Y",
                     "P"
                 ],
-                "shotLimit": 49,
-                "targetScore": 14995,
+                "shotLimit": 50,
+                "targetScore": 15175,
                 "dropInterval": 6,
                 "jarCount": 4,
                 "jarColors": [
@@ -16182,12 +16478,12 @@
                 "layout": [
                     "RRRRRRRRRR",
                     ".YYYYYYYY",
-                    "GGG.GG.GGG",
+                    "GGG..G.GGG",
                     "GGGPPGGGG",
                     "PPPBBPPPPP",
-                    "B.BRRBB..",
+                    "BBBRRBB..",
                     "RR.YYRRRRR",
-                    "YYYGGYYYY"
+                    "YYYG.YYYY"
                 ],
                 "designNotes": "Generated 1000-level campaign stage. Chapter `full_reactive_exam` uses molotov, splitter, locked with a keyhole board silhouette.",
                 "difficultyScore": 46,
@@ -16242,13 +16538,21 @@
                         "col": 6
                     },
                     {
+                        "id": "key_g3_02",
+                        "entityCategory": "key_ball",
+                        "entityType": "key",
+                        "unlockGroup": "g3",
+                        "row": 2,
+                        "col": 4
+                    },
+                    {
                         "id": "locked_g3_02",
                         "entityCategory": "locked_ball",
                         "entityType": "locked",
                         "lockedColor": "R",
                         "lockGroup": "g3",
-                        "row": 5,
-                        "col": 1
+                        "row": 7,
+                        "col": 4
                     }
                 ],
                 "levelType": "normal",
@@ -16319,8 +16623,8 @@
                     "Y",
                     "P"
                 ],
-                "shotLimit": 51,
-                "targetScore": 15398,
+                "shotLimit": 52,
+                "targetScore": 15578,
                 "dropInterval": 6,
                 "jarCount": 4,
                 "jarColors": [
@@ -16349,7 +16653,7 @@
                     {
                         "type": "collect_color",
                         "color": "Y",
-                        "value": 14
+                        "value": 15
                     }
                 ],
                 "bonusObjectives": [
@@ -16366,13 +16670,13 @@
                 ],
                 "layout": [
                     "R.RRRRRRRR",
-                    "GY.YG.YG.",
-                    "PPP.PP.PPP",
-                    "BBBBBBBBB",
-                    ".RRRRRRRRR",
+                    "GY.YGGYGG",
+                    "PPPPPP.PPP",
+                    "BB.BBBBB.",
+                    ".RRRRR.RRR",
                     ".YYYYYYYY",
                     "GGGGGGGGGG",
-                    "PPPPPPP.P"
+                    "PPPPPP..P"
                 ],
                 "designNotes": "Generated 1000-level campaign stage. Chapter `full_reactive_exam` uses molotov, splitter, locked with a crown board silhouette.",
                 "difficultyScore": 47,
@@ -16427,28 +16731,36 @@
                         "col": 7
                     },
                     {
+                        "id": "key_g1_02",
+                        "entityCategory": "key_ball",
+                        "entityType": "key",
+                        "unlockGroup": "g1",
+                        "row": 7,
+                        "col": 6
+                    },
+                    {
                         "id": "locked_g1_02",
                         "entityCategory": "locked_ball",
                         "entityType": "locked",
                         "lockedColor": "G",
                         "lockGroup": "g1",
-                        "row": 2,
-                        "col": 3
+                        "row": 4,
+                        "col": 6
                     },
                     {
                         "id": "skill_rainbow_01",
                         "entityCategory": "skill_ball",
                         "entityType": "rainbow",
-                        "row": 1,
-                        "col": 8
+                        "row": 3,
+                        "col": 2
                     },
                     {
                         "id": "ice_01",
                         "entityCategory": "obstacle_ball",
                         "entityType": "ice",
                         "innerColor": "B",
-                        "row": 1,
-                        "col": 5
+                        "row": 3,
+                        "col": 8
                     }
                 ],
                 "levelType": "normal",
@@ -16519,8 +16831,8 @@
                     "Y",
                     "P"
                 ],
-                "shotLimit": 49,
-                "targetScore": 15082,
+                "shotLimit": 50,
+                "targetScore": 15262,
                 "dropInterval": 6,
                 "jarCount": 4,
                 "jarColors": [
@@ -16566,12 +16878,12 @@
                 ],
                 "layout": [
                     "PRP.PRPPPR",
-                    "Y.BBYBBBY",
+                    "..BBYBBBY",
                     "RRRGRRRGRR",
                     "YYPYYYPY.",
-                    "GB...BGGGB",
+                    "GB.G.BGGGB",
                     "RPPPRPPPR",
-                    "BBBYBBBYBB",
+                    "BBBYB.BYBB",
                     "R.GRRRGRR"
                 ],
                 "designNotes": "Generated 1000-level campaign stage. Chapter `full_reactive_exam` uses molotov, splitter, locked with a wave board silhouette.",
@@ -16627,13 +16939,21 @@
                         "col": 1
                     },
                     {
+                        "id": "key_g2_02",
+                        "entityCategory": "key_ball",
+                        "entityType": "key",
+                        "unlockGroup": "g2",
+                        "row": 1,
+                        "col": 0
+                    },
+                    {
                         "id": "locked_g2_02",
                         "entityCategory": "locked_ball",
                         "entityType": "locked",
                         "lockedColor": "B",
                         "lockGroup": "g2",
-                        "row": 4,
-                        "col": 3
+                        "row": 6,
+                        "col": 5
                     }
                 ],
                 "levelType": "normal",
@@ -16704,8 +17024,8 @@
                     "Y",
                     "P"
                 ],
-                "shotLimit": 50,
-                "targetScore": 15305,
+                "shotLimit": 51,
+                "targetScore": 15485,
                 "dropInterval": 6,
                 "jarCount": 4,
                 "jarColors": [
@@ -16754,13 +17074,13 @@
                     }
                 ],
                 "layout": [
-                    "RRRRRRRRRR",
-                    "YYYR.YYYY",
+                    "RRRR.RRRRR",
+                    "YYYRRYYYY",
                     ".GYYYYGGGG",
-                    "P.GG.GGPP",
+                    "P..G.GG.P",
                     "PPPPPPPPBB",
                     "BBBBBBBBB",
-                    "R.R..RRRRR",
+                    "R.R.RRRRRR",
                     "YYY.YYYYY"
                 ],
                 "designNotes": "Generated 1000-level campaign stage. Chapter `full_reactive_exam` uses molotov, splitter, locked with a arrow board silhouette.",
@@ -16816,20 +17136,28 @@
                         "col": 4
                     },
                     {
+                        "id": "key_g3_02",
+                        "entityCategory": "key_ball",
+                        "entityType": "key",
+                        "unlockGroup": "g3",
+                        "row": 3,
+                        "col": 2
+                    },
+                    {
                         "id": "locked_g3_02",
                         "entityCategory": "locked_ball",
                         "entityType": "locked",
                         "lockedColor": "Y",
                         "lockGroup": "g3",
-                        "row": 6,
+                        "row": 0,
                         "col": 4
                     },
                     {
                         "id": "stone_01",
                         "entityCategory": "obstacle_ball",
                         "entityType": "stone",
-                        "row": 1,
-                        "col": 4
+                        "row": 3,
+                        "col": 7
                     }
                 ],
                 "levelType": "normal",

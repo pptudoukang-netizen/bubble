@@ -56,6 +56,9 @@ module.exports = {
     if (this.networkLoadingOverlay && typeof this.networkLoadingOverlay.destroy === "function") {
       this.networkLoadingOverlay.destroy();
     }
+    if (typeof this._hideSpecialIntroduceView === "function") {
+      this._hideSpecialIntroduceView();
+    }
   },
 
   _handleViewResize: function () {

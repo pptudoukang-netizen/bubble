@@ -722,11 +722,17 @@ module.exports = {
       return;
     }
 
-    this._showRewardedAdForEntry(rewardEntry, {
+    var adOptions = {
       entrySource: "ad_run_powerup",
       adUnitId: this.inventoryRewardedVideoAdUnitId,
       onRewardGrantedMessage: "局内道具补给成功"
-    });
+    };
+    if (powerupType === "plus_three_balls") {
+      adOptions.onRewardGranted = function () {
+        this._autoUsePlusThreeBallsAfterAdGrant();
+      }.bind(this);
+    }
+    return this._showRewardedAdForEntry(rewardEntry, adOptions);
   },
 
   _resolveStaminaRecoveryGrantAmount: function () {

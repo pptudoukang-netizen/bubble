@@ -15,6 +15,7 @@ var SPECIAL_ENTITY_TYPES = {
 var ALLOWED_COLORS = ["R", "G", "B", "Y", "P"];
 var ALLOWED_INNER_COLORS = ALLOWED_COLORS.slice();
 var ALLOWED_CLEAR_REWARD_ITEM_IDS = ["coin", "stamina"];
+var TOP_BOARD_ROW_INDEX = 0;
 var COLLECTION_OBJECTIVE_TYPES = {
   collect_any: true,
   collect_color: true,
@@ -255,6 +256,9 @@ function normalizeSpecialEntities(levelConfig, levelKey) {
       }
     }
     if (category === "reactive_ball" && entityType === "splitter") {
+      if (row === TOP_BOARD_ROW_INDEX) {
+        throw new Error("specialEntities[" + index + "] splitter must not be placed in top board row: " + levelKey);
+      }
       splitColor = typeof entity.splitColor === "string" ? entity.splitColor.trim() : "";
       if (levelConfig.colors.indexOf(splitColor) === -1) {
         throw new Error("specialEntities[" + index + "].splitColor must be in level.colors: " + levelKey);
@@ -402,23 +406,29 @@ function validateKeyLockGroups(levelConfig, levelKey) {
       if (typeof entity.unlockGroup !== "string" || !entity.unlockGroup) {
         throw new Error("key requires unlockGroup before key-lock validation: " + levelKey);
       }
-      keyGroups[entity.unlockGroup] = true;
+      keyGroups[entity.unlockGroup] = (keyGroups[entity.unlockGroup] || 0) + 1;
     }
     if (entity.entityCategory === "locked_ball" && entity.entityType === "locked") {
       if (typeof entity.lockGroup !== "string" || !entity.lockGroup) {
         throw new Error("locked ball requires lockGroup before key-lock validation: " + levelKey);
       }
-      lockGroups[entity.lockGroup] = true;
+      lockGroups[entity.lockGroup] = (lockGroups[entity.lockGroup] || 0) + 1;
     }
   });
   Object.keys(lockGroups).forEach(function (group) {
-    if (keyGroups[group] !== true) {
+    if (!keyGroups[group]) {
       throw new Error("locked ball group missing matching key unlockGroup `" + group + "`: " + levelKey);
+    }
+    if (keyGroups[group] !== lockGroups[group]) {
+      throw new Error("key/locked ball count mismatch for group `" + group + "`: keys=" + keyGroups[group] + ", locks=" + lockGroups[group] + ": " + levelKey);
     }
   });
   Object.keys(keyGroups).forEach(function (group) {
-    if (lockGroups[group] !== true) {
+    if (!lockGroups[group]) {
       throw new Error("key unlockGroup missing matching locked ball group `" + group + "`: " + levelKey);
+    }
+    if (keyGroups[group] !== lockGroups[group]) {
+      throw new Error("key/locked ball count mismatch for group `" + group + "`: keys=" + keyGroups[group] + ", locks=" + lockGroups[group] + ": " + levelKey);
     }
   });
 }

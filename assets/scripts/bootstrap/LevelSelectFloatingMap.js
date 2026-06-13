@@ -49,6 +49,7 @@ var SPECIAL_PREFABS = {
 var STARTUP_VISIBLE_NODE_BUFFER = 1;
 var MAP_PREFAB_RETAIN_NODE_BUFFER = 2;
 var RENDERED_NODE_RETAIN_NODE_BUFFER = MAP_PREFAB_RETAIN_NODE_BUFFER;
+var SCROLL_RETAIN_NODE_BUFFER = 4;
 var LEVEL_NUMBER_DIGITS = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"];
 
 var assetLoadPromise = null;
@@ -1200,8 +1201,28 @@ function resolveVisibleNodeIndexRange(state) {
   };
 }
 
-function getVisibleNodeRangeKey(visibleIndexes) {
-  return visibleIndexes.firstIndex + ":" + visibleIndexes.lastIndex;
+function resolveRetainIndexRange(visibleIndexes, nodeCount, retainBuffer) {
+  requireNonNegativeInteger(retainBuffer, "resolveRetainIndexRange retainBuffer");
+  return {
+    firstIndex: Math.max(0, visibleIndexes.firstIndex - retainBuffer),
+    lastIndex: Math.min(nodeCount - 1, visibleIndexes.lastIndex + retainBuffer)
+  };
+}
+
+function getRenderedNodeRangeKey(visibleIndexes, nodeCount, retainBuffer) {
+  var retainIndexes = resolveRetainIndexRange(visibleIndexes, nodeCount, retainBuffer);
+  return retainIndexes.firstIndex + ":" + retainIndexes.lastIndex;
+}
+
+function isScrollInteractionActive(state) {
+  return state.dragTracking === true || state.inertiaTimer !== null || state.scrollAnimTimer !== null;
+}
+
+function resolveActiveRetainNodeBuffer(state) {
+  if (isScrollInteractionActive(state)) {
+    return SCROLL_RETAIN_NODE_BUFFER;
+  }
+  return RENDERED_NODE_RETAIN_NODE_BUFFER;
 }
 
 function mergePendingPrefetchPrefabNames(state, prefabNames) {
@@ -1252,6 +1273,13 @@ function runMapPrefabPrefetch(state) {
 }
 
 function syncVisibleNodesWithPrefetch(state) {
+  var visibleIndexes = resolveVisibleNodeIndexRange(state);
+  var retainBuffer = resolveActiveRetainNodeBuffer(state);
+  var renderedRangeKey = getRenderedNodeRangeKey(visibleIndexes, state.config.nodes.length, retainBuffer);
+  if (state.renderedVisibleRangeKey === renderedRangeKey) {
+    return;
+  }
+
   var requiredPrefabNames = collectRequiredPrefabNames(state);
   var missingPrefabNames = requiredPrefabNames.filter(function (prefabName) {
     return !state.assets.prefabs[prefabName];
@@ -1268,12 +1296,6 @@ function syncVisibleNodesWithPrefetch(state) {
     return;
   }
 
-  var visibleIndexes = resolveVisibleNodeIndexRange(state);
-  var visibleRangeKey = getVisibleNodeRangeKey(visibleIndexes);
-  if (state.renderedVisibleRangeKey === visibleRangeKey) {
-    return;
-  }
-
   renderVisibleNodes(state);
 }
 
@@ -1284,21 +1306,26 @@ function renderVisibleNodes(state) {
   var visibleIndexes = resolveVisibleNodeIndexRange(state);
   var firstIndex = visibleIndexes.firstIndex;
   var lastIndex = visibleIndexes.lastIndex;
+  var retainBuffer = resolveActiveRetainNodeBuffer(state);
+  var deferCleanup = isScrollInteractionActive(state);
   if (firstIndex > lastIndex) {
-    Object.keys(state.renderedNodes).forEach(function (key) {
-      var node = state.renderedNodes[key];
-      if (node && node.isValid) {
-        LevelSelectMemoryDiagnostics.increment("floatingMap.destroyIsland");
-        node.destroy();
-      }
-      delete state.renderedNodes[key];
-    });
-    state.renderedVisibleRangeKey = getVisibleNodeRangeKey(visibleIndexes);
+    if (!deferCleanup) {
+      Object.keys(state.renderedNodes).forEach(function (key) {
+        var node = state.renderedNodes[key];
+        if (node && node.isValid) {
+          LevelSelectMemoryDiagnostics.increment("floatingMap.destroyIsland");
+          node.destroy();
+        }
+        delete state.renderedNodes[key];
+      });
+    }
+    state.renderedVisibleRangeKey = getRenderedNodeRangeKey(visibleIndexes, nodes.length, retainBuffer);
     return;
   }
 
-  var firstRetainIndex = Math.max(0, firstIndex - RENDERED_NODE_RETAIN_NODE_BUFFER);
-  var lastRetainIndex = Math.min(nodes.length - 1, lastIndex + RENDERED_NODE_RETAIN_NODE_BUFFER);
+  var retainIndexes = resolveRetainIndexRange(visibleIndexes, nodes.length, retainBuffer);
+  var firstRetainIndex = retainIndexes.firstIndex;
+  var lastRetainIndex = retainIndexes.lastIndex;
   for (var retainIndex = firstRetainIndex; retainIndex <= lastRetainIndex; retainIndex += 1) {
     retainedRenderedIndexes[String(nodes[retainIndex].index)] = true;
   }
@@ -1330,20 +1357,22 @@ function renderVisibleNodes(state) {
     }
   }
 
-  Object.keys(state.renderedNodes).forEach(function (key) {
-    if (retainedRenderedIndexes[key] === true) {
-      return;
-    }
-    var node = state.renderedNodes[key];
-    if (node && node.isValid) {
-      LevelSelectMemoryDiagnostics.increment("floatingMap.destroyIsland");
-      node.destroy();
-    }
-    delete state.renderedNodes[key];
-  });
+  if (!deferCleanup) {
+    Object.keys(state.renderedNodes).forEach(function (key) {
+      if (retainedRenderedIndexes[key] === true) {
+        return;
+      }
+      var node = state.renderedNodes[key];
+      if (node && node.isValid) {
+        LevelSelectMemoryDiagnostics.increment("floatingMap.destroyIsland");
+        node.destroy();
+      }
+      delete state.renderedNodes[key];
+    });
 
-  evictMapPrefabsOutsideRetainSet(state.assets, collectRetainedPrefabNames(state));
-  state.renderedVisibleRangeKey = getVisibleNodeRangeKey(visibleIndexes);
+    evictMapPrefabsOutsideRetainSet(state.assets, collectRetainedPrefabNames(state));
+  }
+  state.renderedVisibleRangeKey = getRenderedNodeRangeKey(visibleIndexes, nodes.length, retainBuffer);
 }
 
 function clampBackgroundY(mapHostNode, backgroundNode, y) {
@@ -1374,17 +1403,59 @@ function moveBackground(state, deltaY) {
   backgroundNode.y = clampBackgroundY(state.mapHostNode, backgroundNode, backgroundNode.y + deltaY * BACKGROUND_SCROLL_RATIO);
 }
 
-function applyContentDelta(state, deltaY) {
-  LevelSelectMemoryDiagnostics.increment("floatingMap.applyContentDelta");
+function applyScrollPosition(state, deltaY) {
   var currentY = state.content.y;
   var nextY = clampContentY(state, currentY + deltaY);
   var appliedDeltaY = nextY - currentY;
   if (appliedDeltaY === 0) {
-    return;
+    return 0;
   }
   state.content.y = nextY;
   moveBackground(state, appliedDeltaY);
+  return appliedDeltaY;
+}
+
+function clearScrollVisibilitySync(state) {
+  if (!state) {
+    return;
+  }
+  state.scrollVisibilitySyncScheduled = false;
+  clearScheduledTick(state, "scrollVisibilitySyncTick");
+}
+
+function finalizeScrollVisibility(state) {
+  clearScrollVisibilitySync(state);
+  state.renderedVisibleRangeKey = null;
   syncVisibleNodesWithPrefetch(state);
+}
+
+function requestScrollVisibilitySync(state) {
+  if (state.scrollVisibilitySyncScheduled === true) {
+    return;
+  }
+  state.scrollVisibilitySyncScheduled = true;
+  state.scrollVisibilitySyncTick = function () {
+    state.scrollVisibilitySyncScheduled = false;
+    state.scrollVisibilitySyncTick = null;
+    if (!state.content || !state.content.isValid) {
+      return;
+    }
+    syncVisibleNodesWithPrefetch(state);
+  };
+  scheduleFloatingMapTick(
+    state,
+    "scrollVisibilitySyncTick",
+    state.scrollVisibilitySyncTick,
+    "Floating map visibility sync"
+  );
+}
+
+function applyContentDelta(state, deltaY) {
+  LevelSelectMemoryDiagnostics.increment("floatingMap.applyContentDelta");
+  if (applyScrollPosition(state, deltaY) === 0) {
+    return;
+  }
+  requestScrollVisibilitySync(state);
   state.scrollFrameCounter = (state.scrollFrameCounter || 0) + 1;
   if (state.scrollFrameCounter >= BACK_BUTTON_SYNC_SCROLL_INTERVAL) {
     state.scrollFrameCounter = 0;
@@ -1442,15 +1513,20 @@ function stopScrollAnimation(state) {
   }
 }
 
-function stopInertia(state) {
+function stopInertia(state, options) {
   LevelSelectMemoryDiagnostics.increment("floatingMap.stopInertia");
+  var skipFinalize = options && options.skipFinalize === true;
   stopScrollAnimation(state);
   if (state.inertiaTimer) {
     LevelSelectMemoryDiagnostics.increment("floatingMap.stopInertiaTimer");
     clearScheduledTick(state, "inertiaTimer");
   }
+  clearScrollVisibilitySync(state);
   state.inertiaVelocityY = 0;
   state.scrollFrameCounter = 0;
+  if (!skipFinalize) {
+    finalizeScrollVisibility(state);
+  }
   syncBackToCurrentLevelButtonVisibility(state);
 }
 
@@ -1500,6 +1576,7 @@ function scrollToLevel(mapHostNode, levelId, options) {
     if (progress >= 1) {
       stopScrollAnimation(state);
       state.scrollFrameCounter = 0;
+      finalizeScrollVisibility(state);
       syncBackToCurrentLevelButtonVisibility(state);
       if (typeof options.onComplete === "function") {
         options.onComplete();
@@ -1511,9 +1588,11 @@ function scrollToLevel(mapHostNode, levelId, options) {
 
 function startInertia(state) {
   LevelSelectMemoryDiagnostics.increment("floatingMap.startInertia");
-  stopInertia(state);
+  stopInertia(state, { skipFinalize: true });
   var velocityY = state.dragVelocityY;
   if (!Number.isFinite(velocityY) || Math.abs(velocityY) < INERTIA_MIN_VELOCITY) {
+    finalizeScrollVisibility(state);
+    syncBackToCurrentLevelButtonVisibility(state);
     return;
   }
   state.inertiaVelocityY = velocityY;
@@ -1674,6 +1753,8 @@ function render(options) {
     renderedVisibleRangeKey: null,
     islandDataRevision: 0,
     scrollFrameCounter: 0,
+    scrollVisibilitySyncScheduled: false,
+    scrollVisibilitySyncTick: null,
     dragTracking: false,
     dragConsumed: false,
     lastTouchY: 0,

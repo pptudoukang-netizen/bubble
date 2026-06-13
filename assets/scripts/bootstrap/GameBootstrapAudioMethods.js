@@ -2,6 +2,9 @@
 
 var Shared = require("./GameBootstrapShared");
 
+var JAR_BOUNCE_SFX_MIN_INTERVAL_MS = 80;
+var JAR_BOUNCE_SFX_MAX_PER_FRAME = 2;
+
 module.exports = {
   _buildAudioConfig: function () {
     return {
@@ -96,6 +99,24 @@ module.exports = {
     this.audioManager.playSfx(name);
   },
 
+  _canPlayJarBounceSfx: function (now, playedThisFrame) {
+    if (!Number.isFinite(now)) {
+      throw new Error("Jar bounce sfx throttle requires finite timestamp.");
+    }
+    if (playedThisFrame >= JAR_BOUNCE_SFX_MAX_PER_FRAME) {
+      return false;
+    }
+    if (
+      typeof this._lastJarBounceSfxAt === "number" &&
+      now - this._lastJarBounceSfxAt < JAR_BOUNCE_SFX_MIN_INTERVAL_MS
+    ) {
+      return false;
+    }
+
+    this._lastJarBounceSfxAt = now;
+    return true;
+  },
+
   _triggerShortVibration: function () {
     if (!cc.sys || !cc.sys.isMobile) {
       return;
@@ -141,6 +162,9 @@ module.exports = {
       return;
     }
 
+    var now = Date.now();
+    var jarBouncePlayedThisFrame = 0;
+
     runtimeEvents.forEach(function (event) {
       if (!event || typeof event.type !== "string") {
         return;
@@ -148,6 +172,10 @@ module.exports = {
       this._trackRuntimeTelemetryEvent(event, snapshot);
 
       if (event.type === "jar_rim_bounce") {
+        if (!this._canPlayJarBounceSfx(now, jarBouncePlayedThisFrame)) {
+          return;
+        }
+        jarBouncePlayedThisFrame += 1;
         this._playSfx("jarBounce");
         return;
       }

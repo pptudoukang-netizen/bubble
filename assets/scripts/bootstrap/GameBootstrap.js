@@ -11,6 +11,7 @@ var GameBootstrapAudioMethods = require("./GameBootstrapAudioMethods");
 var GameBootstrapGameplayInputMethods = require("./GameBootstrapGameplayInputMethods");
 var GameBootstrapLevelRuntimeMethods = require("./GameBootstrapLevelRuntimeMethods");
 var GameBootstrapNewUserGuideMethods = require("./GameBootstrapNewUserGuideMethods");
+var GameBootstrapSpecialIntroduceFlowMethods = require("./GameBootstrapSpecialIntroduceFlowMethods");
 var lazyPowerupInventoryMethods = createLazyModuleMethods(
   "./GameBootstrapPowerupInventoryMethods",
   LazyRegistry.POWERUP_INVENTORY_METHODS
@@ -312,6 +313,7 @@ cc.Class({
   _playLevelSelectBackgroundMusic: GameBootstrapAudioMethods._playLevelSelectBackgroundMusic,
   _playGameplayBackgroundMusic: GameBootstrapAudioMethods._playGameplayBackgroundMusic,
   _playSfx: GameBootstrapAudioMethods._playSfx,
+  _canPlayJarBounceSfx: GameBootstrapAudioMethods._canPlayJarBounceSfx,
   _triggerShortVibration: GameBootstrapAudioMethods._triggerShortVibration,
   _playRuntimeAudioEvents: GameBootstrapAudioMethods._playRuntimeAudioEvents,
   _preloadStartupLevelConfigs: GameBootstrapStartupMethods._preloadStartupLevelConfigs,
@@ -343,6 +345,12 @@ cc.Class({
   _rewindNewUserGuideToQuickStart: GameBootstrapNewUserGuideMethods._rewindNewUserGuideToQuickStart,
   _advanceNewUserGuideToGameplay: GameBootstrapNewUserGuideMethods._advanceNewUserGuideToGameplay,
   _completeNewUserGuide: GameBootstrapNewUserGuideMethods._completeNewUserGuide,
+  _ensureSpecialIntroduceViewPrefab: GameBootstrapSpecialIntroduceFlowMethods._ensureSpecialIntroduceViewPrefab,
+  _syncSpecialIntroduceForRuntimeSnapshot: GameBootstrapSpecialIntroduceFlowMethods._syncSpecialIntroduceForRuntimeSnapshot,
+  _showNextSpecialIntroduceView: GameBootstrapSpecialIntroduceFlowMethods._showNextSpecialIntroduceView,
+  _showSpecialIntroduceView: GameBootstrapSpecialIntroduceFlowMethods._showSpecialIntroduceView,
+  _closeSpecialIntroduceView: GameBootstrapSpecialIntroduceFlowMethods._closeSpecialIntroduceView,
+  _hideSpecialIntroduceView: GameBootstrapSpecialIntroduceFlowMethods._hideSpecialIntroduceView,
   _onUseSkillBallTap: lazyPowerupInventoryMethods._onUseSkillBallTap,
   _onUseThreeLineEliminationTap: lazyPowerupInventoryMethods._onUseThreeLineEliminationTap,
   _onUsePlusThreeBallsTap: lazyPowerupInventoryMethods._onUsePlusThreeBallsTap,

@@ -66,6 +66,9 @@ var STAR_NODE_NAME = "star";
 var STAR_TWINKLE_DIM_OPACITY = 120;
 var STAR_TWINKLE_SCALE = 1.18;
 var STAR_TWINKLE_DURATION = 0.45;
+var QUICK_START_BUTTON_BREATH_SCALE = 1.08;
+var QUICK_START_BUTTON_BREATH_UP_DURATION = 0.48;
+var QUICK_START_BUTTON_BREATH_DOWN_DURATION = 0.54;
 var LEVEL_SELECT_IDLE_ANIMATIONS_ENABLED = false;
 
 var levelButtonSkinFrames = null;
@@ -1145,17 +1148,64 @@ function updateTopStatus(levelView, options) {
   );
 }
 
+function requireBreathActionApi(description) {
+  if (
+    !cc ||
+    typeof cc.repeatForever !== "function" ||
+    typeof cc.sequence !== "function" ||
+    typeof cc.scaleTo !== "function"
+  ) {
+    throw new Error(description + " requires Cocos scale action APIs.");
+  }
+}
+
+function playQuickStartButtonBreath(buttonNode, description) {
+  if (!buttonNode || !buttonNode.isValid) {
+    throw new Error(description + " requires quick_start_btn.");
+  }
+  requireBreathActionApi(description);
+  if (buttonNode.__quickStartBreathPlaying === true) {
+    return;
+  }
+
+  if (!Number.isFinite(buttonNode.__quickStartBreathBaseScaleX)) {
+    buttonNode.__quickStartBreathBaseScaleX = buttonNode.scaleX;
+  }
+  if (!Number.isFinite(buttonNode.__quickStartBreathBaseScaleY)) {
+    buttonNode.__quickStartBreathBaseScaleY = buttonNode.scaleY;
+  }
+
+  buttonNode.__quickStartBreathPlaying = true;
+  buttonNode.stopAllActions();
+  buttonNode.scaleX = buttonNode.__quickStartBreathBaseScaleX;
+  buttonNode.scaleY = buttonNode.__quickStartBreathBaseScaleY;
+  buttonNode.runAction(cc.repeatForever(cc.sequence(
+    cc.scaleTo(
+      QUICK_START_BUTTON_BREATH_UP_DURATION,
+      buttonNode.__quickStartBreathBaseScaleX * QUICK_START_BUTTON_BREATH_SCALE,
+      buttonNode.__quickStartBreathBaseScaleY * QUICK_START_BUTTON_BREATH_SCALE
+    ),
+    cc.scaleTo(
+      QUICK_START_BUTTON_BREATH_DOWN_DURATION,
+      buttonNode.__quickStartBreathBaseScaleX,
+      buttonNode.__quickStartBreathBaseScaleY
+    )
+  )));
+}
+
 function bindQuickStartButton(levelView, onQuickStart) {
   if (typeof onQuickStart !== "function") {
     throw new Error("LevelSelectView requires onQuickStart.");
   }
 
+  var quickStartButtonNode = levelView.getChildByName("quick_start_btn");
   bindNamedButtonTap(
-    levelView.getChildByName("quick_start_btn"),
+    quickStartButtonNode,
     "__quickStartTapBound",
     "__onQuickStart",
     onQuickStart
   );
+  playQuickStartButtonBreath(quickStartButtonNode, "LevelSelectView quick start button breath");
 }
 
 function bindBackToCurrentLevelButton(levelView, onBackToCurrentLevel) {

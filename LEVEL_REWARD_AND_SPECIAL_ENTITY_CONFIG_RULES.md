@@ -217,6 +217,7 @@ key_ball:key => row:col,row:col
 - `splitColor` 必须存在于 `level.colors`。
 - 若本关有多个分裂球，每个分裂球都必须配置 `splitColor`。
 - 多个分裂球可以同色，也可以不同色；但收集目标必须能覆盖本关分裂球主设计颜色。
+- 分裂球禁止配置在棋盘顶部槽位，即 `row` 不能为 `0`。
 
 ### 6.2 收集目标必须与分裂球同色
 
@@ -285,7 +286,7 @@ key_ball:key => row:col,row:col
 ]
 ```
 
-示例：一把钥匙解多个锁定球
+示例：两把钥匙解两个锁定球
 
 ```json
 "specialEntities": [
@@ -296,6 +297,14 @@ key_ball:key => row:col,row:col
     "unlockGroup": "g1",
     "row": 2,
     "col": 2
+  },
+  {
+    "id": "key_g1_02",
+    "entityCategory": "key_ball",
+    "entityType": "key",
+    "unlockGroup": "g1",
+    "row": 2,
+    "col": 6
   },
   {
     "id": "locked_g1_01",
@@ -356,12 +365,13 @@ key_ball:key => row:col,row:col
 
 配套要求：
 
-- 每个 `locked_ball.lockGroup` 必须至少有一个同名 `key_ball.unlockGroup`。
-- 每个 `key_ball.unlockGroup` 必须至少有一个同名 `locked_ball.lockGroup`。
+- 每个 `locked_ball.lockGroup` 必须有同名 `key_ball.unlockGroup`。
+- 每个 `key_ball.unlockGroup` 必须有同名 `locked_ball.lockGroup`。
+- 同一个 group 内，钥匙数量必须等于锁定球数量；两个锁定球必须配置两把钥匙。
+- 一把钥匙只能解锁一个同组锁定球。
 - `lockedColor` 必须存在于 `level.colors`。
 - group 命名推荐使用 `g1`、`g2`、`g3`，或带语义的短名，如 `left_gate`。
-- 一把钥匙可以解多个同组锁定球。
-- 多把钥匙可以指向同一个 `unlockGroup`，但必须是明确设计，不用于兜底。
+- 多把钥匙可以指向同一个 `unlockGroup`，但同组锁定球数量必须与钥匙数量一致。
 
 禁止配置：
 
@@ -412,8 +422,10 @@ key_ball:key => row:col,row:col
 8. 本关特殊实体坐标集合是否与相邻关卡完全重复。
 9. 有分裂球时，`winConditions` 是否为 `clear_all + collect_color`。
 10. `collect_color.color` 是否等于分裂球主 `splitColor`。
-11. 每个锁定球 `lockGroup` 是否有同名钥匙 `unlockGroup`。
-12. 每把钥匙 `unlockGroup` 是否有同名锁定球 `lockGroup`。
+11. 分裂球坐标是否避开棋盘顶部槽位 `row: 0`。
+12. 每个锁定球 `lockGroup` 是否有同名钥匙 `unlockGroup`。
+13. 每把钥匙 `unlockGroup` 是否有同名锁定球 `lockGroup`。
+14. 同组钥匙数量是否等于同组锁定球数量。
 
 ## 10. 后续实施注意点
 
@@ -422,11 +434,12 @@ key_ball:key => row:col,row:col
 - `LevelConfigLoader` 已校验 `clearRewardItems`、`specialEntities`、`splitColor`、`lockedColor`、`lockGroup`、`unlockGroup` 的基础结构。
 - `LevelConfigLoader` 会强制每关 `clearRewardItems` 包含 `coin`。
 - `LevelConfigLoader` 会强制分裂球关卡使用同色 `collect_color`。
-- `LevelConfigLoader` 会强制钥匙和锁定球 group 双向配套。
+- `LevelConfigLoader` 会禁止分裂球配置在棋盘顶部槽位。
+- `LevelConfigLoader` 会强制钥匙和锁定球 group 双向配套，并要求同组数量一致。
 - `GameBootstrapLevelSelectFlowMethods` 已在胜利结算前判断 `isFirstCompletion`。
 - `GameBootstrapLevelSelectFlowMethods` 非首次过关金币按配置数量 `30%` 向下取整发放，体力只首次发放。
-- `tools/validate-level-content.js` 会离线校验金币必配、分裂球目标、钥匙锁配套和跨关卡特殊实体坐标重复。
+- `tools/validate-level-content.js` 会离线校验金币必配、分裂球目标、分裂球顶部槽位禁配、钥匙锁配套、同组数量一致和跨关卡特殊实体坐标重复。
 
 ## 11. 一句话结论
 
-后续关卡配置整改以本文档为准：每关配置金币，复通发 `30%` 金币；特殊实体坐标要随关卡变化；分裂球必须绑定同色收集目标；同类实体可多配；钥匙和锁定球必须按 group 双向配套。
+后续关卡配置整改以本文档为准：每关配置金币，复通发 `30%` 金币；特殊实体坐标要随关卡变化；分裂球必须绑定同色收集目标且避开顶部槽位；同类实体可多配；钥匙和锁定球必须按 group 双向配套且数量一致。

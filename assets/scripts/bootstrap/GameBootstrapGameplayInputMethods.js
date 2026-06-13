@@ -2,6 +2,7 @@
 
 var Shared = require("./GameBootstrapShared");
 var BoardLayout = Shared.BoardLayout;
+var RUNTIME_REFRESH_SCOPE = require("../render/LevelRenderer").RUNTIME_REFRESH_SCOPE;
 
 module.exports = {
   update: function (dt) {
@@ -23,6 +24,7 @@ module.exports = {
 
     this._handleRuntimeStateTransition(snapshot);
     this.levelRenderer.refreshRuntime(this.currentLevelConfig, snapshot);
+    this._syncSpecialIntroduceForRuntimeSnapshot(snapshot);
     this._playRuntimeAudioEvents(snapshot);
     if (!snapshot.activeProjectile) {
       this._setStatus(this._formatStatus(this.currentLevelConfig, snapshot));
@@ -97,7 +99,9 @@ module.exports = {
       y: touchLocation.y
     };
     this._handleRuntimeStateTransition(snapshot);
-    this.levelRenderer.refreshRuntime(this.currentLevelConfig, snapshot);
+    this.levelRenderer.refreshRuntime(this.currentLevelConfig, snapshot, {
+      scope: RUNTIME_REFRESH_SCOPE.SHOOTER_AIM
+    });
     this._setStatus(this._formatStatus(this.currentLevelConfig, snapshot));
   },
 
@@ -140,7 +144,7 @@ module.exports = {
     var shouldRefreshPlan = shouldRefreshByDistance && shouldRefreshByTime;
 
     var snapshot = this.gameManager.isAiming
-      ? this.gameManager.setAim(localPoint, { skipPlanRefresh: !shouldRefreshPlan })
+      ? this.gameManager.setAim(localPoint)
       : this.gameManager.beginAim(localPoint);
 
     if (shouldRefreshPlan) {
@@ -158,8 +162,14 @@ module.exports = {
       };
     }
     this._handleRuntimeStateTransition(snapshot);
-    this.levelRenderer.refreshRuntime(this.currentLevelConfig, snapshot);
-    this._setStatus(this._formatStatus(this.currentLevelConfig, snapshot));
+    this.levelRenderer.refreshRuntime(this.currentLevelConfig, snapshot, {
+      scope: shouldRefreshPlan
+        ? RUNTIME_REFRESH_SCOPE.SHOOTER_AIM
+        : RUNTIME_REFRESH_SCOPE.SHOOTER_AIM_ANGLE
+    });
+    if (shouldRefreshPlan) {
+      this._setStatus(this._formatStatus(this.currentLevelConfig, snapshot));
+    }
   },
 
   _onFireTouch: function (event) {

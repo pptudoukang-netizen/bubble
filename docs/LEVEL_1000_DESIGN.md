@@ -62,6 +62,7 @@ Rule:
 - Spawn priority is adjacent empty slot, then nearest upward empty slot; if neither exists, no ball is spawned.
 - Spawned balls play an upward parabolic fly-in from the splitter position to the target slot.
 - Each splitter can trigger at most once per resolution.
+- A splitter must not be placed in the top board row (`row: 0`).
 
 ### Locked Ball
 
@@ -99,7 +100,8 @@ Config:
 Rule:
 
 - A key is collected when an adjacent ball is removed or when the key itself is removed by a blast chain.
-- Collected keys unlock all locked balls with the same group.
+- A collected key unlocks exactly one locked ball with the same group.
+- The number of keys in a group must equal the number of locked balls in that group.
 - Key collection is resolved before support/floating calculation.
 
 ## Board Pattern Strategy

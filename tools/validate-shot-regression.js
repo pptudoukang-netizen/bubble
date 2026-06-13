@@ -6,7 +6,9 @@ var path = require("path");
 var BoardLayout = require("../assets/scripts/config/BoardLayout");
 var AimTuningProfiles = require("../assets/scripts/config/AimTuningProfiles");
 var BubbleGrid = require("../assets/scripts/systems/BubbleGrid");
+var GameManager = require("../assets/scripts/core/GameManager");
 var LevelPackManifest = require("../assets/scripts/config/LevelPackManifest");
+var SpecialAnimationTiming = require("../assets/scripts/config/SpecialAnimationTiming");
 var TrajectoryPredictor = require("../assets/scripts/systems/TrajectoryPredictor");
 
 var LEVEL_DIR = path.resolve(__dirname, "../assets/resources/config/levels");
@@ -167,6 +169,122 @@ function runCase(levelCase) {
   };
 }
 
+function runKeyUnlockBoardAdvanceDelayCase() {
+  var manager = new GameManager();
+  var advancedCount = 0;
+  var hadCc = Object.prototype.hasOwnProperty.call(global, "cc");
+  var previousCc = global.cc;
+
+  global.cc = {
+    log: function () {},
+    warn: function () {},
+    error: function () {}
+  };
+  try {
+    manager.dropInterval = 1;
+    manager.shotsFired = 1;
+    manager.lastResolution = {
+      collectedKeys: [
+        { id: "key_1", row: 1, col: 1, unlockGroup: "group_a" }
+      ],
+      unlockedLockedBalls: [
+        { id: "locked_1", row: 1, col: 2, __sourceUnlockGroup: "group_a" }
+      ],
+      boardDropped: false
+    };
+    manager.systems.bubbleGrid = {
+      advanceRows: function (rows) {
+        if (rows !== 1) {
+          throw new Error("Board advance regression expected one row.");
+        }
+        advancedCount += 1;
+      },
+      getDropOffsetRows: function () {
+        return advancedCount;
+      }
+    };
+
+    if (!manager._scheduleBoardAdvanceAfterImpact()) {
+      throw new Error("Key unlock board advance regression expected scheduled advance.");
+    }
+
+    var keyUnlockDuration = SpecialAnimationTiming.keyUnlock.totalDuration;
+    if (manager._updatePendingBoardAdvance(keyUnlockDuration - 0.001)) {
+      throw new Error("Board advanced before key unlock animation finished.");
+    }
+    if (advancedCount !== 0) {
+      throw new Error("Board advance count changed during key unlock animation.");
+    }
+    if (manager._updatePendingBoardAdvance(0.001)) {
+      throw new Error("Board advanced in the same frame key unlock animation finished.");
+    }
+    if (manager._updatePendingBoardAdvance(0.199)) {
+      throw new Error("Board advanced before post-impact delay finished.");
+    }
+    if (!manager._updatePendingBoardAdvance(0.001)) {
+      throw new Error("Board did not advance after key unlock animation and impact delay.");
+    }
+    if (advancedCount !== 1 || manager.lastResolution.boardDropped !== true) {
+      throw new Error("Board advance regression did not mark the expected single drop.");
+    }
+  } finally {
+    if (hadCc) {
+      global.cc = previousCc;
+    } else {
+      delete global.cc;
+    }
+  }
+}
+
+function runKeyUnlockSingleTargetCase() {
+  var manager = new GameManager();
+  var grid = new BubbleGrid();
+  var levelConfig = {
+    coordinateSystem: "odd-r-hex",
+    level: {
+      initialDropSpaceRows: 8,
+      layout: [
+        ".........",
+        ".........",
+        "........."
+      ],
+      specialEntities: [
+        { id: "key_1", entityCategory: "key_ball", entityType: "key", unlockGroup: "group_a", row: 1, col: 1 },
+        { id: "locked_1", entityCategory: "locked_ball", entityType: "locked", lockedColor: "R", lockGroup: "group_a", row: 1, col: 2 },
+        { id: "locked_2", entityCategory: "locked_ball", entityType: "locked", lockedColor: "B", lockGroup: "group_a", row: 2, col: 1 }
+      ]
+    }
+  };
+  var resolution = {
+    collectedKeys: [],
+    unlockedLockedBalls: []
+  };
+
+  grid.configureLevel(levelConfig);
+  var keyCell = grid.getCell(1, 1);
+  if (!keyCell || keyCell.entityCategory !== "key_ball") {
+    throw new Error("Key unlock regression setup failed to create key cell.");
+  }
+
+  var removedKeys = manager._triggerAdjacentKeys([keyCell], grid, resolution);
+  if (removedKeys.length !== 1 || resolution.collectedKeys.length !== 1) {
+    throw new Error("Key unlock regression expected exactly one collected key.");
+  }
+  if (resolution.unlockedLockedBalls.length !== 1) {
+    throw new Error("One key must unlock exactly one locked ball.");
+  }
+  if (resolution.unlockedLockedBalls[0].__sourceKeyId !== "key_1") {
+    throw new Error("Unlocked locked ball must record source key id.");
+  }
+
+  var remainingLockedCount = grid.getCells().filter(function (cell) {
+    return cell && cell.entityCategory === "locked_ball" && cell.lockGroup === "group_a";
+  }).length;
+  if (remainingLockedCount !== 1) {
+    throw new Error("One key must leave the second same-group locked ball locked.");
+  }
+}
+
 function main() {
   var cases = buildRegressionCases();
   var results = cases.map(runCase);
@@ -185,6 +303,11 @@ function main() {
     });
   });
 
+  runKeyUnlockBoardAdvanceDelayCase();
+  console.log("[OK]", "key_unlock_board_advance_delay", "waited for special animation before board advance");
+  runKeyUnlockSingleTargetCase();
+  console.log("[OK]", "key_unlock_single_target", "one key unlocked one locked ball");
+
   if (failed) {
     console.log("\nShot regression validation failed.");
     process.exit(1);
@@ -194,4 +317,3 @@ function main() {
 }
 
 main();
-

@@ -6,7 +6,7 @@ var POWERUP_DISPLAY_NAMES = {
   swap: "换球",
   barrier_hammer: "破障锤",
   three_line_elimination: "消三行",
-  plus_three_balls: "加三球"
+  plus_three_balls: "加十球"
 };
 
 var LOSE_REWARD_ENTRIES = {

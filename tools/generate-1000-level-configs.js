@@ -28,6 +28,7 @@ var COLOR_NAMES = {
   Y: "yellow",
   P: "purple"
 };
+var TOP_BOARD_ROW_INDEX = 0;
 var PATTERNS = [
   "arrow",
   "heart",
@@ -200,6 +201,17 @@ function hashString(value) {
   return hash;
 }
 
+function isSplitterEntity(entity) {
+  return !!(entity && entity.entityCategory === "reactive_ball" && entity.entityType === "splitter");
+}
+
+function isForbiddenSpecialSlot(entity, slot) {
+  if (!slot) {
+    throw new Error("Special entity slot is required.");
+  }
+  return isSplitterEntity(entity) && slot.row === TOP_BOARD_ROW_INDEX;
+}
+
 function assignSpecialEntitySlot(rows, slotPool, usedSlotIndexes, entity, levelId, entityIndex) {
   if (!Array.isArray(slotPool) || slotPool.length <= 0) {
     throw new Error("Special entity slot pool is empty.");
@@ -224,7 +236,7 @@ function assignSpecialEntitySlot(rows, slotPool, usedSlotIndexes, entity, levelI
   var selectedIndex = -1;
   for (var offset = 0; offset < slotPool.length; offset += 1) {
     var candidateIndex = (baseIndex + offset) % slotPool.length;
-    if (usedSlotIndexes[candidateIndex] !== true) {
+    if (usedSlotIndexes[candidateIndex] !== true && !isForbiddenSpecialSlot(entity, slotPool[candidateIndex])) {
       selectedIndex = candidateIndex;
       break;
     }
@@ -349,28 +361,26 @@ function makeSpecialEntities(levelId, rows, colors, mechanics) {
 
   if (mechanics.indexOf("locked") >= 0) {
     var group = "g" + (levelId % 3 + 1);
-    pushEntity({
-      id: "key_" + group + "_01",
-      entityCategory: "key_ball",
-      entityType: "key",
-      unlockGroup: group
-    });
-    pushEntity({
-      id: "locked_" + group + "_01",
-      entityCategory: "locked_ball",
-      entityType: "locked",
-      lockedColor: colors[(levelId + 1) % colors.length],
-      lockGroup: group
-    });
+    var lockedColors = [colors[(levelId + 1) % colors.length]];
     if (levelId >= 160) {
+      lockedColors.push(colors[(levelId + 3) % colors.length]);
+    }
+    lockedColors.forEach(function (lockedColor, index) {
+      var suffix = String(index + 1).padStart(2, "0");
       pushEntity({
-        id: "locked_" + group + "_02",
+        id: "key_" + group + "_" + suffix,
+        entityCategory: "key_ball",
+        entityType: "key",
+        unlockGroup: group
+      });
+      pushEntity({
+        id: "locked_" + group + "_" + suffix,
         entityCategory: "locked_ball",
         entityType: "locked",
-        lockedColor: colors[(levelId + 3) % colors.length],
+        lockedColor: lockedColor,
         lockGroup: group
       });
-    }
+    });
   }
 
   if (mechanics.indexOf("legacy") >= 0 || levelId % 5 === 0) {
@@ -670,6 +680,9 @@ function loadLevelForPack(levelId, packFrom, packTo) {
   var localFilePath = path.join(RESOURCE_LEVEL_DIR, getLevelFileName(levelId));
   if (fs.existsSync(localFilePath)) {
     return JSON.parse(fs.readFileSync(localFilePath, "utf8"));
+  }
+  if (levelId >= START_GENERATED_LEVEL_ID) {
+    return makeLevel(levelId);
   }
 
   var existingPackPath = path.join(REMOTE_PACK_DIR, getPackFileName(packFrom, packTo));

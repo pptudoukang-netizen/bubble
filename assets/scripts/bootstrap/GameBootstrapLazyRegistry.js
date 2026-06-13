@@ -171,6 +171,8 @@ module.exports = {
     "_releaseGameplayBundleIfIdle"
   ],
   POWERUP_INVENTORY_METHODS: [
+    "_applyPlusThreeBallsUseResult",
+    "_autoUsePlusThreeBallsAfterAdGrant",
     "_onUseThreeLineEliminationTap",
     "_onUsePlusThreeBallsTap",
     "_onUseSkillBallTap",

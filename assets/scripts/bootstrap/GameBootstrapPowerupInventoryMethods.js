@@ -332,6 +332,39 @@ module.exports = {
     }.bind(this));
   },
 
+  _applyPlusThreeBallsUseResult: function (useResult) {
+    var snapshot = useResult && useResult.snapshot
+      ? useResult.snapshot
+      : this.gameManager.getRuntimeSnapshot();
+    this._handleRuntimeStateTransition(snapshot);
+    this.levelRenderer.refreshRuntime(this.currentLevelConfig, snapshot);
+
+    if (useResult && useResult.accepted) {
+      this._setStatusWithTip("plus_three_balls_success", {
+        remaining: useResult.remaining
+      }, "发射球 +10，剩余道具：" + useResult.remaining);
+      return useResult;
+    }
+
+    var reason = useResult && typeof useResult.reason === "string" ? useResult.reason : "plus_three_balls_failed";
+    if (reason === "timed_infinite_shots") {
+      this._setStatusWithTip("plus_three_balls_timed_unavailable", null, "计时关无需加球");
+      return useResult;
+    }
+    this._setStatusWithTip("plus_three_balls_failed", null, "当前状态不可使用加十球");
+    return useResult;
+  },
+
+  _autoUsePlusThreeBallsAfterAdGrant: function () {
+    if (!this.currentLevelConfig || this.isRestarting || this.isSelectingLevel) {
+      return;
+    }
+    if (this._isTerminalState()) {
+      return;
+    }
+    return this._applyPlusThreeBallsUseResult(this.gameManager.usePlusThreeBalls());
+  },
+
   _onUsePlusThreeBallsTap: function () {
     if (!this.currentLevelConfig || this.isRestarting || this.isSelectingLevel) {
       return;
@@ -345,31 +378,12 @@ module.exports = {
     });
     this._playSfx("uiClick");
     var useResult = this.gameManager.usePlusThreeBalls();
-    var snapshot = useResult && useResult.snapshot
-      ? useResult.snapshot
-      : this.gameManager.getRuntimeSnapshot();
-
-    this._handleRuntimeStateTransition(snapshot);
-    this.levelRenderer.refreshRuntime(this.currentLevelConfig, snapshot);
-
-    if (useResult && useResult.accepted) {
-      this._setStatusWithTip("plus_three_balls_success", {
-        remaining: useResult.remaining
-      }, "发射球 +3，剩余道具：" + useResult.remaining);
-      return;
-    }
-
-    var reason = useResult && typeof useResult.reason === "string" ? useResult.reason : "plus_three_balls_failed";
-    if (reason === "inventory_empty") {
-      this._setStatusWithTip("plus_three_balls_inventory_empty", null, "加三球道具库存不足");
+    if (useResult && useResult.reason === "inventory_empty") {
+      this._setStatusWithTip("plus_three_balls_inventory_empty", null, "加十球道具库存不足");
       this._tryRecoverAdRunPowerupByAd("plus_three_balls");
       return;
     }
-    if (reason === "timed_infinite_shots") {
-      this._setStatusWithTip("plus_three_balls_timed_unavailable", null, "计时关无需加球");
-      return;
-    }
-    this._setStatusWithTip("plus_three_balls_failed", null, "当前状态不可使用加三球");
+    this._applyPlusThreeBallsUseResult(useResult);
   },
 
   _onUseSkillBallTap: function (entityType) {

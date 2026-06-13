@@ -31,6 +31,7 @@ var ALLOWED_CLEAR_REWARD_ITEM_IDS = ["coin", "stamina"];
 var AD_RUN_POWERUP_TYPES = ["three_line_elimination", "plus_three_balls"];
 var MIN_INITIAL_DROP_SPACE_ROWS = 8;
 var CLEAR_REWARD_START_LEVEL_ID = 1;
+var TOP_BOARD_ROW_INDEX = 0;
 
 function readJson(filePath) {
   var raw = fs.readFileSync(filePath, "utf8");
@@ -147,6 +148,9 @@ function validateSpecialEntities(level, normalizedLayoutRows, issues) {
     if (entity.entityCategory === "reactive_ball" && entity.entityType === "splitter") {
       if (typeof entity.splitColor !== "string" || level.colors.indexOf(entity.splitColor) === -1) {
         issues.push("specialEntities[" + index + "].splitColor must use a color from level.colors");
+      }
+      if (entity.row === TOP_BOARD_ROW_INDEX) {
+        issues.push("specialEntities[" + index + "] splitter must not be placed in top board row");
       }
     }
     if (entity.entityCategory === "locked_ball" && entity.entityType === "locked") {
@@ -288,20 +292,25 @@ function validateKeyLockGroups(level, issues) {
       return;
     }
     if (entity.entityCategory === "key_ball" && entity.entityType === "key" && typeof entity.unlockGroup === "string" && entity.unlockGroup.trim()) {
-      keyGroups[entity.unlockGroup] = true;
+      keyGroups[entity.unlockGroup] = (keyGroups[entity.unlockGroup] || 0) + 1;
     }
     if (entity.entityCategory === "locked_ball" && entity.entityType === "locked" && typeof entity.lockGroup === "string" && entity.lockGroup.trim()) {
-      lockGroups[entity.lockGroup] = true;
+      lockGroups[entity.lockGroup] = (lockGroups[entity.lockGroup] || 0) + 1;
     }
   });
   Object.keys(lockGroups).forEach(function (group) {
-    if (keyGroups[group] !== true) {
+    if (!keyGroups[group]) {
       issues.push("locked ball group missing matching key unlockGroup: " + group);
+      return;
+    }
+    if (keyGroups[group] !== lockGroups[group]) {
+      issues.push("key/locked ball count mismatch for group " + group + ": keys=" + keyGroups[group] + ", locks=" + lockGroups[group]);
     }
   });
   Object.keys(keyGroups).forEach(function (group) {
-    if (lockGroups[group] !== true) {
+    if (!lockGroups[group]) {
       issues.push("key unlockGroup missing matching locked ball group: " + group);
+      return;
     }
   });
 }

@@ -8163,8 +8163,8 @@
                     }
                 ],
                 "layout": [
-                    "RGBYRG.YRG",
-                    "YYRGBYRGY",
+                    "RGBYRGBYRG",
+                    ".YRGBYRGY",
                     "BB.RGBYRGY",
                     "GGBYRGBYG",
                     "RRGBYRGB.G",
@@ -8180,8 +8180,8 @@
                         "entityCategory": "reactive_ball",
                         "entityType": "splitter",
                         "splitColor": "Y",
-                        "row": 0,
-                        "col": 6
+                        "row": 1,
+                        "col": 0
                     },
                     {
                         "id": "skill_blast_01",
@@ -9250,8 +9250,8 @@
                     }
                 ],
                 "layout": [
-                    "YYRBYY.BYR",
-                    "BBYGBBYGB",
+                    "YYRBYYRBYR",
+                    ".BYGBBYGB",
                     "GGBRGGBRGB",
                     "RGBYRGBYR",
                     "YRGBYRGBYR",
@@ -9267,8 +9267,8 @@
                         "entityCategory": "reactive_ball",
                         "entityType": "splitter",
                         "splitColor": "Y",
-                        "row": 0,
-                        "col": 6
+                        "row": 1,
+                        "col": 0
                     }
                 ],
                 "levelType": "normal",
@@ -10334,8 +10334,8 @@
                     }
                 ],
                 "layout": [
-                    "PRPPPR.PPR",
-                    "YBBBYBBBY",
+                    "PRPPPRPPPR",
+                    ".BBBYBBBY",
                     "RRRGRRRGRR",
                     "YYPYYYPYY",
                     "GBGGGBGGGB",
@@ -10351,8 +10351,8 @@
                         "entityCategory": "reactive_ball",
                         "entityType": "splitter",
                         "splitColor": "P",
-                        "row": 0,
-                        "col": 6
+                        "row": 1,
+                        "col": 0
                     }
                 ],
                 "levelType": "normal",

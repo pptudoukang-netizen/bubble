@@ -5,6 +5,7 @@ var DebugFlags = require("../utils/DebugFlags");
 var BundleLoader = require("../utils/BundleLoader");
 var PrefabFactory = require("./PrefabFactory");
 var BoardLayout = require("../config/BoardLayout");
+var SpecialAnimationTiming = require("../config/SpecialAnimationTiming");
 var StarRatingPolicy = require("../core/StarRatingPolicy");
 var AdRevivePolicy = require("../core/AdRevivePolicy");
 var AdRewardCatalog = require("../services/AdRewardCatalog");
@@ -109,6 +110,38 @@ var GUIDE_DOT_SPRITE_PATH = "image/ball/white_point";
 var GUIDE_DOT_PULSE_DURATION = 0.36;
 var GUIDE_DOT_PULSE_SCALE_LARGE = 1.5;
 var GUIDE_DOT_PULSE_SCALE_SMALL = 0.5;
+
+var RUNTIME_REFRESH_SCOPE = {
+  FULL: "full",
+  PROJECTILE: "projectile",
+  SHOOTER_AIM: "shooterAim",
+  SHOOTER_AIM_ANGLE: "shooterAimAngle",
+  FALLING: "falling",
+  TIMER: "timer"
+};
+
+function resolveRefreshScope(runtimeSnapshot, options) {
+  options = options || {};
+  if (typeof options.scope === "string" && options.scope) {
+    return options.scope;
+  }
+  if (runtimeSnapshot && typeof runtimeSnapshot.refreshScope === "string" && runtimeSnapshot.refreshScope) {
+    return runtimeSnapshot.refreshScope;
+  }
+  return RUNTIME_REFRESH_SCOPE.FULL;
+}
+
+function assertValidRefreshScope(scope) {
+  var valid = false;
+  Object.keys(RUNTIME_REFRESH_SCOPE).forEach(function (key) {
+    if (RUNTIME_REFRESH_SCOPE[key] === scope) {
+      valid = true;
+    }
+  });
+  if (!valid) {
+    throw new Error("refreshRuntime requires valid scope: " + scope);
+  }
+}
 var TEST_SLOT_RADIUS = Math.floor(BoardLayout.bubbleRadius * 0.88);
 var SHOOTER_MAX_ROTATION = 75;
 var ICE_OVERLAY_OPACITY = 255;
@@ -709,6 +742,56 @@ function clipGuidePathToDistance(pathPoints, maxDistance) {
   return result;
 }
 
+function measurePathDistance(pathPoints) {
+  if (!pathPoints || pathPoints.length < 2) {
+    return 0;
+  }
+
+  var total = 0;
+  for (var index = 1; index < pathPoints.length; index += 1) {
+    total += pointDistance(pathPoints[index - 1], pathPoints[index]);
+  }
+  return total;
+}
+
+function resolveGuideFrontClipDistance(trajectory) {
+  if (!trajectory || typeof trajectory.totalDistance !== "number") {
+    return null;
+  }
+
+  var clipRadiusScale = Math.max(0, Number(BoardLayout.guideFrontClipRadiusScale) || 1);
+  var tailClipDistance = BoardLayout.bubbleRadius * clipRadiusScale;
+  if (trajectory.targetCellPosition && trajectory.collidedCellPosition) {
+    var centerDistance = pointDistance(trajectory.targetCellPosition, trajectory.collidedCellPosition);
+    tailClipDistance = (centerDistance * 0.5) * clipRadiusScale;
+  }
+
+  var frontDistance = Math.max(0, trajectory.totalDistance - tailClipDistance);
+
+  if (trajectory.origin && trajectory.hitPoint) {
+    var prefixPoints = [{
+      x: trajectory.origin.x,
+      y: trajectory.origin.y
+    }];
+    (trajectory.wallPoints || []).forEach(function (wallPoint) {
+      prefixPoints.push({
+        x: wallPoint.x,
+        y: wallPoint.y
+      });
+    });
+    prefixPoints.push({
+      x: trajectory.hitPoint.x,
+      y: trajectory.hitPoint.y
+    });
+    var distanceToHit = measurePathDistance(prefixPoints);
+    if (isFinite(distanceToHit) && distanceToHit > 0) {
+      frontDistance = Math.min(frontDistance, distanceToHit);
+    }
+  }
+
+  return frontDistance;
+}
+
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
@@ -860,6 +943,8 @@ function LevelRenderer(rootNode) {
   this.lastKeyUnlockAnimationKey = "";
   this.lastSplitterSpawnAnimationKey = "";
   this.splitterSpawnHiddenCellIds = {};
+  this.molotovBlastHiddenCellIds = {};
+  this.molotovBlastAnimatedIds = {};
   this.lastCommentResolution = null;
   this.boardBubbleNodes = {};
   this.boardBubbleNodePool = {};
@@ -1068,6 +1153,8 @@ LevelRenderer.prototype.renderLevel = function (levelConfig, runtimeSnapshot) {
   this.lastKeyUnlockAnimationKey = "";
   this.lastSplitterSpawnAnimationKey = "";
   this.splitterSpawnHiddenCellIds = {};
+  this.molotovBlastHiddenCellIds = {};
+  this.molotovBlastAnimatedIds = {};
   this.lastCommentResolution = null;
   this.boardRenderTick = 1;
   this.testSlotNodes = {};
@@ -1138,7 +1225,85 @@ LevelRenderer.prototype.renderLevel = function (levelConfig, runtimeSnapshot) {
   }.bind(this));
 };
 
-LevelRenderer.prototype.refreshRuntime = function (levelConfig, runtimeSnapshot) {
+LevelRenderer.prototype.refreshRuntime = function (levelConfig, runtimeSnapshot, options) {
+  var scope = resolveRefreshScope(runtimeSnapshot, options);
+  assertValidRefreshScope(scope);
+
+  if (scope === RUNTIME_REFRESH_SCOPE.PROJECTILE) {
+    this._refreshRuntimeProjectile(runtimeSnapshot);
+    return;
+  }
+  if (scope === RUNTIME_REFRESH_SCOPE.SHOOTER_AIM_ANGLE) {
+    this._refreshRuntimeShooterAimAngle(runtimeSnapshot);
+    return;
+  }
+  if (scope === RUNTIME_REFRESH_SCOPE.SHOOTER_AIM) {
+    this._refreshRuntimeShooterAim(runtimeSnapshot);
+    return;
+  }
+  if (scope === RUNTIME_REFRESH_SCOPE.FALLING) {
+    this._refreshRuntimeFalling(runtimeSnapshot);
+    return;
+  }
+  if (scope === RUNTIME_REFRESH_SCOPE.TIMER) {
+    this._refreshRuntimeTimer(runtimeSnapshot);
+    return;
+  }
+
+  this._refreshRuntimeFull(levelConfig, runtimeSnapshot);
+};
+
+LevelRenderer.prototype._refreshRuntimeProjectile = function (runtimeSnapshot) {
+  if (!runtimeSnapshot || !runtimeSnapshot.activeProjectile) {
+    throw new Error("Projectile refresh scope requires activeProjectile.");
+  }
+  this._updateProjectileOnly(runtimeSnapshot.activeProjectile);
+};
+
+LevelRenderer.prototype._refreshRuntimeShooterAimAngle = function (runtimeSnapshot) {
+  if (!runtimeSnapshot || !runtimeSnapshot.shooter) {
+    throw new Error("Shooter aim angle refresh scope requires shooter snapshot.");
+  }
+  this._renderShooterAimAngleOnly(runtimeSnapshot.shooter, runtimeSnapshot.activeProjectile);
+};
+
+LevelRenderer.prototype._refreshRuntimeShooterAim = function (runtimeSnapshot) {
+  if (!runtimeSnapshot || !runtimeSnapshot.shooter) {
+    throw new Error("Shooter aim refresh scope requires shooter snapshot.");
+  }
+  this._renderShooter(
+    runtimeSnapshot.shooter,
+    runtimeSnapshot.activeProjectile,
+    runtimeSnapshot.remainingShots
+  );
+  var nextShooterKey = buildShooterRenderKey(runtimeSnapshot);
+  if (!runtimeSnapshot.activeProjectile) {
+    this.lastShooterRenderKey = nextShooterKey;
+  }
+};
+
+LevelRenderer.prototype._refreshRuntimeFalling = function (runtimeSnapshot) {
+  var fallingSnapshot = runtimeSnapshot.systems && runtimeSnapshot.systems.fallingMarbleSystem
+    ? runtimeSnapshot.systems.fallingMarbleSystem
+    : null;
+  var activeFallingCount = fallingSnapshot
+    ? Math.max(0, Math.floor(Number(fallingSnapshot.activeDropCount) || 0))
+    : 0;
+  if (activeFallingCount > 0 || this.lastRenderedFallingCount > 0) {
+    this._renderFallingDrops(runtimeSnapshot);
+  }
+};
+
+LevelRenderer.prototype._refreshRuntimeTimer = function (runtimeSnapshot) {
+  var nextTimerKey = buildTimerRenderKey(runtimeSnapshot);
+  if (nextTimerKey !== this.lastTimerRenderKey) {
+    this._renderJarScoreBoostTimer(runtimeSnapshot);
+    this._renderTimedLevelTimer(runtimeSnapshot);
+    this.lastTimerRenderKey = nextTimerKey;
+  }
+};
+
+LevelRenderer.prototype._refreshRuntimeFull = function (levelConfig, runtimeSnapshot) {
   var boardChanged = runtimeSnapshot.board.version !== this.lastBoardVersion;
   if (boardChanged) {
     this._renderBoard(runtimeSnapshot.board);
@@ -1187,6 +1352,7 @@ LevelRenderer.prototype.refreshRuntime = function (levelConfig, runtimeSnapshot)
   this._playImpactBounce(runtimeSnapshot);
   this._playKeyUnlockAnimation(runtimeSnapshot);
   this._playSplitterSpawnAnimation(runtimeSnapshot);
+  this._playMolotovBlastAnimation(runtimeSnapshot);
   this._playCommentAnimation(runtimeSnapshot);
 
   var nextDangerKey = buildDangerLineRenderKey(runtimeSnapshot);
@@ -1208,6 +1374,8 @@ LevelRenderer.prototype.refreshRuntime = function (levelConfig, runtimeSnapshot)
   this._renderLoseView(runtimeSnapshot);
   this._renderResultPopup(runtimeSnapshot);
 };
+
+LevelRenderer.RUNTIME_REFRESH_SCOPE = RUNTIME_REFRESH_SCOPE;
 
 LevelRenderer.prototype._forEachGameplayLayer = function (callback) {
   if (typeof callback !== "function") {
@@ -1460,35 +1628,12 @@ LevelRenderer.prototype._applyGuideDotPulse = function (dotNode, pointIndex) {
     return;
   }
 
-  // Point #1/#3/#5... (0-based even index) starts larger; #2/#4/#6... starts smaller.
-  var pulseParity = pointIndex % 2;
-  var speedScale = Math.max(0.1, Number(BoardLayout.guideDotPulseSpeedScale) || 1);
-  if (dotNode.__guidePulseParity === pulseParity && dotNode.__guidePulseSpeedScale === speedScale) {
-    return;
-  }
-
   dotNode.stopAllActions();
-  dotNode.__guidePulseParity = pulseParity;
-  dotNode.__guidePulseSpeedScale = speedScale;
+  dotNode.__guidePulseParity = null;
+  dotNode.__guidePulseSpeedScale = null;
 
-  var startsLarge = pulseParity === 0;
-  var firstScale = startsLarge ? GUIDE_DOT_PULSE_SCALE_LARGE : GUIDE_DOT_PULSE_SCALE_SMALL;
-  var secondScale = startsLarge ? GUIDE_DOT_PULSE_SCALE_SMALL : GUIDE_DOT_PULSE_SCALE_LARGE;
-  var pulseDuration = GUIDE_DOT_PULSE_DURATION / speedScale;
-  dotNode.scale = firstScale;
-
-  if (typeof cc.tween !== "function") {
-    return;
-  }
-
-  // Cocos 的稳定循环写法：repeatForever(子 tween)。
-  cc.tween(dotNode)
-    .repeatForever(
-      cc.tween()
-        .to(pulseDuration, { scale: secondScale }, { easing: "sineInOut" })
-        .to(pulseDuration, { scale: firstScale }, { easing: "sineInOut" })
-    )
-    .start();
+  // 静态辅助线：奇偶点用固定大小区分，不再做呼吸 tween。
+  dotNode.scale = pointIndex % 2 === 0 ? GUIDE_DOT_PULSE_SCALE_LARGE : GUIDE_DOT_PULSE_SCALE_SMALL;
 };
 
 LevelRenderer.prototype._collectCommonSpritePaths = function () {
@@ -1572,6 +1717,7 @@ var LEVEL_RENDERER_SCENE_DEPS = {
   Logger: Logger,
   DebugFlags: DebugFlags,
   BoardLayout: BoardLayout,
+  SpecialAnimationTiming: SpecialAnimationTiming,
   BALL_RESOURCES: BALL_RESOURCES,
   WIN_BOTTLE_RESOURCES: WIN_BOTTLE_RESOURCES,
   JAR_RESOURCES: JAR_RESOURCES,
@@ -1641,6 +1787,7 @@ var LEVEL_RENDERER_SCENE_DEPS = {
   buildJarRenderKey: buildJarRenderKey,
   buildGuidePathKey: buildGuidePathKey,
   clipGuidePathToDistance: clipGuidePathToDistance,
+  resolveGuideFrontClipDistance: resolveGuideFrontClipDistance,
   pointDistance: pointDistance,
   resolveImpactBounceSpeed: resolveImpactBounceSpeed,
   getJarBaseY: getJarBaseY,

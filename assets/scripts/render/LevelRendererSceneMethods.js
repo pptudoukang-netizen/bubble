@@ -4,6 +4,7 @@ function attachLevelRendererSceneMethods(LevelRenderer, deps) {
   var Logger = deps.Logger;
   var DebugFlags = deps.DebugFlags;
   var BoardLayout = deps.BoardLayout;
+  var SpecialAnimationTiming = deps.SpecialAnimationTiming;
   var BALL_RESOURCES = deps.BALL_RESOURCES;
   var WIN_BOTTLE_RESOURCES = deps.WIN_BOTTLE_RESOURCES;
   var JAR_RESOURCES = deps.JAR_RESOURCES;
@@ -75,6 +76,7 @@ function attachLevelRendererSceneMethods(LevelRenderer, deps) {
   var buildJarRenderKey = deps.buildJarRenderKey;
   var buildGuidePathKey = deps.buildGuidePathKey;
   var clipGuidePathToDistance = deps.clipGuidePathToDistance;
+  var resolveGuideFrontClipDistance = deps.resolveGuideFrontClipDistance;
   var pointDistance = deps.pointDistance;
   var resolveImpactBounceSpeed = deps.resolveImpactBounceSpeed;
   var getJarBaseY = deps.getJarBaseY;
@@ -885,8 +887,8 @@ LevelRenderer.prototype.playThreeLineEliminationAnimation = function (rows) {
   if (!Array.isArray(rows) || !rows.length) {
     throw new Error("Three-line elimination animation requires rows.");
   }
-  if (!this.layers || !this.layers.overlay) {
-    throw new Error("Three-line elimination animation requires overlay layer.");
+  if (!this.layers || !this.layers.board) {
+    throw new Error("Three-line elimination animation requires board layer.");
   }
 
   var spritePath = BALL_RESOURCES.BLOCKADE_LINE;
@@ -907,7 +909,7 @@ LevelRenderer.prototype.playThreeLineEliminationAnimation = function (rows) {
       throw new Error("Three-line elimination row requires finite y.");
     }
     var node = new cc.Node("ThreeLineLight_" + index);
-    node.parent = this.layers.overlay;
+    node.parent = this.layers.board;
     node.zIndex = 200 + index;
     ensureSprite(node, spriteFrame);
     node.setContentSize(Math.max(1, boardRight - boardLeft), Math.max(1, BoardLayout.rowHeight));
@@ -1748,14 +1750,17 @@ LevelRenderer.prototype._renderHudStarProgress = function (panel, runtimeSnapsho
     if (!keyCell || typeof keyCell.unlockGroup !== "string" || !keyCell.unlockGroup) {
       throw new Error("Key unlock animation requires key unlockGroup.");
     }
+    if (typeof keyCell.id !== "string" && typeof keyCell.id !== "number") {
+      throw new Error("Key unlock animation requires key id.");
+    }
     if (!Array.isArray(unlockedCells)) {
       throw new Error("Key unlock animation requires unlockedCells array.");
     }
     var candidates = unlockedCells.filter(function (cell) {
-      return !!(cell && cell.__sourceUnlockGroup === keyCell.unlockGroup);
+      return !!(cell && cell.__sourceUnlockGroup === keyCell.unlockGroup && cell.__sourceKeyId === keyCell.id);
     });
-    if (!candidates.length) {
-      throw new Error("Key unlock animation requires unlocked target cells for group: " + keyCell.unlockGroup);
+    if (candidates.length !== 1) {
+      throw new Error("Key unlock animation requires exactly one unlocked target for key: " + keyCell.id);
     }
     candidates.sort(function (a, b) {
       var rowDelta = Math.abs(a.row - keyCell.row) - Math.abs(b.row - keyCell.row);
@@ -1773,7 +1778,7 @@ LevelRenderer.prototype._renderHudStarProgress = function (panel, runtimeSnapsho
     return keys.map(function (cell) {
       return cell.id + "@" + cell.row + ":" + cell.col + ":" + cell.unlockGroup;
     }).join("|") + "->" + unlocked.map(function (cell) {
-      return cell.id + "@" + cell.row + ":" + cell.col + ":" + cell.__sourceUnlockGroup;
+      return cell.id + "@" + cell.row + ":" + cell.col + ":" + cell.__sourceUnlockGroup + ":" + cell.__sourceKeyId;
     }).join("|");
   }
 
@@ -1874,6 +1879,39 @@ LevelRenderer.prototype._applySplitterSpawnHiddenBoardState = function (bubbleNo
   bubbleNode.active = false;
 };
 
+LevelRenderer.prototype._hideMolotovBlastSource = function (cellId) {
+  if (typeof cellId !== "string" && typeof cellId !== "number") {
+    throw new Error("Molotov blast hide requires cell id.");
+  }
+  var normalizedId = String(cellId);
+  this.molotovBlastHiddenCellIds[normalizedId] = true;
+  var targetNode = this.boardBubbleNodes[normalizedId];
+  if (targetNode && targetNode.isValid) {
+    targetNode.stopAllActions();
+    targetNode.opacity = 0;
+    targetNode.active = false;
+  }
+};
+
+LevelRenderer.prototype._clearMolotovBlastHiddenSource = function (cellId) {
+  if (typeof cellId !== "string" && typeof cellId !== "number") {
+    throw new Error("Molotov blast clear hide requires cell id.");
+  }
+  delete this.molotovBlastHiddenCellIds[String(cellId)];
+};
+
+LevelRenderer.prototype._applyMolotovBlastHiddenBoardState = function (bubbleNode, cellId) {
+  if (!bubbleNode || !bubbleNode.isValid) {
+    return;
+  }
+  if (!this.molotovBlastHiddenCellIds[String(cellId)]) {
+    return;
+  }
+  bubbleNode.stopAllActions();
+  bubbleNode.opacity = 0;
+  bubbleNode.active = false;
+};
+
 LevelRenderer.prototype._renderBoard = function (boardSnapshot) {
   this.lastBoardVersion = boardSnapshot.version;
   this.boardRenderTick += 1;
@@ -1890,6 +1928,7 @@ LevelRenderer.prototype._renderBoard = function (boardSnapshot) {
     if (existingNode && cachedRenderKey === renderKey) {
       existingNode.__boardTick = currentTick;
       this._applySplitterSpawnHiddenBoardState(existingNode, cell.id);
+      this._applyMolotovBlastHiddenBoardState(existingNode, cell.id);
       return;
     }
 
@@ -1902,6 +1941,7 @@ LevelRenderer.prototype._renderBoard = function (boardSnapshot) {
     bubbleNode.opacity = 255;
     this._applyBoardBubbleVisualCached(bubbleNode, cell, BOARD_BUBBLE_SIZE);
     this._applySplitterSpawnHiddenBoardState(bubbleNode, cell.id);
+    this._applyMolotovBlastHiddenBoardState(bubbleNode, cell.id);
   }, this);
 
   this._recycleInactiveBoardBubbleNodes(currentTick);
@@ -2137,19 +2177,15 @@ LevelRenderer.prototype._playKeyUnlockAnimation = function (runtimeSnapshot) {
   }
 
   var boardSnapshot = runtimeSnapshot.board;
-  var flyDuration = 0.62;
-  var lockShakeStep = 0.04;
+  var flyDuration = SpecialAnimationTiming.keyUnlock.flyDuration;
+  var keyShrinkDuration = SpecialAnimationTiming.keyUnlock.shrinkDuration;
+  var lockShakeStep = SpecialAnimationTiming.keyUnlock.lockShakeStepDuration;
   var lockShakeOffset = 8;
-  var playedUnlockGroups = {};
 
   collectedKeys.forEach(function (keyCell) {
     if (!keyCell || typeof keyCell.unlockGroup !== "string" || !keyCell.unlockGroup) {
       throw new Error("Key unlock animation requires collected key unlockGroup.");
     }
-    if (playedUnlockGroups[keyCell.unlockGroup]) {
-      return;
-    }
-    playedUnlockGroups[keyCell.unlockGroup] = true;
 
     var targetCells = findUnlockedTargetsForKey(keyCell, unlockedCells);
     var primaryTarget = targetCells[0];
@@ -2242,7 +2278,7 @@ LevelRenderer.prototype._playKeyUnlockAnimation = function (runtimeSnapshot) {
       .call(function () {
         applyKeyUnlockFlyFrame(keyFx, keyPosition, targetPosition, 1, arcHeight);
         cc.tween(keyFx)
-          .to(0.08, {
+          .to(keyShrinkDuration, {
             scale: 0.35,
             opacity: 0
           }, {
@@ -2374,6 +2410,84 @@ LevelRenderer.prototype._playSplitterSpawnAnimation = function (runtimeSnapshot)
         easing: "sineOut"
       })
       .call(finishFx)
+      .start();
+  }, this);
+};
+
+LevelRenderer.prototype._playMolotovBlastAnimation = function (runtimeSnapshot) {
+  var resolution = runtimeSnapshot && runtimeSnapshot.lastResolution ? runtimeSnapshot.lastResolution : null;
+  var triggered = resolution && Array.isArray(resolution.reactiveTriggered) ? resolution.reactiveTriggered : [];
+  var molotovTriggers = triggered.filter(function (entry) {
+    return !!(entry && entry.entityType === "molotov");
+  });
+  if (!molotovTriggers.length) {
+    return;
+  }
+
+  if (!runtimeSnapshot.board || !Number.isInteger(runtimeSnapshot.board.maxColumns)) {
+    throw new Error("Molotov blast animation requires board snapshot.");
+  }
+  if (!this.layers || !this.layers.board || !this.layers.board.isValid) {
+    throw new Error("Molotov blast animation requires board layer.");
+  }
+  if (typeof cc === "undefined" || !cc || typeof cc.tween !== "function") {
+    throw new Error("Molotov blast animation requires cc.tween.");
+  }
+
+  var blastDuration = SpecialAnimationTiming.molotovBlast.totalDuration;
+  var peakScale = 1.45;
+  var boardSnapshot = runtimeSnapshot.board;
+
+  molotovTriggers.forEach(function (trigger) {
+    if (!trigger || (typeof trigger.id !== "string" && typeof trigger.id !== "number")) {
+      throw new Error("Molotov blast animation requires trigger id.");
+    }
+    if (!Number.isInteger(trigger.row) || !Number.isInteger(trigger.col)) {
+      throw new Error("Molotov blast animation requires trigger coordinates.");
+    }
+
+    var normalizedId = String(trigger.id);
+    if (this.molotovBlastAnimatedIds[normalizedId]) {
+      return;
+    }
+    this.molotovBlastAnimatedIds[normalizedId] = true;
+    this._hideMolotovBlastSource(normalizedId);
+
+    var blastPosition = BoardLayout.getCellPosition(
+      trigger.row,
+      trigger.col,
+      boardSnapshot.maxColumns,
+      boardSnapshot.dropOffsetRows
+    );
+    var animNode = instantiateRequired(
+      this.prefabFactory,
+      PREFAB_PATHS.fireBubbleItem,
+      this.layers.board,
+      "MolotovBlastFx_" + normalizedId,
+      "Molotov blast animation FireBubbleItem"
+    );
+    animNode.setPosition(blastPosition.x, blastPosition.y);
+    animNode.stopAllActions();
+    animNode.active = true;
+    animNode.opacity = 255;
+    animNode.setScale(1);
+    animNode.zIndex = 120;
+
+    var cleanup = function () {
+      this._clearMolotovBlastHiddenSource(normalizedId);
+      if (animNode && animNode.isValid) {
+        animNode.removeFromParent(true);
+      }
+    }.bind(this);
+
+    cc.tween(animNode)
+      .to(blastDuration, {
+        scale: peakScale,
+        opacity: 0
+      }, {
+        easing: "quadOut"
+      })
+      .call(cleanup)
       .start();
   }, this);
 };
@@ -3182,24 +3296,35 @@ LevelRenderer.prototype._renderShooter = function (shooterSnapshot, activeProjec
     projectileNode.active = false;
   }
 
+  this._syncShooterGuideDots(shooterPanel, shooterSnapshot, activeProjectile);
+
+  var dock = getOrCreateChild(shooterPanel, "NextBallDock");
+  dock.active = false;
+};
+
+LevelRenderer.prototype._syncShooterGuideDots = function (shooterPanel, shooterSnapshot, activeProjectile) {
   var guideDots = getOrCreateChild(shooterPanel, "GuideDots");
-  var aimGuidePath = shooterSnapshot && Array.isArray(shooterSnapshot.aimGuidePath)
-    ? shooterSnapshot.aimGuidePath
-    : null;
-  var guidePath = aimGuidePath && aimGuidePath.length >= 2
-    ? aimGuidePath
-    : (hasTrajectory ? trajectory.pathPoints : null);
-  // 辅助线最长只显示到“幽灵球与上方碰撞球之间”的碰撞前端位置。
-  // 有碰撞球时：按“目标中心 <-> 碰撞球中心”中点为基准；否则回退到目标中心前半径。
-  if (guidePath && hasTrajectory && typeof trajectory.totalDistance === "number") {
-    var clipRadiusScale = Math.max(0, Number(BoardLayout.guideFrontClipRadiusScale) || 1);
-    var tailClipDistance = BoardLayout.bubbleRadius * clipRadiusScale;
-    if (trajectory.targetCellPosition && trajectory.collidedCellPosition) {
-      var centerDistance = pointDistance(trajectory.targetCellPosition, trajectory.collidedCellPosition);
-      tailClipDistance = (centerDistance * 0.5) * clipRadiusScale;
+  var trajectory = shooterSnapshot ? shooterSnapshot.trajectory : null;
+  var hasTrajectory = !!(
+    trajectory &&
+    trajectory.valid &&
+    trajectory.targetCellPosition &&
+    trajectory.pathPoints &&
+    trajectory.pathPoints.length >= 2
+  );
+  var guidePath = null;
+  if (hasTrajectory) {
+    var aimGuidePath = shooterSnapshot && Array.isArray(shooterSnapshot.aimGuidePath)
+      ? shooterSnapshot.aimGuidePath
+      : null;
+    guidePath = aimGuidePath && aimGuidePath.length >= 2
+      ? aimGuidePath
+      : trajectory.pathPoints;
+    // 辅助线最长只显示到“幽灵球与上方碰撞球之间”的碰撞前端位置，且不超过实际命中点。
+    var frontDistance = resolveGuideFrontClipDistance(trajectory);
+    if (guidePath && frontDistance !== null) {
+      guidePath = clipGuidePathToDistance(guidePath, frontDistance);
     }
-    var frontDistance = Math.max(0, trajectory.totalDistance - tailClipDistance);
-    guidePath = clipGuidePathToDistance(guidePath, frontDistance);
   }
 
   var shouldShowGuide = !activeProjectile &&
@@ -3214,19 +3339,54 @@ LevelRenderer.prototype._renderShooter = function (shooterSnapshot, activeProjec
       this.lastGuidePathKey = guideKey;
     }
     this.lastGuideDotsVisible = true;
+  } else if (this.lastGuideDotsVisible) {
+    guideDots.active = false;
+    this._renderGuideDots(guideDots, null);
+    this.lastGuideDotsVisible = false;
+    this.lastGuidePathKey = "";
   } else {
-    if (this.lastGuideDotsVisible) {
-      guideDots.active = false;
-      this._renderGuideDots(guideDots, null);
-      this.lastGuideDotsVisible = false;
-      this.lastGuidePathKey = "";
-    } else {
-      guideDots.active = false;
-    }
+    guideDots.active = false;
+  }
+};
+
+LevelRenderer.prototype._renderShooterAimAngleOnly = function (shooterSnapshot, activeProjectile) {
+  if (!this.layers || !this.layers.shooter) {
+    throw new Error("Shooter aim angle refresh requires shooter layer.");
+  }
+  if (!shooterSnapshot || !shooterSnapshot.aim) {
+    throw new Error("Shooter aim angle refresh requires shooter aim.");
   }
 
-  var dock = getOrCreateChild(shooterPanel, "NextBallDock");
-  dock.active = false;
+  var shooterPanel = this.layers.shooter.getChildByName("ShooterPanel");
+  if (!shooterPanel) {
+    throw new Error("Shooter aim angle refresh requires ShooterPanel.");
+  }
+
+  var aim = shooterSnapshot.aim;
+  var fortNode = getOrCreateChild(shooterPanel, "ShooterBase");
+  fortNode.setPosition(aim.origin.x, aim.origin.y);
+  fortNode.angle = computeShooterAngle(aim.direction);
+  // 轻量刷新只跳过炮台 UI 重绘，辅助线仍按当前轨迹每帧更新。
+  this._syncShooterGuideDots(shooterPanel, shooterSnapshot, activeProjectile);
+};
+
+LevelRenderer.prototype._updateProjectileOnly = function (activeProjectile) {
+  if (!this.layers || !this.layers.shooter) {
+    throw new Error("Projectile refresh requires shooter layer.");
+  }
+  if (!activeProjectile || !activeProjectile.position) {
+    throw new Error("Projectile refresh requires active projectile position.");
+  }
+
+  var projectileNode = getOrCreateChild(this.layers.shooter, "ActiveProjectile");
+  projectileNode.active = true;
+  projectileNode.setPosition(activeProjectile.position.x, activeProjectile.position.y);
+  projectileNode.setScale(1);
+  this._applyBallVisualCached(
+    projectileNode,
+    activeProjectile.ball || activeProjectile.color,
+    BOARD_BUBBLE_SIZE
+  );
 };
 
 LevelRenderer.prototype._applyBallVisualCached = function (node, ballLike, forcedSize) {
@@ -3605,6 +3765,7 @@ LevelRenderer.prototype._renderWinAwardInfo = function (winContent, rewardItems)
 
 LevelRenderer.prototype._renderWinMaxScoreStamp = function (scoreBgNode, runtimeSnapshot) {
   var maxScoreNode = requireWinChild(scoreBgNode, "max_score", "score_bg");
+  maxScoreNode.setSiblingIndex(scoreBgNode.children.length - 1);
   if (!runtimeSnapshot || runtimeSnapshot.state !== "won") {
     maxScoreNode.active = false;
     return;
@@ -4100,9 +4261,11 @@ LevelRenderer.prototype._renderWinView = function (runtimeSnapshot) {
   this._bindWinButton(winContent ? winContent.getChildByName("btn_next") : null, "next");
   this._bindWinButton(winContent ? winContent.getChildByName("btn_retry") : null, "retry");
   this._bindWinButton(winContent ? winContent.getChildByName("btn_back") : null, "back");
+  var maxScoreNode = scoreBgNode ? requireWinChild(scoreBgNode, "max_score", "score_bg") : null;
   SpriteProxyLayerHelper.rebuildAutoProxyTree({
     rootNode: winView,
-    proxyRootName: WIN_VIEW_PROXY_ROOT_NAME
+    proxyRootName: WIN_VIEW_PROXY_ROOT_NAME,
+    excludeRoots: maxScoreNode ? [maxScoreNode] : []
   });
   this.lastWinViewRenderKey = renderKey;
 };

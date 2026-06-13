@@ -40,7 +40,7 @@ function createEmptyUpdateResult() {
   };
 }
 
-var SURPLUS_SHOTS_PER_FRAME = 5;
+var SURPLUS_SHOTS_PER_FRAME = 1;
 
 function FallingMarbleSystem() {
   BaseSystem.call(this, "FallingMarbleSystem");
@@ -240,7 +240,61 @@ FallingMarbleSystem.prototype._buildJarZones = function () {
 };
 
 FallingMarbleSystem.prototype.hasActiveDrops = function () {
-  return this.activeDrops.length > 0;
+  return this.activeDrops.length > 0 || this.pendingSurplusShotBalls.length > 0;
+};
+
+FallingMarbleSystem.prototype._buildDropFromCell = function (cell, index, grid, startDelay) {
+  if (!cell || !grid || typeof grid.getCellPosition !== "function") {
+    throw new Error("FallingMarbleSystem._buildDropFromCell requires cell and grid.");
+  }
+
+  var start = grid.getCellPosition(cell.row, cell.col);
+  var direction = index % 2 === 0 ? -1 : 1;
+  var spread = 1 + (index % 4) * 0.18;
+
+  return {
+    id: (cell.id || (cell.row + "_" + cell.col)) + "_drop_" + (this._dropSerial += 1),
+    sourceId: cell.id,
+    color: cell.color,
+    entityCategory: cell.entityCategory || "normal_ball",
+    entityType: cell.entityType || null,
+    splitColor: typeof cell.splitColor === "string" ? cell.splitColor : null,
+    innerColor: cell.innerColor || null,
+    iceSnowballAlreadyCollected: cell.iceSnowballAlreadyCollected === true,
+    row: cell.row,
+    col: cell.col,
+    position: { x: start.x, y: start.y },
+    velocity: {
+      x: direction * this.horizontalSpeed * spread,
+      y: this.initialSpeedY + index * 35
+    },
+    remainingBounces: this.maxBounces,
+    rotation: 0,
+    rotationSpeed: direction * (180 + index * 25),
+    jarCooldown: 0,
+    startDelay: startDelay,
+    rimBounceCount: 0,
+    lastRimBounceSpeed: 0,
+    lifeTime: 0,
+    stuckTimer: 0,
+    lastStuckX: start.x,
+    lastStuckY: start.y,
+    inJar: false,
+    jarIndex: -1,
+    jarColor: null,
+    active: true
+  };
+};
+
+FallingMarbleSystem.prototype._activateDropBatch = function (drops) {
+  if (!drops || !drops.length) {
+    return [];
+  }
+
+  Array.prototype.push.apply(this.activeDrops, drops);
+  this.totalFallen += drops.length;
+  this._renderSnapshotDirty = true;
+  return drops;
 };
 
 FallingMarbleSystem.prototype.hasPendingSurplusShots = function () {
@@ -307,10 +361,7 @@ FallingMarbleSystem.prototype._spawnSurplusShotBatch = function (balls, origin, 
     spawned.push(this._createSurplusShotDrop(balls[index], startIndex + index, origin));
   }
 
-  Array.prototype.push.apply(this.activeDrops, spawned);
-  this.totalFallen += spawned.length;
-  this._renderSnapshotDirty = true;
-  return spawned;
+  return this._activateDropBatch(spawned);
 };
 
 FallingMarbleSystem.prototype._processPendingSurplusShots = function () {
@@ -322,9 +373,13 @@ FallingMarbleSystem.prototype._processPendingSurplusShots = function () {
   }
 
   var batchSize = Math.min(SURPLUS_SHOTS_PER_FRAME, this.pendingSurplusShotBalls.length);
+  if (!batchSize) {
+    return;
+  }
+
   var batch = this.pendingSurplusShotBalls.slice(0, batchSize);
   this.pendingSurplusShotBalls = this.pendingSurplusShotBalls.slice(batchSize);
-  this._spawnSurplusShotBatch(batch, this.pendingSurplusShotOrigin, this.pendingSurplusShotIndex);
+  this.lastDrops = this._spawnSurplusShotBatch(batch, this.pendingSurplusShotOrigin, this.pendingSurplusShotIndex);
   this.pendingSurplusShotIndex += batch.length;
 
   if (!this.pendingSurplusShotBalls.length) {
@@ -349,47 +404,10 @@ FallingMarbleSystem.prototype.registerDrops = function (cells, grid, options) {
   }
 
   this.lastDrops = cells.map(function (cell, index) {
-    var start = grid.getCellPosition(cell.row, cell.col);
-    var direction = index % 2 === 0 ? -1 : 1;
-    var spread = 1 + (index % 4) * 0.18;
-
-    return {
-      id: (cell.id || (cell.row + "_" + cell.col)) + "_drop_" + (this._dropSerial += 1),
-      sourceId: cell.id,
-      color: cell.color,
-      entityCategory: cell.entityCategory || "normal_ball",
-      entityType: cell.entityType || null,
-      splitColor: typeof cell.splitColor === "string" ? cell.splitColor : null,
-      innerColor: cell.innerColor || null,
-      iceSnowballAlreadyCollected: cell.iceSnowballAlreadyCollected === true,
-      row: cell.row,
-      col: cell.col,
-      position: { x: start.x, y: start.y },
-      velocity: {
-        x: direction * this.horizontalSpeed * spread,
-        y: this.initialSpeedY + index * 35
-      },
-      remainingBounces: this.maxBounces,
-      rotation: 0,
-      rotationSpeed: direction * (180 + index * 25),
-      jarCooldown: 0,
-      startDelay: startDelay,
-      rimBounceCount: 0,
-      lastRimBounceSpeed: 0,
-      lifeTime: 0,
-      stuckTimer: 0,
-      lastStuckX: start.x,
-      lastStuckY: start.y,
-      inJar: false,
-      jarIndex: -1,
-      jarColor: null,
-      active: true
-    };
+    return this._buildDropFromCell(cell, index, grid, startDelay);
   }, this);
 
-  Array.prototype.push.apply(this.activeDrops, this.lastDrops);
-  this.totalFallen += this.lastDrops.length;
-  this._renderSnapshotDirty = true;
+  this._activateDropBatch(this.lastDrops);
   return this.lastDrops;
 };
 
@@ -407,24 +425,13 @@ FallingMarbleSystem.prototype.registerSurplusShotsFromOrigin = function (balls, 
     throw new Error("FallingMarbleSystem.registerSurplusShotsFromOrigin cannot run while surplus shots are pending.");
   }
 
-  var firstBatchSize = Math.min(SURPLUS_SHOTS_PER_FRAME, balls.length);
-  var firstBatch = balls.slice(0, firstBatchSize);
-  var remainingBalls = balls.slice(firstBatchSize);
-
-  this.lastDrops = this._spawnSurplusShotBatch(firstBatch, origin, 0);
-
-  if (remainingBalls.length) {
-    this.pendingSurplusShotBalls = remainingBalls;
-    this.pendingSurplusShotOrigin = {
-      x: origin.x,
-      y: origin.y
-    };
-    this.pendingSurplusShotIndex = firstBatch.length;
-  } else {
-    this.pendingSurplusShotOrigin = null;
-    this.pendingSurplusShotIndex = 0;
-  }
-
+  this.pendingSurplusShotBalls = balls.slice();
+  this.pendingSurplusShotOrigin = {
+    x: origin.x,
+    y: origin.y
+  };
+  this.pendingSurplusShotIndex = 0;
+  this._processPendingSurplusShots();
   return this.lastDrops;
 };
 

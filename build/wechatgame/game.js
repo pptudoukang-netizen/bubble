@@ -54,8 +54,10 @@ if (compareVersion(wx.getSystemInfoSync().SDKVersion, "2.1.0") > -1) {
     images: [{
       src: "images/loading_bg.jpg"
     }],
+    designWidth: 720,
+    designHeight: 1280,
     contextType: "webgl",
-    scaleMode: GameGlobal.LoadingManager.ScaleMode.FIXED_WIDTH,
+    scaleMode: GameGlobal.LoadingManager.ScaleMode.NO_BORDER,
     contextAttributes: {
       alpha: false,
       antialias: false,

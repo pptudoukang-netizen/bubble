@@ -17,6 +17,7 @@ var SignInStore = require("../utils/SignInStore");
 var NewUserGuideStore = require("../utils/NewUserGuideStore");
 var NewGiftStore = require("../utils/NewGiftStore");
 var RouteConfigStore = require("../utils/RouteConfigStore");
+var SpecialIntroduceStore = require("../utils/SpecialIntroduceStore");
 var AudioManager = require("../audio/AudioManager");
 var BoardLayout = require("../config/BoardLayout");
 var DailySignInConfig = require("../config/DailySignInConfig");
@@ -138,6 +139,7 @@ module.exports = {
   NewUserGuideStore: NewUserGuideStore,
   NewGiftStore: NewGiftStore,
   RouteConfigStore: RouteConfigStore,
+  SpecialIntroduceStore: SpecialIntroduceStore,
   AudioManager: AudioManager,
   BoardLayout: BoardLayout,
   DailySignInConfig: DailySignInConfig,

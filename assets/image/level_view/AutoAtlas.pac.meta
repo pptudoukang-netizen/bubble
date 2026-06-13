@@ -22,7 +22,7 @@
     "minigame": {
       "formats": [
         {
-          "name": "astc_6x6",
+          "name": "astc_4x4",
           "quality": "medium"
         }
       ]

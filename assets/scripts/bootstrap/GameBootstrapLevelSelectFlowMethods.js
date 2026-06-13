@@ -158,6 +158,7 @@ module.exports = {
     if (typeof this._hideInventoryView === "function") {
       this._hideInventoryView();
     }
+    this._hideSpecialIntroduceView();
     this.isSelectingLevel = true;
     this.currentLevelConfig = null;
     if (this.levelRenderer && typeof this.levelRenderer.setGameplayLayersVisible === "function") {
@@ -298,6 +299,7 @@ module.exports = {
     if (typeof this._hideInventoryView === "function") {
       this._hideInventoryView();
     }
+    this._hideSpecialIntroduceView();
     this._hideSignInView();
     if (this._floatingMapAssets) {
       LevelSelectFloatingMap.releaseAllCachedMapPrefabs(this._floatingMapAssets);

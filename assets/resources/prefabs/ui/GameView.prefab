@@ -8612,7 +8612,7 @@
     },
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 33.6,
+      "width": 50.49,
       "height": 40
     },
     "_anchorPoint": {
@@ -8624,8 +8624,8 @@
       "__type__": "TypedArray",
       "ctor": "Float64Array",
       "array": [
-        14.544,
-        12.307,
+        17.184,
+        8.348,
         0,
         0,
         0,
@@ -8664,9 +8664,9 @@
     ],
     "_srcBlendFactor": 770,
     "_dstBlendFactor": 771,
-    "_string": "3",
-    "_N$string": "3",
-    "_fontSize": 2,
+    "_string": "10",
+    "_N$string": "10",
+    "_fontSize": 1.7,
     "_lineHeight": 40,
     "_enableWrapText": true,
     "_N$file": {

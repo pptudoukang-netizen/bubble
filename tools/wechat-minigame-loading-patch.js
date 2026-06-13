@@ -8,6 +8,8 @@ var MINIGAME_LOADING_PLUGIN_NAME = "MinigameLoading";
 var MINIGAME_LOADING_PROVIDER = "wxbd990766293b9dc4";
 var MINIGAME_LOADING_VERSION = "latest";
 var LOADING_COVER_RELATIVE_PATH = "images/loading_bg.jpg";
+var LOADING_COVER_DESIGN_WIDTH = 720;
+var LOADING_COVER_DESIGN_HEIGHT = 1280;
 var LOADING_COVER_SOURCE_PARTS = ["assets", "loading", "loading_bg.jpg"];
 var GAME_JS_FILE = "game.js";
 var MAIN_JS_FILE = "main.js";
@@ -100,8 +102,10 @@ function buildGameJsBootSnippet() {
     "    images: [{",
     "      src: \"" + LOADING_COVER_RELATIVE_PATH + "\"",
     "    }],",
+    "    designWidth: " + LOADING_COVER_DESIGN_WIDTH + ",",
+    "    designHeight: " + LOADING_COVER_DESIGN_HEIGHT + ",",
     "    contextType: \"webgl\",",
-    "    scaleMode: GameGlobal.LoadingManager.ScaleMode.FIXED_WIDTH,",
+    "    scaleMode: GameGlobal.LoadingManager.ScaleMode.NO_BORDER,",
     "    contextAttributes: {",
     "      alpha: false,",
     "      antialias: false,",

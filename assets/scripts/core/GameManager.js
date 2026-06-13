@@ -2,6 +2,7 @@
 
 var Logger = require("../utils/Logger");
 var BoardLayout = require("../config/BoardLayout");
+var SpecialAnimationTiming = require("../config/SpecialAnimationTiming");
 var ShooterController = require("../systems/ShooterController");
 var TrajectoryPredictor = require("../systems/TrajectoryPredictor");
 var BubbleGrid = require("../systems/BubbleGrid");
@@ -33,8 +34,9 @@ var AD_RUN_POWERUP_TYPES = {
   three_line_elimination: true,
   plus_three_balls: true
 };
-var PLUS_THREE_BALLS_AMOUNT = 3;
+var PLUS_THREE_BALLS_AMOUNT = 10;
 var SPLITTER_SPAWN_DELAY_SEC = 0.2;
+var TIMED_LEVEL_RENDER_BUCKET_MS = 250;
 
 function assertFiniteNumber(value, fieldName) {
   var numberValue = Number(value);
@@ -136,6 +138,8 @@ var SCORE_HEAT_DIFFICULTY_ALIAS = {
 
 // 碰撞反馈播放完成后再下压，避免命中反馈与网格位移同帧造成视觉偏差。
 var BOARD_ADVANCE_AFTER_IMPACT_DELAY = 0.2;
+var BOARD_ADVANCE_DELAY_EPSILON = 0.000001;
+var KEY_UNLOCK_BOARD_ADVANCE_BLOCK_DELAY = SpecialAnimationTiming.keyUnlock.totalDuration;
 // 最后一颗入缸后，延迟再弹出 WinView。
 var WIN_SETTLEMENT_DELAY_SEC = 1;
 var DEFAULT_JAR_SCORE_BOOST_MULTIPLIER = 2;
@@ -473,15 +477,22 @@ function GameManager(options) {
   this.impactSequence = 0;
   this.runtimeEventSequence = 0;
   this.pendingRuntimeEvents = [];
+  this.pendingBoardAdvanceSpecialAnimationDelay = 0;
   this.pendingBoardAdvanceDelay = 0;
   this.boardAdvancedThisFrame = false;
   this.pendingWinSettlementDelay = 0;
   this.pendingSplitterSpawns = [];
+  this.pendingMolotovBlastQueue = [];
+  this.activeMolotovBlast = null;
+  this.molotovBlastTriggeredIds = {};
+  this.molotovResolutionPending = false;
+  this.molotovPendingResolutionContext = null;
   this.pendingBarrierHammer = false;
   this.pendingRainbowColorSelection = null;
   this.jarScoreBoostActive = false;
   this.jarScoreBoostMultiplier = 1;
   this.jarScoreBoostRemainingMs = 0;
+  this._lastTimerRenderBucket = -1;
   this.scoreRules = cloneScoreRules(BASE_SCORE_RULES);
   this.scoreHeatBand = buildScoreHeatBand(null, {
     difficulty: "normal",
@@ -525,6 +536,9 @@ GameManager.prototype.startLevel = function (levelConfig) {
   this.timeLimitMs = this.isTimedInfiniteShots ? assertPositiveInteger(level.timeLimitSeconds, "level.timeLimitSeconds") * 1000 : 0;
   this.remainingTimeMs = this.timeLimitMs;
   this.timerPaused = false;
+  this._lastTimerRenderBucket = this.isTimedInfiniteShots
+    ? Math.ceil(this.remainingTimeMs / TIMED_LEVEL_RENDER_BUCKET_MS)
+    : -1;
   this.requiredStarCount = this.isTimedInfiniteShots ? assertPositiveInteger(level.requiredStarCount, "level.requiredStarCount") : 0;
   this.remainingShots = this.isTimedInfiniteShots ? 0 : assertPositiveInteger(level.shotLimit, "level.shotLimit");
   this.score = 0;
@@ -555,10 +569,16 @@ GameManager.prototype.startLevel = function (levelConfig) {
   this.impactSequence = 0;
   this.runtimeEventSequence = 0;
   this.pendingRuntimeEvents = [];
+  this.pendingBoardAdvanceSpecialAnimationDelay = 0;
   this.pendingBoardAdvanceDelay = 0;
   this.boardAdvancedThisFrame = false;
   this.pendingWinSettlementDelay = 0;
   this.pendingSplitterSpawns = [];
+  this.pendingMolotovBlastQueue = [];
+  this.activeMolotovBlast = null;
+  this.molotovBlastTriggeredIds = {};
+  this.molotovResolutionPending = false;
+  this.molotovPendingResolutionContext = null;
   this.pendingBarrierHammer = false;
   this.pendingRainbowColorSelection = null;
   this.jarScoreBoostActive = false;
@@ -635,7 +655,7 @@ GameManager.prototype._getScoreRule = function (key) {
 };
 
 GameManager.prototype._isWaitingBoardAdvance = function () {
-  return this.pendingBoardAdvanceDelay > 0;
+  return this.pendingBoardAdvanceSpecialAnimationDelay > 0 || this.pendingBoardAdvanceDelay > 0;
 };
 
 GameManager.prototype._hasBoardAdvancedThisFrame = function () {
@@ -653,11 +673,35 @@ GameManager.prototype._isBoardAdvanceBusy = function () {
   return this._isWaitingBoardAdvance() || this._hasBoardAdvancedThisFrame();
 };
 
+GameManager.prototype._resolveBoardAdvanceSpecialAnimationDelay = function (resolution) {
+  if (!resolution || typeof resolution !== "object") {
+    throw new Error("Board advance special animation delay requires resolution.");
+  }
+  if (!Array.isArray(resolution.collectedKeys)) {
+    throw new Error("Board advance special animation delay requires resolution.collectedKeys array.");
+  }
+  if (!Array.isArray(resolution.unlockedLockedBalls)) {
+    throw new Error("Board advance special animation delay requires resolution.unlockedLockedBalls array.");
+  }
+
+  if (resolution.collectedKeys.length > 0 && resolution.unlockedLockedBalls.length > 0) {
+    return KEY_UNLOCK_BOARD_ADVANCE_BLOCK_DELAY;
+  }
+  return 0;
+};
+
 GameManager.prototype._hasPendingSplitterSpawns = function () {
   if (!Array.isArray(this.pendingSplitterSpawns)) {
     throw new Error("GameManager pendingSplitterSpawns must be an array.");
   }
   return this.pendingSplitterSpawns.length > 0;
+};
+
+GameManager.prototype._hasPendingMolotovBlasts = function () {
+  if (!Array.isArray(this.pendingMolotovBlastQueue)) {
+    throw new Error("GameManager pendingMolotovBlastQueue must be an array.");
+  }
+  return this.activeMolotovBlast !== null || this.pendingMolotovBlastQueue.length > 0;
 };
 
 GameManager.prototype._queuePendingSplitterSpawn = function (splitterCell, resolution) {
@@ -779,7 +823,7 @@ GameManager.prototype._updatePendingSplitterSpawns = function (dt) {
   if (this.state === "won_pending" && grid.getCells().length > 0) {
     this.state = "running";
   }
-  if (this.state === "out_of_shots_pending" && !this.systems.fallingMarbleSystem.hasActiveDrops() && !this._hasPendingSplitterSpawns() && !this._isBoardAdvanceBusy()) {
+  if (this.state === "out_of_shots_pending" && !this.systems.fallingMarbleSystem.hasActiveDrops() && !this._hasPendingSplitterSpawns() && !this._hasPendingMolotovBlasts() && !this._isBoardAdvanceBusy()) {
     this._resolveOutOfShotsOutcome();
   }
   if (grid && typeof grid.assertNoVisualOverlap === "function") {
@@ -793,6 +837,7 @@ GameManager.prototype._scheduleBoardAdvanceAfterImpact = function () {
     return false;
   }
 
+  this.pendingBoardAdvanceSpecialAnimationDelay = this._resolveBoardAdvanceSpecialAnimationDelay(this.lastResolution);
   this.pendingBoardAdvanceDelay = BOARD_ADVANCE_AFTER_IMPACT_DELAY;
   return true;
 };
@@ -802,8 +847,30 @@ GameManager.prototype._updatePendingBoardAdvance = function (dt) {
     return false;
   }
 
-  var safeDt = Math.max(0, Number(dt) || 0);
-  this.pendingBoardAdvanceDelay = Math.max(0, this.pendingBoardAdvanceDelay - safeDt);
+  var safeDt = assertFiniteNumber(dt, "Pending board advance dt");
+  if (safeDt < 0) {
+    throw new Error("Pending board advance dt must be non-negative.");
+  }
+  var remainingDt = safeDt;
+  if (this.pendingBoardAdvanceSpecialAnimationDelay > 0) {
+    var previousAnimationDelay = this.pendingBoardAdvanceSpecialAnimationDelay;
+    this.pendingBoardAdvanceSpecialAnimationDelay = Math.max(0, previousAnimationDelay - remainingDt);
+    if (this.pendingBoardAdvanceSpecialAnimationDelay <= BOARD_ADVANCE_DELAY_EPSILON) {
+      this.pendingBoardAdvanceSpecialAnimationDelay = 0;
+    }
+    if (this.pendingBoardAdvanceSpecialAnimationDelay > 0) {
+      return false;
+    }
+    remainingDt = Math.max(0, remainingDt - previousAnimationDelay);
+    if (remainingDt <= 0) {
+      return false;
+    }
+  }
+
+  this.pendingBoardAdvanceDelay = Math.max(0, this.pendingBoardAdvanceDelay - remainingDt);
+  if (this.pendingBoardAdvanceDelay <= BOARD_ADVANCE_DELAY_EPSILON) {
+    this.pendingBoardAdvanceDelay = 0;
+  }
   if (this.pendingBoardAdvanceDelay > 0) {
     return false;
   }
@@ -1073,23 +1140,21 @@ GameManager.prototype._buildPrimaryObjectiveSnapshot = function (jarsSnapshot) {
   };
 };
 
-GameManager.prototype.setAim = function (point, options) {
+GameManager.prototype.setAim = function (point) {
   if (
     this.state !== "running" ||
     this.activeProjectile ||
     this._isBoardAdvanceBusy() ||
     this._hasPendingSplitterSpawns() ||
+    this._hasPendingMolotovBlasts() ||
     this.pendingBarrierHammer ||
     this.pendingRainbowColorSelection
   ) {
     return this.getRuntimeSnapshot();
   }
 
-  options = options || {};
   this.systems.shooterController.setAimFromPoint(point);
-  if (!options.skipPlanRefresh) {
-    this._refreshShotPlan(false);
-  }
+  this._refreshShotPlan(false);
   return this.getRuntimeSnapshot();
 };
 
@@ -1099,6 +1164,7 @@ GameManager.prototype.beginAim = function (point) {
     this.activeProjectile ||
     this._isBoardAdvanceBusy() ||
     this._hasPendingSplitterSpawns() ||
+    this._hasPendingMolotovBlasts() ||
     this.pendingBarrierHammer ||
     this.pendingRainbowColorSelection
   ) {
@@ -1126,6 +1192,7 @@ GameManager.prototype.fireShot = function () {
     this.activeProjectile ||
     this._isBoardAdvanceBusy() ||
     this._hasPendingSplitterSpawns() ||
+    this._hasPendingMolotovBlasts() ||
     this.pendingBarrierHammer ||
     this.pendingRainbowColorSelection
   ) {
@@ -1205,6 +1272,7 @@ GameManager.prototype._isInstantAdPowerupBusy = function () {
     this.activeProjectile ||
     this._isBoardAdvanceBusy() ||
     this._hasPendingSplitterSpawns() ||
+    this._hasPendingMolotovBlasts() ||
     this.pendingBarrierHammer ||
     this.pendingRainbowColorSelection ||
     this.systems.fallingMarbleSystem.hasActiveDrops()
@@ -1967,7 +2035,15 @@ GameManager.prototype.update = function (dt) {
   if (this.state === "running" && this.isTimedInfiniteShots && !this.timerPaused) {
     var previousRemainingTimeMs = this.remainingTimeMs;
     this.remainingTimeMs = Math.max(0, previousRemainingTimeMs - safeDt * 1000);
-    timerChanged = this.remainingTimeMs !== previousRemainingTimeMs;
+    if (this.remainingTimeMs <= 0) {
+      timerChanged = true;
+    } else {
+      var nextTimerRenderBucket = Math.ceil(this.remainingTimeMs / TIMED_LEVEL_RENDER_BUCKET_MS);
+      if (nextTimerRenderBucket !== this._lastTimerRenderBucket) {
+        this._lastTimerRenderBucket = nextTimerRenderBucket;
+        timerChanged = true;
+      }
+    }
     if (this._isTimedWinCompleted()) {
       this.state = "won";
       return this.getRuntimeSnapshot(this._drainRuntimeEvents());
@@ -2103,10 +2179,12 @@ GameManager.prototype.update = function (dt) {
   runtimeEvents = runtimeEvents.concat(this._drainRuntimeEvents());
   var boardAdvancedThisFrame = this._updatePendingBoardAdvance(dt) || this._hasBoardAdvancedThisFrame();
   var splitterSpawned = boardAdvancedThisFrame ? false : this._updatePendingSplitterSpawns(dt);
+  var molotovBlastUpdated = boardAdvancedThisFrame ? false : this._updatePendingMolotovBlasts(dt);
   runtimeEvents = runtimeEvents.concat(this._drainRuntimeEvents());
   var hasProjectile = !!this.activeProjectile;
   var hasFallingDrops = this.systems.fallingMarbleSystem.hasActiveDrops();
   var hasPendingSplitterSpawns = this._hasPendingSplitterSpawns();
+  var hasPendingMolotovBlasts = this._hasPendingMolotovBlasts();
 
   if (
     splitterSpawned &&
@@ -2115,6 +2193,20 @@ GameManager.prototype.update = function (dt) {
     this.remainingShots <= 0 &&
     !hasFallingDrops &&
     !hasPendingSplitterSpawns &&
+    !hasPendingMolotovBlasts &&
+    !this._isBoardAdvanceBusy()
+  ) {
+    this._resolveOutOfShotsOutcome();
+  }
+
+  if (
+    molotovBlastUpdated &&
+    this.state === "running" &&
+    !this.isTimedInfiniteShots &&
+    this.remainingShots <= 0 &&
+    !hasFallingDrops &&
+    !hasPendingSplitterSpawns &&
+    !hasPendingMolotovBlasts &&
     !this._isBoardAdvanceBusy()
   ) {
     this._resolveOutOfShotsOutcome();
@@ -2132,7 +2224,7 @@ GameManager.prototype.update = function (dt) {
     }
   }
 
-  if (this.state === "won_pending" && !hasProjectile && !hasFallingDrops && !hasPendingSplitterSpawns) {
+  if (this.state === "won_pending" && !hasProjectile && !hasFallingDrops && !hasPendingSplitterSpawns && !hasPendingMolotovBlasts) {
     this._resolveBoardClearedOutcome();
     return this.getRuntimeSnapshot(runtimeEvents);
   }
@@ -2142,6 +2234,7 @@ GameManager.prototype.update = function (dt) {
     !hasProjectile &&
     !hasFallingDrops &&
     !hasPendingSplitterSpawns &&
+    !hasPendingMolotovBlasts &&
     !this.systems.fallingMarbleSystem.hasPendingSurplusShots()
   ) {
     if (typeof this._pushRuntimeEvent === "function") {
@@ -2156,7 +2249,7 @@ GameManager.prototype.update = function (dt) {
     return this.getRuntimeSnapshot(runtimeEvents);
   }
 
-  if (this.state === "out_of_shots_pending" && !hasProjectile && !hasFallingDrops && !hasPendingSplitterSpawns && !this._isBoardAdvanceBusy()) {
+  if (this.state === "out_of_shots_pending" && !hasProjectile && !hasFallingDrops && !hasPendingSplitterSpawns && !hasPendingMolotovBlasts && !this._isBoardAdvanceBusy()) {
     this._resolveOutOfShotsOutcome();
     return this.getRuntimeSnapshot(runtimeEvents);
   }
@@ -2189,7 +2282,45 @@ GameManager.prototype.update = function (dt) {
     runtimeEvents.length ||
     timerChanged
   ) {
-    return this.getRuntimeSnapshot(runtimeEvents);
+    var refreshScope = "full";
+    if (
+      hasProjectile &&
+      !hasFallingDrops &&
+      !fallingUpdated &&
+      collectedDrops.length === 0 &&
+      !scoreBoostChanged &&
+      !splitterSpawned &&
+      !boardAdvancedThisFrame &&
+      runtimeEvents.length === 0 &&
+      !timerChanged
+    ) {
+      refreshScope = "projectile";
+    } else if (
+      timerChanged &&
+      !hasProjectile &&
+      !hasFallingDrops &&
+      !fallingUpdated &&
+      collectedDrops.length === 0 &&
+      !scoreBoostChanged &&
+      !splitterSpawned &&
+      !boardAdvancedThisFrame &&
+      runtimeEvents.length === 0
+    ) {
+      refreshScope = "timer";
+    } else if (
+      (hasFallingDrops || fallingUpdated) &&
+      !hasProjectile &&
+      collectedDrops.length === 0 &&
+      !scoreBoostChanged &&
+      !splitterSpawned &&
+      !boardAdvancedThisFrame &&
+      runtimeEvents.length === 0 &&
+      !timerChanged
+    ) {
+      refreshScope = "falling";
+    }
+
+    return this.getRuntimeSnapshot(runtimeEvents, { refreshScope: refreshScope });
   }
 
   return null;
@@ -2303,7 +2434,14 @@ GameManager.prototype.getTurnsUntilDrop = function () {
   return null;
 };
 
-GameManager.prototype.getRuntimeSnapshot = function (runtimeEvents) {
+GameManager.prototype.getRuntimeSnapshot = function (runtimeEvents, renderOptions) {
+  renderOptions = renderOptions || {};
+  if (
+    Object.prototype.hasOwnProperty.call(renderOptions, "refreshScope") &&
+    typeof renderOptions.refreshScope !== "string"
+  ) {
+    throw new Error("getRuntimeSnapshot renderOptions.refreshScope must be string.");
+  }
   var fallingSystem = this.systems.fallingMarbleSystem;
   var systemSnapshots = {
     // Renderer currently relies on falling snapshot (active drops + jar zones).
@@ -2387,7 +2525,8 @@ GameManager.prototype.getRuntimeSnapshot = function (runtimeEvents) {
       maxComboStreak: this.maxComboStreak
     },
     runtimeEvents: Array.isArray(runtimeEvents) ? runtimeEvents.slice() : [],
-    systems: systemSnapshots
+    systems: systemSnapshots,
+    refreshScope: renderOptions.refreshScope || "full"
   };
 };
 

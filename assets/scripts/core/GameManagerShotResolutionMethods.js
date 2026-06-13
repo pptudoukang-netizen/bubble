@@ -1,5 +1,7 @@
 "use strict";
 
+var SpecialAnimationTiming = require("../config/SpecialAnimationTiming");
+
 function createGameManagerShotResolutionMethods(deps) {
   var Logger = deps.Logger;
   var BoardLayout = deps.BoardLayout;
@@ -20,6 +22,8 @@ function createGameManagerShotResolutionMethods(deps) {
   var findPrimaryCollectionObjective = deps.findPrimaryCollectionObjective;
   var COMBO_BONUS_PER_HIT = deps.COMBO_BONUS_PER_HIT;
   var MOLOTOV_BLAST_DROP_DELAY_SECONDS = 0.5;
+  var MOLOTOV_BLAST_ANIMATION_DURATION = SpecialAnimationTiming.molotovBlast.totalDuration;
+  var MOLOTOV_BLAST_TRIGGER_DELAY = SpecialAnimationTiming.molotovBlast.blastTriggerDelay;
 
   return {
     _resetComboStreak: function () {
@@ -202,7 +206,7 @@ function createGameManagerShotResolutionMethods(deps) {
     },
 
     _refreshShotPlan: function (force) {
-      if (this.state !== "running" || this.activeProjectile || this._isBoardAdvanceBusy() || this._hasPendingSplitterSpawns()) {
+      if (this.state !== "running" || this.activeProjectile || this._isBoardAdvanceBusy() || this._hasPendingSplitterSpawns() || this._hasPendingMolotovBlasts()) {
         this.pendingShotPlan = null;
         return;
       }
@@ -631,6 +635,320 @@ function createGameManagerShotResolutionMethods(deps) {
       };
     },
 
+    _registerResolutionDrops: function (cells, grid) {
+      if (!Array.isArray(cells)) {
+        throw new Error("Resolution drop registration requires cells array.");
+      }
+      var fallingCandidates = this._splitMolotovDropCandidates(cells);
+      this.systems.fallingMarbleSystem.registerDrops(fallingCandidates.immediate, grid);
+      this.systems.fallingMarbleSystem.registerDrops(fallingCandidates.delayed, grid, {
+        startDelay: MOLOTOV_BLAST_DROP_DELAY_SECONDS
+      });
+    },
+
+    _resetMolotovBlastSequence: function () {
+      this.pendingMolotovBlastQueue = [];
+      this.activeMolotovBlast = null;
+      this.molotovBlastTriggeredIds = {};
+    },
+
+    _queueMolotovBlasts: function (molotovs, resolution) {
+      if (!Array.isArray(molotovs)) {
+        throw new Error("Molotov blast queue requires molotovs array.");
+      }
+      if (!resolution || !Array.isArray(resolution.reactiveTriggered)) {
+        throw new Error("Molotov blast queue requires resolution.reactiveTriggered.");
+      }
+      if (!Array.isArray(this.pendingMolotovBlastQueue)) {
+        throw new Error("GameManager pendingMolotovBlastQueue must be an array.");
+      }
+      if (!this.molotovBlastTriggeredIds || typeof this.molotovBlastTriggeredIds !== "object") {
+        throw new Error("GameManager molotovBlastTriggeredIds must be an object.");
+      }
+
+      molotovs.forEach(function (molotov) {
+        if (!molotov || (typeof molotov.id !== "string" && typeof molotov.id !== "number")) {
+          throw new Error("Molotov blast queue requires molotov id.");
+        }
+        if (this.molotovBlastTriggeredIds[molotov.id]) {
+          return;
+        }
+        var radius = molotov.blastRadius;
+        if (!Number.isInteger(radius) || radius !== 2) {
+          throw new Error("Molotov blastRadius must be 2.");
+        }
+        if (!Number.isInteger(molotov.row) || !Number.isInteger(molotov.col)) {
+          throw new Error("Molotov blast queue requires molotov coordinates.");
+        }
+        this.molotovBlastTriggeredIds[molotov.id] = true;
+        this.pendingMolotovBlastQueue.push({
+          id: molotov.id,
+          row: molotov.row,
+          col: molotov.col,
+          blastRadius: radius
+        });
+      }, this);
+
+      this._startNextMolotovBlastIfIdle(resolution);
+    },
+
+    _startNextMolotovBlastIfIdle: function (resolution) {
+      if (this.activeMolotovBlast) {
+        return;
+      }
+      if (!Array.isArray(this.pendingMolotovBlastQueue) || !this.pendingMolotovBlastQueue.length) {
+        return;
+      }
+      if (!resolution || !Array.isArray(resolution.reactiveTriggered)) {
+        throw new Error("Molotov blast start requires resolution.reactiveTriggered.");
+      }
+
+      var next = this.pendingMolotovBlastQueue.shift();
+      if (!next || (typeof next.id !== "string" && typeof next.id !== "number")) {
+        throw new Error("Molotov blast start requires pending entry id.");
+      }
+      if (!Number.isInteger(next.row) || !Number.isInteger(next.col)) {
+        throw new Error("Molotov blast start requires pending entry coordinates.");
+      }
+      if (!Number.isInteger(next.blastRadius) || next.blastRadius !== 2) {
+        throw new Error("Molotov blast start requires blastRadius 2.");
+      }
+
+      this.activeMolotovBlast = {
+        id: next.id,
+        row: next.row,
+        col: next.col,
+        blastRadius: next.blastRadius,
+        elapsed: 0,
+        blastExecuted: false,
+        completeExecuted: false
+      };
+      resolution.reactiveTriggered.push({
+        id: next.id,
+        entityType: "molotov",
+        row: next.row,
+        col: next.col
+      });
+    },
+
+    _executeMolotovBlastPhase: function (active, grid, resolution) {
+      if (!active || (typeof active.id !== "string" && typeof active.id !== "number")) {
+        throw new Error("Molotov blast phase requires active blast id.");
+      }
+      if (!Number.isInteger(active.row) || !Number.isInteger(active.col)) {
+        throw new Error("Molotov blast phase requires active blast coordinates.");
+      }
+      if (!Number.isInteger(active.blastRadius) || active.blastRadius !== 2) {
+        throw new Error("Molotov blast phase requires blastRadius 2.");
+      }
+      if (!resolution) {
+        throw new Error("Molotov blast phase requires resolution.");
+      }
+      if (!this.molotovPendingResolutionContext || !Array.isArray(this.molotovPendingResolutionContext.allRemoved)) {
+        throw new Error("Molotov blast phase requires molotovPendingResolutionContext.allRemoved.");
+      }
+
+      var blastCells = [];
+      grid.getCoordinatesWithinRadius(active.row, active.col, active.blastRadius).forEach(function (coord) {
+        if (coord.distance === 0) {
+          return;
+        }
+        var occupiedCell = grid.getCell(coord.row, coord.col);
+        if (!occupiedCell || isLockedBall(occupiedCell)) {
+          return;
+        }
+        blastCells.push(occupiedCell);
+      });
+
+      var removedByBlast = grid.removeCells(blastCells);
+      removedByBlast.forEach(function (cell) {
+        cell.__molotovBlastDropDelay = MOLOTOV_BLAST_DROP_DELAY_SECONDS;
+      });
+
+      var removedKeys = this._triggerAdjacentKeys(removedByBlast, grid, resolution);
+      var triggeredSplitterIds = {};
+      this._triggerAdjacentSplitters(removedByBlast, grid, resolution, triggeredSplitterIds);
+
+      var chainMolotovs = this._collectAdjacentMolotovs(removedByBlast, grid, this.molotovBlastTriggeredIds);
+      this._queueMolotovBlasts(chainMolotovs, resolution);
+
+      this._appendUniqueCells(this.molotovPendingResolutionContext.allRemoved, removedKeys);
+      this._appendUniqueCells(this.molotovPendingResolutionContext.allRemoved, removedByBlast);
+      this._cancelPendingSplitterSpawnsForDroppedCells(removedByBlast.concat(removedKeys));
+      this._registerResolutionDrops(removedByBlast.concat(removedKeys), grid);
+
+      var iceRemoved = removedByBlast.filter(function (cell) {
+        return isIceBall(cell);
+      });
+      if (iceRemoved.length && typeof this._registerIceCollection === "function") {
+        resolution.iceCollected += this._registerIceCollection(iceRemoved);
+      }
+
+      resolution.matched = this.molotovPendingResolutionContext.allRemoved.slice();
+      resolution.collected = this.molotovPendingResolutionContext.allRemoved.slice();
+    },
+
+    _completeMolotovBlast: function (active, grid, resolution) {
+      if (!active || (typeof active.id !== "string" && typeof active.id !== "number")) {
+        throw new Error("Molotov blast completion requires active blast id.");
+      }
+      if (!Number.isInteger(active.row) || !Number.isInteger(active.col)) {
+        throw new Error("Molotov blast completion requires active blast coordinates.");
+      }
+      if (!resolution) {
+        throw new Error("Molotov blast completion requires resolution.");
+      }
+      if (!this.molotovPendingResolutionContext || !Array.isArray(this.molotovPendingResolutionContext.allRemoved)) {
+        throw new Error("Molotov blast completion requires molotovPendingResolutionContext.allRemoved.");
+      }
+
+      var liveMolotov = grid.getCell(active.row, active.col);
+      if (liveMolotov) {
+        if (!isMolotovBall(liveMolotov)) {
+          throw new Error("Molotov blast completion cell is not molotov.");
+        }
+        var removedMolotov = grid.removeCells([liveMolotov]);
+        this._appendUniqueCells(this.molotovPendingResolutionContext.allRemoved, removedMolotov);
+        resolution.matched = this.molotovPendingResolutionContext.allRemoved.slice();
+        resolution.collected = this.molotovPendingResolutionContext.allRemoved.slice();
+      }
+    },
+
+    _updatePendingMolotovBlasts: function (dt) {
+      if (!this._hasPendingMolotovBlasts()) {
+        return false;
+      }
+      if (this._isBoardAdvanceBusy()) {
+        return false;
+      }
+
+      var safeDt = Number(dt);
+      if (!Number.isFinite(safeDt) || safeDt < 0) {
+        throw new Error("Pending molotov blast update requires non-negative finite dt.");
+      }
+      if (!this.lastResolution) {
+        throw new Error("Pending molotov blast update requires lastResolution.");
+      }
+
+      var grid = this.systems.bubbleGrid;
+      var resolution = this.lastResolution;
+      var updated = false;
+
+      if (!this.activeMolotovBlast) {
+        this._startNextMolotovBlastIfIdle(resolution);
+        return !!this.activeMolotovBlast;
+      }
+
+      var active = this.activeMolotovBlast;
+      active.elapsed += safeDt;
+
+      if (!active.blastExecuted && active.elapsed >= MOLOTOV_BLAST_TRIGGER_DELAY) {
+        active.blastExecuted = true;
+        this._executeMolotovBlastPhase(active, grid, resolution);
+        updated = true;
+      }
+
+      if (!active.completeExecuted && active.elapsed >= MOLOTOV_BLAST_ANIMATION_DURATION) {
+        active.completeExecuted = true;
+        this._completeMolotovBlast(active, grid, resolution);
+        this.activeMolotovBlast = null;
+        updated = true;
+
+        if (this.pendingMolotovBlastQueue.length) {
+          this._startNextMolotovBlastIfIdle(resolution);
+        } else {
+          this._finalizeMolotovPendingResolution();
+        }
+      }
+
+      if (grid && typeof grid.assertNoVisualOverlap === "function") {
+        grid.assertNoVisualOverlap("pending molotov blast");
+      }
+      return updated;
+    },
+
+    _beginMolotovPendingResolution: function (resolution, dropScoreRuleKey, syncRemoved) {
+      if (!resolution) {
+        throw new Error("Molotov pending resolution requires resolution.");
+      }
+      if (typeof dropScoreRuleKey !== "string" || !dropScoreRuleKey) {
+        throw new Error("Molotov pending resolution requires dropScoreRuleKey.");
+      }
+      if (!Array.isArray(syncRemoved)) {
+        throw new Error("Molotov pending resolution requires syncRemoved array.");
+      }
+
+      this.molotovResolutionPending = true;
+      this.molotovPendingResolutionContext = {
+        dropScoreRuleKey: dropScoreRuleKey,
+        allRemoved: syncRemoved.slice()
+      };
+
+      this._cancelPendingSplitterSpawnsForDroppedCells(syncRemoved);
+      this._registerResolutionDrops(syncRemoved, this.systems.bubbleGrid);
+      this.systems.jarCollectorSystem.collect([]);
+
+      resolution.matched = syncRemoved.slice();
+      resolution.collected = syncRemoved.slice();
+      resolution.boardCleared = false;
+    },
+
+    _finalizeMolotovPendingResolution: function () {
+      if (!this.molotovResolutionPending) {
+        return;
+      }
+      var context = this.molotovPendingResolutionContext;
+      if (!context || !Array.isArray(context.allRemoved)) {
+        throw new Error("Molotov pending resolution finalize requires context.allRemoved.");
+      }
+      if (typeof context.dropScoreRuleKey !== "string" || !context.dropScoreRuleKey) {
+        throw new Error("Molotov pending resolution finalize requires dropScoreRuleKey.");
+      }
+      if (!this.lastResolution) {
+        throw new Error("Molotov pending resolution finalize requires lastResolution.");
+      }
+
+      var resolution = this.lastResolution;
+      var grid = this.systems.bubbleGrid;
+      var floatingCells = this.systems.supportSystem.findFloatingCells(grid);
+      var removedFloating = grid.removeCells(floatingCells);
+      var collectedCells = context.allRemoved.concat(removedFloating);
+
+      this._cancelPendingSplitterSpawnsForDroppedCells(removedFloating);
+      this._registerResolutionDrops(removedFloating, grid);
+      this.systems.jarCollectorSystem.collect([]);
+
+      resolution.matched = context.allRemoved.slice();
+      resolution.floating = removedFloating;
+      resolution.collected = collectedCells;
+      resolution.boardCleared = grid.getCells().length === 0;
+      this._applyResolutionDropScore(resolution, context.dropScoreRuleKey);
+      this._registerComboElimination(resolution);
+
+      this.molotovResolutionPending = false;
+      this.molotovPendingResolutionContext = null;
+
+      if (resolution.boardCleared) {
+        this._resolveBoardClearedOutcome();
+        return;
+      }
+      if (this._scheduleBoardAdvanceAfterImpact()) {
+        return;
+      }
+      if (grid.hasReachedDangerLine()) {
+        resolution.dangerReached = true;
+        this.state = "lost_danger";
+        return;
+      }
+      if (!this.isTimedInfiniteShots && this.remainingShots <= 0) {
+        if (this.systems.fallingMarbleSystem.hasActiveDrops() || this._isBoardAdvanceBusy() || this._hasPendingSplitterSpawns() || this._hasPendingMolotovBlasts()) {
+          this.state = "out_of_shots_pending";
+        } else {
+          this._resolveOutOfShotsOutcome();
+        }
+      }
+    },
+
     _cancelPendingSplitterSpawnsForDroppedCells: function (cells) {
       if (!Array.isArray(cells)) {
         throw new Error("Cancel pending splitter spawns requires cells array.");
@@ -691,25 +1009,39 @@ function createGameManagerShotResolutionMethods(deps) {
         if (typeof unlockGroup !== "string" || !unlockGroup) {
           throw new Error("Collected key requires unlockGroup.");
         }
-        grid.getCells().forEach(function (cell) {
-          if (!isLockedBall(cell) || cell.lockGroup !== unlockGroup) {
-            return;
+        if (typeof keyCell.id !== "string" && typeof keyCell.id !== "number") {
+          throw new Error("Collected key requires id.");
+        }
+        var lockedTargets = grid.getCells().filter(function (cell) {
+          return isLockedBall(cell) && cell.lockGroup === unlockGroup;
+        });
+        if (!lockedTargets.length) {
+          throw new Error("Collected key has no locked target for unlockGroup: " + unlockGroup);
+        }
+        lockedTargets.sort(function (a, b) {
+          var rowDelta = Math.abs(a.row - keyCell.row) - Math.abs(b.row - keyCell.row);
+          if (rowDelta !== 0) {
+            return rowDelta;
           }
-          if (typeof cell.lockedColor !== "string" || !cell.lockedColor) {
-            throw new Error("Locked ball requires lockedColor before unlock.");
-          }
-          var unlockedCell = grid.addBubble({ row: cell.row, col: cell.col }, cell.lockedColor);
-          if (unlockedCell) {
-            unlocked.push({
-              id: unlockedCell.id,
-              row: unlockedCell.row,
-              col: unlockedCell.col,
-              color: unlockedCell.color,
-              entityCategory: unlockedCell.entityCategory,
-              entityType: unlockedCell.entityType,
-              __sourceUnlockGroup: unlockGroup
-            });
-          }
+          return Math.abs(a.col - keyCell.col) - Math.abs(b.col - keyCell.col);
+        });
+        var targetCell = lockedTargets[0];
+        if (typeof targetCell.lockedColor !== "string" || !targetCell.lockedColor) {
+          throw new Error("Locked ball requires lockedColor before unlock.");
+        }
+        var unlockedCell = grid.addBubble({ row: targetCell.row, col: targetCell.col }, targetCell.lockedColor);
+        if (!unlockedCell) {
+          throw new Error("Locked ball unlock failed for group: " + unlockGroup);
+        }
+        unlocked.push({
+          id: unlockedCell.id,
+          row: unlockedCell.row,
+          col: unlockedCell.col,
+          color: unlockedCell.color,
+          entityCategory: unlockedCell.entityCategory,
+          entityType: unlockedCell.entityType,
+          __sourceUnlockGroup: unlockGroup,
+          __sourceKeyId: keyCell.id
         });
       });
       this._appendUniqueCells(resolution.unlockedLockedBalls, unlocked);
@@ -782,60 +1114,19 @@ function createGameManagerShotResolutionMethods(deps) {
         return [];
       }
 
+      this._resetMolotovBlastSequence();
+
       var collected = [];
-      var triggeredMolotovIds = {};
       var queuedMolotovIds = {};
       var triggeredSplitterIds = {};
-      var queue = removedCells.slice();
 
-      for (var cursor = 0; cursor < queue.length; cursor += 1) {
-        var seeds = [queue[cursor]];
-        var removedKeys = this._triggerAdjacentKeys(seeds, grid, resolution);
-        this._appendUniqueCells(collected, removedKeys);
-        this._triggerAdjacentSplitters(seeds, grid, resolution, triggeredSplitterIds);
+      var removedKeys = this._triggerAdjacentKeys(removedCells, grid, resolution);
+      this._appendUniqueCells(collected, removedKeys);
+      this._triggerAdjacentSplitters(removedCells, grid, resolution, triggeredSplitterIds);
 
-        var molotovs = this._collectAdjacentMolotovs(seeds, grid, queuedMolotovIds);
-        molotovs.forEach(function (molotov) {
-          if (triggeredMolotovIds[molotov.id]) {
-            return;
-          }
-          triggeredMolotovIds[molotov.id] = true;
-          var liveMolotov = grid.getCell(molotov.row, molotov.col);
-          if (liveMolotov) {
-            var removedMolotov = grid.removeCells([liveMolotov]);
-            this._appendUniqueCells(collected, removedMolotov);
-          }
-          resolution.reactiveTriggered.push({
-            id: molotov.id,
-            entityType: "molotov",
-            row: molotov.row,
-            col: molotov.col
-          });
-
-          var radius = molotov.blastRadius;
-          if (!Number.isInteger(radius) || radius !== 2) {
-            throw new Error("Molotov blastRadius must be 2.");
-          }
-          var blastCells = [];
-          grid.getCoordinatesWithinRadius(molotov.row, molotov.col, radius).forEach(function (coord) {
-            if (coord.distance === 0) {
-              return;
-            }
-            var occupiedCell = grid.getCell(coord.row, coord.col);
-            if (!occupiedCell || isLockedBall(occupiedCell)) {
-              return;
-            }
-            blastCells.push(occupiedCell);
-          });
-          var removedByBlast = grid.removeCells(blastCells);
-          removedByBlast.forEach(function (cell) {
-            cell.__molotovBlastDropDelay = MOLOTOV_BLAST_DROP_DELAY_SECONDS;
-          });
-          this._appendUniqueCells(collected, removedByBlast);
-          removedByBlast.forEach(function (cell) {
-            queue.push(cell);
-          });
-        }, this);
+      var molotovs = this._collectAdjacentMolotovs(removedCells, grid, queuedMolotovIds);
+      if (molotovs.length) {
+        this._queueMolotovBlasts(molotovs, resolution);
       }
 
       var iceRemoved = collected.filter(function (cell) {
@@ -970,17 +1261,26 @@ function createGameManagerShotResolutionMethods(deps) {
         resolution.iceCollected += this._registerIceCollection(resolution.thawed);
       }
       var removedReactive = this._resolveReactiveEntitiesAfterRemoval(removedBlastCells, grid, resolution);
+      if (this._hasPendingMolotovBlasts()) {
+        this._beginMolotovPendingResolution(
+          resolution,
+          "blastDrop",
+          removedBlastCells.concat(removedReactive)
+        );
+        Logger.info("Blast resolution pending molotov", {
+          cleared: removedBlastCells.length,
+          thawed: resolution.thawed.length,
+          injectedSkills: resolution.injectedSkills.length
+        });
+        return resolution;
+      }
+
       var floatingCells = this.systems.supportSystem.findFloatingCells(grid);
       var removedFloating = grid.removeCells(floatingCells);
       var removedAll = removedBlastCells.concat(removedReactive).concat(removedFloating);
       this._cancelPendingSplitterSpawnsForDroppedCells(removedAll);
 
-      // 玩法调整：炸裂清除与断层清除都进入掉落链路，不再直接消失。
-      var fallingCandidates = this._splitMolotovDropCandidates(removedAll);
-      this.systems.fallingMarbleSystem.registerDrops(fallingCandidates.immediate, grid);
-      this.systems.fallingMarbleSystem.registerDrops(fallingCandidates.delayed, grid, {
-        startDelay: MOLOTOV_BLAST_DROP_DELAY_SECONDS
-      });
+      this._registerResolutionDrops(removedAll, grid);
       this.systems.jarCollectorSystem.collect([]);
 
 
@@ -1063,6 +1363,14 @@ function createGameManagerShotResolutionMethods(deps) {
         return;
       }
 
+      if (this._hasPendingMolotovBlasts()) {
+        this.pendingShotPlan = null;
+        if (!this.isTimedInfiniteShots && this.remainingShots <= 0) {
+          this.state = "out_of_shots_pending";
+        }
+        return;
+      }
+
       if (this._scheduleBoardAdvanceAfterImpact()) {
         this.pendingShotPlan = null;
         return;
@@ -1075,7 +1383,7 @@ function createGameManagerShotResolutionMethods(deps) {
       }
 
       if (!this.isTimedInfiniteShots && this.remainingShots <= 0) {
-        if (this.systems.fallingMarbleSystem.hasActiveDrops() || this._isBoardAdvanceBusy() || this._hasPendingSplitterSpawns()) {
+        if (this.systems.fallingMarbleSystem.hasActiveDrops() || this._isBoardAdvanceBusy() || this._hasPendingSplitterSpawns() || this._hasPendingMolotovBlasts()) {
           this.state = "out_of_shots_pending";
         } else {
           this._resolveOutOfShotsOutcome();
@@ -1109,17 +1417,27 @@ function createGameManagerShotResolutionMethods(deps) {
       if (typeof this._registerIceCollection === "function") {
         resolution.iceCollected += this._registerIceCollection(resolution.thawed);
       }
+
+      if (this._hasPendingMolotovBlasts()) {
+        this._beginMolotovPendingResolution(
+          resolution,
+          "matchedDrop",
+          removedMatches.concat(removedReactiveMatches)
+        );
+        Logger.info("Resolution pending molotov", {
+          matched: removedMatches.length,
+          thawed: resolution.thawed.length,
+          injectedSkills: resolution.injectedSkills.length
+        });
+        return resolution;
+      }
+
       var floatingCells = this.systems.supportSystem.findFloatingCells(grid);
       var removedFloating = grid.removeCells(floatingCells);
       var collectedCells = removedMatches.concat(removedReactiveMatches).concat(removedFloating);
       this._cancelPendingSplitterSpawnsForDroppedCells(collectedCells);
 
-      // 玩法调整：普通三消命中的珠子与断层珠统一按掉落结算。
-      var fallingCandidates = this._splitMolotovDropCandidates(collectedCells);
-      this.systems.fallingMarbleSystem.registerDrops(fallingCandidates.immediate, grid);
-      this.systems.fallingMarbleSystem.registerDrops(fallingCandidates.delayed, grid, {
-        startDelay: MOLOTOV_BLAST_DROP_DELAY_SECONDS
-      });
+      this._registerResolutionDrops(collectedCells, grid);
       this.systems.jarCollectorSystem.collect([]);
 
       resolution.matched = removedMatches.concat(removedReactiveMatches);
@@ -1182,7 +1500,7 @@ function createGameManagerShotResolutionMethods(deps) {
     _resolveBoardClearedOutcome: function () {
       // 清屏后若仍有掉落中的玻璃球，先进入等待态；
       // 等掉落完成并计分后，再决定本局最终胜负。
-      if (this.systems.fallingMarbleSystem.hasActiveDrops() || this._hasPendingSplitterSpawns()) {
+      if (this.systems.fallingMarbleSystem.hasActiveDrops() || this._hasPendingSplitterSpawns() || this._hasPendingMolotovBlasts()) {
         this.state = "won_pending";
         return;
       }

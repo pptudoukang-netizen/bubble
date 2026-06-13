@@ -28,6 +28,7 @@ var ITEM_DEFINITIONS = [
 
 var PACK_LIST_GRID_SPACING_X = 2;
 var PACK_LIST_GRID_SPACING_Y = 20;
+var BACKPACK_ICON_WIDTH = 97;
 var BACKPACK_RENDER_PROXY_ROOT_NAME = "backpack_render_proxy_root";
 var BACKPACK_RENDER_PROXY_LAYER_NAMES = {
   panel: "backpack_proxy_panel_layer",
@@ -113,6 +114,27 @@ function setSpriteFrame(node, spriteFrame) {
     throw new Error("BackpackView requires " + node.name + " cc.Sprite.");
   }
   sprite.spriteFrame = spriteFrame;
+  if (cc.Sprite.SizeMode && cc.Sprite.SizeMode.CUSTOM !== undefined) {
+    sprite.sizeMode = cc.Sprite.SizeMode.CUSTOM;
+  }
+}
+
+function setSpriteFrameToWidth(node, spriteFrame, targetWidth) {
+  if (!spriteFrame) {
+    throw new Error("BackpackView spriteFrame missing for node: " + node.name);
+  }
+  if (typeof spriteFrame.getRect !== "function") {
+    throw new Error("BackpackView spriteFrame requires getRect: " + node.name);
+  }
+  if (!Number.isFinite(targetWidth) || targetWidth <= 0) {
+    throw new Error("BackpackView sprite target width must be positive: " + node.name);
+  }
+  var rect = spriteFrame.getRect();
+  if (!rect || !Number.isFinite(rect.width) || !Number.isFinite(rect.height) || rect.width <= 0 || rect.height <= 0) {
+    throw new Error("BackpackView spriteFrame has invalid rect: " + node.name);
+  }
+  setSpriteFrame(node, spriteFrame);
+  node.setContentSize(targetWidth, targetWidth * rect.height / rect.width);
 }
 
 function loadSpriteFrame(path) {
@@ -325,7 +347,7 @@ BackpackViewController.prototype._renderPackList = function (inventory) {
 
     setLabelText(nameNode, definition.displayName);
     setLabelText(numNode, String(itemCount));
-    setSpriteFrame(iconNode, this._itemSpriteFrames[definition.itemId]);
+    setSpriteFrameToWidth(iconNode, this._itemSpriteFrames[definition.itemId], BACKPACK_ICON_WIDTH);
   }, this);
 
   var layout = requireValidNode(this._nodes.packListNode, "Panel/pack_listview").getComponent(cc.Layout);
