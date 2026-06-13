@@ -1,7 +1,7 @@
 "use strict";
 
 var RuntimeModeConfig = {
-  mode: "release",
+  mode: "dev",
   enableInspectorOverrides: false,
   enableSpecialEntitiesTestMode: false,
   showDebugOverlay: false,

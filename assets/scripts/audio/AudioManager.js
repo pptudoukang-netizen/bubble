@@ -177,11 +177,23 @@ AudioManager.prototype._loadClip = function (resourcePath) {
 };
 
 AudioManager.prototype._applyVolumeSettings = function () {
+  this._applyMusicVolumeSetting();
+  this._applySfxVolumeSetting();
+};
+
+AudioManager.prototype._applyMusicVolumeSetting = function () {
   if (!hasAudioEngine()) {
     return;
   }
 
   cc.audioEngine.setMusicVolume(this.settings.musicEnabled ? this.settings.musicVolume : 0);
+};
+
+AudioManager.prototype._applySfxVolumeSetting = function () {
+  if (!hasAudioEngine()) {
+    return;
+  }
+
   cc.audioEngine.setEffectsVolume(this.settings.sfxEnabled ? this.settings.sfxVolume : 0);
 };
 
@@ -308,7 +320,7 @@ AudioManager.prototype._applyWeChatAudioOptions = function () {
 AudioManager.prototype.setMusicEnabled = function (enabled) {
   this.settings.musicEnabled = !!enabled;
   this.store.save(this.settings);
-  this._applyVolumeSettings();
+  this._applyMusicVolumeSetting();
 
   if (!this.settings.musicEnabled && hasAudioEngine()) {
     cc.audioEngine.stopMusic();
@@ -322,11 +334,7 @@ AudioManager.prototype.setMusicEnabled = function (enabled) {
 AudioManager.prototype.setSfxEnabled = function (enabled) {
   this.settings.sfxEnabled = !!enabled;
   this.store.save(this.settings);
-  this._applyVolumeSettings();
-
-  if (!this.settings.sfxEnabled && hasAudioEngine()) {
-    cc.audioEngine.stopAllEffects();
-  }
+  this._applySfxVolumeSetting();
 
   return this.settings.sfxEnabled;
 };
@@ -340,14 +348,14 @@ AudioManager.prototype.setVibrationEnabled = function (enabled) {
 AudioManager.prototype.setMusicVolume = function (volume) {
   this.settings.musicVolume = Math.max(0, Math.min(1, Number(volume) || 0));
   this.store.save(this.settings);
-  this._applyVolumeSettings();
+  this._applyMusicVolumeSetting();
   return this.settings.musicVolume;
 };
 
 AudioManager.prototype.setSfxVolume = function (volume) {
   this.settings.sfxVolume = Math.max(0, Math.min(1, Number(volume) || 0));
   this.store.save(this.settings);
-  this._applyVolumeSettings();
+  this._applySfxVolumeSetting();
   return this.settings.sfxVolume;
 };
 

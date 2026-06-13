@@ -24,6 +24,7 @@ module.exports = {
 
     this.enableSpecialEntitiesTestMode = RuntimeModeConfig.enableSpecialEntitiesTestMode && this.enableSpecialEntitiesTestMode === true;
     this.showDebugOverlay = RuntimeModeConfig.showDebugOverlay && this.showDebugOverlay === true;
+    this.enableAssetStatsLog = RuntimeModeConfig.isRelease() !== true && this.enableAssetStatsLog === true;
     this.showGridTestLayer = RuntimeModeConfig.showGridTestLayer && this.showGridTestLayer === true;
     this.showDropTestButton = RuntimeModeConfig.showDropTestButton && this.showDropTestButton === true;
     this.enableLevelEditor = RuntimeModeConfig.enableLevelEditor && this.enableLevelEditor === true;

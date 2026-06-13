@@ -8,9 +8,18 @@
   "premultiplyAlpha": false,
   "genMipmaps": false,
   "packable": true,
-  "width": 724,
+  "width": 720,
   "height": 2172,
-  "platformSettings": {},
+  "platformSettings": {
+    "minigame": {
+      "formats": [
+        {
+          "name": "astc_8x8",
+          "quality": "medium"
+        }
+      ]
+    }
+  },
   "subMetas": {
     "long_bg": {
       "ver": "1.0.6",
@@ -24,9 +33,9 @@
       "offsetY": 0,
       "trimX": 0,
       "trimY": 0,
-      "width": 724,
+      "width": 720,
       "height": 2172,
-      "rawWidth": 724,
+      "rawWidth": 720,
       "rawHeight": 2172,
       "borderTop": 0,
       "borderBottom": 0,

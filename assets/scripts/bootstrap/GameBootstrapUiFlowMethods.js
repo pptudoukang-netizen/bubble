@@ -1,17 +1,25 @@
 "use strict";
 
-var flowModules = [
+var createLazyModuleMethods = require("./GameBootstrapLazyModule").createLazyModuleMethods;
+var LazyRegistry = require("./GameBootstrapLazyRegistry");
+
+var startupFlowModules = [
   require("./GameBootstrapNetworkLoadingFlowMethods"),
   require("./GameBootstrapShareFlowMethods"),
   require("./GameBootstrapStatusResourceFlowMethods"),
-  require("./GameBootstrapSignInAwardFlowMethods"),
-  require("./GameBootstrapDailyTaskFlowMethods"),
-  require("./GameBootstrapRankingShopChestFlowMethods"),
-  require("./GameBootstrapGameCircleFlowMethods"),
-  require("./GameBootstrapSettingsFlowMethods"),
-  require("./GameBootstrapRouteEditorFlowMethods"),
-  require("./GameBootstrapLevelSelectFlowMethods")
+  require("./GameBootstrapLevelSelectFlowMethods"),
+  require("./GameBootstrapRouteEditorFlowMethods")
 ];
+
+var deferredLazyMethods = Object.assign(
+  {},
+  createLazyModuleMethods("./GameBootstrapSignInAwardFlowMethods", LazyRegistry.SIGN_IN_AWARD_FLOW_METHODS),
+  createLazyModuleMethods("./GameBootstrapDailyTaskFlowMethods", LazyRegistry.DAILY_TASK_FLOW_METHODS),
+  createLazyModuleMethods("./GameBootstrapRankingShopChestFlowMethods", LazyRegistry.RANKING_SHOP_CHEST_FLOW_METHODS),
+  createLazyModuleMethods("./GameBootstrapGameCircleFlowMethods", LazyRegistry.GAME_CIRCLE_FLOW_METHODS),
+  createLazyModuleMethods("./GameBootstrapSettingsFlowMethods", LazyRegistry.SETTINGS_FLOW_METHODS)
+);
+
 var hasOwn = Object.prototype.hasOwnProperty;
 
 function mergeMethods(target, source, moduleIndex) {
@@ -28,8 +36,9 @@ function mergeMethods(target, source, moduleIndex) {
 }
 
 var methods = {};
-flowModules.forEach(function (flowModule, index) {
+startupFlowModules.forEach(function (flowModule, index) {
   mergeMethods(methods, flowModule, index);
 });
+mergeMethods(methods, deferredLazyMethods, startupFlowModules.length);
 
 module.exports = methods;

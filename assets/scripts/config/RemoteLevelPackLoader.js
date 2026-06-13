@@ -95,7 +95,7 @@ function RemoteLevelPackLoader(options) {
   this.manifestResourcePath = opts.manifestResourcePath || LevelPackManifest.MANIFEST_RESOURCE_PATH;
   this.cacheRootName = opts.cacheRootName || "bubble_remote_level_packs";
   this._manifestPromise = null;
-  this._packPromises = {};
+  this._packTextPromises = {};
   this._cloudInitialized = false;
 }
 
@@ -320,13 +320,13 @@ RemoteLevelPackLoader.prototype._parsePack = function (packInfo, text) {
   return parsed;
 };
 
-RemoteLevelPackLoader.prototype._loadPack = function (manifest, packInfo) {
-  if (this._packPromises[packInfo.id]) {
-    return this._packPromises[packInfo.id];
+RemoteLevelPackLoader.prototype._fetchPackText = function (manifest, packInfo) {
+  if (this._packTextPromises[packInfo.id]) {
+    return this._packTextPromises[packInfo.id];
   }
 
   var cachePath = this._getCachePath(manifest, packInfo);
-  this._packPromises[packInfo.id] = this._cacheFileExists(cachePath).then(function (exists) {
+  this._packTextPromises[packInfo.id] = this._cacheFileExists(cachePath).then(function (exists) {
     if (exists) {
       return this._readTextFile(cachePath);
     }
@@ -336,15 +336,22 @@ RemoteLevelPackLoader.prototype._loadPack = function (manifest, packInfo) {
       });
     }.bind(this));
   }.bind(this)).then(function (text) {
-    var pack = this._parsePack(packInfo, text);
-    Logger.info("Loaded remote level pack", packInfo.id);
-    return pack;
+    delete this._packTextPromises[packInfo.id];
+    return text;
   }.bind(this)).catch(function (error) {
-    this._packPromises[packInfo.id] = null;
+    this._packTextPromises[packInfo.id] = null;
     throw error;
   }.bind(this));
 
-  return this._packPromises[packInfo.id];
+  return this._packTextPromises[packInfo.id];
+};
+
+RemoteLevelPackLoader.prototype._loadPack = function (manifest, packInfo) {
+  return this._fetchPackText(manifest, packInfo).then(function (text) {
+    var pack = this._parsePack(packInfo, text);
+    Logger.info("Loaded remote level pack", packInfo.id);
+    return pack;
+  }.bind(this));
 };
 
 RemoteLevelPackLoader.prototype.preloadPackAfterLevelId = function (levelId) {
@@ -366,7 +373,7 @@ RemoteLevelPackLoader.prototype.preloadPackAfterLevelId = function (levelId) {
       };
     }
 
-    return this._loadPack(manifest, packInfo).then(function () {
+    return this._fetchPackText(manifest, packInfo).then(function () {
       return {
         preloaded: true,
         levelId: safeLevelId,

@@ -9,6 +9,7 @@ var StarRatingPolicy = require("../core/StarRatingPolicy");
 var AdRevivePolicy = require("../core/AdRevivePolicy");
 var AdRewardCatalog = require("../services/AdRewardCatalog");
 var RenderNodeHelpers = require("./RenderNodeHelpers");
+var SpriteProxyLayerHelper = require("../utils/SpriteProxyLayerHelper");
 var attachLevelRendererSceneMethods = require("./LevelRendererSceneMethods");
 
 var loadSpriteFrame = RenderNodeHelpers.loadSpriteFrame;
@@ -846,6 +847,7 @@ function LevelRenderer(rootNode) {
   this.lastShooterRenderKey = "";
   this.lastDangerLineRenderKey = "";
   this.lastTimerRenderKey = "";
+  this.lastWinViewRenderKey = "";
   this.lastRenderedFallingCount = 0;
   this.dangerLineReady = false;
   this.dangerLineWarningActive = false;
@@ -1077,10 +1079,12 @@ LevelRenderer.prototype.renderLevel = function (levelConfig, runtimeSnapshot) {
 
   var spritePaths = this._collectSpritePaths(levelConfig, runtimeSnapshot);
 
-  return Promise.all([
-    this.warmupSharedAssets(),
-    this._preloadSprites(spritePaths)
-  ]).then(function () {
+  return BundleLoader.ensureGameplayBundleLoaded().then(function () {
+    return Promise.all([
+      this.warmupSharedAssets(),
+      this._preloadSprites(spritePaths)
+    ]);
+  }.bind(this)).then(function () {
     clearChildren(this.layers.background);
     clearChildren(this.layers.board);
     this.boardBubbleNodes = {};
@@ -1100,6 +1104,7 @@ LevelRenderer.prototype.renderLevel = function (levelConfig, runtimeSnapshot) {
     clearChildren(this.layers.overlay);
     clearChildren(this.layers.comment);
     clearChildren(this.layers.modal);
+    this.lastWinViewRenderKey = "";
     clearChildren(this.layers.routeEditor);
     clearChildren(this.layers.shooter);
     clearChildren(this.layers.testGrid);
@@ -1360,6 +1365,60 @@ LevelRenderer.prototype._collectSpritePaths = function (levelConfig, runtimeSnap
   });
 };
 
+LevelRenderer.prototype._collectRetainedSpritePaths = function () {
+  var paths = this._collectCommonSpritePaths().slice();
+  paths.push("image/ball/fort");
+  return paths.filter(function (path, index, list) {
+    return !!path && list.indexOf(path) === index;
+  });
+};
+
+LevelRenderer.prototype.releaseLevelSpecificSpriteCache = function () {
+  if (!cc || !cc.assetManager || typeof cc.assetManager.releaseAsset !== "function") {
+    throw new Error("cc.assetManager.releaseAsset is required to release level-specific sprites.");
+  }
+
+  var releaseAsset = cc.assetManager.releaseAsset;
+  var retainPaths = {};
+  this._collectRetainedSpritePaths().forEach(function (path) {
+    retainPaths[path] = true;
+  });
+
+  Object.keys(this.spriteFrameCache).forEach(function (path) {
+    if (retainPaths[path]) {
+      return;
+    }
+    var spriteFrame = this.spriteFrameCache[path];
+    delete this.spriteFrameCache[path];
+    if (spriteFrame) {
+      releaseAsset(spriteFrame);
+    }
+  }.bind(this));
+};
+
+LevelRenderer.prototype.releaseAfterGameplayBundleUnload = function () {
+  if (!cc || !cc.assetManager || typeof cc.assetManager.releaseAsset !== "function") {
+    throw new Error("cc.assetManager.releaseAsset is required to release gameplay bundle assets.");
+  }
+
+  var releaseAsset = cc.assetManager.releaseAsset;
+  Object.keys(this.spriteFrameCache).forEach(function (path) {
+    var spriteFrame = this.spriteFrameCache[path];
+    if (spriteFrame) {
+      releaseAsset(spriteFrame);
+    }
+  }.bind(this));
+  this.spriteFrameCache = {};
+  this._sharedWarmupPromise = null;
+  this.lastHudRenderKey = "";
+  this.lastJarRenderKey = "";
+  this.lastBottomPanelRenderKey = "";
+  this.lastShooterRenderKey = "";
+  this.lastDangerLineRenderKey = "";
+  this.lastTimerRenderKey = "";
+  this.lastWinViewRenderKey = "";
+};
+
 LevelRenderer.prototype._setGuideDotsActiveCount = function (guideCanvas, count, dotFrame) {
   var required = Math.max(0, Math.floor(Number(count) || 0));
   for (var index = 0; index < required; index += 1) {
@@ -1570,6 +1629,7 @@ var LEVEL_RENDERER_SCENE_DEPS = {
   ensureOutline: ensureOutline,
   clearChildren: clearChildren,
   getOrCreateChild: getOrCreateChild,
+  SpriteProxyLayerHelper: SpriteProxyLayerHelper,
   buildObjectiveDisplayData: buildObjectiveDisplayData,
   buildWinCompletedTargetEntries: buildWinCompletedTargetEntries,
   buildWinCollectEntries: buildWinCollectEntries,

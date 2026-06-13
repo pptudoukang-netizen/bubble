@@ -191,6 +191,20 @@ function patchWeChatWorldLeaderboard(buildDestPath) {
     Editor.log(`${PLUGIN_TAG} WeChat world leaderboard uses main-domain source code and cloudfunctions.`);
 }
 
+function patchWeChatMinigameLoadingCover(buildDestPath) {
+    const patcherPath = path.join(Editor.Project.path, 'tools', 'wechat-minigame-loading-patch.js');
+    assertExistingFile(patcherPath);
+
+    const patcherModule = require(patcherPath);
+    if (!patcherModule || typeof patcherModule.patchWeChatMinigameLoading !== 'function') {
+        throw new Error(`${PLUGIN_TAG} invalid WeChat MinigameLoading patcher module: ${patcherPath}`);
+    }
+
+    const result = patcherModule.patchWeChatMinigameLoading(buildDestPath, Editor.Project.path);
+    Editor.log(`${PLUGIN_TAG} patched WeChat MinigameLoading cover in ${result.outputDir}`);
+    Editor.log(`${PLUGIN_TAG} cover image: ${result.coverImagePath}`);
+}
+
 function onBuildFinished(options, callback) {
     try {
         const resolvedImage = resolveBackgroundImageSource();
@@ -203,6 +217,7 @@ function onBuildFinished(options, callback) {
         if (isWeChatGameBuild(options)) {
             patchWeChatProjectConfig(options.dest);
             patchWeChatWorldLeaderboard(options.dest);
+            patchWeChatMinigameLoadingCover(options.dest);
         }
     } catch (error) {
         Editor.error(`${PLUGIN_TAG} build patch failed: ${error && error.stack ? error.stack : error}`);

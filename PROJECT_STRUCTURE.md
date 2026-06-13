@@ -2,7 +2,7 @@
 
 ## 项目定位
 
-本项目是 Cocos Creator 2.4.9 微信小游戏项目，核心玩法是泡泡龙关卡制闯关。主工程代码在 `assets/scripts`，本地首 100 关配置在 `assets/resources/config/levels`，101-1000 关远程包在 `remote-level-packs` 并通过微信云存储加载，微信云函数在 `cloudfunctions`，历史开放数据域资源在 `open-data`。
+本项目是 Cocos Creator 2.4.9 微信小游戏项目，核心玩法是泡泡龙关卡制闯关。主工程代码在 `assets/scripts`，本地首 10 关配置在 `assets/resources/config/levels`，11-1000 关远程包在 `remote-level-packs` 并通过微信云存储加载，微信云函数在 `cloudfunctions`，历史开放数据域资源在 `open-data`。
 
 项目遵守 `AGENTS.md` 中的 Fail-Fast 严格模式：优先暴露错误，不通过默认值、静默返回、mock 或兜底分支掩盖问题。
 
@@ -14,13 +14,14 @@
 - `assets/resources/`：Resources 分包资源，包含局内和选关预制体。
 - `assets/map/`：地图分包资源，包含无限浮岛选关地图配置、浮岛预制体、地标预制体、传送阵和主角图片。
 - `assets/ui/`：UI 分包资源，包含弹窗预制体与 UI 图片；`assets/ui/image/commone/` 存放被 `assets/ui/prefabs/` 下两个及以上预制体共同引用的图片，其余按界面分子目录（如 `win/`、`shop/`、`sign/`）。
-- `assets/image/`：主场景图片资源，按引用范围分子目录：`common/`（选关 `LevelView` 与局内 `GameView` 共用）、`game/`（仅局内）、`level_view/`（仅选关）、`icon/`（选关入口图标）。
-- `assets/resources/config/levels/`：本地内置关卡 JSON 配置，文件名形如 `level_001.json`；当前只内置 `level_001.json` 到 `level_100.json`。
-- `assets/resources/config/level_manifest.json`：101-1000 关远程包清单，包含云环境、包范围、云存储 fileID、sha256 与字节数。
-- `remote-level-packs/`：待上传到微信云存储的远程关卡包，当前为 `levels_pack_101_200.json` 到 `levels_pack_901_1000.json`。
+- `assets/game/`：局内 HUD 图片分包（微信 `subpackage`），`GameView` 等预制体仍引用该分包内 sprite；进入局内前由 `BundleLoader.ensureGameplayBundleLoaded()` 加载。
+- `assets/image/`：主场景图片资源，按引用范围分子目录：`common/`（选关 `LevelView` 与局内 `GameView` 共用）、`level_view/`（仅选关）、`icon/`（选关入口图标）。局内专用图片已迁至 `assets/game/`。
+- `assets/resources/config/levels/`：本地内置关卡 JSON 配置，文件名形如 `level_001.json`；当前只内置 `level_001.json` 到 `level_010.json`。
+- `assets/resources/config/level_manifest.json`：11-1000 关远程包清单，包含云环境、包范围、云存储 fileID、sha256 与字节数。
+- `remote-level-packs/`：待上传到微信云存储的远程关卡包，当前为 `levels_pack_011_100.json` 到 `levels_pack_901_1000.json`。
 - `docs/LEVEL_1000_DESIGN.md`：1000 关长线关卡设计、特殊球投放节奏、图案化棋盘策略和生成规则。
 - `cloudfunctions/`：微信云开发函数源码。
-- `build-templates/wechatgame/`：微信小游戏构建模板与云函数模板。
+- `build-templates/wechatgame/`：微信小游戏构建模板与云函数模板；构建后由 `tools/wechat-minigame-loading-patch.js` 接入微信官方封面图插件 `MinigameLoading`，封面图使用 `assets/loading/loading_bg.jpg`。
 - `build-templates/web-mobile/`、`build-templates/web-desktop/`：Web 构建模板，包含引擎启动页 `splash.css` 与 `loading_bg.jpg`（源图来自 `assets/loading/loading_bg.jpg`）。
 - `packages/build-loading-splash/`：构建完成后同步启动页模板，并为 Web 产物注入 `splash.css` 引用。
 - `packages/find-image-references/`：Cocos Creator 2.4 编辑器扩展。资源面板右键图片（若编辑器支持）或顶部菜单「扩展 -> 查找图片引用」（需先选中图片）可查找引用，输出所属自动图集，并将引用该图片的预制体、场景、动画与图集引用名称输出到控制台；对预制体/场景会额外打印具体节点路径。
@@ -38,8 +39,9 @@
 
 `GameBootstrap.js` 是 Cocos 组件声明文件，负责暴露 Inspector 属性，并把实际实现挂载到组件方法上。具体业务实现拆在多个 `GameBootstrap*Methods.js` 文件中：
 
-- `GameBootstrapCompositionMethods.js`：`onLoad` 初始化中枢，创建 Store、Service、Manager、Renderer、Audio、Tips、NetworkLoading 等。
-- `GameBootstrapStartupMethods.js`：启动加载流程，预加载分包、选关预制体、关卡配置，并展示 LoadingView。
+- `GameBootstrapCompositionMethods.js`：`onLoad` 初始化中枢，创建 Store、Service、Manager、Audio、Tips、NetworkLoading 等；`GameManager`/`LevelRenderer` 延迟到 `_ensureGameplayKernel()`（进入局内时加载 `game` 分包并初始化）。
+- `GameBootstrapStartupMethods.js`：启动加载流程；`onLoad` 末尾即调用 `_beginStartupBundlePrefetch()` 与 `start()` 并行预拉 `resources`/`map` 分包，再加载选关预制体并展示 LoadingView；选关页展示后再后台执行好友体力领取与云档案同步。
+- `GameBootstrapLazyModule.js` / `GameBootstrapLazyRegistry.js`：非首屏必需的 bootstrap 方法模块（签到/任务/商店/游戏圈/设置/广告/telemetry/背包等）通过 `GameBootstrapLazyModule` 在首次调用时再 `require` 对应模块；各 loader 必须使用 Cocos 可静态分析的字符串字面量路径，禁止运行时变量 `require(path)` 或对 UI Controller 做 getter 懒加载。
 - `GameBootstrapGameplayInputMethods.js`：局内触摸输入、瞄准、发射、update 驱动。
 - `GameBootstrapNewUserGuideMethods.js`：新账号首次进入的新手引导覆盖层，使用 `resources/image/finger.png` 指引快速开始、开局按钮和首次局内发射操作。
 - `GameBootstrapLevelRuntimeMethods.js`：启动关卡、重开、终态判断。
@@ -69,7 +71,7 @@
 应用编排层。它连接 UI、玩法内核、渲染、服务、存储、广告、微信能力和音频。修改业务流程时通常先从这里找到真实调用链。
 
 - `LevelSelectView.js`：选关页顶层 UI 渲染入口，负责顶部状态和入口按钮绑定（含 `quick_start_btn` 快速开始、`back_cur_level` 回到当前关卡位置），并调用浮岛地图渲染器。
-- `LevelSelectFloatingMap.js`：按 `assets/map/config/floating_map.json` 渲染 1000 关无限上滚动浮岛地图，负责虚拟列表、关卡点状态、主角、传送阵、背景跟随，以及滚动定位到指定关卡（快速开始）。
+- `LevelSelectFloatingMap.js`：按 `assets/map/config/floating_map.json` 渲染 1000 关无限上滚动浮岛地图；启动时仅预加载当前焦点关卡视口所需 island prefab，滚动时按需加载其余 prefab。
 
 ### core
 
@@ -113,7 +115,7 @@
 
 配置层。重点文件：
 
-- `LevelManager.js`：按关卡 ID 生成 key，1-100 调用本地 `LevelConfigLoader`，101-1000 调用 `RemoteLevelPackLoader`，并缓存关卡配置；`preloadRemotePackAfterLevel(levelId)` 用于开局弹窗前在 100、200、300 等分包边界预下载下一段远程关卡包。
+- `LevelManager.js`：按关卡 ID 生成 key，1-10 调用本地 `LevelConfigLoader`，11-1000 调用 `RemoteLevelPackLoader`，并缓存关卡配置；`preloadRemotePackAfterLevel(levelId)` 用于开局弹窗前在 10、100、200、300 等分包边界预下载下一段远程关卡包。
 - `LevelConfigLoader.js`：本地关卡配置加载、校验、规范化，并向远程包 loader 暴露同一套规范化入口。这里大量使用 Fail-Fast 校验。
 - `LevelPackManifest.js`：远程关卡包 manifest 的严格校验与包定位。
 - `RemoteLevelPackLoader.js`：读取 manifest，使用 `wx.cloud.getTempFileURL` 获取远程包临时地址，再用 `wx.downloadFile` 下载到本地用户文件缓存，最后按单关复用 `LevelConfigLoader` 的规范化校验；同时提供按当前关卡预下载下一远程包的能力。
@@ -175,19 +177,29 @@
 
 1. Cocos 加载 `assets/scens/game.fire`。
 2. 场景挂载 `GameBootstrap`。
-3. `GameBootstrap.onLoad` 初始化中枢对象和业务状态。
+3. `GameBootstrap.onLoad` 初始化中枢对象和业务状态，并立即启动 `_beginStartupBundlePrefetch()` 预拉 `resources`/`map` 分包。
 4. `GameBootstrap.start` 调用启动加载流程。
-5. 启动关键任务并行加载玩家云端档案、resources/ui/map 分包、选关预制体和浮岛地图配置；云档案同步完成后检查好友体力领取。
-6. 关键任务完成后进入选关页；首批关卡配置在选关页渲染后按 `startupPreloadLevelCount` 后台预热。
+5. 启动关键任务复用分包预拉结果并加载选关预制体；`game.json` 构建后写入 `preloadSubpackages`（`resources`、`map`）。微信构建后由 `tools/wechat-minigame-loading-patch.js` 接入官方封面图插件 `MinigameLoading`，在引擎初始化前展示 `images/loading_bg.jpg`，首场景加载或引擎启动后销毁封面。好友体力领取与云档案同步均在选关页展示后后台执行，失败时提示用户且不阻塞首屏。
+6. 关键任务完成后进入选关页；选关页渲染后按 `startupPreloadLevelCount`（默认 1）后台预热首批关卡 JSON 配置。
+7. 用户点击开局弹窗「开始」后，`_loadLevelById` → `_ensureGameplayKernel()` 才加载 `game` 分包并初始化 `GameManager`/`LevelRenderer`；`_hideLevelSelectView` 会释放浮岛 prefab、`map` 分包缓存，返回选关时再按需重新加载。
+
+### 内存管理（P1）
+
+- `LevelSelectFloatingMap.js`：浮岛滚动后按视口 ±2 个节点保留 prefab，其余 `cc.assetManager.releaseAsset`；离开选关页时 `releaseAllCachedMapPrefabs` + `invalidateAssetCache`。
+- `RemoteLevelPackLoader.js`：远程包 JSON 只写入 `USER_DATA_PATH` 磁盘缓存，解析后不在内存常驻整包对象；并发下载仍通过 `_packTextPromises` 去重。
+- `LevelRenderer.js`：`releaseLevelSpecificSpriteCache()` 在返回选关时释放关卡专属 sprite，保留球/罐/HUD 共用图。
+- `BundleLoader.js`：`releaseNamedBundle(name)` 供离开选关时卸载 `map` 分包；`ui` 弹窗仍按需加载，关闭后节点隐藏（未 destroy）故不自动卸载 `ui` 分包。
+- `GameplayBundleReleaseScheduler.js`：离开局内返回选关后，超过 `gameplayBundleIdleReleaseMs`（默认 30000）未再进入局内则释放 `game` 分包。
+- `UiModalReleaseHelper.js`：除 `ShopView` 外，其余 UI 弹窗在 `_hide*` 时 destroy 节点并 `releaseAsset` prefab；`BuyView` 在关闭购买弹窗时释放。
 
 ### 选关到开局
 
 1. 选关页触发 `_onLevelSelectTap`。
 2. 浮岛地图只允许点击 `levelId <= highestUnlockedLevel` 的关卡点。
 3. 进入开局道具/体力检查流程。
-4. `_showStartGameView` 调用 `levelManager.loadLevel(levelId)` 读取当前关卡预览信息，并调用 `levelManager.preloadRemotePackAfterLevel(levelId)` 在 100、200、300 等分包边界预下载下一段远程关卡包。
+4. `_showStartGameView` 调用 `levelManager.loadLevel(levelId)` 读取当前关卡预览信息，并调用 `levelManager.preloadRemotePackAfterLevel(levelId)` 在 10、100、200、300 等分包边界预下载下一段远程关卡包。
 5. `_loadLevelById` 调用 `levelManager.loadLevel(levelId)`。
-6. `LevelManager` 对 1-100 使用 `LevelConfigLoader` 加载本地 `levels/level_###.json`；对 101-1000 使用 `RemoteLevelPackLoader` 按 manifest 下载云存储关卡包，再复用同一套校验。
+6. `LevelManager` 对 1-10 使用 `LevelConfigLoader` 加载本地 `levels/level_###.json`；对 11-1000 使用 `RemoteLevelPackLoader` 按 manifest 下载云存储关卡包，再复用同一套校验。
 7. `gameManager.startLevel(levelConfig)` 生成运行时状态。
 8. `levelRenderer.renderLevel(levelConfig, snapshot)` 渲染局内场景。
 
@@ -211,7 +223,7 @@
 
 ## 关卡配置
 
-本地首 100 关文件位于 `assets/resources/config/levels/`，命名规则为 `level_###.json`。101-1000 关位于 `remote-level-packs/` 的 100 关分段包中，运行时由 `assets/resources/config/level_manifest.json` 定位微信云存储 fileID。`LevelConfigLoader` 会校验：
+本地首 10 关文件位于 `assets/resources/config/levels/`，命名规则为 `level_###.json`。11-1000 关位于 `remote-level-packs/` 的 100 关分段包中，运行时由 `assets/resources/config/level_manifest.json` 定位微信云存储 fileID。`LevelConfigLoader` 会校验：
 
 - `schemaVersion`
 - `coordinateSystem`
@@ -227,7 +239,7 @@
 
 远程包上传规则：
 
-- `remote-level-packs/levels_pack_101_200.json` 上传到云存储 `level-packs/levels_pack_101_200.json`。
+- `remote-level-packs/levels_pack_011_100.json` 上传到云存储 `level-packs/levels_pack_011_100.json`。
 - 其余包同名上传到 `level-packs/`。
 - 当前 manifest 使用的云存储 File ID 前缀为 `cloud://cloud1-d7gqettx3e9249ca1.636c-cloud1-d7gqettx3e9249ca1-1428064608`。
 - `level-packs/` 是静态关卡配置目录，必须在云存储权限/安全规则中允许客户端读取；否则 `wx.cloud.getTempFileURL` 会返回 `STORAGE_EXCEED_AUTHORITY`。
@@ -240,6 +252,7 @@
 - `cloudfunctions/playerProfile`：玩家信息云端存储函数，按当前微信 `OPENID` 读写 `player_profiles` 云数据库集合。
 - `cloudfunctions/worldLeaderboard`：世界排行榜云函数，按当前微信 `OPENID` 写入并读取 `world_leaderboard` 云数据库集合。
 - `build-templates/wechatgame/cloudfunctions/`：构建模板中的云函数。
+- `tools/wechat-minigame-loading-patch.js`：微信官方封面图插件 `MinigameLoading` 构建后装配脚本，写入 `game.json` 插件声明、修补 `game.js`/`main.js` 启动与销毁逻辑，并复制 `images/loading_bg.jpg`。
 - `open-data/`：历史微信开放数据域排行榜逻辑。当前世界排行榜不再依赖开放数据域。
 - `settings/wechatgame.json`：微信小游戏构建相关设置。
 
@@ -261,7 +274,7 @@
 - `npm run validate`
 
 微信构建前如果 `build/wechatgame/cloudfunctions` 残留导致 Cocos 报 `ENOTEMPTY`，先运行 `npm run clean:wechat-cloudfunctions` 清理构建产物云函数目录。
-修改 1000 关生成策略后，运行 `npm run generate:levels1000` 重新生成本地首 100 关、根目录 `levels` 镜像、`remote-level-packs` 远程关卡包和 `assets/resources/config/level_manifest.json`。修改浮岛地图资源、容量表或 1000 关地图规划后，运行 `npm run generate:floating-map` 重新生成 `assets/map/config/floating_map.json`。修改关卡、瞄准、射击、发布配置或体力相关逻辑后，优先运行对应校验。
+修改 1000 关生成策略后，运行 `npm run generate:levels1000` 重新生成本地首 10 关、根目录 `levels` 镜像、`remote-level-packs` 远程关卡包和 `assets/resources/config/level_manifest.json`。修改浮岛地图资源、容量表或 1000 关地图规划后，运行 `npm run generate:floating-map` 重新生成 `assets/map/config/floating_map.json`。修改关卡、瞄准、射击、发布配置或体力相关逻辑后，优先运行对应校验。
 
 ## 修改建议
 

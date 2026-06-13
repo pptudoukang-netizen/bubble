@@ -1,7 +1,7 @@
 "use strict";
 
 var MANIFEST_RESOURCE_PATH = "config/level_manifest";
-var LOCAL_LEVEL_MAX = 100;
+var LOCAL_LEVEL_MAX = 10;
 var TOTAL_LEVEL_COUNT = 1000;
 
 function assertObject(value, fieldName) {

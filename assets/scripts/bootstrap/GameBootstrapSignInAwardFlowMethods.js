@@ -13,6 +13,8 @@ var AWARD_ITEM_ICON_PATHS = Shared.AWARD_ITEM_ICON_PATHS;
 var AWARD_ITEM_DISPLAY_NAMES = Shared.AWARD_ITEM_DISPLAY_NAMES;
 var hasOwn = Shared.hasOwn;
 var normalizeAwardPopupItems = Shared.normalizeAwardPopupItems;
+var UiModalReleaseHelper = require("../utils/UiModalReleaseHelper");
+var SpriteProxyLayerHelper = require("../utils/SpriteProxyLayerHelper");
 var PopupPanelAnimator = Shared.PopupPanelAnimator;
 var AWARD_LIST_ITEM_SPACING = 10;
 var AWARD_LIST_MIN_VIEWPORT_WIDTH = 160;
@@ -24,6 +26,9 @@ var SIGN_IN_GIFT_ITEM_SPACING = 8;
 var SIGN_IN_BUTTON_BREATH_SCALE = 1.08;
 var SIGN_IN_BUTTON_BREATH_UP_DURATION = 0.48;
 var SIGN_IN_BUTTON_BREATH_DOWN_DURATION = 0.54;
+var SIGN_IN_PROXY_ROOT_NAME = "sign_in_auto_proxy_root";
+var AWARD_PROXY_ROOT_NAME = "award_auto_proxy_root";
+var AWARD_CONTENT_PROXY_ROOT_NAME = "award_content_auto_proxy_root";
 var SIGN_IN_DAY_TEXT = [
   "",
   "第一天",
@@ -620,10 +625,28 @@ module.exports = {
     }.bind(this));
     this._bindNodeTapOnce(claimButtonNode, function () {
       this._playSfx("uiClick");
+      if (!this._canClaimSignInToday()) {
+        if (typeof this._setStatusWithTip === "function") {
+          this._setStatusWithTip("sign_in_already_claimed", null, "今日奖励已领取");
+        } else {
+          this._setStatus("今日奖励已领取");
+        }
+        this._updateSignInEntryState();
+        return;
+      }
       this._claimTodaySignInReward();
     }.bind(this));
     this._bindNodeTapOnce(claimAdButtonNode, function () {
       this._playSfx("uiClick");
+      if (!this._canClaimSignInToday()) {
+        if (typeof this._setStatusWithTip === "function") {
+          this._setStatusWithTip("sign_in_already_claimed", null, "今日奖励已领取");
+        } else {
+          this._setStatus("今日奖励已领取");
+        }
+        this._updateSignInEntryState();
+        return;
+      }
       this._claimTodaySignInRewardByAd();
     }.bind(this));
     this._bindNodeTapOnce(checkBoxNode, function () {
@@ -641,6 +664,7 @@ module.exports = {
       return;
     }
 
+    SpriteProxyLayerHelper.destroyProxyRoot(signInViewNode, SIGN_IN_PROXY_ROOT_NAME);
     this._refreshSignInState();
     var canClaimToday = this._canClaimSignInToday();
     var currentState = this.signInState || {
@@ -696,7 +720,7 @@ module.exports = {
         var awardButton = awardButtonNode.getComponent(cc.Button);
         if (awardButton) {
           awardButton.enableAutoGrayEffect = false;
-          awardButton.interactable = true;
+          awardButton.interactable = dayState === "claimable";
         }
         awardButtonNode.color = cc.color(255, 255, 255, 255);
         var awardSprite = awardButtonNode.getComponent(cc.Sprite);
@@ -722,7 +746,7 @@ module.exports = {
       var claimButton = claimButtonNode.getComponent(cc.Button);
       if (claimButton) {
         claimButton.enableAutoGrayEffect = false;
-        claimButton.interactable = true;
+        claimButton.interactable = canClaimToday;
       }
       claimButtonNode.color = cc.color(255, 255, 255, 255);
     }
@@ -731,7 +755,7 @@ module.exports = {
       var claimAdButton = claimAdButtonNode.getComponent(cc.Button);
       if (claimAdButton) {
         claimAdButton.enableAutoGrayEffect = false;
-        claimAdButton.interactable = true;
+        claimAdButton.interactable = canClaimToday;
       }
       claimAdButtonNode.color = cc.color(255, 255, 255, 255);
       if (canClaimToday) {
@@ -741,8 +765,14 @@ module.exports = {
       }
     }
 
-    Promise.all(iconLoadTasks).catch(function (error) {
+    return Promise.all(iconLoadTasks).then(function () {
+      SpriteProxyLayerHelper.rebuildAutoProxyTree({
+        rootNode: signInViewNode,
+        proxyRootName: SIGN_IN_PROXY_ROOT_NAME
+      });
+    }).catch(function (error) {
       Logger.warn("Render sign-in icons failed", error && error.message ? error.message : error);
+      throw error;
     });
   },
 
@@ -780,7 +810,7 @@ module.exports = {
 
         signInViewNode.active = true;
         PopupPanelAnimator.play(signInViewNode, { targetNodeName: "ContentContainer" });
-        this._renderSignInView();
+        return this._renderSignInView();
       }.bind(this));
     }.bind(this)).catch(function (error) {
       Logger.warn("Show sign-in view failed", error && error.message ? error.message : error);
@@ -789,10 +819,15 @@ module.exports = {
   },
 
   _hideSignInView: function () {
-    if (!this._signInViewNode || !this._signInViewNode.isValid) {
-      return;
+    if (this._signInViewNode && cc.isValid(this._signInViewNode)) {
+      SpriteProxyLayerHelper.destroyProxyRoot(this._signInViewNode, SIGN_IN_PROXY_ROOT_NAME);
     }
-    this._signInViewNode.active = false;
+    UiModalReleaseHelper.releaseCachedModal(this, {
+      label: "SignInView",
+      nodeKey: "_signInViewNode",
+      prefabKey: "_signInViewPrefab",
+      spriteFrameCacheKey: "_signInIconSpriteFrameCache"
+    });
   },
 
   _ensureAwardViewPrefab: function () {
@@ -894,6 +929,8 @@ module.exports = {
     var itemTemplateNode = nodes.itemTemplateNode;
     var itemWidth = requirePositiveNumber(itemTemplateNode.width, "award item width");
 
+    SpriteProxyLayerHelper.destroyProxyRoot(this._awardViewNode, AWARD_PROXY_ROOT_NAME);
+    SpriteProxyLayerHelper.destroyProxyRoot(contentNode, AWARD_CONTENT_PROXY_ROOT_NAME);
     for (var childIndex = contentNode.children.length - 1; childIndex >= 0; childIndex -= 1) {
       var child = contentNode.children[childIndex];
       if (!child || !child.isValid || child === itemTemplateNode) {
@@ -942,7 +979,17 @@ module.exports = {
       }.bind(this))(iconSprite, rewardItem.id);
     }
 
-    return Promise.all(iconTasks);
+    return Promise.all(iconTasks).then(function () {
+      SpriteProxyLayerHelper.rebuildAutoProxyTree({
+        rootNode: this._awardViewNode,
+        proxyRootName: AWARD_PROXY_ROOT_NAME,
+        excludeRoots: [contentNode]
+      });
+      SpriteProxyLayerHelper.rebuildAutoProxyTree({
+        rootNode: contentNode,
+        proxyRootName: AWARD_CONTENT_PROXY_ROOT_NAME
+      });
+    }.bind(this));
   },
 
   _showAwardViewForRewardItems: function (rewardItems) {
@@ -968,10 +1015,17 @@ module.exports = {
   },
 
   _hideAwardView: function () {
-    if (!this._awardViewNode || !this._awardViewNode.isValid) {
-      return;
+    if (this._awardViewNode && cc.isValid(this._awardViewNode)) {
+      var nodes = this._resolveAwardViewNodes(this._awardViewNode);
+      SpriteProxyLayerHelper.destroyProxyRoot(this._awardViewNode, AWARD_PROXY_ROOT_NAME);
+      SpriteProxyLayerHelper.destroyProxyRoot(nodes.contentNode, AWARD_CONTENT_PROXY_ROOT_NAME);
     }
-    this._awardViewNode.active = false;
+    UiModalReleaseHelper.releaseCachedModal(this, {
+      label: "AwardView",
+      nodeKey: "_awardViewNode",
+      prefabKey: "_awardViewPrefab",
+      spriteFrameCacheKey: "_awardItemIconSpriteFrameCache"
+    });
     if (
       this._gameCircleWelfareViewNode &&
       cc.isValid(this._gameCircleWelfareViewNode) &&
@@ -1085,7 +1139,6 @@ module.exports = {
       } else {
         this._setStatus("今日奖励已领取");
       }
-      this._renderSignInView();
       this._updateSignInEntryState();
       return;
     }
@@ -1137,7 +1190,6 @@ module.exports = {
       } else {
         this._setStatus("今日奖励已领取");
       }
-      this._renderSignInView();
       this._updateSignInEntryState();
       return;
     }
@@ -1180,7 +1232,6 @@ module.exports = {
       if (!claimResult || !claimResult.accepted) {
         this.adService.reportHostedRewardFailure(adResult);
         this._setStatus("今日奖励已领取");
-        this._renderSignInView();
         this._updateSignInEntryState();
         return;
       }

@@ -123,6 +123,10 @@ module.exports = {
     if (this.isRestarting) {
       return;
     }
+    if (!this.isSelectingLevel && this.levelRenderer) {
+      this.levelRenderer.releaseLevelSpecificSpriteCache();
+      this._scheduleGameplayBundleIdleRelease();
+    }
     if (DebugFlags.get("levelSelectMemory") === true) {
       LevelSelectMemoryDiagnostics.start(this.node);
     }
@@ -156,7 +160,9 @@ module.exports = {
     }
     this.isSelectingLevel = true;
     this.currentLevelConfig = null;
-    this.levelRenderer.setGameplayLayersVisible(false);
+    if (this.levelRenderer && typeof this.levelRenderer.setGameplayLayersVisible === "function") {
+      this.levelRenderer.setGameplayLayersVisible(false);
+    }
     this._currentLevelId = targetLevelId > 0 ? targetLevelId : 0;
     this._lastRuntimeState = null;
     this._currentAttemptId = "";
@@ -203,6 +209,7 @@ module.exports = {
       this._maybeAutoShowSignInView();
       this._playLevelSelectBackgroundMusic();
       this._setStatus("Please select a level");
+      this._logAssetManagerStats("level_select");
       if (prepareLevelId !== null) {
         if (typeof this._showStartGameView !== "function") {
           throw new Error("Level select prepare requires StartGameView entry method.");
@@ -292,6 +299,16 @@ module.exports = {
       this._hideInventoryView();
     }
     this._hideSignInView();
+    if (this._floatingMapAssets) {
+      LevelSelectFloatingMap.releaseAllCachedMapPrefabs(this._floatingMapAssets);
+    }
+    LevelSelectFloatingMap.invalidateAssetCache();
+    this._floatingMapAssets = null;
+    if (typeof BundleLoader.releaseNamedBundle !== "function") {
+      throw new Error("BundleLoader.releaseNamedBundle is required when leaving level select.");
+    }
+    BundleLoader.releaseNamedBundle("map");
+
     if (!this._levelSelectNode || !cc.isValid(this._levelSelectNode)) {
       return;
     }
@@ -301,6 +318,13 @@ module.exports = {
       LevelSelectFloatingMap.disposeRuntime(mapHostNode);
     }
     this._levelSelectNode.active = false;
+  },
+
+  _resolveFloatingMapFocusLevelId: function () {
+    if (this.levelProgress && Number.isInteger(this.levelProgress.highestUnlockedLevel) && this.levelProgress.highestUnlockedLevel > 0) {
+      return this.levelProgress.highestUnlockedLevel;
+    }
+    throw new Error("Floating map focus level requires positive highestUnlockedLevel.");
   },
 
   _ensureLevelSelectPrefabs: function () {
@@ -315,7 +339,8 @@ module.exports = {
       });
     }
 
-    return LevelSelectView.loadFloatingMapAssets().then(function (floatingMapAssets) {
+    var focusLevelId = this._resolveFloatingMapFocusLevelId();
+    return LevelSelectView.loadFloatingMapAssets(focusLevelId).then(function (floatingMapAssets) {
       this._floatingMapAssets = floatingMapAssets;
       return this._loadPrefab("prefabs/ui/LevelView");
     }.bind(this)).then(function (levelViewPrefab) {

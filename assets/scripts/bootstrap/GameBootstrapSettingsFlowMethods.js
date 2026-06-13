@@ -10,6 +10,91 @@ var SETTING_VOLUME_ICON_OPEN_PATH = Shared.SETTING_VOLUME_ICON_OPEN_PATH;
 var SETTING_VOLUME_ICON_CLOSE_PATH = Shared.SETTING_VOLUME_ICON_CLOSE_PATH;
 var hideGameCircleWelfareViewNode = Shared.hideGameCircleWelfareViewNode;
 var PopupPanelAnimator = Shared.PopupPanelAnimator;
+var UiModalReleaseHelper = require("../utils/UiModalReleaseHelper");
+var SpriteProxyLayerHelper = require("../utils/SpriteProxyLayerHelper");
+var SETTING_PROXY_ROOT_NAME = "setting_content_auto_proxy_root";
+var LEGACY_SETTING_PROXY_ROOT_NAME = "setting_auto_proxy_root";
+var SETTING_VOLUME_EDGE_SNAP_RATIO = 0.01;
+var SETTING_MUTED_RESTORE_VOLUME = 1;
+
+function assertSettingAudioChannel(channel) {
+  if (channel !== "music" && channel !== "sfx") {
+    throw new Error("Unsupported setting audio channel: " + channel);
+  }
+  return channel;
+}
+
+function getSettingChannelVolume(settings, channel) {
+  assertSettingAudioChannel(channel);
+  if (!settings || typeof settings !== "object") {
+    throw new Error("Audio settings snapshot is required for setting channel volume.");
+  }
+  return channel === "music" ? settings.musicVolume : settings.sfxVolume;
+}
+
+function getSettingChannelEnabled(settings, channel) {
+  assertSettingAudioChannel(channel);
+  if (!settings || typeof settings !== "object") {
+    throw new Error("Audio settings snapshot is required for setting channel enabled state.");
+  }
+  return channel === "music" ? settings.musicEnabled !== false : settings.sfxEnabled !== false;
+}
+
+function setSettingChannelVolume(audioManager, channel, volume) {
+  assertSettingAudioChannel(channel);
+  if (!audioManager) {
+    throw new Error("AudioManager is required to set setting channel volume.");
+  }
+  if (channel === "music") {
+    audioManager.setMusicVolume(volume);
+    return;
+  }
+  audioManager.setSfxVolume(volume);
+}
+
+function getLastPositiveSettingVolumeKey(channel) {
+  assertSettingAudioChannel(channel);
+  return channel === "music" ? "_settingLastPositiveMusicVolume" : "_settingLastPositiveSfxVolume";
+}
+
+function rememberPositiveSettingVolume(host, channel, volume) {
+  var normalizedVolume = host._normalizeSettingVolume(volume);
+  if (normalizedVolume <= 0) {
+    return;
+  }
+  host[getLastPositiveSettingVolumeKey(channel)] = normalizedVolume;
+}
+
+function resolveMutedSettingRestoreVolume(host, channel) {
+  var key = getLastPositiveSettingVolumeKey(channel);
+  var rememberedVolume = host._normalizeSettingVolume(host[key]);
+  if (rememberedVolume > 0) {
+    return rememberedVolume;
+  }
+  return SETTING_MUTED_RESTORE_VOLUME;
+}
+
+function snapSettingVolumeToEdge(volume) {
+  if (volume <= SETTING_VOLUME_EDGE_SNAP_RATIO) {
+    return 0;
+  }
+  if (volume >= 1 - SETTING_VOLUME_EDGE_SNAP_RATIO) {
+    return 1;
+  }
+  return volume;
+}
+
+function buildSettingProxyExcludeRoots(controls) {
+  if (!controls) {
+    throw new Error("SettingView controls are required for proxy excludes.");
+  }
+  return [
+    controls.musicProgressNode,
+    controls.sfxProgressNode,
+    controls.musicVolumeIconNode,
+    controls.sfxVolumeIconNode
+  ];
+}
 
 module.exports = {
   _onLevelSelectSettingTap: function () {
@@ -88,11 +173,14 @@ module.exports = {
   },
 
   _hideSettingView: function () {
-    if (!this._settingViewNode || !cc.isValid(this._settingViewNode)) {
-      return;
-    }
-
-    this._settingViewNode.active = false;
+    this._settingVolumeIconLoadVersion = (Number(this._settingVolumeIconLoadVersion) || 0) + 1;
+    this._settingVolumeIconSprites = null;
+    this._settingVolumeIconLoadPromise = null;
+    UiModalReleaseHelper.releaseCachedModal(this, {
+      label: "SettingView",
+      nodeKey: "_settingViewNode",
+      prefabKey: "_settingViewPrefab"
+    });
   },
 
   _bindSettingViewActions: function (settingViewNode) {
@@ -165,15 +253,15 @@ module.exports = {
       }.bind(this));
       this._bindNodeTapOnce(controls.musicVolumeIconNode, function () {
         this._playSfx("uiClick");
-        this._setSettingVolumeToZero("music", settingViewNode);
+        this._toggleSettingChannelVolume("music", settingViewNode);
       }.bind(this));
       this._bindNodeTapOnce(controls.sfxVolumeIconNode, function () {
         this._playSfx("uiClick");
-        this._setSettingVolumeToZero("sfx", settingViewNode);
+        this._toggleSettingChannelVolume("sfx", settingViewNode);
       }.bind(this));
 
-      this._bindSettingVolumeDragOnce(controls.musicProgressNode, controls.musicStarNode, "music", settingViewNode);
-      this._bindSettingVolumeDragOnce(controls.sfxProgressNode, controls.sfxStarNode, "sfx", settingViewNode);
+      this._bindSettingVolumeDragOnce(controls.musicProgressNode, controls.musicStarNode, "music", settingViewNode, controls.musicVolumeIconNode);
+      this._bindSettingVolumeDragOnce(controls.sfxProgressNode, controls.sfxStarNode, "sfx", settingViewNode, controls.sfxVolumeIconNode);
     }
   },
 
@@ -195,6 +283,16 @@ module.exports = {
     if (!settingViewNode || !settingViewNode.isValid || !this.audioManager) {
       return;
     }
+    var contentContainerNode = settingViewNode.getChildByName("ContentContainer");
+    if (!contentContainerNode || !contentContainerNode.isValid) {
+      throw new Error("SettingView requires ContentContainer.");
+    }
+    var maskNode = settingViewNode.getChildByName("mask");
+    if (!maskNode || !maskNode.isValid) {
+      throw new Error("SettingView requires mask.");
+    }
+    SpriteProxyLayerHelper.setSpriteRenderEnabled(maskNode, true, "SettingView mask");
+    SpriteProxyLayerHelper.destroyProxyRoot(settingViewNode, LEGACY_SETTING_PROXY_ROOT_NAME);
 
     var settingsSnapshot = this.audioManager.snapshot();
     var settings = settingsSnapshot && settingsSnapshot.settings ? settingsSnapshot.settings : null;
@@ -206,6 +304,7 @@ module.exports = {
     if (!controls) {
       return;
     }
+    this._restoreSettingVolumeSliderSprites(controls);
 
     settingViewNode.__isSyncingSettingAudio = true;
     try {
@@ -217,23 +316,41 @@ module.exports = {
       this._updateSettingToggleStatusView(controls.sfxToggle, controls.sfxStatusNode, controls.sfxStatusLabel, sfxEnabled);
       this._updateSettingToggleStatusView(controls.vibrationToggle, controls.vibrationStatusNode, controls.vibrationStatusLabel, vibrationEnabled);
 
+      var musicVolume = this._normalizeSettingVolume(settings.musicVolume);
+      var sfxVolume = this._normalizeSettingVolume(settings.sfxVolume);
+      rememberPositiveSettingVolume(this, "music", musicVolume);
+      rememberPositiveSettingVolume(this, "sfx", sfxVolume);
       if (controls.musicProgress) {
-        var musicVolume = this._normalizeSettingVolume(settings.musicVolume);
         controls.musicProgress.progress = musicVolume;
         this._syncSettingVolumeStarPosition(controls.musicProgressNode, controls.musicStarNode, musicVolume);
       }
       if (controls.sfxProgress) {
-        var sfxVolume = this._normalizeSettingVolume(settings.sfxVolume);
         controls.sfxProgress.progress = sfxVolume;
         this._syncSettingVolumeStarPosition(controls.sfxProgressNode, controls.sfxStarNode, sfxVolume);
       }
-      var musicVolumeOpen = musicEnabled && (Number(settings.musicVolume) > 0);
-      var sfxVolumeOpen = sfxEnabled && (Number(settings.sfxVolume) > 0);
+      var musicVolumeOpen = musicEnabled && musicVolume > 0;
+      var sfxVolumeOpen = sfxEnabled && sfxVolume > 0;
       this._updateSettingVolumeIconView(controls.musicVolumeIconSprite, musicVolumeOpen);
       this._updateSettingVolumeIconView(controls.sfxVolumeIconSprite, sfxVolumeOpen);
     } finally {
       settingViewNode.__isSyncingSettingAudio = false;
     }
+    if (
+      contentContainerNode.__settingProxyExcludesDynamicVolume === true &&
+      SpriteProxyLayerHelper.hasAutoProxyTree(contentContainerNode, SETTING_PROXY_ROOT_NAME)
+    ) {
+      SpriteProxyLayerHelper.syncAutoProxyTree(contentContainerNode, SETTING_PROXY_ROOT_NAME);
+      return;
+    }
+    SpriteProxyLayerHelper.destroyProxyRoot(contentContainerNode, SETTING_PROXY_ROOT_NAME);
+    SpriteProxyLayerHelper.rebuildAutoProxyTree({
+      rootNode: contentContainerNode,
+      proxyRootName: SETTING_PROXY_ROOT_NAME,
+      excludeRoots: buildSettingProxyExcludeRoots(controls),
+      autoSync: false
+    });
+    contentContainerNode.__settingProxyExcludesDynamicVolume = true;
+    this._restoreSettingVolumeSliderSprites(controls);
   },
 
   _adjustSettingVolumeByStep: function (channel, stepDirection, settingViewNode) {
@@ -252,15 +369,11 @@ module.exports = {
       return;
     }
 
-    var isMusicChannel = channel === "music";
-    var currentVolume = this._normalizeSettingVolume(isMusicChannel ? settings.musicVolume : settings.sfxVolume);
+    var currentVolume = this._normalizeSettingVolume(getSettingChannelVolume(settings, channel));
     var targetVolume = this._normalizeSettingVolume(currentVolume + (SETTING_VOLUME_STEP * direction));
 
-    if (isMusicChannel) {
-      this.audioManager.setMusicVolume(targetVolume);
-    } else {
-      this.audioManager.setSfxVolume(targetVolume);
-    }
+    setSettingChannelVolume(this.audioManager, channel, targetVolume);
+    rememberPositiveSettingVolume(this, channel, targetVolume);
 
     this._syncSettingViewFromAudioSettings(settingViewNode || this._settingViewNode);
   },
@@ -270,10 +383,27 @@ module.exports = {
       return;
     }
 
-    if (channel === "music") {
-      this.audioManager.setMusicVolume(0);
+    setSettingChannelVolume(this.audioManager, channel, 0);
+    this._syncSettingViewFromAudioSettings(settingViewNode || this._settingViewNode);
+  },
+
+  _toggleSettingChannelVolume: function (channel, settingViewNode) {
+    if (!this.audioManager) {
+      return;
+    }
+
+    var snapshot = this.audioManager.snapshot();
+    var settings = snapshot && snapshot.settings ? snapshot.settings : null;
+    if (!settings) {
+      throw new Error("Audio settings snapshot is required before toggling setting channel volume.");
+    }
+
+    var currentVolume = this._normalizeSettingVolume(getSettingChannelVolume(settings, channel));
+    if (currentVolume > 0) {
+      rememberPositiveSettingVolume(this, channel, currentVolume);
+      setSettingChannelVolume(this.audioManager, channel, 0);
     } else {
-      this.audioManager.setSfxVolume(0);
+      setSettingChannelVolume(this.audioManager, channel, resolveMutedSettingRestoreVolume(this, channel));
     }
     this._syncSettingViewFromAudioSettings(settingViewNode || this._settingViewNode);
   },
@@ -290,16 +420,22 @@ module.exports = {
     if (this._settingVolumeIconLoadPromise) {
       return this._settingVolumeIconLoadPromise;
     }
+    this._settingVolumeIconLoadVersion = (Number(this._settingVolumeIconLoadVersion) || 0) + 1;
+    var loadVersion = this._settingVolumeIconLoadVersion;
 
     var loadSpriteFrame = function (path) {
-      return new Promise(function (resolve) {
+      return new Promise(function (resolve, reject) {
         BundleLoader.loadRes(path, cc.SpriteFrame, function (error, spriteFrame) {
           if (error) {
-            Logger.warn("Load setting icon failed", path, error && error.message ? error.message : error);
-            resolve(null);
+            var errorMessage = error && error.message ? error.message : String(error);
+            reject(new Error("Load setting icon failed `" + path + "`: " + errorMessage));
             return;
           }
-          resolve(spriteFrame || null);
+          if (!spriteFrame) {
+            reject(new Error("Load setting icon returned empty spriteFrame: " + path));
+            return;
+          }
+          resolve(spriteFrame);
         });
       });
     };
@@ -308,19 +444,20 @@ module.exports = {
       loadSpriteFrame(SETTING_VOLUME_ICON_OPEN_PATH),
       loadSpriteFrame(SETTING_VOLUME_ICON_CLOSE_PATH)
     ]).then(function (results) {
+      if (loadVersion !== this._settingVolumeIconLoadVersion) {
+        return null;
+      }
       this._settingVolumeIconSprites = {
-        open: results[0] || null,
-        close: results[1] || null
+        open: results[0],
+        close: results[1]
       };
       this._settingVolumeIconLoadPromise = null;
       return this._settingVolumeIconSprites;
     }.bind(this)).catch(function (error) {
-      this._settingVolumeIconLoadPromise = null;
-      Logger.warn("Load setting icons failed", error && error.message ? error.message : error);
-      return {
-        open: null,
-        close: null
-      };
+      if (loadVersion === this._settingVolumeIconLoadVersion) {
+        this._settingVolumeIconLoadPromise = null;
+      }
+      throw error;
     }.bind(this));
 
     return this._settingVolumeIconLoadPromise;
@@ -328,16 +465,18 @@ module.exports = {
 
   _updateSettingVolumeIconView: function (spriteComponent, isVolumeOpen) {
     if (!spriteComponent || !spriteComponent.node || !spriteComponent.node.isValid || !this._settingVolumeIconSprites) {
-      return;
+      throw new Error("SettingView volume icon sprite is required.");
     }
 
     var targetSpriteFrame = isVolumeOpen
       ? this._settingVolumeIconSprites.open
       : this._settingVolumeIconSprites.close;
     if (!targetSpriteFrame) {
-      return;
+      throw new Error("SettingView volume icon spriteFrame is missing.");
     }
 
+    spriteComponent.node.active = true;
+    spriteComponent.node.opacity = 255;
     spriteComponent.spriteFrame = targetSpriteFrame;
   },
 
@@ -365,7 +504,7 @@ module.exports = {
     });
   },
 
-  _bindSettingVolumeDragOnce: function (progressNode, starNode, channel, settingViewNode) {
+  _bindSettingVolumeDragOnce: function (progressNode, starNode, channel, settingViewNode, volumeIconNode) {
     if (!progressNode || !progressNode.isValid || !starNode || !starNode.isValid) {
       return;
     }
@@ -380,16 +519,26 @@ module.exports = {
       if (event) {
         event.stopPropagation();
       }
-      this._applySettingVolumeFromTouch(channel, progressNode, settingViewNode, event);
+      this._applySettingVolumeFromTouch(channel, progressNode, settingViewNode, volumeIconNode, event);
+    }.bind(this);
+    var onDragEnd = function (event) {
+      if (event) {
+        event.stopPropagation();
+      }
+      this._syncSettingViewFromAudioSettings(settingViewNode);
     }.bind(this);
 
     starNode.on(cc.Node.EventType.TOUCH_START, onDrag);
     starNode.on(cc.Node.EventType.TOUCH_MOVE, onDrag);
+    starNode.on(cc.Node.EventType.TOUCH_END, onDragEnd);
+    starNode.on(cc.Node.EventType.TOUCH_CANCEL, onDragEnd);
     progressNode.on(cc.Node.EventType.TOUCH_START, onDrag);
     progressNode.on(cc.Node.EventType.TOUCH_MOVE, onDrag);
+    progressNode.on(cc.Node.EventType.TOUCH_END, onDragEnd);
+    progressNode.on(cc.Node.EventType.TOUCH_CANCEL, onDragEnd);
   },
 
-  _applySettingVolumeFromTouch: function (channel, progressNode, settingViewNode, event) {
+  _applySettingVolumeFromTouch: function (channel, progressNode, settingViewNode, volumeIconNode, event) {
     if (!this.audioManager || !progressNode || !progressNode.isValid || !event || typeof event.getLocation !== "function") {
       return;
     }
@@ -401,15 +550,66 @@ module.exports = {
 
     var touchLocation = event.getLocation();
     var localPoint = progressNode.convertToNodeSpaceAR(touchLocation);
-    var volume = this._normalizeSettingVolume((localPoint.x + (width * 0.5)) / width);
+    var rawVolume = (localPoint.x + (width * 0.5)) / width;
+    var volume = this._normalizeSettingVolume(snapSettingVolumeToEdge(rawVolume));
 
-    if (channel === "music") {
-      this.audioManager.setMusicVolume(volume);
-    } else {
-      this.audioManager.setSfxVolume(volume);
+    setSettingChannelVolume(this.audioManager, channel, volume);
+    rememberPositiveSettingVolume(this, channel, volume);
+
+    var progress = progressNode.getComponent(cc.ProgressBar);
+    if (!progress) {
+      throw new Error("SettingView volume_progress requires cc.ProgressBar.");
     }
+    var starNode = this._findNodeByNameRecursive(progressNode, "star");
+    if (!starNode || !starNode.isValid) {
+      throw new Error("SettingView volume_progress requires star.");
+    }
+    progress.progress = volume;
+    this._syncSettingVolumeStarPosition(progressNode, starNode, volume);
 
-    this._syncSettingViewFromAudioSettings(settingViewNode || this._settingViewNode);
+    if (!settingViewNode || !settingViewNode.isValid) {
+      throw new Error("SettingView node is required for volume icon sync.");
+    }
+    if (!volumeIconNode || !volumeIconNode.isValid) {
+      throw new Error("SettingView volume icon node is required.");
+    }
+    var iconSprite = volumeIconNode.getComponent(cc.Sprite);
+    if (!iconSprite) {
+      throw new Error("SettingView volume icon requires cc.Sprite.");
+    }
+    var contentContainerNode = settingViewNode.getChildByName("ContentContainer");
+    if (!contentContainerNode || !contentContainerNode.isValid) {
+      throw new Error("SettingView requires ContentContainer.");
+    }
+    this._updateSettingVolumeIconView(iconSprite, getSettingChannelEnabled(this.audioManager.settings, channel) && volume > 0);
+  },
+
+  _restoreSettingVolumeSliderSprites: function (controls) {
+    if (!controls) {
+      throw new Error("SettingView controls are required for volume slider sprites.");
+    }
+    [controls.musicVolumeIconNode, controls.sfxVolumeIconNode].forEach(function (iconNode) {
+      if (!iconNode || !iconNode.isValid) {
+        throw new Error("SettingView volume icon node is required.");
+      }
+      SpriteProxyLayerHelper.setSpriteRenderEnabled(iconNode, true, "SettingView volume icon");
+    });
+    [controls.musicProgressNode, controls.sfxProgressNode].forEach(function (progressNode) {
+      if (!progressNode || !progressNode.isValid) {
+        throw new Error("SettingView volume_progress node is required.");
+      }
+      SpriteProxyLayerHelper.setSpriteRenderEnabled(progressNode, true, "SettingView volume_progress");
+      var barNode = progressNode.getChildByName("bar");
+      if (!barNode || !barNode.isValid) {
+        throw new Error("SettingView volume_progress requires bar.");
+      }
+      SpriteProxyLayerHelper.setSpriteRenderEnabled(barNode, true, "SettingView volume_progress/bar");
+      var starNode = progressNode.getChildByName("star");
+      if (!starNode || !starNode.isValid) {
+        throw new Error("SettingView volume_progress requires star.");
+      }
+      SpriteProxyLayerHelper.setSpriteRenderEnabled(starNode, true, "SettingView volume_progress/star");
+    });
   },
 
   _syncSettingVolumeStarPosition: function (progressNode, starNode, progressValue) {
@@ -453,10 +653,7 @@ module.exports = {
       ? this._findNodeByNameRecursive(musicVolumeItemNode, "music_volume_icon")
       : null;
     var sfxVolumeIconNode = sfxVolumeItemNode
-      ? (
-        this._findNodeByNameRecursive(sfxVolumeItemNode, "sound_effect_volume_icon") ||
-        this._findNodeByNameRecursive(sfxVolumeItemNode, "music_volume_icon")
-      )
+      ? this._findNodeByNameRecursive(sfxVolumeItemNode, "sound_volume_icon")
       : null;
     var musicProgressNode = musicVolumeItemNode ? this._findNodeByNameRecursive(musicVolumeItemNode, "volume_progress") : null;
     var sfxProgressNode = sfxVolumeItemNode ? this._findNodeByNameRecursive(sfxVolumeItemNode, "volume_progress") : null;

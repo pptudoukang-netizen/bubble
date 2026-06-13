@@ -11,6 +11,7 @@ function attachLevelRendererSceneMethods(LevelRenderer, deps) {
   var REWARD_ITEM_RESOURCES = deps.REWARD_ITEM_RESOURCES;
   var HUD_STAR_RESOURCES = deps.HUD_STAR_RESOURCES;
   var PREFAB_PATHS = deps.PREFAB_PATHS;
+  var SpriteProxyLayerHelper = deps.SpriteProxyLayerHelper;
   var JAR_RENDER_Y_OFFSET = deps.JAR_RENDER_Y_OFFSET;
   var GUIDE_DOT_SPACING = deps.GUIDE_DOT_SPACING;
   var GUIDE_DOT_RADIUS = deps.GUIDE_DOT_RADIUS;
@@ -28,6 +29,8 @@ function attachLevelRendererSceneMethods(LevelRenderer, deps) {
   var NEXT_SHOT_BUBBLE_SIZE = deps.NEXT_SHOT_BUBBLE_SIZE;
   var JAR_RENDER_SIZE = deps.JAR_RENDER_SIZE;
   var POPUP_CONTENT_CONTAINER_NAME = deps.POPUP_CONTENT_CONTAINER_NAME;
+  var WIN_VIEW_PROXY_ROOT_NAME = "win_view_auto_proxy_root";
+  var LOSE_VIEW_PROXY_ROOT_NAME = "lose_view_auto_proxy_root";
   var POPUP_OPEN_ANIM_DURATION = deps.POPUP_OPEN_ANIM_DURATION;
   var POPUP_OPEN_ANIM_FROM_SCALE = deps.POPUP_OPEN_ANIM_FROM_SCALE;
   var WIN_POPUP_OPEN_ANIM_DURATION = deps.WIN_POPUP_OPEN_ANIM_DURATION;
@@ -3079,7 +3082,7 @@ LevelRenderer.prototype._renderShooter = function (shooterSnapshot, activeProjec
     : { origin: BoardLayout.shooterOrigin, direction: { x: 0, y: 1 } };
   var shooterAngle = computeShooterAngle(aim.direction);
   var fortNode = getOrCreateChild(shooterPanel, "ShooterBase");
-  var fortFrame = this.spriteFrameCache["image/fort"];
+  var fortFrame = this.spriteFrameCache["image/ball/fort"];
   if (fortFrame && fortNode.__fortApplied !== true) {
     ensureSprite(fortNode, fortFrame);
     fortNode.setContentSize(fortFrame.getOriginalSize());
@@ -3960,6 +3963,59 @@ LevelRenderer.prototype._playWinPopupOpenAnimation = function (winContent, starR
   this._playWinStarsPunchAnimation(winContent, starRating);
 };
 
+  function requireRuntimeWinStats(runtimeSnapshot) {
+    if (!runtimeSnapshot || runtimeSnapshot.state !== "won") {
+      throw new Error("WinView render key requires won runtime snapshot.");
+    }
+    if (!runtimeSnapshot.winStats || typeof runtimeSnapshot.winStats !== "object") {
+      throw new Error("WinView render key requires runtimeSnapshot.winStats.");
+    }
+    return runtimeSnapshot.winStats;
+  }
+
+  function requireFiniteWinNumber(value, description) {
+    var numberValue = Number(value);
+    if (!Number.isFinite(numberValue)) {
+      throw new Error(description + " must be a finite number.");
+    }
+    return numberValue;
+  }
+
+  function buildWinViewRenderKey(levelConfig, runtimeSnapshot) {
+    if (!levelConfig || !levelConfig.level) {
+      throw new Error("WinView render key requires level config.");
+    }
+
+    var levelId = Math.floor(Number(levelConfig.level.levelId));
+    if (!Number.isInteger(levelId) || levelId <= 0) {
+      throw new Error("WinView render key requires positive integer level id.");
+    }
+
+    var winStats = requireRuntimeWinStats(runtimeSnapshot);
+    if (typeof winStats.isPersonalBestScore !== "boolean") {
+      throw new Error("WinView render key requires boolean isPersonalBestScore.");
+    }
+    if (typeof winStats.maxComboStreak !== "number") {
+      throw new Error("WinView render key requires numeric maxComboStreak.");
+    }
+
+    var starRating = resolveWinStarRating(levelConfig, runtimeSnapshot);
+    if (!Number.isFinite(starRating)) {
+      throw new Error("WinView render key requires finite star rating.");
+    }
+
+    return JSON.stringify({
+      levelId: levelId,
+      totalScore: requireFiniteWinNumber(winStats.totalScore, "WinView render key totalScore"),
+      personalBest: winStats.isPersonalBestScore,
+      maxComboStreak: Math.floor(winStats.maxComboStreak),
+      rewardItems: getRuntimeWinClearRewardItems(runtimeSnapshot),
+      collectEntries: buildWinCollectEntries(levelConfig, runtimeSnapshot),
+      targetEntries: buildWinCompletedTargetEntries(levelConfig, runtimeSnapshot),
+      starRating: Math.floor(starRating)
+    });
+  }
+
 LevelRenderer.prototype._bindLoseButton = function (buttonNode, action) {
   if (!buttonNode || buttonNode.__loseBoundAction === action) {
     return;
@@ -3981,6 +4037,17 @@ LevelRenderer.prototype._renderWinView = function (runtimeSnapshot) {
     if (existing) {
       existing.active = false;
     }
+    this.lastWinViewRenderKey = "";
+    return;
+  }
+
+  var renderKey = buildWinViewRenderKey(this.currentLevelConfig, runtimeSnapshot);
+  if (
+    existing &&
+    existing.active &&
+    this.lastWinViewRenderKey === renderKey &&
+    SpriteProxyLayerHelper.hasAutoProxyTree(existing, WIN_VIEW_PROXY_ROOT_NAME)
+  ) {
     return;
   }
 
@@ -3990,16 +4057,17 @@ LevelRenderer.prototype._renderWinView = function (runtimeSnapshot) {
   }
 
   if (!winView) {
-    return;
+    throw new Error("WinView prefab could not be instantiated.");
   }
 
   winView.active = true;
   winView.setPosition(0, 0);
+  SpriteProxyLayerHelper.destroyProxyRoot(winView, WIN_VIEW_PROXY_ROOT_NAME);
   this._ensurePopupMaskVisible(winView, 100);
   var winContent = this._ensurePopupContentContainer(winView);
 
-  var winStats = runtimeSnapshot.winStats || {};
-  var totalScore = Number(winStats.totalScore) || runtimeSnapshot.score || 0;
+  var winStats = requireRuntimeWinStats(runtimeSnapshot);
+  var totalScore = requireFiniteWinNumber(winStats.totalScore, "WinView totalScore");
   var scoreBgNode = winContent ? winContent.getChildByName("score_bg") : null;
   var rewardItems = getRuntimeWinClearRewardItems(runtimeSnapshot);
   this._setWinValueText(requireWinChild(scoreBgNode, "score_value", "score_bg"), String(totalScore));
@@ -4032,6 +4100,11 @@ LevelRenderer.prototype._renderWinView = function (runtimeSnapshot) {
   this._bindWinButton(winContent ? winContent.getChildByName("btn_next") : null, "next");
   this._bindWinButton(winContent ? winContent.getChildByName("btn_retry") : null, "retry");
   this._bindWinButton(winContent ? winContent.getChildByName("btn_back") : null, "back");
+  SpriteProxyLayerHelper.rebuildAutoProxyTree({
+    rootNode: winView,
+    proxyRootName: WIN_VIEW_PROXY_ROOT_NAME
+  });
+  this.lastWinViewRenderKey = renderKey;
 };
 
 LevelRenderer.prototype._renderLoseView = function (runtimeSnapshot) {
@@ -4059,6 +4132,7 @@ LevelRenderer.prototype._renderLoseView = function (runtimeSnapshot) {
 
   loseView.active = true;
   loseView.setPosition(0, 0);
+  SpriteProxyLayerHelper.destroyProxyRoot(loseView, LOSE_VIEW_PROXY_ROOT_NAME);
   this._ensurePopupMaskVisible(loseView, 164);
   var loseContent = this._ensurePopupContentContainer(loseView);
   if (!wasActive) {
@@ -4152,6 +4226,10 @@ LevelRenderer.prototype._renderLoseView = function (runtimeSnapshot) {
   this._bindLoseButton(loseCloseButtonNode, "back");
   this._bindLoseButton(retryButtonNode, "retry");
   this._bindLoseButton(loseContent ? loseContent.getChildByName("btn_back") : null, "back");
+  SpriteProxyLayerHelper.rebuildAutoProxyTree({
+    rootNode: loseView,
+    proxyRootName: LOSE_VIEW_PROXY_ROOT_NAME
+  });
 };
 
 LevelRenderer.prototype._renderResultPopup = function (runtimeSnapshot) {

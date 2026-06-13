@@ -38,6 +38,9 @@ module.exports = {
   },
 
   onDestroy: function () {
+    if (typeof this._cancelGameplayBundleIdleRelease === "function") {
+      this._cancelGameplayBundleIdleRelease();
+    }
     this._unbindGameCircleWelfareReturnRefresh();
     this._unbindFriendGiftEnterClaim();
     if (typeof this._unbindReturnToForegroundInterstitialAd === "function") {
@@ -64,7 +67,7 @@ module.exports = {
       this.networkLoadingOverlay.refreshLayout();
     }
 
-    if (this.levelRenderer && this.currentLevelConfig && !this.isRestarting && !this.isSelectingLevel) {
+    if (this.levelRenderer && this.gameManager && this.currentLevelConfig && !this.isRestarting && !this.isSelectingLevel) {
       var snapshot = this.gameManager.getRuntimeSnapshot();
       if (snapshot && snapshot.state === "won" && typeof this._applyCurrentLevelBestScoreFlag === "function") {
         this._applyCurrentLevelBestScoreFlag(snapshot);

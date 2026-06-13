@@ -8,6 +8,9 @@
     ]
   ],
   "excluded-modules": [
+    "DragonBones",
+    "EditBox",
+    "RichText",
     "TiledMap",
     "VideoPlayer",
     "WebView",
@@ -40,7 +43,7 @@
       "enable": false
     }
   },
-  "last-module-event-record-time": 1780540215257,
+  "last-module-event-record-time": 1781324691203,
   "migrate-history": [
     "cloud-function"
   ],

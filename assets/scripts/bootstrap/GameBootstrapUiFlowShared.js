@@ -13,6 +13,7 @@ var RankingViewController = require("../ui/RankingViewController");
 var ShopViewController = require("../ui/ShopViewController");
 var BuyViewController = require("../ui/BuyViewController");
 var PopupPanelAnimator = require("../ui/PopupPanelAnimator");
+var UiModalReleaseHelper = require("../utils/UiModalReleaseHelper");
 
 var SETTING_VOLUME_STEP = 0.1;
 var SETTING_STATUS_X_ENABLED = -18;
@@ -101,9 +102,12 @@ function hideGameCircleWelfareViewNode(host) {
   if (host.gameCircleButtonAdapter && typeof host.gameCircleButtonAdapter.hideAllButtons === "function") {
     host.gameCircleButtonAdapter.hideAllButtons();
   }
-  if (host._gameCircleWelfareViewNode && cc.isValid(host._gameCircleWelfareViewNode)) {
-    host._gameCircleWelfareViewNode.active = false;
-  }
+  UiModalReleaseHelper.releaseCachedModal(host, {
+    label: "GameCircleWelfareView",
+    nodeKey: "_gameCircleWelfareViewNode",
+    prefabKey: "_gameCircleWelfareViewPrefab",
+    controllerKey: "_gameCircleWelfareViewController"
+  });
 }
 
 function resolveGameCirclePlatform(host) {

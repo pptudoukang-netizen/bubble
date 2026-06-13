@@ -2,11 +2,19 @@
     "schemaVersion": 1,
     "version": "levels-1000-v1",
     "totalLevelCount": 1000,
-    "localLevelMax": 100,
+    "localLevelMax": 10,
     "cloud": {
         "envId": "cloud1-d7gqettx3e9249ca1"
     },
     "packs": [
+        {
+            "id": "levels_pack_011_100",
+            "from": 11,
+            "to": 100,
+            "fileID": "cloud://cloud1-d7gqettx3e9249ca1.636c-cloud1-d7gqettx3e9249ca1-1428064608/level-packs/levels_pack_011_100.json",
+            "sha256": "c0f5fad0d840af257b9646b8cff5dc8c287f4f0c9a901d1ea38f78e22a07a1cb",
+            "bytes": 457945
+        },
         {
             "id": "levels_pack_101_200",
             "from": 101,

@@ -78,10 +78,10 @@ function configureCountdownLabelTextureCache(label, description) {
   if (!label) {
     throw new Error(description + " is required.");
   }
-  if (!cc || !cc.Label || !cc.Label.CacheMode || cc.Label.CacheMode.BITMAP === undefined) {
-    throw new Error(description + " requires cc.Label.CacheMode.BITMAP.");
+  if (!cc || !cc.Label || !cc.Label.CacheMode || cc.Label.CacheMode.CHAR === undefined) {
+    throw new Error(description + " requires cc.Label.CacheMode.CHAR.");
   }
-  label.cacheMode = cc.Label.CacheMode.BITMAP;
+  label.cacheMode = cc.Label.CacheMode.CHAR;
 }
 
 function setDynamicLabelString(label, value, description) {
@@ -562,6 +562,39 @@ module.exports = {
     }
   },
 
+  _updateLevelSelectStaminaRecoveryStatus: function () {
+    LevelSelectMemoryDiagnostics.increment("levelSelect.updateStaminaRecoveryStatus");
+    if (!this._levelSelectNode || !cc.isValid(this._levelSelectNode)) {
+      throw new Error("Level select node is required for stamina recovery status.");
+    }
+
+    var topLayerNode = this._getLevelSelectTopLayerNode();
+    if (!topLayerNode || !topLayerNode.isValid) {
+      throw new Error("LevelView requires top_layer for stamina recovery status.");
+    }
+
+    var loveInfoNode = topLayerNode.getChildByName("love_info");
+    if (!loveInfoNode || !loveInfoNode.isValid) {
+      throw new Error("LevelView top_layer requires love_info.");
+    }
+    var loveNode = loveInfoNode.getChildByName("love");
+    var timeNode = loveInfoNode.getChildByName("time");
+    var loveLabel = loveNode ? loveNode.getComponent(cc.Label) : null;
+    var timeLabel = timeNode ? timeNode.getComponent(cc.Label) : null;
+    if (!timeLabel) {
+      throw new Error("LevelView love_info requires time label.");
+    }
+
+    this._refreshPlayerResources();
+    if (loveLabel) {
+      var staminaText = String(this.playerResources.stamina);
+      if (loveLabel.string !== staminaText) {
+        setDynamicLabelString(loveLabel, staminaText, "LevelView love label");
+      }
+    }
+    setCountdownLabelString(timeLabel, this._getStaminaRecoveryCountdownText(new Date()), "LevelView time label");
+  },
+
   _ensureStaminaRecoveryTicker: function () {
     LevelSelectMemoryDiagnostics.increment("levelSelect.ensureStaminaTicker");
     this._refreshPlayerResources();
@@ -578,9 +611,7 @@ module.exports = {
       if (!this.isSelectingLevel || !this._levelSelectNode || !cc.isValid(this._levelSelectNode)) {
         return;
       }
-      this._updateLevelSelectTopStatus({
-        updateEntryStates: false
-      });
+      this._updateLevelSelectStaminaRecoveryStatus();
       if (this.showDebugOverlay === true && this._statusLabel) {
         this._setStatus(this._formatLevelSelectDebugStatus());
       }

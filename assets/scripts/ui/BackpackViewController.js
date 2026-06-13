@@ -1,6 +1,7 @@
 "use strict";
 
 var BundleLoader = require("../utils/BundleLoader");
+var SpriteProxyLayerHelper = require("../utils/SpriteProxyLayerHelper");
 
 var ITEM_DEFINITIONS = [
   {
@@ -27,6 +28,13 @@ var ITEM_DEFINITIONS = [
 
 var PACK_LIST_GRID_SPACING_X = 2;
 var PACK_LIST_GRID_SPACING_Y = 20;
+var BACKPACK_RENDER_PROXY_ROOT_NAME = "backpack_render_proxy_root";
+var BACKPACK_RENDER_PROXY_LAYER_NAMES = {
+  panel: "backpack_proxy_panel_layer",
+  chrome: "backpack_proxy_chrome_layer",
+  itemBackground: "backpack_proxy_item_background_layer",
+  itemIcon: "backpack_proxy_item_icon_layer"
+};
 
 function findNodeByNameRecursive(rootNode, name) {
   if (!rootNode || !rootNode.isValid) {
@@ -158,6 +166,9 @@ function BackpackViewController(options) {
   this._itemSpriteFrames = {};
   this._itemSpriteLoadPromise = null;
   this._lastRenderOptions = null;
+  this._renderProxyRoot = null;
+  this._renderProxyLayers = {};
+  this._renderProxyRecords = [];
   this._initPackItemNodes();
   this._bindActions();
 }
@@ -179,6 +190,76 @@ BackpackViewController.prototype._resolveNodes = function () {
 BackpackViewController.prototype._bindActions = function () {
   bindTapWithoutScaleOnce(this._nodes.closeButton, "__backpackCloseTapBound", this.onClose);
   bindTapWithoutScaleOnce(this._nodes.mask, "__backpackMaskTapBound", this.onClose);
+};
+
+BackpackViewController.prototype._ensureRenderProxyLayers = function () {
+  if (this._renderProxyRoot && this._renderProxyRoot.isValid) {
+    return;
+  }
+
+  var root = SpriteProxyLayerHelper.createProxyRoot(this._nodes.panel, {
+    name: BACKPACK_RENDER_PROXY_ROOT_NAME,
+    zIndex: -1
+  });
+  this._renderProxyRoot = root;
+  this._renderProxyLayers = SpriteProxyLayerHelper.createProxyLayers(root, [
+    { key: "panel", name: BACKPACK_RENDER_PROXY_LAYER_NAMES.panel, zIndex: 0 },
+    { key: "chrome", name: BACKPACK_RENDER_PROXY_LAYER_NAMES.chrome, zIndex: 1 },
+    { key: "itemBackground", name: BACKPACK_RENDER_PROXY_LAYER_NAMES.itemBackground, zIndex: 2 },
+    { key: "itemIcon", name: BACKPACK_RENDER_PROXY_LAYER_NAMES.itemIcon, zIndex: 3 }
+  ]);
+};
+
+BackpackViewController.prototype._clearRenderProxyRecords = function () {
+  SpriteProxyLayerHelper.clearRecords(this._renderProxyRecords);
+};
+
+BackpackViewController.prototype._createSpriteProxyRecord = function (layerKey, sourceNode, name, visible) {
+  var layerNode = this._renderProxyLayers[layerKey];
+  if (!layerNode || !layerNode.isValid) {
+    throw new Error("BackpackView render proxy layer is invalid: " + layerKey);
+  }
+  this._renderProxyRecords.push(SpriteProxyLayerHelper.createRecord({
+    layerNode: layerNode,
+    sourceNode: sourceNode,
+    rootNode: this._renderProxyRoot,
+    name: name,
+    visible: visible === true
+  }));
+};
+
+BackpackViewController.prototype._hideSourceStaticSprites = function () {
+  var titleBgNode = requireChildNode(this._nodes.panel, "title_bg", "Panel");
+  SpriteProxyLayerHelper.setSpriteRenderEnabled(this._nodes.panel, false, "BackpackView Panel background");
+  SpriteProxyLayerHelper.setSpriteRenderEnabled(this._nodes.closeButton, false, "BackpackView close button");
+  SpriteProxyLayerHelper.setSpriteRenderEnabled(titleBgNode, false, "BackpackView title_bg");
+  SpriteProxyLayerHelper.setSpriteRenderEnabled(requireChildNode(titleBgNode, "paopao", "Panel/title_bg"), false, "BackpackView title_bg/paopao");
+};
+
+BackpackViewController.prototype._hideSourceItemSprites = function (itemNode) {
+  SpriteProxyLayerHelper.setSpriteRenderEnabled(itemNode, false, "BackpackView pack item background");
+  SpriteProxyLayerHelper.setSpriteRenderEnabled(requireChildNode(itemNode, "price_bg", itemNode.name), false, "BackpackView pack item price_bg");
+  SpriteProxyLayerHelper.setSpriteRenderEnabled(requireChildNode(itemNode, "icon", itemNode.name), false, "BackpackView pack item icon");
+};
+
+BackpackViewController.prototype._rebuildRenderProxies = function () {
+  this._ensureRenderProxyLayers();
+  this._clearRenderProxyRecords();
+  this._hideSourceStaticSprites();
+
+  var titleBgNode = requireChildNode(this._nodes.panel, "title_bg", "Panel");
+  this._createSpriteProxyRecord("panel", this._nodes.panel, "backpack_panel_bg_proxy", true);
+  this._createSpriteProxyRecord("chrome", this._nodes.closeButton, "backpack_close_button_proxy", true);
+  this._createSpriteProxyRecord("chrome", titleBgNode, "backpack_title_bg_proxy", true);
+  this._createSpriteProxyRecord("chrome", requireChildNode(titleBgNode, "paopao", "Panel/title_bg"), "backpack_title_bubble_proxy", true);
+
+  ITEM_DEFINITIONS.forEach(function (definition, index) {
+    var itemNode = requireValidNode(this._packItemNodesByItemId[definition.itemId], "pack item node for " + definition.itemId);
+    this._hideSourceItemSprites(itemNode);
+    this._createSpriteProxyRecord("itemBackground", itemNode, "backpack_item_bg_proxy_" + index, true);
+    this._createSpriteProxyRecord("itemBackground", requireChildNode(itemNode, "price_bg", itemNode.name), "backpack_item_price_bg_proxy_" + index, true);
+    this._createSpriteProxyRecord("itemIcon", requireChildNode(itemNode, "icon", itemNode.name), "backpack_item_icon_proxy_" + index, true);
+  }, this);
 };
 
 BackpackViewController.prototype._initPackItemNodes = function () {
@@ -258,8 +339,10 @@ BackpackViewController.prototype.render = function (options) {
   requireObject(options, "BackpackView render options");
   requireObject(options.inventory, "BackpackView render inventory");
   this._lastRenderOptions = options;
-  this._renderPackList(options.inventory);
-  return this.ensureItemSpriteFrames();
+  return this.ensureItemSpriteFrames().then(function () {
+    this._renderPackList(options.inventory);
+    this._rebuildRenderProxies();
+  }.bind(this));
 };
 
 BackpackViewController.prototype.ensureItemSpriteFrames = function () {
@@ -289,9 +372,6 @@ BackpackViewController.prototype.ensureItemSpriteFrames = function () {
       this._itemSpriteFrames[entry.itemId] = entry.spriteFrame;
     }, this);
     this._itemSpriteLoadPromise = null;
-    if (this._lastRenderOptions) {
-      this.render(this._lastRenderOptions);
-    }
     return this._itemSpriteFrames;
   }.bind(this)).catch(function (error) {
     this._itemSpriteLoadPromise = null;

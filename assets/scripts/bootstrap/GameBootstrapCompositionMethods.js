@@ -3,6 +3,7 @@
 var Shared = require("./GameBootstrapShared");
 var DebugFlags = Shared.DebugFlags;
 var Logger = Shared.Logger;
+var BundleLoader = Shared.BundleLoader;
 var PoolManager = Shared.PoolManager;
 var LevelProgressStore = Shared.LevelProgressStore;
 var PlayerResourceStore = Shared.PlayerResourceStore;
@@ -26,9 +27,7 @@ var ShopGoodsConfig = Shared.ShopGoodsConfig;
 var ShopRulesConfig = Shared.ShopRulesConfig;
 var LevelManager = Shared.LevelManager;
 var RuntimeModeConfig = Shared.RuntimeModeConfig;
-var GameManager = Shared.GameManager;
 var ResourceGateway = Shared.ResourceGateway;
-var LevelRenderer = Shared.LevelRenderer;
 var NetworkLoadingOverlay = Shared.NetworkLoadingOverlay;
 var TipsPresenter = Shared.TipsPresenter;
 var StarChestRewardService = Shared.StarChestRewardService;
@@ -99,6 +98,10 @@ module.exports = {
     this._startupFlowPromise = null;
     this._startupResolvedLevelIds = null;
     this._startupPrefabWarmupPromise = null;
+    this._startupBundlePrefetchPromise = null;
+    this._deferredFriendStaminaGiftClaimPromise = null;
+    this._deferredPlayerCloudProfileSyncPromise = null;
+    this._gameplayKernelPromise = null;
     this._lastStatusMessage = "";
     this._lastRuntimeState = null;
     this._lastAimRefreshPoint = null;
@@ -394,58 +397,11 @@ module.exports = {
 
     this.poolManager = new PoolManager();
     this.levelManager = new LevelManager();
-    this.gameManager = new GameManager({
-      poolManager: this.poolManager,
-      levelManager: this.levelManager
-    });
-    this.levelRenderer = new LevelRenderer(this.node);
-    this.levelRenderer.setLoseAdPresentation({
-      showVideoIcon: this._hasRewardedVideoAdConfig()
-    });
-    this.levelRenderer.setWinActionHandlers({
-      onNextLevel: this._onNextLevelTap.bind(this),
-      onRetryLevel: this._restartCurrentLevel.bind(this)
-    });
-    this.levelRenderer.setLoseActionHandlers({
-      onRetryLevel: this._restartCurrentLevel.bind(this),
-      onBackLevel: this._onBackToLevelTap.bind(this),
-      onWatchAd: this._onLoseWatchAdTap.bind(this)
-    });
-    this.levelRenderer.setGameplayActionHandlers({
-      onOpenSettings: this._onGameplaySettingTap.bind(this),
-      onUseRainbow: function () {
-        this._onUseSkillBallTap("rainbow");
-      }.bind(this),
-      onUseBlast: function () {
-        this._onUseSkillBallTap("blast");
-      }.bind(this),
-      onUseSwap: function () {
-        this._onUseSwapBallTap();
-      }.bind(this),
-      onUseBarrierHammer: function () {
-        this._onUseBarrierHammerTap();
-      }.bind(this),
-      onUseThreeLineElimination: function () {
-        this._onUseThreeLineEliminationTap();
-      }.bind(this),
-      onUsePlusThreeBalls: function () {
-        this._onUsePlusThreeBallsTap();
-      }.bind(this),
-      onSelectRainbowColor: function (colorCode) {
-        this._onSelectRainbowColorTap(colorCode);
-      }.bind(this),
-      onRecoverInventoryByAd: function (powerupType) {
-        this._playSfx("uiClick");
-        this._tryRecoverInventoryByAd(powerupType);
-      }.bind(this),
-      onRecoverAdRunPowerupByAd: function (powerupType) {
-        this._playSfx("uiClick");
-        this._tryRecoverAdRunPowerupByAd(powerupType);
-      }.bind(this)
-    });
-
-    this.gameManager.bootstrap();
+    this.gameManager = null;
+    this.levelRenderer = null;
     this._bindInput();
+
+    this._beginStartupBundlePrefetch();
 
     if (RuntimeModeConfig.exposeDebugHandle === true && typeof window !== "undefined") {
       window["__bubbleDebug"] = {
@@ -464,8 +420,90 @@ module.exports = {
           }.bind(this),
           save: this._onRouteEditorSaveTap.bind(this),
           toggle: this._onRouteEditorToggleTap.bind(this)
-        }
+        },
+        logAssetStats: function (context) {
+          this._logAssetManagerStats(context);
+        }.bind(this)
       };
     }
+  },
+
+  _ensureGameplayKernel: function () {
+    this._cancelGameplayBundleIdleRelease();
+    if (this.gameManager && this.levelRenderer) {
+      return Promise.resolve();
+    }
+    if (this._gameplayKernelPromise) {
+      return this._gameplayKernelPromise;
+    }
+
+    this._gameplayKernelPromise = BundleLoader.ensureGameplayBundleLoaded().then(function () {
+      if (this.gameManager && this.levelRenderer) {
+        return null;
+      }
+
+      var GameManager = require("../core/GameManager");
+      var LevelRenderer = require("../render/LevelRenderer");
+
+      this.gameManager = new GameManager({
+        poolManager: this.poolManager,
+        levelManager: this.levelManager
+      });
+      this.levelRenderer = new LevelRenderer(this.node);
+      this.levelRenderer.setLoseAdPresentation({
+        showVideoIcon: this._hasRewardedVideoAdConfig()
+      });
+      this.levelRenderer.setWinActionHandlers({
+        onNextLevel: this._onNextLevelTap.bind(this),
+        onRetryLevel: this._restartCurrentLevel.bind(this)
+      });
+      this.levelRenderer.setLoseActionHandlers({
+        onRetryLevel: this._restartCurrentLevel.bind(this),
+        onBackLevel: this._onBackToLevelTap.bind(this),
+        onWatchAd: this._onLoseWatchAdTap.bind(this)
+      });
+      this.levelRenderer.setGameplayActionHandlers({
+        onOpenSettings: this._onGameplaySettingTap.bind(this),
+        onUseRainbow: function () {
+          this._onUseSkillBallTap("rainbow");
+        }.bind(this),
+        onUseBlast: function () {
+          this._onUseSkillBallTap("blast");
+        }.bind(this),
+        onUseSwap: function () {
+          this._onUseSwapBallTap();
+        }.bind(this),
+        onUseBarrierHammer: function () {
+          this._onUseBarrierHammerTap();
+        }.bind(this),
+        onUseThreeLineElimination: function () {
+          this._onUseThreeLineEliminationTap();
+        }.bind(this),
+        onUsePlusThreeBalls: function () {
+          this._onUsePlusThreeBallsTap();
+        }.bind(this),
+        onSelectRainbowColor: function (colorCode) {
+          this._onSelectRainbowColorTap(colorCode);
+        }.bind(this),
+        onRecoverInventoryByAd: function (powerupType) {
+          this._playSfx("uiClick");
+          this._tryRecoverInventoryByAd(powerupType);
+        }.bind(this),
+        onRecoverAdRunPowerupByAd: function (powerupType) {
+          this._playSfx("uiClick");
+          this._tryRecoverAdRunPowerupByAd(powerupType);
+        }.bind(this)
+      });
+      this.gameManager.bootstrap();
+      return null;
+    }.bind(this)).catch(function (error) {
+      this._gameplayKernelPromise = null;
+      throw error;
+    }.bind(this)).then(function (result) {
+      this._gameplayKernelPromise = null;
+      return result;
+    }.bind(this));
+
+    return this._gameplayKernelPromise;
   }
 };

@@ -5,6 +5,7 @@ var Logger = Shared.Logger;
 var DailyTaskViewController = require("../ui/DailyTaskViewController");
 var PopupPanelAnimator = Shared.PopupPanelAnimator;
 var hideGameCircleWelfareViewNode = Shared.hideGameCircleWelfareViewNode;
+var UiModalReleaseHelper = require("../utils/UiModalReleaseHelper");
 
 var DAILY_TASK_VIEW_PREFAB_PATH = "prefabs/ui/DailyTaskView";
 var FRIEND_STAMINA_GIFT_COST = 1;
@@ -190,10 +191,12 @@ module.exports = {
   },
 
   _hideDailyTaskView: function () {
-    if (!this._dailyTaskViewNode || !cc.isValid(this._dailyTaskViewNode)) {
-      return;
-    }
-    this._dailyTaskViewNode.active = false;
+    UiModalReleaseHelper.releaseCachedModal(this, {
+      label: "DailyTaskView",
+      nodeKey: "_dailyTaskViewNode",
+      prefabKey: "_dailyTaskViewPrefab",
+      controllerKey: "_dailyTaskViewController"
+    });
   },
 
   _renderDailyTaskView: function () {

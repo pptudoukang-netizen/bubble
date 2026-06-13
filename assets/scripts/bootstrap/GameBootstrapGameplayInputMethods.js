@@ -12,6 +12,9 @@ module.exports = {
     if (!this.currentLevelConfig || this.isRestarting) {
       return;
     }
+    if (!this.gameManager || !this.levelRenderer) {
+      return;
+    }
 
     var snapshot = this.gameManager.update(dt);
     if (!snapshot) {

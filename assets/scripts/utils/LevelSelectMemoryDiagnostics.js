@@ -191,12 +191,16 @@ function formatOverlayText(payload) {
       " destroy=" + formatCounter(payload.counters, "floatingMap.destroyExistingRuntimeRoot"),
     "Island create=" + sumCountersByPrefix(payload.counters, "floatingMap.createIsland:") +
       " destroy=" + formatCounter(payload.counters, "floatingMap.destroyIsland") +
+      " release=" + sumCountersByPrefix(payload.counters, "floatingMap.releasePrefab:") +
       " scrollTick=" + formatCounter(payload.counters, "floatingMap.scrollTimerTick") +
       " inertiaTick=" + formatCounter(payload.counters, "floatingMap.inertiaTimerTick"),
     "Bundle loads=" + formatCounter(payload.counters, "bundle.loadBundle:resources") +
       " mapLoad=" + formatCounter(payload.counters, "bundle.loadBundle:map") +
+      " mapRelease=" + formatCounter(payload.counters, "bundle.release:map") +
+      " gameRelease=" + formatCounter(payload.counters, "bundle.release:game") +
       " topStatus=" + formatCounter(payload.counters, "levelSelect.updateTopStatus") +
       " staminaTick=" + formatCounter(payload.counters, "levelSelect.staminaTickerTick"),
+    "Ui modal release=" + sumCountersByPrefix(payload.counters, "uiModal.release:"),
     formatTopCounters(payload.counters)
   ].join("\n");
 }

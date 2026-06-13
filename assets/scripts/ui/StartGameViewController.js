@@ -1,6 +1,7 @@
 "use strict";
 
 var BundleLoader = require("../utils/BundleLoader");
+var SpriteProxyLayerHelper = require("../utils/SpriteProxyLayerHelper");
 
 var POWERUP_DEFINITIONS = [
   { itemId: "swap_ball", unlockLevel: 5, iconPath: "image/props/change_ball" },
@@ -9,6 +10,15 @@ var POWERUP_DEFINITIONS = [
   { itemId: "barrier_hammer", unlockLevel: 20, iconPath: "image/props/barrier_hammer" }
 ];
 var LOCK_ICON_PATH = "image/commone/lock";
+var START_GAME_RENDER_PROXY_ROOT_NAME = "start_game_render_proxy_root";
+var START_GAME_RENDER_PROXY_LAYER_NAMES = {
+  panel: "start_game_proxy_panel_layer",
+  chrome: "start_game_proxy_chrome_layer",
+  target: "start_game_proxy_target_layer",
+  propBackground: "start_game_proxy_prop_background_layer",
+  propIcon: "start_game_proxy_prop_icon_layer",
+  propState: "start_game_proxy_prop_state_layer"
+};
 
 function findNodeByNameRecursive(rootNode, name) {
   if (!rootNode || !rootNode.isValid) {
@@ -204,13 +214,15 @@ function StartGameViewController(options) {
   this.onUnavailable = requireFunction(options.onUnavailable, "StartGameViewController onUnavailable");
   this.onPurchasePowerup = requireFunction(options.onPurchasePowerup, "StartGameViewController onPurchasePowerup");
   this._nodes = this._resolveNodes();
-  this._nodes.awardTipsNode.active = false;
   this._propNodes = [];
   this._spriteFrames = {};
   this._spriteLoadPromise = null;
   this._renderState = null;
   this._selectedItems = [];
   this._purchaseInProgressItemId = "";
+  this._renderProxyRoot = null;
+  this._renderProxyLayers = {};
+  this._renderProxyRecords = [];
   this._initPropNodes();
   this._bindActions();
 }
@@ -230,10 +242,10 @@ StartGameViewController.prototype._resolveNodes = function () {
     mask: requireValidNode(findNodeByNameRecursive(this.node, "mask"), "mask"),
     panel: panelNode,
     closeButton: requireChildNode(panelNode, "btn_close", "Panel"),
-    awardTipsNode: requireChildNode(panelNode, "award_tips", "Panel"),
     levelLabelNode: requireChildNode(titleBgNode, "level", "Panel/title_bg"),
     playButton: playButtonNode,
     staminaCostLabelNode: requireChildNode(playButtonNode, "num", "Panel/play_btn"),
+    targetNode: targetNode,
     targetTitleNode: requireChildNode(targetNode, "target_title", "Panel/target"),
     targetLayoutNode: targetLayoutNode,
     targetBallNode: targetBallNode,
@@ -274,6 +286,17 @@ StartGameViewController.prototype._selectObjectiveTargetNodes = function (object
   throw new Error("Unsupported StartGameView objective type: " + objective.type);
 };
 
+StartGameViewController.prototype._updateTargetLayout = function () {
+  var layout = requireValidNode(this._nodes.targetLayoutNode, "Panel/target/traget_layout").getComponent(cc.Layout);
+  if (!layout) {
+    throw new Error("StartGameView target layout requires cc.Layout.");
+  }
+  if (typeof layout.updateLayout !== "function") {
+    throw new Error("StartGameView target layout requires cc.Layout.updateLayout.");
+  }
+  layout.updateLayout();
+};
+
 StartGameViewController.prototype._bindActions = function () {
   bindTapOnce(this._nodes.closeButton, "__startGameCloseTapBound", this.onClose);
   bindTapWithoutScaleOnce(this._nodes.mask, "__startGameMaskTapBound", this.onClose);
@@ -284,6 +307,121 @@ StartGameViewController.prototype._bindActions = function () {
     }
     this.onPlay(this._selectedItems.slice());
   }.bind(this));
+  this._bindProxySyncToNode(this._nodes.closeButton);
+  this._bindProxySyncToNode(this._nodes.playButton);
+};
+
+StartGameViewController.prototype._bindProxySyncToNode = function (node) {
+  requireValidNode(node, "StartGameView proxy sync node");
+  if (node.__startGameProxySyncBound === true) {
+    return;
+  }
+  node.__startGameProxySyncBound = true;
+  node.on(cc.Node.EventType.TOUCH_START, function () {
+    this._syncRenderProxies();
+  }, this);
+  node.on(cc.Node.EventType.TOUCH_CANCEL, function () {
+    this._syncRenderProxies();
+  }, this);
+  node.on(cc.Node.EventType.TOUCH_END, function () {
+    this._syncRenderProxies();
+  }, this);
+};
+
+StartGameViewController.prototype._ensureRenderProxyLayers = function () {
+  if (this._renderProxyRoot && this._renderProxyRoot.isValid) {
+    return;
+  }
+
+  var root = SpriteProxyLayerHelper.createProxyRoot(this._nodes.panel, {
+    name: START_GAME_RENDER_PROXY_ROOT_NAME,
+    zIndex: -1
+  });
+  this._renderProxyRoot = root;
+  this._renderProxyLayers = SpriteProxyLayerHelper.createProxyLayers(root, [
+    { key: "panel", name: START_GAME_RENDER_PROXY_LAYER_NAMES.panel, zIndex: 0 },
+    { key: "chrome", name: START_GAME_RENDER_PROXY_LAYER_NAMES.chrome, zIndex: 1 },
+    { key: "target", name: START_GAME_RENDER_PROXY_LAYER_NAMES.target, zIndex: 2 },
+    { key: "propBackground", name: START_GAME_RENDER_PROXY_LAYER_NAMES.propBackground, zIndex: 3 },
+    { key: "propIcon", name: START_GAME_RENDER_PROXY_LAYER_NAMES.propIcon, zIndex: 4 },
+    { key: "propState", name: START_GAME_RENDER_PROXY_LAYER_NAMES.propState, zIndex: 5 }
+  ]);
+};
+
+StartGameViewController.prototype._clearRenderProxyRecords = function () {
+  SpriteProxyLayerHelper.clearRecords(this._renderProxyRecords);
+};
+
+StartGameViewController.prototype._createSpriteProxyRecord = function (layerKey, sourceNode, name, visible) {
+  var layerNode = this._renderProxyLayers[layerKey];
+  if (!layerNode || !layerNode.isValid) {
+    throw new Error("StartGameView render proxy layer is invalid: " + layerKey);
+  }
+  this._renderProxyRecords.push(SpriteProxyLayerHelper.createRecord({
+    layerNode: layerNode,
+    sourceNode: sourceNode,
+    rootNode: this._renderProxyRoot,
+    name: name,
+    visible: visible === true
+  }));
+};
+
+StartGameViewController.prototype._hideStaticSourceSprites = function () {
+  var titleBgNode = requireChildNode(this._nodes.panel, "title_bg", "Panel");
+  SpriteProxyLayerHelper.setSpriteRenderEnabled(this._nodes.panel, false, "StartGameView Panel background");
+  SpriteProxyLayerHelper.setSpriteRenderEnabled(this._nodes.closeButton, false, "StartGameView close button");
+  SpriteProxyLayerHelper.setSpriteRenderEnabled(titleBgNode, false, "StartGameView title_bg");
+  SpriteProxyLayerHelper.setSpriteRenderEnabled(requireChildNode(titleBgNode, "paopao", "Panel/title_bg"), false, "StartGameView title_bg/paopao");
+  SpriteProxyLayerHelper.setSpriteRenderEnabled(requireChildNode(this._nodes.panel, "line", "Panel"), false, "StartGameView line");
+  SpriteProxyLayerHelper.setSpriteRenderEnabled(this._nodes.playButton, false, "StartGameView play_btn");
+  SpriteProxyLayerHelper.setSpriteRenderEnabled(requireChildNode(this._nodes.playButton, "love", "Panel/play_btn"), false, "StartGameView play_btn/love");
+  SpriteProxyLayerHelper.setSpriteRenderEnabled(this._nodes.targetNode, false, "StartGameView target");
+  SpriteProxyLayerHelper.setSpriteRenderEnabled(this._nodes.targetBallNode, false, "StartGameView target_ball");
+  SpriteProxyLayerHelper.setSpriteRenderEnabled(this._nodes.targetIceNode, false, "StartGameView target_ice");
+  SpriteProxyLayerHelper.setSpriteRenderEnabled(this._nodes.propListNode, false, "StartGameView prop_listview");
+};
+
+StartGameViewController.prototype._hidePropSourceSprites = function (entry) {
+  SpriteProxyLayerHelper.setSpriteRenderEnabled(entry.node, false, "StartGameView prop background");
+  SpriteProxyLayerHelper.setSpriteRenderEnabled(entry.iconNode, false, "StartGameView prop icon");
+  SpriteProxyLayerHelper.setSpriteRenderEnabled(requireChildNode(entry.node, "price_bg", entry.node.name), false, "StartGameView prop price_bg");
+  SpriteProxyLayerHelper.setSpriteRenderEnabled(entry.selectNode, false, "StartGameView prop select");
+  SpriteProxyLayerHelper.setSpriteRenderEnabled(entry.coinNode, false, "StartGameView prop coin");
+};
+
+StartGameViewController.prototype._rebuildRenderProxies = function () {
+  this._ensureRenderProxyLayers();
+  this._clearRenderProxyRecords();
+  this._hideStaticSourceSprites();
+
+  var titleBgNode = requireChildNode(this._nodes.panel, "title_bg", "Panel");
+  this._createSpriteProxyRecord("panel", this._nodes.panel, "start_game_panel_bg_proxy", true);
+  this._createSpriteProxyRecord("chrome", this._nodes.closeButton, "start_game_close_button_proxy", true);
+  this._createSpriteProxyRecord("chrome", titleBgNode, "start_game_title_bg_proxy", true);
+  this._createSpriteProxyRecord("chrome", requireChildNode(titleBgNode, "paopao", "Panel/title_bg"), "start_game_title_bubble_proxy", true);
+  this._createSpriteProxyRecord("chrome", requireChildNode(this._nodes.panel, "line", "Panel"), "start_game_line_proxy", true);
+  this._createSpriteProxyRecord("chrome", this._nodes.playButton, "start_game_play_button_proxy", true);
+  this._createSpriteProxyRecord("chrome", requireChildNode(this._nodes.playButton, "love", "Panel/play_btn"), "start_game_play_love_proxy", true);
+  this._createSpriteProxyRecord("target", this._nodes.targetNode, "start_game_target_bg_proxy", true);
+  this._createSpriteProxyRecord("target", this._nodes.targetBallNode, "start_game_target_ball_proxy", this._nodes.targetBallNode.active === true);
+  this._createSpriteProxyRecord("target", this._nodes.targetIceNode, "start_game_target_ice_proxy", this._nodes.targetIceNode.active === true);
+  this._createSpriteProxyRecord("propBackground", this._nodes.propListNode, "start_game_prop_list_bg_proxy", true);
+
+  this._propNodes.forEach(function (entry, index) {
+    this._hidePropSourceSprites(entry);
+    this._createSpriteProxyRecord("propBackground", entry.node, "start_game_prop_bg_proxy_" + index, true);
+    this._createSpriteProxyRecord("propBackground", requireChildNode(entry.node, "price_bg", entry.node.name), "start_game_prop_price_bg_proxy_" + index, true);
+    this._createSpriteProxyRecord("propIcon", entry.iconNode, "start_game_prop_icon_proxy_" + index, true);
+    this._createSpriteProxyRecord("propState", entry.selectNode, "start_game_prop_select_proxy_" + index, true);
+    this._createSpriteProxyRecord("propState", entry.coinNode, "start_game_prop_coin_proxy_" + index, true);
+  }, this);
+};
+
+StartGameViewController.prototype._syncRenderProxies = function () {
+  if (!this._renderProxyRoot || !this._renderProxyRoot.isValid) {
+    return;
+  }
+  SpriteProxyLayerHelper.syncRecords(this._renderProxyRecords, this._renderProxyRoot);
 };
 
 StartGameViewController.prototype._initPropNodes = function () {
@@ -314,6 +452,7 @@ StartGameViewController.prototype._initPropNodes = function () {
     bindTapOnce(entry.node, "__startGamePropTapBound", function () {
       this._onPropTap(entry.definition.itemId);
     }.bind(this));
+    this._bindProxySyncToNode(entry.node);
   }, this);
 };
 
@@ -387,6 +526,7 @@ StartGameViewController.prototype._onPropTap = function (itemId) {
   if (index >= 0) {
     this._selectedItems.splice(index, 1);
     this._renderPropSelectionState();
+    this._syncRenderProxies();
     return;
   }
 
@@ -398,6 +538,7 @@ StartGameViewController.prototype._onPropTap = function (itemId) {
 
   this._selectedItems.push(itemId);
   this._renderPropSelectionState();
+  this._syncRenderProxies();
 };
 
 StartGameViewController.prototype._purchasePowerupAndSelect = function (itemId) {
@@ -439,6 +580,7 @@ StartGameViewController.prototype._purchasePowerupAndSelect = function (itemId) 
     }
     this._renderPropItems();
     this._renderPropSelectionState();
+    this._syncRenderProxies();
   }.bind(this)).catch(function (error) {
     this.onUnavailable(error && error.message ? error.message : String(error));
   }.bind(this)).then(function () {
@@ -532,10 +674,11 @@ StartGameViewController.prototype._renderContent = function (options) {
   setLabelText(this._nodes.targetTitleNode, "收集目标", "Panel/target/target_title");
   setLabelText(targetNodes.countLabelNode, String(options.objective.target), targetNodes.description + "/num");
   getSprite(targetNodes.iconNode, targetNodes.description).spriteFrame = this._spriteFrames[options.objective.iconPath];
-  this._nodes.awardTipsNode.active = options.showAwardTips;
+  this._updateTargetLayout();
 
   this._renderPropItems();
   this._renderPropSelectionState();
+  this._rebuildRenderProxies();
 };
 
 StartGameViewController.prototype.render = function (options) {
@@ -543,7 +686,6 @@ StartGameViewController.prototype.render = function (options) {
   if (typeof options.showAwardTips !== "boolean") {
     throw new Error("StartGameView showAwardTips must be boolean.");
   }
-  this._nodes.awardTipsNode.active = options.showAwardTips;
   return this._ensureSpriteFrames(options).then(function () {
     this._renderContent(options);
   }.bind(this));

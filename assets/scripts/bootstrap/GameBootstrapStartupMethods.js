@@ -112,6 +112,8 @@ module.exports = {
     if (!this.enableStartupLoadingView) {
       this._startupFlowPromise = this._runWeightedStartupTasks().then(function () {
         this._showLevelSelectView();
+        this._scheduleDeferredFriendStaminaGiftClaim();
+        this._scheduleDeferredPlayerCloudProfileSync();
       }.bind(this)).catch(function (error) {
         Logger.error("Startup resource loading failed", error && error.stack ? error.stack : error);
         this._setStatus("Startup resource loading failed. Check console logs.");
@@ -120,7 +122,6 @@ module.exports = {
       return this._startupFlowPromise;
     }
 
-    var flowStartedAt = Date.now();
     this._startupFlowPromise = this._ensureLoadingViewController().then(function (controller) {
       this._setStatus("Loading startup resources...");
       controller.setProgress(0, true);
@@ -129,21 +130,16 @@ module.exports = {
     }.bind(this)).then(function () {
       return this._runWeightedStartupTasks();
     }.bind(this)).then(function () {
-      var minVisibleMs = Math.max(0, Math.floor(Number(this.loadingViewMinVisibleMs) || 0));
-      var elapsed = Date.now() - flowStartedAt;
-      var waitMs = Math.max(0, minVisibleMs - elapsed);
-      return this._delay(waitMs);
-    }.bind(this)).then(function () {
       if (!this._loadingViewController) {
         return;
       }
       this._loadingViewController.setProgress(1, true);
       this._loadingViewController.setStage("准备进入关卡...");
-      return this._loadingViewController.waitForProgressComplete().then(function () {
-        return this._loadingViewController.playOut();
-      }.bind(this));
+      return this._loadingViewController.playOut();
     }.bind(this)).then(function () {
       this._showLevelSelectView();
+      this._scheduleDeferredFriendStaminaGiftClaim();
+      this._scheduleDeferredPlayerCloudProfileSync();
     }.bind(this)).catch(function (error) {
       Logger.error("Startup loading flow failed", error && error.stack ? error.stack : error);
       this._setStatus("Startup resource loading failed. Check console logs.");
@@ -245,42 +241,26 @@ module.exports = {
   _runWeightedStartupTasks: function () {
     var host = this;
 
-    setStartupStage(host, "准备资源分包...");
+    setStartupStage(host, "准备启动分包...");
     if (host._loadingViewController && host._loadingViewController.setProgress) {
       host._loadingViewController.setProgress(0, true);
     }
 
-    return BundleLoader.ensureResourcesBundleLoaded().then(function () {
-      if (host._loadingViewController && host._loadingViewController.setProgress) {
-        host._loadingViewController.setProgress(0.35, false);
-      }
-      setStartupStage(host, "准备地图分包...");
-      return BundleLoader.ensureNamedBundleLoaded("map");
-    }).then(function () {
+    return host._beginStartupBundlePrefetch().then(function () {
       if (host._loadingViewController && host._loadingViewController.setProgress) {
         host._loadingViewController.setProgress(0.55, false);
       }
 
-      var tasks = [
-        {
-          id: "player_cloud_profile_sync",
-          stage: "同步玩家云端信息...",
-          weight: 0.2,
-          run: function () {
-            return host._syncPlayerProfileFromCloud();
-          }
-        },
+      return runParallelStartupTasks(host, [
         {
           id: "level_select_prefabs",
           stage: "加载选关界面...",
-          weight: 0.8,
+          weight: 1,
           run: function () {
             return host._preloadStartupPrefabs();
           }
         }
-      ];
-
-      return runParallelStartupTasks(host, tasks, "并行准备启动资源...", {
+      ], "加载选关界面...", {
         base: 0.55,
         span: 0.45
       });
@@ -288,9 +268,92 @@ module.exports = {
       if (host._loadingViewController && host._loadingViewController.setProgress) {
         host._loadingViewController.setProgress(1, false);
       }
-      setStartupStage(host, "检查好友体力赠送...");
-      return host._claimPendingFriendStaminaGiftFromLaunchOptions();
+      setStartupStage(host, "准备进入关卡...");
+      return null;
     });
+  },
+
+  _beginStartupBundlePrefetch: function () {
+    if (this._startupBundlePrefetchPromise) {
+      return this._startupBundlePrefetchPromise;
+    }
+
+    this._startupBundlePrefetchPromise = Promise.all([
+      BundleLoader.ensureResourcesBundleLoaded(),
+      BundleLoader.ensureNamedBundleLoaded("map")
+    ]);
+
+    return this._startupBundlePrefetchPromise;
+  },
+
+  _scheduleDeferredFriendStaminaGiftClaim: function () {
+    if (this._deferredFriendStaminaGiftClaimPromise) {
+      return this._deferredFriendStaminaGiftClaimPromise;
+    }
+
+    this._deferredFriendStaminaGiftClaimPromise = Promise.resolve().then(function () {
+      setStartupStage(this, "检查好友体力赠送...");
+      return this._claimPendingFriendStaminaGiftFromLaunchOptions();
+    }.bind(this)).catch(function (error) {
+      this._deferredFriendStaminaGiftClaimPromise = null;
+      throw error;
+    }.bind(this));
+
+    return this._deferredFriendStaminaGiftClaimPromise;
+  },
+
+  _scheduleDeferredPlayerCloudProfileSync: function () {
+    if (this._deferredPlayerCloudProfileSyncPromise) {
+      return this._deferredPlayerCloudProfileSyncPromise;
+    }
+
+    this._deferredPlayerCloudProfileSyncPromise = this._syncPlayerProfileFromCloud().then(function (result) {
+      if (result && result.source === "cloud") {
+        this._refreshLevelSelectAfterCloudProfileSync();
+      }
+      return result;
+    }.bind(this)).catch(function (error) {
+      Logger.error(
+        "Deferred player cloud profile sync failed",
+        error && error.stack ? error.stack : error
+      );
+      this._setStatus("玩家云端信息同步失败");
+      if (this.tipsPresenter && typeof this.tipsPresenter.showText === "function") {
+        this.tipsPresenter.showText("玩家云端信息同步失败");
+      }
+      this._deferredPlayerCloudProfileSyncPromise = null;
+      throw error;
+    }.bind(this));
+
+    return this._deferredPlayerCloudProfileSyncPromise;
+  },
+
+  _refreshLevelSelectAfterCloudProfileSync: function () {
+    if (!this.isSelectingLevel) {
+      return;
+    }
+
+    this._refreshLevelProgress();
+    this._refreshPlayerResources();
+    if (typeof this._refreshPlayerInventory === "function") {
+      this._refreshPlayerInventory();
+    }
+    if (typeof this._refreshSelectedPowerups === "function") {
+      this._refreshSelectedPowerups();
+    }
+    this._refreshSignInState();
+    this._updateSignInEntryState();
+    if (typeof this._updateDailyTaskEntryState === "function") {
+      this._updateDailyTaskEntryState();
+    }
+    if (typeof this._updateInventoryEntryState === "function") {
+      this._updateInventoryEntryState();
+    }
+    this._updateStarChestEntryState();
+    this._updateNewGiftEntryState();
+    if (typeof this._ensureGameCircleEntryButton === "function") {
+      this._ensureGameCircleEntryButton();
+    }
   },
 
   _syncPlayerProfileFromCloud: function () {

@@ -2,6 +2,7 @@
 
 var BundleLoader = require("../utils/BundleLoader");
 var Logger = require("../utils/Logger");
+var SpriteProxyLayerHelper = require("../utils/SpriteProxyLayerHelper");
 
 var ROOT_WIDTH = 720;
 var ROOT_HEIGHT = 1280;
@@ -14,6 +15,17 @@ var ROW_STRIDE = ROW_HEIGHT + ROW_GAP;
 var ROW_POOL_BUFFER = 2;
 var MIN_ROW_POOL_SIZE = 6;
 var RANKING_ITEM_PREFAB_PATH = "prefabs/ui/RankingItem";
+var RANKING_STATIC_PROXY_ROOT_NAME = "ranking_static_proxy_root";
+var RANKING_ROW_PROXY_ROOT_NAME = "ranking_row_proxy_root";
+var RANKING_STATIC_PROXY_LAYER_NAMES = {
+  panel: "ranking_proxy_panel_layer",
+  chrome: "ranking_proxy_chrome_layer"
+};
+var RANKING_ROW_PROXY_LAYER_NAMES = {
+  background: "ranking_proxy_row_background_layer",
+  badge: "ranking_proxy_row_badge_layer",
+  avatarFrame: "ranking_proxy_row_avatar_frame_layer"
+};
 
 var TEXT = {
   scoreSuffix: "",
@@ -257,6 +269,12 @@ function RankingViewController(options) {
   this._rankingItemPrefabLoadPromise = null;
   this._spriteFrames = null;
   this._spriteFrameLoadPromise = null;
+  this._staticProxyRoot = null;
+  this._staticProxyLayers = {};
+  this._staticProxyRecords = [];
+  this._rowProxyRoot = null;
+  this._rowProxyLayers = {};
+  this._rowProxyRecords = [];
   this._nodes = this._resolveNodes();
   this._bindActions();
   this.ensureSpriteFrames();
@@ -362,6 +380,184 @@ RankingViewController.prototype._bindActions = function () {
 
   bindTapOnce(this._nodes.closeButton, this.onClose);
   bindCloseAreaOnce(this._nodes.mask, this.onClose);
+  if (this._nodes.closeButton && this._nodes.closeButton.isValid) {
+    this._bindProxySyncToNode(this._nodes.closeButton);
+  }
+};
+
+RankingViewController.prototype._bindProxySyncToNode = function (node) {
+  if (!node || !node.isValid) {
+    throw new Error("RankingView proxy sync node is invalid.");
+  }
+  if (node.__rankingProxySyncBound === true) {
+    return;
+  }
+  node.__rankingProxySyncBound = true;
+  node.on(cc.Node.EventType.TOUCH_START, function () {
+    this._syncRenderProxies();
+  }, this);
+  node.on(cc.Node.EventType.TOUCH_CANCEL, function () {
+    this._syncRenderProxies();
+  }, this);
+  node.on(cc.Node.EventType.TOUCH_END, function () {
+    this._syncRenderProxies();
+  }, this);
+};
+
+RankingViewController.prototype._ensureStaticProxyLayers = function () {
+  if (this._staticProxyRoot && this._staticProxyRoot.isValid) {
+    return;
+  }
+  var root = SpriteProxyLayerHelper.createProxyRoot(this._nodes.panel, {
+    name: RANKING_STATIC_PROXY_ROOT_NAME,
+    zIndex: -1
+  });
+  this._staticProxyRoot = root;
+  this._staticProxyLayers = SpriteProxyLayerHelper.createProxyLayers(root, [
+    { key: "panel", name: RANKING_STATIC_PROXY_LAYER_NAMES.panel, zIndex: 0 },
+    { key: "chrome", name: RANKING_STATIC_PROXY_LAYER_NAMES.chrome, zIndex: 1 }
+  ]);
+};
+
+RankingViewController.prototype._ensureRowProxyLayers = function () {
+  var content = this._nodes.content;
+  if (!content || !content.isValid) {
+    throw new Error("RankingView row proxy requires content node.");
+  }
+  if (!this._rowProxyRoot || !this._rowProxyRoot.isValid) {
+    this._rowProxyRoot = SpriteProxyLayerHelper.createProxyRoot(content, {
+      name: RANKING_ROW_PROXY_ROOT_NAME,
+      zIndex: -1
+    });
+    this._rowProxyLayers = SpriteProxyLayerHelper.createProxyLayers(this._rowProxyRoot, [
+      { key: "background", name: RANKING_ROW_PROXY_LAYER_NAMES.background, zIndex: 0 },
+      { key: "badge", name: RANKING_ROW_PROXY_LAYER_NAMES.badge, zIndex: 1 },
+      { key: "avatarFrame", name: RANKING_ROW_PROXY_LAYER_NAMES.avatarFrame, zIndex: 2 }
+    ]);
+  }
+  var contentSize = SpriteProxyLayerHelper.requireNodeSize(content, "RankingView content");
+  this._rowProxyRoot.setContentSize(contentSize.width, contentSize.height);
+  Object.keys(this._rowProxyLayers).forEach(function (key) {
+    this._rowProxyLayers[key].setContentSize(contentSize.width, contentSize.height);
+  }, this);
+};
+
+RankingViewController.prototype._createStaticProxyRecord = function (layerKey, sourceNode, name, visible) {
+  var layerNode = this._staticProxyLayers[layerKey];
+  if (!layerNode || !layerNode.isValid) {
+    throw new Error("RankingView static proxy layer is invalid: " + layerKey);
+  }
+  this._staticProxyRecords.push(SpriteProxyLayerHelper.createRecord({
+    layerNode: layerNode,
+    sourceNode: sourceNode,
+    rootNode: this._staticProxyRoot,
+    name: name,
+    visible: visible === true
+  }));
+};
+
+RankingViewController.prototype._createRowProxyRecord = function (layerKey, sourceNode, name, visible) {
+  var layerNode = this._rowProxyLayers[layerKey];
+  if (!layerNode || !layerNode.isValid) {
+    throw new Error("RankingView row proxy layer is invalid: " + layerKey);
+  }
+  this._rowProxyRecords.push(SpriteProxyLayerHelper.createRecord({
+    layerNode: layerNode,
+    sourceNode: sourceNode,
+    rootNode: this._rowProxyRoot,
+    name: name,
+    visible: visible === true
+  }));
+};
+
+RankingViewController.prototype._collectSpriteNodes = function (rootNode, output) {
+  if (!rootNode || !rootNode.isValid) {
+    throw new Error("RankingView collect sprite root node is invalid.");
+  }
+  if (!Array.isArray(output)) {
+    throw new Error("RankingView collect sprite output must be an array.");
+  }
+  if (rootNode.getComponent(cc.Sprite)) {
+    output.push(rootNode);
+  }
+  var children = rootNode.children;
+  if (!Array.isArray(children)) {
+    throw new Error("RankingView collect sprite children must be an array: " + rootNode.name);
+  }
+  children.forEach(function (child) {
+    this._collectSpriteNodes(child, output);
+  }, this);
+};
+
+RankingViewController.prototype._rebuildStaticRenderProxies = function () {
+  if (!this._nodes || !this._nodes.panel || !this._nodes.panel.isValid) {
+    throw new Error("RankingView static proxy requires panel node.");
+  }
+  this._ensureStaticProxyLayers();
+  SpriteProxyLayerHelper.clearRecords(this._staticProxyRecords);
+  var titleBgNode = findNodeByNameRecursive(this._nodes.panel, "title_bg");
+  var decorateNode = findNodeByNameRecursive(this._nodes.panel, "decorate");
+  if (!titleBgNode || !decorateNode) {
+    throw new Error("RankingView static proxy requires title_bg and decorate nodes.");
+  }
+  SpriteProxyLayerHelper.setSpriteRenderEnabled(this._nodes.panel, false, "RankingView Panel background");
+  SpriteProxyLayerHelper.setSpriteRenderEnabled(this._nodes.closeButton, false, "RankingView close button");
+  SpriteProxyLayerHelper.setSpriteRenderEnabled(titleBgNode, false, "RankingView title_bg");
+  this._createStaticProxyRecord("panel", this._nodes.panel, "ranking_panel_bg_proxy", true);
+  this._createStaticProxyRecord("chrome", this._nodes.closeButton, "ranking_close_button_proxy", true);
+  this._createStaticProxyRecord("chrome", titleBgNode, "ranking_title_bg_proxy", true);
+  var decorateSprites = [];
+  this._collectSpriteNodes(decorateNode, decorateSprites);
+  decorateSprites.forEach(function (spriteNode, index) {
+    SpriteProxyLayerHelper.setSpriteRenderEnabled(spriteNode, false, "RankingView decorate sprite");
+    this._createStaticProxyRecord("chrome", spriteNode, "ranking_decorate_proxy_" + index, true);
+  }, this);
+};
+
+RankingViewController.prototype._hideRowSourceSprites = function (row) {
+  var refs = row.__rankingRow;
+  if (!refs) {
+    throw new Error("RankingView row refs are required before proxying.");
+  }
+  if (refs.bgSprite) {
+    refs.bgSprite.enabled = false;
+  }
+  if (refs.badgeSprite) {
+    refs.badgeSprite.enabled = false;
+  }
+  if (refs.avatarFrameSprite) {
+    refs.avatarFrameSprite.enabled = false;
+  }
+};
+
+RankingViewController.prototype._rebuildRowRenderProxies = function () {
+  if (!this._nodes || !this._nodes.content || !this._nodes.content.isValid) {
+    return;
+  }
+  this._ensureRowProxyLayers();
+  SpriteProxyLayerHelper.clearRecords(this._rowProxyRecords);
+  this._rowPool.forEach(function (row, index) {
+    if (!row || !row.isValid || row.active !== true) {
+      return;
+    }
+    var refs = row.__rankingRow;
+    if (!refs) {
+      throw new Error("RankingView row refs are required for proxy: " + row.name);
+    }
+    this._hideRowSourceSprites(row);
+    this._createRowProxyRecord("background", row, "ranking_row_bg_proxy_" + index, true);
+    this._createRowProxyRecord("badge", refs.badgeNode, "ranking_row_badge_proxy_" + index, refs.badgeNode && refs.badgeNode.active === true);
+    this._createRowProxyRecord("avatarFrame", refs.avatarFrameNode, "ranking_row_avatar_frame_proxy_" + index, true);
+  }, this);
+};
+
+RankingViewController.prototype._syncRenderProxies = function () {
+  if (this._staticProxyRoot && this._staticProxyRoot.isValid) {
+    SpriteProxyLayerHelper.syncRecords(this._staticProxyRecords, this._staticProxyRoot);
+  }
+  if (this._rowProxyRoot && this._rowProxyRoot.isValid) {
+    SpriteProxyLayerHelper.syncRecords(this._rowProxyRecords, this._rowProxyRoot);
+  }
 };
 
 RankingViewController.prototype.ensureSpriteFrames = function () {
@@ -430,6 +626,7 @@ RankingViewController.prototype._rebuildRowsFromPrefab = function () {
     return;
   }
 
+  SpriteProxyLayerHelper.clearRecords(this._rowProxyRecords);
   this._rowPool.forEach(function (rowNode) {
     if (rowNode && rowNode.isValid) {
       rowNode.destroy();
@@ -460,9 +657,12 @@ RankingViewController.prototype.render = function (entries) {
     this._rowPool.forEach(function (rowNode) {
       rowNode.active = false;
     });
+    SpriteProxyLayerHelper.clearRecords(this._rowProxyRecords);
+    this._rebuildStaticRenderProxies();
     return;
   }
 
+  this._rebuildStaticRenderProxies();
   var contentHeight = Math.max(LIST_HEIGHT, (safeEntries.length * ROW_STRIDE) - ROW_GAP);
   content.setContentSize(LIST_WIDTH, contentHeight);
   content.setPosition(0, Math.min(0, (LIST_HEIGHT - contentHeight) * 0.5));
@@ -521,6 +721,8 @@ RankingViewController.prototype._cachePrefabRankRowRefs = function (row) {
     badgeNode: rankingNode,
     badgeSprite: rankingNode ? rankingNode.getComponent(cc.Sprite) : null,
     avatarSprite: avatarNode ? avatarNode.getComponent(cc.Sprite) : null,
+    avatarFrameNode: avatarFrameNode,
+    avatarFrameSprite: avatarFrameNode ? avatarFrameNode.getComponent(cc.Sprite) : null,
     rankingNumNode: rankingNumNode,
     rankingNumLabel: rankingNumNode ? rankingNumNode.getComponent(cc.Label) : null,
     nameLabel: nameNode ? nameNode.getComponent(cc.Label) : null,
@@ -557,6 +759,7 @@ RankingViewController.prototype._updateVirtualRows = function () {
     row.setPosition(0, (this._nodes.content.height * 0.5) - (ROW_HEIGHT * 0.5) - (entryIndex * ROW_STRIDE));
     this._renderRankRow(row, this._entries[entryIndex], entryIndex);
   }
+  this._rebuildRowRenderProxies();
 };
 
 RankingViewController.prototype._renderRankRow = function (row, entry, index) {

@@ -4,6 +4,7 @@ var LevelSelectMemoryDiagnostics = require("./LevelSelectMemoryDiagnostics");
 
 var RESOURCES_BUNDLE_NAME = "resources";
 var UI_BUNDLE_NAME = "ui";
+var GAME_BUNDLE_NAME = "game";
 var UI_PREFAB_LEGACY_PREFIX = "prefabs/ui/";
 var UI_PREFAB_BUNDLE_PREFIX = "prefabs/";
 var UI_IMAGE_SIGN_PREFIX = "image/sign/";
@@ -252,6 +253,39 @@ function ensureNamedBundleLoaded(bundleName) {
   return namedBundlePromises[bundleName];
 }
 
+function releaseNamedBundle(bundleName) {
+  if (!bundleName || typeof bundleName !== "string") {
+    throw new Error("Invalid bundle name for release: " + bundleName);
+  }
+  if (bundleName === RESOURCES_BUNDLE_NAME) {
+    throw new Error("Resources bundle cannot be released at runtime.");
+  }
+  if (!namedBundleCache[bundleName]) {
+    return;
+  }
+
+  delete namedBundleCache[bundleName];
+  namedBundlePromises[bundleName] = null;
+
+  if (!hasAssetManager()) {
+    throw new Error("AssetManager is required to release bundle: " + bundleName);
+  }
+  if (typeof cc.assetManager.removeBundle !== "function") {
+    throw new Error("cc.assetManager.removeBundle is required to release bundle: " + bundleName);
+  }
+
+  var loadedBundle = typeof cc.assetManager.getBundle === "function"
+    ? cc.assetManager.getBundle(bundleName)
+    : null;
+  if (loadedBundle) {
+    cc.assetManager.removeBundle(loadedBundle);
+  } else {
+    cc.assetManager.removeBundle(bundleName);
+  }
+
+  LevelSelectMemoryDiagnostics.increment("bundle.release:" + bundleName);
+}
+
 function resolveLoadRoute(path) {
   if (path.indexOf(UI_COMMENT_ANIMATION_LEGACY_PREFIX) === 0) {
     return {
@@ -337,6 +371,10 @@ function loadResDir(path, typeOrCallback, callback) {
 module.exports = {
   ensureResourcesBundleLoaded: ensureResourcesBundleLoaded,
   ensureNamedBundleLoaded: ensureNamedBundleLoaded,
+  releaseNamedBundle: releaseNamedBundle,
+  ensureGameplayBundleLoaded: function () {
+    return ensureNamedBundleLoaded(GAME_BUNDLE_NAME);
+  },
   loadRes: loadRes,
   loadResDir: loadResDir
 };

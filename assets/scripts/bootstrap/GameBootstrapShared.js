@@ -27,14 +27,12 @@ var ShopGoodsConfig = require("../config/ShopGoodsConfig");
 var ShopRulesConfig = require("../config/ShopRulesConfig");
 var LevelManager = require("../config/LevelManager");
 var RuntimeModeConfig = require("../config/RuntimeModeConfig");
-var GameManager = require("../core/GameManager");
 var StarRatingPolicy = require("../core/StarRatingPolicy");
 var LevelSelectPolicy = require("./LevelSelectPolicy");
 var RouteEditorState = require("./RouteEditorState");
 var ResourceGateway = require("./ResourceGateway");
 var LevelSelectView = require("./LevelSelectView");
 var BootstrapButtonFactory = require("./BootstrapButtonFactory");
-var LevelRenderer = require("../render/LevelRenderer");
 var LoadingViewController = require("../ui/LoadingViewController");
 var NetworkLoadingOverlay = require("../ui/NetworkLoadingOverlay");
 var TipsPresenter = require("../ui/TipsPresenter");
@@ -150,14 +148,12 @@ module.exports = {
   ShopRulesConfig: ShopRulesConfig,
   LevelManager: LevelManager,
   RuntimeModeConfig: RuntimeModeConfig,
-  GameManager: GameManager,
   StarRatingPolicy: StarRatingPolicy,
   LevelSelectPolicy: LevelSelectPolicy,
   RouteEditorState: RouteEditorState,
   ResourceGateway: ResourceGateway,
   LevelSelectView: LevelSelectView,
   BootstrapButtonFactory: BootstrapButtonFactory,
-  LevelRenderer: LevelRenderer,
   LoadingViewController: LoadingViewController,
   NetworkLoadingOverlay: NetworkLoadingOverlay,
   TipsPresenter: TipsPresenter,

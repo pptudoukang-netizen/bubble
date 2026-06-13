@@ -11,6 +11,10 @@ window.boot = function () {
     // load scene
     cc.director.loadScene(launchScene, null, function () {
       console.log('Success to load scene: ' + launchScene);
+      // [wechat-minigame-loading-patch] destroy isolated canvas cover after first scene
+      if (GameGlobal.LoadingManager && !GameGlobal.LoadingManager.isMainCanvas) {
+        GameGlobal.LoadingManager.destroy();
+      }
     });
   };
   var isSubContext = cc.sys.platform === cc.sys.WECHAT_GAME_SUB;
@@ -44,7 +48,16 @@ window.boot = function () {
       // if there is start-scene bundle. should load start-scene bundle in the last stage
       // Otherwise the main bundle should be the last
       cc.assetManager.loadBundle(settings.hasStartSceneBundle ? START_SCENE : MAIN, function (err) {
-        if (!err) cc.game.run(option, onStart);
+        if (!err) {
+        // [wechat-minigame-loading-patch] destroy shared canvas cover before engine run
+        if (GameGlobal.LoadingManager && GameGlobal.LoadingManager.isMainCanvas) {
+          GameGlobal.LoadingManager.destroy().then(function () {
+            cc.game.run(option, onStart);
+          });
+        } else {
+          cc.game.run(option, onStart);
+        }
+      }
       });
     }
   }

@@ -8,6 +8,7 @@ var SelectedPowerupsStore = Shared.SelectedPowerupsStore;
 var BackpackViewController = Shared.BackpackViewController;
 var StartGameViewController = Shared.StartGameViewController;
 var PopupPanelAnimator = Shared.PopupPanelAnimator;
+var SpriteProxyLayerHelper = require("../utils/SpriteProxyLayerHelper");
 var INVENTORY_VIEW_PREFAB_PATH = Shared.INVENTORY_VIEW_PREFAB_PATH;
 var START_GAME_VIEW_PREFAB_PATH = Shared.START_GAME_VIEW_PREFAB_PATH;
 var POWER_TIPS_VIEW_PREFAB_PATH = Shared.POWER_TIPS_VIEW_PREFAB_PATH;
@@ -18,6 +19,8 @@ var MAX_SELECTED_POWERUP_TOTAL_COUNT = Shared.MAX_SELECTED_POWERUP_TOTAL_COUNT;
 var INVENTORY_TOTAL_LIMIT_TIP = Shared.INVENTORY_TOTAL_LIMIT_TIP;
 var STAMINA_FLY_ICON_PATH = "image/props/love";
 var STAMINA_FLY_DURATION = 0.45;
+var POWER_TIPS_PROXY_ROOT_NAME = "power_tips_auto_proxy_root";
+var UiModalReleaseHelper = require("../utils/UiModalReleaseHelper");
 var STAMINA_FLY_FADE_DURATION = 0.12;
 var STAMINA_FLY_ENTER_DELAY = 1;
 var LEVEL_ENTRY_STAMINA_COST = 1;
@@ -1143,10 +1146,12 @@ module.exports = {
     this._startGameLevelId = 0;
     this._startGameLevelConfig = null;
     this._hideNewUserGuide();
-    if (!this._startGameViewNode || !this._startGameViewNode.isValid) {
-      return;
-    }
-    this._startGameViewNode.active = false;
+    UiModalReleaseHelper.releaseCachedModal(this, {
+      label: "StartGameView",
+      nodeKey: "_startGameViewNode",
+      prefabKey: "_startGameViewPrefab",
+      controllerKey: "_startGameViewController"
+    });
   },
 
   _loadPreparedLevelFromLevelSelect: function (levelId, selectedItems) {
@@ -1226,6 +1231,10 @@ module.exports = {
     }
 
     numLabel.string = "x" + this._resolveStaminaRecoveryGrantAmount();
+    SpriteProxyLayerHelper.rebuildAutoProxyTree({
+      rootNode: this._powerTipsViewNode,
+      proxyRootName: POWER_TIPS_PROXY_ROOT_NAME
+    });
   },
 
   _showPowerTipsView: function (onRecovered) {
@@ -1272,10 +1281,11 @@ module.exports = {
 
   _hidePowerTipsView: function () {
     this._pendingPowerTipsRecovery = null;
-    if (!this._powerTipsViewNode || !cc.isValid(this._powerTipsViewNode)) {
-      return;
-    }
-    this._powerTipsViewNode.active = false;
+    UiModalReleaseHelper.releaseCachedModal(this, {
+      label: "PowerTipsView",
+      nodeKey: "_powerTipsViewNode",
+      prefabKey: "_powerTipsViewPrefab"
+    });
   },
 
   _ensureStaminaFlySpriteFrame: function () {
@@ -1502,10 +1512,12 @@ module.exports = {
   },
 
   _hideInventoryView: function () {
-    if (!this._inventoryViewNode || !this._inventoryViewNode.isValid) {
-      return;
-    }
-    this._inventoryViewNode.active = false;
+    UiModalReleaseHelper.releaseCachedModal(this, {
+      label: "BackpackView",
+      nodeKey: "_inventoryViewNode",
+      prefabKey: "_inventoryViewPrefab",
+      controllerKey: "_inventoryViewController"
+    });
     if (!this._isInventorySelectionOperable()) {
       this._inventoryViewReadOnly = true;
     }

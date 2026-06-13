@@ -13,6 +13,8 @@ var DEFAULT_DESCRIPTION = "Project configuration file.";
 var CLOUD_FUNCTION_ROOT = "cloudfunctions/";
 var GAME_JSON_FILE = "game.json";
 var GAME_JS_FILE = "game.js";
+var STARTUP_PRELOAD_SUBPACKAGE_NAMES = ["resources", "map"];
+var wechatMinigameLoadingPatch = require("./wechat-minigame-loading-patch");
 
 function stripBom(text) {
   if (text.charCodeAt(0) === 0xfeff) {
@@ -152,6 +154,51 @@ function ensureCloudFunctionRoot(config) {
   config.cloudfunctionRoot = CLOUD_FUNCTION_ROOT;
 }
 
+function ensurePreloadSubpackages(gameJson) {
+  if (!gameJson || typeof gameJson !== "object" || Array.isArray(gameJson)) {
+    throw new Error("game.json must be an object when configuring preloadSubpackages.");
+  }
+  if (!Array.isArray(gameJson.subpackages)) {
+    throw new Error("game.json subpackages must be an array to configure preloadSubpackages.");
+  }
+
+  var availableNames = {};
+  gameJson.subpackages.forEach(function (entry, index) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      throw new Error("game.json subpackages[" + index + "] must be an object.");
+    }
+    if (typeof entry.name !== "string" || entry.name.trim().length === 0) {
+      throw new Error("game.json subpackages[" + index + "] requires name.");
+    }
+    availableNames[entry.name] = true;
+  });
+
+  gameJson.preloadSubpackages = STARTUP_PRELOAD_SUBPACKAGE_NAMES.map(function (name) {
+    if (!availableNames[name]) {
+      throw new Error("Startup preload subpackage `" + name + "` is missing from game.json subpackages.");
+    }
+    return {
+      name: name
+    };
+  });
+}
+
+function patchGameJsonStartupPreload(outputDir) {
+  var gameJsonPath = path.join(outputDir, GAME_JSON_FILE);
+  if (!fs.existsSync(gameJsonPath)) {
+    throw new Error("Missing " + GAME_JSON_FILE + " in " + outputDir);
+  }
+
+  var gameJson = tryParseJson(readUtf8(gameJsonPath));
+  if (!gameJson) {
+    throw new Error("Cannot parse " + GAME_JSON_FILE + " in " + outputDir);
+  }
+
+  ensurePreloadSubpackages(gameJson);
+  writeJson(gameJsonPath, gameJson);
+  console.log("[FIXED]", gameJsonPath, "preloadSubpackages=" + STARTUP_PRELOAD_SUBPACKAGE_NAMES.join(","));
+}
+
 function assertReleaseSeparateEngine(outputDir) {
   var gameJsonPath = path.join(outputDir, GAME_JSON_FILE);
   var gameJsPath = path.join(outputDir, GAME_JS_FILE);
@@ -204,6 +251,8 @@ function fixWeChatProjectConfig(outputDir) {
   writeJson(mainConfigPath, mainConfig);
   console.log("[FIXED]", mainConfigPath);
   assertReleaseSeparateEngine(resolvedOutputDir);
+  patchGameJsonStartupPreload(resolvedOutputDir);
+  wechatMinigameLoadingPatch.patchWeChatMinigameLoading(resolvedOutputDir, DEFAULT_PROJECT_DIR);
   console.log("[CHECKED] WeChat separate engine plugin is enabled");
   removeDirectoryIfExists(targetCloudFunctionsDir);
   copyDirectoryContents(sourceCloudFunctionsDir, targetCloudFunctionsDir);
@@ -241,5 +290,7 @@ if (require.main === module) {
 }
 
 module.exports = {
-  fixWeChatProjectConfig: fixWeChatProjectConfig
+  fixWeChatProjectConfig: fixWeChatProjectConfig,
+  patchGameJsonStartupPreload: patchGameJsonStartupPreload,
+  ensurePreloadSubpackages: ensurePreloadSubpackages
 };

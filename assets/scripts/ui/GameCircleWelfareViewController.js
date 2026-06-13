@@ -1,6 +1,7 @@
 "use strict";
 
 var BundleLoader = require("../utils/BundleLoader");
+var SpriteProxyLayerHelper = require("../utils/SpriteProxyLayerHelper");
 
 var REWARD_ICON_PATHS = {
   coin: "image/props/coin",
@@ -9,6 +10,16 @@ var REWARD_ICON_PATHS = {
   rainbow_ball: "image/props/rainbow_ball",
   blast_ball: "image/props/blast_ball",
   barrier_hammer: "image/props/barrier_hammer"
+};
+var GAME_CIRCLE_RENDER_PROXY_ROOT_NAME = "game_circle_render_proxy_root";
+var GAME_CIRCLE_RENDER_PROXY_LAYER_NAMES = {
+  panel: "game_circle_proxy_panel_layer",
+  button: "game_circle_proxy_button_layer",
+  itemBackground: "game_circle_proxy_item_background_layer",
+  itemIcon: "game_circle_proxy_item_icon_layer",
+  progress: "game_circle_proxy_progress_layer",
+  reward: "game_circle_proxy_reward_layer",
+  action: "game_circle_proxy_action_layer"
 };
 
 function bindTapWithDynamicHandler(node, handlerProperty) {
@@ -160,6 +171,9 @@ function GameCircleWelfareViewController(options) {
   this.onOpenGameCircle = options.onOpenGameCircle;
   this.onSyncNativeButtons = options.onSyncNativeButtons;
   this._iconSpriteFrameCache = {};
+  this._renderProxyRoot = null;
+  this._renderProxyLayers = {};
+  this._renderProxyRecords = [];
   this.nodes = this._resolveNodes();
   this._bindActions();
 }
@@ -202,6 +216,100 @@ GameCircleWelfareViewController.prototype._bindActions = function () {
   this.nodes.maskNode.__gameCircleCloseHandler = this.onClose;
   this.nodes.circleButtonNode.__gameCircleOpenHandler = this.onOpenGameCircle;
   removeRuntimeButtonLabel(this.nodes.circleButtonNode);
+  this._bindProxySyncToNode(this.nodes.circleButtonNode);
+};
+
+GameCircleWelfareViewController.prototype._bindProxySyncToNode = function (node) {
+  if (!node || !node.isValid) {
+    throw new Error("Game circle welfare proxy sync node is invalid.");
+  }
+  if (node.__gameCircleProxySyncBound === true) {
+    return;
+  }
+  node.__gameCircleProxySyncBound = true;
+  node.on(cc.Node.EventType.TOUCH_END, function () {
+    this._syncRenderProxies();
+  }, this);
+};
+
+GameCircleWelfareViewController.prototype._ensureRenderProxyLayers = function () {
+  if (this._renderProxyRoot && this._renderProxyRoot.isValid) {
+    return;
+  }
+  var root = SpriteProxyLayerHelper.createProxyRoot(this.nodes.panelNode, {
+    name: GAME_CIRCLE_RENDER_PROXY_ROOT_NAME,
+    zIndex: -1
+  });
+  this._renderProxyRoot = root;
+  this._renderProxyLayers = SpriteProxyLayerHelper.createProxyLayers(root, [
+    { key: "panel", name: GAME_CIRCLE_RENDER_PROXY_LAYER_NAMES.panel, zIndex: 0 },
+    { key: "button", name: GAME_CIRCLE_RENDER_PROXY_LAYER_NAMES.button, zIndex: 1 },
+    { key: "itemBackground", name: GAME_CIRCLE_RENDER_PROXY_LAYER_NAMES.itemBackground, zIndex: 2 },
+    { key: "itemIcon", name: GAME_CIRCLE_RENDER_PROXY_LAYER_NAMES.itemIcon, zIndex: 3 },
+    { key: "progress", name: GAME_CIRCLE_RENDER_PROXY_LAYER_NAMES.progress, zIndex: 4 },
+    { key: "reward", name: GAME_CIRCLE_RENDER_PROXY_LAYER_NAMES.reward, zIndex: 5 },
+    { key: "action", name: GAME_CIRCLE_RENDER_PROXY_LAYER_NAMES.action, zIndex: 6 }
+  ]);
+};
+
+GameCircleWelfareViewController.prototype._clearRenderProxyRecords = function () {
+  SpriteProxyLayerHelper.clearRecords(this._renderProxyRecords);
+};
+
+GameCircleWelfareViewController.prototype._createSpriteProxyRecord = function (layerKey, sourceNode, name, visible) {
+  var layerNode = this._renderProxyLayers[layerKey];
+  if (!layerNode || !layerNode.isValid) {
+    throw new Error("Game circle welfare render proxy layer is invalid: " + layerKey);
+  }
+  this._renderProxyRecords.push(SpriteProxyLayerHelper.createRecord({
+    layerNode: layerNode,
+    sourceNode: sourceNode,
+    rootNode: this._renderProxyRoot,
+    name: name,
+    visible: visible === true
+  }));
+};
+
+GameCircleWelfareViewController.prototype._hideSourceSprites = function () {
+  SpriteProxyLayerHelper.setSpriteRenderEnabled(this.nodes.panelNode, false, "GamingCircleView Panel background");
+  SpriteProxyLayerHelper.setSpriteRenderEnabled(this.nodes.closeButtonNode, false, "GamingCircleView close button");
+  SpriteProxyLayerHelper.setSpriteRenderEnabled(this.nodes.circleButtonNode, false, "GamingCircleView sure_btn");
+  this.nodes.taskItemNodes.forEach(function (taskItemNode) {
+    SpriteProxyLayerHelper.setSpriteRenderEnabled(taskItemNode, false, "GamingCircleView task item background");
+    SpriteProxyLayerHelper.setSpriteRenderEnabled(taskItemNode.getChildByName("icon"), false, "GamingCircleView task icon");
+    SpriteProxyLayerHelper.setSpriteRenderEnabled(taskItemNode.getChildByName("1"), false, "GamingCircleView task ordinal");
+    SpriteProxyLayerHelper.setSpriteRenderEnabled(taskItemNode.getChildByName("award_icon"), false, "GamingCircleView award_icon");
+    SpriteProxyLayerHelper.setSpriteRenderEnabled(taskItemNode.getChildByName("go_btn"), false, "GamingCircleView go_btn");
+    SpriteProxyLayerHelper.setSpriteRenderEnabled(taskItemNode.getChildByName("receive_btn"), false, "GamingCircleView receive_btn");
+    var progressBarNode = taskItemNode.getChildByName("progressBar");
+    SpriteProxyLayerHelper.setSpriteRenderEnabled(progressBarNode, false, "GamingCircleView progressBar");
+  });
+};
+
+GameCircleWelfareViewController.prototype._rebuildRenderProxies = function () {
+  this._ensureRenderProxyLayers();
+  this._clearRenderProxyRecords();
+  this._hideSourceSprites();
+  this._createSpriteProxyRecord("panel", this.nodes.panelNode, "game_circle_panel_bg_proxy", true);
+  this._createSpriteProxyRecord("button", this.nodes.closeButtonNode, "game_circle_close_button_proxy", true);
+  this._createSpriteProxyRecord("button", this.nodes.circleButtonNode, "game_circle_sure_button_proxy", true);
+  this.nodes.taskItemNodes.forEach(function (taskItemNode, index) {
+    var progressBarNode = taskItemNode.getChildByName("progressBar");
+    this._createSpriteProxyRecord("itemBackground", taskItemNode, "game_circle_item_bg_proxy_" + index, true);
+    this._createSpriteProxyRecord("itemIcon", taskItemNode.getChildByName("icon"), "game_circle_item_icon_proxy_" + index, true);
+    this._createSpriteProxyRecord("itemIcon", taskItemNode.getChildByName("1"), "game_circle_item_ordinal_proxy_" + index, true);
+    this._createSpriteProxyRecord("progress", progressBarNode, "game_circle_progress_bg_proxy_" + index, true);
+    this._createSpriteProxyRecord("reward", taskItemNode.getChildByName("award_icon"), "game_circle_award_icon_proxy_" + index, true);
+    this._createSpriteProxyRecord("action", taskItemNode.getChildByName("go_btn"), "game_circle_go_button_proxy_" + index, taskItemNode.getChildByName("go_btn").active === true);
+    this._createSpriteProxyRecord("action", taskItemNode.getChildByName("receive_btn"), "game_circle_receive_button_proxy_" + index, taskItemNode.getChildByName("receive_btn").active === true);
+  }, this);
+};
+
+GameCircleWelfareViewController.prototype._syncRenderProxies = function () {
+  if (!this._renderProxyRoot || !this._renderProxyRoot.isValid) {
+    return;
+  }
+  SpriteProxyLayerHelper.syncRecords(this._renderProxyRecords, this._renderProxyRoot);
 };
 
 GameCircleWelfareViewController.prototype._loadRewardIcon = function (itemId) {
@@ -325,6 +433,8 @@ GameCircleWelfareViewController.prototype._renderTask = function (taskItemNode, 
     : null;
   bindTapWithDynamicHandler(nodes.goButtonNode, "__gameCircleTaskHandler");
   bindTapWithDynamicHandler(nodes.receiveButtonNode, "__gameCircleClaimHandler");
+  this._bindProxySyncToNode(nodes.goButtonNode);
+  this._bindProxySyncToNode(nodes.receiveButtonNode);
 
   return this._loadRewardIcon(rewardItem.id).then(function (spriteFrame) {
     if (!nodes.awardIconSprite || !nodes.awardIconSprite.node || !nodes.awardIconSprite.node.isValid) {
@@ -347,6 +457,7 @@ GameCircleWelfareViewController.prototype.render = function (summary) {
     return this._renderTask(this.nodes.taskItemNodes[index], task);
   }, this);
   return Promise.all(renderTasks).then(function (buttonStates) {
+    this._rebuildRenderProxies();
     this.onSyncNativeButtons({
       circleButtonNode: this.nodes.circleButtonNode,
       taskButtons: buttonStates

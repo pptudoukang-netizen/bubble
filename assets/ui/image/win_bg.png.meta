@@ -10,7 +10,16 @@
   "packable": true,
   "width": 578,
   "height": 754,
-  "platformSettings": {},
+  "platformSettings": {
+    "minigame": {
+      "formats": [
+        {
+          "name": "astc_8x8",
+          "quality": "medium"
+        }
+      ]
+    }
+  },
   "subMetas": {
     "win_bg": {
       "ver": "1.0.6",

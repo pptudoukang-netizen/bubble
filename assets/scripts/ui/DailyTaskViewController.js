@@ -1,12 +1,26 @@
 "use strict";
 
 var BundleLoader = require("../utils/BundleLoader");
+var SpriteProxyLayerHelper = require("../utils/SpriteProxyLayerHelper");
 
 var UI_BUNDLE_NAME = "ui";
 var COIN_ICON_PATH = "image/props/coin";
 var GO_BUTTON_PATH = "image/dailytask/go_btn";
 var CLAIM_BUTTON_PATH = "image/dailytask/get_btn";
 var TASK_ITEM_GAP = 15;
+var DAILY_TASK_STATIC_PROXY_ROOT_NAME = "daily_task_static_proxy_root";
+var DAILY_TASK_LIST_PROXY_ROOT_NAME = "daily_task_list_proxy_root";
+var DAILY_TASK_STATIC_PROXY_LAYER_NAMES = {
+  panel: "daily_task_proxy_panel_layer",
+  chrome: "daily_task_proxy_chrome_layer"
+};
+var DAILY_TASK_LIST_PROXY_LAYER_NAMES = {
+  itemBackground: "daily_task_proxy_item_background_layer",
+  itemIcon: "daily_task_proxy_item_icon_layer",
+  progress: "daily_task_proxy_progress_layer",
+  reward: "daily_task_proxy_reward_layer",
+  button: "daily_task_proxy_button_layer"
+};
 
 function assertObject(value, message) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -188,6 +202,12 @@ function DailyTaskViewController(options) {
   this._itemNodes = [];
   this._spriteFrames = {};
   this._spriteFrameLoadPromise = null;
+  this._staticProxyRoot = null;
+  this._staticProxyLayers = {};
+  this._staticProxyRecords = [];
+  this._listProxyRoot = null;
+  this._listProxyLayers = {};
+  this._listProxyRecords = [];
   this._nodes = this._resolveNodes();
   this._bindActions();
 }
@@ -220,6 +240,136 @@ DailyTaskViewController.prototype._bindActions = function () {
   bindTapWithDynamicHandler(this._nodes.closeButtonNode, "__dailyTaskCloseHandler");
   this._nodes.maskNode.__dailyTaskCloseHandler = this.onClose;
   this._nodes.closeButtonNode.__dailyTaskCloseHandler = this.onClose;
+  this._bindProxySyncToNode(this._nodes.closeButtonNode);
+};
+
+DailyTaskViewController.prototype._bindProxySyncToNode = function (node) {
+  if (!node || !node.isValid) {
+    throw new Error("DailyTaskView proxy sync node is invalid.");
+  }
+  if (node.__dailyTaskProxySyncBound === true) {
+    return;
+  }
+  node.__dailyTaskProxySyncBound = true;
+  node.on(cc.Node.EventType.TOUCH_START, function () {
+    this._syncRenderProxies();
+  }, this);
+  node.on(cc.Node.EventType.TOUCH_CANCEL, function () {
+    this._syncRenderProxies();
+  }, this);
+  node.on(cc.Node.EventType.TOUCH_END, function () {
+    this._syncRenderProxies();
+  }, this);
+};
+
+DailyTaskViewController.prototype._ensureStaticProxyLayers = function () {
+  if (this._staticProxyRoot && this._staticProxyRoot.isValid) {
+    return;
+  }
+  var root = SpriteProxyLayerHelper.createProxyRoot(this._nodes.panelNode, {
+    name: DAILY_TASK_STATIC_PROXY_ROOT_NAME,
+    zIndex: -1
+  });
+  this._staticProxyRoot = root;
+  this._staticProxyLayers = SpriteProxyLayerHelper.createProxyLayers(root, [
+    { key: "panel", name: DAILY_TASK_STATIC_PROXY_LAYER_NAMES.panel, zIndex: 0 },
+    { key: "chrome", name: DAILY_TASK_STATIC_PROXY_LAYER_NAMES.chrome, zIndex: 1 }
+  ]);
+};
+
+DailyTaskViewController.prototype._ensureListProxyLayers = function () {
+  SpriteProxyLayerHelper.clearRecords(this._listProxyRecords);
+  this._listProxyRoot = SpriteProxyLayerHelper.createProxyRoot(this._nodes.contentNode, {
+    name: DAILY_TASK_LIST_PROXY_ROOT_NAME,
+    zIndex: -1
+  });
+  this._listProxyLayers = SpriteProxyLayerHelper.createProxyLayers(this._listProxyRoot, [
+    { key: "itemBackground", name: DAILY_TASK_LIST_PROXY_LAYER_NAMES.itemBackground, zIndex: 0 },
+    { key: "itemIcon", name: DAILY_TASK_LIST_PROXY_LAYER_NAMES.itemIcon, zIndex: 1 },
+    { key: "progress", name: DAILY_TASK_LIST_PROXY_LAYER_NAMES.progress, zIndex: 2 },
+    { key: "reward", name: DAILY_TASK_LIST_PROXY_LAYER_NAMES.reward, zIndex: 3 },
+    { key: "button", name: DAILY_TASK_LIST_PROXY_LAYER_NAMES.button, zIndex: 4 }
+  ]);
+};
+
+DailyTaskViewController.prototype._createStaticProxyRecord = function (layerKey, sourceNode, name, visible) {
+  var layerNode = this._staticProxyLayers[layerKey];
+  if (!layerNode || !layerNode.isValid) {
+    throw new Error("DailyTaskView static proxy layer is invalid: " + layerKey);
+  }
+  this._staticProxyRecords.push(SpriteProxyLayerHelper.createRecord({
+    layerNode: layerNode,
+    sourceNode: sourceNode,
+    rootNode: this._staticProxyRoot,
+    name: name,
+    visible: visible === true
+  }));
+};
+
+DailyTaskViewController.prototype._createListProxyRecord = function (layerKey, sourceNode, name, visible) {
+  var layerNode = this._listProxyLayers[layerKey];
+  if (!layerNode || !layerNode.isValid) {
+    throw new Error("DailyTaskView list proxy layer is invalid: " + layerKey);
+  }
+  this._listProxyRecords.push(SpriteProxyLayerHelper.createRecord({
+    layerNode: layerNode,
+    sourceNode: sourceNode,
+    rootNode: this._listProxyRoot,
+    name: name,
+    visible: visible === true
+  }));
+};
+
+DailyTaskViewController.prototype._hideStaticSourceSprites = function () {
+  var titleBgNode = requireChild(this._nodes.panelNode, "title_bg");
+  SpriteProxyLayerHelper.setSpriteRenderEnabled(this._nodes.panelNode, false, "DailyTaskView Panel background");
+  SpriteProxyLayerHelper.setSpriteRenderEnabled(this._nodes.closeButtonNode, false, "DailyTaskView close button");
+  SpriteProxyLayerHelper.setSpriteRenderEnabled(titleBgNode, false, "DailyTaskView title_bg");
+  SpriteProxyLayerHelper.setSpriteRenderEnabled(requireChild(titleBgNode, "paopao"), false, "DailyTaskView title_bg/paopao");
+  SpriteProxyLayerHelper.setSpriteRenderEnabled(requireChild(this._nodes.panelNode, "tips"), false, "DailyTaskView tips");
+};
+
+DailyTaskViewController.prototype._hideTaskSourceSprites = function (taskItemNode) {
+  SpriteProxyLayerHelper.setSpriteRenderEnabled(taskItemNode, false, "DailyTaskView task item background");
+  SpriteProxyLayerHelper.setSpriteRenderEnabled(requireChild(taskItemNode, "hammer_icon"), false, "DailyTaskView hammer_icon");
+  SpriteProxyLayerHelper.setSpriteRenderEnabled(requireChild(taskItemNode, "progressBar"), false, "DailyTaskView progressBar");
+  SpriteProxyLayerHelper.setSpriteRenderEnabled(requireChild(taskItemNode, "award"), false, "DailyTaskView award");
+  SpriteProxyLayerHelper.setSpriteRenderEnabled(requireChild(taskItemNode, "go_btn"), false, "DailyTaskView go_btn");
+};
+
+DailyTaskViewController.prototype._rebuildStaticRenderProxies = function () {
+  this._ensureStaticProxyLayers();
+  SpriteProxyLayerHelper.clearRecords(this._staticProxyRecords);
+  this._hideStaticSourceSprites();
+  var titleBgNode = requireChild(this._nodes.panelNode, "title_bg");
+  this._createStaticProxyRecord("panel", this._nodes.panelNode, "daily_task_panel_bg_proxy", true);
+  this._createStaticProxyRecord("chrome", this._nodes.closeButtonNode, "daily_task_close_button_proxy", true);
+  this._createStaticProxyRecord("chrome", titleBgNode, "daily_task_title_bg_proxy", true);
+  this._createStaticProxyRecord("chrome", requireChild(titleBgNode, "paopao"), "daily_task_title_bubble_proxy", true);
+  this._createStaticProxyRecord("chrome", requireChild(this._nodes.panelNode, "tips"), "daily_task_tips_proxy", true);
+};
+
+DailyTaskViewController.prototype._rebuildListRenderProxies = function () {
+  this._ensureListProxyLayers();
+  var nodes = [this._nodes.taskItemTemplate].concat(this._itemNodes);
+  nodes.forEach(function (taskItemNode, index) {
+    this._hideTaskSourceSprites(taskItemNode);
+    var progressBarNode = requireChild(taskItemNode, "progressBar");
+    this._createListProxyRecord("itemBackground", taskItemNode, "daily_task_item_bg_proxy_" + index, true);
+    this._createListProxyRecord("itemIcon", requireChild(taskItemNode, "hammer_icon"), "daily_task_icon_proxy_" + index, true);
+    this._createListProxyRecord("progress", progressBarNode, "daily_task_progress_bg_proxy_" + index, true);
+    this._createListProxyRecord("reward", requireChild(taskItemNode, "award"), "daily_task_award_proxy_" + index, true);
+    this._createListProxyRecord("button", requireChild(taskItemNode, "go_btn"), "daily_task_button_proxy_" + index, true);
+  }, this);
+};
+
+DailyTaskViewController.prototype._syncRenderProxies = function () {
+  if (this._staticProxyRoot && this._staticProxyRoot.isValid) {
+    SpriteProxyLayerHelper.syncRecords(this._staticProxyRecords, this._staticProxyRoot);
+  }
+  if (this._listProxyRoot && this._listProxyRoot.isValid) {
+    SpriteProxyLayerHelper.syncRecords(this._listProxyRecords, this._listProxyRoot);
+  }
 };
 
 DailyTaskViewController.prototype._clearItemNodes = function () {
@@ -229,6 +379,7 @@ DailyTaskViewController.prototype._clearItemNodes = function () {
       node.destroy();
     }
   }
+  SpriteProxyLayerHelper.clearRecords(this._listProxyRecords);
 };
 
 DailyTaskViewController.prototype._ensureSpriteFrame = function (path, source) {
@@ -338,6 +489,7 @@ DailyTaskViewController.prototype._renderTask = function (task, index, totalCoun
     }.bind(this);
   }
   bindTapWithDynamicHandler(nodes.buttonNode, "__dailyTaskActionHandler");
+  this._bindProxySyncToNode(nodes.buttonNode);
 };
 
 DailyTaskViewController.prototype.render = function (summary) {
@@ -351,6 +503,8 @@ DailyTaskViewController.prototype.render = function (summary) {
     summary.tasks.forEach(function (task, index) {
       this._renderTask(task, index, summary.tasks.length);
     }, this);
+    this._rebuildStaticRenderProxies();
+    this._rebuildListRenderProxies();
   }.bind(this));
 };
 

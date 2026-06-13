@@ -13,7 +13,7 @@ var MIRROR_LEVEL_DIR = path.join(PROJECT_ROOT, "levels");
 var REMOTE_PACK_DIR = path.join(PROJECT_ROOT, "remote-level-packs");
 var MANIFEST_PATH = path.join(RESOURCE_CONFIG_DIR, "level_manifest.json");
 var TARGET_LEVEL_COUNT = 1000;
-var LOCAL_LEVEL_MAX = 100;
+var LOCAL_LEVEL_MAX = 10;
 var REMOTE_PACK_SIZE = 100;
 var START_GENERATED_LEVEL_ID = 41;
 var CLOUD_ENV_ID = "cloud1-d7gqettx3e9249ca1";
@@ -635,7 +635,7 @@ function normalizeManualSplitterObjectives(config) {
 }
 
 function normalizeManualLocalLevels() {
-  for (var levelId = 1; levelId < START_GENERATED_LEVEL_ID; levelId += 1) {
+  for (var levelId = 1; levelId <= LOCAL_LEVEL_MAX; levelId += 1) {
     var filePath = path.join(RESOURCE_LEVEL_DIR, getLevelFileName(levelId));
     if (!fs.existsSync(filePath)) {
       throw new Error("Missing manual local level: " + filePath);
@@ -646,6 +646,49 @@ function normalizeManualLocalLevels() {
     normalizeManualSplitterObjectives(config);
     writeJson(filePath, config);
   }
+}
+
+function buildRemotePackRanges() {
+  var ranges = [];
+  if (LOCAL_LEVEL_MAX < 100) {
+    ranges.push({
+      from: LOCAL_LEVEL_MAX + 1,
+      to: 100
+    });
+  }
+  var remoteStart = LOCAL_LEVEL_MAX < 100 ? 101 : LOCAL_LEVEL_MAX + 1;
+  for (var from = remoteStart; from <= TARGET_LEVEL_COUNT; from += REMOTE_PACK_SIZE) {
+    ranges.push({
+      from: from,
+      to: Math.min(TARGET_LEVEL_COUNT, from + REMOTE_PACK_SIZE - 1)
+    });
+  }
+  return ranges;
+}
+
+function loadLevelForPack(levelId, packFrom, packTo) {
+  var localFilePath = path.join(RESOURCE_LEVEL_DIR, getLevelFileName(levelId));
+  if (fs.existsSync(localFilePath)) {
+    return JSON.parse(fs.readFileSync(localFilePath, "utf8"));
+  }
+
+  var existingPackPath = path.join(REMOTE_PACK_DIR, getPackFileName(packFrom, packTo));
+  if (fs.existsSync(existingPackPath)) {
+    var existingPack = JSON.parse(fs.readFileSync(existingPackPath, "utf8"));
+    var levelKey = "level_" + padLevelId(levelId);
+    if (
+      existingPack &&
+      existingPack.levels &&
+      typeof existingPack.levels === "object" &&
+      existingPack.levels[levelKey] &&
+      typeof existingPack.levels[levelKey] === "object" &&
+      !Array.isArray(existingPack.levels[levelKey])
+    ) {
+      return existingPack.levels[levelKey];
+    }
+  }
+
+  return makeLevel(levelId);
 }
 
 function writeMeta(levelId) {
@@ -676,6 +719,9 @@ function writeManifestMeta() {
 
 function removeGeneratedRemoteLocalFiles() {
   [RESOURCE_LEVEL_DIR, MIRROR_LEVEL_DIR].forEach(function (dirPath) {
+    if (!fs.existsSync(dirPath)) {
+      return;
+    }
     fs.readdirSync(dirPath).forEach(function (name) {
       var match = name.match(/^level_(\d{3,})\.json(\.meta)?$/);
       if (!match) {
@@ -686,6 +732,17 @@ function removeGeneratedRemoteLocalFiles() {
         fs.unlinkSync(path.join(dirPath, name));
       }
     });
+  });
+
+  [RESOURCE_LEVEL_DIR, MIRROR_LEVEL_DIR].forEach(function (dirPath) {
+    var examplePath = path.join(dirPath, "level_021_special_entities_example.json");
+    if (fs.existsSync(examplePath)) {
+      fs.unlinkSync(examplePath);
+    }
+    var exampleMetaPath = examplePath + ".meta";
+    if (fs.existsSync(exampleMetaPath)) {
+      fs.unlinkSync(exampleMetaPath);
+    }
   });
 }
 
@@ -701,8 +758,9 @@ function buildRemotePacks() {
   ensureDirectory(REMOTE_PACK_DIR);
 
   var manifestPacks = [];
-  for (var from = LOCAL_LEVEL_MAX + 1; from <= TARGET_LEVEL_COUNT; from += REMOTE_PACK_SIZE) {
-    var to = Math.min(TARGET_LEVEL_COUNT, from + REMOTE_PACK_SIZE - 1);
+  buildRemotePackRanges().forEach(function (range) {
+    var from = range.from;
+    var to = range.to;
     var packId = getPackId(from, to);
     var pack = {
       schemaVersion: 1,
@@ -712,7 +770,7 @@ function buildRemotePacks() {
       levels: {}
     };
     for (var levelId = from; levelId <= to; levelId += 1) {
-      pack.levels["level_" + padLevelId(levelId)] = makeLevel(levelId);
+      pack.levels["level_" + padLevelId(levelId)] = loadLevelForPack(levelId, from, to);
     }
 
     var packText = toJsonText(pack);
@@ -726,7 +784,7 @@ function buildRemotePacks() {
       sha256: sha256Text(packText),
       bytes: Buffer.byteLength(packText, "utf8")
     });
-  }
+  });
   return manifestPacks;
 }
 
@@ -756,16 +814,15 @@ function main() {
   }
 
   normalizeManualLocalLevels();
-  for (var levelId = START_GENERATED_LEVEL_ID; levelId <= LOCAL_LEVEL_MAX; levelId += 1) {
-    var levelConfig = makeLevel(levelId);
-    writeJson(path.join(RESOURCE_LEVEL_DIR, getLevelFileName(levelId)), levelConfig);
-    writeMeta(levelId);
-  }
-  removeGeneratedRemoteLocalFiles();
   var packs = buildRemotePacks();
+  removeGeneratedRemoteLocalFiles();
   writeManifest(packs);
   syncMirror();
-  console.log("Generated local levels " + START_GENERATED_LEVEL_ID + "-" + LOCAL_LEVEL_MAX + ", remote packs " + (LOCAL_LEVEL_MAX + 1) + "-" + TARGET_LEVEL_COUNT + ", and synced mirror directory.");
+  console.log(
+    "Generated local levels 1-" + LOCAL_LEVEL_MAX +
+    ", remote packs " + (LOCAL_LEVEL_MAX + 1) + "-" + TARGET_LEVEL_COUNT +
+    ", and synced mirror directory."
+  );
 }
 
 main();

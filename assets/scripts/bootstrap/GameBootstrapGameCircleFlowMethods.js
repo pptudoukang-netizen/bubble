@@ -379,13 +379,7 @@ module.exports = {
   },
 
   _hideGameCircleWelfareView: function () {
-    if (this.gameCircleButtonAdapter && typeof this.gameCircleButtonAdapter.hideAllButtons === "function") {
-      this.gameCircleButtonAdapter.hideAllButtons();
-    }
-    if (!this._gameCircleWelfareViewNode || !cc.isValid(this._gameCircleWelfareViewNode)) {
-      return;
-    }
-    this._gameCircleWelfareViewNode.active = false;
+    hideGameCircleWelfareViewNode(this);
   },
 
   _renderGameCircleWelfareView: function () {

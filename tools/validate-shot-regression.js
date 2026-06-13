@@ -6,7 +6,12 @@ var path = require("path");
 var BoardLayout = require("../assets/scripts/config/BoardLayout");
 var AimTuningProfiles = require("../assets/scripts/config/AimTuningProfiles");
 var BubbleGrid = require("../assets/scripts/systems/BubbleGrid");
+var LevelPackManifest = require("../assets/scripts/config/LevelPackManifest");
 var TrajectoryPredictor = require("../assets/scripts/systems/TrajectoryPredictor");
+
+var LEVEL_DIR = path.resolve(__dirname, "../assets/resources/config/levels");
+var MANIFEST_PATH = path.resolve(__dirname, "../assets/resources/config/level_manifest.json");
+var REMOTE_PACK_DIR = path.resolve(__dirname, "../remote-level-packs");
 
 function readJson(filePath) {
   var raw = fs.readFileSync(filePath, "utf8");
@@ -38,10 +43,24 @@ function stableSignature(plan) {
   ].join("|");
 }
 
+function loadLevelRaw(levelId) {
+  var key = "level_" + String(levelId).padStart(3, "0");
+  if (levelId <= LevelPackManifest.LOCAL_LEVEL_MAX) {
+    return readJson(path.join(LEVEL_DIR, key + ".json"));
+  }
+
+  var manifest = LevelPackManifest.normalizeManifest(readJson(MANIFEST_PATH));
+  var pack = LevelPackManifest.findPackForLevelId(manifest, levelId);
+  var packData = readJson(path.join(REMOTE_PACK_DIR, pack.id + ".json"));
+  if (!packData.levels || !packData.levels[key]) {
+    throw new Error("Missing remote level config: " + key + " in " + pack.id);
+  }
+  return packData.levels[key];
+}
+
 function createLevelConfig(levelId) {
   var key = "level_" + String(levelId).padStart(3, "0");
-  var filePath = path.resolve(__dirname, "../assets/resources/config/levels/" + key + ".json");
-  var raw = readJson(filePath);
+  var raw = loadLevelRaw(levelId);
 
   if (!raw.level || !Array.isArray(raw.level.layout)) {
     throw new Error("Invalid level config: " + key);

@@ -13,6 +13,7 @@ var formatRewardItems = Shared.formatRewardItems;
 var showStatusAndTip = Shared.showStatusAndTip;
 var hideGameCircleWelfareViewNode = Shared.hideGameCircleWelfareViewNode;
 var resolveStarChestFailMessage = Shared.resolveStarChestFailMessage;
+var UiModalReleaseHelper = require("../utils/UiModalReleaseHelper");
 var WORLD_RANK_LOADING_MESSAGE = "正在加载世界排行榜...";
 
 function resolveWorldLeaderboardFailMessage(error) {
@@ -111,10 +112,12 @@ module.exports = {
   },
 
   _hideRankingView: function () {
-    if (!this._rankingViewNode || !cc.isValid(this._rankingViewNode)) {
-      return;
-    }
-    this._rankingViewNode.active = false;
+    UiModalReleaseHelper.releaseCachedModal(this, {
+      label: "RankingView",
+      nodeKey: "_rankingViewNode",
+      prefabKey: "_rankingViewPrefab",
+      controllerKey: "_rankingViewController"
+    });
   },
 
   _renderRankingView: function () {
@@ -338,10 +341,12 @@ module.exports = {
 
   _hideBuyView: function () {
     this._buyViewSkuId = "";
-    if (!this._buyViewNode || !cc.isValid(this._buyViewNode)) {
-      return;
-    }
-    this._buyViewNode.active = false;
+    UiModalReleaseHelper.releaseCachedModal(this, {
+      label: "BuyView",
+      nodeKey: "_buyViewNode",
+      prefabKey: "_buyViewPrefab",
+      controllerKey: "_buyViewController"
+    });
   },
 
   _confirmShopPurchase: function (quantity) {
