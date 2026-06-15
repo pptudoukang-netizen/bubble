@@ -384,6 +384,24 @@ function invalidateAssetCache() {
   assetLoadPromise = null;
 }
 
+function isRuntimeDisposed(state) {
+  if (!state || typeof state !== "object") {
+    throw new Error("Floating map runtime state is required.");
+  }
+  return state.disposed === true;
+}
+
+function cancelRuntimePrefetch(state) {
+  if (isRuntimeDisposed(state)) {
+    state.pendingPrefetchPrefabNames = {};
+    state.prefabPrefetchPromise = null;
+    return;
+  }
+  state.disposed = true;
+  state.pendingPrefetchPrefabNames = {};
+  state.prefabPrefetchPromise = null;
+}
+
 function collectRequiredPrefabNames(state) {
   var nodes = state.config.nodes;
   var visibleIndexes = resolveVisibleNodeIndexRange(state);
@@ -653,7 +671,9 @@ function loadAssets(focusLevelId) {
 function destroyExistingRuntimeRoot(mapHostNode) {
   LevelSelectMemoryDiagnostics.increment("floatingMap.destroyExistingRuntimeRoot");
   if (mapHostNode.__floatingMapState) {
-    stopInertia(mapHostNode.__floatingMapState);
+    cancelRuntimePrefetch(mapHostNode.__floatingMapState);
+    stopInertia(mapHostNode.__floatingMapState, { skipFinalize: true });
+    clearScrollVisibilitySync(mapHostNode.__floatingMapState);
     mapHostNode.__floatingMapState = null;
   }
   var existingRoot = mapHostNode.getChildByName(ROOT_NODE_NAME);
@@ -1258,21 +1278,40 @@ function reportMapPrefabPrefetchError(error) {
 }
 
 function runMapPrefabPrefetch(state) {
+  if (isRuntimeDisposed(state)) {
+    state.prefabPrefetchPromise = null;
+    return Promise.resolve(null);
+  }
+
   var pendingNames = drainPendingPrefetchPrefabNames(state);
   if (pendingNames.length === 0) {
     state.prefabPrefetchPromise = null;
-    if (state.content && state.content.isValid) {
+    if (!isRuntimeDisposed(state) && state.content && state.content.isValid) {
       syncVisibleNodesWithPrefetch(state);
     }
     return Promise.resolve(null);
   }
 
   return ensureMapPrefabsLoaded(state.assets, pendingNames).then(function () {
+    if (isRuntimeDisposed(state)) {
+      state.prefabPrefetchPromise = null;
+      return null;
+    }
     return runMapPrefabPrefetch(state);
+  }, function (error) {
+    if (isRuntimeDisposed(state)) {
+      state.prefabPrefetchPromise = null;
+      return null;
+    }
+    throw error;
   });
 }
 
 function syncVisibleNodesWithPrefetch(state) {
+  if (isRuntimeDisposed(state)) {
+    return;
+  }
+
   var visibleIndexes = resolveVisibleNodeIndexRange(state);
   var retainBuffer = resolveActiveRetainNodeBuffer(state);
   var renderedRangeKey = getRenderedNodeRangeKey(visibleIndexes, state.config.nodes.length, retainBuffer);
@@ -1289,6 +1328,9 @@ function syncVisibleNodesWithPrefetch(state) {
     if (!state.prefabPrefetchPromise) {
       state.prefabPrefetchPromise = runMapPrefabPrefetch(state).catch(function (error) {
         state.prefabPrefetchPromise = null;
+        if (isRuntimeDisposed(state)) {
+          return null;
+        }
         reportMapPrefabPrefetchError(error);
         throw error;
       });
@@ -1351,6 +1393,9 @@ function renderVisibleNodes(state) {
     if (!state.prefabPrefetchPromise) {
       state.prefabPrefetchPromise = runMapPrefabPrefetch(state).catch(function (error) {
         state.prefabPrefetchPromise = null;
+        if (isRuntimeDisposed(state)) {
+          return null;
+        }
         reportMapPrefabPrefetchError(error);
         throw error;
       });
@@ -1755,6 +1800,7 @@ function render(options) {
     scrollFrameCounter: 0,
     scrollVisibilitySyncScheduled: false,
     scrollVisibilitySyncTick: null,
+    disposed: false,
     dragTracking: false,
     dragConsumed: false,
     lastTouchY: 0,

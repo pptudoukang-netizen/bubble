@@ -46,6 +46,14 @@ function assertFiniteNumber(value, fieldName) {
   return numberValue;
 }
 
+function assertPositiveNumber(value, fieldName) {
+  var numberValue = assertFiniteNumber(value, fieldName);
+  if (numberValue <= 0) {
+    throw new Error(fieldName + " must be positive.");
+  }
+  return numberValue;
+}
+
 function assertPositiveInteger(value, fieldName) {
   var numberValue = assertFiniteNumber(value, fieldName);
   if (!Number.isInteger(numberValue) || numberValue <= 0) {
@@ -136,8 +144,38 @@ var SCORE_HEAT_DIFFICULTY_ALIAS = {
   difficult: "hard"
 };
 
+function resolveImpactBounceBoardAdvanceDelay() {
+  if (typeof SpecialAnimationTiming.calculateImpactBounceTotalDuration !== "function") {
+    throw new Error("SpecialAnimationTiming.calculateImpactBounceTotalDuration is required.");
+  }
+
+  return SpecialAnimationTiming.calculateImpactBounceTotalDuration(
+    IMPACT_BOUNCE_PUSH_DISTANCE,
+    IMPACT_BOUNCE_SPEED
+  );
+}
+
+function requireImpactBounceTiming() {
+  if (!SpecialAnimationTiming.impactBounce || typeof SpecialAnimationTiming.impactBounce !== "object") {
+    throw new Error("SpecialAnimationTiming.impactBounce is required.");
+  }
+  return SpecialAnimationTiming.impactBounce;
+}
+
+var IMPACT_BOUNCE_TIMING = requireImpactBounceTiming();
+var IMPACT_BOUNCE_PUSH_DISTANCE = assertPositiveNumber(
+  IMPACT_BOUNCE_TIMING.defaultPushDistance,
+  "SpecialAnimationTiming.impactBounce.defaultPushDistance"
+);
+var IMPACT_BOUNCE_SPEED = assertPositiveNumber(
+  BoardLayout.impactBounceSpeed,
+  "BoardLayout.impactBounceSpeed"
+);
 // 碰撞反馈播放完成后再下压，避免命中反馈与网格位移同帧造成视觉偏差。
-var BOARD_ADVANCE_AFTER_IMPACT_DELAY = 0.2;
+var BOARD_ADVANCE_AFTER_IMPACT_DELAY = assertPositiveNumber(
+  resolveImpactBounceBoardAdvanceDelay(),
+  "Board advance after impact delay"
+);
 var BOARD_ADVANCE_DELAY_EPSILON = 0.000001;
 var KEY_UNLOCK_BOARD_ADVANCE_BLOCK_DELAY = SpecialAnimationTiming.keyUnlock.totalDuration;
 // 最后一颗入缸后，延迟再弹出 WinView。
@@ -251,6 +289,30 @@ function resolveIceInnerColor(cellOrBall) {
 
   return null;
 }
+
+function buildIceSnowballCollectEntry(cell, innerColor) {
+  if (!cell || typeof cell !== "object") {
+    throw new Error("Ice snowball collect entry requires cell.");
+  }
+  if (typeof innerColor !== "string" || !innerColor) {
+    throw new Error("Ice snowball collect entry requires innerColor.");
+  }
+
+  var entry = {
+    id: cell.id,
+    innerColor: innerColor
+  };
+  if (Number.isInteger(cell.row) && Number.isInteger(cell.col)) {
+    entry.row = cell.row;
+    entry.col = cell.col;
+  }
+  if (cell.position && typeof cell.position.x === "number" && typeof cell.position.y === "number") {
+    entry.x = cell.position.x;
+    entry.y = cell.position.y;
+  }
+  return entry;
+}
+
 function buildActiveProjectile(firedBall, shotPlan) {
   var pathPoints = buildProjectilePathFromShotPlan(shotPlan);
   var displayCode = resolveBallDisplayCode(firedBall);
@@ -301,6 +363,20 @@ function findPrimaryCollectionObjective(levelConfig) {
   }
 
   return null;
+}
+
+function listWinCollectionObjectives(levelConfig) {
+  var level = levelConfig && levelConfig.level ? levelConfig.level : null;
+  if (!level) {
+    throw new Error("Win objective evaluation requires level config.");
+  }
+  if (!Array.isArray(level.winConditions)) {
+    throw new Error("Win objective evaluation requires level.winConditions array.");
+  }
+
+  return level.winConditions.filter(function (objective) {
+    return objective && COLLECTION_OBJECTIVE_TYPES[objective.type] === true;
+  });
 }
 
 function clamp(value, min, max) {
@@ -479,7 +555,11 @@ function GameManager(options) {
   this.pendingRuntimeEvents = [];
   this.pendingBoardAdvanceSpecialAnimationDelay = 0;
   this.pendingBoardAdvanceDelay = 0;
+  this.pendingDeferredEnsureMinimumVisibleBoardRows = false;
+  this.pendingDropIntervalBoardAdvance = false;
   this.boardAdvancedThisFrame = false;
+  this.boardAdvanceUpdateSerial = 0;
+  this.pendingBoardAdvanceScheduledUpdateSerial = -1;
   this.pendingWinSettlementDelay = 0;
   this.pendingSplitterSpawns = [];
   this.pendingMolotovBlastQueue = [];
@@ -539,7 +619,7 @@ GameManager.prototype.startLevel = function (levelConfig) {
   this._lastTimerRenderBucket = this.isTimedInfiniteShots
     ? Math.ceil(this.remainingTimeMs / TIMED_LEVEL_RENDER_BUCKET_MS)
     : -1;
-  this.requiredStarCount = this.isTimedInfiniteShots ? assertPositiveInteger(level.requiredStarCount, "level.requiredStarCount") : 0;
+  this.requiredStarCount = this.isTimedInfiniteShots ? assertPositiveInteger(level.requiredStarCount, "level.requiredStarCount") : 1;
   this.remainingShots = this.isTimedInfiniteShots ? 0 : assertPositiveInteger(level.shotLimit, "level.shotLimit");
   this.score = 0;
   this.comboStreak = 0;
@@ -571,7 +651,11 @@ GameManager.prototype.startLevel = function (levelConfig) {
   this.pendingRuntimeEvents = [];
   this.pendingBoardAdvanceSpecialAnimationDelay = 0;
   this.pendingBoardAdvanceDelay = 0;
+  this.pendingDeferredEnsureMinimumVisibleBoardRows = false;
+  this.pendingDropIntervalBoardAdvance = false;
   this.boardAdvancedThisFrame = false;
+  this.boardAdvanceUpdateSerial = 0;
+  this.pendingBoardAdvanceScheduledUpdateSerial = -1;
   this.pendingWinSettlementDelay = 0;
   this.pendingSplitterSpawns = [];
   this.pendingMolotovBlastQueue = [];
@@ -643,8 +727,104 @@ GameManager.prototype._createImpactEventFromCell = function (centerCell) {
       y: centerPosition.y
     },
     neighbors: neighbors,
-    pushDistance: 12
+    pushDistance: IMPACT_BOUNCE_PUSH_DISTANCE,
+    bounceSpeed: IMPACT_BOUNCE_SPEED
   };
+};
+
+GameManager.prototype._filterImpactEventSurvivors = function (impact, removedCells) {
+  if (!impact) {
+    return null;
+  }
+  if (!Array.isArray(removedCells)) {
+    throw new Error("Filter impact survivors requires removedCells array.");
+  }
+  if (!Array.isArray(impact.neighbors)) {
+    throw new Error("Impact event requires neighbors array.");
+  }
+
+  var removedIds = {};
+  for (var removedIndex = 0; removedIndex < removedCells.length; removedIndex += 1) {
+    var removedCell = removedCells[removedIndex];
+    if (!removedCell || (typeof removedCell.id !== "string" && typeof removedCell.id !== "number")) {
+      throw new Error("Filter impact survivors requires removed cell id.");
+    }
+    removedIds[removedCell.id] = true;
+  }
+
+  var grid = this.systems.bubbleGrid;
+  var survivingNeighbors = [];
+  for (var neighborIndex = 0; neighborIndex < impact.neighbors.length; neighborIndex += 1) {
+    var neighbor = impact.neighbors[neighborIndex];
+    if (!neighbor || (typeof neighbor.id !== "string" && typeof neighbor.id !== "number")) {
+      throw new Error("Impact neighbor requires id.");
+    }
+    if (removedIds[neighbor.id]) {
+      continue;
+    }
+    if (!Number.isInteger(neighbor.row) || !Number.isInteger(neighbor.col)) {
+      throw new Error("Impact neighbor requires row and col.");
+    }
+    var liveCell = grid.getCell(neighbor.row, neighbor.col);
+    if (!liveCell || liveCell.id !== neighbor.id) {
+      continue;
+    }
+    var neighborPosition = grid.getCellPosition(neighbor.row, neighbor.col);
+    survivingNeighbors.push({
+      id: liveCell.id,
+      row: liveCell.row,
+      col: liveCell.col,
+      x: neighborPosition.x,
+      y: neighborPosition.y
+    });
+  }
+
+  if (!survivingNeighbors.length) {
+    return null;
+  }
+
+  return {
+    seq: impact.seq,
+    center: impact.center,
+    neighbors: survivingNeighbors,
+    pushDistance: impact.pushDistance,
+    bounceSpeed: impact.bounceSpeed
+  };
+};
+
+GameManager.prototype._applyPostImpactBoardShiftPolicy = function (resolution) {
+  if (!resolution || !resolution.impact) {
+    this._ensureMinimumVisibleBoardRows(resolution);
+    return false;
+  }
+  if (this._isWaitingBoardAdvance()) {
+    throw new Error("Post-impact board shift cannot start while board advance is already pending.");
+  }
+
+  var needsDropIntervalAdvance = !!(this.dropInterval && this.shotsFired % this.dropInterval === 0);
+  this.pendingDeferredEnsureMinimumVisibleBoardRows = true;
+  this.pendingDropIntervalBoardAdvance = needsDropIntervalAdvance;
+  this.pendingBoardAdvanceSpecialAnimationDelay = Math.max(
+    this._resolveBoardAdvanceSpecialAnimationDelay(resolution),
+    BOARD_ADVANCE_AFTER_IMPACT_DELAY
+  );
+  this.pendingBoardAdvanceDelay = 0;
+  this.pendingBoardAdvanceScheduledUpdateSerial = Math.floor(assertFiniteNumber(
+    this.boardAdvanceUpdateSerial,
+    "GameManager boardAdvanceUpdateSerial"
+  ));
+  return true;
+};
+
+GameManager.prototype._flushDeferredBoardShiftAfterImpact = function () {
+  if (this.pendingDeferredEnsureMinimumVisibleBoardRows) {
+    this.pendingDeferredEnsureMinimumVisibleBoardRows = false;
+    this._ensureMinimumVisibleBoardRows(this.lastResolution);
+  }
+  if (this.pendingDropIntervalBoardAdvance) {
+    this.pendingDropIntervalBoardAdvance = false;
+    this._advanceBoardIfNeeded();
+  }
 };
 
 GameManager.prototype._getScoreRule = function (key) {
@@ -655,7 +835,10 @@ GameManager.prototype._getScoreRule = function (key) {
 };
 
 GameManager.prototype._isWaitingBoardAdvance = function () {
-  return this.pendingBoardAdvanceSpecialAnimationDelay > 0 || this.pendingBoardAdvanceDelay > 0;
+  return this.pendingBoardAdvanceSpecialAnimationDelay > 0 ||
+    this.pendingBoardAdvanceDelay > 0 ||
+    this.pendingDeferredEnsureMinimumVisibleBoardRows ||
+    this.pendingDropIntervalBoardAdvance;
 };
 
 GameManager.prototype._hasBoardAdvancedThisFrame = function () {
@@ -671,6 +854,15 @@ GameManager.prototype._markBoardAdvancedThisFrame = function () {
 
 GameManager.prototype._isBoardAdvanceBusy = function () {
   return this._isWaitingBoardAdvance() || this._hasBoardAdvancedThisFrame();
+};
+
+GameManager.prototype._isBoardAdvanceScheduledThisUpdate = function () {
+  var updateSerial = Math.floor(assertFiniteNumber(this.boardAdvanceUpdateSerial, "GameManager boardAdvanceUpdateSerial"));
+  var scheduledSerial = Math.floor(assertFiniteNumber(this.pendingBoardAdvanceScheduledUpdateSerial, "GameManager pendingBoardAdvanceScheduledUpdateSerial"));
+  if (updateSerial < 0) {
+    throw new Error("GameManager boardAdvanceUpdateSerial must be non-negative.");
+  }
+  return updateSerial > 0 && scheduledSerial === updateSerial;
 };
 
 GameManager.prototype._resolveBoardAdvanceSpecialAnimationDelay = function (resolution) {
@@ -838,12 +1030,20 @@ GameManager.prototype._scheduleBoardAdvanceAfterImpact = function () {
   }
 
   this.pendingBoardAdvanceSpecialAnimationDelay = this._resolveBoardAdvanceSpecialAnimationDelay(this.lastResolution);
-  this.pendingBoardAdvanceDelay = BOARD_ADVANCE_AFTER_IMPACT_DELAY;
+  this.pendingBoardAdvanceDelay = 0;
+  this.pendingDropIntervalBoardAdvance = true;
+  this.pendingBoardAdvanceScheduledUpdateSerial = Math.floor(assertFiniteNumber(
+    this.boardAdvanceUpdateSerial,
+    "GameManager boardAdvanceUpdateSerial"
+  ));
   return true;
 };
 
 GameManager.prototype._updatePendingBoardAdvance = function (dt) {
   if (!this._isWaitingBoardAdvance()) {
+    return false;
+  }
+  if (this._isBoardAdvanceScheduledThisUpdate()) {
     return false;
   }
 
@@ -875,7 +1075,8 @@ GameManager.prototype._updatePendingBoardAdvance = function (dt) {
     return false;
   }
 
-  this._advanceBoardIfNeeded();
+  this._flushDeferredBoardShiftAfterImpact();
+  this.pendingBoardAdvanceScheduledUpdateSerial = -1;
   return true;
 };
 
@@ -970,6 +1171,11 @@ GameManager.prototype._updateJarScoreBoost = function (dt) {
 };
 
 GameManager.prototype._resolveOutOfShotsOutcome = function () {
+  if (this._isObjectiveWinCompleted()) {
+    this._resolveObjectiveCompletedOutcome();
+    return;
+  }
+
   var grid = this.systems.bubbleGrid;
   if (grid && grid.hasReachedDangerLine()) {
     if (this.lastResolution) {
@@ -1043,12 +1249,43 @@ GameManager.prototype._getCachedJarSnapshot = function () {
   return this.cachedJarSnapshot;
 };
 
-GameManager.prototype._registerIceCollection = function (thawedCells) {
-  if (!Array.isArray(thawedCells) || !thawedCells.length) {
+GameManager.prototype._registerIceCollection = function (cells) {
+  if (!Array.isArray(cells) || !cells.length) {
     return 0;
   }
 
-  return 0;
+  var iceObstacleCells = [];
+  var thawEntries = [];
+
+  cells.forEach(function (cell) {
+    if (!cell) {
+      return;
+    }
+    if (cell.entityCategory === "obstacle_ball" && cell.entityType === "ice") {
+      iceObstacleCells.push(cell);
+      return;
+    }
+    if (cell.entityCategory === "normal_ball") {
+      if (typeof cell.color !== "string" || !cell.color) {
+        throw new Error("Thawed ice snowball collection requires color.");
+      }
+      thawEntries.push(buildIceSnowballCollectEntry(cell, cell.color));
+    }
+  });
+
+  var gained = this._registerIceSnowballCollection(iceObstacleCells);
+  if (thawEntries.length) {
+    this.iceCollectedTotal += thawEntries.length;
+    if (this.lastResolution) {
+      this.lastResolution.iceCollected += thawEntries.length;
+    }
+    gained += thawEntries.length;
+    this._pushRuntimeEvent("ice_snowball_collect", {
+      count: thawEntries.length,
+      entries: thawEntries
+    });
+  }
+  return gained;
 };
 
 GameManager.prototype._registerIceSnowballCollection = function (cells) {
@@ -1056,14 +1293,23 @@ GameManager.prototype._registerIceSnowballCollection = function (cells) {
     return 0;
   }
 
-  var gained = cells.filter(function (cell) {
-    return !!(
+  var gained = 0;
+  var entries = [];
+  cells.forEach(function (cell) {
+    if (!(
       cell &&
       cell.entityCategory === "obstacle_ball" &&
       cell.entityType === "ice" &&
       cell.iceSnowballAlreadyCollected !== true
-    );
-  }).length;
+    )) {
+      return;
+    }
+
+    var innerColor = cell.innerColor || resolveIceInnerColor(cell);
+    entries.push(buildIceSnowballCollectEntry(cell, innerColor));
+    cell.iceSnowballAlreadyCollected = true;
+    gained += 1;
+  });
   if (gained <= 0) {
     return 0;
   }
@@ -1072,6 +1318,10 @@ GameManager.prototype._registerIceSnowballCollection = function (cells) {
   if (this.lastResolution) {
     this.lastResolution.iceCollected += gained;
   }
+  this._pushRuntimeEvent("ice_snowball_collect", {
+    count: gained,
+    entries: entries
+  });
   return gained;
 };
 
@@ -1099,6 +1349,54 @@ GameManager.prototype._getPrimaryObjectiveProgressValue = function (objective, j
   }
 
   return 0;
+};
+
+GameManager.prototype._areWinCollectionObjectivesCompleted = function () {
+  var objectives = listWinCollectionObjectives(this.currentLevel);
+  if (!objectives.length) {
+    throw new Error("level.winConditions must contain at least one collection objective.");
+  }
+
+  var jarsSnapshot = this._getCachedJarSnapshot();
+  if (!jarsSnapshot) {
+    return false;
+  }
+
+  for (var index = 0; index < objectives.length; index += 1) {
+    var objective = objectives[index];
+    var target = assertPositiveInteger(objective.value, "Win collection objective value");
+    if (this._getPrimaryObjectiveProgressValue(objective, jarsSnapshot) < target) {
+      return false;
+    }
+  }
+
+  return true;
+};
+
+GameManager.prototype._hasRequiredStarRating = function () {
+  var requiredStarCount = assertPositiveInteger(this.requiredStarCount, "GameManager.requiredStarCount");
+  if (requiredStarCount !== 1) {
+    throw new Error("Objective win requires requiredStarCount to be 1.");
+  }
+  return calculateStarRating(this.score, this.scoreHeatBand) >= requiredStarCount;
+};
+
+GameManager.prototype._isObjectiveWinCompleted = function () {
+  return this._areWinCollectionObjectivesCompleted() && this._hasRequiredStarRating();
+};
+
+GameManager.prototype._resolveObjectiveCompletedOutcome = function () {
+  if (this.isTimedInfiniteShots) {
+    this.state = "won";
+    return;
+  }
+
+  if (this.remainingShots > 0) {
+    this._beginSurplusShotBonus();
+    return;
+  }
+
+  this._scheduleWinSettlement();
 };
 
 GameManager.prototype._buildPrimaryObjectiveSnapshot = function (jarsSnapshot) {
@@ -1506,26 +1804,21 @@ GameManager.prototype.useThreeLineElimination = function (expectedRows) {
   var removedLineCells = grid.removeCells(lineCells);
   var resolution = createEmptyResolution();
   resolution.matched = removedLineCells;
-  resolution.iceCollected = this._registerIceSnowballCollection(removedLineCells);
+  if (removedLineCells.length) {
+    resolution.impact = this._createImpactEventFromCell(removedLineCells[0]);
+  }
 
   var floatingCells = this.systems.supportSystem.findFloatingCells(grid);
   var removedFloating = grid.removeCells(floatingCells);
-  var fallingLineCells = removedLineCells.map(function (cell) {
-    var copied = clone(cell);
-    if (copied.entityCategory === "obstacle_ball" && copied.entityType === "ice") {
-      copied.iceSnowballAlreadyCollected = true;
-    }
-    return copied;
-  });
-  var fallingCandidates = fallingLineCells.concat(removedFloating);
-  this.systems.fallingMarbleSystem.registerDrops(fallingCandidates, grid);
+  var fallingCandidates = removedLineCells.concat(removedFloating);
+  this._registerResolutionDrops(fallingCandidates, grid, resolution);
   this.systems.jarCollectorSystem.collect([]);
 
   resolution.floating = removedFloating;
   resolution.collected = fallingCandidates;
   resolution.boardCleared = grid.getCells().length === 0;
   this.lastResolution = resolution;
-  this._ensureMinimumVisibleBoardRows(this.lastResolution);
+  this._applyPostImpactBoardShiftPolicy(this.lastResolution);
   this.pendingShotPlan = null;
   this.isAiming = false;
 
@@ -1969,7 +2262,7 @@ GameManager.prototype.useBarrierHammerAt = function (point) {
 
   this.pendingBarrierHammer = false;
   this.lastResolution = resolution;
-  this._ensureMinimumVisibleBoardRows(this.lastResolution);
+  this._applyPostImpactBoardShiftPolicy(this.lastResolution);
 
   if (this.isAiming) {
     this._refreshShotPlan(true);
@@ -1994,19 +2287,7 @@ GameManager.prototype._isTimedWinCompleted = function () {
     return false;
   }
 
-  var objective = findPrimaryCollectionObjective(this.currentLevel);
-  if (!objective) {
-    return false;
-  }
-  var target = assertPositiveInteger(objective.value, "Timed level objective target");
-  if (this._getPrimaryObjectiveProgressValue(objective, this._getCachedJarSnapshot()) < target) {
-    return false;
-  }
-
-  if (this.requiredStarCount !== 1) {
-    throw new Error("Timed level requiredStarCount must be 1.");
-  }
-  return calculateStarRating(this.score, this.scoreHeatBand) >= this.requiredStarCount;
+  return this._isObjectiveWinCompleted();
 };
 
 GameManager.prototype.pauseTimedLevelTimer = function () {
@@ -2030,6 +2311,7 @@ GameManager.prototype.update = function (dt) {
   if (safeDt < 0) {
     throw new Error("GameManager.update dt must be non-negative.");
   }
+  this.boardAdvanceUpdateSerial += 1;
   this.boardAdvancedThisFrame = false;
   var timerChanged = false;
   if (this.state === "running" && this.isTimedInfiniteShots && !this.timerPaused) {
@@ -2140,12 +2422,7 @@ GameManager.prototype.update = function (dt) {
     this._pushRuntimeEvent("jar_collect_bottom", {
       count: collectedDrops.length
     });
-    var iceSnowballCollected = this._registerIceSnowballCollection(collectedDrops);
-    if (iceSnowballCollected > 0) {
-      this._pushRuntimeEvent("ice_snowball_collect", {
-        count: iceSnowballCollected
-      });
-    }
+    this._registerIceSnowballCollection(collectedDrops);
     this._injectCollectedSkillBalls(collectedDrops);
     this.systems.jarCollectorSystem.collect(collectedDrops);
     this._applyJarCollectionScore(collectedDrops);
@@ -2177,6 +2454,23 @@ GameManager.prototype.update = function (dt) {
 
   var scoreBoostChanged = this._updateJarScoreBoost(dt);
   runtimeEvents = runtimeEvents.concat(this._drainRuntimeEvents());
+
+  var preBoardAdvanceHasProjectile = !!this.activeProjectile;
+  var preBoardAdvanceHasFallingDrops = this.systems.fallingMarbleSystem.hasActiveDrops();
+  var preBoardAdvanceHasPendingSplitterSpawns = this._hasPendingSplitterSpawns();
+  var preBoardAdvanceHasPendingMolotovBlasts = this._hasPendingMolotovBlasts();
+  if (
+    this.state === "running" &&
+    this._isObjectiveWinCompleted() &&
+    !preBoardAdvanceHasProjectile &&
+    !preBoardAdvanceHasFallingDrops &&
+    !preBoardAdvanceHasPendingSplitterSpawns &&
+    !preBoardAdvanceHasPendingMolotovBlasts
+  ) {
+    this._resolveObjectiveCompletedOutcome();
+    return this.getRuntimeSnapshot(runtimeEvents);
+  }
+
   var boardAdvancedThisFrame = this._updatePendingBoardAdvance(dt) || this._hasBoardAdvancedThisFrame();
   var splitterSpawned = boardAdvancedThisFrame ? false : this._updatePendingSplitterSpawns(dt);
   var molotovBlastUpdated = boardAdvancedThisFrame ? false : this._updatePendingMolotovBlasts(dt);
@@ -2376,9 +2670,11 @@ GameManager.prototype.debugDropBottomRow = function () {
 
   var resolution = createEmptyResolution();
   resolution.collected = removedBottom;
+  if (removedBottom.length) {
+    resolution.impact = this._createImpactEventFromCell(removedBottom[0]);
+  }
 
-  var fallingCandidates = removedBottom;
-  this.systems.fallingMarbleSystem.registerDrops(fallingCandidates, grid);
+  this._registerResolutionDrops(removedBottom, grid, resolution);
   this.systems.jarCollectorSystem.collect([]);
 
   resolution.boardCleared = grid.getCells().length === 0;
@@ -2394,7 +2690,7 @@ GameManager.prototype.debugDropBottomRow = function () {
   Logger.info("Debug bottom-row drop", {
     row: bottomRow,
     removed: removedBottom.length,
-    falling: fallingCandidates.length,
+    falling: removedBottom.length,
     injectedSkills: resolution.injectedSkills.length
   });
 

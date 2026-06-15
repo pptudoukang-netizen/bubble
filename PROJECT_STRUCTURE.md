@@ -77,7 +77,7 @@
 
 路径：`assets/scripts/core`
 
-- `GameManager.js`：玩法状态机和运行时核心。负责开局、瞄准、发射、技能、结算、胜负、分数、运行时事件、runtime snapshot。清屏胜利链路含 `won_pending`（等待棋盘掉落）、`won_surplus_shots_pending`（剩余发射球抛物线入缸）、`won_settlement_pending`（入缸后 1 秒），最终 `won` 才触发 `WinView`。
+- `GameManager.js`：玩法状态机和运行时核心。负责开局、瞄准、发射、技能、结算、胜负、分数、运行时事件、runtime snapshot。过关要求为星级达到 1 星且 `winConditions` 中所有收集目标完成；达成后进入 `won_surplus_shots_pending`（剩余发射球抛物线入缸，可选）、`won_settlement_pending`（入缸后 1 秒）并最终切到 `won` 触发 `WinView`。
 - `GameManagerShotResolutionMethods.js`：发射命中后的消除、掉落、收集等结算扩展；`_resolveBoardClearedOutcome` / `_beginSurplusShotBonus` 处理清屏后的剩余球奖励。
 - `AdRevivePolicy.js`：广告复活策略，统一复活补球、目标色选择和 LoseView 描述文案。
 - `ProjectileMath.js`：弹道与几何计算。
@@ -209,8 +209,8 @@
 2. 瞄准输入传给 `gameManager.beginAim` / `setAim` / `endAim`。
 3. 发射触发 `gameManager.fireShot`。
 4. `GameManager` 调用 systems 完成命中、消除、掉落、收集、胜负判断。
-5. 棋盘清屏且棋盘掉落结算完成后，若仍有 `remainingShots`，进入 `won_surplus_shots_pending`：`ShooterController.drainRemainingShotBalls` 排空炮台队列，`FallingMarbleSystem.registerSurplusShotsFromOrigin` 从炮台随机抛物线入缸计分；全部入缸后进入 `won_settlement_pending`，停顿 1 秒再切到 `won`。
-6. 无剩余发射球时，清屏掉落结算完成后同样先 `won_settlement_pending` 停顿 1 秒，再 `won`。
+5. 每次掉落、收集和计分完成后，`GameManager` 检查是否同时满足 1 星与 `winConditions` 中所有收集目标；满足后不再要求清屏，也不继续等待棋盘下压。
+6. 达成目标且仍有 `remainingShots` 时进入 `won_surplus_shots_pending`：`ShooterController.drainRemainingShotBalls` 排空炮台队列，`FallingMarbleSystem.registerSurplusShotsFromOrigin` 从炮台随机抛物线入缸计分；全部入缸后进入 `won_settlement_pending`，停顿 1 秒再切到 `won`。无剩余发射球时直接进入 `won_settlement_pending`。
 7. `GameBootstrap.update` 刷新 `GameManager.update(dt)`，再让 `LevelRenderer.refreshRuntime` 同步画面。
 8. runtime event 驱动音效、震动、埋点、结果弹窗和奖励流程；`WinView` 仅在 `state === "won"` 时弹出。
 

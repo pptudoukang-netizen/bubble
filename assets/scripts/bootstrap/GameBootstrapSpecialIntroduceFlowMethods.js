@@ -23,7 +23,7 @@ var INTRODUCE_DEFINITIONS = {
     summary: "打碎冰冻球后会掉落雪块，收集到目标数量即可完成关卡目标。",
     effectTitle: "收集目标",
     effectDescription: "雪块不会作为普通颜色球消除，主要通过融化冰冻球获得。",
-    iconPath: "image/ball/snow_cube"
+    iconPath: "image/ball/ice_ball"
   },
   ice: {
     title: "冰冻球",

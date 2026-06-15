@@ -353,6 +353,8 @@ cc.Class({
   _hideSpecialIntroduceView: GameBootstrapSpecialIntroduceFlowMethods._hideSpecialIntroduceView,
   _onUseSkillBallTap: lazyPowerupInventoryMethods._onUseSkillBallTap,
   _onUseThreeLineEliminationTap: lazyPowerupInventoryMethods._onUseThreeLineEliminationTap,
+  _applyPlusThreeBallsUseResult: lazyPowerupInventoryMethods._applyPlusThreeBallsUseResult,
+  _autoUsePlusThreeBallsAfterAdGrant: lazyPowerupInventoryMethods._autoUsePlusThreeBallsAfterAdGrant,
   _onUsePlusThreeBallsTap: lazyPowerupInventoryMethods._onUsePlusThreeBallsTap,
   _onUseSwapBallTap: lazyPowerupInventoryMethods._onUseSwapBallTap,
   _onSelectRainbowColorTap: lazyPowerupInventoryMethods._onSelectRainbowColorTap,

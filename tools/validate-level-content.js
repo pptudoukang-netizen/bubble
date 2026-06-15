@@ -30,6 +30,7 @@ var ALLOWED_ENTITY_TYPES = {
 var ALLOWED_CLEAR_REWARD_ITEM_IDS = ["coin", "stamina"];
 var AD_RUN_POWERUP_TYPES = ["three_line_elimination", "plus_three_balls"];
 var MIN_INITIAL_DROP_SPACE_ROWS = 8;
+var MAX_SHOT_LIMIT = 30;
 var CLEAR_REWARD_START_LEVEL_ID = 1;
 var TOP_BOARD_ROW_INDEX = 0;
 
@@ -351,6 +352,8 @@ function validateLevelMode(level, issues) {
   } else {
     if (!isPositiveInteger(level.shotLimit)) {
       issues.push("shotLimit must be a positive integer");
+    } else if (level.shotLimit > MAX_SHOT_LIMIT) {
+      issues.push("shotLimit must be <= " + MAX_SHOT_LIMIT);
     }
     if (level.timeLimitSeconds !== undefined) {
       issues.push("timeLimitSeconds must not be configured for shot_limited");

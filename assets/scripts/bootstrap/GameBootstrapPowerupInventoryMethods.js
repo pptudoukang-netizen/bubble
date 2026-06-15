@@ -30,6 +30,7 @@ var START_GAME_POWERUP_UNLOCK_LEVEL_BY_ITEM_ID = {
   blast_ball: 15,
   barrier_hammer: 20
 };
+var START_GAME_POWERUP_ITEM_IDS = ["swap_ball", "rainbow_ball", "blast_ball", "barrier_hammer"];
 var START_GAME_OBJECTIVE_ICON_PATHS = {
   R: "image/ball/red_ball",
   G: "image/ball/green_ball",
@@ -37,7 +38,7 @@ var START_GAME_OBJECTIVE_ICON_PATHS = {
   Y: "image/ball/yellow_ball",
   P: "image/ball/purple_ball",
   RAINBOW: "image/ball/rainbow_ball",
-  ICE_SNOWBALL: "image/ball/snow_cube"
+  ICE_SNOWBALL: "image/ball/ice_ball"
 };
 var START_GAME_COLLECTION_OBJECTIVE_TYPES = {
   collect_any: true,
@@ -82,25 +83,7 @@ function getStartGameObjectiveList(levelConfig) {
   return level.bonusObjectives.concat(level.winConditions);
 }
 
-function findStartGameCollectionObjective(levelConfig) {
-  var objectives = getStartGameObjectiveList(levelConfig);
-  for (var i = 0; i < objectives.length; i += 1) {
-    var objective = objectives[i];
-    if (!objective || typeof objective !== "object" || Array.isArray(objective)) {
-      throw new Error("StartGameView objective entry must be an object.");
-    }
-    if (typeof objective.type !== "string") {
-      throw new Error("StartGameView objective type must be a string.");
-    }
-    if (START_GAME_COLLECTION_OBJECTIVE_TYPES[objective.type] === true) {
-      return objective;
-    }
-  }
-  throw new Error("StartGameView requires a collection objective.");
-}
-
-function buildStartGameObjective(levelConfig) {
-  var objective = findStartGameCollectionObjective(levelConfig);
+function buildStartGameObjectiveEntry(objective) {
   var target = requirePositiveInteger(Math.floor(Number(objective.value)), "StartGameView objective target");
 
   if (objective.type === "collect_any") {
@@ -131,6 +114,42 @@ function buildStartGameObjective(levelConfig) {
   }
 
   throw new Error("Unsupported StartGameView objective type: " + objective.type);
+}
+
+function buildStartGameObjectives(levelConfig) {
+  var objectives = getStartGameObjectiveList(levelConfig);
+  var ballObjective = null;
+  var iceSnowballObjective = null;
+
+  for (var i = 0; i < objectives.length; i += 1) {
+    var objective = objectives[i];
+    if (!objective || typeof objective !== "object" || Array.isArray(objective)) {
+      throw new Error("StartGameView objective entry must be an object.");
+    }
+    if (typeof objective.type !== "string") {
+      throw new Error("StartGameView objective type must be a string.");
+    }
+    if (START_GAME_COLLECTION_OBJECTIVE_TYPES[objective.type] !== true) {
+      continue;
+    }
+    if (
+      !ballObjective &&
+      (objective.type === "collect_any" || objective.type === "collect_color")
+    ) {
+      ballObjective = objective;
+    } else if (!iceSnowballObjective && objective.type === "collect_ice_snowball") {
+      iceSnowballObjective = objective;
+    }
+  }
+
+  if (!ballObjective && !iceSnowballObjective) {
+    throw new Error("StartGameView requires at least one collection objective.");
+  }
+
+  return {
+    ball: ballObjective ? buildStartGameObjectiveEntry(ballObjective) : null,
+    iceSnowball: iceSnowballObjective ? buildStartGameObjectiveEntry(iceSnowballObjective) : null
+  };
 }
 
 function requireStartGameShopServices(host) {
@@ -234,6 +253,36 @@ function validateStartGameSelectedPowerups(host, levelId, selectedItems) {
     }
     return itemId;
   });
+}
+
+function buildDefaultStartGameSelectedPowerups(host, levelId) {
+  if (!host.inventoryStore || typeof host.inventoryStore.getItemCount !== "function") {
+    throw new Error("StartGameView requires InventoryStore.getItemCount.");
+  }
+  if (typeof host._refreshPlayerInventory !== "function") {
+    throw new Error("StartGameView requires player inventory refresh method.");
+  }
+  host._refreshPlayerInventory();
+
+  var safeLevelId = normalizeStartGameLevelId(levelId);
+  var selectedItems = [];
+  START_GAME_POWERUP_ITEM_IDS.forEach(function (itemId) {
+    if (selectedItems.length >= MAX_SELECTED_POWERUPS) {
+      return;
+    }
+    var unlockLevel = START_GAME_POWERUP_UNLOCK_LEVEL_BY_ITEM_ID[itemId];
+    if (!Number.isInteger(unlockLevel)) {
+      throw new Error("StartGameView unlock level missing for item: " + itemId);
+    }
+    if (safeLevelId < unlockLevel) {
+      return;
+    }
+    if (host.inventoryStore.getItemCount(host.playerInventory, itemId) <= 0) {
+      return;
+    }
+    selectedItems.push(itemId);
+  });
+  return validateStartGameSelectedPowerups(host, safeLevelId, selectedItems);
 }
 
 function requireValidNode(node, description) {
@@ -1012,7 +1061,7 @@ module.exports = {
     }
     this._pendingStartGamePowerups = options && options.selectedItems !== undefined
       ? validateStartGameSelectedPowerups(this, safeLevelId, options.selectedItems)
-      : [];
+      : buildDefaultStartGameSelectedPowerups(this, safeLevelId);
     this._startGameLevelId = safeLevelId;
     this._startGameLevelConfig = null;
     this._hideAwardView();
@@ -1117,7 +1166,7 @@ module.exports = {
       levelId: normalizeStartGameLevelId(this._startGameLevelId),
       staminaCost: LEVEL_ENTRY_STAMINA_COST,
       inventory: this.playerInventory,
-      objective: buildStartGameObjective(this._startGameLevelConfig),
+      objectives: buildStartGameObjectives(this._startGameLevelConfig),
       showAwardTips: shouldShowFirstClearAwardTips(this, this._startGameLevelId),
       selectedItems: this._pendingStartGamePowerups,
       purchaseOptionsByItemId: buildStartGamePurchaseOptions(this)

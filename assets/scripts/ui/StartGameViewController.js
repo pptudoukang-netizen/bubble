@@ -257,33 +257,21 @@ StartGameViewController.prototype._resolveNodes = function () {
   };
 };
 
-StartGameViewController.prototype._selectObjectiveTargetNodes = function (objective) {
+StartGameViewController.prototype._renderStartGameTargetSlot = function (objective, iconNode, countLabelNode, description) {
+  if (!objective) {
+    iconNode.active = false;
+    return;
+  }
+
   requireObject(objective, "StartGameView objective");
-  if (typeof objective.type !== "string") {
-    throw new Error("StartGameView objective type must be a string.");
+  requirePositiveInteger(objective.target, "StartGameView objective target");
+  if (typeof objective.iconPath !== "string" || objective.iconPath.length === 0) {
+    throw new Error("StartGameView objective iconPath must be a non-empty string.");
   }
 
-  if (objective.type === "collect_ice_snowball") {
-    this._nodes.targetBallNode.active = false;
-    this._nodes.targetIceNode.active = true;
-    return {
-      iconNode: this._nodes.targetIceNode,
-      countLabelNode: this._nodes.targetIceCountLabelNode,
-      description: "Panel/target/traget_layout/target_ice"
-    };
-  }
-
-  if (objective.type === "collect_any" || objective.type === "collect_color") {
-    this._nodes.targetBallNode.active = true;
-    this._nodes.targetIceNode.active = false;
-    return {
-      iconNode: this._nodes.targetBallNode,
-      countLabelNode: this._nodes.targetBallCountLabelNode,
-      description: "Panel/target/traget_layout/target_ball"
-    };
-  }
-
-  throw new Error("Unsupported StartGameView objective type: " + objective.type);
+  iconNode.active = true;
+  setLabelText(countLabelNode, String(objective.target), description + "/num");
+  getSprite(iconNode, description).spriteFrame = this._spriteFrames[objective.iconPath];
 };
 
 StartGameViewController.prototype._updateTargetLayout = function () {
@@ -458,13 +446,21 @@ StartGameViewController.prototype._initPropNodes = function () {
 
 StartGameViewController.prototype._getRequiredSpritePaths = function (options) {
   requireObject(options, "StartGameView render options");
-  requireObject(options.objective, "StartGameView objective");
-  if (typeof options.objective.iconPath !== "string" || options.objective.iconPath.length === 0) {
-    throw new Error("StartGameView objective iconPath must be a non-empty string.");
-  }
-  return [LOCK_ICON_PATH, options.objective.iconPath].concat(POWERUP_DEFINITIONS.map(function (definition) {
-    return definition.iconPath;
-  })).filter(function (path, index, list) {
+  requireObject(options.objectives, "StartGameView objectives");
+  var paths = [LOCK_ICON_PATH];
+  [options.objectives.ball, options.objectives.iceSnowball].forEach(function (objective) {
+    if (!objective) {
+      return;
+    }
+    if (typeof objective.iconPath !== "string" || objective.iconPath.length === 0) {
+      throw new Error("StartGameView objective iconPath must be a non-empty string.");
+    }
+    paths.push(objective.iconPath);
+  });
+  POWERUP_DEFINITIONS.forEach(function (definition) {
+    paths.push(definition.iconPath);
+  });
+  return paths.filter(function (path, index, list) {
     return list.indexOf(path) === index;
   });
 };
@@ -643,9 +639,10 @@ StartGameViewController.prototype._renderContent = function (options) {
   var levelId = requirePositiveInteger(options.levelId, "StartGameView levelId");
   var staminaCost = requirePositiveInteger(options.staminaCost, "StartGameView staminaCost");
   requireObject(options.inventory, "StartGameView inventory");
-  requireObject(options.objective, "StartGameView objective");
-  requirePositiveInteger(options.objective.target, "StartGameView objective target");
-  var targetNodes = this._selectObjectiveTargetNodes(options.objective);
+  requireObject(options.objectives, "StartGameView objectives");
+  if (!options.objectives.ball && !options.objectives.iceSnowball) {
+    throw new Error("StartGameView requires at least one collection objective.");
+  }
   if (typeof options.showAwardTips !== "boolean") {
     throw new Error("StartGameView showAwardTips must be boolean.");
   }
@@ -672,8 +669,18 @@ StartGameViewController.prototype._renderContent = function (options) {
   setLabelText(this._nodes.levelLabelNode, "第" + levelId + "关", "Panel/title_bg/level");
   setLabelText(this._nodes.staminaCostLabelNode, String(staminaCost), "Panel/play_btn/num");
   setLabelText(this._nodes.targetTitleNode, "收集目标", "Panel/target/target_title");
-  setLabelText(targetNodes.countLabelNode, String(options.objective.target), targetNodes.description + "/num");
-  getSprite(targetNodes.iconNode, targetNodes.description).spriteFrame = this._spriteFrames[options.objective.iconPath];
+  this._renderStartGameTargetSlot(
+    options.objectives.ball,
+    this._nodes.targetBallNode,
+    this._nodes.targetBallCountLabelNode,
+    "Panel/target/traget_layout/target_ball"
+  );
+  this._renderStartGameTargetSlot(
+    options.objectives.iceSnowball,
+    this._nodes.targetIceNode,
+    this._nodes.targetIceCountLabelNode,
+    "Panel/target/traget_layout/target_ice"
+  );
   this._updateTargetLayout();
 
   this._renderPropItems();

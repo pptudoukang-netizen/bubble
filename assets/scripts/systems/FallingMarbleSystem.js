@@ -31,6 +31,26 @@ function getJarRenderCenterY() {
   return (Number(BoardLayout.jarBaseY) || 0) + (Number(BoardLayout.jarRenderYOffset) || 0);
 }
 
+function resolveInitialDropVelocity(cell, standardVelocity) {
+  if (Object.prototype.hasOwnProperty.call(cell, "__molotovBlastVelocity")) {
+    var molotovVelocity = cell.__molotovBlastVelocity;
+    if (
+      !molotovVelocity ||
+      typeof molotovVelocity.x !== "number" ||
+      typeof molotovVelocity.y !== "number" ||
+      !isFinite(molotovVelocity.x) ||
+      !isFinite(molotovVelocity.y)
+    ) {
+      throw new Error("FallingMarbleSystem molotov blast velocity must be finite.");
+    }
+    return {
+      x: molotovVelocity.x,
+      y: molotovVelocity.y
+    };
+  }
+  return standardVelocity;
+}
+
 function createEmptyUpdateResult() {
   return {
     updated: false,
@@ -251,6 +271,10 @@ FallingMarbleSystem.prototype._buildDropFromCell = function (cell, index, grid, 
   var start = grid.getCellPosition(cell.row, cell.col);
   var direction = index % 2 === 0 ? -1 : 1;
   var spread = 1 + (index % 4) * 0.18;
+  var standardVelocity = {
+    x: direction * this.horizontalSpeed * spread,
+    y: this.initialSpeedY + index * 35
+  };
 
   return {
     id: (cell.id || (cell.row + "_" + cell.col)) + "_drop_" + (this._dropSerial += 1),
@@ -264,10 +288,7 @@ FallingMarbleSystem.prototype._buildDropFromCell = function (cell, index, grid, 
     row: cell.row,
     col: cell.col,
     position: { x: start.x, y: start.y },
-    velocity: {
-      x: direction * this.horizontalSpeed * spread,
-      y: this.initialSpeedY + index * 35
-    },
+    velocity: resolveInitialDropVelocity(cell, standardVelocity),
     remainingBounces: this.maxBounces,
     rotation: 0,
     rotationSpeed: direction * (180 + index * 25),

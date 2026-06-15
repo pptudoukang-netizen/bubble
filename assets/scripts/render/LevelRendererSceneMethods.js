@@ -56,6 +56,22 @@ function attachLevelRendererSceneMethods(LevelRenderer, deps) {
   var ICE_THAW_SHAKE_STEP_DURATION = deps.ICE_THAW_SHAKE_STEP_DURATION;
   var ICE_COLLECT_FLY_DURATION = deps.ICE_COLLECT_FLY_DURATION;
   var ICE_COLLECT_BEZIER_ARC = deps.ICE_COLLECT_BEZIER_ARC;
+  var ICE_COLLECT_FLY_Z_INDEX = deps.ICE_COLLECT_FLY_Z_INDEX;
+  var ICE_COLLECT_FLY_EASE_RATE = deps.ICE_COLLECT_FLY_EASE_RATE;
+  var ICE_COLLECT_FLY_TWEEN_EASING = deps.ICE_COLLECT_FLY_TWEEN_EASING;
+
+  function applyIceCollectFlyEaseAction(action) {
+    if (!action || typeof action.easing !== "function") {
+      throw new Error("Ice collect fly action requires easing support.");
+    }
+    if (typeof cc.easeIn !== "function") {
+      throw new Error("Ice collect fly requires cc.easeIn.");
+    }
+    if (typeof ICE_COLLECT_FLY_EASE_RATE !== "number" || !isFinite(ICE_COLLECT_FLY_EASE_RATE) || ICE_COLLECT_FLY_EASE_RATE <= 0) {
+      throw new Error("Ice collect fly ease rate must be positive.");
+    }
+    return action.easing(cc.easeIn(ICE_COLLECT_FLY_EASE_RATE));
+  }
   var SPLITTER_SPAWN_FLY_DURATION = deps.SPLITTER_SPAWN_FLY_DURATION;
   var SPLITTER_SPAWN_BEZIER_ARC = deps.SPLITTER_SPAWN_BEZIER_ARC;
   var loadSpriteFrame = deps.loadSpriteFrame;
@@ -69,6 +85,8 @@ function attachLevelRendererSceneMethods(LevelRenderer, deps) {
   var buildWinCompletedTargetEntries = deps.buildWinCompletedTargetEntries;
   var buildWinCollectEntries = deps.buildWinCollectEntries;
   var buildHudTargetDisplayData = deps.buildHudTargetDisplayData;
+  var applyIceSnowballHudDisplayProgress = deps.applyIceSnowballHudDisplayProgress;
+  var hasIceSnowballCollectionObjective = deps.hasIceSnowballCollectionObjective;
   var buildStateText = deps.buildStateText;
   var buildResultTexts = deps.buildResultTexts;
   var resolveWinStarRating = deps.resolveWinStarRating;
@@ -94,6 +112,10 @@ function attachLevelRendererSceneMethods(LevelRenderer, deps) {
   var DANGER_WARNING_SHAKE_STEP = 0.045;
   var HUD_STAR_MARKER_FALLBACK_RATIOS = [0.3 / 0.85, 0.6 / 0.85, 1];
   var LOSE_RETRY_CENTER_X = 0;
+  var MOLOTOV_BLAST_MIN_VISUAL_DURATION = 0.36;
+  var MOLOTOV_BLAST_SWELL_DURATION_RATIO = 0.42;
+  var MOLOTOV_BLAST_SWELL_SCALE = 1.52;
+  var MOLOTOV_BLAST_PEAK_SCALE = 2.15;
 
   function setLoseRetryButtonPosition(retryButtonNode, canRevive) {
     if (!retryButtonNode) {
@@ -403,7 +425,7 @@ LevelRenderer.prototype._renderHud = function (levelConfig, runtimeSnapshot) {
     Logger.warn("HudPanel not found in mounted GameView.");
     return;
   }
-  var hudTargetDisplay = buildHudTargetDisplayData(levelConfig, runtimeSnapshot);
+  var hudTargetDisplay = this._buildHudTargetDisplayForRender(levelConfig, runtimeSnapshot);
 
   // this._setHudLabel(panel, "LevelTitle", "关卡");
   this._setHudLabel(panel, "LevelValue", String(levelConfig.level.levelId));
@@ -1315,11 +1337,68 @@ LevelRenderer.prototype._renderHudTargetSlot = function (targetLayout, slotName,
   valueLabel.string = displayData.remainingText;
 };
 
-LevelRenderer.prototype._getHudTargetBallPositionInBoard = function () {
-  if (!this.layers || !this.layers.hud || !this.layers.board) {
-    return null;
+LevelRenderer.prototype._readRuntimeIceSnowballCollectedTotal = function (runtimeSnapshot) {
+  if (!runtimeSnapshot || !runtimeSnapshot.objectives) {
+    return 0;
+  }
+  var total = Number(runtimeSnapshot.objectives.iceCollectedTotal);
+  if (!Number.isFinite(total) || total < 0) {
+    throw new Error("Runtime snapshot iceCollectedTotal must be a non-negative number.");
+  }
+  return Math.floor(total);
+};
+
+LevelRenderer.prototype._syncDisplayedIceSnowballCollectedTotal = function (runtimeSnapshot) {
+  this.displayedIceSnowballCollectedTotal = this._readRuntimeIceSnowballCollectedTotal(runtimeSnapshot);
+};
+
+LevelRenderer.prototype._resolveIceSnowballHudDisplayProgress = function (runtimeSnapshot) {
+  if (!this._shouldFlyIceSnowballToHud(this.currentLevelConfig)) {
+    return this._readRuntimeIceSnowballCollectedTotal(runtimeSnapshot);
+  }
+  return Math.max(0, Math.floor(Number(this.displayedIceSnowballCollectedTotal) || 0));
+};
+
+LevelRenderer.prototype._buildHudTargetDisplayForRender = function (levelConfig, runtimeSnapshot) {
+  var hudTargetDisplay = buildHudTargetDisplayData(levelConfig, runtimeSnapshot);
+  return applyIceSnowballHudDisplayProgress(
+    hudTargetDisplay,
+    this._resolveIceSnowballHudDisplayProgress(runtimeSnapshot)
+  );
+};
+
+LevelRenderer.prototype._incrementDisplayedIceSnowballCollectedTotal = function () {
+  var next = Math.floor(Number(this.displayedIceSnowballCollectedTotal) || 0) + 1;
+  if (!Number.isInteger(next) || next <= 0) {
+    throw new Error("Displayed ice snowball collected total must increment to a positive integer.");
+  }
+  this.displayedIceSnowballCollectedTotal = next;
+};
+
+LevelRenderer.prototype._refreshIceSnowballHudTarget = function () {
+  if (!this.currentLevelConfig || !this.lastRuntimeSnapshot) {
+    throw new Error("Ice snowball HUD target refresh requires level config and runtime snapshot.");
+  }
+  var panel = this._getMountedHudPanel();
+  if (!panel) {
+    return;
   }
 
+  var targetLayout = this._getHudTargetLayout(panel);
+  var hudTargetDisplay = this._buildHudTargetDisplayForRender(this.currentLevelConfig, this.lastRuntimeSnapshot);
+  this._renderHudTargetSlot(targetLayout, "ice_ball", hudTargetDisplay.iceSnowball);
+  var layout = targetLayout.getComponent(cc.Layout);
+  if (layout && typeof layout.updateLayout === "function") {
+    layout.updateLayout();
+  }
+  this.lastHudRenderKey = buildHudRenderKey(
+    this.currentLevelConfig,
+    this.lastRuntimeSnapshot,
+    this._resolveIceSnowballHudDisplayProgress(this.lastRuntimeSnapshot)
+  );
+};
+
+LevelRenderer.prototype._getHudTargetIceBallPositionInGameView = function () {
   var panel = this._getMountedHudPanel();
   var targetLayout = panel ? panel.getChildByName("target_layout") : null;
   var iceCardNode = targetLayout ? targetLayout.getChildByName("item_ice_ball") : null;
@@ -1328,8 +1407,60 @@ LevelRenderer.prototype._getHudTargetBallPositionInBoard = function () {
     return null;
   }
 
-  var worldPos = ballNode.parent.convertToWorldSpaceAR(ballNode.getPosition());
-  return this.layers.board.convertToNodeSpaceAR(worldPos);
+  return this._convertNodePositionToGameView(ballNode);
+};
+
+LevelRenderer.prototype._convertBoardPointToGameView = function (x, y) {
+  if (!this.layers || !this.layers.board) {
+    throw new Error("Board layer is required for coordinate conversion.");
+  }
+  if (typeof x !== "number" || typeof y !== "number" || !isFinite(x) || !isFinite(y)) {
+    throw new Error("Board point conversion requires finite x/y.");
+  }
+
+  var gameViewNode = this._getGameViewNode();
+  if (!gameViewNode || !gameViewNode.isValid) {
+    throw new Error("GameView is required for board point conversion.");
+  }
+
+  var worldPos = this.layers.board.convertToWorldSpaceAR(cc.v2(x, y));
+  return gameViewNode.convertToNodeSpaceAR(worldPos);
+};
+
+LevelRenderer.prototype._resolveIceSnowballCollectStartPositionInGameView = function (entry, boardSnapshot) {
+  if (!entry || typeof entry !== "object") {
+    throw new Error("Ice snowball collect entry is required.");
+  }
+  if (typeof entry.innerColor !== "string" || !entry.innerColor) {
+    throw new Error("Ice snowball collect entry requires innerColor.");
+  }
+
+  if (typeof entry.x === "number" && typeof entry.y === "number" && isFinite(entry.x) && isFinite(entry.y)) {
+    if (this.layers && this.layers.falling) {
+      var gameViewNode = this._getGameViewNode();
+      if (!gameViewNode || !gameViewNode.isValid) {
+        throw new Error("GameView is required for falling drop collect position.");
+      }
+      var worldPos = this.layers.falling.convertToWorldSpaceAR(cc.v2(entry.x, entry.y));
+      return gameViewNode.convertToNodeSpaceAR(worldPos);
+    }
+    return this._convertBoardPointToGameView(entry.x, entry.y);
+  }
+
+  if (!boardSnapshot || !Number.isInteger(boardSnapshot.maxColumns) || !Number.isInteger(boardSnapshot.dropOffsetRows)) {
+    throw new Error("Ice snowball collect entry position requires board snapshot.");
+  }
+  if (!Number.isInteger(entry.row) || !Number.isInteger(entry.col)) {
+    throw new Error("Ice snowball collect entry requires row and col when x/y are missing.");
+  }
+
+  var boardPos = BoardLayout.getCellPosition(
+    entry.row,
+    entry.col,
+    boardSnapshot.maxColumns,
+    boardSnapshot.dropOffsetRows
+  );
+  return this._convertBoardPointToGameView(boardPos.x, boardPos.y);
 };
 
 LevelRenderer.prototype._alignHudPanelToTop = function (panel) {
@@ -1728,6 +1859,52 @@ LevelRenderer.prototype._renderHudStarProgress = function (panel, runtimeSnapsho
     return child;
   }
 
+  function restoreSpriteNodeVisible(node, ownerName) {
+    if (!node || !node.isValid) {
+      throw new Error(ownerName + " node is required.");
+    }
+    node.active = true;
+    node.opacity = 255;
+    var sprite = node.getComponent(cc.Sprite);
+    if (sprite) {
+      sprite.enabled = true;
+    }
+  }
+
+  function restoreGenericBubbleVisualState(node) {
+    restoreSpriteNodeVisible(node, "Bubble visual");
+    var iconNode = node.getChildByName("Icon");
+    if (iconNode && iconNode.isValid) {
+      restoreSpriteNodeVisible(iconNode, "Bubble visual Icon");
+    }
+  }
+
+  function rebindKeyBubbleVisual(renderer, node) {
+    restoreSpriteNodeVisible(node, "KeyBubbleItem");
+    var iconNode = requireVisualChild(node, "Icon", "KeyBubbleItem");
+    iconNode.active = true;
+    var keyNode = requireVisualChild(node, "key", "KeyBubbleItem");
+    restoreSpriteNodeVisible(keyNode, "KeyBubbleItem key");
+
+    var keyFrame = renderer.spriteFrameCache[BALL_RESOURCES.KEY];
+    if (!keyFrame) {
+      throw new Error("Missing preloaded KeyBubbleItem sprite frame: " + BALL_RESOURCES.KEY);
+    }
+    ensureSprite(keyNode, keyFrame);
+  }
+
+  function restoreBoardBubbleVisualState(renderer, node, cell) {
+    if (cell && cell.entityType === "key") {
+      rebindKeyBubbleVisual(renderer, node);
+      return;
+    }
+    restoreGenericBubbleVisualState(node);
+    if (cell && cell.entityType === "locked") {
+      var lockNode = requireVisualChild(node, "lock", "LockingBubbleItem");
+      restoreSpriteNodeVisible(lockNode, "LockingBubbleItem lock");
+    }
+  }
+
   function instantiateRequired(prefabFactory, prefabPath, parent, name, ownerName) {
     if (!prefabFactory || typeof prefabFactory.instantiate !== "function") {
       throw new Error(ownerName + " requires prefabFactory.instantiate.");
@@ -1737,6 +1914,38 @@ LevelRenderer.prototype._renderHudStarProgress = function (panel, runtimeSnapsho
       throw new Error(ownerName + " prefab instantiate failed: " + prefabPath);
     }
     return node;
+  }
+
+  function requirePositiveFiniteNumber(value, ownerName) {
+    var numberValue = Number(value);
+    if (!isFinite(numberValue) || numberValue <= 0) {
+      throw new Error(ownerName + " must be a positive finite number.");
+    }
+    return numberValue;
+  }
+
+  function requireFinitePoint(point, ownerName) {
+    if (
+      !point ||
+      typeof point.x !== "number" ||
+      typeof point.y !== "number" ||
+      !isFinite(point.x) ||
+      !isFinite(point.y)
+    ) {
+      throw new Error(ownerName + " position must be finite.");
+    }
+    return point;
+  }
+
+  function resolveMolotovBlastVisualDuration() {
+    if (!SpecialAnimationTiming || !SpecialAnimationTiming.molotovBlast) {
+      throw new Error("Molotov blast visual requires SpecialAnimationTiming.molotovBlast.");
+    }
+    var configuredDuration = requirePositiveFiniteNumber(
+      SpecialAnimationTiming.molotovBlast.totalDuration,
+      "Molotov blast totalDuration"
+    );
+    return Math.max(configuredDuration, MOLOTOV_BLAST_MIN_VISUAL_DURATION);
   }
 
   function requireNodePrefabPath(node, ownerName) {
@@ -1824,11 +2033,27 @@ LevelRenderer.prototype._renderHudStarProgress = function (panel, runtimeSnapsho
     keyFx.scale = 1 + (0.72 - 1) * motionProgress;
   }
 
-  function createSplitterSpawnAnimationKey(resolution) {
-    var spawned = Array.isArray(resolution && resolution.spawnedBySplitters) ? resolution.spawnedBySplitters : [];
-    return spawned.map(function (cell) {
-      return String(cell.id) + "<-" + String(cell.sourceSplitterId) + "@" + cell.row + ":" + cell.col;
-    }).join("|");
+  function createSplitterSpawnEntryKey(cell) {
+    if (!cell || !cell.id) {
+      throw new Error("Splitter spawn entry key requires cell id.");
+    }
+    return String(cell.id) + "<-" + String(cell.sourceSplitterId) + "@" + cell.row + ":" + cell.col;
+  }
+
+  function resolveSplitterSpawnTargetNode(renderer, spawnedCell) {
+    if (!spawnedCell || !spawnedCell.id) {
+      throw new Error("Splitter spawn animation requires spawned cell id.");
+    }
+    var normalizedId = String(spawnedCell.id);
+    var targetNode = renderer.boardBubbleNodes[normalizedId];
+    if (targetNode && targetNode.isValid) {
+      return targetNode;
+    }
+    targetNode = renderer.layers.board.getChildByName("Bubble_" + normalizedId);
+    if (targetNode && targetNode.isValid) {
+      return targetNode;
+    }
+    return null;
   }
 
 LevelRenderer.prototype._hideSplitterSpawnTarget = function (cellId) {
@@ -1927,6 +2152,10 @@ LevelRenderer.prototype._renderBoard = function (boardSnapshot) {
     var existingNode = this.boardBubbleNodes[cellId];
     if (existingNode && cachedRenderKey === renderKey) {
       existingNode.__boardTick = currentTick;
+      if (!existingNode.parent || existingNode.parent !== this.layers.board) {
+        existingNode.parent = this.layers.board;
+      }
+      restoreBoardBubbleVisualState(this, existingNode, cell);
       this._applySplitterSpawnHiddenBoardState(existingNode, cell.id);
       this._applyMolotovBlastHiddenBoardState(existingNode, cell.id);
       return;
@@ -1996,6 +2225,7 @@ LevelRenderer.prototype._resetBubblePrefabNode = function (node, cell) {
   node.angle = 0;
   node.opacity = 255;
   node.active = true;
+  restoreBoardBubbleVisualState(this, node, cell);
 
   if (cell && cell.entityType === "key") {
     requireVisualChild(node, "Icon", "KeyBubbleItem").active = true;
@@ -2077,6 +2307,9 @@ LevelRenderer.prototype._renderFallingDrops = function (runtimeSnapshot) {
   drops.forEach(function (drop) {
     var dropId = String(drop.id);
     if (!dropId) {
+      return;
+    }
+    if (typeof drop.startDelay === "number" && drop.startDelay > 0) {
       return;
     }
 
@@ -2298,11 +2531,20 @@ LevelRenderer.prototype._playSplitterSpawnAnimation = function (runtimeSnapshot)
     return;
   }
 
-  var animationKey = createSplitterSpawnAnimationKey(resolution);
-  if (!animationKey || animationKey === this.lastSplitterSpawnAnimationKey) {
+  if (!this.splitterSpawnAnimatedEntryKeys || typeof this.splitterSpawnAnimatedEntryKeys !== "object") {
+    throw new Error("Splitter spawn animated entry keys map is required.");
+  }
+
+  var pendingSpawnCells = spawnedCells.filter(function (spawnedCell) {
+    if (!spawnedCell || !spawnedCell.id) {
+      throw new Error("Splitter spawn animation requires spawned cell id.");
+    }
+    var entryKey = createSplitterSpawnEntryKey(spawnedCell);
+    return !this.splitterSpawnAnimatedEntryKeys[entryKey];
+  }, this);
+  if (!pendingSpawnCells.length) {
     return;
   }
-  this.lastSplitterSpawnAnimationKey = animationKey;
 
   if (!runtimeSnapshot.board || !Number.isInteger(runtimeSnapshot.board.maxColumns)) {
     throw new Error("Splitter spawn animation requires board snapshot.");
@@ -2315,7 +2557,7 @@ LevelRenderer.prototype._playSplitterSpawnAnimation = function (runtimeSnapshot)
   var flyDuration = Math.max(0.2, Number(SPLITTER_SPAWN_FLY_DURATION) || 0.36);
   var bezierArc = Math.max(36, Number(SPLITTER_SPAWN_BEZIER_ARC) || 96);
 
-  spawnedCells.forEach(function (spawnedCell) {
+  pendingSpawnCells.forEach(function (spawnedCell) {
     if (!spawnedCell || !spawnedCell.id) {
       throw new Error("Splitter spawn animation requires spawned cell id.");
     }
@@ -2332,7 +2574,10 @@ LevelRenderer.prototype._playSplitterSpawnAnimation = function (runtimeSnapshot)
       throw new Error("Splitter spawn animation requires spawned cell color.");
     }
 
-    var targetNode = this.layers.board.getChildByName("Bubble_" + spawnedCell.id);
+    var entryKey = createSplitterSpawnEntryKey(spawnedCell);
+    this.splitterSpawnAnimatedEntryKeys[entryKey] = true;
+
+    var targetNode = resolveSplitterSpawnTargetNode(this, spawnedCell);
     if (!targetNode || !targetNode.isValid) {
       throw new Error("Splitter spawn animation target node missing: " + spawnedCell.id);
     }
@@ -2434,8 +2679,12 @@ LevelRenderer.prototype._playMolotovBlastAnimation = function (runtimeSnapshot) 
     throw new Error("Molotov blast animation requires cc.tween.");
   }
 
-  var blastDuration = SpecialAnimationTiming.molotovBlast.totalDuration;
-  var peakScale = 1.45;
+  var blastDuration = resolveMolotovBlastVisualDuration();
+  var swellDuration = blastDuration * MOLOTOV_BLAST_SWELL_DURATION_RATIO;
+  var burstDuration = blastDuration - swellDuration;
+  if (!isFinite(swellDuration) || swellDuration <= 0 || !isFinite(burstDuration) || burstDuration <= 0) {
+    throw new Error("Molotov blast animation duration is invalid.");
+  }
   var boardSnapshot = runtimeSnapshot.board;
 
   molotovTriggers.forEach(function (trigger) {
@@ -2447,18 +2696,18 @@ LevelRenderer.prototype._playMolotovBlastAnimation = function (runtimeSnapshot) 
     }
 
     var normalizedId = String(trigger.id);
+    var blastPosition = requireFinitePoint(BoardLayout.getCellPosition(
+      trigger.row,
+      trigger.col,
+      boardSnapshot.maxColumns,
+      boardSnapshot.dropOffsetRows
+    ), "Molotov blast");
     if (this.molotovBlastAnimatedIds[normalizedId]) {
       return;
     }
     this.molotovBlastAnimatedIds[normalizedId] = true;
     this._hideMolotovBlastSource(normalizedId);
 
-    var blastPosition = BoardLayout.getCellPosition(
-      trigger.row,
-      trigger.col,
-      boardSnapshot.maxColumns,
-      boardSnapshot.dropOffsetRows
-    );
     var animNode = instantiateRequired(
       this.prefabFactory,
       PREFAB_PATHS.fireBubbleItem,
@@ -2472,6 +2721,8 @@ LevelRenderer.prototype._playMolotovBlastAnimation = function (runtimeSnapshot) 
     animNode.opacity = 255;
     animNode.setScale(1);
     animNode.zIndex = 120;
+    requireVisualChild(animNode, "Icon", "Molotov blast animation FireBubbleItem").opacity = 230;
+    requireVisualChild(animNode, "fire_box", "Molotov blast animation FireBubbleItem").opacity = 255;
 
     var cleanup = function () {
       this._clearMolotovBlastHiddenSource(normalizedId);
@@ -2481,8 +2732,14 @@ LevelRenderer.prototype._playMolotovBlastAnimation = function (runtimeSnapshot) 
     }.bind(this);
 
     cc.tween(animNode)
-      .to(blastDuration, {
-        scale: peakScale,
+      .to(swellDuration, {
+        scale: MOLOTOV_BLAST_SWELL_SCALE,
+        opacity: 255
+      }, {
+        easing: "sineOut"
+      })
+      .to(burstDuration, {
+        scale: MOLOTOV_BLAST_PEAK_SCALE,
         opacity: 0
       }, {
         easing: "quadOut"
@@ -2490,6 +2747,257 @@ LevelRenderer.prototype._playMolotovBlastAnimation = function (runtimeSnapshot) 
       .call(cleanup)
       .start();
   }, this);
+};
+
+LevelRenderer.prototype._spawnIceSnowballFlyFxNode = function (nodeName, gameViewX, gameViewY, innerColor) {
+  var parentNode = this._getGameViewNode();
+  if (!parentNode || !parentNode.isValid) {
+    throw new Error("GameView is required for ice snowball fly fx.");
+  }
+  if (typeof nodeName !== "string" || !nodeName) {
+    throw new Error("Ice snowball fly fx requires node name.");
+  }
+  if (typeof innerColor !== "string" || !innerColor) {
+    throw new Error("Ice snowball fly fx requires innerColor.");
+  }
+  if (typeof gameViewX !== "number" || typeof gameViewY !== "number" || !isFinite(gameViewX) || !isFinite(gameViewY)) {
+    throw new Error("Ice snowball fly fx requires finite GameView position.");
+  }
+
+  var fxNode = new cc.Node(nodeName);
+  fxNode.parent = parentNode;
+  fxNode.zIndex = ICE_COLLECT_FLY_Z_INDEX;
+  fxNode.setPosition(gameViewX, gameViewY);
+  fxNode.setScale(1);
+  fxNode.opacity = 255;
+  this._applyBallVisualCached(fxNode, {
+    entityCategory: "obstacle_ball",
+    entityType: "ice",
+    innerColor: innerColor
+  }, BOARD_BUBBLE_SIZE);
+  return fxNode;
+};
+
+LevelRenderer.prototype._spawnIceSnowballFxNode = function (nodeName, baseX, baseY, innerColor, zIndexBase) {
+  if (!this.layers || !this.layers.board) {
+    throw new Error("Ice snowball fx requires board layer.");
+  }
+  if (typeof nodeName !== "string" || !nodeName) {
+    throw new Error("Ice snowball fx requires node name.");
+  }
+  if (typeof innerColor !== "string" || !innerColor) {
+    throw new Error("Ice snowball fx requires innerColor.");
+  }
+
+  var fxNode = new cc.Node(nodeName);
+  fxNode.parent = this.layers.board;
+  fxNode.zIndex = typeof zIndexBase === "number" ? zIndexBase : 10;
+  fxNode.setPosition(baseX, baseY);
+  fxNode.setScale(1);
+  fxNode.opacity = 255;
+  this._applyBallVisualCached(fxNode, {
+    entityCategory: "obstacle_ball",
+    entityType: "ice",
+    innerColor: innerColor
+  }, BOARD_BUBBLE_SIZE);
+  return fxNode;
+};
+
+LevelRenderer.prototype._flyIceFxNodeToHudTarget = function (fxNode, startX, startY, options) {
+  if (!fxNode) {
+    throw new Error("Ice fx fly requires fxNode.");
+  }
+
+  var targetBoardPos = options && options.targetBoardPos ? options.targetBoardPos : null;
+  var flyDuration = Math.max(0.18, Number(options && options.flyDuration) || Number(ICE_COLLECT_FLY_DURATION) || 0.34);
+  var bezierArc = Math.max(40, Number(options && options.bezierArc) || Number(ICE_COLLECT_BEZIER_ARC) || 120);
+  var startDelay = Math.max(0, Number(options && options.startDelay) || 0);
+  var onArrive = options && typeof options.onArrive === "function" ? options.onArrive : null;
+  var onComplete = options && typeof options.onComplete === "function" ? options.onComplete : null;
+
+  var finishFx = function () {
+    if (fxNode && fxNode.isValid && fxNode.parent) {
+      fxNode.removeFromParent(true);
+    }
+    if (onComplete) {
+      onComplete();
+    }
+  };
+
+  if (!targetBoardPos) {
+    finishFx();
+    return;
+  }
+
+  var baseX = startX;
+  var baseY = startY;
+  var endX = targetBoardPos.x;
+  var endY = targetBoardPos.y;
+  var controlY = Math.max(baseY, endY) + bezierArc;
+  var controlX = (baseX + endX) * 0.5;
+
+  fxNode.stopAllActions();
+  if (
+    fxNode.runAction &&
+    typeof cc.bezierTo === "function" &&
+    typeof cc.spawn === "function" &&
+    typeof cc.sequence === "function" &&
+    typeof cc.callFunc === "function" &&
+    typeof cc.delayTime === "function" &&
+    typeof cc.scaleTo === "function" &&
+    typeof cc.fadeTo === "function" &&
+    typeof cc.v2 === "function"
+  ) {
+    var bezier = [
+      cc.v2(controlX, controlY),
+      cc.v2(controlX, controlY),
+      cc.v2(endX, endY)
+    ];
+    var flyAction = cc.spawn(
+      applyIceCollectFlyEaseAction(cc.bezierTo(flyDuration, bezier)),
+      applyIceCollectFlyEaseAction(cc.scaleTo(flyDuration, 0.38)),
+      applyIceCollectFlyEaseAction(cc.fadeTo(flyDuration, 120))
+    );
+    var actionChain = [];
+    if (startDelay > 0) {
+      actionChain.push(cc.delayTime(startDelay));
+    }
+    actionChain.push(flyAction);
+    actionChain.push(cc.callFunc(function () {
+      if (onArrive) {
+        onArrive();
+      }
+      finishFx();
+    }));
+    fxNode.runAction(cc.sequence.apply(null, actionChain));
+    return;
+  }
+
+  if (typeof cc.tween !== "function") {
+    finishFx();
+    return;
+  }
+
+  if (typeof ICE_COLLECT_FLY_TWEEN_EASING !== "string" || !ICE_COLLECT_FLY_TWEEN_EASING) {
+    throw new Error("Ice collect fly tween easing must be a non-empty string.");
+  }
+
+  var collectTween = cc.tween(fxNode);
+  if (startDelay > 0) {
+    collectTween = collectTween.delay(startDelay);
+  }
+  if (typeof collectTween.bezierTo === "function") {
+    collectTween
+      .parallel(
+        cc.tween().bezierTo(
+          flyDuration,
+          cc.v2(controlX, controlY),
+          cc.v2(controlX, controlY),
+          cc.v2(endX, endY),
+          { easing: ICE_COLLECT_FLY_TWEEN_EASING }
+        ),
+        cc.tween().to(flyDuration, { scale: 0.38 }, { easing: ICE_COLLECT_FLY_TWEEN_EASING }),
+        cc.tween().to(flyDuration, { opacity: 120 }, { easing: ICE_COLLECT_FLY_TWEEN_EASING })
+      )
+      .call(function () {
+        if (onArrive) {
+          onArrive();
+        }
+        finishFx();
+      })
+      .start();
+    return;
+  }
+
+  collectTween
+    .to(flyDuration, {
+      x: endX,
+      y: endY,
+      scale: 0.38,
+      opacity: 120
+    }, {
+      easing: ICE_COLLECT_FLY_TWEEN_EASING
+    })
+    .call(function () {
+      if (onArrive) {
+        onArrive();
+      }
+      finishFx();
+    })
+    .start();
+};
+
+LevelRenderer.prototype._shouldFlyIceSnowballToHud = function (levelConfig) {
+  var config = levelConfig || this.currentLevelConfig;
+  if (!config) {
+    return false;
+  }
+  return hasIceSnowballCollectionObjective(config);
+};
+
+LevelRenderer.prototype._playIceSnowballCollectFly = function (runtimeSnapshot) {
+  if (!runtimeSnapshot || !Array.isArray(runtimeSnapshot.runtimeEvents)) {
+    return;
+  }
+
+  if (!this._shouldFlyIceSnowballToHud(this.currentLevelConfig)) {
+    return;
+  }
+
+  var targetGameViewPos = this._getHudTargetIceBallPositionInGameView();
+  if (!targetGameViewPos) {
+    this._syncDisplayedIceSnowballCollectedTotal(runtimeSnapshot);
+    this._refreshIceSnowballHudTarget();
+    return;
+  }
+
+  var runtimeEvents = runtimeSnapshot.runtimeEvents;
+  var maxProcessedEventId = this.lastIceSnowballCollectEventId;
+  var flyDuration = Math.max(0.18, Number(ICE_COLLECT_FLY_DURATION) || 0.34);
+  var bezierArc = Math.max(40, Number(ICE_COLLECT_BEZIER_ARC) || 120);
+  var boardSnapshot = runtimeSnapshot.board;
+
+  for (var index = 0; index < runtimeEvents.length; index += 1) {
+    var event = runtimeEvents[index];
+    if (!event || event.type !== "ice_snowball_collect") {
+      continue;
+    }
+    if (typeof event.id !== "number" || !isFinite(event.id)) {
+      throw new Error("ice_snowball_collect event requires a numeric id.");
+    }
+    if (event.id <= this.lastIceSnowballCollectEventId) {
+      continue;
+    }
+    if (!Array.isArray(event.entries) || !event.entries.length) {
+      continue;
+    }
+
+    maxProcessedEventId = Math.max(maxProcessedEventId, event.id);
+    event.entries.forEach(function (entry, entryIndex) {
+      if (!entry || (typeof entry.id !== "string" && typeof entry.id !== "number")) {
+        throw new Error("Ice snowball collect entry requires id.");
+      }
+      var position = this._resolveIceSnowballCollectStartPositionInGameView(entry, boardSnapshot);
+      var fxNode = this._spawnIceSnowballFlyFxNode(
+        "IceCollectFx_" + entry.id + "_" + event.id + "_" + entryIndex,
+        position.x,
+        position.y,
+        entry.innerColor
+      );
+      this._flyIceFxNodeToHudTarget(fxNode, position.x, position.y, {
+        targetBoardPos: targetGameViewPos,
+        flyDuration: flyDuration,
+        bezierArc: bezierArc,
+        startDelay: 0.03,
+        onArrive: function () {
+          this._incrementDisplayedIceSnowballCollectedTotal();
+          this._refreshIceSnowballHudTarget();
+        }.bind(this)
+      });
+    }, this);
+  }
+
+  this.lastIceSnowballCollectEventId = maxProcessedEventId;
 };
 
 LevelRenderer.prototype._playIceThawShake = function (runtimeSnapshot) {
@@ -2505,136 +3013,83 @@ LevelRenderer.prototype._playIceThawShake = function (runtimeSnapshot) {
     return;
   }
 
+  var boardSnapshot = runtimeSnapshot.board;
   var offset = Math.max(2, Number(ICE_THAW_SHAKE_OFFSET) || 0);
   var stepDuration = Math.max(0.02, Number(ICE_THAW_SHAKE_STEP_DURATION) || 0.04);
-  var objective = runtimeSnapshot && runtimeSnapshot.objectives ? runtimeSnapshot.objectives : null;
-  var shouldFlyToHud = !!(objective && objective.type === "collect_ice_snowball");
-  var targetBoardPos = shouldFlyToHud ? this._getHudTargetBallPositionInBoard() : null;
-  var flyDuration = Math.max(0.18, Number(ICE_COLLECT_FLY_DURATION) || 0.34);
-  var bezierArc = Math.max(40, Number(ICE_COLLECT_BEZIER_ARC) || 120);
-  var collectFlyStartDelay = shouldFlyToHud ? 0.03 : 0;
 
   thawedCells.forEach(function (cell) {
-    if (!cell || !cell.id) {
+    if (!cell) {
       return;
     }
 
-    var bubbleNode = this.layers.board.getChildByName("Bubble_" + cell.id);
-    if (!bubbleNode) {
-      return;
+    var innerColor = typeof cell.color === "string" && cell.color ? cell.color : resolveIceInnerColor(cell);
+    if (typeof innerColor !== "string" || !innerColor) {
+      throw new Error("Ice thaw animation requires inner color.");
     }
 
-    if (bubbleNode.__iceThawShakeSeq === impact.seq) {
-      return;
+    var bubbleNode = cell.id ? this.layers.board.getChildByName("Bubble_" + cell.id) : null;
+    var baseX = null;
+    var baseY = null;
+    var fxZIndex = 10;
+
+    if (bubbleNode) {
+      if (bubbleNode.__iceThawShakeSeq === impact.seq) {
+        return;
+      }
+      bubbleNode.__iceThawShakeSeq = impact.seq;
+      baseX = bubbleNode.x;
+      baseY = bubbleNode.y;
+      fxZIndex = (bubbleNode.zIndex || 0) + 1;
+      bubbleNode.stopAllActions();
+      bubbleNode.__thawHiddenSeq = impact.seq;
+      bubbleNode.opacity = 0;
+      bubbleNode.active = false;
+    } else {
+      if (
+        !boardSnapshot ||
+        !Number.isInteger(boardSnapshot.maxColumns) ||
+        !Number.isInteger(boardSnapshot.dropOffsetRows) ||
+        !Number.isInteger(cell.row) ||
+        !Number.isInteger(cell.col)
+      ) {
+        throw new Error("Ice thaw animation requires board position when bubble node is missing.");
+      }
+      var cellPosition = BoardLayout.getCellPosition(
+        cell.row,
+        cell.col,
+        boardSnapshot.maxColumns,
+        boardSnapshot.dropOffsetRows
+      );
+      baseX = cellPosition.x;
+      baseY = cellPosition.y;
     }
-    bubbleNode.__iceThawShakeSeq = impact.seq;
 
-    var baseX = bubbleNode.x;
-    var baseY = bubbleNode.y;
-
-    bubbleNode.stopAllActions();
-    bubbleNode.__thawHiddenSeq = impact.seq;
-    bubbleNode.opacity = 0;
-    bubbleNode.active = false;
-
-    var fxNode = new cc.Node("IceThawFx_" + cell.id + "_" + impact.seq);
-    fxNode.parent = this.layers.board;
-    fxNode.zIndex = (bubbleNode.zIndex || 0) + 1;
-    fxNode.setPosition(baseX, baseY);
-    fxNode.setScale(1);
-    this._applyBallVisualCached(fxNode, {
-      entityCategory: "obstacle_ball",
-      entityType: "ice",
-      innerColor: cell.color || "B"
-    }, BOARD_BUBBLE_SIZE);
+    var fxNode = this._spawnIceSnowballFxNode(
+      "IceThawFx_" + (cell.id || (cell.row + "_" + cell.col)) + "_" + impact.seq,
+      baseX,
+      baseY,
+      innerColor,
+      fxZIndex
+    );
 
     var revealBubble = function () {
-      if (bubbleNode && bubbleNode.__thawHiddenSeq === impact.seq) {
-        bubbleNode.active = true;
-        bubbleNode.opacity = 255;
-        bubbleNode.__thawHiddenSeq = -1;
+      if (!bubbleNode || bubbleNode.__thawHiddenSeq !== impact.seq) {
+        return;
       }
+      bubbleNode.active = true;
+      bubbleNode.opacity = 255;
+      bubbleNode.__thawHiddenSeq = -1;
     };
 
-    var finishFx = function () {
-      if (fxNode && fxNode.parent) {
+    var finishShakeFx = function () {
+      revealBubble();
+      if (fxNode && fxNode.isValid && fxNode.parent) {
         fxNode.removeFromParent(true);
       }
     };
 
-    var playCollectFly = function () {
-      if (!shouldFlyToHud || !targetBoardPos) {
-        finishFx();
-        return;
-      }
-
-      var endX = targetBoardPos.x;
-      var endY = targetBoardPos.y;
-      var controlY = Math.max(baseY, endY) + bezierArc;
-      var controlX = (baseX + endX) * 0.5;
-
-      fxNode.stopAllActions();
-      if (
-        fxNode.runAction &&
-        typeof cc.bezierTo === "function" &&
-        typeof cc.spawn === "function" &&
-        typeof cc.sequence === "function" &&
-        typeof cc.callFunc === "function" &&
-        typeof cc.delayTime === "function" &&
-        typeof cc.scaleTo === "function" &&
-        typeof cc.fadeTo === "function" &&
-        typeof cc.v2 === "function"
-      ) {
-        var bezier = [
-          cc.v2(controlX, controlY),
-          cc.v2(controlX, controlY),
-          cc.v2(endX, endY)
-        ];
-        var flyAction = cc.spawn(
-          cc.bezierTo(flyDuration, bezier),
-          cc.scaleTo(flyDuration, 0.38),
-          cc.fadeTo(flyDuration, 120)
-        );
-        var actionChain = [];
-        if (collectFlyStartDelay > 0) {
-          actionChain.push(cc.delayTime(collectFlyStartDelay));
-        }
-        actionChain.push(flyAction);
-        actionChain.push(cc.callFunc(function () {
-          finishFx();
-        }));
-        var sequence = cc.sequence.apply(null, actionChain);
-        fxNode.runAction(sequence);
-        return;
-      }
-
-      if (typeof cc.tween === "function") {
-        var collectTween = cc.tween(fxNode);
-        if (collectFlyStartDelay > 0) {
-          collectTween = collectTween.delay(collectFlyStartDelay);
-        }
-        collectTween
-          .to(flyDuration, {
-            x: endX,
-            y: endY,
-            scale: 0.38,
-            opacity: 120
-          }, {
-            easing: "sineIn"
-          })
-          .call(function () {
-            finishFx();
-          })
-          .start();
-        return;
-      }
-
-      finishFx();
-    };
-
     if (typeof cc.tween !== "function") {
-      revealBubble();
-      playCollectFly();
+      finishShakeFx();
       return;
     }
 
@@ -2644,10 +3099,7 @@ LevelRenderer.prototype._playIceThawShake = function (runtimeSnapshot) {
       .to(stepDuration, { x: baseX - offset * 0.7, y: baseY })
       .to(stepDuration, { x: baseX + offset * 0.7, y: baseY })
       .to(stepDuration, { x: baseX, y: baseY })
-      .call(function () {
-        revealBubble();
-        playCollectFly();
-      })
+      .call(finishShakeFx)
       .start();
   }, this);
 };

@@ -49,6 +49,7 @@ var AD_RUN_POWERUP_TYPES = {
 };
 var MIN_INITIAL_DROP_SPACE_ROWS = 8;
 var MAX_JAR_COUNT = 4;
+var MAX_SHOT_LIMIT = 30;
 var CLEAR_REWARD_START_LEVEL_ID = 1;
 
 function clone(data) {
@@ -125,7 +126,11 @@ function resolveExpectedLevelId(levelKey) {
 }
 
 function resolveShotLimit(levelConfig, levelKey) {
-  return assertPositiveInteger(levelConfig.shotLimit, "level.shotLimit", levelKey);
+  var shotLimit = assertPositiveInteger(levelConfig.shotLimit, "level.shotLimit", levelKey);
+  if (shotLimit > MAX_SHOT_LIMIT) {
+    throw new Error("level.shotLimit must be <= " + MAX_SHOT_LIMIT + ": " + levelKey);
+  }
+  return shotLimit;
 }
 
 function normalizeClearRewardItems(levelConfig, levelId, levelKey) {

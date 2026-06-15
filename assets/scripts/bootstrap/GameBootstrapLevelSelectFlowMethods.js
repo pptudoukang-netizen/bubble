@@ -301,6 +301,14 @@ module.exports = {
     }
     this._hideSpecialIntroduceView();
     this._hideSignInView();
+
+    if (this._levelSelectNode && cc.isValid(this._levelSelectNode)) {
+      var mapHostNode = this._levelSelectNode.getChildByName("map");
+      if (mapHostNode && mapHostNode.isValid) {
+        LevelSelectFloatingMap.disposeRuntime(mapHostNode);
+      }
+    }
+
     if (this._floatingMapAssets) {
       LevelSelectFloatingMap.releaseAllCachedMapPrefabs(this._floatingMapAssets);
     }
@@ -315,10 +323,6 @@ module.exports = {
       return;
     }
 
-    var mapHostNode = this._levelSelectNode.getChildByName("map");
-    if (mapHostNode && mapHostNode.isValid) {
-      LevelSelectFloatingMap.disposeRuntime(mapHostNode);
-    }
     this._levelSelectNode.active = false;
   },
 
