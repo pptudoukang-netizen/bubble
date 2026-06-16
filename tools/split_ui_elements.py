@@ -70,6 +70,34 @@ def parse_args():
         help="Ignore exported elements shorter than this many pixels.",
     )
     parser.add_argument(
+        "--content-alpha-threshold",
+        type=int,
+        default=48,
+        help=(
+            "Alpha threshold used to decide whether a region contains real "
+            "visible content. Low-alpha dust/shadow leftovers below this value "
+            "are ignored."
+        ),
+    )
+    parser.add_argument(
+        "--min-content-pixels",
+        type=int,
+        default=24,
+        help=(
+            "Ignore regions with fewer than this many pixels at "
+            "--content-alpha-threshold. Use 0 to keep all low-alpha fragments."
+        ),
+    )
+    parser.add_argument(
+        "--trim-alpha-threshold",
+        type=int,
+        default=16,
+        help=(
+            "Alpha threshold used when tightening exported crops to the smallest "
+            "visible bounding box. Pixels below this value are ignored for bounds."
+        ),
+    )
+    parser.add_argument(
         "--padding",
         type=int,
         default=0,
@@ -127,6 +155,12 @@ def parse_args():
         parser.error("--min-width must be >= 1")
     if args.min_height < 1:
         parser.error("--min-height must be >= 1")
+    if args.content_alpha_threshold < 0 or args.content_alpha_threshold > 255:
+        parser.error("--content-alpha-threshold must be between 0 and 255")
+    if args.min_content_pixels < 0:
+        parser.error("--min-content-pixels must be >= 0")
+    if args.trim_alpha_threshold < 0 or args.trim_alpha_threshold > 255:
+        parser.error("--trim-alpha-threshold must be between 0 and 255")
     if args.padding < 0:
         parser.error("--padding must be >= 0")
     if args.merge_gap < 0:
@@ -457,7 +491,38 @@ def split_merged_components(
     return split_components
 
 
-def filter_components(components, min_pixels, min_width, min_height):
+def component_content_pixel_count(component, labels, alpha_channel, threshold):
+    if threshold <= 0:
+        return component["pixel_count"]
+
+    x = component["x"]
+    y = component["y"]
+    width = component["width"]
+    height = component["height"]
+    alpha_sub = alpha_channel[y:y + height, x:x + width]
+
+    if "region_mask" in component:
+        component_mask = component["region_mask"]
+    elif "label_id" in component:
+        label_sub = labels[y:y + height, x:x + width]
+        component_mask = label_sub == component["label_id"]
+    else:
+        component_mask = np.ones(alpha_sub.shape, dtype=bool)
+
+    content_mask = component_mask & (alpha_sub >= threshold)
+    return int(content_mask.sum())
+
+
+def filter_components(
+    components,
+    labels,
+    alpha_channel,
+    min_pixels,
+    min_width,
+    min_height,
+    content_alpha_threshold,
+    min_content_pixels,
+):
     filtered = []
     for component in components:
         if component["pixel_count"] < min_pixels:
@@ -466,6 +531,15 @@ def filter_components(components, min_pixels, min_width, min_height):
             continue
         if component["height"] < min_height:
             continue
+        content_pixel_count = component_content_pixel_count(
+            component,
+            labels,
+            alpha_channel,
+            content_alpha_threshold,
+        )
+        if content_pixel_count < min_content_pixels:
+            continue
+        component["content_pixel_count"] = content_pixel_count
         filtered.append(component)
     return filtered
 
@@ -522,7 +596,7 @@ def export_components(
     prefix,
     padding,
     min_file_size_kb,
-    alpha_threshold,
+    trim_alpha_threshold,
 ):
     ensure_dir(export_dir)
     height, width = image.shape[:2]
@@ -551,7 +625,7 @@ def export_components(
             region_labels = labels[top:bottom, left:right]
             foreign_pixels = region_labels != label_id
         crop[foreign_pixels, 3] = 0
-        crop, trim_left, trim_top = tighten_export_crop(crop, alpha_threshold)
+        crop, trim_left, trim_top = tighten_export_crop(crop, trim_alpha_threshold)
 
         file_name = "{0}_{1:03d}.png".format(prefix, export_index)
         output_path = os.path.join(export_dir, file_name)
@@ -575,6 +649,7 @@ def export_components(
             "width": export_width,
             "height": export_height,
             "pixel_count": component["pixel_count"],
+            "content_pixel_count": component.get("content_pixel_count"),
             "export_x": export_x,
             "export_y": export_y,
             "export_width": export_width,
@@ -606,9 +681,13 @@ def process_image(input_file, input_root, output_root, args):
     )
     components = filter_components(
         components,
+        labels,
+        alpha_channel,
         args.min_pixels,
         args.min_width,
         args.min_height,
+        args.content_alpha_threshold,
+        args.min_content_pixels,
     )
     components = sort_components(components)
 
@@ -621,7 +700,7 @@ def process_image(input_file, input_root, output_root, args):
         args.prefix,
         args.padding,
         args.min_file_size_kb,
-        args.alpha_threshold,
+        args.trim_alpha_threshold,
     )
 
     return {
@@ -727,6 +806,9 @@ def main():
             "min_pixels": args.min_pixels,
             "min_width": args.min_width,
             "min_height": args.min_height,
+            "content_alpha_threshold": args.content_alpha_threshold,
+            "min_content_pixels": args.min_content_pixels,
+            "trim_alpha_threshold": args.trim_alpha_threshold,
             "padding": args.padding,
             "merge_gap": args.merge_gap,
             "solid_alpha_threshold": args.solid_alpha_threshold,

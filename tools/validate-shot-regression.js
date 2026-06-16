@@ -424,6 +424,47 @@ function runKeyUnlockSingleTargetCase() {
   }
 }
 
+function runKeyUnlockNearestTargetCase() {
+  var manager = new GameManager();
+  var grid = new BubbleGrid();
+  var levelConfig = {
+    coordinateSystem: "odd-r-hex",
+    level: {
+      initialDropSpaceRows: 8,
+      layout: [
+        ".........",
+        ".........",
+        ".........",
+        "........."
+      ],
+      specialEntities: [
+        { id: "key_1", entityCategory: "key_ball", entityType: "key", unlockGroup: "group_a", row: 1, col: 1 },
+        { id: "locked_far", entityCategory: "locked_ball", entityType: "locked", lockedColor: "R", lockGroup: "group_a", row: 1, col: 3 },
+        { id: "locked_near", entityCategory: "locked_ball", entityType: "locked", lockedColor: "B", lockGroup: "group_a", row: 2, col: 1 }
+      ]
+    }
+  };
+  var resolution = {
+    collectedKeys: [],
+    unlockedLockedBalls: []
+  };
+
+  grid.configureLevel(levelConfig);
+  var keyCell = grid.getCell(1, 1);
+  if (!keyCell || keyCell.entityCategory !== "key_ball") {
+    throw new Error("Key nearest-target regression setup failed to create key cell.");
+  }
+
+  manager._triggerAdjacentKeys([keyCell], grid, resolution);
+  if (resolution.unlockedLockedBalls.length !== 1) {
+    throw new Error("Key nearest-target regression expected exactly one unlocked locked ball.");
+  }
+  var unlockedTarget = resolution.unlockedLockedBalls[0];
+  if (unlockedTarget.row !== 2 || unlockedTarget.col !== 1) {
+    throw new Error("Key must unlock the visually nearest locked ball.");
+  }
+}
+
 function runMolotovChainQueueCase() {
   var manager = new GameManager();
   var removedByFirstBlast = [
@@ -680,6 +721,8 @@ function main() {
   console.log("[OK]", "impact_bounce_board_advance_same_update_frame", "did not consume delay in the scheduling update frame");
   runKeyUnlockSingleTargetCase();
   console.log("[OK]", "key_unlock_single_target", "one key unlocked one locked ball");
+  runKeyUnlockNearestTargetCase();
+  console.log("[OK]", "key_unlock_nearest_target", "key unlocked visually nearest locked ball");
   runMolotovChainQueueCase();
   console.log("[OK]", "molotov_chain_queue", "adjacent molotov queued after neighbor removal");
   runAdjacentIceThawSnowballCollectionCase();

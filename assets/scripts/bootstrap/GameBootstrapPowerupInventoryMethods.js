@@ -367,9 +367,7 @@ module.exports = {
       this.levelRenderer.refreshRuntime(this.currentLevelConfig, snapshot);
 
       if (useResult && useResult.accepted) {
-        this._setStatusWithTip("three_line_success", {
-          remaining: useResult.remaining
-        }, "消三行生效，剩余：" + useResult.remaining);
+        this._setStatusWithTip("three_line_success", null, "消三行使用成功");
       } else {
         this._setStatusWithTip("three_line_failed", null, "消三行失败");
       }
@@ -389,9 +387,7 @@ module.exports = {
     this.levelRenderer.refreshRuntime(this.currentLevelConfig, snapshot);
 
     if (useResult && useResult.accepted) {
-      this._setStatusWithTip("plus_three_balls_success", {
-        remaining: useResult.remaining
-      }, "发射球 +10，剩余道具：" + useResult.remaining);
+      this._setStatusWithTip("plus_three_balls_success", null, "加十球使用成功");
       return useResult;
     }
 
@@ -465,18 +461,10 @@ module.exports = {
         });
       }
       var skillName = entityType === "rainbow" ? "彩虹球" : "炸弹球";
-      var inventory = snapshot && snapshot.shooter && snapshot.shooter.skillInventory
-        ? snapshot.shooter.skillInventory
-        : {};
-      var remaining = Math.max(0, Math.floor(Number(inventory[entityType]) || 0));
       this._setStatusWithTip(
         entityType === "rainbow" ? "skill_equip_rainbow_success" : "skill_equip_blast_success",
-        {
-          remaining: remaining
-        },
-        entityType === "rainbow"
-          ? skillName + "已装填，请选择颜色"
-          : skillName + "已装填，剩余：" + remaining
+        null,
+        skillName + "使用成功"
       );
       return;
     }
@@ -545,13 +533,7 @@ module.exports = {
 
     if (swapResult && swapResult.accepted) {
       this._consumePersistentInventoryItemForPowerup("swap");
-      var inventory = snapshot && snapshot.shooter && snapshot.shooter.skillInventory
-        ? snapshot.shooter.skillInventory
-        : {};
-      var remaining = Math.max(0, Math.floor(Number(inventory.swap) || 0));
-      this._setStatusWithTip("swap_success", {
-        remaining: remaining
-      }, "换球成功，剩余：" + remaining);
+      this._setStatusWithTip("swap_success", null, "换球使用成功");
       return;
     }
 
@@ -710,9 +692,6 @@ module.exports = {
     this.levelRenderer.refreshRuntime(this.currentLevelConfig, snapshot);
 
     if (hammerResult && hammerResult.accepted) {
-      var inventory = snapshot && snapshot.shooter && snapshot.shooter.skillInventory
-        ? snapshot.shooter.skillInventory
-        : {};
       this._consumePersistentInventoryItemForPowerup("barrier_hammer");
       if (typeof this._recordDailyTaskEvent === "function") {
         this._recordDailyTaskEvent("use_powerup", {
@@ -720,10 +699,7 @@ module.exports = {
           powerupType: "barrier_hammer"
         });
       }
-      var remaining = Math.max(0, Math.floor(Number(inventory.barrier_hammer) || 0));
-      this._setStatusWithTip("hammer_applied", {
-        remaining: remaining
-      }, "破障锤生效，剩余：" + remaining);
+      this._setStatusWithTip("hammer_applied", null, "破障锤使用成功");
       return;
     }
 

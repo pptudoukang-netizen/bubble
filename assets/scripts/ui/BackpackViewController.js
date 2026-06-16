@@ -277,10 +277,21 @@ BackpackViewController.prototype._rebuildRenderProxies = function () {
 
   ITEM_DEFINITIONS.forEach(function (definition, index) {
     var itemNode = requireValidNode(this._packItemNodesByItemId[definition.itemId], "pack item node for " + definition.itemId);
+    var itemVisible = itemNode.active === true;
     this._hideSourceItemSprites(itemNode);
-    this._createSpriteProxyRecord("itemBackground", itemNode, "backpack_item_bg_proxy_" + index, true);
-    this._createSpriteProxyRecord("itemBackground", requireChildNode(itemNode, "price_bg", itemNode.name), "backpack_item_price_bg_proxy_" + index, true);
-    this._createSpriteProxyRecord("itemIcon", requireChildNode(itemNode, "icon", itemNode.name), "backpack_item_icon_proxy_" + index, true);
+    this._createSpriteProxyRecord("itemBackground", itemNode, "backpack_item_bg_proxy_" + index, itemVisible);
+    this._createSpriteProxyRecord(
+      "itemBackground",
+      requireChildNode(itemNode, "price_bg", itemNode.name),
+      "backpack_item_price_bg_proxy_" + index,
+      itemVisible
+    );
+    this._createSpriteProxyRecord(
+      "itemIcon",
+      requireChildNode(itemNode, "icon", itemNode.name),
+      "backpack_item_icon_proxy_" + index,
+      itemVisible
+    );
   }, this);
 };
 

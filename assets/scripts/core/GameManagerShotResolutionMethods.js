@@ -47,6 +47,48 @@ function createGameManagerShotResolutionMethods(deps) {
     return value;
   }
 
+  function compareLockedTargetsByKeyDistance(keyCell, grid) {
+    if (!keyCell || !Number.isInteger(keyCell.row) || !Number.isInteger(keyCell.col)) {
+      throw new Error("Key distance sort requires key coordinates.");
+    }
+    if (!grid || typeof grid.getCellPosition !== "function") {
+      throw new Error("Key distance sort requires grid.getCellPosition.");
+    }
+    var keyPosition = requireFinitePoint(
+      grid.getCellPosition(keyCell.row, keyCell.col),
+      "Key cell"
+    );
+    return function (leftTarget, rightTarget) {
+      if (!leftTarget || !Number.isInteger(leftTarget.row) || !Number.isInteger(leftTarget.col)) {
+        throw new Error("Locked target distance sort requires left target coordinates.");
+      }
+      if (!rightTarget || !Number.isInteger(rightTarget.row) || !Number.isInteger(rightTarget.col)) {
+        throw new Error("Locked target distance sort requires right target coordinates.");
+      }
+      var leftPosition = requireFinitePoint(
+        grid.getCellPosition(leftTarget.row, leftTarget.col),
+        "Locked target"
+      );
+      var rightPosition = requireFinitePoint(
+        grid.getCellPosition(rightTarget.row, rightTarget.col),
+        "Locked target"
+      );
+      var leftDx = leftPosition.x - keyPosition.x;
+      var leftDy = leftPosition.y - keyPosition.y;
+      var rightDx = rightPosition.x - keyPosition.x;
+      var rightDy = rightPosition.y - keyPosition.y;
+      var leftDistanceSq = leftDx * leftDx + leftDy * leftDy;
+      var rightDistanceSq = rightDx * rightDx + rightDy * rightDy;
+      if (leftDistanceSq !== rightDistanceSq) {
+        return leftDistanceSq - rightDistanceSq;
+      }
+      if (leftTarget.row !== rightTarget.row) {
+        return leftTarget.row - rightTarget.row;
+      }
+      return leftTarget.col - rightTarget.col;
+    };
+  }
+
   function buildMolotovBlastDropVelocity(active, cell, grid) {
     if (!active || !Number.isInteger(active.row) || !Number.isInteger(active.col)) {
       throw new Error("Molotov blast drop velocity requires active coordinates.");
@@ -1154,13 +1196,7 @@ function createGameManagerShotResolutionMethods(deps) {
         if (!lockedTargets.length) {
           throw new Error("Collected key has no locked target for unlockGroup: " + unlockGroup);
         }
-        lockedTargets.sort(function (a, b) {
-          var rowDelta = Math.abs(a.row - keyCell.row) - Math.abs(b.row - keyCell.row);
-          if (rowDelta !== 0) {
-            return rowDelta;
-          }
-          return Math.abs(a.col - keyCell.col) - Math.abs(b.col - keyCell.col);
-        });
+        lockedTargets.sort(compareLockedTargetsByKeyDistance(keyCell, grid));
         var targetCell = lockedTargets[0];
         if (typeof targetCell.lockedColor !== "string" || !targetCell.lockedColor) {
           throw new Error("Locked ball requires lockedColor before unlock.");
