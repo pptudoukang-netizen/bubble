@@ -5,6 +5,7 @@ var Logger = Shared.Logger;
 var BundleLoader = Shared.BundleLoader;
 var SIGN_IN_PREFAB_CANDIDATES = Shared.SIGN_IN_PREFAB_CANDIDATES;
 var SIGN_IN_BUTTON_SPRITE_PATHS = Shared.SIGN_IN_BUTTON_SPRITE_PATHS;
+var SIGN_IN_DAY_BG_SPRITE_PATHS = Shared.SIGN_IN_DAY_BG_SPRITE_PATHS;
 var SIGN_IN_ITEM_ICON_PATHS = Shared.SIGN_IN_ITEM_ICON_PATHS;
 var SIGN_IN_DAY_ITEM_ICON_PATHS = Shared.SIGN_IN_DAY_ITEM_ICON_PATHS;
 var SIGN_IN_ITEM_DISPLAY_NAMES = Shared.SIGN_IN_ITEM_DISPLAY_NAMES;
@@ -29,6 +30,8 @@ var SIGN_IN_BUTTON_BREATH_DOWN_DURATION = 0.54;
 var SIGN_IN_PROXY_ROOT_NAME = "sign_in_auto_proxy_root";
 var AWARD_PROXY_ROOT_NAME = "award_auto_proxy_root";
 var AWARD_CONTENT_PROXY_ROOT_NAME = "award_content_auto_proxy_root";
+var SIGN_IN_CLAIM_BUTTON_ENABLED_COLOR = cc.color(255, 255, 255, 255);
+var SIGN_IN_CLAIM_BUTTON_DISABLED_COLOR = cc.color(150, 150, 150, 255);
 var SIGN_IN_DAY_TEXT = [
   "",
   "第一天",
@@ -60,6 +63,16 @@ function requirePositiveInteger(value, description) {
     throw new Error("AwardView requires positive integer " + description + ".");
   }
   return value;
+}
+
+function retainModalSpriteFrame(spriteFrame, description) {
+  if (!spriteFrame) {
+    throw new Error(description + " sprite frame is required.");
+  }
+  if (typeof spriteFrame.addRef === "function") {
+    spriteFrame.addRef();
+  }
+  return spriteFrame;
 }
 
 function findNodeByNameWithComponent(rootNode, name, componentClass) {
@@ -264,6 +277,22 @@ function resizeSpriteNodeToSpriteFrameWidth(node, sprite, spriteFrame, targetWid
   node.setContentSize(safeTargetWidth, (safeTargetWidth * frameHeight) / frameWidth);
 }
 
+function nextSignInRenderVersion(owner) {
+  if (!owner || typeof owner !== "object") {
+    throw new Error("Sign-in render owner is required.");
+  }
+
+  if (owner._signInRenderVersion === undefined) {
+    owner._signInRenderVersion = 0;
+  }
+  if (!Number.isInteger(owner._signInRenderVersion) || owner._signInRenderVersion < 0) {
+    throw new Error("Sign-in render version is invalid.");
+  }
+
+  owner._signInRenderVersion += 1;
+  return owner._signInRenderVersion;
+}
+
 module.exports = {
   _getDailySignInConfig: function () {
     if (this.dailySignInConfig && Array.isArray(this.dailySignInConfig.rewards)) {
@@ -405,9 +434,9 @@ module.exports = {
       loadSpriteFrame(SIGN_IN_BUTTON_SPRITE_PATHS.locked)
     ]).then(function (results) {
       this._signInButtonSpriteFrames = {
-        claimed: results[0] || null,
-        claimable: results[1] || null,
-        locked: results[2] || null
+        claimed: results[0] ? retainModalSpriteFrame(results[0], "Sign-in button claimed") : null,
+        claimable: results[1] ? retainModalSpriteFrame(results[1], "Sign-in button claimable") : null,
+        locked: results[2] ? retainModalSpriteFrame(results[2], "Sign-in button locked") : null
       };
       this._signInButtonSpriteLoadPromise = null;
       return this._signInButtonSpriteFrames;
@@ -422,6 +451,61 @@ module.exports = {
     }.bind(this));
 
     return this._signInButtonSpriteLoadPromise;
+  },
+
+  _ensureSignInDayBgSpriteFrames: function () {
+    if (
+      this._signInDayBgSpriteFrames &&
+      this._signInDayBgSpriteFrames.claimed &&
+      this._signInDayBgSpriteFrames.claimable &&
+      this._signInDayBgSpriteFrames.locked
+    ) {
+      return Promise.resolve(this._signInDayBgSpriteFrames);
+    }
+    if (this._signInDayBgSpriteLoadPromise) {
+      return this._signInDayBgSpriteLoadPromise;
+    }
+
+    var loadSpriteFrame = function (state) {
+      if (!hasOwn.call(SIGN_IN_DAY_BG_SPRITE_PATHS, state)) {
+        throw new Error("Unsupported sign-in day bg state: " + state);
+      }
+      var path = SIGN_IN_DAY_BG_SPRITE_PATHS[state];
+      return new Promise(function (resolve, reject) {
+        BundleLoader.loadRes(path, cc.SpriteFrame, function (error, spriteFrame) {
+          if (error) {
+            reject(error);
+            return;
+          }
+          if (!spriteFrame) {
+            reject(new Error("Sign-in day bg sprite frame is empty: " + path));
+            return;
+          }
+
+          resolve(spriteFrame);
+        });
+      });
+    };
+
+    this._signInDayBgSpriteLoadPromise = Promise.all([
+      loadSpriteFrame("claimed"),
+      loadSpriteFrame("claimable"),
+      loadSpriteFrame("locked")
+    ]).then(function (results) {
+      this._signInDayBgSpriteFrames = {
+        claimed: retainModalSpriteFrame(results[0], "Sign-in day bg claimed"),
+        claimable: retainModalSpriteFrame(results[1], "Sign-in day bg claimable"),
+        locked: retainModalSpriteFrame(results[2], "Sign-in day bg locked")
+      };
+      this._signInDayBgSpriteLoadPromise = null;
+      return this._signInDayBgSpriteFrames;
+    }.bind(this)).catch(function (error) {
+      this._signInDayBgSpriteLoadPromise = null;
+      Logger.warn("Load sign-in day bg sprites failed", error && error.message ? error.message : error);
+      throw error;
+    }.bind(this));
+
+    return this._signInDayBgSpriteLoadPromise;
   },
 
   _resolveSignInRewardByDay: function (day) {
@@ -465,7 +549,9 @@ module.exports = {
           return;
         }
 
-        this._signInIconSpriteFrameCache[cacheKey] = spriteFrame || null;
+        this._signInIconSpriteFrameCache[cacheKey] = spriteFrame
+          ? retainModalSpriteFrame(spriteFrame, "Sign-in icon " + path)
+          : null;
         resolve(this._signInIconSpriteFrameCache[cacheKey]);
       }.bind(this));
     }.bind(this));
@@ -582,6 +668,10 @@ module.exports = {
       if (!iconNode || !iconNode.isValid || !iconSprite || !numLabel) {
         throw new Error("SignInView day7 gift item structure is incomplete.");
       }
+      if (itemNode.getComponent(cc.Sprite)) {
+        SpriteProxyLayerHelper.setSpriteRenderEnabled(itemNode, true, "SignInView day7 gift item background");
+      }
+      SpriteProxyLayerHelper.setSpriteRenderEnabled(iconNode, true, "SignInView day7 gift item icon");
       iconSprite.sizeMode = requireCustomSpriteSizeMode("Sign-in gift icon");
       iconNode.scaleX = 1;
       iconNode.scaleY = 1;
@@ -664,6 +754,7 @@ module.exports = {
       return;
     }
 
+    var renderVersion = nextSignInRenderVersion(this);
     SpriteProxyLayerHelper.destroyProxyRoot(signInViewNode, SIGN_IN_PROXY_ROOT_NAME);
     this._refreshSignInState();
     var canClaimToday = this._canClaimSignInToday();
@@ -710,6 +801,16 @@ module.exports = {
       }
 
       var dayState = this._resolveSignInDayUiState(day, currentState, canClaimToday);
+      var dayBgSprite = dayNode.getComponent(cc.Sprite);
+      if (!dayBgSprite) {
+        throw new Error("SignInView day" + day + " requires background sprite.");
+      }
+      SpriteProxyLayerHelper.setSpriteRenderEnabled(dayNode, true, "SignInView day" + day + " background");
+      if (!this._signInDayBgSpriteFrames || !this._signInDayBgSpriteFrames[dayState]) {
+        throw new Error("Sign-in day bg sprite frame is missing for state: " + dayState);
+      }
+      dayBgSprite.spriteFrame = this._signInDayBgSpriteFrames[dayState];
+
       var awardButtonNode = dayNode.getChildByName("award_btn");
       var statusNode = awardButtonNode ? awardButtonNode.getChildByName("status") : null;
       var statusLabel = statusNode ? statusNode.getComponent(cc.Label) : null;
@@ -725,6 +826,7 @@ module.exports = {
         awardButtonNode.color = cc.color(255, 255, 255, 255);
         var awardSprite = awardButtonNode.getComponent(cc.Sprite);
         if (awardSprite && this._signInButtonSpriteFrames) {
+          SpriteProxyLayerHelper.setSpriteRenderEnabled(awardButtonNode, true, "SignInView day" + day + " award button");
           awardSprite.spriteFrame = this._signInButtonSpriteFrames[dayState];
         }
         if (dayState === "claimable") {
@@ -745,19 +847,25 @@ module.exports = {
     if (claimButtonNode && claimButtonNode.isValid) {
       var claimButton = claimButtonNode.getComponent(cc.Button);
       if (claimButton) {
-        claimButton.enableAutoGrayEffect = false;
+        claimButton.enableAutoGrayEffect = true;
         claimButton.interactable = canClaimToday;
       }
-      claimButtonNode.color = cc.color(255, 255, 255, 255);
+      if (claimButtonNode.getComponent(cc.Sprite)) {
+        SpriteProxyLayerHelper.setSpriteRenderEnabled(claimButtonNode, true, "SignInView claim button");
+      }
+      claimButtonNode.color = canClaimToday ? SIGN_IN_CLAIM_BUTTON_ENABLED_COLOR : SIGN_IN_CLAIM_BUTTON_DISABLED_COLOR;
     }
     var claimAdButtonNode = this._findNodeByNameRecursive(signInViewNode, "btn_award_ad");
     if (claimAdButtonNode && claimAdButtonNode.isValid) {
       var claimAdButton = claimAdButtonNode.getComponent(cc.Button);
       if (claimAdButton) {
-        claimAdButton.enableAutoGrayEffect = false;
+        claimAdButton.enableAutoGrayEffect = true;
         claimAdButton.interactable = canClaimToday;
       }
-      claimAdButtonNode.color = cc.color(255, 255, 255, 255);
+      if (claimAdButtonNode.getComponent(cc.Sprite)) {
+        SpriteProxyLayerHelper.setSpriteRenderEnabled(claimAdButtonNode, true, "SignInView ad claim button");
+      }
+      claimAdButtonNode.color = canClaimToday ? SIGN_IN_CLAIM_BUTTON_ENABLED_COLOR : SIGN_IN_CLAIM_BUTTON_DISABLED_COLOR;
       if (canClaimToday) {
         playSignInButtonBreath(claimAdButtonNode, "Sign-in double reward button breath");
       } else {
@@ -766,6 +874,12 @@ module.exports = {
     }
 
     return Promise.all(iconLoadTasks).then(function () {
+      if (this._signInRenderVersion !== renderVersion) {
+        return null;
+      }
+      if (!signInViewNode || !signInViewNode.isValid) {
+        throw new Error("SignInView node became invalid before proxy rebuild.");
+      }
       SpriteProxyLayerHelper.rebuildAutoProxyTree({
         rootNode: signInViewNode,
         proxyRootName: SIGN_IN_PROXY_ROOT_NAME
@@ -793,7 +907,10 @@ module.exports = {
         return;
       }
 
-      return this._ensureSignInButtonSpriteFrames().then(function () {
+      return Promise.all([
+        this._ensureSignInButtonSpriteFrames(),
+        this._ensureSignInDayBgSpriteFrames()
+      ]).then(function () {
         var signInViewNode = this._signInViewNode;
         if (!signInViewNode || !signInViewNode.isValid) {
           signInViewNode = cc.instantiate(prefab);
@@ -822,6 +939,12 @@ module.exports = {
     if (this._signInViewNode && cc.isValid(this._signInViewNode)) {
       SpriteProxyLayerHelper.destroyProxyRoot(this._signInViewNode, SIGN_IN_PROXY_ROOT_NAME);
     }
+    UiModalReleaseHelper.releaseSpriteFrameMap(this._signInButtonSpriteFrames, "SignInView/button");
+    UiModalReleaseHelper.releaseSpriteFrameMap(this._signInDayBgSpriteFrames, "SignInView/dayBg");
+    this._signInButtonSpriteFrames = null;
+    this._signInDayBgSpriteFrames = null;
+    this._signInButtonSpriteLoadPromise = null;
+    this._signInDayBgSpriteLoadPromise = null;
     UiModalReleaseHelper.releaseCachedModal(this, {
       label: "SignInView",
       nodeKey: "_signInViewNode",
@@ -866,7 +989,7 @@ module.exports = {
           return;
         }
 
-        this._awardItemIconSpriteFrameCache[itemId] = spriteFrame;
+        this._awardItemIconSpriteFrameCache[itemId] = retainModalSpriteFrame(spriteFrame, "Award icon " + path);
         resolve(spriteFrame);
       }.bind(this));
     }.bind(this));
@@ -1152,7 +1275,10 @@ module.exports = {
       return;
     }
 
-    if (typeof this._hasRewardedVideoAdConfig !== "function" || !this._hasRewardedVideoAdConfig()) {
+    var signInAdOptions = {
+      adUnitId: this.signInDoubleRewardVideoAdUnitId
+    };
+    if (typeof this._hasRewardedVideoAdConfig !== "function" || !this._hasRewardedVideoAdConfig(signInAdOptions)) {
       if (typeof this._setStatusWithTip === "function") {
         this._setStatusWithTip("sign_in_ad_unavailable", null, "暂时还没有广告可看哦");
       } else {
@@ -1176,7 +1302,13 @@ module.exports = {
     if (typeof this._requireRewardedVideoAdConfig !== "function") {
       throw new Error("Sign-in ad reward requires rewarded video ad config validation.");
     }
-    this._requireRewardedVideoAdConfig();
+    var adUnitId = this._requireRewardedVideoAdConfig(signInAdOptions);
+    if (!this.adService || typeof this.adService.setAdUnitId !== "function") {
+      throw new Error("Sign-in ad reward requires AdService.setAdUnitId.");
+    }
+    if (this.adService.adUnitId !== adUnitId) {
+      this.adService.setAdUnitId(adUnitId);
+    }
     if (!this._canShowRewardedVideoAd()) {
       this._setRewardedVideoAdUnavailableStatus();
       return;

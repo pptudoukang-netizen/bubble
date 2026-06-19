@@ -11,6 +11,17 @@ var LevelSelectMemoryDiagnostics = require("../utils/LevelSelectMemoryDiagnostic
 var StarRatingPolicy = Shared.StarRatingPolicy;
 var hideGameCircleWelfareViewNode = Shared.hideGameCircleWelfareViewNode;
 
+function requireNonEmptyString(value, fieldName) {
+  if (typeof value !== "string") {
+    throw new Error(fieldName + " must be a string.");
+  }
+  var normalized = value.trim();
+  if (!normalized) {
+    throw new Error(fieldName + " must be non-empty.");
+  }
+  return normalized;
+}
+
 function resolveMaxAvailableLevelId(levelIds) {
   if (!Array.isArray(levelIds) || levelIds.length === 0) {
     throw new Error("Unlock all levels for test requires non-empty level ids.");
@@ -54,6 +65,26 @@ function requireNonNegativeInteger(value, fieldName) {
     throw new Error(fieldName + " must be a non-negative integer.");
   }
   return value;
+}
+
+function requirePositiveFiniteNumber(value, fieldName) {
+  var numberValue = Number(value);
+  if (!Number.isFinite(numberValue) || numberValue <= 0) {
+    throw new Error(fieldName + " must be a positive finite number.");
+  }
+  return numberValue;
+}
+
+function resolveNativeTemplateAdWidgetTop(nativeHeightPx) {
+  var heightPx = requirePositiveFiniteNumber(nativeHeightPx, "Native template ad height");
+  var winSize = cc.winSize;
+  var frameSize = cc.view && typeof cc.view.getFrameSize === "function"
+    ? cc.view.getFrameSize()
+    : null;
+  if (!winSize || !frameSize || winSize.width <= 0 || winSize.height <= 0 || frameSize.width <= 0 || frameSize.height <= 0) {
+    throw new Error("Invalid view size when resolving LevelView native template ad height.");
+  }
+  return heightPx / frameSize.height * winSize.height;
 }
 
 function normalizeOptionalPrepareLevelId(options) {
@@ -187,10 +218,11 @@ module.exports = {
 
     Promise.all([
       this._ensureLevelSelectPrefabs(),
+      LevelSelectView.ensureTopResourceIconFrames(),
       this._loadAvailableLevelIds()
     ]).then(function (results) {
       var prefabs = results[0];
-      var levelIds = results[1];
+      var levelIds = results[2];
       this._preloadLevelConfigsInBackground(levelIds);
       this._renderLevelSelectContent(prefabs.viewPrefab, prefabs.floatingMapAssets, levelIds);
       this._ensureStaminaRecoveryTicker();
@@ -281,6 +313,7 @@ module.exports = {
   _hideLevelSelectView: function () {
     LevelSelectMemoryDiagnostics.increment("levelSelect.hide");
     LevelSelectMemoryDiagnostics.stop();
+    this._hideLevelSelectNativeTemplateAd();
     this._clearStaminaRecoveryTicker();
     this._hideAwardView();
     this._hideSettingView();
@@ -346,8 +379,11 @@ module.exports = {
     }
 
     var focusLevelId = this._resolveFloatingMapFocusLevelId();
-    return LevelSelectView.loadFloatingMapAssets(focusLevelId).then(function (floatingMapAssets) {
-      this._floatingMapAssets = floatingMapAssets;
+    return Promise.all([
+      LevelSelectView.loadFloatingMapAssets(focusLevelId),
+      LevelSelectView.ensureTopResourceIconFrames()
+    ]).then(function (results) {
+      this._floatingMapAssets = results[0];
       return this._loadPrefab("prefabs/ui/LevelView");
     }.bind(this)).then(function (levelViewPrefab) {
       this._levelSelectViewPrefab = levelViewPrefab;
@@ -877,5 +913,100 @@ module.exports = {
       Logger.error("Level select back to current level failed", error && error.stack ? error.stack : String(error));
       throw error;
     });
+  },
+
+  _resolveLevelSelectNativeTemplateAdUnitId: function () {
+    return requireNonEmptyString(this.startGameNativeTemplateAdUnitId, "startGameNativeTemplateAdUnitId");
+  },
+
+  _resolveLevelSelectNativeTemplateAdStyle: function () {
+    if (!cc.view || typeof cc.view.getFrameSize !== "function") {
+      throw new Error("cc.view.getFrameSize is required for LevelView native template ad.");
+    }
+    var frameSize = cc.view.getFrameSize();
+    if (!frameSize || frameSize.width <= 0 || frameSize.height <= 0) {
+      throw new Error("Invalid frame size for LevelView native template ad.");
+    }
+    return {
+      left: 0,
+      top: 0,
+      width: frameSize.width
+    };
+  },
+
+  _applyLevelSelectNativeTemplateAdHeight: function (nativeHeightPx) {
+    if (!this.isSelectingLevel || !this._levelSelectNode || !this._levelSelectNode.isValid) {
+      return;
+    }
+    var widgetTop = resolveNativeTemplateAdWidgetTop(nativeHeightPx);
+    LevelSelectView.setTopWidgetTop(this._levelSelectNode, widgetTop);
+    this._levelSelectNativeTemplateAdHeightPx = nativeHeightPx;
+  },
+
+  _showLevelSelectNativeTemplateAd: function () {
+    if (!this.levelSelectNativeTemplateAdAdapter || typeof this.levelSelectNativeTemplateAdAdapter.isSupported !== "function") {
+      throw new Error("Level select native template ad adapter is required.");
+    }
+    if (!this.isSelectingLevel || !this._levelSelectNode || !this._levelSelectNode.isValid) {
+      return Promise.resolve(false);
+    }
+    if (!this.levelSelectNativeTemplateAdAdapter.isSupported()) {
+      this._hideLevelSelectNativeTemplateAd();
+      return Promise.resolve(false);
+    }
+
+    var adUnitId = this._resolveLevelSelectNativeTemplateAdUnitId();
+    var style = this._resolveLevelSelectNativeTemplateAdStyle();
+    return Promise.resolve().then(function () {
+      return this.levelSelectNativeTemplateAdAdapter.showTopAd({
+        adUnitId: adUnitId,
+        style: style,
+        onHeightChange: function (heightPx) {
+          this._applyLevelSelectNativeTemplateAdHeight(heightPx);
+        }.bind(this),
+        onError: function (error) {
+          Logger.warn("Level select native template ad error", error && error.errMsg ? error.errMsg : error);
+          this._hideLevelSelectNativeTemplateAd();
+        }.bind(this)
+      });
+    }.bind(this)).then(function () {
+      this._levelSelectNativeTemplateAdShowing = true;
+      return true;
+    }.bind(this)).catch(function (error) {
+      Logger.warn("Level select native template ad show failed", error && error.message ? error.message : error);
+      this._hideLevelSelectNativeTemplateAd();
+      return false;
+    }.bind(this));
+  },
+
+  _hideLevelSelectNativeTemplateAd: function () {
+    if (this.levelSelectNativeTemplateAdAdapter && typeof this.levelSelectNativeTemplateAdAdapter.hideAd === "function") {
+      this.levelSelectNativeTemplateAdAdapter.hideAd();
+    }
+    this._levelSelectNativeTemplateAdShowing = false;
+    this._levelSelectNativeTemplateAdHeightPx = 0;
+    if (
+      this._levelSelectNode &&
+      this._levelSelectNode.isValid &&
+      Number.isFinite(this._levelSelectNode.__levelSelectTopWidgetOriginalTop)
+    ) {
+      LevelSelectView.setTopWidgetTop(this._levelSelectNode, this._levelSelectNode.__levelSelectTopWidgetOriginalTop);
+    }
+  },
+
+  _refreshLevelSelectNativeTemplateAdLayout: function () {
+    if (!this.isSelectingLevel || !this._levelSelectNode || !this._levelSelectNode.isValid) {
+      return;
+    }
+    if (!this._levelSelectNativeTemplateAdShowing) {
+      return;
+    }
+    if (!this.levelSelectNativeTemplateAdAdapter || typeof this.levelSelectNativeTemplateAdAdapter.updateStyle !== "function") {
+      throw new Error("Level select native template ad adapter cannot update style.");
+    }
+    this.levelSelectNativeTemplateAdAdapter.updateStyle(this._resolveLevelSelectNativeTemplateAdStyle());
+    if (this._levelSelectNativeTemplateAdHeightPx > 0) {
+      this._applyLevelSelectNativeTemplateAdHeight(this._levelSelectNativeTemplateAdHeightPx);
+    }
   }
 };

@@ -70,8 +70,6 @@ function createSpecialEntityRecord(entity, row, col) {
     splitColor: entity.splitColor || null,
     lockedColor: entity.lockedColor || null,
     blastRadius: Number.isInteger(entity.blastRadius) ? entity.blastRadius : null,
-    lockGroup: entity.lockGroup || null,
-    unlockGroup: entity.unlockGroup || null,
     row: row,
     col: col
   };
@@ -86,6 +84,7 @@ function BubbleGrid() {
   this.maxColumns = 0;
   this.version = 0;
   this.dropOffsetRows = 0;
+  this.minDropOffsetRows = 0;
   this._cellMap = {};
   this._cellsByRow = {};
   this._specialCellMap = {};
@@ -117,6 +116,7 @@ BubbleGrid.prototype.configureLevel = function (levelConfig) {
   this.version = 1;
   this._rebuildCaches();
   this.ensureMinimumVisibleRows(MIN_VISIBLE_BOARD_ROWS);
+  this.minDropOffsetRows = this.dropOffsetRows;
   this.assertNoVisualOverlap("configureLevel");
   return this;
 };
@@ -183,8 +183,6 @@ BubbleGrid.prototype._createSpecialCell = function (entity, row, col) {
     splitColor: entity.splitColor || null,
     lockedColor: entity.lockedColor || null,
     blastRadius: Number.isInteger(entity.blastRadius) ? entity.blastRadius : null,
-    lockGroup: entity.lockGroup || null,
-    unlockGroup: entity.unlockGroup || null,
     isSpecial: true
   };
 };
@@ -1264,7 +1262,10 @@ BubbleGrid.prototype.ensureDangerLineSpaceRows = function (minimumRows) {
   var requestedShiftRows = currentSpacePixels < requiredSpacePixels
     ? Math.ceil((requiredSpacePixels - currentSpacePixels) / BoardLayout.rowHeight)
     : 0;
-  var maxShiftRowsBeforeTopLimit = Math.max(0, this.dropOffsetRows);
+  if (!Number.isInteger(this.minDropOffsetRows)) {
+    throw new Error("BubbleGrid minDropOffsetRows must be an integer.");
+  }
+  var maxShiftRowsBeforeTopLimit = Math.max(0, this.dropOffsetRows - this.minDropOffsetRows);
   var shiftRows = Math.min(requestedShiftRows, maxShiftRowsBeforeTopLimit);
 
   if (shiftRows > 0) {
@@ -1330,6 +1331,7 @@ BubbleGrid.prototype.snapshot = function () {
   snapshot.maxColumns = this.maxColumns;
   snapshot.cellCount = this.cells.length;
   snapshot.dropOffsetRows = this.dropOffsetRows;
+  snapshot.minDropOffsetRows = this.minDropOffsetRows;
   snapshot.topAttachY = this.getTopAttachY();
   snapshot.dangerReached = this.hasReachedDangerLine();
   snapshot.cells = this.getCells();

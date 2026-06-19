@@ -4,6 +4,7 @@ var fs = require("fs");
 var path = require("path");
 
 var BoardLayout = require("../assets/scripts/config/BoardLayout");
+var LevelPackCompactCodec = require("../assets/scripts/config/LevelPackCompactCodec");
 
 var LEVEL_DIR = path.resolve(__dirname, "../assets/resources/config/levels");
 var REMOTE_PACK_DIR = path.resolve(__dirname, "../remote-level-packs");
@@ -158,14 +159,6 @@ function validateSpecialEntities(level, normalizedLayoutRows, issues) {
       if (typeof entity.lockedColor !== "string" || level.colors.indexOf(entity.lockedColor) === -1) {
         issues.push("specialEntities[" + index + "].lockedColor must use a color from level.colors");
       }
-      if (typeof entity.lockGroup !== "string" || !entity.lockGroup.trim()) {
-        issues.push("specialEntities[" + index + "].lockGroup must be non-empty string");
-      }
-    }
-    if (entity.entityCategory === "key_ball" && entity.entityType === "key") {
-      if (typeof entity.unlockGroup !== "string" || !entity.unlockGroup.trim()) {
-        issues.push("specialEntities[" + index + "].unlockGroup must be non-empty string");
-      }
     }
 
     if (!Number.isInteger(entity.row) || !Number.isInteger(entity.col)) {
@@ -285,35 +278,23 @@ function validateSplitterObjectives(level, issues) {
   }
 }
 
-function validateKeyLockGroups(level, issues) {
-  var keyGroups = {};
-  var lockGroups = {};
+function validateKeyLockCounts(level, issues) {
+  var keyCount = 0;
+  var lockCount = 0;
   (Array.isArray(level.specialEntities) ? level.specialEntities : []).forEach(function (entity) {
     if (!entity) {
       return;
     }
-    if (entity.entityCategory === "key_ball" && entity.entityType === "key" && typeof entity.unlockGroup === "string" && entity.unlockGroup.trim()) {
-      keyGroups[entity.unlockGroup] = (keyGroups[entity.unlockGroup] || 0) + 1;
+    if (entity.entityCategory === "key_ball" && entity.entityType === "key") {
+      keyCount += 1;
     }
-    if (entity.entityCategory === "locked_ball" && entity.entityType === "locked" && typeof entity.lockGroup === "string" && entity.lockGroup.trim()) {
-      lockGroups[entity.lockGroup] = (lockGroups[entity.lockGroup] || 0) + 1;
-    }
-  });
-  Object.keys(lockGroups).forEach(function (group) {
-    if (!keyGroups[group]) {
-      issues.push("locked ball group missing matching key unlockGroup: " + group);
-      return;
-    }
-    if (keyGroups[group] !== lockGroups[group]) {
-      issues.push("key/locked ball count mismatch for group " + group + ": keys=" + keyGroups[group] + ", locks=" + lockGroups[group]);
+    if (entity.entityCategory === "locked_ball" && entity.entityType === "locked") {
+      lockCount += 1;
     }
   });
-  Object.keys(keyGroups).forEach(function (group) {
-    if (!lockGroups[group]) {
-      issues.push("key unlockGroup missing matching locked ball group: " + group);
-      return;
-    }
-  });
+  if (keyCount !== lockCount) {
+    issues.push("key and locked ball count mismatch: keys=" + keyCount + ", locks=" + lockCount);
+  }
 }
 
 function validateLevelMode(level, issues) {
@@ -597,7 +578,7 @@ function validateLevelData(data, expectedLevelId) {
   validateObjectives(level.winConditions, "win", level, issues);
   validateObjectives(level.bonusObjectives, "bonus", level, issues);
   validateSplitterObjectives(level, issues);
-  validateKeyLockGroups(level, issues);
+  validateKeyLockCounts(level, issues);
   validateInitialShotBalls(level, issues);
   validateIceSnowballSupply(level, issues);
   validateAdPowerupRules(level, issues);
@@ -705,12 +686,16 @@ function listRemotePackEntries() {
       if (pack.schemaVersion !== 1) {
         throw new Error("remote level pack schemaVersion must be 1: " + fileName);
       }
+      if (pack.format !== LevelPackCompactCodec.PACK_FORMAT_COMPACT_V1) {
+        throw new Error("remote level pack format must be " + LevelPackCompactCodec.PACK_FORMAT_COMPACT_V1 + ": " + fileName);
+      }
       if (typeof pack.packId !== "string" || !pack.packId) {
         throw new Error("remote level pack packId is required: " + fileName);
       }
       if (!Number.isInteger(pack.from) || !Number.isInteger(pack.to) || pack.from <= 0 || pack.to < pack.from) {
         throw new Error("remote level pack range invalid: " + fileName);
       }
+      pack = LevelPackCompactCodec.expandPack(pack);
       if (!pack.levels || typeof pack.levels !== "object" || Array.isArray(pack.levels)) {
         throw new Error("remote level pack levels must be object: " + fileName);
       }

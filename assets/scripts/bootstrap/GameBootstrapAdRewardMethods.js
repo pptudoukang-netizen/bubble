@@ -11,6 +11,7 @@ var STAMINA_RECOVERY_LOW_GRANT = 1;
 var STAMINA_RECOVERY_HIGH_GRANT = 2;
 var STAMINA_RECOVERY_LOW_GRANT_COUNT = 2;
 var CONSECUTIVE_LOSE_INTERSTITIAL_THRESHOLD = 3;
+var RESULT_NATIVE_TEMPLATE_AD_REFRESH_INTERVAL = 40;
 var REWARDED_AD_UNAVAILABLE_MESSAGE = "目前没有合适的广告，请稍后再试";
 
 function resolveWechatPlatform() {
@@ -52,11 +53,56 @@ function requireNonNegativeInteger(value, fieldName) {
   return value;
 }
 
+function requirePositiveFiniteNumber(value, fieldName) {
+  var numberValue = Number(value);
+  if (!Number.isFinite(numberValue) || numberValue <= 0) {
+    throw new Error(fieldName + " must be a positive finite number.");
+  }
+  return numberValue;
+}
+
+function resolveNativeTemplateAdFrameSize() {
+  if (typeof wx !== "undefined" && wx && typeof wx.getSystemInfoSync === "function") {
+    var systemInfo = wx.getSystemInfoSync();
+    var width = Number(systemInfo.screenWidth);
+    var height = Number(systemInfo.screenHeight);
+    if (Number.isFinite(width) && width > 0 && Number.isFinite(height) && height > 0) {
+      return {
+        width: width,
+        height: height
+      };
+    }
+  }
+  if (!cc.view || typeof cc.view.getFrameSize !== "function") {
+    throw new Error("cc.view.getFrameSize is required for result native template ad.");
+  }
+  var frameSize = cc.view.getFrameSize();
+  if (!frameSize || frameSize.width <= 0 || frameSize.height <= 0) {
+    throw new Error("Invalid frame size for result native template ad.");
+  }
+  return frameSize;
+}
+
+function requireResultNativeTemplateAdPlacement(placement) {
+  var safePlacement = requireNonEmptyString(placement, "Result native template ad placement");
+  if (safePlacement !== "win" && safePlacement !== "lose") {
+    throw new Error("Unsupported result native template ad placement: " + safePlacement);
+  }
+  return safePlacement;
+}
+
 function resolveStaminaRecoveryGrantAmount(grantedTodayBefore) {
   var safeGrantedTodayBefore = requireNonNegativeInteger(grantedTodayBefore, "Stamina recovery grantedToday");
   return safeGrantedTodayBefore < STAMINA_RECOVERY_LOW_GRANT_COUNT
     ? STAMINA_RECOVERY_LOW_GRANT
     : STAMINA_RECOVERY_HIGH_GRANT;
+}
+
+function notifyRewardedAdUnavailable(options, payload) {
+  if (!options || typeof options.onAdUnavailable !== "function") {
+    return;
+  }
+  options.onAdUnavailable(payload);
 }
 
 module.exports = {
@@ -237,6 +283,149 @@ module.exports = {
     }
   },
 
+  _resolveResultNativeTemplateAdUnitId: function (placement) {
+    var safePlacement = requireResultNativeTemplateAdPlacement(placement);
+    if (safePlacement === "win") {
+      return requireNonEmptyString(this.winNativeTemplateAdUnitId, "winNativeTemplateAdUnitId");
+    }
+    return requireNonEmptyString(this.loseNativeTemplateAdUnitId, "loseNativeTemplateAdUnitId");
+  },
+
+  _resolveResultNativeTemplateAdStyle: function (nativeHeightPx) {
+    var frameSize = resolveNativeTemplateAdFrameSize();
+    var width = requirePositiveFiniteNumber(frameSize.width, "Result native template ad frame width");
+    var frameHeight = requirePositiveFiniteNumber(frameSize.height, "Result native template ad frame height");
+    if (nativeHeightPx === undefined || nativeHeightPx === null) {
+      return {
+        left: 0,
+        top: 0,
+        width: width
+      };
+    }
+    var heightPx = requirePositiveFiniteNumber(nativeHeightPx, "Result native template ad height");
+    return {
+      left: 0,
+      top: Math.max(0, frameHeight - heightPx),
+      width: width
+    };
+  },
+
+  _applyResultNativeTemplateAdHeight: function (placement, nativeHeightPx) {
+    var safePlacement = requireResultNativeTemplateAdPlacement(placement);
+    if (this._resultNativeTemplateAdPlacement !== safePlacement) {
+      return;
+    }
+    var heightPx = requirePositiveFiniteNumber(
+      nativeHeightPx,
+      "Result native template ad height"
+    );
+    if (this._resultNativeTemplateAdHeightPx === heightPx) {
+      return;
+    }
+    this._resultNativeTemplateAdHeightPx = heightPx;
+  },
+
+  _showResultNativeTemplateAd: function (placement) {
+    var safePlacement = requireResultNativeTemplateAdPlacement(placement);
+    if (!this.nativeTemplateAdAdapter || typeof this.nativeTemplateAdAdapter.isSupported !== "function") {
+      throw new Error("Result native template ad requires WechatNativeTemplateAdAdapter.");
+    }
+
+    if (!this.nativeTemplateAdAdapter.isSupported()) {
+      this._hideResultNativeTemplateAd(safePlacement);
+      return Promise.resolve(false);
+    }
+
+    var adUnitId = this._resolveResultNativeTemplateAdUnitId(safePlacement);
+    var style = this._resolveResultNativeTemplateAdStyle();
+    this._resultNativeTemplateAdPlacement = safePlacement;
+    this._resultNativeTemplateAdHeightPx = 0;
+    try {
+      return this.nativeTemplateAdAdapter.showAd({
+        adUnitId: adUnitId,
+        adIntervals: RESULT_NATIVE_TEMPLATE_AD_REFRESH_INTERVAL,
+        placement: "bottom",
+        style: style,
+        onHeightChange: function (heightPx) {
+          this._applyResultNativeTemplateAdHeight(safePlacement, heightPx);
+        }.bind(this),
+        onError: function (error) {
+          Logger.warn("Result native template ad error", error && error.errMsg ? error.errMsg : error);
+          this._hideResultNativeTemplateAd(safePlacement);
+        }.bind(this)
+      }).then(function () {
+        if (this._resultNativeTemplateAdPlacement !== safePlacement) {
+          return false;
+        }
+        this._resultNativeTemplateAdShowing = true;
+        return true;
+      }.bind(this), function (error) {
+        Logger.warn("Result native template ad show failed", error && error.message ? error.message : error);
+        this._hideResultNativeTemplateAd(safePlacement);
+        return false;
+      }.bind(this));
+    } catch (error) {
+      Logger.warn("Result native template ad show failed", error && error.message ? error.message : error);
+      this._hideResultNativeTemplateAd(safePlacement);
+      return Promise.resolve(false);
+    }
+  },
+
+  _hideResultNativeTemplateAd: function (placement) {
+    if (placement !== undefined && placement !== null) {
+      var safePlacement = requireResultNativeTemplateAdPlacement(placement);
+      if (this._resultNativeTemplateAdPlacement && this._resultNativeTemplateAdPlacement !== safePlacement) {
+        return;
+      }
+    }
+    if (this._resultNativeTemplateAdShowing !== true && !this._resultNativeTemplateAdPlacement) {
+      return;
+    }
+    if (this.nativeTemplateAdAdapter && typeof this.nativeTemplateAdAdapter.hideAd === "function") {
+      this.nativeTemplateAdAdapter.hideAd();
+    }
+    this._resultNativeTemplateAdShowing = false;
+    this._resultNativeTemplateAdPlacement = "";
+    this._resultNativeTemplateAdHeightPx = 0;
+  },
+
+  _refreshResultNativeTemplateAdLayout: function () {
+    if (this._resultNativeTemplateAdShowing !== true) {
+      return;
+    }
+    if (!this._resultNativeTemplateAdPlacement) {
+      throw new Error("Result native template ad placement is required before refresh.");
+    }
+    if (!this.nativeTemplateAdAdapter || typeof this.nativeTemplateAdAdapter.updateStyle !== "function") {
+      throw new Error("Result native template ad requires WechatNativeTemplateAdAdapter.updateStyle.");
+    }
+    if (this._resultNativeTemplateAdHeightPx <= 0) {
+      return;
+    }
+    var updated = this.nativeTemplateAdAdapter.updateStyle(
+      this._resolveResultNativeTemplateAdStyle(this._resultNativeTemplateAdHeightPx)
+    );
+    if (updated !== true) {
+      throw new Error("Result native template ad style update failed.");
+    }
+  },
+
+  _showWinNativeTemplateAd: function () {
+    return this._showResultNativeTemplateAd("win");
+  },
+
+  _hideWinNativeTemplateAd: function () {
+    this._hideResultNativeTemplateAd("win");
+  },
+
+  _showLoseNativeTemplateAd: function () {
+    return this._showResultNativeTemplateAd("lose");
+  },
+
+  _hideLoseNativeTemplateAd: function () {
+    this._hideResultNativeTemplateAd("lose");
+  },
+
   _bindReturnToForegroundInterstitialAd: function () {
     if (this._interstitialReturnShowHandler || this._interstitialReturnHideHandler) {
       return;
@@ -372,6 +561,60 @@ module.exports = {
     });
   },
 
+  _onLoseCoinReviveTap: function () {
+    if (!this.currentLevelConfig || this.isRestarting || this.isSelectingLevel) {
+      return;
+    }
+
+    var snapshot = this.gameManager.getRuntimeSnapshot();
+    var loseRewardEntry = AdRewardCatalog.resolveLoseRewardEntry(snapshot ? snapshot.state : "");
+    if (!loseRewardEntry) {
+      this._setStatus("当前失败类型暂无复活奖励");
+      return;
+    }
+
+    var cost = Shared.LOSE_COIN_REVIVE_COST;
+    if (!Number.isInteger(cost) || cost <= 0) {
+      throw new Error("LoseView coin revive cost must be a positive integer.");
+    }
+    if (typeof this._spendCoinsForRevive !== "function") {
+      throw new Error("LoseView coin revive requires _spendCoinsForRevive.");
+    }
+    if (typeof this._refundCoinsForRevive !== "function") {
+      throw new Error("LoseView coin revive requires _refundCoinsForRevive.");
+    }
+    if (!this.gameManager || typeof this.gameManager.reviveFromAd !== "function") {
+      throw new Error("LoseView coin revive requires GameManager.reviveFromAd.");
+    }
+
+    var spendResult = this._spendCoinsForRevive(cost, "lose_coin_revive");
+    if (!spendResult || spendResult.accepted !== true) {
+      if (typeof this._setStatusWithTip === "function") {
+        this._setStatusWithTip("lose_coin_revive_not_enough", null, "金币不足");
+      } else {
+        this._setStatus("金币不足");
+      }
+      return;
+    }
+
+    var reviveResult = null;
+    try {
+      reviveResult = this.gameManager.reviveFromAd();
+    } catch (error) {
+      this._refundCoinsForRevive(cost, "lose_coin_revive_rollback");
+      throw error;
+    }
+    if (!reviveResult || reviveResult.accepted !== true || !reviveResult.snapshot) {
+      this._refundCoinsForRevive(cost, "lose_coin_revive_rollback");
+      throw new Error("LoseView coin revive result is invalid.");
+    }
+
+    this._handleRuntimeStateTransition(reviveResult.snapshot);
+    this.levelRenderer.refreshRuntime(this.currentLevelConfig, reviveResult.snapshot);
+    this._refreshPlayerResources();
+    this._setStatus("复活成功");
+  },
+
   _showRewardedAdForEntry: function (entry, options) {
     options = options || {};
     if (!entry) {
@@ -414,6 +657,12 @@ module.exports = {
     var quotaResult = this.adRewardQuotaStore.canGrant(entry.quotaType);
     if (!quotaResult.allowed) {
       this._setAdQuotaBlockedStatus(quotaResult);
+      if (quotaResult.reason === "daily_limit") {
+        notifyRewardedAdUnavailable(options, {
+          reason: quotaResult.reason,
+          entry: entry
+        });
+      }
       return Promise.resolve(false);
     }
 
@@ -457,6 +706,12 @@ module.exports = {
 
       if (!safeAdResult || !safeAdResult.ok) {
         this._setRewardedAdFailureStatus(safeAdResult, "广告加载失败，请稍后重试");
+        if (safeAdResult && safeAdResult.code === "no_fill") {
+          notifyRewardedAdUnavailable(options, {
+            reason: safeAdResult.code,
+            entry: entry
+          });
+        }
         return false;
       }
       if (!isCompleted) {
@@ -708,7 +963,50 @@ module.exports = {
     this._showRewardedAdForEntry(rewardEntry, {
       entrySource: "inventory_empty",
       adUnitId: this.inventoryRewardedVideoAdUnitId,
-      onRewardGrantedMessage: "道具补给成功"
+      onRewardGrantedMessage: "道具补给成功",
+      onAdUnavailable: function (payload) {
+        this._showGameplayInventoryQuickBuyForPowerup(powerupType, payload ? payload.reason : "");
+      }.bind(this)
+    });
+  },
+
+  _showGameplayInventoryQuickBuyForPowerup: function (powerupType, unavailableReason) {
+    var itemId = ITEM_ID_BY_POWERUP_TYPE[powerupType];
+    if (!itemId) {
+      return false;
+    }
+    if (!this.shopConfigService || typeof this.shopConfigService.getSortedGoodsList !== "function") {
+      throw new Error("Gameplay inventory quick buy requires ShopConfigService.getSortedGoodsList.");
+    }
+    if (!this.shopStateService || typeof this.shopStateService.getRemainingCount !== "function") {
+      throw new Error("Gameplay inventory quick buy requires ShopStateService.getRemainingCount.");
+    }
+    if (typeof this._showBuyView !== "function") {
+      throw new Error("Gameplay inventory quick buy requires _showBuyView.");
+    }
+
+    var goodsList = this.shopConfigService.getSortedGoodsList();
+    var goods = null;
+    for (var i = 0; i < goodsList.length; i += 1) {
+      if (goodsList[i].itemId === itemId) {
+        goods = goodsList[i];
+        break;
+      }
+    }
+    if (!goods) {
+      return false;
+    }
+
+    var remaining = this.shopStateService.getRemainingCount(goods.skuId);
+    if (remaining <= 0) {
+      return false;
+    }
+
+    return this._showBuyView(goods.skuId, goods, remaining, {
+      source: "gameplay_inventory_quick_buy",
+      itemId: itemId,
+      powerupType: powerupType,
+      unavailableReason: typeof unavailableReason === "string" ? unavailableReason : ""
     });
   },
 

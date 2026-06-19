@@ -246,8 +246,6 @@ function normalizeSpecialEntities(levelConfig, levelKey) {
     var splitColor = null;
     var lockedColor = null;
     var blastRadius = null;
-    var lockGroup = null;
-    var unlockGroup = null;
     if (category === "obstacle_ball" && entityType === "ice") {
       innerColor = typeof entity.innerColor === "string" ? entity.innerColor.trim() : "";
       if (ALLOWED_INNER_COLORS.indexOf(innerColor) === -1) {
@@ -274,16 +272,6 @@ function normalizeSpecialEntities(levelConfig, levelKey) {
       if (levelConfig.colors.indexOf(lockedColor) === -1) {
         throw new Error("specialEntities[" + index + "].lockedColor must be in level.colors: " + levelKey);
       }
-      lockGroup = typeof entity.lockGroup === "string" ? entity.lockGroup.trim() : "";
-      if (!lockGroup) {
-        throw new Error("specialEntities[" + index + "].lockGroup is required for locked ball: " + levelKey);
-      }
-    }
-    if (category === "key_ball" && entityType === "key") {
-      unlockGroup = typeof entity.unlockGroup === "string" ? entity.unlockGroup.trim() : "";
-      if (!unlockGroup) {
-        throw new Error("specialEntities[" + index + "].unlockGroup is required for key: " + levelKey);
-      }
     }
 
     return {
@@ -295,9 +283,7 @@ function normalizeSpecialEntities(levelConfig, levelKey) {
       innerColor: innerColor,
       splitColor: splitColor,
       lockedColor: lockedColor,
-      blastRadius: blastRadius,
-      lockGroup: lockGroup,
-      unlockGroup: unlockGroup
+      blastRadius: blastRadius
     };
   });
 }
@@ -397,45 +383,26 @@ function validateSplitterObjectives(levelConfig, levelKey) {
   }
 }
 
-function validateKeyLockGroups(levelConfig, levelKey) {
+function validateKeyLockCounts(levelConfig, levelKey) {
   if (!Array.isArray(levelConfig.specialEntities)) {
     throw new Error("level.specialEntities must be normalized before key-lock validation: " + levelKey);
   }
-  var keyGroups = {};
-  var lockGroups = {};
+  var keyCount = 0;
+  var lockCount = 0;
   levelConfig.specialEntities.forEach(function (entity) {
     if (!entity) {
       throw new Error("key-lock validation received empty special entity: " + levelKey);
     }
     if (entity.entityCategory === "key_ball" && entity.entityType === "key") {
-      if (typeof entity.unlockGroup !== "string" || !entity.unlockGroup) {
-        throw new Error("key requires unlockGroup before key-lock validation: " + levelKey);
-      }
-      keyGroups[entity.unlockGroup] = (keyGroups[entity.unlockGroup] || 0) + 1;
+      keyCount += 1;
     }
     if (entity.entityCategory === "locked_ball" && entity.entityType === "locked") {
-      if (typeof entity.lockGroup !== "string" || !entity.lockGroup) {
-        throw new Error("locked ball requires lockGroup before key-lock validation: " + levelKey);
-      }
-      lockGroups[entity.lockGroup] = (lockGroups[entity.lockGroup] || 0) + 1;
+      lockCount += 1;
     }
   });
-  Object.keys(lockGroups).forEach(function (group) {
-    if (!keyGroups[group]) {
-      throw new Error("locked ball group missing matching key unlockGroup `" + group + "`: " + levelKey);
-    }
-    if (keyGroups[group] !== lockGroups[group]) {
-      throw new Error("key/locked ball count mismatch for group `" + group + "`: keys=" + keyGroups[group] + ", locks=" + lockGroups[group] + ": " + levelKey);
-    }
-  });
-  Object.keys(keyGroups).forEach(function (group) {
-    if (!lockGroups[group]) {
-      throw new Error("key unlockGroup missing matching locked ball group `" + group + "`: " + levelKey);
-    }
-    if (keyGroups[group] !== lockGroups[group]) {
-      throw new Error("key/locked ball count mismatch for group `" + group + "`: keys=" + keyGroups[group] + ", locks=" + lockGroups[group] + ": " + levelKey);
-    }
-  });
+  if (keyCount !== lockCount) {
+    throw new Error("key and locked ball count mismatch: keys=" + keyCount + ", locks=" + lockCount + ": " + levelKey);
+  }
 }
 
 function normalizeInitialShotBalls(levelConfig, levelKey) {
@@ -632,7 +599,7 @@ function normalizeLevelConfig(rawConfig, levelKey) {
   config.level.specialEntities = normalizeSpecialEntities(config.level, levelKey);
   validateIceSnowballObjectives(config.level, levelKey);
   validateSplitterObjectives(config.level, levelKey);
-  validateKeyLockGroups(config.level, levelKey);
+  validateKeyLockCounts(config.level, levelKey);
   normalizeAdPowerupRules(config.level, levelKey);
   validateInitialDropSpaceRows(config.level, levelKey);
 

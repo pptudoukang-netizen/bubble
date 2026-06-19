@@ -70,11 +70,17 @@ var QUICK_START_BUTTON_BREATH_SCALE = 1.08;
 var QUICK_START_BUTTON_BREATH_UP_DURATION = 0.48;
 var QUICK_START_BUTTON_BREATH_DOWN_DURATION = 0.54;
 var LEVEL_SELECT_IDLE_ANIMATIONS_ENABLED = false;
+var TOP_RESOURCE_ICON_PATHS = {
+  stamina: "image/props/love",
+  coin: "image/props/coin"
+};
 
 var levelButtonSkinFrames = null;
 var levelButtonSkinLoadPromise = null;
 var runAnimationClip = null;
 var runAnimationClipLoadPromise = null;
+var topResourceIconFrames = null;
+var topResourceIconLoadPromise = null;
 
 function loadSpriteFrame(path) {
   return new Promise(function (resolve) {
@@ -88,6 +94,79 @@ function loadSpriteFrame(path) {
       resolve(spriteFrame || null);
     });
   });
+}
+
+function loadRequiredSpriteFrame(path, description) {
+  return new Promise(function (resolve, reject) {
+    BundleLoader.loadRes(path, cc.SpriteFrame, function (error, spriteFrame) {
+      if (error) {
+        reject(new Error("Load " + description + " sprite frame failed: " + error.message));
+        return;
+      }
+
+      if (!spriteFrame) {
+        reject(new Error(description + " sprite frame is missing: " + path));
+        return;
+      }
+
+      resolve(spriteFrame);
+    });
+  });
+}
+
+function retainSpriteFrame(spriteFrame, description) {
+  if (!spriteFrame) {
+    throw new Error(description + " sprite frame is required.");
+  }
+  if (typeof spriteFrame.addRef === "function") {
+    spriteFrame.addRef();
+  }
+  return spriteFrame;
+}
+
+function hasValidSpriteFrame(spriteFrame) {
+  if (!spriteFrame) {
+    return false;
+  }
+  if (cc && typeof cc.isValid === "function") {
+    return cc.isValid(spriteFrame);
+  }
+  return true;
+}
+
+function hasTopResourceIconFrames() {
+  return !!(
+    topResourceIconFrames &&
+    hasValidSpriteFrame(topResourceIconFrames.stamina) &&
+    hasValidSpriteFrame(topResourceIconFrames.coin)
+  );
+}
+
+function ensureTopResourceIconFrames() {
+  if (hasTopResourceIconFrames()) {
+    return Promise.resolve(topResourceIconFrames);
+  }
+
+  if (topResourceIconLoadPromise) {
+    return topResourceIconLoadPromise;
+  }
+
+  topResourceIconLoadPromise = Promise.all([
+    loadRequiredSpriteFrame(TOP_RESOURCE_ICON_PATHS.stamina, "LevelView stamina icon"),
+    loadRequiredSpriteFrame(TOP_RESOURCE_ICON_PATHS.coin, "LevelView coin icon")
+  ]).then(function (results) {
+    topResourceIconFrames = {
+      stamina: retainSpriteFrame(results[0], "LevelView stamina icon"),
+      coin: retainSpriteFrame(results[1], "LevelView coin icon")
+    };
+    topResourceIconLoadPromise = null;
+    return topResourceIconFrames;
+  }, function (error) {
+    topResourceIconLoadPromise = null;
+    throw error;
+  });
+
+  return topResourceIconLoadPromise;
 }
 
 function ensureLevelButtonSkinFrames() {
@@ -1060,6 +1139,80 @@ function resolveTopLayerNode(levelView) {
   return topLayerNode && topLayerNode.isValid ? topLayerNode : null;
 }
 
+function requireTopWidget(levelView) {
+  if (!levelView || !levelView.isValid) {
+    throw new Error("LevelView node is required before updating top widget.");
+  }
+  var topNode = levelView.getChildByName("top");
+  if (!topNode || !topNode.isValid) {
+    throw new Error("LevelView/top is required before updating top widget.");
+  }
+  var widget = topNode.getComponent(cc.Widget);
+  if (!widget) {
+    throw new Error("LevelView/top requires cc.Widget.");
+  }
+  if (widget.enabled !== true) {
+    throw new Error("LevelView/top cc.Widget must be enabled.");
+  }
+  if (typeof widget.updateAlignment !== "function") {
+    throw new Error("LevelView/top cc.Widget requires updateAlignment.");
+  }
+  return widget;
+}
+
+function setTopWidgetTop(levelView, top) {
+  var nextTop = Number(top);
+  if (!Number.isFinite(nextTop) || nextTop < 0) {
+    throw new Error("LevelView/top widget top must be a non-negative finite number.");
+  }
+  var widget = requireTopWidget(levelView);
+  if (!Number.isFinite(levelView.__levelSelectTopWidgetOriginalTop)) {
+    levelView.__levelSelectTopWidgetOriginalTop = widget.top;
+  }
+  widget.top = nextTop;
+  widget.updateAlignment();
+  return widget.top;
+}
+
+function requireNode(parentNode, childName, description) {
+  var node = parentNode ? parentNode.getChildByName(childName) : null;
+  if (!node || !node.isValid) {
+    throw new Error(description + " requires child node `" + childName + "`.");
+  }
+  return node;
+}
+
+function requireSprite(node, description) {
+  var sprite = node ? node.getComponent(cc.Sprite) : null;
+  if (!sprite) {
+    throw new Error(description + " requires cc.Sprite.");
+  }
+  return sprite;
+}
+
+function rebindTopResourceSprites(levelView) {
+  if (!levelView || !levelView.isValid) {
+    return;
+  }
+  if (!hasTopResourceIconFrames()) {
+    throw new Error("LevelView top resource icon frames must be preloaded before binding.");
+  }
+
+  var topLayerNode = resolveTopLayerNode(levelView);
+  if (!topLayerNode || !topLayerNode.isValid) {
+    throw new Error("LevelView requires top_layer before binding resource icons.");
+  }
+
+  var loveInfoNode = requireNode(topLayerNode, "love_info", "LevelView top_layer");
+  var loveBgNode = requireNode(loveInfoNode, "love_bg", "LevelView love_info");
+  var loveIconNode = requireNode(loveBgNode, "love_icon", "LevelView love_bg");
+  var goldInfoNode = requireNode(topLayerNode, "gold_info", "LevelView top_layer");
+  var coinIconNode = requireNode(goldInfoNode, "icon", "LevelView gold_info");
+
+  requireSprite(loveIconNode, "LevelView love_icon").spriteFrame = topResourceIconFrames.stamina;
+  requireSprite(coinIconNode, "LevelView gold icon").spriteFrame = topResourceIconFrames.coin;
+}
+
 function updateTopStatus(levelView, options) {
   if (!levelView || !levelView.isValid) {
     return;
@@ -1089,6 +1242,7 @@ function updateTopStatus(levelView, options) {
   var onOpenDailyTasks = options.onOpenDailyTasks;
 
   var topLayerNode = resolveTopLayerNode(levelView);
+  rebindTopResourceSprites(levelView);
   var loveNode = topLayerNode ? topLayerNode.getChildByName("love_info") : null;
   var goldNode = topLayerNode ? topLayerNode.getChildByName("gold_info") : null;
   var staminaLabelNode = loveNode ? loveNode.getChildByName("love") : null;
@@ -1346,6 +1500,7 @@ function renderLevelSelectContent(options) {
     mapHostNode: mapHostNode,
     assets: floatingMapAssets,
     highestUnlocked: highestUnlocked,
+    focusLevelId: highlightedLevelId,
     backToCurrentLevelButtonNode: backToCurrentLevelButtonNode,
     getLevelStarCount: getLevelStarCount,
     isLevelCompleted: isLevelCompleted,
@@ -1374,7 +1529,10 @@ function renderLevelSelectContent(options) {
 }
 
 module.exports = {
+  ensureTopResourceIconFrames: ensureTopResourceIconFrames,
+  rebindTopResourceSprites: rebindTopResourceSprites,
   loadFloatingMapAssets: FloatingMap.loadAssets,
   renderLevelSelectContent: renderLevelSelectContent,
+  setTopWidgetTop: setTopWidgetTop,
   scrollFloatingMapToLevel: scrollFloatingMapToLevel
 };

@@ -19,6 +19,7 @@ var INERTIA_FRAME_SECONDS = 1 / 60;
 var INERTIA_DECELERATION = 2600;
 var INERTIA_MIN_VELOCITY = 18;
 var INERTIA_SCHEDULE_REPEAT = cc.macro.REPEAT_FOREVER;
+var SCHEDULE_ONCE_REPEAT = 0;
 var BACKGROUND_SCROLL_RATIO = 0.05;
 var FOCUS_Y_RATIO_FROM_BOTTOM = 0.38;
 var FIRST_ISLAND_BOTTOM_SCROLL_PADDING = 300;
@@ -1487,7 +1488,7 @@ function requestScrollVisibilitySync(state) {
     }
     syncVisibleNodesWithPrefetch(state);
   };
-  scheduleFloatingMapTick(
+  scheduleFloatingMapTickOnce(
     state,
     "scrollVisibilitySyncTick",
     state.scrollVisibilitySyncTick,
@@ -1535,6 +1536,13 @@ function scheduleFloatingMapTick(state, tickPropertyName, tick, description) {
   var scheduler = requireDirectorScheduler(description);
   var target = requireScheduleTarget(state, description);
   scheduler.schedule(tick, target, INERTIA_FRAME_SECONDS, INERTIA_SCHEDULE_REPEAT, 0, false);
+  state[tickPropertyName] = tick;
+}
+
+function scheduleFloatingMapTickOnce(state, tickPropertyName, tick, description) {
+  var scheduler = requireDirectorScheduler(description);
+  var target = requireScheduleTarget(state, description);
+  scheduler.schedule(tick, target, INERTIA_FRAME_SECONDS, SCHEDULE_ONCE_REPEAT, 0, false);
   state[tickPropertyName] = tick;
 }
 
@@ -1751,6 +1759,7 @@ function requireRenderOptions(options) {
     }
   });
   requirePositiveInteger(options.highestUnlocked, "highestUnlocked");
+  requirePositiveInteger(options.focusLevelId, "focusLevelId");
   if (typeof options.getLevelStarCount !== "function") {
     throw new Error("Floating map requires getLevelStarCount.");
   }
@@ -1774,6 +1783,7 @@ function render(options) {
   var config = options.assets.config;
   var bounds = resolveHostBounds(mapHostNode);
   var latestAccessibleLevelId = resolveLatestAccessibleLevelId(config, options.highestUnlocked);
+  var focusLevelId = requirePositiveInteger(options.focusLevelId, "focusLevelId");
   var focusY = resolveFocusY(bounds);
   var firstNode = config.nodes[0];
   var lastNode = config.nodes[config.nodes.length - 1];
@@ -1811,14 +1821,14 @@ function render(options) {
     prefabPrefetchPromise: null,
     pendingPrefetchPrefabNames: {}
   };
-  runtimeNodes.content.y = resolveInitialContentY(state, latestAccessibleLevelId);
+  runtimeNodes.content.y = resolveInitialContentY(state, focusLevelId);
   mapHostNode.__floatingMapState = state;
   bindTouch(mapHostNode, state);
   syncVisibleNodesWithPrefetch(state);
   syncBackToCurrentLevelButtonVisibility(state);
   return {
     nodeCount: config.nodes.length,
-    currentNodeIndex: findNodeIndexByLevelId(config, latestAccessibleLevelId),
+    currentNodeIndex: findNodeIndexByLevelId(config, focusLevelId),
     targetLevelCount: config.targetLevelCount
   };
 }

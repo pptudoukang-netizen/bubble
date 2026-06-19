@@ -5,6 +5,7 @@ var fs = require("fs");
 var path = require("path");
 
 var BoardLayout = require("../assets/scripts/config/BoardLayout");
+var LevelPackCompactCodec = require("../assets/scripts/config/LevelPackCompactCodec");
 
 var PROJECT_ROOT = path.resolve(__dirname, "..");
 var RESOURCE_LEVEL_DIR = path.join(PROJECT_ROOT, "assets/resources/config/levels");
@@ -19,8 +20,8 @@ var REMOTE_PACK_SIZE = 100;
 var START_GENERATED_LEVEL_ID = 41;
 var CLOUD_ENV_ID = "cloud1-d7gqettx3e9249ca1";
 var CLOUD_FILE_ID_PREFIX = "cloud://cloud1-d7gqettx3e9249ca1.636c-cloud1-d7gqettx3e9249ca1-1428064608";
-var CLOUD_PACK_ROOT = "level-packs";
-var MANIFEST_VERSION = "levels-1000-v1";
+var CLOUD_PACK_ROOT = "level-packs-compact";
+var MANIFEST_VERSION = "levels-1000-compact-v1";
 var COLORS = ["R", "G", "B", "Y", "P"];
 var COLOR_NAMES = {
   R: "red",
@@ -289,6 +290,10 @@ function writeJson(filePath, value) {
 
 function toJsonText(value) {
   return JSON.stringify(value, null, 4) + "\n";
+}
+
+function toCompactJsonText(value) {
+  return JSON.stringify(value) + "\n";
 }
 
 function clone(value) {
@@ -597,22 +602,18 @@ function buildTableSpecialEntities(tableRow, activeColors) {
   });
 
   pushRepeated(counts.key, function (index) {
-    var group = "g" + String(index + 1).padStart(2, "0");
     return {
-      id: "key_" + group,
+      id: "key_" + String(index + 1).padStart(2, "0"),
       entityCategory: "key_ball",
-      entityType: "key",
-      unlockGroup: group
+      entityType: "key"
     };
   });
   pushRepeated(counts.locked, function (index) {
-    var group = "g" + String(index + 1).padStart(2, "0");
     return {
-      id: "locked_" + group,
+      id: "locked_" + String(index + 1).padStart(2, "0"),
       entityCategory: "locked_ball",
       entityType: "locked",
-      lockedColor: activeColors[(levelId + index + 1) % activeColors.length],
-      lockGroup: group
+      lockedColor: activeColors[(levelId + index + 1) % activeColors.length]
     };
   });
 
@@ -840,7 +841,6 @@ function makeSpecialEntities(levelId, rows, colors, mechanics, placementVariant)
   }
 
   if (mechanics.indexOf("locked") >= 0) {
-    var group = "g" + (levelId % 3 + 1);
     var lockedColors = [colors[(levelId + 1) % colors.length]];
     if (levelId >= 160) {
       lockedColors.push(colors[(levelId + 3) % colors.length]);
@@ -848,17 +848,15 @@ function makeSpecialEntities(levelId, rows, colors, mechanics, placementVariant)
     lockedColors.forEach(function (lockedColor, index) {
       var suffix = String(index + 1).padStart(2, "0");
       pushEntity({
-        id: "key_" + group + "_" + suffix,
+        id: "key_" + suffix,
         entityCategory: "key_ball",
-        entityType: "key",
-        unlockGroup: group
+        entityType: "key"
       });
       pushEntity({
-        id: "locked_" + group + "_" + suffix,
+        id: "locked_" + suffix,
         entityCategory: "locked_ball",
         entityType: "locked",
-        lockedColor: lockedColor,
-        lockGroup: group
+        lockedColor: lockedColor
       });
     });
   }
@@ -1342,7 +1340,8 @@ function buildRemotePacks() {
       pack.levels["level_" + padLevelId(levelId)] = loadLevelForPack(levelId, from, to);
     }
 
-    var packText = toJsonText(pack);
+    var compactPack = LevelPackCompactCodec.compactPack(pack);
+    var packText = toCompactJsonText(compactPack);
     var packFileName = getPackFileName(from, to);
     fs.writeFileSync(path.join(REMOTE_PACK_DIR, packFileName), packText, "utf8");
     manifestPacks.push({
@@ -1351,7 +1350,8 @@ function buildRemotePacks() {
       to: to,
       fileID: CLOUD_FILE_ID_PREFIX + "/" + CLOUD_PACK_ROOT + "/" + packFileName,
       sha256: sha256Text(packText),
-      bytes: Buffer.byteLength(packText, "utf8")
+      bytes: Buffer.byteLength(packText, "utf8"),
+      format: LevelPackCompactCodec.PACK_FORMAT_COMPACT_V1
     });
   });
   return manifestPacks;

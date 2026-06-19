@@ -3,6 +3,7 @@
 var fs = require("fs");
 var path = require("path");
 var BoardLayout = require("../assets/scripts/config/BoardLayout");
+var LevelPackCompactCodec = require("../assets/scripts/config/LevelPackCompactCodec");
 
 var LEVEL_DIR = path.resolve(__dirname, "../assets/resources/config/levels");
 var REMOTE_PACK_DIR = path.resolve(__dirname, "../remote-level-packs");
@@ -95,6 +96,10 @@ function listRemotePackEntries() {
       if (pack.schemaVersion !== 1) {
         throw new Error("remote level pack schemaVersion must be 1: " + fileName);
       }
+      if (pack.format !== LevelPackCompactCodec.PACK_FORMAT_COMPACT_V1) {
+        throw new Error("remote level pack format must be " + LevelPackCompactCodec.PACK_FORMAT_COMPACT_V1 + ": " + fileName);
+      }
+      pack = LevelPackCompactCodec.expandPack(pack);
       if (!pack.levels || typeof pack.levels !== "object" || Array.isArray(pack.levels)) {
         throw new Error("remote level pack levels must be object: " + fileName);
       }

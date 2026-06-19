@@ -45,9 +45,10 @@
         "shotLimit": 14,
         "targetScore": 2400,
         "dropInterval": 6,
-        "jarCount": 2,
+        "jarCount": 3,
         "jarColors": [
             "R",
+            "B",
             "B"
         ],
         "spawnWeights": {
@@ -63,7 +64,7 @@
             {
                 "type": "collect_color",
                 "color": "B",
-                "value": 12
+                "value": 5
             }
         ],
         "bonusObjectives": [

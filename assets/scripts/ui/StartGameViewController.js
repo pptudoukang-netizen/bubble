@@ -7,10 +7,16 @@ var POWERUP_DEFINITIONS = [
   { itemId: "swap_ball", unlockLevel: 5, iconPath: "image/props/change_ball" },
   { itemId: "rainbow_ball", unlockLevel: 10, iconPath: "image/props/rainbow_ball" },
   { itemId: "blast_ball", unlockLevel: 15, iconPath: "image/props/blast_ball" },
-  { itemId: "barrier_hammer", unlockLevel: 20, iconPath: "image/props/barrier_hammer" }
+  { itemId: "barrier_hammer", unlockLevel: 20, iconPath: "image/props/barrier_hammer" },
+  { itemId: "three_line_elimination", unlockLevel: 1, iconPath: "image/props/three_line_elimination", temporary: true },
+  { itemId: "plus_three_balls", unlockLevel: 1, iconPath: "image/props/plus_ball", temporary: true }
 ];
 var LOCK_ICON_PATH = "image/commone/lock";
+var MAX_SELECTED_POWERUPS = 4;
+var PROP_ITEM_HORIZONTAL_PADDING = 12;
+var PROP_ITEM_SPACING = 16;
 var START_GAME_RENDER_PROXY_ROOT_NAME = "start_game_render_proxy_root";
+var START_GAME_PROP_RENDER_PROXY_ROOT_NAME = "start_game_prop_render_proxy_root";
 var START_GAME_RENDER_PROXY_LAYER_NAMES = {
   panel: "start_game_proxy_panel_layer",
   chrome: "start_game_proxy_chrome_layer",
@@ -46,6 +52,15 @@ function requireValidNode(node, description) {
     throw new Error("StartGameView requires " + description + ".");
   }
   return node;
+}
+
+function getValidSize(node, description) {
+  requireValidNode(node, description);
+  var size = node.getContentSize();
+  if (!size || !Number.isFinite(size.width) || size.width <= 0 || !Number.isFinite(size.height) || size.height <= 0) {
+    throw new Error("StartGameView requires valid size for " + description + ".");
+  }
+  return size;
 }
 
 function requireChildNode(parentNode, childName, parentDescription) {
@@ -181,6 +196,41 @@ function getInventoryCount(inventory, itemId) {
   return requireNonNegativeInteger(inventory.items[itemId], "StartGameView inventory item count `" + itemId + "`");
 }
 
+function isTemporaryPowerupItem(itemId) {
+  return POWERUP_DEFINITIONS.some(function (definition) {
+    return definition.itemId === itemId && definition.temporary === true;
+  });
+}
+
+function normalizeTemporaryPurchases(temporaryPurchasesByItemId) {
+  requireObject(temporaryPurchasesByItemId, "StartGameView temporary purchases");
+  var output = {};
+  POWERUP_DEFINITIONS.forEach(function (definition) {
+    if (definition.temporary !== true) {
+      return;
+    }
+    if (!Object.prototype.hasOwnProperty.call(temporaryPurchasesByItemId, definition.itemId)) {
+      throw new Error("StartGameView temporary purchase count missing: " + definition.itemId);
+    }
+    output[definition.itemId] = requireNonNegativeInteger(
+      temporaryPurchasesByItemId[definition.itemId],
+      "StartGameView temporary purchase count `" + definition.itemId + "`"
+    );
+  });
+  return output;
+}
+
+function getOwnedPowerupCount(renderState, itemId) {
+  requireObject(renderState, "StartGameView render state");
+  if (isTemporaryPowerupItem(itemId)) {
+    return requireNonNegativeInteger(
+      renderState.temporaryPurchasesByItemId[itemId],
+      "StartGameView temporary purchase count `" + itemId + "`"
+    );
+  }
+  return getInventoryCount(renderState.inventory, itemId);
+}
+
 function assertSelectedItems(selectedItems) {
   if (!Array.isArray(selectedItems)) {
     throw new Error("StartGameView selectedItems must be an array.");
@@ -198,9 +248,17 @@ function normalizePurchaseOptions(purchaseOptionsByItemId) {
   POWERUP_DEFINITIONS.forEach(function (definition) {
     var itemId = definition.itemId;
     var option = requireObject(purchaseOptionsByItemId[itemId], "StartGameView purchase option `" + itemId + "`");
+    if (typeof option.available !== "boolean") {
+      throw new Error("StartGameView purchase available `" + itemId + "` must be boolean.");
+    }
+    if (typeof option.unavailableMessage !== "string") {
+      throw new Error("StartGameView purchase unavailableMessage `" + itemId + "` must be a string.");
+    }
     output[itemId] = {
       price: requirePositiveInteger(option.price, "StartGameView purchase price `" + itemId + "`"),
-      remaining: requireNonNegativeInteger(option.remaining, "StartGameView purchase remaining `" + itemId + "`")
+      remaining: requireNonNegativeInteger(option.remaining, "StartGameView purchase remaining `" + itemId + "`"),
+      available: option.available,
+      unavailableMessage: option.unavailableMessage
     };
   });
   return output;
@@ -223,6 +281,9 @@ function StartGameViewController(options) {
   this._renderProxyRoot = null;
   this._renderProxyLayers = {};
   this._renderProxyRecords = [];
+  this._propRenderProxyRoot = null;
+  this._propRenderProxyLayers = {};
+  this._propRenderProxyRecords = [];
   this._initPropNodes();
   this._bindActions();
 }
@@ -236,7 +297,16 @@ StartGameViewController.prototype._resolveNodes = function () {
   var targetBallNode = requireChildNode(targetLayoutNode, "target_ball", "Panel/target/traget_layout");
   var targetIceNode = requireChildNode(targetLayoutNode, "target_ice", "Panel/target/traget_layout");
   var propListNode = requireChildNode(panelNode, "prop_listview", "Panel");
-  var propTemplateNode = requireChildNode(propListNode, "prop", "Panel/prop_listview");
+  var propViewNode = requireChildNode(propListNode, "view", "Panel/prop_listview");
+  var propContentNode = requireChildNode(propViewNode, "content", "Panel/prop_listview/view");
+  var propTemplateNode = requireChildNode(propContentNode, "prop", "Panel/prop_listview/view/content");
+  var scrollView = propListNode.getComponent(cc.ScrollView);
+  if (!scrollView) {
+    throw new Error("StartGameView prop_listview requires cc.ScrollView.");
+  }
+  if (scrollView.content !== propContentNode) {
+    throw new Error("StartGameView prop_listview ScrollView.content must be Panel/prop_listview/view/content.");
+  }
 
   return {
     mask: requireValidNode(findNodeByNameRecursive(this.node, "mask"), "mask"),
@@ -253,6 +323,8 @@ StartGameViewController.prototype._resolveNodes = function () {
     targetIceNode: targetIceNode,
     targetIceCountLabelNode: requireChildNode(targetIceNode, "num", "Panel/target/traget_layout/target_ice"),
     propListNode: propListNode,
+    propViewNode: propViewNode,
+    propContentNode: propContentNode,
     propTemplateNode: propTemplateNode
   };
 };
@@ -317,7 +389,7 @@ StartGameViewController.prototype._bindProxySyncToNode = function (node) {
 };
 
 StartGameViewController.prototype._ensureRenderProxyLayers = function () {
-  if (this._renderProxyRoot && this._renderProxyRoot.isValid) {
+  if (this._renderProxyRoot && this._renderProxyRoot.isValid && this._propRenderProxyRoot && this._propRenderProxyRoot.isValid) {
     return;
   }
 
@@ -330,14 +402,24 @@ StartGameViewController.prototype._ensureRenderProxyLayers = function () {
     { key: "panel", name: START_GAME_RENDER_PROXY_LAYER_NAMES.panel, zIndex: 0 },
     { key: "chrome", name: START_GAME_RENDER_PROXY_LAYER_NAMES.chrome, zIndex: 1 },
     { key: "target", name: START_GAME_RENDER_PROXY_LAYER_NAMES.target, zIndex: 2 },
-    { key: "propBackground", name: START_GAME_RENDER_PROXY_LAYER_NAMES.propBackground, zIndex: 3 },
-    { key: "propIcon", name: START_GAME_RENDER_PROXY_LAYER_NAMES.propIcon, zIndex: 4 },
-    { key: "propState", name: START_GAME_RENDER_PROXY_LAYER_NAMES.propState, zIndex: 5 }
+    { key: "propBackground", name: START_GAME_RENDER_PROXY_LAYER_NAMES.propBackground, zIndex: 3 }
+  ]);
+
+  var propRoot = SpriteProxyLayerHelper.createProxyRoot(this._nodes.propContentNode, {
+    name: START_GAME_PROP_RENDER_PROXY_ROOT_NAME,
+    zIndex: -1
+  });
+  this._propRenderProxyRoot = propRoot;
+  this._propRenderProxyLayers = SpriteProxyLayerHelper.createProxyLayers(propRoot, [
+    { key: "propBackground", name: START_GAME_RENDER_PROXY_LAYER_NAMES.propBackground, zIndex: 0 },
+    { key: "propIcon", name: START_GAME_RENDER_PROXY_LAYER_NAMES.propIcon, zIndex: 1 },
+    { key: "propState", name: START_GAME_RENDER_PROXY_LAYER_NAMES.propState, zIndex: 2 }
   ]);
 };
 
 StartGameViewController.prototype._clearRenderProxyRecords = function () {
   SpriteProxyLayerHelper.clearRecords(this._renderProxyRecords);
+  SpriteProxyLayerHelper.clearRecords(this._propRenderProxyRecords);
 };
 
 StartGameViewController.prototype._createSpriteProxyRecord = function (layerKey, sourceNode, name, visible) {
@@ -349,6 +431,20 @@ StartGameViewController.prototype._createSpriteProxyRecord = function (layerKey,
     layerNode: layerNode,
     sourceNode: sourceNode,
     rootNode: this._renderProxyRoot,
+    name: name,
+    visible: visible === true
+  }));
+};
+
+StartGameViewController.prototype._createPropSpriteProxyRecord = function (layerKey, sourceNode, name, visible) {
+  var layerNode = this._propRenderProxyLayers[layerKey];
+  if (!layerNode || !layerNode.isValid) {
+    throw new Error("StartGameView prop render proxy layer is invalid: " + layerKey);
+  }
+  this._propRenderProxyRecords.push(SpriteProxyLayerHelper.createRecord({
+    layerNode: layerNode,
+    sourceNode: sourceNode,
+    rootNode: this._propRenderProxyRoot,
     name: name,
     visible: visible === true
   }));
@@ -397,29 +493,52 @@ StartGameViewController.prototype._rebuildRenderProxies = function () {
 
   this._propNodes.forEach(function (entry, index) {
     this._hidePropSourceSprites(entry);
-    this._createSpriteProxyRecord("propBackground", entry.node, "start_game_prop_bg_proxy_" + index, true);
-    this._createSpriteProxyRecord("propBackground", requireChildNode(entry.node, "price_bg", entry.node.name), "start_game_prop_price_bg_proxy_" + index, true);
-    this._createSpriteProxyRecord("propIcon", entry.iconNode, "start_game_prop_icon_proxy_" + index, true);
-    this._createSpriteProxyRecord("propState", entry.selectNode, "start_game_prop_select_proxy_" + index, true);
-    this._createSpriteProxyRecord("propState", entry.coinNode, "start_game_prop_coin_proxy_" + index, true);
+    this._createPropSpriteProxyRecord("propBackground", entry.node, "start_game_prop_bg_proxy_" + index, true);
+    this._createPropSpriteProxyRecord("propBackground", requireChildNode(entry.node, "price_bg", entry.node.name), "start_game_prop_price_bg_proxy_" + index, true);
+    this._createPropSpriteProxyRecord("propIcon", entry.iconNode, "start_game_prop_icon_proxy_" + index, true);
+    this._createPropSpriteProxyRecord("propState", entry.selectNode, "start_game_prop_select_proxy_" + index, true);
+    this._createPropSpriteProxyRecord("propState", entry.coinNode, "start_game_prop_coin_proxy_" + index, true);
   }, this);
 };
 
 StartGameViewController.prototype._syncRenderProxies = function () {
-  if (!this._renderProxyRoot || !this._renderProxyRoot.isValid) {
+  if (!this._renderProxyRoot || !this._renderProxyRoot.isValid || !this._propRenderProxyRoot || !this._propRenderProxyRoot.isValid) {
     return;
   }
   SpriteProxyLayerHelper.syncRecords(this._renderProxyRecords, this._renderProxyRoot);
+  SpriteProxyLayerHelper.syncRecords(this._propRenderProxyRecords, this._propRenderProxyRoot);
+};
+
+StartGameViewController.prototype._layoutPropNodes = function () {
+  var contentNode = requireValidNode(this._nodes.propContentNode, "Panel/prop_listview/view/content");
+  var viewSize = getValidSize(this._nodes.propViewNode, "Panel/prop_listview/view");
+  var templateSize = getValidSize(this._nodes.propTemplateNode, "Panel/prop_listview/view/content/prop");
+  var contentAnchor = contentNode.getAnchorPoint();
+  var itemAnchor = this._nodes.propTemplateNode.getAnchorPoint();
+  var itemY = this._nodes.propTemplateNode.y;
+  if (!Number.isFinite(itemY)) {
+    throw new Error("StartGameView prop template y must be finite.");
+  }
+  var contentWidth = Math.max(
+    viewSize.width,
+    PROP_ITEM_HORIZONTAL_PADDING * 2 + templateSize.width * this._propNodes.length + PROP_ITEM_SPACING * (this._propNodes.length - 1)
+  );
+  contentNode.setContentSize(contentWidth, viewSize.height);
+
+  this._propNodes.forEach(function (entry, index) {
+    var x = -contentWidth * contentAnchor.x + PROP_ITEM_HORIZONTAL_PADDING + templateSize.width * itemAnchor.x + (templateSize.width + PROP_ITEM_SPACING) * index;
+    entry.node.setPosition(x, itemY);
+  }, this);
 };
 
 StartGameViewController.prototype._initPropNodes = function () {
-  var propListNode = requireValidNode(this._nodes.propListNode, "Panel/prop_listview");
-  var propTemplateNode = requireValidNode(this._nodes.propTemplateNode, "Panel/prop_listview/prop");
+  var propContentNode = requireValidNode(this._nodes.propContentNode, "Panel/prop_listview/view/content");
+  var propTemplateNode = requireValidNode(this._nodes.propTemplateNode, "Panel/prop_listview/view/content/prop");
 
   POWERUP_DEFINITIONS.forEach(function (definition, index) {
     var propNode = index === 0 ? propTemplateNode : cc.instantiate(propTemplateNode);
     if (index > 0) {
-      propNode.parent = propListNode;
+      propNode.parent = propContentNode;
     }
     propNode.name = "prop_" + definition.itemId;
     propNode.active = true;
@@ -435,6 +554,7 @@ StartGameViewController.prototype._initPropNodes = function () {
       selectNode: requireChildNode(propNode, "select", propNode.name)
     });
   }, this);
+  this._layoutPropNodes();
 
   this._propNodes.forEach(function (entry) {
     bindTapOnce(entry.node, "__startGamePropTapBound", function () {
@@ -520,13 +640,21 @@ StartGameViewController.prototype._onPropTap = function (itemId) {
 
   var index = this._selectedItems.indexOf(itemId);
   if (index >= 0) {
+    if (isTemporaryPowerupItem(itemId)) {
+      this.onUnavailable("已购买，本局开始后生效");
+      return;
+    }
     this._selectedItems.splice(index, 1);
     this._renderPropSelectionState();
     this._syncRenderProxies();
     return;
   }
 
-  var count = getInventoryCount(this._renderState.inventory, itemId);
+  var count = getOwnedPowerupCount(this._renderState, itemId);
+  if (this._selectedItems.length >= MAX_SELECTED_POWERUPS) {
+    this.onUnavailable("关卡中最多携带" + MAX_SELECTED_POWERUPS + "个道具");
+    return;
+  }
   if (count <= 0) {
     this._purchasePowerupAndSelect(itemId);
     return;
@@ -544,6 +672,13 @@ StartGameViewController.prototype._purchasePowerupAndSelect = function (itemId) 
   var purchaseOption = this._renderState.purchaseOptionsByItemId[itemId];
   if (!purchaseOption) {
     throw new Error("StartGameView purchase option missing for item: " + itemId);
+  }
+  if (purchaseOption.available !== true) {
+    if (purchaseOption.unavailableMessage.length === 0) {
+      throw new Error("StartGameView unavailable purchase option requires message: " + itemId);
+    }
+    this.onUnavailable(purchaseOption.unavailableMessage);
+    return;
   }
   if (purchaseOption.remaining <= 0) {
     this.onUnavailable("今日售罄");
@@ -563,13 +698,18 @@ StartGameViewController.prototype._purchasePowerupAndSelect = function (itemId) 
       this.onUnavailable(purchaseResult.message);
       return;
     }
-    requireObject(purchaseResult.inventory, "StartGameView purchase result inventory");
-    this._renderState.inventory = purchaseResult.inventory;
+    if (purchaseResult.inventory !== undefined) {
+      requireObject(purchaseResult.inventory, "StartGameView purchase result inventory");
+      this._renderState.inventory = purchaseResult.inventory;
+    }
+    if (purchaseResult.temporaryPurchasesByItemId !== undefined) {
+      this._renderState.temporaryPurchasesByItemId = normalizeTemporaryPurchases(purchaseResult.temporaryPurchasesByItemId);
+    }
     if (purchaseResult.purchaseOptionsByItemId !== undefined) {
       this._renderState.purchaseOptionsByItemId = normalizePurchaseOptions(purchaseResult.purchaseOptionsByItemId);
     }
-    if (getInventoryCount(this._renderState.inventory, itemId) <= 0) {
-      throw new Error("StartGameView purchased item must be added to inventory: " + itemId);
+    if (getOwnedPowerupCount(this._renderState, itemId) <= 0) {
+      throw new Error("StartGameView purchased item must be available: " + itemId);
     }
     if (this._selectedItems.indexOf(itemId) < 0) {
       this._selectedItems.push(itemId);
@@ -590,7 +730,6 @@ StartGameViewController.prototype._renderPropItems = function () {
   }
 
   var levelId = this._renderState.levelId;
-  var inventory = this._renderState.inventory;
   var purchaseOptionsByItemId = this._renderState.purchaseOptionsByItemId;
   this._propNodes.forEach(function (entry) {
     var definition = entry.definition;
@@ -601,7 +740,7 @@ StartGameViewController.prototype._renderPropItems = function () {
     entry.coinNode.active = false;
     entry.limitNode.active = true;
     if (unlocked) {
-      var count = getInventoryCount(inventory, definition.itemId);
+      var count = getOwnedPowerupCount(this._renderState, definition.itemId);
       if (count > 0) {
         setLabelText(entry.numNode, String(count), entry.node.name + "/num");
         setLabelText(entry.limitNode, "可使用", entry.node.name + "/limit");
@@ -611,7 +750,12 @@ StartGameViewController.prototype._renderPropItems = function () {
           throw new Error("StartGameView purchase option missing for item: " + definition.itemId);
         }
         entry.numNode.active = false;
-        if (purchaseOption.remaining > 0) {
+        if (purchaseOption.available !== true) {
+          if (purchaseOption.unavailableMessage.length === 0) {
+            throw new Error("StartGameView unavailable purchase option requires message: " + definition.itemId);
+          }
+          setLabelText(entry.limitNode, purchaseOption.unavailableMessage, entry.node.name + "/limit");
+        } else if (purchaseOption.remaining > 0) {
           entry.coinNode.active = true;
           entry.limitNode.active = false;
           setLabelText(entry.coinPriceNode, String(purchaseOption.price), entry.node.name + "/coin/num");
@@ -640,6 +784,7 @@ StartGameViewController.prototype._renderContent = function (options) {
   var staminaCost = requirePositiveInteger(options.staminaCost, "StartGameView staminaCost");
   requireObject(options.inventory, "StartGameView inventory");
   requireObject(options.objectives, "StartGameView objectives");
+  var temporaryPurchasesByItemId = normalizeTemporaryPurchases(options.temporaryPurchasesByItemId);
   if (!options.objectives.ball && !options.objectives.iceSnowball) {
     throw new Error("StartGameView requires at least one collection objective.");
   }
@@ -652,8 +797,10 @@ StartGameViewController.prototype._renderContent = function (options) {
   this._renderState = {
     levelId: levelId,
     inventory: options.inventory,
+    temporaryPurchasesByItemId: temporaryPurchasesByItemId,
     purchaseOptionsByItemId: purchaseOptionsByItemId
   };
+  var renderState = this._renderState;
   this._selectedItems = options.selectedItems.filter(function (itemId, index, list) {
     var definition = POWERUP_DEFINITIONS.filter(function (entry) {
       return entry.itemId === itemId;
@@ -663,7 +810,7 @@ StartGameViewController.prototype._renderContent = function (options) {
     }
     return list.indexOf(itemId) === index &&
       levelId >= definition.unlockLevel &&
-      getInventoryCount(options.inventory, itemId) > 0;
+      getOwnedPowerupCount(renderState, itemId) > 0;
   });
 
   setLabelText(this._nodes.levelLabelNode, "第" + levelId + "关", "Panel/title_bg/level");

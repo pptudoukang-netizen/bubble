@@ -4,6 +4,7 @@ var BundleLoader = require("../utils/BundleLoader");
 var Logger = require("../utils/Logger");
 var LevelConfigLoader = require("./LevelConfigLoader");
 var LevelPackManifest = require("./LevelPackManifest");
+var LevelPackCompactCodec = require("./LevelPackCompactCodec");
 
 function resolvePlatform(platform) {
   if (platform) {
@@ -313,11 +314,18 @@ RemoteLevelPackLoader.prototype._parsePack = function (packInfo, text) {
   if (parsed.packId !== packInfo.id) {
     throw new Error("remote level pack id mismatch: " + packInfo.id);
   }
+  if (parsed.format !== packInfo.format) {
+    throw new Error("remote level pack format mismatch: " + packInfo.id);
+  }
   if (parsed.from !== packInfo.from || parsed.to !== packInfo.to) {
     throw new Error("remote level pack range mismatch: " + packInfo.id);
   }
-  assertObject(parsed.levels, "remote level pack levels " + packInfo.id);
-  return parsed;
+  if (packInfo.format !== LevelPackManifest.PACK_FORMAT_COMPACT_V1) {
+    throw new Error("remote level pack format unsupported: " + packInfo.format);
+  }
+  var expanded = LevelPackCompactCodec.expandPack(parsed);
+  assertObject(expanded.levels, "remote level pack levels " + packInfo.id);
+  return expanded;
 };
 
 RemoteLevelPackLoader.prototype._fetchPackText = function (manifest, packInfo) {

@@ -24,6 +24,7 @@ function createGameManagerShotResolutionMethods(deps) {
   var MOLOTOV_BLAST_ANIMATION_DURATION = SpecialAnimationTiming.molotovBlast.totalDuration;
   var MOLOTOV_BLAST_TRIGGER_DELAY = SpecialAnimationTiming.molotovBlast.blastTriggerDelay;
   var FLOATING_ICE_DROP_DELAY = SpecialAnimationTiming.iceSnowballCollect.floatingIceDropDelay;
+  var KEY_UNLOCK_DROP_DELAY = SpecialAnimationTiming.keyUnlock.totalDuration;
   var MOLOTOV_BLAST_DROP_INNER_SPEED = 860;
   var MOLOTOV_BLAST_DROP_OUTER_SPEED = 640;
 
@@ -47,46 +48,181 @@ function createGameManagerShotResolutionMethods(deps) {
     return value;
   }
 
-  function compareLockedTargetsByKeyDistance(keyCell, grid) {
-    if (!keyCell || !Number.isInteger(keyCell.row) || !Number.isInteger(keyCell.col)) {
-      throw new Error("Key distance sort requires key coordinates.");
+  function measureWorldDistanceSqBetweenCells(leftCell, rightCell, grid) {
+    if (!leftCell || !Number.isInteger(leftCell.row) || !Number.isInteger(leftCell.col)) {
+      throw new Error("World distance requires left cell coordinates.");
+    }
+    if (!rightCell || !Number.isInteger(rightCell.row) || !Number.isInteger(rightCell.col)) {
+      throw new Error("World distance requires right cell coordinates.");
     }
     if (!grid || typeof grid.getCellPosition !== "function") {
-      throw new Error("Key distance sort requires grid.getCellPosition.");
+      throw new Error("World distance requires grid.getCellPosition.");
     }
-    var keyPosition = requireFinitePoint(
-      grid.getCellPosition(keyCell.row, keyCell.col),
-      "Key cell"
+
+    var leftPosition = requireFinitePoint(
+      grid.getCellPosition(leftCell.row, leftCell.col),
+      "Left cell"
     );
-    return function (leftTarget, rightTarget) {
-      if (!leftTarget || !Number.isInteger(leftTarget.row) || !Number.isInteger(leftTarget.col)) {
-        throw new Error("Locked target distance sort requires left target coordinates.");
+    var rightPosition = requireFinitePoint(
+      grid.getCellPosition(rightCell.row, rightCell.col),
+      "Right cell"
+    );
+    var dx = rightPosition.x - leftPosition.x;
+    var dy = rightPosition.y - leftPosition.y;
+    return dx * dx + dy * dy;
+  }
+
+  function compareWorldDistanceSq(leftDistanceSq, rightDistanceSq) {
+    if (typeof leftDistanceSq !== "number" || !isFinite(leftDistanceSq)) {
+      throw new Error("World distance compare requires left distanceSq.");
+    }
+    if (typeof rightDistanceSq !== "number" || !isFinite(rightDistanceSq)) {
+      throw new Error("World distance compare requires right distanceSq.");
+    }
+    return leftDistanceSq - rightDistanceSq;
+  }
+
+  function compareKeysForStableTiebreak(leftKey, rightKey) {
+    if (!leftKey || !Number.isInteger(leftKey.row) || !Number.isInteger(leftKey.col)) {
+      throw new Error("Key tiebreak requires left key coordinates.");
+    }
+    if (!rightKey || !Number.isInteger(rightKey.row) || !Number.isInteger(rightKey.col)) {
+      throw new Error("Key tiebreak requires right key coordinates.");
+    }
+    if (leftKey.row !== rightKey.row) {
+      return leftKey.row - rightKey.row;
+    }
+    if (leftKey.col !== rightKey.col) {
+      return leftKey.col - rightKey.col;
+    }
+    return String(leftKey.id).localeCompare(String(rightKey.id));
+  }
+
+  function compareLocksForStableTiebreak(leftLock, rightLock) {
+    if (!leftLock || !Number.isInteger(leftLock.row) || !Number.isInteger(leftLock.col)) {
+      throw new Error("Lock tiebreak requires left lock coordinates.");
+    }
+    if (!rightLock || !Number.isInteger(rightLock.row) || !Number.isInteger(rightLock.col)) {
+      throw new Error("Lock tiebreak requires right lock coordinates.");
+    }
+    if (leftLock.row !== rightLock.row) {
+      return leftLock.row - rightLock.row;
+    }
+    if (leftLock.col !== rightLock.col) {
+      return leftLock.col - rightLock.col;
+    }
+    return String(leftLock.id).localeCompare(String(rightLock.id));
+  }
+
+  function hasUnlockEntryForKey(keyCell, unlockedLockedBalls) {
+    if (!keyCell || (typeof keyCell.id !== "string" && typeof keyCell.id !== "number")) {
+      throw new Error("Key unlock lookup requires key id.");
+    }
+    if (!Array.isArray(unlockedLockedBalls)) {
+      throw new Error("Key unlock lookup requires unlockedLockedBalls array.");
+    }
+    return unlockedLockedBalls.some(function (entry) {
+      return entry && entry.__sourceKeyId === keyCell.id;
+    });
+  }
+
+  function findNearestLockForKey(keyCell, lockedTargets, grid) {
+    if (!keyCell) {
+      throw new Error("Nearest lock selection requires key cell.");
+    }
+    if (!Array.isArray(lockedTargets) || !lockedTargets.length) {
+      throw new Error("Nearest lock selection requires locked targets.");
+    }
+
+    var nearestLock = null;
+    var nearestDistanceSq = null;
+    lockedTargets.forEach(function (lockCell) {
+      var distanceSq = measureWorldDistanceSqBetweenCells(keyCell, lockCell, grid);
+      if (
+        nearestLock === null ||
+        compareWorldDistanceSq(distanceSq, nearestDistanceSq) < 0 ||
+        (
+          compareWorldDistanceSq(distanceSq, nearestDistanceSq) === 0 &&
+          compareLocksForStableTiebreak(lockCell, nearestLock) < 0
+        )
+      ) {
+        nearestLock = lockCell;
+        nearestDistanceSq = distanceSq;
       }
-      if (!rightTarget || !Number.isInteger(rightTarget.row) || !Number.isInteger(rightTarget.col)) {
-        throw new Error("Locked target distance sort requires right target coordinates.");
+    });
+
+    if (!nearestLock) {
+      throw new Error("Nearest lock selection failed for key: " + keyCell.id);
+    }
+    return nearestLock;
+  }
+
+  function buildNearestKeyLockPairings(groupKeys, lockedTargets, grid) {
+    if (!Array.isArray(groupKeys) || !groupKeys.length) {
+      throw new Error("Nearest key lock pairing requires group keys.");
+    }
+    if (!Array.isArray(lockedTargets) || !lockedTargets.length) {
+      throw new Error("Nearest key lock pairing requires locked targets.");
+    }
+    if (lockedTargets.length < groupKeys.length) {
+      throw new Error("Nearest key lock pairing requires at least one locked target per key.");
+    }
+
+    if (groupKeys.length === 1) {
+      return [{
+        keyCell: groupKeys[0],
+        lockCell: findNearestLockForKey(groupKeys[0], lockedTargets, grid)
+      }];
+    }
+
+    var remainingKeys = groupKeys.slice();
+    var remainingLocks = lockedTargets.slice();
+    var pairings = [];
+
+    while (remainingKeys.length && remainingLocks.length) {
+      var bestPair = null;
+      var bestDistanceSq = null;
+
+      remainingKeys.forEach(function (keyCell) {
+        remainingLocks.forEach(function (lockCell) {
+          var distanceSq = measureWorldDistanceSqBetweenCells(keyCell, lockCell, grid);
+          if (
+            !bestPair ||
+            compareWorldDistanceSq(distanceSq, bestDistanceSq) < 0 ||
+            (
+              compareWorldDistanceSq(distanceSq, bestDistanceSq) === 0 &&
+              (
+                compareKeysForStableTiebreak(keyCell, bestPair.keyCell) < 0 ||
+                (
+                  compareKeysForStableTiebreak(keyCell, bestPair.keyCell) === 0 &&
+                  compareLocksForStableTiebreak(lockCell, bestPair.lockCell) < 0
+                )
+              )
+            )
+          ) {
+            bestPair = {
+              keyCell: keyCell,
+              lockCell: lockCell
+            };
+            bestDistanceSq = distanceSq;
+          }
+        });
+      });
+
+      if (!bestPair) {
+        throw new Error("Nearest key lock pairing failed to resolve target.");
       }
-      var leftPosition = requireFinitePoint(
-        grid.getCellPosition(leftTarget.row, leftTarget.col),
-        "Locked target"
-      );
-      var rightPosition = requireFinitePoint(
-        grid.getCellPosition(rightTarget.row, rightTarget.col),
-        "Locked target"
-      );
-      var leftDx = leftPosition.x - keyPosition.x;
-      var leftDy = leftPosition.y - keyPosition.y;
-      var rightDx = rightPosition.x - keyPosition.x;
-      var rightDy = rightPosition.y - keyPosition.y;
-      var leftDistanceSq = leftDx * leftDx + leftDy * leftDy;
-      var rightDistanceSq = rightDx * rightDx + rightDy * rightDy;
-      if (leftDistanceSq !== rightDistanceSq) {
-        return leftDistanceSq - rightDistanceSq;
-      }
-      if (leftTarget.row !== rightTarget.row) {
-        return leftTarget.row - rightTarget.row;
-      }
-      return leftTarget.col - rightTarget.col;
-    };
+
+      pairings.push(bestPair);
+      remainingKeys = remainingKeys.filter(function (cell) {
+        return cell.id !== bestPair.keyCell.id;
+      });
+      remainingLocks = remainingLocks.filter(function (cell) {
+        return cell.id !== bestPair.lockCell.id;
+      });
+    }
+
+    return pairings;
   }
 
   function buildMolotovBlastDropVelocity(active, cell, grid) {
@@ -792,22 +928,56 @@ function createGameManagerShotResolutionMethods(deps) {
       };
     },
 
-    _registerResolutionDrops: function (cells, grid, resolution) {
+    _registerResolutionDrops: function (cells, grid, resolution, dropOptions) {
       if (!Array.isArray(cells)) {
         throw new Error("Resolution drop registration requires cells array.");
       }
+      if (
+        dropOptions !== undefined &&
+        (
+          !dropOptions ||
+          typeof dropOptions !== "object" ||
+          Array.isArray(dropOptions)
+        )
+      ) {
+        throw new Error("Resolution drop registration dropOptions must be an object when provided.");
+      }
 
-      var prepared = this._prepareResolutionDropCells(cells, resolution);
+      var pendingCells = cells.filter(function (cell) {
+        if (!cell) {
+          throw new Error("Resolution drop registration requires cell.");
+        }
+        return cell.__resolutionDropRegistered !== true;
+      });
+      if (!pendingCells.length) {
+        return;
+      }
+
+      var prepared = this._prepareResolutionDropCells(pendingCells, resolution);
       var immediateCandidates = this._splitMolotovDropCandidates(prepared.immediate);
-      this.systems.fallingMarbleSystem.registerDrops(immediateCandidates.immediate, grid);
+      if (immediateCandidates.immediate.length) {
+        this.systems.fallingMarbleSystem.registerDrops(
+          immediateCandidates.immediate,
+          grid,
+          dropOptions
+        );
+        immediateCandidates.immediate.forEach(function (cell) {
+          cell.__resolutionDropRegistered = true;
+        });
+      }
 
       if (prepared.delayedIce.length) {
         var delayedCandidates = this._splitMolotovDropCandidates(prepared.delayedIce);
-        this.systems.fallingMarbleSystem.registerDrops(
-          delayedCandidates.immediate,
-          grid,
-          { startDelay: FLOATING_ICE_DROP_DELAY }
-        );
+        if (delayedCandidates.immediate.length) {
+          this.systems.fallingMarbleSystem.registerDrops(
+            delayedCandidates.immediate,
+            grid,
+            { startDelay: FLOATING_ICE_DROP_DELAY }
+          );
+          delayedCandidates.immediate.forEach(function (cell) {
+            cell.__resolutionDropRegistered = true;
+          });
+        }
       }
     },
 
@@ -1085,17 +1255,17 @@ function createGameManagerShotResolutionMethods(deps) {
 
       var resolution = this.lastResolution;
       var grid = this.systems.bubbleGrid;
+      this._resolveCollectedKeyUnlocks(grid, resolution);
       var floatingCells = this.systems.supportSystem.findFloatingCells(grid);
       var removedFloating = grid.removeCells(floatingCells);
-      var collectedCells = context.allRemoved.concat(removedFloating);
+      this._appendUniqueCells(resolution.floating, removedFloating);
 
-      this._cancelPendingSplitterSpawnsForDroppedCells(removedFloating);
-      this._registerResolutionDrops(removedFloating, grid, resolution);
+      this._cancelPendingSplitterSpawnsForDroppedCells(resolution.floating);
+      this._registerResolutionDrops(resolution.floating, grid, resolution);
       this.systems.jarCollectorSystem.collect([]);
 
       resolution.matched = context.allRemoved.slice();
-      resolution.floating = removedFloating;
-      resolution.collected = collectedCells;
+      resolution.collected = context.allRemoved.concat(resolution.floating);
       resolution.boardCleared = grid.getCells().length === 0;
       this._applyResolutionDropScore(resolution, context.dropScoreRuleKey);
       this._registerComboElimination(resolution);
@@ -1146,6 +1316,115 @@ function createGameManagerShotResolutionMethods(deps) {
       }
     },
 
+    _removeUnsupportedUnlockedCells: function (unlockedEntries, grid, resolution) {
+      if (!Array.isArray(unlockedEntries)) {
+        throw new Error("Unsupported unlocked flush requires unlockedEntries array.");
+      }
+      if (!unlockedEntries.length) {
+        return [];
+      }
+      if (!grid || typeof grid.removeCells !== "function") {
+        throw new Error("Unsupported unlocked flush requires bubble grid.");
+      }
+      if (!resolution || !Array.isArray(resolution.floating)) {
+        throw new Error("Unsupported unlocked flush requires resolution.floating array.");
+      }
+      if (!this.systems.supportSystem || typeof this.systems.supportSystem.findFloatingCells !== "function") {
+        throw new Error("Unsupported unlocked flush requires supportSystem.findFloatingCells.");
+      }
+
+      var unlockedPositions = {};
+      unlockedEntries.forEach(function (entry) {
+        if (!entry || !Number.isInteger(entry.row) || !Number.isInteger(entry.col)) {
+          throw new Error("Unsupported unlocked flush requires unlocked cell coordinates.");
+        }
+        unlockedPositions[entry.row + ":" + entry.col] = true;
+      });
+
+      var floatingCells = this.systems.supportSystem.findFloatingCells(grid);
+      var targets = floatingCells.filter(function (cell) {
+        return unlockedPositions[cell.row + ":" + cell.col] === true;
+      });
+      if (!targets.length) {
+        return [];
+      }
+
+      var removed = grid.removeCells(targets);
+      this._appendUniqueCells(resolution.floating, removed);
+      if (removed.length) {
+        this._cancelPendingSplitterSpawnsForDroppedCells(removed);
+        this._registerResolutionDrops(removed, grid, resolution, {
+          startDelay: KEY_UNLOCK_DROP_DELAY
+        });
+      }
+      return removed;
+    },
+
+    _resolveCollectedKeyUnlocks: function (grid, resolution) {
+      if (!grid || typeof grid.getSpecialEntities !== "function" || typeof grid.addBubble !== "function") {
+        throw new Error("Collected key unlock requires bubble grid.");
+      }
+      if (!resolution || !Array.isArray(resolution.collectedKeys)) {
+        throw new Error("Collected key unlock requires resolution.collectedKeys array.");
+      }
+      if (!Array.isArray(resolution.unlockedLockedBalls)) {
+        throw new Error("Collected key unlock requires resolution.unlockedLockedBalls array.");
+      }
+      if (!Array.isArray(resolution.floating)) {
+        throw new Error("Collected key unlock requires resolution.floating array.");
+      }
+
+      var pendingKeys = resolution.collectedKeys.filter(function (keyCell) {
+        return keyCell && !hasUnlockEntryForKey(keyCell, resolution.unlockedLockedBalls);
+      });
+      if (!pendingKeys.length) {
+        return [];
+      }
+
+      var unlocked = [];
+      pendingKeys.forEach(function (keyCell) {
+        if (typeof keyCell.id !== "string" && typeof keyCell.id !== "number") {
+          throw new Error("Collected key requires id.");
+        }
+      });
+
+      var lockedTargets = grid.getSpecialEntities().filter(function (cell) {
+        return isLockedBall(cell);
+      });
+      if (!lockedTargets.length) {
+        throw new Error("Collected key has no locked target.");
+      }
+      if (lockedTargets.length < pendingKeys.length) {
+        throw new Error("Collected keys exceed remaining locked targets.");
+      }
+
+      var pairings = buildNearestKeyLockPairings(pendingKeys, lockedTargets, grid);
+      pairings.forEach(function (pair) {
+        var keyCell = pair.keyCell;
+        var targetCell = pair.lockCell;
+        if (typeof targetCell.lockedColor !== "string" || !targetCell.lockedColor) {
+          throw new Error("Locked ball requires lockedColor before unlock.");
+        }
+        var unlockedCell = grid.addBubble({ row: targetCell.row, col: targetCell.col }, targetCell.lockedColor);
+        if (!unlockedCell) {
+          throw new Error("Locked ball unlock failed for key: " + keyCell.id);
+        }
+        unlocked.push({
+          id: unlockedCell.id,
+          row: unlockedCell.row,
+          col: unlockedCell.col,
+          color: unlockedCell.color,
+          entityCategory: unlockedCell.entityCategory,
+          entityType: unlockedCell.entityType,
+          __sourceKeyId: keyCell.id
+        });
+      });
+
+      this._appendUniqueCells(resolution.unlockedLockedBalls, unlocked);
+      this._removeUnsupportedUnlockedCells(unlocked, grid, resolution);
+      return unlocked;
+    },
+
     _triggerAdjacentKeys: function (removedCells, grid, resolution) {
       var touched = {};
       var keys = [];
@@ -1181,42 +1460,6 @@ function createGameManagerShotResolutionMethods(deps) {
       var removedKeys = grid.removeCells(liveKeys);
       this._appendUniqueCells(removedKeys, keys);
       this._appendUniqueCells(resolution.collectedKeys, removedKeys);
-      var unlocked = [];
-      removedKeys.forEach(function (keyCell) {
-        var unlockGroup = keyCell.unlockGroup;
-        if (typeof unlockGroup !== "string" || !unlockGroup) {
-          throw new Error("Collected key requires unlockGroup.");
-        }
-        if (typeof keyCell.id !== "string" && typeof keyCell.id !== "number") {
-          throw new Error("Collected key requires id.");
-        }
-        var lockedTargets = grid.getCells().filter(function (cell) {
-          return isLockedBall(cell) && cell.lockGroup === unlockGroup;
-        });
-        if (!lockedTargets.length) {
-          throw new Error("Collected key has no locked target for unlockGroup: " + unlockGroup);
-        }
-        lockedTargets.sort(compareLockedTargetsByKeyDistance(keyCell, grid));
-        var targetCell = lockedTargets[0];
-        if (typeof targetCell.lockedColor !== "string" || !targetCell.lockedColor) {
-          throw new Error("Locked ball requires lockedColor before unlock.");
-        }
-        var unlockedCell = grid.addBubble({ row: targetCell.row, col: targetCell.col }, targetCell.lockedColor);
-        if (!unlockedCell) {
-          throw new Error("Locked ball unlock failed for group: " + unlockGroup);
-        }
-        unlocked.push({
-          id: unlockedCell.id,
-          row: unlockedCell.row,
-          col: unlockedCell.col,
-          color: unlockedCell.color,
-          entityCategory: unlockedCell.entityCategory,
-          entityType: unlockedCell.entityType,
-          __sourceUnlockGroup: unlockGroup,
-          __sourceKeyId: keyCell.id
-        });
-      });
-      this._appendUniqueCells(resolution.unlockedLockedBalls, unlocked);
       return removedKeys;
     },
 
@@ -1474,9 +1717,11 @@ function createGameManagerShotResolutionMethods(deps) {
         return resolution;
       }
 
+      this._resolveCollectedKeyUnlocks(grid, resolution);
       var floatingCells = this.systems.supportSystem.findFloatingCells(grid);
       var removedFloating = grid.removeCells(floatingCells);
-      var removedAll = removedBlastCells.concat(removedReactive).concat(removedFloating);
+      this._appendUniqueCells(resolution.floating, removedFloating);
+      var removedAll = removedBlastCells.concat(removedReactive).concat(resolution.floating);
       this._cancelPendingSplitterSpawnsForDroppedCells(removedAll);
 
       this._registerResolutionDrops(removedAll, grid, resolution);
@@ -1484,7 +1729,6 @@ function createGameManagerShotResolutionMethods(deps) {
 
 
       resolution.matched = removedBlastCells.concat(removedReactive);
-      resolution.floating = removedFloating;
       resolution.collected = removedAll;
       resolution.impact = this._createImpactEventFromCell(centerCoordinate);
       resolution.boardCleared = grid.getCells().length === 0;
@@ -1494,7 +1738,7 @@ function createGameManagerShotResolutionMethods(deps) {
       Logger.info("Blast resolution", {
         cleared: removedBlastCells.length,
         thawed: resolution.thawed.length,
-        floating: removedFloating.length,
+        floating: resolution.floating.length,
         injectedSkills: resolution.injectedSkills.length,
         scoreDelta: resolution.scoreDelta
       });
@@ -1642,16 +1886,17 @@ function createGameManagerShotResolutionMethods(deps) {
         return resolution;
       }
 
+      this._resolveCollectedKeyUnlocks(grid, resolution);
       var floatingCells = this.systems.supportSystem.findFloatingCells(grid);
       var removedFloating = grid.removeCells(floatingCells);
-      var collectedCells = removedMatches.concat(removedReactiveMatches).concat(removedFloating);
+      this._appendUniqueCells(resolution.floating, removedFloating);
+      var collectedCells = removedMatches.concat(removedReactiveMatches).concat(resolution.floating);
       this._cancelPendingSplitterSpawnsForDroppedCells(collectedCells);
 
       this._registerResolutionDrops(collectedCells, grid, resolution);
       this.systems.jarCollectorSystem.collect([]);
 
       resolution.matched = removedMatches.concat(removedReactiveMatches);
-      resolution.floating = removedFloating;
       resolution.collected = collectedCells;
       resolution.boardCleared = grid.getCells().length === 0;
       this._applyResolutionDropScore(resolution, "matchedDrop");
@@ -1660,7 +1905,7 @@ function createGameManagerShotResolutionMethods(deps) {
       Logger.info("Resolution", {
         matched: removedMatches.length,
         thawed: resolution.thawed.length,
-        floating: removedFloating.length,
+        floating: resolution.floating.length,
         collected: collectedCells.length,
         injectedSkills: resolution.injectedSkills.length,
         scoreDelta: resolution.scoreDelta

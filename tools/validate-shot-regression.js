@@ -7,6 +7,7 @@ var BoardLayout = require("../assets/scripts/config/BoardLayout");
 var AimTuningProfiles = require("../assets/scripts/config/AimTuningProfiles");
 var BubbleGrid = require("../assets/scripts/systems/BubbleGrid");
 var GameManager = require("../assets/scripts/core/GameManager");
+var LevelPackCompactCodec = require("../assets/scripts/config/LevelPackCompactCodec");
 var LevelPackManifest = require("../assets/scripts/config/LevelPackManifest");
 var SpecialAnimationTiming = require("../assets/scripts/config/SpecialAnimationTiming");
 var TrajectoryPredictor = require("../assets/scripts/systems/TrajectoryPredictor");
@@ -14,6 +15,32 @@ var TrajectoryPredictor = require("../assets/scripts/systems/TrajectoryPredictor
 var LEVEL_DIR = path.resolve(__dirname, "../assets/resources/config/levels");
 var MANIFEST_PATH = path.resolve(__dirname, "../assets/resources/config/level_manifest.json");
 var REMOTE_PACK_DIR = path.resolve(__dirname, "../remote-level-packs");
+
+function createKeyUnlockRegressionManager() {
+  var SupportSystem = require("../assets/scripts/systems/SupportSystem");
+  var manager = new GameManager();
+  manager.systems = {
+    supportSystem: new SupportSystem(),
+    fallingMarbleSystem: {
+      registerDrops: function () {}
+    }
+  };
+  return manager;
+}
+
+function createKeyUnlockResolution() {
+  return {
+    collectedKeys: [],
+    unlockedLockedBalls: [],
+    floating: []
+  };
+}
+
+function collectKeysAndResolveUnlocks(manager, removedCells, grid, resolution) {
+  var removedKeys = manager._triggerAdjacentKeys(removedCells, grid, resolution);
+  manager._resolveCollectedKeyUnlocks(grid, resolution);
+  return removedKeys;
+}
 
 function readJson(filePath) {
   var raw = fs.readFileSync(filePath, "utf8");
@@ -54,6 +81,13 @@ function loadLevelRaw(levelId) {
   var manifest = LevelPackManifest.normalizeManifest(readJson(MANIFEST_PATH));
   var pack = LevelPackManifest.findPackForLevelId(manifest, levelId);
   var packData = readJson(path.join(REMOTE_PACK_DIR, pack.id + ".json"));
+  if (packData.format !== pack.format) {
+    throw new Error("Remote pack format mismatch: " + pack.id);
+  }
+  if (pack.format !== LevelPackManifest.PACK_FORMAT_COMPACT_V1) {
+    throw new Error("Remote pack format unsupported: " + pack.format);
+  }
+  packData = LevelPackCompactCodec.expandPack(packData);
   if (!packData.levels || !packData.levels[key]) {
     throw new Error("Missing remote level config: " + key + " in " + pack.id);
   }
@@ -185,10 +219,10 @@ function runKeyUnlockBoardAdvanceDelayCase() {
     manager.shotsFired = 1;
     manager.lastResolution = {
       collectedKeys: [
-        { id: "key_1", row: 1, col: 1, unlockGroup: "group_a" }
+        { id: "key_1", row: 1, col: 1 }
       ],
       unlockedLockedBalls: [
-        { id: "locked_1", row: 1, col: 2, __sourceUnlockGroup: "group_a" }
+        { id: "locked_1", row: 1, col: 2, __sourceKeyId: "key_1" }
       ],
       boardDropped: false
     };
@@ -376,7 +410,7 @@ function runImpactBounceBoardAdvanceSameUpdateFrameCase() {
 }
 
 function runKeyUnlockSingleTargetCase() {
-  var manager = new GameManager();
+  var manager = createKeyUnlockRegressionManager();
   var grid = new BubbleGrid();
   var levelConfig = {
     coordinateSystem: "odd-r-hex",
@@ -388,16 +422,13 @@ function runKeyUnlockSingleTargetCase() {
         "........."
       ],
       specialEntities: [
-        { id: "key_1", entityCategory: "key_ball", entityType: "key", unlockGroup: "group_a", row: 1, col: 1 },
-        { id: "locked_1", entityCategory: "locked_ball", entityType: "locked", lockedColor: "R", lockGroup: "group_a", row: 1, col: 2 },
-        { id: "locked_2", entityCategory: "locked_ball", entityType: "locked", lockedColor: "B", lockGroup: "group_a", row: 2, col: 1 }
+        { id: "key_1", entityCategory: "key_ball", entityType: "key", row: 1, col: 1 },
+        { id: "locked_1", entityCategory: "locked_ball", entityType: "locked", lockedColor: "R", row: 1, col: 2 },
+        { id: "locked_2", entityCategory: "locked_ball", entityType: "locked", lockedColor: "B", row: 2, col: 1 }
       ]
     }
   };
-  var resolution = {
-    collectedKeys: [],
-    unlockedLockedBalls: []
-  };
+  var resolution = createKeyUnlockResolution();
 
   grid.configureLevel(levelConfig);
   var keyCell = grid.getCell(1, 1);
@@ -405,7 +436,7 @@ function runKeyUnlockSingleTargetCase() {
     throw new Error("Key unlock regression setup failed to create key cell.");
   }
 
-  var removedKeys = manager._triggerAdjacentKeys([keyCell], grid, resolution);
+  var removedKeys = collectKeysAndResolveUnlocks(manager, [keyCell], grid, resolution);
   if (removedKeys.length !== 1 || resolution.collectedKeys.length !== 1) {
     throw new Error("Key unlock regression expected exactly one collected key.");
   }
@@ -417,7 +448,7 @@ function runKeyUnlockSingleTargetCase() {
   }
 
   var remainingLockedCount = grid.getCells().filter(function (cell) {
-    return cell && cell.entityCategory === "locked_ball" && cell.lockGroup === "group_a";
+    return cell && cell.entityCategory === "locked_ball";
   }).length;
   if (remainingLockedCount !== 1) {
     throw new Error("One key must leave the second same-group locked ball locked.");
@@ -425,7 +456,7 @@ function runKeyUnlockSingleTargetCase() {
 }
 
 function runKeyUnlockNearestTargetCase() {
-  var manager = new GameManager();
+  var manager = createKeyUnlockRegressionManager();
   var grid = new BubbleGrid();
   var levelConfig = {
     coordinateSystem: "odd-r-hex",
@@ -438,16 +469,13 @@ function runKeyUnlockNearestTargetCase() {
         "........."
       ],
       specialEntities: [
-        { id: "key_1", entityCategory: "key_ball", entityType: "key", unlockGroup: "group_a", row: 1, col: 1 },
-        { id: "locked_far", entityCategory: "locked_ball", entityType: "locked", lockedColor: "R", lockGroup: "group_a", row: 1, col: 3 },
-        { id: "locked_near", entityCategory: "locked_ball", entityType: "locked", lockedColor: "B", lockGroup: "group_a", row: 2, col: 1 }
+        { id: "key_1", entityCategory: "key_ball", entityType: "key", row: 1, col: 1 },
+        { id: "locked_far", entityCategory: "locked_ball", entityType: "locked", lockedColor: "R", row: 1, col: 3 },
+        { id: "locked_near", entityCategory: "locked_ball", entityType: "locked", lockedColor: "B", row: 2, col: 1 }
       ]
     }
   };
-  var resolution = {
-    collectedKeys: [],
-    unlockedLockedBalls: []
-  };
+  var resolution = createKeyUnlockResolution();
 
   grid.configureLevel(levelConfig);
   var keyCell = grid.getCell(1, 1);
@@ -455,13 +483,214 @@ function runKeyUnlockNearestTargetCase() {
     throw new Error("Key nearest-target regression setup failed to create key cell.");
   }
 
-  manager._triggerAdjacentKeys([keyCell], grid, resolution);
+  collectKeysAndResolveUnlocks(manager, [keyCell], grid, resolution);
   if (resolution.unlockedLockedBalls.length !== 1) {
     throw new Error("Key nearest-target regression expected exactly one unlocked locked ball.");
   }
   var unlockedTarget = resolution.unlockedLockedBalls[0];
   if (unlockedTarget.row !== 2 || unlockedTarget.col !== 1) {
     throw new Error("Key must unlock the visually nearest locked ball.");
+  }
+}
+
+function runKeyUnlockCompetitiveNearestCase() {
+  var manager = createKeyUnlockRegressionManager();
+  var grid = new BubbleGrid();
+  var levelConfig = {
+    coordinateSystem: "odd-r-hex",
+    level: {
+      initialDropSpaceRows: 8,
+      layout: [
+        ".........",
+        ".........",
+        ".........",
+        "........."
+      ],
+      specialEntities: [
+        { id: "key_left", entityCategory: "key_ball", entityType: "key", row: 2, col: 1 },
+        { id: "key_right", entityCategory: "key_ball", entityType: "key", row: 2, col: 5 },
+        { id: "locked_left", entityCategory: "locked_ball", entityType: "locked", lockedColor: "R", row: 2, col: 2 },
+        { id: "locked_right", entityCategory: "locked_ball", entityType: "locked", lockedColor: "B", row: 2, col: 4 }
+      ]
+    }
+  };
+  var resolution = createKeyUnlockResolution();
+
+  grid.configureLevel(levelConfig);
+  var leftKey = grid.getCell(2, 1);
+  var rightKey = grid.getCell(2, 5);
+  if (!leftKey || !rightKey) {
+    throw new Error("Competitive nearest-key regression setup failed to create key cells.");
+  }
+
+  collectKeysAndResolveUnlocks(manager, [leftKey, rightKey], grid, resolution);
+  if (resolution.unlockedLockedBalls.length !== 2) {
+    throw new Error("Competitive nearest-key regression expected two unlocked locked balls.");
+  }
+
+  var leftUnlock = resolution.unlockedLockedBalls.find(function (cell) {
+    return cell.__sourceKeyId === "key_left";
+  });
+  var rightUnlock = resolution.unlockedLockedBalls.find(function (cell) {
+    return cell.__sourceKeyId === "key_right";
+  });
+  if (!leftUnlock || leftUnlock.row !== 2 || leftUnlock.col !== 2) {
+    throw new Error("Left key must unlock nearest locked ball on its right.");
+  }
+  if (!rightUnlock || rightUnlock.row !== 2 || rightUnlock.col !== 4) {
+    throw new Error("Right key must unlock nearest locked ball on its left.");
+  }
+}
+
+function runKeyUnlockSequentialWaveCase() {
+  var manager = createKeyUnlockRegressionManager();
+  var grid = new BubbleGrid();
+  var levelConfig = {
+    coordinateSystem: "odd-r-hex",
+    level: {
+      initialDropSpaceRows: 8,
+      layout: [
+        ".........",
+        ".........",
+        ".........",
+        ".........",
+        "........."
+      ],
+      specialEntities: [
+        { id: "key_far", entityCategory: "key_ball", entityType: "key", row: 2, col: 1 },
+        { id: "key_near", entityCategory: "key_ball", entityType: "key", row: 2, col: 3 },
+        { id: "locked_a", entityCategory: "locked_ball", entityType: "locked", lockedColor: "R", row: 2, col: 4 },
+        { id: "locked_b", entityCategory: "locked_ball", entityType: "locked", lockedColor: "B", row: 2, col: 6 }
+      ]
+    }
+  };
+  var resolution = createKeyUnlockResolution();
+
+  grid.configureLevel(levelConfig);
+  var farKey = grid.getCell(2, 1);
+  var nearKey = grid.getCell(2, 3);
+  if (!farKey || !nearKey) {
+    throw new Error("Sequential key unlock regression setup failed to create key cells.");
+  }
+
+  manager._triggerAdjacentKeys([farKey], grid, resolution);
+  manager._triggerAdjacentKeys([nearKey], grid, resolution);
+  manager._resolveCollectedKeyUnlocks(grid, resolution);
+
+  if (resolution.unlockedLockedBalls.length !== 2) {
+    throw new Error("Sequential key unlock regression expected two unlocked locked balls.");
+  }
+
+  var nearUnlock = resolution.unlockedLockedBalls.find(function (cell) {
+    return cell.__sourceKeyId === "key_near";
+  });
+  var farUnlock = resolution.unlockedLockedBalls.find(function (cell) {
+    return cell.__sourceKeyId === "key_far";
+  });
+  if (!nearUnlock || nearUnlock.row !== 2 || nearUnlock.col !== 4) {
+    throw new Error("Near key must unlock the visually nearest locked ball after deferred pairing.");
+  }
+  if (!farUnlock || farUnlock.row !== 2 || farUnlock.col !== 6) {
+    throw new Error("Far key must unlock the remaining locked ball after deferred pairing.");
+  }
+}
+
+function runKeyUnlockUnsupportedFallsCase() {
+  var manager = new GameManager();
+  var grid = new BubbleGrid();
+  var support = require("../assets/scripts/systems/SupportSystem");
+  var supportSystem = new support();
+  var falling = require("../assets/scripts/systems/FallingMarbleSystem");
+  var fallingMarbleSystem = new falling();
+  var levelConfig = {
+    coordinateSystem: "odd-r-hex",
+    colors: ["R", "G", "B"],
+    level: {
+      initialDropSpaceRows: 8,
+      colors: ["R", "G", "B"],
+      jarColors: ["R", "G", "B"],
+      layout: [
+        ".........",
+        ".........",
+        "GGG.......",
+        "G.........",
+        "........."
+      ],
+      specialEntities: [
+        { id: "key_1", entityCategory: "key_ball", entityType: "key", row: 3, col: 1 },
+        { id: "locked_1", entityCategory: "locked_ball", entityType: "locked", lockedColor: "R", row: 3, col: 2 }
+      ]
+    },
+    sharedDefaults: {
+      fallingRules: {
+        maxDynamicMarbles: 20,
+        maxBounces: 3
+      }
+    }
+  };
+  var match = require("../assets/scripts/systems/MatchSystem");
+  var matchSystem = new match();
+  var jars = require("../assets/scripts/systems/JarCollectorSystem");
+  var jarCollectorSystem = new jars();
+
+  grid.configureLevel(levelConfig);
+  supportSystem.configureLevel(levelConfig);
+  matchSystem.configureLevel(levelConfig);
+  fallingMarbleSystem.configureLevel(levelConfig);
+  jarCollectorSystem.configureLevel(levelConfig);
+
+  manager.systems = {
+    bubbleGrid: grid,
+    supportSystem: supportSystem,
+    matchSystem: matchSystem,
+    fallingMarbleSystem: fallingMarbleSystem,
+    jarCollectorSystem: jarCollectorSystem
+  };
+
+  var previousCc = global.cc;
+  global.cc = { log: function () {} };
+
+  try {
+    var attached = grid.getCell(2, 1);
+    if (!attached || attached.color !== "G") {
+      throw new Error("Unsupported unlock fall regression setup failed to create green match anchor.");
+    }
+    var resolution = manager._resolveAttachment(attached);
+    if (resolution.floating.length !== 1) {
+      throw new Error("Unsupported unlocked locked ball must enter floating resolution.");
+    }
+    if (resolution.floating[0].row !== 3 || resolution.floating[0].col !== 2 || resolution.floating[0].color !== "R") {
+      throw new Error("Unsupported unlocked locked ball must float as unlocked color.");
+    }
+    if (grid.getCell(3, 2)) {
+      throw new Error("Unsupported unlocked locked ball must be removed from the board.");
+    }
+    if (fallingMarbleSystem.activeDrops.length < 1) {
+      throw new Error("Unsupported unlocked locked ball must register falling drops.");
+    }
+    var unlockedDrop = fallingMarbleSystem.activeDrops.find(function (drop) {
+      return drop && drop.row === 3 && drop.col === 2 && drop.color === "R";
+    });
+    if (!unlockedDrop) {
+      throw new Error("Unsupported unlocked locked ball must produce a falling drop at unlock coordinates.");
+    }
+    if (unlockedDrop.startDelay !== SpecialAnimationTiming.keyUnlock.totalDuration) {
+      throw new Error("Unsupported unlocked locked ball must wait for key unlock animation.");
+    }
+    if (resolution.floating[0].__resolutionDropRegistered !== true) {
+      throw new Error("Unsupported unlocked locked ball must register drops during unlock flush.");
+    }
+    var dropCountAfterResolve = fallingMarbleSystem.activeDrops.length;
+    manager._registerResolutionDrops(resolution.floating, grid, resolution);
+    if (fallingMarbleSystem.activeDrops.length !== dropCountAfterResolve) {
+      throw new Error("Unsupported unlocked locked ball drops must not be registered twice.");
+    }
+  } finally {
+    if (previousCc) {
+      global.cc = previousCc;
+    } else {
+      delete global.cc;
+    }
   }
 }
 
@@ -695,6 +924,53 @@ function runObjectiveWinRequiresStarAndAllTargetsCase() {
   }
 }
 
+function runReviveDangerSpaceKeepsLockedBallCase() {
+  var grid = new BubbleGrid();
+  var levelConfig = {
+    coordinateSystem: "odd-r-hex",
+    level: {
+      initialDropSpaceRows: 8,
+      layout: [
+        "..........",
+        "..........",
+        "..........",
+        "..........",
+        "..........",
+        "..........",
+        "..........",
+        "..........",
+        ".........."
+      ],
+      specialEntities: [
+        {
+          id: "locked_revive_anchor",
+          entityCategory: "locked_ball",
+          entityType: "locked",
+          lockedColor: "R",
+          row: 8,
+          col: 4
+        }
+      ]
+    }
+  };
+
+  grid.configureLevel(levelConfig);
+  grid.advanceRows(10);
+
+  var result = grid.ensureDangerLineSpaceRows(3);
+  if (result.shiftRows !== 3) {
+    throw new Error("Ad revive danger space must shift the board up three rows when initial top space allows it.");
+  }
+  if (result.removedCells.length !== 0) {
+    throw new Error("Ad revive danger space must not remove cells when three-row shift is available.");
+  }
+
+  var lockedCell = grid.getCell(8, 4);
+  if (!lockedCell || lockedCell.entityCategory !== "locked_ball" || lockedCell.entityType !== "locked") {
+    throw new Error("Ad revive danger space must keep unsupported locked balls on the board.");
+  }
+}
+
 function main() {
   var cases = buildRegressionCases();
   var results = cases.map(runCase);
@@ -723,6 +999,12 @@ function main() {
   console.log("[OK]", "key_unlock_single_target", "one key unlocked one locked ball");
   runKeyUnlockNearestTargetCase();
   console.log("[OK]", "key_unlock_nearest_target", "key unlocked visually nearest locked ball");
+  runKeyUnlockCompetitiveNearestCase();
+  console.log("[OK]", "key_unlock_competitive_nearest", "each key unlocked nearest lock in shared group");
+  runKeyUnlockSequentialWaveCase();
+  console.log("[OK]", "key_unlock_sequential_wave", "deferred pairing kept nearest lock for later collected key");
+  runKeyUnlockUnsupportedFallsCase();
+  console.log("[OK]", "key_unlock_unsupported_falls", "unsupported unlocked locked ball falls instead of disappearing");
   runMolotovChainQueueCase();
   console.log("[OK]", "molotov_chain_queue", "adjacent molotov queued after neighbor removal");
   runAdjacentIceThawSnowballCollectionCase();
@@ -731,6 +1013,8 @@ function main() {
   console.log("[OK]", "floating_ice_drop_thaw_before_fall", "floating ice thaws, flies, then drops inner ball");
   runObjectiveWinRequiresStarAndAllTargetsCase();
   console.log("[OK]", "objective_win_requires_star_and_all_targets", "requires one star and every collection target");
+  runReviveDangerSpaceKeepsLockedBallCase();
+  console.log("[OK]", "revive_danger_space_keeps_locked_ball", "shifted board up without removing unsupported locked ball");
 
   if (failed) {
     console.log("\nShot regression validation failed.");

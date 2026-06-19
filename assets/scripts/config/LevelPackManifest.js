@@ -3,6 +3,7 @@
 var MANIFEST_RESOURCE_PATH = "config/level_manifest";
 var LOCAL_LEVEL_MAX = 10;
 var TOTAL_LEVEL_COUNT = 1000;
+var PACK_FORMAT_COMPACT_V1 = "compact-schema-v1";
 
 function assertObject(value, fieldName) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -46,6 +47,10 @@ function normalizePack(pack, index) {
     throw new Error("level manifest packs[" + index + "].sha256 must be 64 lowercase hex chars.");
   }
   var bytes = assertPositiveInteger(pack.bytes, "level manifest packs[" + index + "].bytes");
+  var format = assertNonEmptyString(pack.format, "level manifest packs[" + index + "].format");
+  if (format !== PACK_FORMAT_COMPACT_V1) {
+    throw new Error("level manifest packs[" + index + "].format unsupported: " + format);
+  }
 
   return {
     id: id,
@@ -53,7 +58,8 @@ function normalizePack(pack, index) {
     to: to,
     fileID: fileID,
     sha256: sha256,
-    bytes: bytes
+    bytes: bytes,
+    format: format
   };
 }
 
@@ -125,6 +131,7 @@ module.exports = {
   MANIFEST_RESOURCE_PATH: MANIFEST_RESOURCE_PATH,
   LOCAL_LEVEL_MAX: LOCAL_LEVEL_MAX,
   TOTAL_LEVEL_COUNT: TOTAL_LEVEL_COUNT,
+  PACK_FORMAT_COMPACT_V1: PACK_FORMAT_COMPACT_V1,
   normalizeManifest: normalizeManifest,
   findPackForLevelId: findPackForLevelId
 };

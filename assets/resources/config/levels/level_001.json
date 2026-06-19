@@ -39,20 +39,21 @@
         ],
         "colorCount": 2,
         "colors": [
-            "R",
-            "B"
+            "B",
+            "R"
         ],
         "shotLimit": 14,
         "targetScore": 2400,
         "dropInterval": 6,
-        "jarCount": 2,
+        "jarCount": 3,
         "jarColors": [
             "R",
+            "B",
             "B"
         ],
         "spawnWeights": {
-            "R": 1.15,
-            "B": 1.3
+            "B": 1,
+            "R": 1
         },
         "jarRules": {
             "rimBounce": 0.68,
@@ -62,8 +63,8 @@
         "winConditions": [
             {
                 "type": "collect_color",
-                "color": "B",
-                "value": 12
+                "value": 6,
+                "color": "B"
             }
         ],
         "bonusObjectives": [
@@ -83,9 +84,9 @@
             }
         ],
         "layout": [
-            "RBRBRBRBRB",
-            "RBRBRBRBR",
-            "BRBRBR....",
+            "BBBBBBBBBB",
+            "RRRRRRRRR",
+            "RRRBBBBRRR",
             ".........",
             "..........",
             ".........",
@@ -107,7 +108,14 @@
                 "three_line_elimination": 1,
                 "plus_three_balls": 1
             }
-        }
+        },
+        "aimCollisionRadius": 58,
+        "aimTunnelAssistRadius": 42,
+        "aimSlotProbeRadius": 23,
+        "aimSlotCaptureTightness": 0.78,
+        "aimSlotOpenMinAlignment": 0.2,
+        "aimSlotVsBubbleTieDistance": 14,
+        "aimSlotPriorityConfidence": 0.58
     },
     "difficultyScaleMax": 100
 }

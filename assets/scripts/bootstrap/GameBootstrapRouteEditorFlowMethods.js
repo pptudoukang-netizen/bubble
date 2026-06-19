@@ -77,6 +77,9 @@ module.exports = {
       }.bind(this));
     }.bind(this)).catch(function (error) {
       this.isRestarting = false;
+      if (typeof this._refundPendingStartGameTemporaryPowerups === "function") {
+        this._refundPendingStartGameTemporaryPowerups();
+      }
       this._pendingStartGamePowerups = [];
       this._pendingRouteEditorAutoEnable = false;
       this._setDropTestButtonVisible(!!this.currentLevelConfig && !this.isSelectingLevel);

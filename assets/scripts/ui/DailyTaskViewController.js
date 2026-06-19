@@ -132,6 +132,46 @@ function bindTapWithDynamicHandler(node, handlerProperty) {
   });
 }
 
+function ensureTaskButtonComponent(buttonNode) {
+  if (!buttonNode || !buttonNode.isValid) {
+    throw new Error("DailyTaskView go_btn node is invalid.");
+  }
+  var button = buttonNode.getComponent(cc.Button);
+  if (!button) {
+    button = buttonNode.addComponent(cc.Button);
+    button.transition = cc.Button.Transition.SCALE;
+    button.duration = 0.1;
+    button.zoomScale = 0.96;
+  }
+  return button;
+}
+
+function bindTaskButtonWithDynamicHandler(buttonNode, handlerProperty) {
+  if (!buttonNode || !buttonNode.isValid) {
+    throw new Error("Cannot bind task button on invalid DailyTaskView node.");
+  }
+  ensureTaskButtonComponent(buttonNode);
+  if (buttonNode.__dailyTaskButtonTapBound === true) {
+    return;
+  }
+  buttonNode.__dailyTaskButtonTapBound = true;
+  buttonNode.on(cc.Node.EventType.TOUCH_END, function (event) {
+    if (event) {
+      event.stopPropagation();
+    }
+    var handler = buttonNode[handlerProperty];
+    if (typeof handler !== "function") {
+      return;
+    }
+    var result = handler();
+    if (result && typeof result.then === "function") {
+      result.catch(function (error) {
+        throw error;
+      });
+    }
+  });
+}
+
 function loadResourceSpriteFrame(path) {
   return new Promise(function (resolve, reject) {
     BundleLoader.loadRes(path, cc.SpriteFrame, function (error, spriteFrame) {
@@ -474,10 +514,12 @@ DailyTaskViewController.prototype._renderTask = function (task, index, totalCoun
   setSpriteFrame(nodes.awardSprite, this._spriteFrames[COIN_ICON_PATH]);
 
   var action = getTaskAction(task);
+  var taskButton = ensureTaskButtonComponent(nodes.buttonNode);
   var buttonFrame = action === "open" ? this._spriteFrames[GO_BUTTON_PATH] : this._spriteFrames[CLAIM_BUTTON_PATH];
   setSpriteFrame(nodes.buttonSprite, buttonFrame);
   nodes.buttonNode.opacity = action === "claimed" ? 150 : 255;
   nodes.buttonNode.color = action === "claimed" ? cc.color(150, 150, 150) : cc.color(255, 255, 255);
+  taskButton.interactable = action === "open" || action === "claim";
   nodes.buttonNode.__dailyTaskActionHandler = null;
   if (action === "claim") {
     nodes.buttonNode.__dailyTaskActionHandler = function () {
@@ -488,7 +530,7 @@ DailyTaskViewController.prototype._renderTask = function (task, index, totalCoun
       this.onGo(task);
     }.bind(this);
   }
-  bindTapWithDynamicHandler(nodes.buttonNode, "__dailyTaskActionHandler");
+  bindTaskButtonWithDynamicHandler(nodes.buttonNode, "__dailyTaskActionHandler");
   this._bindProxySyncToNode(nodes.buttonNode);
 };
 
@@ -505,6 +547,7 @@ DailyTaskViewController.prototype.render = function (summary) {
     }, this);
     this._rebuildStaticRenderProxies();
     this._rebuildListRenderProxies();
+    this._syncRenderProxies();
   }.bind(this));
 };
 

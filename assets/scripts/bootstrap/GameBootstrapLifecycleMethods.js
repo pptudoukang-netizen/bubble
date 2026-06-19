@@ -32,6 +32,15 @@ module.exports = {
     if (typeof this._unbindReturnToForegroundInterstitialAd === "function") {
       this._unbindReturnToForegroundInterstitialAd();
     }
+    if (this._startGameNativeTemplateAdShowing === true && typeof this._hideStartGameNativeTemplateAd === "function") {
+      this._hideStartGameNativeTemplateAd();
+    }
+    if (this._resultNativeTemplateAdShowing === true && typeof this._hideResultNativeTemplateAd === "function") {
+      this._hideResultNativeTemplateAd();
+    }
+    if (typeof this._hideLevelSelectNativeTemplateAd === "function") {
+      this._hideLevelSelectNativeTemplateAd();
+    }
     if (typeof this._clearStaminaRecoveryTicker === "function") {
       this._clearStaminaRecoveryTicker();
     }
@@ -45,6 +54,15 @@ module.exports = {
     this._unbindFriendGiftEnterClaim();
     if (typeof this._unbindReturnToForegroundInterstitialAd === "function") {
       this._unbindReturnToForegroundInterstitialAd();
+    }
+    if (this._startGameNativeTemplateAdShowing === true && typeof this._hideStartGameNativeTemplateAd === "function") {
+      this._hideStartGameNativeTemplateAd();
+    }
+    if (this._resultNativeTemplateAdShowing === true && typeof this._hideResultNativeTemplateAd === "function") {
+      this._hideResultNativeTemplateAd();
+    }
+    if (typeof this._hideLevelSelectNativeTemplateAd === "function") {
+      this._hideLevelSelectNativeTemplateAd();
     }
     if (typeof this._clearStaminaRecoveryTicker === "function") {
       this._clearStaminaRecoveryTicker();
@@ -63,6 +81,15 @@ module.exports = {
 
   _handleViewResize: function () {
     this._applyViewportLayout();
+    if (this.isSelectingLevel && typeof this._refreshLevelSelectNativeTemplateAdLayout === "function") {
+      this._refreshLevelSelectNativeTemplateAdLayout();
+    }
+    if (this._startGameViewNode && this._startGameViewNode.isValid && this._startGameViewNode.active && typeof this._refreshStartGameNativeTemplateAdLayout === "function") {
+      this._refreshStartGameNativeTemplateAdLayout();
+    }
+    if (this._resultNativeTemplateAdShowing === true && typeof this._refreshResultNativeTemplateAdLayout === "function") {
+      this._refreshResultNativeTemplateAdLayout();
+    }
     if (this._loadingViewController && this._loadingViewController.refreshLayout) {
       this._loadingViewController.refreshLayout();
     }

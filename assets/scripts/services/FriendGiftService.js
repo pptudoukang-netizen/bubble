@@ -39,6 +39,28 @@ function requirePositiveInteger(value, fieldName) {
 }
 
 var CREATE_STAMINA_GIFT_FUNCTION_NAME = "createSelfManagedFriendStaminaGift";
+var CLIENT_GIFT_RECORD_ID_PATTERN = /^friend_stamina_gift_[a-f0-9]{16,64}$/;
+
+function buildClientGiftRecordId() {
+  var timeHex = Date.now().toString(16);
+  var randomOne = Math.floor(Math.random() * 0x100000000).toString(16);
+  while (randomOne.length < 8) {
+    randomOne = "0" + randomOne;
+  }
+  var randomTwo = Math.floor(Math.random() * 0x100000000).toString(16);
+  while (randomTwo.length < 8) {
+    randomTwo = "0" + randomTwo;
+  }
+  return "friend_stamina_gift_" + timeHex + randomOne + randomTwo;
+}
+
+function requireClientGiftRecordId(value, fieldName) {
+  var normalized = requireNonEmptyString(value, fieldName);
+  if (!CLIENT_GIFT_RECORD_ID_PATTERN.test(normalized)) {
+    throw new Error(fieldName + " format is invalid.");
+  }
+  return normalized;
+}
 
 function normalizeCloudFunctionResult(result, functionName) {
   requireObject(result, functionName + " response");
@@ -59,14 +81,20 @@ function stringifyForError(data) {
   return text;
 }
 
-function resolveGiftRecordId(result, functionName) {
+function resolveGiftRecordId(result, functionName, expectedClientGiftRecordId) {
+  var resolvedGiftRecordId = null;
   if (typeof result.giftRecordId === "string" && result.giftRecordId.trim()) {
-    return result.giftRecordId.trim();
+    resolvedGiftRecordId = result.giftRecordId.trim();
+  } else if (typeof result._id === "string" && result._id.trim()) {
+    resolvedGiftRecordId = result._id.trim();
   }
-  if (typeof result._id === "string" && result._id.trim()) {
-    return result._id.trim();
+  if (!resolvedGiftRecordId) {
+    throw new Error(functionName + " result missing string giftRecordId; raw=" + stringifyForError(result));
   }
-  throw new Error(functionName + " result missing string giftRecordId; raw=" + stringifyForError(result));
+  if (expectedClientGiftRecordId) {
+    return expectedClientGiftRecordId;
+  }
+  return resolvedGiftRecordId;
 }
 
 function FriendGiftService(options) {
@@ -98,21 +126,34 @@ FriendGiftService.prototype.getPlatform = function () {
   return this.platform;
 };
 
-FriendGiftService.prototype.createStaminaGift = function (amount) {
+FriendGiftService.prototype.createStaminaGift = function (amount, giftRecordId) {
   var giftAmount = requirePositiveInteger(amount, "Friend stamina gift amount");
+  var expectedClientGiftRecordId = null;
+  var payload = {
+    amount: giftAmount
+  };
+  if (typeof giftRecordId === "string" && giftRecordId.trim()) {
+    expectedClientGiftRecordId = requireClientGiftRecordId(giftRecordId, "friend stamina giftRecordId");
+    payload.giftRecordId = expectedClientGiftRecordId;
+  }
   return this._requireCloud().callFunction({
     name: CREATE_STAMINA_GIFT_FUNCTION_NAME,
-    data: {
-      amount: giftAmount
-    }
+    data: payload
   }).then(function (response) {
     var result = normalizeCloudFunctionResult(response, CREATE_STAMINA_GIFT_FUNCTION_NAME);
     return {
-      giftRecordId: resolveGiftRecordId(result, CREATE_STAMINA_GIFT_FUNCTION_NAME),
-      amount: requirePositiveInteger(result.amount, CREATE_STAMINA_GIFT_FUNCTION_NAME + " amount")
+      giftRecordId: resolveGiftRecordId(
+        result,
+        CREATE_STAMINA_GIFT_FUNCTION_NAME,
+        expectedClientGiftRecordId
+      ),
+      amount: requirePositiveInteger(result.amount, CREATE_STAMINA_GIFT_FUNCTION_NAME + " amount"),
+      deploymentMarker: typeof result.deploymentMarker === "string" ? result.deploymentMarker : ""
     };
   });
 };
+
+FriendGiftService.buildClientGiftRecordId = buildClientGiftRecordId;
 
 FriendGiftService.prototype.claimStaminaGift = function (giftRecordId) {
   var normalizedGiftRecordId = requireNonEmptyString(giftRecordId, "friendGiftId");

@@ -28,9 +28,23 @@ var START_GAME_POWERUP_UNLOCK_LEVEL_BY_ITEM_ID = {
   swap_ball: 5,
   rainbow_ball: 10,
   blast_ball: 15,
-  barrier_hammer: 20
+  barrier_hammer: 20,
+  three_line_elimination: 1,
+  plus_three_balls: 1
 };
-var START_GAME_POWERUP_ITEM_IDS = ["swap_ball", "rainbow_ball", "blast_ball", "barrier_hammer"];
+var START_GAME_PERSISTENT_POWERUP_ITEM_IDS = ["swap_ball", "rainbow_ball", "blast_ball", "barrier_hammer"];
+var START_GAME_TEMPORARY_POWERUP_CONFIG_BY_ITEM_ID = {
+  three_line_elimination: {
+    displayName: "消三行",
+    adRunPowerupType: "three_line_elimination",
+    price: 300
+  },
+  plus_three_balls: {
+    displayName: "加十球",
+    adRunPowerupType: "plus_three_balls",
+    price: 300
+  }
+};
 var START_GAME_OBJECTIVE_ICON_PATHS = {
   R: "image/ball/red_ball",
   G: "image/ball/green_ball",
@@ -45,6 +59,12 @@ var START_GAME_COLLECTION_OBJECTIVE_TYPES = {
   collect_color: true,
   collect_ice_snowball: true
 };
+var START_GAME_NATIVE_TEMPLATE_AD_SHOW_DELAY_SEC = 0.3;
+var START_GAME_AD_LOG_LABEL = "StartGameAd";
+
+function logStartGameNativeTemplateAd() {
+  Logger.warn.apply(Logger, ["[" + START_GAME_AD_LOG_LABEL + "]"].concat(Array.prototype.slice.call(arguments)));
+}
 
 function requirePositiveInteger(value, fieldName) {
   if (!Number.isInteger(value) || value <= 0) {
@@ -60,11 +80,52 @@ function requireNonNegativeInteger(value, fieldName) {
   return value;
 }
 
+function requireNonEmptyString(value, fieldName) {
+  if (typeof value !== "string") {
+    throw new Error(fieldName + " must be a string.");
+  }
+  var normalized = value.trim();
+  if (!normalized) {
+    throw new Error(fieldName + " must be non-empty.");
+  }
+  return normalized;
+}
+
+function requirePositiveFiniteNumber(value, fieldName) {
+  var numberValue = Number(value);
+  if (!Number.isFinite(numberValue) || numberValue <= 0) {
+    throw new Error(fieldName + " must be a positive finite number.");
+  }
+  return numberValue;
+}
+
 function requireObject(value, fieldName) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new Error(fieldName + " must be an object.");
   }
   return value;
+}
+
+function resolveNativeTemplateAdFrameSize() {
+  if (typeof wx !== "undefined" && wx && typeof wx.getSystemInfoSync === "function") {
+    var systemInfo = wx.getSystemInfoSync();
+    var width = Number(systemInfo.screenWidth);
+    var height = Number(systemInfo.screenHeight);
+    if (Number.isFinite(width) && width > 0 && Number.isFinite(height) && height > 0) {
+      return {
+        width: width,
+        height: height
+      };
+    }
+  }
+  if (!cc.view || typeof cc.view.getFrameSize !== "function") {
+    throw new Error("cc.view.getFrameSize is required for StartGameView native template ad.");
+  }
+  var frameSize = cc.view.getFrameSize();
+  if (!frameSize || frameSize.width <= 0 || frameSize.height <= 0) {
+    throw new Error("Invalid frame size for StartGameView native template ad.");
+  }
+  return frameSize;
 }
 
 function getLevelBody(levelConfig) {
@@ -183,7 +244,72 @@ function getStartGameShopGoodsByItemId(host, itemId) {
   throw new Error("StartGameView purchase goods missing for item: " + itemId);
 }
 
-function buildStartGamePurchaseOptions(host) {
+function isStartGamePersistentPowerupItem(itemId) {
+  return START_GAME_PERSISTENT_POWERUP_ITEM_IDS.indexOf(itemId) >= 0;
+}
+
+function isStartGameTemporaryPowerupItem(itemId) {
+  return Object.prototype.hasOwnProperty.call(START_GAME_TEMPORARY_POWERUP_CONFIG_BY_ITEM_ID, itemId);
+}
+
+function createEmptyStartGameTemporaryPowerups() {
+  var temporaryPowerups = {};
+  Object.keys(START_GAME_TEMPORARY_POWERUP_CONFIG_BY_ITEM_ID).forEach(function (itemId) {
+    temporaryPowerups[itemId] = 0;
+  });
+  return temporaryPowerups;
+}
+
+function normalizeStartGameTemporaryPowerups(temporaryPowerups) {
+  requireObject(temporaryPowerups, "StartGameView temporary powerups");
+  var normalized = createEmptyStartGameTemporaryPowerups();
+  Object.keys(temporaryPowerups).forEach(function (itemId) {
+    if (!isStartGameTemporaryPowerupItem(itemId)) {
+      throw new Error("StartGameView temporary powerup is unsupported: " + itemId);
+    }
+  });
+  Object.keys(normalized).forEach(function (itemId) {
+    if (!Object.prototype.hasOwnProperty.call(temporaryPowerups, itemId)) {
+      throw new Error("StartGameView temporary powerup count missing: " + itemId);
+    }
+    normalized[itemId] = requireNonNegativeInteger(temporaryPowerups[itemId], "StartGameView temporary powerup count `" + itemId + "`");
+  });
+  return normalized;
+}
+
+function getStartGameTemporaryPowerupCount(host, itemId) {
+  var temporaryPowerups = normalizeStartGameTemporaryPowerups(host._pendingStartGameTemporaryPowerups);
+  return requireNonNegativeInteger(temporaryPowerups[itemId], "StartGameView temporary powerup count `" + itemId + "`");
+}
+
+function getStartGameAdPowerupRules(levelConfig) {
+  var level = getLevelBody(levelConfig);
+  if (!level.adPowerupRules || typeof level.adPowerupRules !== "object" || Array.isArray(level.adPowerupRules)) {
+    throw new Error("StartGameView level adPowerupRules must be an object.");
+  }
+  if (!Array.isArray(level.adPowerupRules.allowed)) {
+    throw new Error("StartGameView level adPowerupRules.allowed must be an array.");
+  }
+  if (!level.adPowerupRules.maxGrantsPerRun || typeof level.adPowerupRules.maxGrantsPerRun !== "object" || Array.isArray(level.adPowerupRules.maxGrantsPerRun)) {
+    throw new Error("StartGameView level adPowerupRules.maxGrantsPerRun must be an object.");
+  }
+  return level.adPowerupRules;
+}
+
+function isStartGameTemporaryPowerupAllowed(levelConfig, itemId) {
+  var config = START_GAME_TEMPORARY_POWERUP_CONFIG_BY_ITEM_ID[itemId];
+  if (!config) {
+    throw new Error("StartGameView temporary powerup config missing: " + itemId);
+  }
+  var rules = getStartGameAdPowerupRules(levelConfig);
+  if (rules.allowed.indexOf(config.adRunPowerupType) < 0) {
+    return false;
+  }
+  var maxGrant = requirePositiveInteger(rules.maxGrantsPerRun[config.adRunPowerupType], "StartGameView ad powerup maxGrantsPerRun." + config.adRunPowerupType);
+  return maxGrant > 0;
+}
+
+function buildStartGamePurchaseOptions(host, levelConfig) {
   requireStartGameShopServices(host);
   if (typeof host.shopStateService.ensureDailyReset !== "function") {
     throw new Error("StartGameView purchase requires ShopStateService.ensureDailyReset.");
@@ -191,11 +317,24 @@ function buildStartGamePurchaseOptions(host) {
   host.shopStateService.ensureDailyReset();
 
   var optionsByItemId = {};
-  Object.keys(POWERUP_TYPE_BY_ITEM_ID).forEach(function (itemId) {
+  START_GAME_PERSISTENT_POWERUP_ITEM_IDS.forEach(function (itemId) {
     var goods = getStartGameShopGoodsByItemId(host, itemId);
     optionsByItemId[itemId] = {
       price: requirePositiveInteger(goods.price.amount, "StartGameView purchase price `" + itemId + "`"),
-      remaining: requireNonNegativeInteger(host.shopStateService.getRemainingCount(goods.skuId), "StartGameView purchase remaining `" + itemId + "`")
+      remaining: requireNonNegativeInteger(host.shopStateService.getRemainingCount(goods.skuId), "StartGameView purchase remaining `" + itemId + "`"),
+      available: true,
+      unavailableMessage: ""
+    };
+  });
+  Object.keys(START_GAME_TEMPORARY_POWERUP_CONFIG_BY_ITEM_ID).forEach(function (itemId) {
+    var config = START_GAME_TEMPORARY_POWERUP_CONFIG_BY_ITEM_ID[itemId];
+    var purchasedCount = getStartGameTemporaryPowerupCount(host, itemId);
+    var allowed = isStartGameTemporaryPowerupAllowed(levelConfig, itemId);
+    optionsByItemId[itemId] = {
+      price: requirePositiveInteger(config.price, "StartGameView temporary powerup price `" + itemId + "`"),
+      remaining: allowed && purchasedCount <= 0 ? 1 : 0,
+      available: allowed,
+      unavailableMessage: allowed ? "" : "本关不可用"
     };
   });
   return optionsByItemId;
@@ -234,11 +373,13 @@ function validateStartGameSelectedPowerups(host, levelId, selectedItems) {
   }
 
   host._refreshPlayerInventory();
+  var temporaryPowerups = normalizeStartGameTemporaryPowerups(host._pendingStartGameTemporaryPowerups);
+  var levelConfig = host._startGameLevelConfig || host.currentLevelConfig;
   return selectedItems.map(function (itemId, index) {
     if (selectedItems.indexOf(itemId) !== index) {
       throw new Error("StartGameView selected powerups contain duplicate item: " + itemId);
     }
-    if (!POWERUP_TYPE_BY_ITEM_ID[itemId]) {
+    if (!isStartGamePersistentPowerupItem(itemId) && !isStartGameTemporaryPowerupItem(itemId)) {
       throw new Error("StartGameView selected powerup is unsupported: " + itemId);
     }
     var unlockLevel = START_GAME_POWERUP_UNLOCK_LEVEL_BY_ITEM_ID[itemId];
@@ -247,6 +388,18 @@ function validateStartGameSelectedPowerups(host, levelId, selectedItems) {
     }
     if (levelId < unlockLevel) {
       throw new Error("StartGameView selected locked powerup: " + itemId);
+    }
+    if (isStartGameTemporaryPowerupItem(itemId)) {
+      if (!levelConfig) {
+        throw new Error("StartGameView temporary selected powerup requires level config: " + itemId);
+      }
+      if (!isStartGameTemporaryPowerupAllowed(levelConfig, itemId)) {
+        throw new Error("StartGameView selected temporary powerup is unavailable for level: " + itemId);
+      }
+      if (temporaryPowerups[itemId] <= 0) {
+        throw new Error("StartGameView selected temporary powerup was not purchased: " + itemId);
+      }
+      return itemId;
     }
     if (host.inventoryStore.getItemCount(host.playerInventory, itemId) <= 0) {
       throw new Error("StartGameView selected powerup inventory is empty: " + itemId);
@@ -266,7 +419,7 @@ function buildDefaultStartGameSelectedPowerups(host, levelId) {
 
   var safeLevelId = normalizeStartGameLevelId(levelId);
   var selectedItems = [];
-  START_GAME_POWERUP_ITEM_IDS.forEach(function (itemId) {
+  START_GAME_PERSISTENT_POWERUP_ITEM_IDS.forEach(function (itemId) {
     if (selectedItems.length >= MAX_SELECTED_POWERUPS) {
       return;
     }
@@ -951,17 +1104,27 @@ module.exports = {
     if (!Array.isArray(this._pendingStartGamePowerups)) {
       throw new Error("StartGameView pending powerups must be an array.");
     }
-    if (this._pendingStartGamePowerups.length === 0) {
+    var temporaryPowerups = normalizeStartGameTemporaryPowerups(this._pendingStartGameTemporaryPowerups);
+    var hasTemporaryPowerups = Object.keys(temporaryPowerups).some(function (itemId) {
+      return temporaryPowerups[itemId] > 0;
+    });
+    if (this._pendingStartGamePowerups.length === 0 && !hasTemporaryPowerups) {
       return snapshot;
     }
     if (!this.gameManager || typeof this.gameManager.grantPowerupInventory !== "function") {
       throw new Error("StartGameView requires GameManager.grantPowerupInventory.");
+    }
+    if (!this.gameManager || typeof this.gameManager.grantAdRunPowerup !== "function") {
+      throw new Error("StartGameView requires GameManager.grantAdRunPowerup.");
     }
 
     var levelId = normalizeStartGameLevelId(this._currentLevelId);
     var selectedItems = validateStartGameSelectedPowerups(this, levelId, this._pendingStartGamePowerups);
     var runtimeSnapshot = snapshot;
     selectedItems.forEach(function (itemId) {
+      if (isStartGameTemporaryPowerupItem(itemId)) {
+        return;
+      }
       var powerupType = POWERUP_TYPE_BY_ITEM_ID[itemId];
       var inventoryCount = this.inventoryStore.getItemCount(this.playerInventory, itemId);
       var grantResult = this.gameManager.grantPowerupInventory(powerupType, inventoryCount);
@@ -973,9 +1136,67 @@ module.exports = {
       }
       runtimeSnapshot = grantResult.snapshot;
     }, this);
+    Object.keys(temporaryPowerups).forEach(function (itemId) {
+      var count = temporaryPowerups[itemId];
+      if (count <= 0) {
+        return;
+      }
+      var config = START_GAME_TEMPORARY_POWERUP_CONFIG_BY_ITEM_ID[itemId];
+      var grantResult = this.gameManager.grantAdRunPowerup(config.adRunPowerupType, count);
+      if (!grantResult || grantResult.accepted !== true) {
+        throw new Error("StartGameView grant temporary powerup failed: " + itemId);
+      }
+      if (!grantResult.snapshot) {
+        throw new Error("StartGameView grant temporary powerup result missing snapshot: " + itemId);
+      }
+      runtimeSnapshot = grantResult.snapshot;
+    }, this);
 
     this._pendingStartGamePowerups = [];
+    this._pendingStartGameTemporaryPowerups = createEmptyStartGameTemporaryPowerups();
+    this._pendingStartGameTemporaryPowerupCosts = {};
+    this._startGameTemporaryPowerupsCommitted = false;
     return runtimeSnapshot;
+  },
+
+  _applyGameplayInventoryQuickBuy: function (purchaseResult, context) {
+    requireObject(purchaseResult, "Gameplay inventory quick buy purchase result");
+    requireObject(context, "Gameplay inventory quick buy context");
+    if (context.source !== "gameplay_inventory_quick_buy") {
+      throw new Error("Unsupported gameplay inventory quick buy source: " + context.source);
+    }
+    if (!purchaseResult.accepted) {
+      throw new Error("Gameplay inventory quick buy requires accepted purchase result.");
+    }
+    if (!purchaseResult.goods || purchaseResult.goods.itemId !== context.itemId) {
+      throw new Error("Gameplay inventory quick buy goods itemId mismatch.");
+    }
+    var powerupType = POWERUP_TYPE_BY_ITEM_ID[context.itemId];
+    if (!powerupType || powerupType !== context.powerupType) {
+      throw new Error("Gameplay inventory quick buy powerup type mismatch: " + context.itemId);
+    }
+    var grantCount = requirePositiveInteger(purchaseResult.itemCount, "Gameplay inventory quick buy itemCount");
+    if (!this.currentLevelConfig || this.isSelectingLevel || this.isRestarting) {
+      throw new Error("Gameplay inventory quick buy requires active gameplay.");
+    }
+    if (!this.gameManager || typeof this.gameManager.grantPowerupInventory !== "function") {
+      throw new Error("Gameplay inventory quick buy requires GameManager.grantPowerupInventory.");
+    }
+    if (!this.levelRenderer || typeof this.levelRenderer.refreshRuntime !== "function") {
+      throw new Error("Gameplay inventory quick buy requires LevelRenderer.refreshRuntime.");
+    }
+
+    var grantResult = this.gameManager.grantPowerupInventory(powerupType, grantCount);
+    if (!grantResult || grantResult.accepted !== true) {
+      throw new Error("Gameplay inventory quick buy runtime grant failed: " + powerupType);
+    }
+    if (!grantResult.snapshot) {
+      throw new Error("Gameplay inventory quick buy runtime grant result missing snapshot: " + powerupType);
+    }
+
+    this._handleRuntimeStateTransition(grantResult.snapshot);
+    this.levelRenderer.refreshRuntime(this.currentLevelConfig, grantResult.snapshot);
+    return grantResult;
   },
 
   _consumePersistentInventoryItemForPowerup: function (powerupType) {
@@ -1038,6 +1259,9 @@ module.exports = {
     this._pendingStartGamePowerups = options && options.selectedItems !== undefined
       ? validateStartGameSelectedPowerups(this, safeLevelId, options.selectedItems)
       : buildDefaultStartGameSelectedPowerups(this, safeLevelId);
+    this._pendingStartGameTemporaryPowerups = createEmptyStartGameTemporaryPowerups();
+    this._pendingStartGameTemporaryPowerupCosts = {};
+    this._startGameTemporaryPowerupsCommitted = false;
     this._startGameLevelId = safeLevelId;
     this._startGameLevelConfig = null;
     this._hideAwardView();
@@ -1083,7 +1307,9 @@ module.exports = {
           onClose: function () {
             this._playSfx("uiClick");
             this._rewindNewUserGuideToQuickStart();
-            this._hideStartGameView();
+            this._hideStartGameView({
+              refundTemporaryPowerups: true
+            });
             var guideShowResult = this._showNewUserGuideForQuickStart();
             if (guideShowResult && typeof guideShowResult.catch === "function") {
               guideShowResult.catch(function (error) {
@@ -1121,7 +1347,9 @@ module.exports = {
       startGameViewNode.active = true;
       PopupPanelAnimator.play(startGameViewNode);
       return this._renderStartGameView().then(function () {
-        return this._showNewUserGuideForStartGame();
+        return this._showStartGameNativeTemplateAd().then(function () {
+          return this._showNewUserGuideForStartGame();
+        }.bind(this));
       }.bind(this));
     }.bind(this)).catch(function (error) {
       Logger.error("Show StartGameView failed", error && error.stack ? error.stack : String(error));
@@ -1145,11 +1373,158 @@ module.exports = {
       objectives: buildStartGameObjectives(this._startGameLevelConfig),
       showAwardTips: shouldShowFirstClearAwardTips(this, this._startGameLevelId),
       selectedItems: this._pendingStartGamePowerups,
-      purchaseOptionsByItemId: buildStartGamePurchaseOptions(this)
+      temporaryPurchasesByItemId: normalizeStartGameTemporaryPowerups(this._pendingStartGameTemporaryPowerups),
+      purchaseOptionsByItemId: buildStartGamePurchaseOptions(this, this._startGameLevelConfig)
     });
   },
 
+  _resolveStartGameNativeTemplateAdUnitId: function () {
+    return requireNonEmptyString(this.startGameNativeTemplateAdUnitId, "startGameNativeTemplateAdUnitId");
+  },
+
+  _resolveStartGameNativeTemplateAdStyle: function (nativeHeightPx) {
+    var frameSize = resolveNativeTemplateAdFrameSize();
+    if (nativeHeightPx === undefined || nativeHeightPx === null) {
+      return {
+        left: 0,
+        top: 0,
+        width: frameSize.width
+      };
+    }
+    var heightPx = requirePositiveFiniteNumber(nativeHeightPx, "StartGameView native template ad height");
+    return {
+      left: 0,
+      top: Math.max(0, frameSize.height - heightPx),
+      width: frameSize.width
+    };
+  },
+
+  _applyStartGameNativeTemplateAdHeight: function (nativeHeightPx) {
+    if (!this._startGameViewNode || !this._startGameViewNode.isValid || !this._startGameViewNode.active) {
+      return;
+    }
+    var heightPx = requirePositiveFiniteNumber(
+      nativeHeightPx,
+      "StartGameView native template ad height"
+    );
+    if (this._startGameNativeTemplateAdHeightPx === heightPx) {
+      return;
+    }
+    this._startGameNativeTemplateAdHeightPx = heightPx;
+  },
+
+  _showStartGameNativeTemplateAd: function () {
+    if (!this.startGameNativeTemplateAdAdapter || typeof this.startGameNativeTemplateAdAdapter.isSupported !== "function") {
+      throw new Error("StartGameView native template ad adapter is required.");
+    }
+    if (!this._startGameViewNode || !this._startGameViewNode.isValid || !this._startGameViewNode.active) {
+      logStartGameNativeTemplateAd("skip", "StartGameView node is not active.");
+      return Promise.resolve(false);
+    }
+    if (!this.startGameNativeTemplateAdAdapter.isSupported()) {
+      logStartGameNativeTemplateAd("skip", "wx.createCustomAd is unavailable in current runtime.");
+      this._hideStartGameNativeTemplateAd();
+      return Promise.resolve(false);
+    }
+    if (typeof this.scheduleOnce !== "function") {
+      throw new Error("StartGameView native template ad requires GameBootstrap.scheduleOnce.");
+    }
+
+    logStartGameNativeTemplateAd("schedule", {
+      levelId: this._startGameLevelId,
+      delaySec: START_GAME_NATIVE_TEMPLATE_AD_SHOW_DELAY_SEC
+    });
+    var self = this;
+    return new Promise(function (resolve) {
+      self.scheduleOnce(function () {
+        resolve(self._invokeStartGameNativeTemplateAd());
+      }, START_GAME_NATIVE_TEMPLATE_AD_SHOW_DELAY_SEC);
+    });
+  },
+
+  _invokeStartGameNativeTemplateAd: function () {
+    if (!this._startGameViewNode || !this._startGameViewNode.isValid || !this._startGameViewNode.active) {
+      logStartGameNativeTemplateAd("skip", "StartGameView closed before native ad show.");
+      return Promise.resolve(false);
+    }
+    if (typeof this._hideLevelSelectNativeTemplateAd === "function") {
+      this._hideLevelSelectNativeTemplateAd();
+    }
+    if (typeof this._hideResultNativeTemplateAd === "function") {
+      this._hideResultNativeTemplateAd();
+    }
+
+    var adUnitId = this._resolveStartGameNativeTemplateAdUnitId();
+    var style = this._resolveStartGameNativeTemplateAdStyle();
+    logStartGameNativeTemplateAd("invoke", {
+      adUnitId: adUnitId,
+      style: style
+    });
+    return Promise.resolve().then(function () {
+      return this.startGameNativeTemplateAdAdapter.showAd({
+        adUnitId: adUnitId,
+        adIntervals: 40,
+        placement: "bottom",
+        adLogLabel: START_GAME_AD_LOG_LABEL,
+        style: style,
+        onHeightChange: function (heightPx, source) {
+          logStartGameNativeTemplateAd("height", {
+            heightPx: heightPx,
+            source: source
+          });
+          this._applyStartGameNativeTemplateAdHeight(heightPx);
+        }.bind(this),
+        onError: function (error) {
+          Logger.error("StartGameView native template ad error", error && error.errMsg ? error.errMsg : error);
+          this._hideStartGameNativeTemplateAd();
+        }.bind(this)
+      });
+    }.bind(this)).then(function () {
+      this._startGameNativeTemplateAdShowing = true;
+      logStartGameNativeTemplateAd("shown", {
+        heightPx: this._startGameNativeTemplateAdHeightPx
+      });
+      return true;
+    }.bind(this)).catch(function (error) {
+      Logger.error("StartGameView native template ad show failed: " + (error && error.message ? error.message : String(error)));
+      this._hideStartGameNativeTemplateAd();
+      return false;
+    }.bind(this));
+  },
+
+  _hideStartGameNativeTemplateAd: function () {
+    if (this.startGameNativeTemplateAdAdapter && typeof this.startGameNativeTemplateAdAdapter.hideAd === "function") {
+      this.startGameNativeTemplateAdAdapter.hideAd();
+    }
+    this._startGameNativeTemplateAdShowing = false;
+    this._startGameNativeTemplateAdHeightPx = 0;
+  },
+
+  _refreshStartGameNativeTemplateAdLayout: function () {
+    if (!this._startGameViewNode || !this._startGameViewNode.isValid || !this._startGameViewNode.active) {
+      return;
+    }
+    if (this._startGameNativeTemplateAdShowing !== true) {
+      return;
+    }
+    if (!this.startGameNativeTemplateAdAdapter || typeof this.startGameNativeTemplateAdAdapter.updateStyle !== "function") {
+      throw new Error("StartGameView native template ad adapter cannot update style.");
+    }
+    if (this._startGameNativeTemplateAdHeightPx <= 0) {
+      return;
+    }
+    var updated = this.startGameNativeTemplateAdAdapter.updateStyle(
+      this._resolveStartGameNativeTemplateAdStyle(this._startGameNativeTemplateAdHeightPx)
+    );
+    if (updated !== true) {
+      throw new Error("StartGameView native template ad style update failed because ad instance is missing.");
+    }
+  },
+
   _purchaseStartGamePowerup: function (itemId) {
+    if (isStartGameTemporaryPowerupItem(itemId)) {
+      return this._purchaseStartGameTemporaryPowerup(itemId);
+    }
     var goods = getStartGameShopGoodsByItemId(this, itemId);
     var result = this.shopPurchaseService.purchase(goods.skuId, 1);
     if (!result || typeof result.accepted !== "boolean") {
@@ -1176,14 +1551,106 @@ module.exports = {
     return {
       accepted: true,
       inventory: this.playerInventory,
-      purchaseOptionsByItemId: buildStartGamePurchaseOptions(this),
+      temporaryPurchasesByItemId: normalizeStartGameTemporaryPowerups(this._pendingStartGameTemporaryPowerups),
+      purchaseOptionsByItemId: buildStartGamePurchaseOptions(this, this._startGameLevelConfig),
       message: message
     };
   },
 
-  _hideStartGameView: function () {
+  _purchaseStartGameTemporaryPowerup: function (itemId) {
+    if (!isStartGameTemporaryPowerupItem(itemId)) {
+      throw new Error("StartGameView temporary purchase item is unsupported: " + itemId);
+    }
+    if (!this._startGameLevelConfig) {
+      throw new Error("StartGameView temporary purchase requires level config.");
+    }
+    if (!isStartGameTemporaryPowerupAllowed(this._startGameLevelConfig, itemId)) {
+      return {
+        accepted: false,
+        message: "本关不可用"
+      };
+    }
+    var temporaryPowerups = normalizeStartGameTemporaryPowerups(this._pendingStartGameTemporaryPowerups);
+    if (temporaryPowerups[itemId] > 0) {
+      return {
+        accepted: false,
+        message: "已购买"
+      };
+    }
+    if (typeof this._spendCoinsForStartGamePowerup !== "function") {
+      throw new Error("StartGameView temporary purchase requires _spendCoinsForStartGamePowerup.");
+    }
+    var config = START_GAME_TEMPORARY_POWERUP_CONFIG_BY_ITEM_ID[itemId];
+    var spendResult = this._spendCoinsForStartGamePowerup(config.price, "start_game_powerup");
+    if (!spendResult || spendResult.accepted !== true) {
+      if (!spendResult || typeof spendResult.reason !== "string") {
+        throw new Error("StartGameView temporary purchase spend result is invalid.");
+      }
+      return {
+        accepted: false,
+        message: this._resolveShopPurchaseFailMessage(spendResult.reason)
+      };
+    }
+
+    temporaryPowerups[itemId] = 1;
+    this._pendingStartGameTemporaryPowerups = temporaryPowerups;
+    if (!this._pendingStartGameTemporaryPowerupCosts || typeof this._pendingStartGameTemporaryPowerupCosts !== "object" || Array.isArray(this._pendingStartGameTemporaryPowerupCosts)) {
+      this._pendingStartGameTemporaryPowerupCosts = {};
+    }
+    this._pendingStartGameTemporaryPowerupCosts[itemId] = requirePositiveInteger(spendResult.cost, "StartGameView temporary spend cost");
+    this._refreshPlayerResources();
+    this._updateLevelSelectTopStatus();
+
+    var message = "购买" + config.displayName + "成功";
+    this._setStatusWithTip("start_game_temporary_powerup_purchase_success", null, message);
+    return {
+      accepted: true,
+      inventory: this.playerInventory,
+      temporaryPurchasesByItemId: normalizeStartGameTemporaryPowerups(this._pendingStartGameTemporaryPowerups),
+      purchaseOptionsByItemId: buildStartGamePurchaseOptions(this, this._startGameLevelConfig),
+      message: message
+    };
+  },
+
+  _refundPendingStartGameTemporaryPowerups: function () {
+    var temporaryPowerups = normalizeStartGameTemporaryPowerups(this._pendingStartGameTemporaryPowerups);
+    var costs = this._pendingStartGameTemporaryPowerupCosts;
+    if (!costs || typeof costs !== "object" || Array.isArray(costs)) {
+      costs = {};
+    }
+    var refundTotal = 0;
+    Object.keys(temporaryPowerups).forEach(function (itemId) {
+      if (temporaryPowerups[itemId] <= 0) {
+        return;
+      }
+      if (!Object.prototype.hasOwnProperty.call(costs, itemId)) {
+        throw new Error("StartGameView temporary powerup refund cost missing: " + itemId);
+      }
+      refundTotal += requirePositiveInteger(costs[itemId], "StartGameView temporary refund cost `" + itemId + "`");
+    });
+    if (refundTotal > 0) {
+      if (typeof this._refundCoinsForStartGamePowerup !== "function") {
+        throw new Error("StartGameView temporary refund requires _refundCoinsForStartGamePowerup.");
+      }
+      this._refundCoinsForStartGamePowerup(refundTotal, "start_game_powerup_rollback");
+      this._setStatusWithTip("start_game_temporary_powerup_refund", null, "已返还未开局道具金币");
+    }
+    this._pendingStartGameTemporaryPowerups = createEmptyStartGameTemporaryPowerups();
+    this._pendingStartGameTemporaryPowerupCosts = {};
+    this._startGameTemporaryPowerupsCommitted = false;
+  },
+
+  _hideStartGameView: function (options) {
+    if (options !== undefined && (!options || typeof options !== "object" || Array.isArray(options))) {
+      throw new Error("StartGameView hide options must be an object when provided.");
+    }
+    var shouldRefundTemporaryPowerups = !options || options.refundTemporaryPowerups !== false;
+    if (shouldRefundTemporaryPowerups && this._startGameTemporaryPowerupsCommitted !== true) {
+      this._refundPendingStartGameTemporaryPowerups();
+    }
     this._startGameLevelId = 0;
     this._startGameLevelConfig = null;
+    this._hideStartGameNativeTemplateAd();
     this._hideNewUserGuide();
     UiModalReleaseHelper.releaseCachedModal(this, {
       label: "StartGameView",
@@ -1205,18 +1672,21 @@ module.exports = {
     var safeLevelId = normalizeStartGameLevelId(levelId);
     var preparedItems = validateStartGameSelectedPowerups(this, safeLevelId, selectedItems);
 
-    this._hideStartGameView();
     if (!this._consumeStaminaForLevelEntry()) {
       this._showPowerTipsView(function () {
-        return this._showStartGameView(safeLevelId, {
-          selectedItems: preparedItems
-        });
+        return this._startPreparedLevelEntry(safeLevelId, preparedItems);
       }.bind(this));
       return false;
     }
 
+    this._pendingStartGamePowerups = preparedItems.slice();
+    this._startGameTemporaryPowerupsCommitted = true;
+    this._hideStartGameView({
+      refundTemporaryPowerups: false
+    });
     this._advanceNewUserGuideToGameplay();
-    this._loadPreparedLevelFromLevelSelect(safeLevelId, preparedItems);
+    this._setStatus("Loading level_" + String(safeLevelId).padStart(3, "0") + "...");
+    this._loadLevelById(safeLevelId, "Level selected", "Load selected level failed. Check console logs.");
     return true;
   },
 

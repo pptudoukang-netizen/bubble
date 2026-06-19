@@ -3,6 +3,7 @@
 var fs = require("fs");
 var path = require("path");
 var AimTuningProfiles = require("../assets/scripts/config/AimTuningProfiles");
+var LevelPackCompactCodec = require("../assets/scripts/config/LevelPackCompactCodec");
 
 var LEVEL_DIR = path.resolve(__dirname, "../assets/resources/config/levels");
 var REMOTE_PACK_DIR = path.resolve(__dirname, "../remote-level-packs");
@@ -79,8 +80,15 @@ function listRemotePackEntries() {
     .sort()
     .forEach(function (fileName) {
       var pack = readJson(path.join(REMOTE_PACK_DIR, fileName));
-      if (!pack || typeof pack !== "object" || Array.isArray(pack) || !pack.levels || typeof pack.levels !== "object") {
+      if (!pack || typeof pack !== "object" || Array.isArray(pack)) {
         throw new Error("remote level pack invalid: " + fileName);
+      }
+      if (pack.format !== LevelPackCompactCodec.PACK_FORMAT_COMPACT_V1) {
+        throw new Error("remote level pack format must be " + LevelPackCompactCodec.PACK_FORMAT_COMPACT_V1 + ": " + fileName);
+      }
+      pack = LevelPackCompactCodec.expandPack(pack);
+      if (!pack.levels || typeof pack.levels !== "object" || Array.isArray(pack.levels)) {
+        throw new Error("remote level pack levels invalid: " + fileName);
       }
       Object.keys(pack.levels).sort(function (a, b) {
         return getLevelNumber(a + ".json") - getLevelNumber(b + ".json");

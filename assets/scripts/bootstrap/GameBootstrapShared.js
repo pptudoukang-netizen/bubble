@@ -55,6 +55,7 @@ var FriendGiftService = require("../services/FriendGiftService");
 var PlayerCloudProfileService = require("../services/PlayerCloudProfileService");
 var WorldLeaderboardService = require("../services/WorldLeaderboardService");
 var AdService = require("../services/AdService");
+var WechatNativeTemplateAdAdapter = require("../services/WechatNativeTemplateAdAdapter");
 var TelemetryService = require("../services/TelemetryService");
 var AdRewardQuotaStore = require("../services/AdRewardQuotaStore");
 var AdRewardCatalog = require("../services/AdRewardCatalog");
@@ -86,6 +87,7 @@ var ITEM_ID_BY_POWERUP_TYPE = {
 var MAX_SELECTED_POWERUPS = 4;
 var MAX_SELECTED_POWERUP_TOTAL_COUNT = 4;
 var INVENTORY_TOTAL_LIMIT_TIP = "关卡中最多携带" + MAX_SELECTED_POWERUP_TOTAL_COUNT + "个道具";
+var LOSE_COIN_REVIVE_COST = 500;
 var RELEASE_FALSE_SCENE_FIELDS = [
   "enableSpecialEntitiesTestMode",
   "showDebugOverlay",
@@ -177,6 +179,7 @@ module.exports = {
   PlayerCloudProfileService: PlayerCloudProfileService,
   WorldLeaderboardService: WorldLeaderboardService,
   AdService: AdService,
+  WechatNativeTemplateAdAdapter: WechatNativeTemplateAdAdapter,
   TelemetryService: TelemetryService,
   AdRewardQuotaStore: AdRewardQuotaStore,
   AdRewardCatalog: AdRewardCatalog,
@@ -197,6 +200,7 @@ module.exports = {
   MAX_SELECTED_POWERUPS: MAX_SELECTED_POWERUPS,
   MAX_SELECTED_POWERUP_TOTAL_COUNT: MAX_SELECTED_POWERUP_TOTAL_COUNT,
   INVENTORY_TOTAL_LIMIT_TIP: INVENTORY_TOTAL_LIMIT_TIP,
+  LOSE_COIN_REVIVE_COST: LOSE_COIN_REVIVE_COST,
   RELEASE_FALSE_SCENE_FIELDS: RELEASE_FALSE_SCENE_FIELDS,
   clone: clone,
   assertReleaseSceneFieldDisabled: assertReleaseSceneFieldDisabled,

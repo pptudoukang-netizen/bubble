@@ -2,7 +2,9 @@
 
 var Shared = require("./GameBootstrapUiFlowShared");
 var Logger = Shared.Logger;
+var showStatusAndTip = Shared.showStatusAndTip;
 var DailyTaskViewController = require("../ui/DailyTaskViewController");
+var FriendGiftService = require("../services/FriendGiftService");
 var PopupPanelAnimator = Shared.PopupPanelAnimator;
 var hideGameCircleWelfareViewNode = Shared.hideGameCircleWelfareViewNode;
 var UiModalReleaseHelper = require("../utils/UiModalReleaseHelper");
@@ -231,11 +233,10 @@ module.exports = {
     }
     this._playSfx("uiClick");
     if (task.taskId === "gift_friend_stamina_3") {
-      this._setStatus(resolveDailyTaskGoStatus(task));
       return this._giftFriendStaminaBySelfManagedGift();
     }
     this._hideDailyTaskView();
-    this._setStatus(resolveDailyTaskGoStatus(task));
+    showStatusAndTip(this, resolveDailyTaskGoStatus(task));
     return Promise.resolve(false);
   },
 
@@ -246,42 +247,54 @@ module.exports = {
     if (!this.wechatShareService || typeof this.wechatShareService.shareAppMessage !== "function") {
       throw new Error("Daily task friend stamina gift requires WechatShareService.shareAppMessage.");
     }
+    if (!this.wechatShareService.isWechatGameRuntime()) {
+      showStatusAndTip(this, "好友体力赠送仅微信小游戏环境可用");
+      return Promise.reject(new Error("Daily task friend stamina gift requires WeChat mini game runtime."));
+    }
+    if (!this.wechatShareService.isActiveShareSupported()) {
+      throw new Error("Daily task friend stamina gift requires wx.shareAppMessage.");
+    }
     if (this._getCurrentStamina() < FRIEND_STAMINA_GIFT_COST) {
-      this._setStatus("体力不足，无法赠送好友体力");
+      showStatusAndTip(this, "体力不足，无法赠送好友体力");
       return Promise.resolve(false);
     }
 
     var consumeAccepted = this._consumeStaminaForFriendGift();
     if (consumeAccepted !== true) {
-      this._setStatus("体力不足，无法赠送好友体力");
+      showStatusAndTip(this, "体力不足，无法赠送好友体力");
       return Promise.resolve({
         accepted: false,
         reason: "DAILY_TASK_GIFT_STAMINA_NOT_ENOUGH"
       });
     }
 
-    return this.friendGiftService.createStaminaGift(FRIEND_STAMINA_GIFT_COST).then(function (giftResult) {
+    var giftRecordId = FriendGiftService.buildClientGiftRecordId();
+    var shareQuery = [
+      "friendGiftType=stamina",
+      "friendGiftId=" + encodeURIComponent(giftRecordId)
+    ].join("&");
+    var createGiftPromise = this.friendGiftService.createStaminaGift(FRIEND_STAMINA_GIFT_COST, giftRecordId);
+    var sharePromise = this.wechatShareService.shareAppMessage({
+      title: "送你 1 点体力，继续泡泡挑战",
+      imageUrl: this.shareImageUrl,
+      query: shareQuery
+    });
+
+    return Promise.all([createGiftPromise, sharePromise]).then(function (results) {
+      var giftResult = results[0];
       if (!giftResult || giftResult.amount !== FRIEND_STAMINA_GIFT_COST) {
         throw new Error("Create friend stamina gift result is invalid.");
       }
-      var giftRecordId = requireNonEmptyString(giftResult.giftRecordId, "friend stamina giftRecordId");
-      var shareQuery = [
-        "friendGiftType=stamina",
-        "friendGiftId=" + encodeURIComponent(giftRecordId)
-      ].join("&");
-      return this.wechatShareService.shareAppMessage({
-        title: "送你 1 点体力，继续泡泡挑战",
-        imageUrl: this.shareImageUrl,
-        query: shareQuery
-      }).then(function () {
-        var result = this._recordFriendStaminaGiftSuccess(giftRecordId);
-        this._setStatus("好友体力赠送成功");
-        return result;
-      }.bind(this));
+      if (giftResult.giftRecordId !== giftRecordId) {
+        throw new Error("Create friend stamina gift result giftRecordId is invalid.");
+      }
+      var result = this._recordFriendStaminaGiftSuccess(giftRecordId);
+      showStatusAndTip(this, "好友体力赠送成功");
+      return result;
     }.bind(this)).catch(function (error) {
       this._refundStaminaForFriendGift(FRIEND_STAMINA_GIFT_COST);
       Logger.error("Daily task self managed friend stamina gift failed", error && error.stack ? error.stack : error);
-      this._setStatus("好友体力赠送失败");
+      showStatusAndTip(this, "好友体力赠送失败");
       throw error;
     }.bind(this));
   },

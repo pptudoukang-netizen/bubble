@@ -41,6 +41,16 @@ function requireNonNegativeInteger(value, description) {
   return value;
 }
 
+function syncVisibleBuyViewCoinCount(host) {
+  if (!host._buyViewNode || !cc.isValid(host._buyViewNode) || host._buyViewNode.active !== true) {
+    return;
+  }
+  if (!host._buyViewController || typeof host._buyViewController.updateCoinCount !== "function") {
+    throw new Error("Visible BuyView requires BuyViewController.updateCoinCount.");
+  }
+  host._buyViewController.updateCoinCount(requireNonNegativeInteger(host.playerResources.coins, "Player coins"));
+}
+
 function formatCountdownText(remainingMs) {
   var safeRemainingMs = requireNonNegativeInteger(remainingMs, "Stamina recovery remainingMs");
   var totalSeconds = Math.ceil(safeRemainingMs / 1000);
@@ -286,6 +296,7 @@ module.exports = {
 
     this.playerResources = this.playerResourceStore.load();
     this._applyNaturalStaminaRecovery(new Date());
+    syncVisibleBuyViewCoinCount(this);
     return this.playerResources;
   },
 
@@ -426,6 +437,118 @@ module.exports = {
     return {
       accepted: true,
       cost: cost,
+      coinBefore: currentCoins,
+      coinAfter: this.playerResources.coins
+    };
+  },
+
+  _spendCoinsForStartGamePowerup: function (amount, reason) {
+    var cost = Math.floor(Number(amount));
+    if (!Number.isInteger(cost) || cost <= 0) {
+      throw new Error("StartGameView coin spend amount must be a positive integer.");
+    }
+    if (reason !== "start_game_powerup") {
+      throw new Error("StartGameView coin spend reason must be start_game_powerup.");
+    }
+    this._refreshPlayerResources();
+    var currentCoins = Math.floor(Number(this.playerResources.coins));
+    if (!Number.isInteger(currentCoins) || currentCoins < 0) {
+      throw new Error("Player coin balance is invalid.");
+    }
+    if (currentCoins < cost) {
+      return {
+        accepted: false,
+        reason: "SHOP_COIN_NOT_ENOUGH",
+        cost: cost,
+        coinBefore: currentCoins
+      };
+    }
+    this.playerResources.coins = currentCoins - cost;
+    this.playerResourceStore.save(this.playerResources);
+    this._updateLevelSelectTopStatus();
+    return {
+      accepted: true,
+      cost: cost,
+      coinBefore: currentCoins,
+      coinAfter: this.playerResources.coins
+    };
+  },
+
+  _spendCoinsForRevive: function (amount, reason) {
+    var cost = Math.floor(Number(amount));
+    if (!Number.isInteger(cost) || cost <= 0) {
+      throw new Error("LoseView coin revive spend amount must be a positive integer.");
+    }
+    if (reason !== "lose_coin_revive") {
+      throw new Error("LoseView coin revive spend reason must be lose_coin_revive.");
+    }
+    this._refreshPlayerResources();
+    var currentCoins = Math.floor(Number(this.playerResources.coins));
+    if (!Number.isInteger(currentCoins) || currentCoins < 0) {
+      throw new Error("Player coin balance is invalid.");
+    }
+    if (currentCoins < cost) {
+      return {
+        accepted: false,
+        reason: "LOSE_REVIVE_COIN_NOT_ENOUGH",
+        cost: cost,
+        coinBefore: currentCoins
+      };
+    }
+    this.playerResources.coins = currentCoins - cost;
+    this.playerResourceStore.save(this.playerResources);
+    this._updateLevelSelectTopStatus();
+    return {
+      accepted: true,
+      cost: cost,
+      coinBefore: currentCoins,
+      coinAfter: this.playerResources.coins
+    };
+  },
+
+  _refundCoinsForRevive: function (amount, reason) {
+    var refund = Math.floor(Number(amount));
+    if (!Number.isInteger(refund) || refund <= 0) {
+      throw new Error("LoseView coin revive refund amount must be a positive integer.");
+    }
+    if (reason !== "lose_coin_revive_rollback") {
+      throw new Error("LoseView coin revive refund reason must be lose_coin_revive_rollback.");
+    }
+    this._refreshPlayerResources();
+    var currentCoins = Math.floor(Number(this.playerResources.coins));
+    if (!Number.isInteger(currentCoins) || currentCoins < 0) {
+      throw new Error("Player coin balance is invalid.");
+    }
+    this.playerResources.coins = currentCoins + refund;
+    this.playerResourceStore.save(this.playerResources);
+    this._updateLevelSelectTopStatus();
+    return {
+      accepted: true,
+      refund: refund,
+      coinBefore: currentCoins,
+      coinAfter: this.playerResources.coins
+    };
+  },
+
+  _refundCoinsForStartGamePowerup: function (amount, reason) {
+    var refund = Math.floor(Number(amount));
+    if (!Number.isInteger(refund) || refund <= 0) {
+      throw new Error("StartGameView coin refund amount must be a positive integer.");
+    }
+    if (reason !== "start_game_powerup_rollback") {
+      throw new Error("StartGameView coin refund reason must be start_game_powerup_rollback.");
+    }
+    this._refreshPlayerResources();
+    var currentCoins = Math.floor(Number(this.playerResources.coins));
+    if (!Number.isInteger(currentCoins) || currentCoins < 0) {
+      throw new Error("Player coin balance is invalid.");
+    }
+    this.playerResources.coins = currentCoins + refund;
+    this.playerResourceStore.save(this.playerResources);
+    this._updateLevelSelectTopStatus();
+    return {
+      accepted: true,
+      refund: refund,
       coinBefore: currentCoins,
       coinAfter: this.playerResources.coins
     };

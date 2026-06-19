@@ -5,7 +5,8 @@ var cloud = require("wx-server-sdk");
 
 var COLLECTION_NAME = "friend_stamina_gifts";
 var GIFT_TYPE_STAMINA = "stamina";
-var DEPLOYMENT_MARKER = "createSelfManagedFriendStaminaGift_v20260524_1";
+var DEPLOYMENT_MARKER = "createSelfManagedFriendStaminaGift_v20260619_2";
+var CLIENT_GIFT_RECORD_ID_PATTERN = /^friend_stamina_gift_[a-f0-9]{16,64}$/;
 
 cloud.init({
   env: cloud.DYNAMIC_CURRENT_ENV
@@ -45,6 +46,14 @@ function buildGiftRecordId(senderOpenid, now) {
   return "friend_stamina_gift_" + crypto.createHash("sha1").update(seed).digest("hex");
 }
 
+function requireClientGiftRecordId(value, fieldName) {
+  var normalized = requireNonEmptyString(value, fieldName);
+  if (!CLIENT_GIFT_RECORD_ID_PATTERN.test(normalized)) {
+    throw new Error(fieldName + " format is invalid.");
+  }
+  return normalized;
+}
+
 exports.main = async function (event) {
   console.log("[Bubble]", DEPLOYMENT_MARKER, "invoked");
   requireObject(event, "createSelfManagedFriendStaminaGift event");
@@ -52,7 +61,12 @@ exports.main = async function (event) {
   var context = cloud.getWXContext();
   var senderOpenid = requireNonEmptyString(context.OPENID, "sender OPENID");
   var now = Date.now();
-  var giftRecordId = buildGiftRecordId(senderOpenid, now);
+  var giftRecordId;
+  if (typeof event.giftRecordId === "string" && event.giftRecordId.trim()) {
+    giftRecordId = requireClientGiftRecordId(event.giftRecordId, "createSelfManagedFriendStaminaGift giftRecordId");
+  } else {
+    giftRecordId = buildGiftRecordId(senderOpenid, now);
+  }
   var result = await cloud.database().collection(COLLECTION_NAME).doc(giftRecordId).set({
     data: {
       type: GIFT_TYPE_STAMINA,

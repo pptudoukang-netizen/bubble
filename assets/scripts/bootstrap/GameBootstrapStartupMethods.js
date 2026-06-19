@@ -112,6 +112,7 @@ module.exports = {
     if (!this.enableStartupLoadingView) {
       this._startupFlowPromise = this._runWeightedStartupTasks().then(function () {
         this._showLevelSelectView();
+        this._scheduleDeferredUiBundleWarmup();
         this._scheduleDeferredFriendStaminaGiftClaim();
         this._scheduleDeferredPlayerCloudProfileSync();
       }.bind(this)).catch(function (error) {
@@ -138,6 +139,7 @@ module.exports = {
       return this._loadingViewController.playOut();
     }.bind(this)).then(function () {
       this._showLevelSelectView();
+      this._scheduleDeferredUiBundleWarmup();
       this._scheduleDeferredFriendStaminaGiftClaim();
       this._scheduleDeferredPlayerCloudProfileSync();
     }.bind(this)).catch(function (error) {
@@ -284,6 +286,33 @@ module.exports = {
     ]);
 
     return this._startupBundlePrefetchPromise;
+  },
+
+  _scheduleDeferredUiBundleWarmup: function () {
+    if (this._deferredUiBundleWarmupPromise) {
+      return this._deferredUiBundleWarmupPromise;
+    }
+    if (!BundleLoader || typeof BundleLoader.ensureNamedBundleLoaded !== "function") {
+      throw new Error("Deferred UI bundle warmup requires BundleLoader.ensureNamedBundleLoaded.");
+    }
+
+    this._deferredUiBundleWarmupPromise = BundleLoader.ensureNamedBundleLoaded("ui").then(function (bundle) {
+      if (!bundle || typeof bundle.load !== "function") {
+        throw new Error("Deferred UI bundle warmup loaded invalid ui bundle.");
+      }
+      Logger.info("Deferred UI bundle warmup completed.");
+      return bundle;
+    }).catch(function (error) {
+      Logger.error("Deferred UI bundle warmup failed", error && error.stack ? error.stack : error);
+      this._setStatus("UI资源加载失败");
+      if (this.tipsPresenter && typeof this.tipsPresenter.showText === "function") {
+        this.tipsPresenter.showText("UI资源加载失败");
+      }
+      this._deferredUiBundleWarmupPromise = null;
+      throw error;
+    }.bind(this));
+
+    return this._deferredUiBundleWarmupPromise;
   },
 
   _scheduleDeferredFriendStaminaGiftClaim: function () {

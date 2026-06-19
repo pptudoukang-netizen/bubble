@@ -12,7 +12,6 @@ var SHOP_ICON_WIDTH = 110;
 var SHOP_ITEM_TEMPLATE_NAME = "shop_item";
 var SHOP_RENDER_PROXY_ROOT_NAME = "shop_render_proxy_root";
 var SHOP_RENDER_PROXY_LAYER_NAMES = {
-  listBackground: "shop_proxy_list_background_layer",
   itemBackground: "shop_proxy_item_background_layer",
   itemIcon: "shop_proxy_item_icon_layer",
   itemPrice: "shop_proxy_item_price_layer",
@@ -241,7 +240,6 @@ ShopViewController.prototype._resolveNodes = function () {
   if (layout) {
     layout.cellSize = cc.size(nodes.shopItemTemplate.width, nodes.shopItemTemplate.height);
   }
-  SpriteProxyLayerHelper.setSpriteRenderEnabled(nodes.shopList, false, "ShopView shop_list background");
   return nodes;
 };
 
@@ -263,11 +261,10 @@ ShopViewController.prototype._ensureRenderProxyLayers = function () {
 
   this._renderProxyRoot = root;
   this._renderProxyLayers = SpriteProxyLayerHelper.createProxyLayers(root, [
-    { key: "listBackground", name: SHOP_RENDER_PROXY_LAYER_NAMES.listBackground, zIndex: 0 },
-    { key: "itemBackground", name: SHOP_RENDER_PROXY_LAYER_NAMES.itemBackground, zIndex: 1 },
-    { key: "itemIcon", name: SHOP_RENDER_PROXY_LAYER_NAMES.itemIcon, zIndex: 2 },
-    { key: "itemPrice", name: SHOP_RENDER_PROXY_LAYER_NAMES.itemPrice, zIndex: 3 },
-    { key: "itemTag", name: SHOP_RENDER_PROXY_LAYER_NAMES.itemTag, zIndex: 4 }
+    { key: "itemBackground", name: SHOP_RENDER_PROXY_LAYER_NAMES.itemBackground, zIndex: 0 },
+    { key: "itemIcon", name: SHOP_RENDER_PROXY_LAYER_NAMES.itemIcon, zIndex: 1 },
+    { key: "itemPrice", name: SHOP_RENDER_PROXY_LAYER_NAMES.itemPrice, zIndex: 2 },
+    { key: "itemTag", name: SHOP_RENDER_PROXY_LAYER_NAMES.itemTag, zIndex: 3 }
   ]);
 };
 
@@ -324,13 +321,6 @@ ShopViewController.prototype._hideSourceItemSprites = function (itemNode) {
 ShopViewController.prototype._rebuildRenderProxies = function () {
   this._ensureRenderProxyLayers();
   this._clearRenderProxyRecords();
-
-  this._createSpriteProxyRecord(
-    this._renderProxyLayers.listBackground,
-    this._nodes.shopList,
-    "shop_list_background_proxy",
-    true
-  );
 
   this._shopItemNodes.forEach(function (itemNode, index) {
     this._hideSourceItemSprites(itemNode);

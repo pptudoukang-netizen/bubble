@@ -64,6 +64,11 @@ var REWARD_ITEM_RESOURCES = {
   stamina: "image/props/love"
 };
 
+var POWERUP_ICON_RESOURCES = {
+  rainbow: "image/props/rainbow_ball",
+  barrier_hammer: "image/props/barrier_hammer"
+};
+
 var WIN_BOTTLE_RESOURCES = {
   R: "image/win/bottle_red",
   G: "image/win/bottle_green",
@@ -78,6 +83,16 @@ var WIN_TARGET_COLOR_NAMES = {
   B: "蓝球",
   Y: "黄球",
   P: "紫球"
+};
+
+var LOSE_TARGET_DISPLAY_NAMES = {
+  R: "红球",
+  G: "绿球",
+  B: "蓝球",
+  Y: "黄球",
+  P: "紫球",
+  RAINBOW: "任意球",
+  ICE_SNOWBALL: "雪块"
 };
 
 var HUD_STAR_RESOURCES = {
@@ -210,6 +225,7 @@ var COMMENT_ANIMATION_START_SCALE = 0.8;
 var COMMENT_ANIMATION_PUNCH_SCALE = 1.1;
 var COMMENT_ANIMATION_NORMAL_SCALE = 1;
 var COMMENT_ANIMATION_OUT_SCALE = 1.3;
+var LOSE_COIN_REVIVE_COST = 500;
 
 var ROUTE_EDITOR_COLORS = [
   { r: 255, g: 195, b: 0 },
@@ -260,6 +276,27 @@ function findCollectionObjective(levelConfig) {
   }
 
   return null;
+}
+
+function retainSpriteFrame(spriteFrame, path) {
+  if (!spriteFrame) {
+    throw new Error("Cannot retain empty sprite frame: " + path);
+  }
+  if (typeof spriteFrame.addRef !== "function") {
+    throw new Error("SpriteFrame.addRef is required for gameplay sprite: " + path);
+  }
+  spriteFrame.addRef();
+  return spriteFrame;
+}
+
+function releaseRetainedSpriteFrame(spriteFrame, path) {
+  if (!spriteFrame) {
+    return;
+  }
+  if (typeof spriteFrame.decRef !== "function") {
+    throw new Error("SpriteFrame.decRef is required for gameplay sprite: " + path);
+  }
+  spriteFrame.decRef();
 }
 
 function buildObjectiveDisplayForObjective(objective, runtimeSnapshot) {
@@ -410,6 +447,61 @@ function buildWinCompletedTargetEntries(levelConfig, runtimeSnapshot) {
       description: buildWinTargetDescription(objective, display.target)
     });
   });
+
+  return entries;
+}
+
+function buildLoseTargetDisplayName(iconCode) {
+  if (typeof iconCode !== "string" || !LOSE_TARGET_DISPLAY_NAMES[iconCode]) {
+    throw new Error("LoseView unsupported target icon code: " + iconCode);
+  }
+  return LOSE_TARGET_DISPLAY_NAMES[iconCode];
+}
+
+function buildLoseUnfinishedTargetEntries(levelConfig, runtimeSnapshot) {
+  var objectives = getCollectionObjectiveList(levelConfig);
+  var entries = [];
+
+  objectives.forEach(function (objective) {
+    if (!objective || typeof objective.type !== "string") {
+      throw new Error("LoseView target objective entry must include type.");
+    }
+    if (
+      objective.type !== "collect_any" &&
+      objective.type !== "collect_color" &&
+      objective.type !== "collect_ice_snowball"
+    ) {
+      return;
+    }
+
+    var display = buildObjectiveDisplayForObjective(objective, runtimeSnapshot);
+    if (typeof display.iconCode !== "string" || !display.iconCode) {
+      throw new Error("LoseView target display requires iconCode.");
+    }
+    if (!Number.isInteger(display.remaining) || display.remaining < 0) {
+      throw new Error("LoseView target display requires non-negative integer remaining.");
+    }
+    if (display.remaining <= 0) {
+      return;
+    }
+    if (typeof display.remainingText !== "string" || !display.remainingText) {
+      throw new Error("LoseView target display requires remainingText.");
+    }
+
+    entries.push({
+      iconCode: display.iconCode,
+      remaining: display.remaining,
+      remainingText: display.remainingText,
+      displayName: buildLoseTargetDisplayName(display.iconCode)
+    });
+  });
+
+  if (entries.length <= 0) {
+    throw new Error("LoseView requires at least one unfinished target.");
+  }
+  if (entries.length > 2) {
+    throw new Error("LoseView prefab supports at most two unfinished targets.");
+  }
 
   return entries;
 }
@@ -967,6 +1059,7 @@ function createRouteColor(index, isActive) {
 function LevelRenderer(rootNode) {
   this.rootNode = rootNode;
   this.spriteFrameCache = {};
+  this.spriteFrameLoadPromises = {};
   this.layers = null;
   this.prefabFactory = new PrefabFactory();
   this._sharedWarmupPromise = null;
@@ -1022,11 +1115,22 @@ function LevelRenderer(rootNode) {
   this.loseActionHandlers = {
     onRetryLevel: null,
     onBackLevel: null,
-    onWatchAd: null
+    onWatchAd: null,
+    onCoinRevive: null
+  };
+  this.resultViewLifecycleHandlers = {
+    onWinViewShow: null,
+    onWinViewHide: null,
+    onLoseViewShow: null,
+    onLoseViewHide: null
   };
   this.loseAdPresentation = {
     showVideoIcon: true,
     showCoinIcon: false
+  };
+  this.loseCoinPresentation = {
+    cost: LOSE_COIN_REVIVE_COST,
+    getCoinCount: null
   };
   this.gameplayActionHandlers = {
     onBackToLevel: null,
@@ -1053,6 +1157,23 @@ LevelRenderer.prototype.setLoseAdPresentation = function (options) {
   this.loseAdPresentation = {
     showVideoIcon: showVideoIcon,
     showCoinIcon: showCoinIcon
+  };
+};
+
+LevelRenderer.prototype.setLoseCoinPresentation = function (options) {
+  if (!options || typeof options !== "object" || Array.isArray(options)) {
+    throw new Error("LoseView coin presentation options are required.");
+  }
+  var cost = Math.floor(Number(options.cost));
+  if (!Number.isInteger(cost) || cost <= 0) {
+    throw new Error("LoseView coin revive cost must be a positive integer.");
+  }
+  if (typeof options.getCoinCount !== "function") {
+    throw new Error("LoseView coin presentation requires getCoinCount.");
+  }
+  this.loseCoinPresentation = {
+    cost: cost,
+    getCoinCount: options.getCoinCount
   };
 };
 
@@ -1085,7 +1206,18 @@ LevelRenderer.prototype.setLoseActionHandlers = function (handlers) {
   this.loseActionHandlers = {
     onRetryLevel: typeof handlers.onRetryLevel === "function" ? handlers.onRetryLevel : null,
     onBackLevel: typeof handlers.onBackLevel === "function" ? handlers.onBackLevel : null,
-    onWatchAd: typeof handlers.onWatchAd === "function" ? handlers.onWatchAd : null
+    onWatchAd: typeof handlers.onWatchAd === "function" ? handlers.onWatchAd : null,
+    onCoinRevive: typeof handlers.onCoinRevive === "function" ? handlers.onCoinRevive : null
+  };
+};
+
+LevelRenderer.prototype.setResultViewLifecycleHandlers = function (handlers) {
+  handlers = handlers || {};
+  this.resultViewLifecycleHandlers = {
+    onWinViewShow: typeof handlers.onWinViewShow === "function" ? handlers.onWinViewShow : null,
+    onWinViewHide: typeof handlers.onWinViewHide === "function" ? handlers.onWinViewHide : null,
+    onLoseViewShow: typeof handlers.onLoseViewShow === "function" ? handlers.onLoseViewShow : null,
+    onLoseViewHide: typeof handlers.onLoseViewHide === "function" ? handlers.onLoseViewHide : null
   };
 };
 
@@ -1131,6 +1263,8 @@ LevelRenderer.prototype._invokeLoseAction = function (action) {
     handler = this.loseActionHandlers.onBackLevel;
   } else if (action === "ad") {
     handler = this.loseActionHandlers.onWatchAd;
+  } else if (action === "coin") {
+    handler = this.loseActionHandlers.onCoinRevive;
   }
 
   if (typeof handler !== "function") {
@@ -1183,6 +1317,30 @@ LevelRenderer.prototype._invokeGameplayAction = function (action) {
   }
 
   handler();
+};
+
+LevelRenderer.prototype._notifyResultViewLifecycle = function (handlerName) {
+  if (!this.resultViewLifecycleHandlers) {
+    return;
+  }
+  var handler = this.resultViewLifecycleHandlers[handlerName];
+  if (typeof handler === "function") {
+    handler();
+  }
+};
+
+LevelRenderer.prototype._notifyActiveResultViewsHidden = function () {
+  if (!this.layers || !this.layers.modal) {
+    return;
+  }
+  var winView = this.layers.modal.getChildByName("WinView");
+  if (winView && winView.active) {
+    this._notifyResultViewLifecycle("onWinViewHide");
+  }
+  var loseView = this.layers.modal.getChildByName("LoseView");
+  if (loseView && loseView.active) {
+    this._notifyResultViewLifecycle("onLoseViewHide");
+  }
 };
 
 LevelRenderer.prototype.renderLevel = function (levelConfig, runtimeSnapshot) {
@@ -1251,6 +1409,7 @@ LevelRenderer.prototype.renderLevel = function (levelConfig, runtimeSnapshot) {
     clearChildren(this.layers.dangerLine);
     clearChildren(this.layers.overlay);
     clearChildren(this.layers.comment);
+    this._notifyActiveResultViewsHidden();
     clearChildren(this.layers.modal);
     this.lastWinViewRenderKey = "";
     clearChildren(this.layers.routeEditor);
@@ -1479,6 +1638,10 @@ LevelRenderer.prototype.setGameplayLayersVisible = function (visible) {
     return;
   }
 
+  if (!visible) {
+    this._notifyActiveResultViewsHidden();
+  }
+
   this._forEachGameplayLayer(function (layerNode) {
     layerNode.active = visible;
   });
@@ -1616,11 +1779,6 @@ LevelRenderer.prototype._collectRetainedSpritePaths = function () {
 };
 
 LevelRenderer.prototype.releaseLevelSpecificSpriteCache = function () {
-  if (!cc || !cc.assetManager || typeof cc.assetManager.releaseAsset !== "function") {
-    throw new Error("cc.assetManager.releaseAsset is required to release level-specific sprites.");
-  }
-
-  var releaseAsset = cc.assetManager.releaseAsset;
   var retainPaths = {};
   this._collectRetainedSpritePaths().forEach(function (path) {
     retainPaths[path] = true;
@@ -1632,25 +1790,17 @@ LevelRenderer.prototype.releaseLevelSpecificSpriteCache = function () {
     }
     var spriteFrame = this.spriteFrameCache[path];
     delete this.spriteFrameCache[path];
-    if (spriteFrame) {
-      releaseAsset(spriteFrame);
-    }
+    releaseRetainedSpriteFrame(spriteFrame, path);
   }.bind(this));
 };
 
 LevelRenderer.prototype.releaseAfterGameplayBundleUnload = function () {
-  if (!cc || !cc.assetManager || typeof cc.assetManager.releaseAsset !== "function") {
-    throw new Error("cc.assetManager.releaseAsset is required to release gameplay bundle assets.");
-  }
-
-  var releaseAsset = cc.assetManager.releaseAsset;
   Object.keys(this.spriteFrameCache).forEach(function (path) {
     var spriteFrame = this.spriteFrameCache[path];
-    if (spriteFrame) {
-      releaseAsset(spriteFrame);
-    }
+    releaseRetainedSpriteFrame(spriteFrame, path);
   }.bind(this));
   this.spriteFrameCache = {};
+  this.spriteFrameLoadPromises = {};
   this._sharedWarmupPromise = null;
   this.lastHudRenderKey = "";
   this.lastJarRenderKey = "";
@@ -1747,6 +1897,8 @@ LevelRenderer.prototype._collectCommonSpritePaths = function () {
     HUD_STAR_RESOURCES.unlit,
     REWARD_ITEM_RESOURCES.coin,
     REWARD_ITEM_RESOURCES.stamina,
+    POWERUP_ICON_RESOURCES.rainbow,
+    POWERUP_ICON_RESOURCES.barrier_hammer,
     COMMENT_ANIMATION_RESOURCES.good,
     COMMENT_ANIMATION_RESOURCES.great,
     COMMENT_ANIMATION_RESOURCES.excellent,
@@ -1779,11 +1931,19 @@ LevelRenderer.prototype._preloadSprites = function (paths) {
     if (this.spriteFrameCache[path]) {
       return Promise.resolve(this.spriteFrameCache[path]);
     }
+    if (this.spriteFrameLoadPromises[path]) {
+      return this.spriteFrameLoadPromises[path];
+    }
 
-    return loadSpriteFrame(path).then(function (spriteFrame) {
-      this.spriteFrameCache[path] = spriteFrame;
-      return spriteFrame;
+    this.spriteFrameLoadPromises[path] = loadSpriteFrame(path).then(function (spriteFrame) {
+      this.spriteFrameCache[path] = retainSpriteFrame(spriteFrame, path);
+      delete this.spriteFrameLoadPromises[path];
+      return this.spriteFrameCache[path];
+    }.bind(this)).catch(function (error) {
+      delete this.spriteFrameLoadPromises[path];
+      throw error;
     }.bind(this));
+    return this.spriteFrameLoadPromises[path];
   }, this));
 };
 
@@ -1797,6 +1957,7 @@ var LEVEL_RENDERER_SCENE_DEPS = {
   JAR_RESOURCES: JAR_RESOURCES,
   JAR_MASK_RESOURCES: JAR_MASK_RESOURCES,
   REWARD_ITEM_RESOURCES: REWARD_ITEM_RESOURCES,
+  POWERUP_ICON_RESOURCES: POWERUP_ICON_RESOURCES,
   HUD_STAR_RESOURCES: HUD_STAR_RESOURCES,
   PREFAB_PATHS: PREFAB_PATHS,
   JAR_RENDER_Y_OFFSET: JAR_RENDER_Y_OFFSET,
@@ -1854,6 +2015,7 @@ var LEVEL_RENDERER_SCENE_DEPS = {
   getOrCreateChild: getOrCreateChild,
   SpriteProxyLayerHelper: SpriteProxyLayerHelper,
   buildObjectiveDisplayData: buildObjectiveDisplayData,
+  buildLoseUnfinishedTargetEntries: buildLoseUnfinishedTargetEntries,
   buildWinCompletedTargetEntries: buildWinCompletedTargetEntries,
   buildWinCollectEntries: buildWinCollectEntries,
   buildHudTargetDisplayData: buildHudTargetDisplayData,
@@ -1876,6 +2038,7 @@ var LEVEL_RENDERER_SCENE_DEPS = {
   resolveBallVisualKey: resolveBallVisualKey,
   computeShooterAngle: computeShooterAngle,
   createRouteColor: createRouteColor,
+  buildAdRevivePlan: AdRevivePolicy.buildRevivePlan,
   buildAdReviveDescription: AdRevivePolicy.buildReviveDescription,
   resolveLoseRewardEntry: AdRewardCatalog.resolveLoseRewardEntry,
   clamp: clamp

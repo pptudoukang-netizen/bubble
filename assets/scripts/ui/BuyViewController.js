@@ -23,6 +23,13 @@ function assertFunction(value, message) {
   }
 }
 
+function requireNonNegativeInteger(value, message) {
+  if (!Number.isInteger(value) || value < 0) {
+    throw new Error(message);
+  }
+  return value;
+}
+
 function findNodeByNameRecursive(rootNode, name) {
   if (!rootNode || !rootNode.isValid) {
     return null;
@@ -157,7 +164,8 @@ BuyViewController.prototype._resolveNodes = function () {
     name: requireChild(panel, "name"),
     functionText: requireChild(panel, "function"),
     todayLimit: requireChild(panel, "today_limit"),
-    totalNum: requireChild(panel, "total_num")
+    totalNum: requireChild(panel, "total_num"),
+    selfNum: requireChild(panel, "self_num")
   };
 };
 
@@ -275,12 +283,18 @@ BuyViewController.prototype._syncQuantity = function () {
   this._syncRenderProxies();
 };
 
+BuyViewController.prototype.updateCoinCount = function (coinCount) {
+  var coins = requireNonNegativeInteger(coinCount, "BuyView coinCount must be a non-negative integer.");
+  setLabelText(this._nodes.selfNum, String(coins));
+};
+
 BuyViewController.prototype.render = function (options) {
   assertObject(options, "BuyView render options are required.");
   assertObject(options.goods, "BuyView render requires goods.");
   if (!Number.isInteger(options.remaining) || options.remaining <= 0) {
     throw new Error("BuyView requires positive remaining count.");
   }
+  requireNonNegativeInteger(options.coinCount, "BuyView render requires coinCount.");
 
   this._lastRenderOptions = options;
   this.quantity = 1;
@@ -292,6 +306,7 @@ BuyViewController.prototype.render = function (options) {
   setLabelText(this._nodes.name, options.goods.displayName);
   setLabelText(this._nodes.functionText, options.goods.functionText);
   setLabelText(this._nodes.todayLimit, options.goods.dailyLimit === 0 ? "不限购" : options.remaining + "/" + options.goods.dailyLimit);
+  this.updateCoinCount(options.coinCount);
   this._syncQuantity();
   return iconLoadPromise;
 };

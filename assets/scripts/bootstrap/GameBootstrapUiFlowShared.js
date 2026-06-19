@@ -34,6 +34,11 @@ var SIGN_IN_BUTTON_SPRITE_PATHS = {
   claimable: "image/sign/btn_green",
   locked: "image/sign/btn_blue"
 };
+var SIGN_IN_DAY_BG_SPRITE_PATHS = {
+  claimed: "image/sign/item_bg3",
+  claimable: "image/sign/item_bg2",
+  locked: "image/sign/item_bg1"
+};
 var SIGN_IN_ITEM_ICON_PATHS = {
   coin: "image/props/coin",
   stamina: "image/props/treasure_chest",
@@ -247,6 +252,7 @@ module.exports = {
   MAX_LEVEL_MAP_PREFAB_INDEX: MAX_LEVEL_MAP_PREFAB_INDEX,
   SIGN_IN_PREFAB_CANDIDATES: SIGN_IN_PREFAB_CANDIDATES,
   SIGN_IN_BUTTON_SPRITE_PATHS: SIGN_IN_BUTTON_SPRITE_PATHS,
+  SIGN_IN_DAY_BG_SPRITE_PATHS: SIGN_IN_DAY_BG_SPRITE_PATHS,
   SIGN_IN_ITEM_ICON_PATHS: SIGN_IN_ITEM_ICON_PATHS,
   SIGN_IN_DAY_ITEM_ICON_PATHS: SIGN_IN_DAY_ITEM_ICON_PATHS,
   SIGN_IN_ITEM_DISPLAY_NAMES: SIGN_IN_ITEM_DISPLAY_NAMES,

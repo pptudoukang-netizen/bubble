@@ -45,6 +45,7 @@ var FriendGiftService = Shared.FriendGiftService;
 var PlayerCloudProfileService = Shared.PlayerCloudProfileService;
 var WorldLeaderboardService = Shared.WorldLeaderboardService;
 var AdService = Shared.AdService;
+var WechatNativeTemplateAdAdapter = Shared.WechatNativeTemplateAdAdapter;
 var TelemetryService = Shared.TelemetryService;
 var AdRewardQuotaStore = Shared.AdRewardQuotaStore;
 var clone = Shared.clone;
@@ -100,6 +101,7 @@ module.exports = {
     this._startupResolvedLevelIds = null;
     this._startupPrefabWarmupPromise = null;
     this._startupBundlePrefetchPromise = null;
+    this._deferredUiBundleWarmupPromise = null;
     this._deferredFriendStaminaGiftClaimPromise = null;
     this._deferredPlayerCloudProfileSyncPromise = null;
     this._gameplayKernelPromise = null;
@@ -123,6 +125,11 @@ module.exports = {
     this._interstitialReturnHideObserved = false;
     this._interstitialReturnHideHandler = null;
     this._interstitialReturnShowHandler = null;
+    this._startGameNativeTemplateAdHeightPx = 0;
+    this._startGameNativeTemplateAdShowing = false;
+    this._resultNativeTemplateAdPlacement = "";
+    this._resultNativeTemplateAdHeightPx = 0;
+    this._resultNativeTemplateAdShowing = false;
     this._staminaRecoveryInProgress = false;
     this._staminaRecoveryTicker = null;
     this._pendingLevelEntry = null;
@@ -268,6 +275,12 @@ module.exports = {
     this._startGameLevelId = 0;
     this._startGameLevelConfig = null;
     this._pendingStartGamePowerups = [];
+    this._pendingStartGameTemporaryPowerups = {
+      three_line_elimination: 0,
+      plus_three_balls: 0
+    };
+    this._pendingStartGameTemporaryPowerupCosts = {};
+    this._startGameTemporaryPowerupsCommitted = false;
     this._threeLineEliminationInProgress = false;
     this._powerTipsViewPrefab = null;
     this._powerTipsViewNode = null;
@@ -292,6 +305,7 @@ module.exports = {
     this._buyViewNode = null;
     this._buyViewController = null;
     this._buyViewSkuId = "";
+    this._buyViewContext = null;
     this.dailySignInConfig = clone(DailySignInConfig);
     this.signInStore = new SignInStore({
       cycleLength: this.dailySignInConfig.cycleLength,
@@ -327,6 +341,13 @@ module.exports = {
       logger: Logger,
       mockEnabled: this.enableMockRewardedAdOnUnsupported === true,
       hostedShareBehaviorEnabled: true
+    });
+    this.nativeTemplateAdAdapter = new WechatNativeTemplateAdAdapter({
+      logger: Logger
+    });
+    this.levelSelectNativeTemplateAdAdapter = this.nativeTemplateAdAdapter;
+    this.startGameNativeTemplateAdAdapter = new WechatNativeTemplateAdAdapter({
+      logger: Logger
     });
     this._settingViewPrefab = null;
     this._settingViewNode = null;
@@ -464,6 +485,10 @@ module.exports = {
       this.levelRenderer.setLoseAdPresentation({
         showVideoIcon: this._hasRewardedVideoAdConfig()
       });
+      this.levelRenderer.setLoseCoinPresentation({
+        cost: Shared.LOSE_COIN_REVIVE_COST,
+        getCoinCount: this._getCurrentCoins.bind(this)
+      });
       this.levelRenderer.setWinActionHandlers({
         onNextLevel: this._onNextLevelTap.bind(this),
         onRetryLevel: this._restartCurrentLevel.bind(this)
@@ -471,7 +496,14 @@ module.exports = {
       this.levelRenderer.setLoseActionHandlers({
         onRetryLevel: this._restartCurrentLevel.bind(this),
         onBackLevel: this._onBackToLevelTap.bind(this),
-        onWatchAd: this._onLoseWatchAdTap.bind(this)
+        onWatchAd: this._onLoseWatchAdTap.bind(this),
+        onCoinRevive: this._onLoseCoinReviveTap.bind(this)
+      });
+      this.levelRenderer.setResultViewLifecycleHandlers({
+        onWinViewShow: this._showWinNativeTemplateAd.bind(this),
+        onWinViewHide: this._hideWinNativeTemplateAd.bind(this),
+        onLoseViewShow: this._showLoseNativeTemplateAd.bind(this),
+        onLoseViewHide: this._hideLoseNativeTemplateAd.bind(this)
       });
       this.levelRenderer.setGameplayActionHandlers({
         onOpenSettings: this._onGameplaySettingTap.bind(this),

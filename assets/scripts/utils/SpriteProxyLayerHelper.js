@@ -184,11 +184,29 @@ function clearRecords(records) {
     throw new Error("SpriteProxyLayerHelper records must be an array.");
   }
   records.forEach(function (record) {
+    restoreRecordSourceRender(record);
     if (record && record.proxyNode && record.proxyNode.isValid) {
       record.proxyNode.destroy();
     }
   });
   records.length = 0;
+}
+
+function restoreRecordSourceRender(record) {
+  if (!record) {
+    return;
+  }
+  if (!record.sourceNode || !record.sourceNode.isValid) {
+    return;
+  }
+  if (typeof record.restoreSourceRenderEnabled !== "boolean") {
+    throw new Error("SpriteProxyLayerHelper record restoreSourceRenderEnabled is required.");
+  }
+  setSpriteRenderEnabled(
+    record.sourceNode,
+    record.restoreSourceRenderEnabled,
+    "SpriteProxyLayerHelper restore source " + record.sourceNode.name
+  );
 }
 
 function resolveScaleToAncestor(node, ancestorNode, description) {
@@ -268,13 +286,29 @@ function createRecord(options) {
     throw new Error("SpriteProxyLayerHelper record name is required.");
   }
 
-  requireSprite(options.sourceNode, "SpriteProxyLayerHelper source " + options.name);
+  var sourceSprite = requireSprite(options.sourceNode, "SpriteProxyLayerHelper source " + options.name);
+  var sourceRenderEnabled = options.sourceRenderEnabled;
+  if (sourceRenderEnabled === undefined) {
+    sourceRenderEnabled = sourceSprite.enabled === true;
+  }
+  if (typeof sourceRenderEnabled !== "boolean") {
+    throw new Error("SpriteProxyLayerHelper sourceRenderEnabled must be boolean: " + options.name);
+  }
+  var restoreSourceRenderEnabled = options.restoreSourceRenderEnabled;
+  if (restoreSourceRenderEnabled === undefined) {
+    restoreSourceRenderEnabled = true;
+  }
+  if (typeof restoreSourceRenderEnabled !== "boolean") {
+    throw new Error("SpriteProxyLayerHelper restoreSourceRenderEnabled must be boolean: " + options.name);
+  }
   var proxyNode = new cc.Node(options.name);
   proxyNode.parent = options.layerNode;
   proxyNode.addComponent(cc.Sprite);
   var record = {
     sourceNode: options.sourceNode,
     proxyNode: proxyNode,
+    sourceRenderEnabled: sourceRenderEnabled,
+    restoreSourceRenderEnabled: restoreSourceRenderEnabled,
     visible: options.visible === true
   };
   syncRecord(record, options.rootNode);
@@ -347,6 +381,9 @@ function collectAutoProxySprites(rootNode, options, output) {
   assertObject(options, "SpriteProxyLayerHelper auto proxy options");
   if (!Array.isArray(output)) {
     throw new Error("SpriteProxyLayerHelper auto proxy output must be an array.");
+  }
+  if (rootNode.active !== true) {
+    return;
   }
   if (isProxyNode(rootNode, options.proxyRootName)) {
     return;
@@ -427,12 +464,15 @@ function rebuildAutoProxyTree(options) {
   ]);
   var records = [];
   sourceNodes.forEach(function (sourceNode, index) {
+    var sourceRenderEnabled = requireSprite(sourceNode, "SpriteProxyLayerHelper auto proxy source " + sourceNode.name).enabled === true;
     setSpriteRenderEnabled(sourceNode, false, "SpriteProxyLayerHelper auto proxy source " + sourceNode.name);
     records.push(createRecord({
       layerNode: layers[classifyAutoProxyLayer(sourceNode)],
       sourceNode: sourceNode,
       rootNode: proxyRoot,
       name: proxyRootName + "_sprite_" + index,
+      sourceRenderEnabled: sourceRenderEnabled,
+      restoreSourceRenderEnabled: true,
       visible: true
     }));
   });

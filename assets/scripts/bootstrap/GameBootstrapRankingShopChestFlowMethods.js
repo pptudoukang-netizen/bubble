@@ -302,11 +302,11 @@ module.exports = {
       this._renderShopView();
       return;
     }
-    this._showBuyView(skuId, goods, remaining);
+    this._showBuyView(skuId, goods, remaining, null);
   },
 
-  _showBuyView: function (skuId, goods, remaining) {
-    this._ensureBuyViewPrefab().then(function (prefab) {
+  _showBuyView: function (skuId, goods, remaining, context) {
+    return this._ensureBuyViewPrefab().then(function (prefab) {
       var buyNode = this._buyViewNode;
       if (!buyNode || !cc.isValid(buyNode)) {
         buyNode = cc.instantiate(prefab);
@@ -330,6 +330,7 @@ module.exports = {
       }
 
       this._buyViewSkuId = skuId;
+      this._buyViewContext = context || null;
       buyNode.active = true;
       PopupPanelAnimator.play(buyNode);
       return this._renderBuyView(goods, remaining);
@@ -341,6 +342,7 @@ module.exports = {
 
   _hideBuyView: function () {
     this._buyViewSkuId = "";
+    this._buyViewContext = null;
     UiModalReleaseHelper.releaseCachedModal(this, {
       label: "BuyView",
       nodeKey: "_buyViewNode",
@@ -353,6 +355,7 @@ module.exports = {
     if (!this._buyViewSkuId) {
       throw new Error("BuyView skuId is missing.");
     }
+    var buyViewContext = this._buyViewContext;
     var result = this.shopPurchaseService.purchase(this._buyViewSkuId, quantity);
     if (!result.accepted) {
       showStatusAndTip(this, this._resolveShopPurchaseFailMessage(result.reason));
@@ -363,6 +366,11 @@ module.exports = {
     this._refreshPlayerResources();
     this._refreshPlayerInventory();
     this._updateLevelSelectTopStatus();
+    this._renderInventoryView();
+    this._updateInventoryEntryState();
+    if (buyViewContext && buyViewContext.source === "gameplay_inventory_quick_buy") {
+      this._applyGameplayInventoryQuickBuy(result, buyViewContext);
+    }
     this._renderShopView();
     this._hideBuyView();
     showStatusAndTip(this, "获得" + result.goods.displayName + " +" + result.itemCount);
