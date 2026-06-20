@@ -49,7 +49,7 @@ var AD_RUN_POWERUP_TYPES = {
 };
 var MIN_INITIAL_DROP_SPACE_ROWS = 8;
 var MAX_JAR_COUNT = 4;
-var MAX_SHOT_LIMIT = 30;
+var MAX_SHOT_LIMIT = 40;
 var CLEAR_REWARD_START_LEVEL_ID = 1;
 
 function clone(data) {
@@ -469,9 +469,6 @@ function normalizeAdPowerupRules(levelConfig, levelKey) {
   if (!Array.isArray(rules.allowed)) {
     throw new Error("level.adPowerupRules.allowed must be array: " + levelKey);
   }
-  if (!rules.maxGrantsPerRun || typeof rules.maxGrantsPerRun !== "object" || Array.isArray(rules.maxGrantsPerRun)) {
-    throw new Error("level.adPowerupRules.maxGrantsPerRun must be object: " + levelKey);
-  }
   var seen = {};
   rules.allowed.forEach(function (powerupType, index) {
     if (typeof powerupType !== "string" || AD_RUN_POWERUP_TYPES[powerupType] !== true) {
@@ -481,14 +478,8 @@ function normalizeAdPowerupRules(levelConfig, levelKey) {
       throw new Error("duplicate ad powerup rule: " + powerupType + ": " + levelKey);
     }
     seen[powerupType] = true;
-    assertPositiveInteger(rules.maxGrantsPerRun[powerupType], "level.adPowerupRules.maxGrantsPerRun." + powerupType, levelKey);
     if (levelConfig.playMode === "timed_infinite_shots" && powerupType === "plus_three_balls") {
       throw new Error("timed_infinite_shots cannot allow plus_three_balls: " + levelKey);
-    }
-  });
-  Object.keys(rules.maxGrantsPerRun).forEach(function (powerupType) {
-    if (seen[powerupType] !== true) {
-      throw new Error("level.adPowerupRules.maxGrantsPerRun contains undeclared powerup: " + levelKey);
     }
   });
 }

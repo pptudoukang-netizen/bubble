@@ -23,6 +23,14 @@ function attachLevelRendererSceneMethods(LevelRenderer, deps) {
   var GUIDE_DOT_PULSE_DURATION = deps.GUIDE_DOT_PULSE_DURATION;
   var GUIDE_DOT_PULSE_SCALE_LARGE = deps.GUIDE_DOT_PULSE_SCALE_LARGE;
   var GUIDE_DOT_PULSE_SCALE_SMALL = deps.GUIDE_DOT_PULSE_SCALE_SMALL;
+  var BARRIER_HAMMER_HINT_SIZE = deps.BARRIER_HAMMER_HINT_SIZE;
+  var BARRIER_HAMMER_HINT_OFFSET_X = deps.BARRIER_HAMMER_HINT_OFFSET_X;
+  var BARRIER_HAMMER_HINT_OFFSET_Y = deps.BARRIER_HAMMER_HINT_OFFSET_Y;
+  var BARRIER_HAMMER_HINT_TAP_OFFSET_X = deps.BARRIER_HAMMER_HINT_TAP_OFFSET_X;
+  var BARRIER_HAMMER_HINT_TAP_OFFSET_Y = deps.BARRIER_HAMMER_HINT_TAP_OFFSET_Y;
+  var BARRIER_HAMMER_HINT_LIFT_DURATION = deps.BARRIER_HAMMER_HINT_LIFT_DURATION;
+  var BARRIER_HAMMER_HINT_STRIKE_DURATION = deps.BARRIER_HAMMER_HINT_STRIKE_DURATION;
+  var BARRIER_HAMMER_HINT_PAUSE_DURATION = deps.BARRIER_HAMMER_HINT_PAUSE_DURATION;
   var TEST_SLOT_RADIUS = deps.TEST_SLOT_RADIUS;
   var ICE_OVERLAY_OPACITY = deps.ICE_OVERLAY_OPACITY;
   var NEXT_SHOT_OFFSET_X = deps.NEXT_SHOT_OFFSET_X;
@@ -2460,6 +2468,182 @@ LevelRenderer.prototype._applyMolotovBlastHiddenBoardState = function (bubbleNod
   bubbleNode.active = false;
 };
 
+LevelRenderer.prototype._buildBarrierHammerHintAction = function (hintNode) {
+  if (!hintNode || !hintNode.isValid) {
+    throw new Error("Barrier hammer hint action requires hint node.");
+  }
+  if (
+    typeof cc.callFunc !== "function" ||
+    typeof cc.spawn !== "function" ||
+    typeof cc.sequence !== "function" ||
+    typeof cc.repeatForever !== "function" ||
+    typeof cc.moveTo !== "function" ||
+    typeof cc.rotateTo !== "function" ||
+    typeof cc.delayTime !== "function"
+  ) {
+    throw new Error("Barrier hammer hint animation requires Cocos action APIs.");
+  }
+
+  var liftX = BARRIER_HAMMER_HINT_OFFSET_X;
+  var liftY = BARRIER_HAMMER_HINT_OFFSET_Y;
+  var strikeX = BARRIER_HAMMER_HINT_OFFSET_X + BARRIER_HAMMER_HINT_TAP_OFFSET_X;
+  var strikeY = BARRIER_HAMMER_HINT_OFFSET_Y + BARRIER_HAMMER_HINT_TAP_OFFSET_Y;
+  return cc.repeatForever(cc.sequence(
+    cc.callFunc(function () {
+      hintNode.setPosition(liftX, liftY);
+      hintNode.angle = -26;
+      hintNode.opacity = 255;
+    }),
+    cc.spawn(
+      cc.moveTo(BARRIER_HAMMER_HINT_STRIKE_DURATION, strikeX, strikeY),
+      cc.rotateTo(BARRIER_HAMMER_HINT_STRIKE_DURATION, 18)
+    ),
+    cc.delayTime(BARRIER_HAMMER_HINT_PAUSE_DURATION),
+    cc.spawn(
+      cc.moveTo(BARRIER_HAMMER_HINT_LIFT_DURATION, liftX, liftY),
+      cc.rotateTo(BARRIER_HAMMER_HINT_LIFT_DURATION, -26)
+    )
+  ));
+};
+
+LevelRenderer.prototype._removeBarrierHammerHintNodeByCellId = function (cellId) {
+  if (typeof cellId !== "string" || !cellId) {
+    throw new Error("Barrier hammer hint removal requires cell id.");
+  }
+  if (!this.barrierHammerHintNodes || typeof this.barrierHammerHintNodes !== "object" || Array.isArray(this.barrierHammerHintNodes)) {
+    throw new Error("Barrier hammer hint nodes map is required.");
+  }
+
+  var hintNode = this.barrierHammerHintNodes[cellId];
+  if (hintNode && hintNode.isValid) {
+    hintNode.stopAllActions();
+    hintNode.removeFromParent(true);
+  }
+  delete this.barrierHammerHintNodes[cellId];
+};
+
+LevelRenderer.prototype._clearBarrierHammerStoneHints = function () {
+  if (!this.barrierHammerHintNodes || typeof this.barrierHammerHintNodes !== "object" || Array.isArray(this.barrierHammerHintNodes)) {
+    throw new Error("Barrier hammer hint nodes map is required.");
+  }
+
+  Object.keys(this.barrierHammerHintNodes).forEach(function (cellId) {
+    this._removeBarrierHammerHintNodeByCellId(cellId);
+  }, this);
+};
+
+LevelRenderer.prototype._ensureBarrierHammerHintNode = function (bubbleNode, cellId, spriteFrame) {
+  if (!bubbleNode || !bubbleNode.isValid) {
+    throw new Error("Barrier hammer hint requires valid bubble node.");
+  }
+  if (typeof cellId !== "string" || !cellId) {
+    throw new Error("Barrier hammer hint requires cell id.");
+  }
+  if (!spriteFrame) {
+    throw new Error("Barrier hammer hint requires sprite frame.");
+  }
+  if (!BARRIER_HAMMER_HINT_SIZE || typeof BARRIER_HAMMER_HINT_SIZE.width !== "number" || typeof BARRIER_HAMMER_HINT_SIZE.height !== "number") {
+    throw new Error("Barrier hammer hint requires valid size.");
+  }
+  if (!this.barrierHammerHintNodes || typeof this.barrierHammerHintNodes !== "object" || Array.isArray(this.barrierHammerHintNodes)) {
+    throw new Error("Barrier hammer hint nodes map is required.");
+  }
+
+  var hintNode = this.barrierHammerHintNodes[cellId];
+  if (hintNode && hintNode.isValid && hintNode.parent !== bubbleNode) {
+    hintNode.stopAllActions();
+    hintNode.removeFromParent(true);
+    delete this.barrierHammerHintNodes[cellId];
+    hintNode = null;
+  }
+
+  if (!hintNode || !hintNode.isValid) {
+    hintNode = new cc.Node("BarrierHammerHint");
+    this.barrierHammerHintNodes[cellId] = hintNode;
+    hintNode.parent = bubbleNode;
+    hintNode.zIndex = 120;
+    hintNode.setAnchorPoint(0.5, 0.5);
+    hintNode.setPosition(BARRIER_HAMMER_HINT_OFFSET_X, BARRIER_HAMMER_HINT_OFFSET_Y);
+    hintNode.angle = -26;
+    hintNode.opacity = 255;
+    hintNode.setContentSize(BARRIER_HAMMER_HINT_SIZE);
+    ensureSprite(hintNode, spriteFrame);
+    hintNode.runAction(this._buildBarrierHammerHintAction(hintNode));
+  } else {
+    hintNode.parent = bubbleNode;
+    hintNode.active = true;
+    hintNode.zIndex = 120;
+    hintNode.setContentSize(BARRIER_HAMMER_HINT_SIZE);
+    ensureSprite(hintNode, spriteFrame);
+  }
+};
+
+LevelRenderer.prototype._syncBarrierHammerStoneHints = function (runtimeSnapshot) {
+  if (!runtimeSnapshot || typeof runtimeSnapshot !== "object") {
+    throw new Error("Barrier hammer hints require runtime snapshot.");
+  }
+  var shooterSnapshot = runtimeSnapshot.shooter;
+  if (!shooterSnapshot || typeof shooterSnapshot !== "object") {
+    throw new Error("Barrier hammer hints require shooter snapshot.");
+  }
+  var boardSnapshot = runtimeSnapshot.board;
+  if (!boardSnapshot || typeof boardSnapshot !== "object" || !Array.isArray(boardSnapshot.cells)) {
+    throw new Error("Barrier hammer hints require board cells.");
+  }
+
+  if (!shooterSnapshot.pendingBarrierHammer) {
+    this._clearBarrierHammerStoneHints();
+    this.lastBarrierHammerHintKey = "inactive";
+    return;
+  }
+
+  if (!this.layers || !this.layers.board || !this.layers.board.isValid) {
+    throw new Error("Barrier hammer hints require board layer.");
+  }
+
+  var spritePath = POWERUP_ICON_RESOURCES.barrier_hammer;
+  if (typeof spritePath !== "string" || !spritePath) {
+    throw new Error("Barrier hammer hint sprite path is missing.");
+  }
+  var spriteFrame = this.spriteFrameCache[spritePath];
+  if (!spriteFrame) {
+    throw new Error("Missing preloaded barrier hammer hint sprite: " + spritePath);
+  }
+
+  var activeCellIds = {};
+  boardSnapshot.cells.forEach(function (cell) {
+    if (!cell || typeof cell !== "object") {
+      throw new Error("Barrier hammer hint requires valid board cell.");
+    }
+    if (cell.entityType !== "stone") {
+      return;
+    }
+    if (!cell.id) {
+      throw new Error("Stone cell requires id for barrier hammer hint.");
+    }
+
+    var cellId = String(cell.id);
+    var bubbleNode = this.boardBubbleNodes[cellId];
+    if (!bubbleNode || !bubbleNode.isValid) {
+      throw new Error("Barrier hammer hint target bubble node is missing: " + cellId);
+    }
+    activeCellIds[cellId] = true;
+    this._ensureBarrierHammerHintNode(bubbleNode, cellId, spriteFrame);
+  }, this);
+
+  Object.keys(this.barrierHammerHintNodes).forEach(function (cellId) {
+    if (!activeCellIds[cellId]) {
+      this._removeBarrierHammerHintNodeByCellId(cellId);
+    }
+  }, this);
+
+  this.lastBarrierHammerHintKey = [
+    "active",
+    boardSnapshot.version,
+    Object.keys(activeCellIds).sort().join(",")
+  ].join("|");
+};
+
 LevelRenderer.prototype._renderBoard = function (boardSnapshot) {
   this.lastBoardVersion = boardSnapshot.version;
   this.boardRenderTick += 1;
@@ -2508,6 +2692,7 @@ LevelRenderer.prototype._acquireBoardBubbleNode = function (cell) {
   if (existing) {
     var expectedPath = resolveBoardBubblePrefabPath(cell);
     if (existing.__bubblePrefabPath !== expectedPath) {
+      this._removeBarrierHammerHintNodeByCellId(nodeId);
       existing.stopAllActions();
       existing.active = false;
       existing.removeFromParent(false);
@@ -2597,6 +2782,7 @@ LevelRenderer.prototype._recycleInactiveBoardBubbleNodes = function (activeTick)
     }
 
     if (node) {
+      this._removeBarrierHammerHintNodeByCellId(cellId);
       node.stopAllActions();
       node.active = false;
       node.removeFromParent(false);
@@ -4920,6 +5106,21 @@ LevelRenderer.prototype._playWinPopupOpenAnimation = function (winContent, starR
     return numberValue;
   }
 
+  function resolveWinLevelDisplayText(levelConfig) {
+    if (!levelConfig || !levelConfig.level) {
+      throw new Error("WinView level display requires level config.");
+    }
+    var randomChallenge = levelConfig.level.randomChallenge;
+    if (randomChallenge && randomChallenge.mode === "random_challenge") {
+      return "挑战关";
+    }
+    var levelId = Math.floor(Number(levelConfig.level.levelId));
+    if (!Number.isInteger(levelId) || levelId <= 0) {
+      throw new Error("WinView level display requires positive integer level id.");
+    }
+    return "第" + levelId + "关";
+  }
+
   function buildWinViewRenderKey(levelConfig, runtimeSnapshot) {
     if (!levelConfig || !levelConfig.level) {
       throw new Error("WinView render key requires level config.");
@@ -5025,14 +5226,11 @@ LevelRenderer.prototype._renderWinView = function (runtimeSnapshot) {
     this._playWinPopupOpenAnimation(winContent, starRating);
   }
 
-  var currentLevelId = this.currentLevelConfig && this.currentLevelConfig.level
-    ? Math.max(1, Math.floor(Number(this.currentLevelConfig.level.levelId) || 1))
-    : 1;
   var levelBgNode = winContent ? winContent.getChildByName("level_bg") : null;
   var currentLevelNode = levelBgNode
     ? levelBgNode.getChildByName("cur_level")
     : (winContent ? winContent.getChildByName("cur_level") : null);
-  this._setWinValueText(currentLevelNode, "第" + currentLevelId + "关");
+  this._setWinValueText(currentLevelNode, resolveWinLevelDisplayText(this.currentLevelConfig));
 
   var closeButtonNode = winContent ? winContent.getChildByName("btn_close") : null;
   if (!closeButtonNode && winView) {

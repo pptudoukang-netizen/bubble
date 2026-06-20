@@ -3,13 +3,15 @@
     "validate:stamina": "node tools/validate-stamina-system.js",
     "validate:levels": "node tools/validate-level-content.js",
     "validate:level-sync": "node tools/validate-level-sync.js",
+    "validate:random-challenge": "node tools/validate-random-challenge.js",
     "validate:aim": "node tools/validate-aim-profiles.js",
     "validate:shots": "node tools/validate-shot-regression.js",
     "validate:release": "node tools/validate-release-config.js",
     "generate:levels1000": "node tools/generate-1000-level-configs.js",
+    "redesign:first100-clusters": "node tools/redesign-first-100-clustered-levels.js",
     "generate:floating-map": "node tools/generate-floating-map-config.js --target 1000",
     "clean:wechat-cloudfunctions": "node tools/clean-wechat-build-cloudfunctions.js",
-    "validate": "npm run validate:stamina && npm run validate:levels && npm run validate:level-sync && npm run validate:aim && npm run validate:shots && npm run validate:release",
+    "validate": "npm run validate:stamina && npm run validate:levels && npm run validate:level-sync && npm run validate:random-challenge && npm run validate:aim && npm run validate:shots && npm run validate:release",
     "chatgpt:images": "node tools/chatgpt-web-image-regenerator.js"
   },
   "devDependencies": {

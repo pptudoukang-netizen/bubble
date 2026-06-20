@@ -1362,6 +1362,39 @@ function bindQuickStartButton(levelView, onQuickStart) {
   playQuickStartButtonBreath(quickStartButtonNode, "LevelSelectView quick start button breath");
 }
 
+function findChildByNameRecursive(parentNode, childName) {
+  if (!parentNode || !parentNode.isValid) {
+    return null;
+  }
+  var directChild = parentNode.getChildByName(childName);
+  if (directChild && directChild.isValid) {
+    return directChild;
+  }
+  for (var index = 0; index < parentNode.children.length; index += 1) {
+    var matched = findChildByNameRecursive(parentNode.children[index], childName);
+    if (matched) {
+      return matched;
+    }
+  }
+  return null;
+}
+
+function bindRandomChallengeButton(levelView, onRandomChallenge) {
+  if (typeof onRandomChallenge !== "function") {
+    throw new Error("LevelSelectView requires onRandomChallenge.");
+  }
+  var randomChallengeButtonNode = findChildByNameRecursive(levelView, "break_through_btn");
+  if (!randomChallengeButtonNode || !randomChallengeButtonNode.isValid) {
+    throw new Error("LevelSelectView requires break_through_btn.");
+  }
+  bindNamedButtonTap(
+    randomChallengeButtonNode,
+    "__randomChallengeTapBound",
+    "__onRandomChallenge",
+    onRandomChallenge
+  );
+}
+
 function bindBackToCurrentLevelButton(levelView, onBackToCurrentLevel) {
   if (typeof onBackToCurrentLevel !== "function") {
     throw new Error("LevelSelectView requires onBackToCurrentLevel.");
@@ -1426,6 +1459,10 @@ function renderLevelSelectContent(options) {
     throw new Error("LevelSelectView requires onQuickStart.");
   }
   var onQuickStart = options.onQuickStart;
+  if (typeof options.onRandomChallenge !== "function") {
+    throw new Error("LevelSelectView requires onRandomChallenge.");
+  }
+  var onRandomChallenge = options.onRandomChallenge;
   if (typeof options.onBackToCurrentLevel !== "function") {
     throw new Error("LevelSelectView requires onBackToCurrentLevel.");
   }
@@ -1474,6 +1511,7 @@ function renderLevelSelectContent(options) {
     onOpenDailyTasks: onOpenDailyTasks
   });
   bindQuickStartButton(levelView, onQuickStart);
+  bindRandomChallengeButton(levelView, onRandomChallenge);
   var backToCurrentLevelButtonNode = levelView.getChildByName("back_cur_level");
   if (!backToCurrentLevelButtonNode || !backToCurrentLevelButtonNode.isValid) {
     throw new Error("LevelView/back_cur_level is required.");

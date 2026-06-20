@@ -17,10 +17,6 @@ var UiModalReleaseHelper = require("../utils/UiModalReleaseHelper");
 var WORLD_RANK_LOADING_MESSAGE = "正在加载世界排行榜...";
 
 function resolveWorldLeaderboardFailMessage(error) {
-  var message = error && error.message ? error.message : String(error);
-  if (message.indexOf("wx.getUserProfile failed for world leaderboard") >= 0) {
-    return "授权后可查看世界排行榜";
-  }
   return "世界排行榜加载失败";
 }
 
@@ -29,18 +25,16 @@ module.exports = {
     if (!this._worldLeaderboardUserProfile) {
       throw new Error("World leaderboard user profile has not been authorized.");
     }
-    return this._worldLeaderboardUserProfile.nickname;
+    return this._worldLeaderboardUserProfile.nickname || "微信用户";
   },
 
   _refreshLeaderboardEntries: function () {
     if (!this.worldLeaderboardService || typeof this.worldLeaderboardService.submitAndList !== "function") {
       throw new Error("WorldLeaderboardService is not initialized.");
     }
-    if (!this._worldLeaderboardUserProfile) {
-      throw new Error("World leaderboard user profile has not been authorized.");
-    }
+    var profile = this._worldLeaderboardUserProfile || this.worldLeaderboardService.createAnonymousUserProfile();
     this._refreshLevelProgress();
-    return this.worldLeaderboardService.submitAndList(this.levelProgress, this._worldLeaderboardUserProfile)
+    return this.worldLeaderboardService.submitAndList(this.levelProgress, profile)
       .then(function (result) {
         return result.entries;
       });
@@ -133,10 +127,16 @@ module.exports = {
       : this.worldLeaderboardService.requestUserProfile().then(function (profile) {
         this._worldLeaderboardUserProfile = this.worldLeaderboardService.saveCachedUserProfile(profile);
         return this._worldLeaderboardUserProfile;
+      }.bind(this)).catch(function (error) {
+        Logger.warn("World leaderboard user profile authorization skipped", error && error.message ? error.message : error);
+        return this.worldLeaderboardService.createAnonymousUserProfile();
       }.bind(this));
 
-    return resolveUserProfile.then(function () {
-      return this._refreshLeaderboardEntries();
+    return resolveUserProfile.then(function (profile) {
+      this._refreshLevelProgress();
+      return this.worldLeaderboardService.submitAndList(this.levelProgress, profile).then(function (result) {
+        return result.entries;
+      });
     }.bind(this)).then(function (entries) {
       this._rankingViewController.render(entries);
       return entries;

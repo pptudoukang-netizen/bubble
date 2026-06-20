@@ -418,6 +418,9 @@ module.exports = {
     if (!this.levelProgressStore || typeof this.levelProgressStore.load !== "function") {
       throw new Error("Reload player profile requires LevelProgressStore.load.");
     }
+    if (!this.levelAttemptStatsStore || typeof this.levelAttemptStatsStore.load !== "function") {
+      throw new Error("Reload player profile requires LevelAttemptStatsStore.load.");
+    }
     if (!this.playerResourceStore || typeof this.playerResourceStore.load !== "function") {
       throw new Error("Reload player profile requires PlayerResourceStore.load.");
     }
@@ -457,6 +460,7 @@ module.exports = {
 
     var now = new Date();
     this.levelProgress = this.levelProgressStore.load();
+    this.levelAttemptStats = this.levelAttemptStatsStore.load();
     this.staminaRecoveryState = this.staminaRecoveryStore.load();
     this.playerResources = this.playerResourceStore.load(now);
     this.dailyTaskState = this.dailyTaskStore.load(now);

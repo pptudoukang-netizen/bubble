@@ -10,6 +10,7 @@ var clone = Shared.clone;
 var STAMINA_RECOVERY_LOW_GRANT = 1;
 var STAMINA_RECOVERY_HIGH_GRANT = 2;
 var STAMINA_RECOVERY_LOW_GRANT_COUNT = 2;
+var INTERSTITIAL_UNLOCK_COMPLETED_LEVEL_ID = 10;
 var CONSECUTIVE_LOSE_INTERSTITIAL_THRESHOLD = 3;
 var RESULT_NATIVE_TEMPLATE_AD_REFRESH_INTERVAL = 40;
 var REWARDED_AD_UNAVAILABLE_MESSAGE = "目前没有合适的广告，请稍后再试";
@@ -26,6 +27,24 @@ function resolveWechatPlatform() {
 
 function isInterstitialLoseState(state) {
   return state === "out_of_shots" || state === "lost_danger" || state === "lost_objective";
+}
+
+function isInterstitialAdUnlocked(host) {
+  if (!host || !host.levelProgress || typeof host.levelProgress !== "object" || Array.isArray(host.levelProgress)) {
+    throw new Error("Interstitial ad unlock check requires levelProgress.");
+  }
+  var completedLevels = host.levelProgress.completedLevels;
+  if (!completedLevels || typeof completedLevels !== "object" || Array.isArray(completedLevels)) {
+    throw new Error("Interstitial ad unlock check requires levelProgress.completedLevels.");
+  }
+  var unlockKey = String(INTERSTITIAL_UNLOCK_COMPLETED_LEVEL_ID);
+  if (!Object.prototype.hasOwnProperty.call(completedLevels, unlockKey)) {
+    return false;
+  }
+  if (completedLevels[unlockKey] !== true) {
+    throw new Error("levelProgress.completedLevels." + unlockKey + " must be true when present.");
+  }
+  return true;
 }
 
 function requireNonEmptyString(value, fieldName) {
@@ -185,6 +204,9 @@ module.exports = {
 
   _showInterstitialAd: function (placement) {
     var safePlacement = requireNonEmptyString(placement, "Interstitial ad placement");
+    if (!isInterstitialAdUnlocked(this)) {
+      return Promise.resolve(false);
+    }
     if (this._interstitialAdInProgress || this._adFlowInProgress) {
       return Promise.resolve(false);
     }

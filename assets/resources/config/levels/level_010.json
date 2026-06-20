@@ -46,7 +46,7 @@
             "B",
             "Y"
         ],
-        "shotLimit": 14,
+        "shotLimit": 24,
         "targetScore": 2440,
         "dropInterval": 6,
         "jarCount": 4,
@@ -91,11 +91,11 @@
             }
         ],
         "layout": [
-            "RGBYRGB.YR",
-            "GBYRGBYRG",
-            "BYRGBYRGBY",
-            "RGBYRGBYR",
-            "GBYRGBYRBY",
+            "GGGRRRR.RR",
+            "GGGBBBBBB",
+            "GGGGGYYYYY",
+            "BBBBBBYYY",
+            "YYYRRRRRRY",
             "Y........",
             "..........",
             "........."

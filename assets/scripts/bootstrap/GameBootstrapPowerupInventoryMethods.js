@@ -290,9 +290,6 @@ function getStartGameAdPowerupRules(levelConfig) {
   if (!Array.isArray(level.adPowerupRules.allowed)) {
     throw new Error("StartGameView level adPowerupRules.allowed must be an array.");
   }
-  if (!level.adPowerupRules.maxGrantsPerRun || typeof level.adPowerupRules.maxGrantsPerRun !== "object" || Array.isArray(level.adPowerupRules.maxGrantsPerRun)) {
-    throw new Error("StartGameView level adPowerupRules.maxGrantsPerRun must be an object.");
-  }
   return level.adPowerupRules;
 }
 
@@ -305,8 +302,7 @@ function isStartGameTemporaryPowerupAllowed(levelConfig, itemId) {
   if (rules.allowed.indexOf(config.adRunPowerupType) < 0) {
     return false;
   }
-  var maxGrant = requirePositiveInteger(rules.maxGrantsPerRun[config.adRunPowerupType], "StartGameView ad powerup maxGrantsPerRun." + config.adRunPowerupType);
-  return maxGrant > 0;
+  return true;
 }
 
 function buildStartGamePurchaseOptions(host, levelConfig) {
@@ -516,12 +512,13 @@ module.exports = {
       var snapshot = useResult && useResult.snapshot
         ? useResult.snapshot
         : this.gameManager.getRuntimeSnapshot();
+      if (useResult && useResult.accepted) {
+        this._recordAttemptPowerupUsed("three_line_elimination");
+      }
       this._handleRuntimeStateTransition(snapshot);
       this.levelRenderer.refreshRuntime(this.currentLevelConfig, snapshot);
 
-      if (useResult && useResult.accepted) {
-        this._setStatusWithTip("three_line_success", null, "消三行使用成功");
-      } else {
+      if (!useResult || !useResult.accepted) {
         this._setStatusWithTip("three_line_failed", null, "消三行失败");
       }
     }.bind(this)).then(function () {
@@ -536,11 +533,13 @@ module.exports = {
     var snapshot = useResult && useResult.snapshot
       ? useResult.snapshot
       : this.gameManager.getRuntimeSnapshot();
+    if (useResult && useResult.accepted) {
+      this._recordAttemptPowerupUsed("plus_three_balls");
+    }
     this._handleRuntimeStateTransition(snapshot);
     this.levelRenderer.refreshRuntime(this.currentLevelConfig, snapshot);
 
     if (useResult && useResult.accepted) {
-      this._setStatusWithTip("plus_three_balls_success", null, "加十球使用成功");
       return useResult;
     }
 
@@ -602,6 +601,9 @@ module.exports = {
       ? useResult.snapshot
       : this.gameManager.getRuntimeSnapshot();
 
+    if (useResult && useResult.accepted) {
+      this._recordAttemptPowerupUsed(entityType);
+    }
     this._handleRuntimeStateTransition(snapshot);
     this.levelRenderer.refreshRuntime(this.currentLevelConfig, snapshot);
 
@@ -613,12 +615,6 @@ module.exports = {
           powerupType: entityType
         });
       }
-      var skillName = entityType === "rainbow" ? "彩虹球" : "炸弹球";
-      this._setStatusWithTip(
-        entityType === "rainbow" ? "skill_equip_rainbow_success" : "skill_equip_blast_success",
-        null,
-        skillName + "使用成功"
-      );
       return;
     }
 
@@ -681,12 +677,14 @@ module.exports = {
       ? swapResult.snapshot
       : this.gameManager.getRuntimeSnapshot();
 
+    if (swapResult && swapResult.accepted) {
+      this._recordAttemptPowerupUsed("swap");
+    }
     this._handleRuntimeStateTransition(snapshot);
     this.levelRenderer.refreshRuntime(this.currentLevelConfig, snapshot);
 
     if (swapResult && swapResult.accepted) {
       this._consumePersistentInventoryItemForPowerup("swap");
-      this._setStatusWithTip("swap_success", null, "换球使用成功");
       return;
     }
 
@@ -754,9 +752,6 @@ module.exports = {
     this.levelRenderer.refreshRuntime(this.currentLevelConfig, snapshot);
 
     if (selectResult && selectResult.accepted) {
-      this._setStatusWithTip("rainbow_color_selected", {
-        color: colorCode
-      }, "彩虹球已变色");
       return;
     }
 
@@ -841,6 +836,9 @@ module.exports = {
       ? hammerResult.snapshot
       : this.gameManager.getRuntimeSnapshot();
 
+    if (hammerResult && hammerResult.accepted) {
+      this._recordAttemptPowerupUsed("barrier_hammer");
+    }
     this._handleRuntimeStateTransition(snapshot);
     this.levelRenderer.refreshRuntime(this.currentLevelConfig, snapshot);
 
@@ -852,7 +850,6 @@ module.exports = {
           powerupType: "barrier_hammer"
         });
       }
-      this._setStatusWithTip("hammer_applied", null, "破障锤使用成功");
       return;
     }
 
@@ -1114,8 +1111,8 @@ module.exports = {
     if (!this.gameManager || typeof this.gameManager.grantPowerupInventory !== "function") {
       throw new Error("StartGameView requires GameManager.grantPowerupInventory.");
     }
-    if (!this.gameManager || typeof this.gameManager.grantAdRunPowerup !== "function") {
-      throw new Error("StartGameView requires GameManager.grantAdRunPowerup.");
+    if (!this.gameManager || typeof this.gameManager.grantPreparedAdRunPowerup !== "function") {
+      throw new Error("StartGameView requires GameManager.grantPreparedAdRunPowerup.");
     }
 
     var levelId = normalizeStartGameLevelId(this._currentLevelId);
@@ -1142,7 +1139,7 @@ module.exports = {
         return;
       }
       var config = START_GAME_TEMPORARY_POWERUP_CONFIG_BY_ITEM_ID[itemId];
-      var grantResult = this.gameManager.grantAdRunPowerup(config.adRunPowerupType, count);
+      var grantResult = this.gameManager.grantPreparedAdRunPowerup(config.adRunPowerupType, count);
       if (!grantResult || grantResult.accepted !== true) {
         throw new Error("StartGameView grant temporary powerup failed: " + itemId);
       }

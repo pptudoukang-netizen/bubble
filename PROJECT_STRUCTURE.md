@@ -29,6 +29,7 @@
 - `tools/sync-loading-splash-template.js`：将 `assets/loading/loading_bg.jpg` 同步到 Web 构建模板目录。
 - `open-data/`：历史微信开放数据域逻辑。当前世界排行榜由主域源码和云函数实现，不再依赖开放数据域读取好友云存储。
 - `tools/`：校验、同步、构建修复、调试辅助脚本。
+- `tools/clustered-level-layout.js`、`tools/redesign-first-100-clustered-levels.js`：前 100 关聚类棋盘重设计规则与定向生成入口；对登记的问题关卡强制校验同色块覆盖率、孤球率和目标色连通块，并同步本地关卡、11-100 远程包及 manifest。
 - `settings/`：Cocos Creator 项目设置。
 - `package.json`：校验脚本入口。
 
@@ -137,8 +138,8 @@
 - 商店：`ShopConfigService.js`、`ShopStateService.js`、`ShopPurchaseService.js`
 - 星星宝箱：`StarChestService.js`、`StarChestRewardService.js`
 - 微信能力：`WechatShareService.js`、`FriendGiftService.js`、`GameCircleButtonAdapter.js`、`WorldLeaderboardService.js`
-- 玩家云端档案：`PlayerCloudProfileService.js` 通过 `playerProfile` 微信云函数同步本地玩家状态到云数据库 `player_profiles`
-- 世界排行榜：`WorldLeaderboardService.js` 优先读取本地缓存的排行榜昵称头像；缓存不存在时在点击排行榜入口后通过 `wx.getUserProfile` 获取并写入 `bubble_world_leaderboard_profile_v1`，再调用 `worldLeaderboard` 微信云函数把本地最佳成绩汇总写入云数据库 `world_leaderboard` 并拉取榜单。
+- 玩家云端档案：`PlayerCloudProfileService.js` 通过 `playerProfile` 微信云函数同步本地玩家状态到云数据库 `player_profiles`，同步内容包含关卡进度、资源、背包、签到、商店、游戏圈福利与关卡尝试统计。
+- 世界排行榜：玩家普通关卡过关后，`WorldLeaderboardService.js` 立即用本地最佳成绩和已过关数调用 `worldLeaderboard` 微信云函数写入云数据库 `world_leaderboard`。未授权昵称头像时数据库中的 `nickname` 与 `avatarUrl` 保持空字符串；用户后续授权后，排行榜入口会保存 `bubble_world_leaderboard_profile_v1` 并再次上报覆盖云端资料。排行榜只拉取前 100 名；展示时空头像使用默认头像，空昵称显示“微信用户”。
 - 游戏圈福利：`GameCircleWelfareService.js`
 - 埋点：`TelemetryService.js`
 
@@ -151,7 +152,7 @@
 - `StrictStorage.js`：严格本地存储读写，不吞 JSON 错误。
 - `BundleLoader.js`：分包/资源加载。
 - `Logger.js`、`DebugFlags.js`：日志和调试开关。
-- 各种 Store：`LevelProgressStore.js`、`PlayerResourceStore.js`、`InventoryStore.js`、`SelectedPowerupsStore.js`、`DailyTaskStore.js`、`SignInStore.js`、`StarChestStore.js`、`ShopStateStore.js`、`StaminaRecoveryStore.js`、`NewGiftStore.js`、`RouteConfigStore.js`、`GameCircleWelfareStore.js`、`LeaderboardStore.js`。
+- 各种 Store：`LevelProgressStore.js`、`LevelAttemptStatsStore.js`、`PlayerResourceStore.js`、`InventoryStore.js`、`SelectedPowerupsStore.js`、`DailyTaskStore.js`、`SignInStore.js`、`StarChestStore.js`、`ShopStateStore.js`、`StaminaRecoveryStore.js`、`NewGiftStore.js`、`RouteConfigStore.js`、`GameCircleWelfareStore.js`、`LeaderboardStore.js`。
 - `NewUserGuideStore.js`：记录新账号新手引导步骤，未完成引导时阻止签到弹窗自动弹出。
 
 ### ui

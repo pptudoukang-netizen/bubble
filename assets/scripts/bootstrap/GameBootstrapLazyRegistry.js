@@ -172,6 +172,8 @@ module.exports = {
     "_trackTelemetry",
     "_beginLevelAttemptTracking",
     "_trackRuntimeTelemetryEvent",
+    "_recordAttemptPowerupUsed",
+    "_recordCurrentAttemptQuit",
     "_onRuntimeStateTransition"
   ],
   ASSET_STATS_METHODS: [

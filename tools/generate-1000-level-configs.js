@@ -6,6 +6,7 @@ var path = require("path");
 
 var BoardLayout = require("../assets/scripts/config/BoardLayout");
 var LevelPackCompactCodec = require("../assets/scripts/config/LevelPackCompactCodec");
+var ClusteredLevelLayout = require("./clustered-level-layout");
 
 var PROJECT_ROOT = path.resolve(__dirname, "..");
 var RESOURCE_LEVEL_DIR = path.join(PROJECT_ROOT, "assets/resources/config/levels");
@@ -232,8 +233,8 @@ function normalizeTableRow(rawRow, levelId) {
     throw new Error("Level " + levelId + " table row count must be <= 20.");
   }
   var shotLimit = parsePositiveIntegerCell(rawRow, "发射球数量", levelId);
-  if (shotLimit > 30) {
-    throw new Error("Level " + levelId + " table shot count must be <= 30.");
+  if (shotLimit > 40) {
+    throw new Error("Level " + levelId + " table shot count must be <= 40.");
   }
 
   var target1 = parseCollectionTargetDisplay(rawRow["收集目标1"], levelId, "收集目标1");
@@ -650,6 +651,20 @@ function fillTableLayoutColors(rows, entities, tableRow, activeColors) {
     remaining[color] = tableRow.colorCounts[color];
   });
   var remainingTotal = sumColorCounts(tableRow.colorCounts);
+  if (ClusteredLevelLayout.shouldRedesign(tableRow.levelId)) {
+    var clusteredResult = ClusteredLevelLayout.buildClusteredLayout({
+      levelId: tableRow.levelId,
+      rows: rows,
+      colors: activeColors,
+      colorCounts: tableRow.colorCounts,
+      targetColor: tableRow.target1.color,
+      specialEntities: entities
+    });
+    clusteredResult.rows.forEach(function (clusteredRow, rowIndex) {
+      rows[rowIndex] = clusteredRow;
+    });
+    return;
+  }
   var fillIndex = 0;
   for (var row = 0; row < rows.length && remainingTotal > 0; row += 1) {
     for (var col = 0; col < rows[row].length && remainingTotal > 0; col += 1) {
@@ -961,7 +976,7 @@ function makeLevel(levelId, placementVariant) {
     spawnWeights[color] = 1 + ((levelId + index) % 3) * 0.15;
   });
 
-  return {
+  var config = {
     schemaVersion: 1,
     gameMode: "glass_marble_bubble",
     coordinateSystem: "odd-r-hex",
@@ -1018,15 +1033,42 @@ function makeLevel(levelId, placementVariant) {
       playMode: "shot_limited",
       initialDropSpaceRows: 8,
       adPowerupRules: {
-        allowed: ["three_line_elimination", "plus_three_balls"],
-        maxGrantsPerRun: {
-          three_line_elimination: 1,
-          plus_three_balls: 1
-        }
+        allowed: ["three_line_elimination", "plus_three_balls"]
       }
     },
     difficultyScaleMax: 100
   };
+
+  if (levelId === 8) {
+    config.layoutNotes.pattern = "double_support_drop";
+    config.level.code = "L008_DOUBLE_SUPPORT_DROP";
+    config.level.teaches = ["four_color_intro", "support_drop"];
+    config.level.dropInterval = 8;
+    config.level.spawnWeights = {
+      R: 0.8,
+      G: 1.4,
+      B: 1.4,
+      Y: 0.8
+    };
+    config.level.adPowerupRules.maxGrantsPerRun = {
+      three_line_elimination: 1,
+      plus_three_balls: 1
+    };
+    config.level.layout = [
+      "BBBGGGYYYY",
+      "BBBGGGYYY",
+      "BB..G..YYY",
+      ".BB...GG.",
+      ".RR...RRR.",
+      ".RR...RR.",
+      "..........",
+      "........."
+    ];
+    config.level.designNotes = "Handcrafted four-color tutorial: clear the blue and green supports to drop two suspended red target groups.";
+    config.level.difficultyScore = 26;
+  }
+
+  return config;
 }
 
 var generatedSpecialPositionState = {

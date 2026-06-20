@@ -4,7 +4,7 @@ var crypto = require("crypto");
 var cloud = require("wx-server-sdk");
 
 var COLLECTION_NAME = "world_leaderboard";
-var DEPLOYMENT_MARKER = "worldLeaderboard_v20260604_1";
+var DEPLOYMENT_MARKER = "worldLeaderboard_v20260619_2";
 
 cloud.init({
   env: cloud.DYNAMIC_CURRENT_ENV
@@ -26,6 +26,13 @@ function requireNonEmptyString(value, fieldName) {
     throw new Error(fieldName + " must be non-empty.");
   }
   return normalized;
+}
+
+function requireString(value, fieldName) {
+  if (typeof value !== "string") {
+    throw new Error(fieldName + " must be a string.");
+  }
+  return value.trim();
 }
 
 function requireNonNegativeInteger(value, fieldName) {
@@ -62,19 +69,23 @@ function normalizeLimit(value) {
 function normalizeProfile(profile) {
   requireObject(profile, "worldLeaderboard profile");
   return {
-    nickname: requireNonEmptyString(profile.nickname, "worldLeaderboard nickname"),
-    avatarUrl: requireNonEmptyString(profile.avatarUrl, "worldLeaderboard avatarUrl")
+    nickname: requireString(profile.nickname, "worldLeaderboard nickname"),
+    avatarUrl: requireString(profile.avatarUrl, "worldLeaderboard avatarUrl")
   };
 }
 
-function normalizeSubmission(event) {
+function normalizeSubmission(event, options) {
   requireObject(event, "worldLeaderboard event");
-  return {
-    limit: normalizeLimit(event.limit),
+  var settings = options || {};
+  var submission = {
     profile: normalizeProfile(event.profile),
     score: requireNonNegativeInteger(event.score, "worldLeaderboard score"),
     completedLevels: requireNonNegativeInteger(event.completedLevels, "worldLeaderboard completedLevels")
   };
+  if (settings.requireLimit === true) {
+    submission.limit = normalizeLimit(event.limit);
+  }
+  return submission;
 }
 
 function normalizeRecord(record, selfOpenid, rank) {
@@ -82,8 +93,8 @@ function normalizeRecord(record, selfOpenid, rank) {
   return {
     rank: requirePositiveInteger(rank, "worldLeaderboard rank"),
     playerId: requireNonEmptyString(record.playerId, "worldLeaderboard playerId"),
-    nickname: requireNonEmptyString(record.nickname, "worldLeaderboard record nickname"),
-    avatarUrl: requireNonEmptyString(record.avatarUrl, "worldLeaderboard record avatarUrl"),
+    nickname: requireString(record.nickname, "worldLeaderboard record nickname"),
+    avatarUrl: requireString(record.avatarUrl, "worldLeaderboard record avatarUrl"),
     score: requireNonNegativeInteger(record.score, "worldLeaderboard record score"),
     completedLevels: requireNonNegativeInteger(record.completedLevels, "worldLeaderboard record completedLevels"),
     isSelf: requireNonEmptyString(record.openid, "worldLeaderboard record openid") === selfOpenid
@@ -104,7 +115,9 @@ function compareRecords(left, right) {
 }
 
 async function submitRecord(collection, openid, event) {
-  var submission = normalizeSubmission(event);
+  var submission = normalizeSubmission(event, {
+    requireLimit: event.action === "submitAndList"
+  });
   var now = Date.now();
   var recordId = buildLeaderboardRecordId(openid);
   var result = await collection.doc(recordId).set({
@@ -150,6 +163,14 @@ exports.main = async function (event) {
   var context = cloud.getWXContext();
   var openid = requireNonEmptyString(context.OPENID, "player OPENID");
   var collection = cloud.database().collection(COLLECTION_NAME);
+
+  if (action === "submit") {
+    var submitResult = await submitRecord(collection, openid, event);
+    return {
+      accepted: true,
+      updatedAt: submitResult.updatedAt
+    };
+  }
 
   if (action === "submitAndList") {
     var submissionResult = await submitRecord(collection, openid, event);

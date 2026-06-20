@@ -1,12 +1,16 @@
 "use strict";
 
 var StrictStorage = require("../utils/StrictStorage");
+var LevelAttemptStatsStore = require("../utils/LevelAttemptStatsStore");
 
 var PROFILE_VERSION = 1;
+var EXPECTED_DEPLOYMENT_MARKER = "playerProfile_v20260619_attempt_stats_v1";
 var SYNC_SOURCE_CLOUD = "cloud";
 var SYNC_SOURCE_LOCAL = "local";
+var LEVEL_ATTEMPT_STATS_STORAGE_KEY = LevelAttemptStatsStore.STORAGE_KEY;
 var STORAGE_ENTRIES = [
   { storageKey: "bubble_level_progress_v1", namespace: "LevelProgressStore" },
+  { storageKey: LEVEL_ATTEMPT_STATS_STORAGE_KEY, namespace: LevelAttemptStatsStore.NAMESPACE },
   { storageKey: "bubble_player_resources_v1", namespace: "PlayerResourceStore" },
   { storageKey: "bubble_stamina_recovery_state_v1", namespace: "StaminaRecoveryStore" },
   { storageKey: "bubble_daily_task_state_v1", namespace: "DailyTaskStore" },
@@ -103,6 +107,16 @@ function parseStoredValue(rawText, storageKey) {
   }
 }
 
+function createMissingStorageEntry(storageKey, entryMap) {
+  if (storageKey === LEVEL_ATTEMPT_STATS_STORAGE_KEY) {
+    return {
+      namespace: entryMap[storageKey].namespace,
+      value: LevelAttemptStatsStore.createInitialState()
+    };
+  }
+  throw new Error("Player cloud profile missing storageKey: " + storageKey);
+}
+
 function normalizeProfile(profile, entryMap) {
   assertObject(profile, "Player cloud profile");
   if (profile.version !== PROFILE_VERSION) {
@@ -119,7 +133,8 @@ function normalizeProfile(profile, entryMap) {
   var normalizedStorage = {};
   Object.keys(entryMap).forEach(function (storageKey) {
     if (!Object.prototype.hasOwnProperty.call(profile.storage, storageKey)) {
-      throw new Error("Player cloud profile missing storageKey: " + storageKey);
+      normalizedStorage[storageKey] = createMissingStorageEntry(storageKey, entryMap);
+      return;
     }
     var entry = profile.storage[storageKey];
     assertObject(entry, "Player cloud profile storage entry `" + storageKey + "`");
@@ -141,10 +156,18 @@ function normalizeProfile(profile, entryMap) {
 
 function normalizeCloudFunctionResponse(response, functionName) {
   assertObject(response, functionName + " response");
+  var result = response;
   if (response.result && typeof response.result === "object" && !Array.isArray(response.result)) {
-    return response.result;
+    result = response.result;
   }
-  return response;
+  if (result.deploymentMarker !== EXPECTED_DEPLOYMENT_MARKER) {
+    throw new Error(
+      functionName + " cloud function deployment mismatch. Expected `" +
+      EXPECTED_DEPLOYMENT_MARKER + "`, received `" +
+      String(result.deploymentMarker) + "`. Redeploy the playerProfile cloud function."
+    );
+  }
+  return result;
 }
 
 function PlayerCloudProfileService(options) {
@@ -335,6 +358,7 @@ PlayerCloudProfileService.prototype.flushUploadQueue = function (reason) {
 };
 
 PlayerCloudProfileService.PROFILE_VERSION = PROFILE_VERSION;
+PlayerCloudProfileService.EXPECTED_DEPLOYMENT_MARKER = EXPECTED_DEPLOYMENT_MARKER;
 PlayerCloudProfileService.STORAGE_ENTRIES = STORAGE_ENTRIES.map(function (entry) {
   return {
     storageKey: entry.storageKey,

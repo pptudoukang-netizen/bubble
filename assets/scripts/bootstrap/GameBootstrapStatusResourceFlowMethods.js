@@ -258,6 +258,13 @@ module.exports = {
     }
 
     this._playSfx("uiClick");
+    if (this._currentRunContext && this._currentRunContext.mode === "random_challenge") {
+      if (typeof this._startRandomChallengeRun !== "function") {
+        throw new Error("Random challenge next run requires _startRandomChallengeRun.");
+      }
+      this._startRandomChallengeRun({});
+      return;
+    }
     var nextLevelId = (this.currentLevelConfig.level.levelId || 1) + 1;
     if (typeof this._showStartGameView !== "function") {
       throw new Error("Next level requires StartGameView entry method.");
@@ -277,7 +284,9 @@ module.exports = {
     }
 
     var targetLevelId = 0;
-    if (this.currentLevelConfig && this.currentLevelConfig.level) {
+    if (this._currentRunContext && this._currentRunContext.mode === "random_challenge") {
+      targetLevelId = 0;
+    } else if (this.currentLevelConfig && this.currentLevelConfig.level) {
       targetLevelId = Math.max(1, Math.floor(Number(this.currentLevelConfig.level.levelId) || 0));
     } else if (this._currentLevelId) {
       targetLevelId = Math.max(1, Math.floor(Number(this._currentLevelId) || 0));

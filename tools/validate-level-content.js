@@ -5,6 +5,7 @@ var path = require("path");
 
 var BoardLayout = require("../assets/scripts/config/BoardLayout");
 var LevelPackCompactCodec = require("../assets/scripts/config/LevelPackCompactCodec");
+var ClusteredLevelLayout = require("./clustered-level-layout");
 
 var LEVEL_DIR = path.resolve(__dirname, "../assets/resources/config/levels");
 var REMOTE_PACK_DIR = path.resolve(__dirname, "../remote-level-packs");
@@ -31,7 +32,7 @@ var ALLOWED_ENTITY_TYPES = {
 var ALLOWED_CLEAR_REWARD_ITEM_IDS = ["coin", "stamina"];
 var AD_RUN_POWERUP_TYPES = ["three_line_elimination", "plus_three_balls"];
 var MIN_INITIAL_DROP_SPACE_ROWS = 8;
-var MAX_SHOT_LIMIT = 30;
+var MAX_SHOT_LIMIT = 40;
 var CLEAR_REWARD_START_LEVEL_ID = 1;
 var TOP_BOARD_ROW_INDEX = 0;
 
@@ -369,10 +370,6 @@ function validateAdPowerupRules(level, issues) {
     issues.push("adPowerupRules.allowed must be array");
     return;
   }
-  if (!rules.maxGrantsPerRun || typeof rules.maxGrantsPerRun !== "object" || Array.isArray(rules.maxGrantsPerRun)) {
-    issues.push("adPowerupRules.maxGrantsPerRun must be object");
-    return;
-  }
   var seen = {};
   rules.allowed.forEach(function (powerupType) {
     if (AD_RUN_POWERUP_TYPES.indexOf(powerupType) === -1) {
@@ -383,16 +380,8 @@ function validateAdPowerupRules(level, issues) {
       issues.push("adPowerupRules duplicate powerup: " + powerupType);
     }
     seen[powerupType] = true;
-    if (!isPositiveInteger(rules.maxGrantsPerRun[powerupType])) {
-      issues.push("adPowerupRules.maxGrantsPerRun." + powerupType + " must be positive integer");
-    }
     if (level.playMode === "timed_infinite_shots" && powerupType === "plus_three_balls") {
       issues.push("timed_infinite_shots cannot allow plus_three_balls");
-    }
-  });
-  Object.keys(rules.maxGrantsPerRun).forEach(function (powerupType) {
-    if (seen[powerupType] !== true) {
-      issues.push("adPowerupRules.maxGrantsPerRun contains undeclared powerup: " + powerupType);
     }
   });
 }
@@ -577,6 +566,13 @@ function validateLevelData(data, expectedLevelId) {
 
   validateObjectives(level.winConditions, "win", level, issues);
   validateObjectives(level.bonusObjectives, "bonus", level, issues);
+  if (ClusteredLevelLayout.shouldRedesign(expectedLevelId)) {
+    try {
+      ClusteredLevelLayout.validateClusteredLevel(level);
+    } catch (error) {
+      issues.push(error.message);
+    }
+  }
   validateSplitterObjectives(level, issues);
   validateKeyLockCounts(level, issues);
   validateInitialShotBalls(level, issues);

@@ -125,6 +125,14 @@ var GUIDE_DOT_SPRITE_PATH = "image/ball/white_point";
 var GUIDE_DOT_PULSE_DURATION = 0.36;
 var GUIDE_DOT_PULSE_SCALE_LARGE = 1.5;
 var GUIDE_DOT_PULSE_SCALE_SMALL = 0.5;
+var BARRIER_HAMMER_HINT_SIZE = new cc.Size(46, 46);
+var BARRIER_HAMMER_HINT_OFFSET_X = 16;
+var BARRIER_HAMMER_HINT_OFFSET_Y = 18;
+var BARRIER_HAMMER_HINT_TAP_OFFSET_X = -10;
+var BARRIER_HAMMER_HINT_TAP_OFFSET_Y = -12;
+var BARRIER_HAMMER_HINT_LIFT_DURATION = 0.16;
+var BARRIER_HAMMER_HINT_STRIKE_DURATION = 0.12;
+var BARRIER_HAMMER_HINT_PAUSE_DURATION = 0.1;
 
 var RUNTIME_REFRESH_SCOPE = {
   FULL: "full",
@@ -1101,6 +1109,8 @@ function LevelRenderer(rootNode) {
   this.boardBubbleNodePool = {};
   this.boardCellRenderKeys = {};
   this.boardRenderTick = 1;
+  this.barrierHammerHintNodes = {};
+  this.lastBarrierHammerHintKey = "";
   this.testSlotNodes = {};
   this.testSlotNodePool = [];
   this.testGridRenderTick = 1;
@@ -1396,6 +1406,8 @@ LevelRenderer.prototype.renderLevel = function (levelConfig, runtimeSnapshot) {
     this.boardBubbleNodes = {};
     this.boardBubbleNodePool = {};
     this.boardCellRenderKeys = {};
+    this.barrierHammerHintNodes = {};
+    this.lastBarrierHammerHintKey = "";
     clearChildren(this.layers.testGrid);
     this.testSlotNodes = {};
     this.testSlotNodePool = [];
@@ -1425,6 +1437,7 @@ LevelRenderer.prototype.renderLevel = function (levelConfig, runtimeSnapshot) {
     this._renderTimedLevelTimer(runtimeSnapshot);
     this._renderBottomPanel(runtimeSnapshot);
     this._renderBoard(runtimeSnapshot.board);
+    this._syncBarrierHammerStoneHints(runtimeSnapshot);
     this._renderMainland(runtimeSnapshot.board);
     this._renderJianbian(runtimeSnapshot.board);
     this._renderBottomJars(levelConfig, runtimeSnapshot);
@@ -1538,6 +1551,7 @@ LevelRenderer.prototype._refreshRuntimeFull = function (levelConfig, runtimeSnap
     this._renderMainland(runtimeSnapshot.board);
     this._renderJianbian(runtimeSnapshot.board);
   }
+  this._syncBarrierHammerStoneHints(runtimeSnapshot);
 
   if (!this._shouldFlyIceSnowballToHud(levelConfig)) {
     this._syncDisplayedIceSnowballCollectedTotal(runtimeSnapshot);
@@ -1969,6 +1983,14 @@ var LEVEL_RENDERER_SCENE_DEPS = {
   GUIDE_DOT_PULSE_DURATION: GUIDE_DOT_PULSE_DURATION,
   GUIDE_DOT_PULSE_SCALE_LARGE: GUIDE_DOT_PULSE_SCALE_LARGE,
   GUIDE_DOT_PULSE_SCALE_SMALL: GUIDE_DOT_PULSE_SCALE_SMALL,
+  BARRIER_HAMMER_HINT_SIZE: BARRIER_HAMMER_HINT_SIZE,
+  BARRIER_HAMMER_HINT_OFFSET_X: BARRIER_HAMMER_HINT_OFFSET_X,
+  BARRIER_HAMMER_HINT_OFFSET_Y: BARRIER_HAMMER_HINT_OFFSET_Y,
+  BARRIER_HAMMER_HINT_TAP_OFFSET_X: BARRIER_HAMMER_HINT_TAP_OFFSET_X,
+  BARRIER_HAMMER_HINT_TAP_OFFSET_Y: BARRIER_HAMMER_HINT_TAP_OFFSET_Y,
+  BARRIER_HAMMER_HINT_LIFT_DURATION: BARRIER_HAMMER_HINT_LIFT_DURATION,
+  BARRIER_HAMMER_HINT_STRIKE_DURATION: BARRIER_HAMMER_HINT_STRIKE_DURATION,
+  BARRIER_HAMMER_HINT_PAUSE_DURATION: BARRIER_HAMMER_HINT_PAUSE_DURATION,
   TEST_SLOT_RADIUS: TEST_SLOT_RADIUS,
   ICE_OVERLAY_OPACITY: ICE_OVERLAY_OPACITY,
   NEXT_SHOT_OFFSET_X: NEXT_SHOT_OFFSET_X,

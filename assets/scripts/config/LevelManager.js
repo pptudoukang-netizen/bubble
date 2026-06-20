@@ -3,6 +3,7 @@
 var LevelConfigLoader = require("./LevelConfigLoader");
 var RemoteLevelPackLoader = require("./RemoteLevelPackLoader");
 var LevelPackManifest = require("./LevelPackManifest");
+var RandomChallengeManager = require("./RandomChallengeManager");
 
 function padLevelId(levelId) {
   return String(levelId).padStart(3, "0");
@@ -21,6 +22,9 @@ function LevelManager(options) {
   }
   this._loader = opts.localLoader || new LevelConfigLoader();
   this._remoteLoader = opts.remoteLoader || new RemoteLevelPackLoader();
+  this._randomChallengeManager = opts.randomChallengeManager === undefined
+    ? RandomChallengeManager
+    : opts.randomChallengeManager;
   this._localLevelMax = opts.localLevelMax || LevelPackManifest.LOCAL_LEVEL_MAX;
   this._cache = {};
 }
@@ -65,6 +69,13 @@ LevelManager.prototype.loadAvailableLevelIds = function () {
     throw new Error("Remote level loader missing loadAvailableLevelIds.");
   }
   return this._remoteLoader.loadAvailableLevelIds();
+};
+
+LevelManager.prototype.createRandomChallengeRun = function (options) {
+  if (!this._randomChallengeManager || typeof this._randomChallengeManager.buildRun !== "function") {
+    throw new Error("Random challenge manager missing buildRun.");
+  }
+  return this._randomChallengeManager.buildRun(options);
 };
 
 module.exports = LevelManager;

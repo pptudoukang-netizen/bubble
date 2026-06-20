@@ -1604,23 +1604,28 @@ GameManager.prototype.grantAdRunPowerup = function (powerupType, count) {
   }
 
   var safeCount = assertPositiveInteger(count, "Ad run powerup grant count");
-
-  var rules = this._getAdPowerupRules();
-  if (!rules.maxGrantsPerRun || typeof rules.maxGrantsPerRun !== "object" || Array.isArray(rules.maxGrantsPerRun)) {
-    throw new Error("Ad run powerup rules require maxGrantsPerRun.");
-  }
-  var maxGrant = assertPositiveInteger(rules.maxGrantsPerRun[powerupType], "Ad run powerup maxGrantsPerRun." + powerupType);
-
   var granted = readRunPowerupCount(this.adRunPowerupGrantCounts, powerupType);
-  if (granted + safeCount > maxGrant) {
+  this.adRunPowerupGrantCounts[powerupType] = granted + safeCount;
+  this.adRunPowerupInventory[powerupType] = readRunPowerupCount(this.adRunPowerupInventory, powerupType) + safeCount;
+  return {
+    accepted: true,
+    powerupType: powerupType,
+    gained: safeCount,
+    total: this.adRunPowerupInventory[powerupType],
+    snapshot: this.getRuntimeSnapshot()
+  };
+};
+
+GameManager.prototype.grantPreparedAdRunPowerup = function (powerupType, count) {
+  if (!this._isAdRunPowerupAllowed(powerupType)) {
     return {
       accepted: false,
-      reason: "grant_limit_reached",
+      reason: "not_allowed",
       snapshot: this.getRuntimeSnapshot()
     };
   }
 
-  this.adRunPowerupGrantCounts[powerupType] = granted + safeCount;
+  var safeCount = assertPositiveInteger(count, "Prepared ad run powerup grant count");
   this.adRunPowerupInventory[powerupType] = readRunPowerupCount(this.adRunPowerupInventory, powerupType) + safeCount;
   return {
     accepted: true,

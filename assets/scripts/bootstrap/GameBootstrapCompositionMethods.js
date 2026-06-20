@@ -6,6 +6,7 @@ var Logger = Shared.Logger;
 var BundleLoader = Shared.BundleLoader;
 var PoolManager = Shared.PoolManager;
 var LevelProgressStore = Shared.LevelProgressStore;
+var LevelAttemptStatsStore = Shared.LevelAttemptStatsStore;
 var PlayerResourceStore = Shared.PlayerResourceStore;
 var DailyTaskStore = Shared.DailyTaskStore;
 var StaminaRecoveryStore = Shared.StaminaRecoveryStore;
@@ -19,6 +20,7 @@ var NewUserGuideStore = Shared.NewUserGuideStore;
 var NewGiftStore = Shared.NewGiftStore;
 var RouteConfigStore = Shared.RouteConfigStore;
 var SpecialIntroduceStore = Shared.SpecialIntroduceStore;
+var RandomChallengeStore = Shared.RandomChallengeStore;
 var AudioManager = Shared.AudioManager;
 var DailySignInConfig = Shared.DailySignInConfig;
 var DailyTaskConfig = Shared.DailyTaskConfig;
@@ -111,6 +113,7 @@ module.exports = {
     this._lastAimRefreshScreenPoint = null;
     this._currentLevelId = 0;
     this._currentLevelAwardedClearRewardItems = [];
+    this._currentRunContext = null;
     this._levelSelectRouteEditorMode = false;
     this._pendingRouteEditorAutoEnable = false;
     this._levelConfigPreloadPromise = null;
@@ -140,6 +143,10 @@ module.exports = {
     this.levelProgress = this.resetLevelProgressOnStart
       ? this.levelProgressStore.reset()
       : this.levelProgressStore.load();
+    this.levelAttemptStatsStore = new LevelAttemptStatsStore();
+    this.levelAttemptStats = this.levelAttemptStatsStore.load();
+    this.randomChallengeStore = new RandomChallengeStore();
+    this.randomChallengeState = this.randomChallengeStore.load();
     this.playerResourceStore = new PlayerResourceStore({
       dailyStamina: 20
     });
@@ -365,6 +372,7 @@ module.exports = {
     this._rankingViewNode = null;
     this._rankingViewController = null;
     this._worldLeaderboardUserProfile = null;
+    this._lastWorldLeaderboardSubmitError = null;
     this._gameCircleWelfareViewPrefab = null;
     this._gameCircleWelfareViewNode = null;
     this._gameCircleWelfareViewController = null;
@@ -445,6 +453,7 @@ module.exports = {
         audioManager: this.audioManager,
         gameCircleWelfareService: this.gameCircleWelfareService,
         playerCloudProfileService: this.playerCloudProfileService,
+        levelAttemptStatsStore: this.levelAttemptStatsStore,
         routeConfigStore: this.routeConfigStore,
         routeEditor: {
           getState: function () {

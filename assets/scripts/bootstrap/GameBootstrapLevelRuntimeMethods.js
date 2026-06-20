@@ -23,6 +23,15 @@ module.exports = {
     }
 
     this._playSfx("uiClick");
+    if (this._currentRunContext && this._currentRunContext.mode === "random_challenge") {
+      if (typeof this._startRandomChallengeRun !== "function") {
+        throw new Error("Random challenge retry requires _startRandomChallengeRun.");
+      }
+      this._startRandomChallengeRun({
+        seed: this._currentRunContext.seed
+      });
+      return;
+    }
     var currentLevelId = this.currentLevelConfig.level
       ? Math.max(1, Math.floor(Number(this.currentLevelConfig.level.levelId) || 0))
       : 0;

@@ -44,7 +44,7 @@
             "G",
             "B"
         ],
-        "shotLimit": 16,
+        "shotLimit": 26,
         "targetScore": 3840,
         "dropInterval": 6,
         "jarCount": 3,

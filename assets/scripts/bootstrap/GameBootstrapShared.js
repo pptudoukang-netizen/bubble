@@ -5,6 +5,7 @@ var Logger = require("../utils/Logger");
 var BundleLoader = require("../utils/BundleLoader");
 var PoolManager = require("../utils/PoolManager");
 var LevelProgressStore = require("../utils/LevelProgressStore");
+var LevelAttemptStatsStore = require("../utils/LevelAttemptStatsStore");
 var PlayerResourceStore = require("../utils/PlayerResourceStore");
 var DailyTaskStore = require("../utils/DailyTaskStore");
 var StaminaRecoveryStore = require("../utils/StaminaRecoveryStore");
@@ -18,6 +19,7 @@ var NewUserGuideStore = require("../utils/NewUserGuideStore");
 var NewGiftStore = require("../utils/NewGiftStore");
 var RouteConfigStore = require("../utils/RouteConfigStore");
 var SpecialIntroduceStore = require("../utils/SpecialIntroduceStore");
+var RandomChallengeStore = require("../utils/RandomChallengeStore");
 var AudioManager = require("../audio/AudioManager");
 var BoardLayout = require("../config/BoardLayout");
 var DailySignInConfig = require("../config/DailySignInConfig");
@@ -129,6 +131,7 @@ module.exports = {
   BundleLoader: BundleLoader,
   PoolManager: PoolManager,
   LevelProgressStore: LevelProgressStore,
+  LevelAttemptStatsStore: LevelAttemptStatsStore,
   PlayerResourceStore: PlayerResourceStore,
   DailyTaskStore: DailyTaskStore,
   StaminaRecoveryStore: StaminaRecoveryStore,
@@ -142,6 +145,7 @@ module.exports = {
   NewGiftStore: NewGiftStore,
   RouteConfigStore: RouteConfigStore,
   SpecialIntroduceStore: SpecialIntroduceStore,
+  RandomChallengeStore: RandomChallengeStore,
   AudioManager: AudioManager,
   BoardLayout: BoardLayout,
   DailySignInConfig: DailySignInConfig,

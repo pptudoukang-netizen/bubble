@@ -5,9 +5,11 @@ var cloud = require("wx-server-sdk");
 
 var COLLECTION_NAME = "player_profiles";
 var PROFILE_VERSION = 1;
-var DEPLOYMENT_MARKER = "playerProfile_v20260604_1";
+var DEPLOYMENT_MARKER = "playerProfile_v20260619_attempt_stats_v1";
+var LEVEL_ATTEMPT_STATS_STORAGE_KEY = "bubble_level_attempt_stats_v1";
 var SUPPORTED_STORAGE_KEYS = {
   bubble_level_progress_v1: "LevelProgressStore",
+  bubble_level_attempt_stats_v1: "LevelAttemptStatsStore",
   bubble_player_resources_v1: "PlayerResourceStore",
   bubble_stamina_recovery_state_v1: "StaminaRecoveryStore",
   bubble_daily_task_state_v1: "DailyTaskStore",
@@ -58,6 +60,28 @@ function buildProfileRecordId(openid) {
   return "player_profile_" + digest;
 }
 
+function createEmptyLevelAttemptStats() {
+  return {
+    version: 1,
+    totalAttemptCount: 0,
+    attemptCountByLevel: {},
+    activeAttempt: null,
+    lastAttempt: null,
+    lastAttemptByLevel: {},
+    recentEvents: []
+  };
+}
+
+function createMissingStorageEntry(storageKey) {
+  if (storageKey === LEVEL_ATTEMPT_STATS_STORAGE_KEY) {
+    return {
+      namespace: SUPPORTED_STORAGE_KEYS[storageKey],
+      value: createEmptyLevelAttemptStats()
+    };
+  }
+  throw new Error("player profile missing storageKey: " + storageKey);
+}
+
 function normalizeProfile(profile) {
   requireObject(profile, "player profile");
   if (profile.version !== PROFILE_VERSION) {
@@ -74,7 +98,8 @@ function normalizeProfile(profile) {
   var normalizedStorage = {};
   Object.keys(SUPPORTED_STORAGE_KEYS).forEach(function (storageKey) {
     if (!Object.prototype.hasOwnProperty.call(profile.storage, storageKey)) {
-      throw new Error("player profile missing storageKey: " + storageKey);
+      normalizedStorage[storageKey] = createMissingStorageEntry(storageKey);
+      return;
     }
     var entry = profile.storage[storageKey];
     requireObject(entry, "player profile storage entry `" + storageKey + "`");
@@ -103,6 +128,7 @@ async function getProfile(collection, openid) {
   }
   if (result.data.length === 0) {
     return {
+      deploymentMarker: DEPLOYMENT_MARKER,
       exists: false,
       updatedAt: 0
     };
@@ -113,6 +139,7 @@ async function getProfile(collection, openid) {
 
   var record = requireObject(result.data[0], "player profile record");
   return {
+    deploymentMarker: DEPLOYMENT_MARKER,
     exists: true,
     updatedAt: requireNonNegativeInteger(record.updatedAt, "player profile updatedAt"),
     profile: normalizeProfile(record.profile)
@@ -136,6 +163,7 @@ async function saveProfile(collection, openid, event) {
   }
 
   return {
+    deploymentMarker: DEPLOYMENT_MARKER,
     accepted: true,
     updatedAt: now
   };

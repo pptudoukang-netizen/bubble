@@ -167,6 +167,17 @@ function setSpriteFrame(sprite, spriteFrame) {
   }
 }
 
+function setDefaultAvatarSpriteFrame(sprite, spriteFrame) {
+  if (!sprite || !sprite.node || !sprite.node.isValid) {
+    throw new Error("Ranking default avatar sprite is required.");
+  }
+  if (!spriteFrame) {
+    throw new Error("Ranking default avatar SpriteFrame is required.");
+  }
+  sprite.node.__rankingAvatarUrl = "";
+  setSpriteFrame(sprite, spriteFrame);
+}
+
 function createSpriteFrameFromRemoteAsset(imageAsset, imageUrl) {
   if (imageAsset instanceof cc.SpriteFrame) {
     return imageAsset;
@@ -715,12 +726,17 @@ RankingViewController.prototype._cachePrefabRankRowRefs = function (row) {
   if (!rankingNode || !rankingNumNode || !avatarNode || !avatarFrameNode || !nameNode || !scoreNode || !levelNode) {
     Logger.warn("RankingItem prefab structure is incomplete.");
   }
+  var avatarSprite = avatarNode ? avatarNode.getComponent(cc.Sprite) : null;
+  if (avatarSprite && !avatarSprite.spriteFrame) {
+    throw new Error("RankingItem avatar requires a default SpriteFrame.");
+  }
 
   return {
     bgSprite: row.getComponent(cc.Sprite),
     badgeNode: rankingNode,
     badgeSprite: rankingNode ? rankingNode.getComponent(cc.Sprite) : null,
-    avatarSprite: avatarNode ? avatarNode.getComponent(cc.Sprite) : null,
+    avatarSprite: avatarSprite,
+    defaultAvatarSpriteFrame: avatarSprite ? avatarSprite.spriteFrame : null,
     avatarFrameNode: avatarFrameNode,
     avatarFrameSprite: avatarFrameNode ? avatarFrameNode.getComponent(cc.Sprite) : null,
     rankingNumNode: rankingNumNode,
@@ -785,7 +801,11 @@ RankingViewController.prototype._renderRankRow = function (row, entry, index) {
     setSpriteFrame(refs.bgSprite, this._spriteFrames[bgKey]);
     setSpriteFrame(refs.badgeSprite, badgeKey ? this._spriteFrames[badgeKey] : null);
   }
-  setSpriteRemoteImage(refs.avatarSprite, avatarUrl);
+  if (avatarUrl) {
+    setSpriteRemoteImage(refs.avatarSprite, avatarUrl);
+  } else {
+    setDefaultAvatarSpriteFrame(refs.avatarSprite, refs.defaultAvatarSpriteFrame);
+  }
 
   if (refs.badgeNode) {
     refs.badgeNode.active = !!badgeKey;
@@ -797,7 +817,7 @@ RankingViewController.prototype._renderRankRow = function (row, entry, index) {
     refs.rankingNumLabel.string = String(rank);
   }
   if (refs.nameLabel) {
-    refs.nameLabel.string = nickname || "\u73a9\u5bb6";
+    refs.nameLabel.string = nickname || "\u5fae\u4fe1\u7528\u6237";
     refs.nameLabel.node.color = cc.color(41, 18, 102);
   }
   if (refs.scoreLabel) {

@@ -5,6 +5,8 @@ var StrictStorage = require("../utils/StrictStorage");
 var PROFILE_STORAGE_KEY = "bubble_world_leaderboard_profile_v1";
 var PROFILE_STORAGE_NAMESPACE = "WorldLeaderboardService";
 var PROFILE_STORAGE_VERSION = 1;
+var DEFAULT_PROFILE_NICKNAME = "";
+var DEFAULT_PROFILE_AVATAR_URL = "";
 
 function resolvePlatform(explicitPlatform) {
   if (explicitPlatform) {
@@ -35,6 +37,13 @@ function requireNonEmptyString(value, fieldName) {
     throw new Error(fieldName + " must be non-empty.");
   }
   return normalized;
+}
+
+function requireString(value, fieldName) {
+  if (typeof value !== "string") {
+    throw new Error(fieldName + " must be a string.");
+  }
+  return value.trim();
 }
 
 function requireNonNegativeInteger(value, fieldName) {
@@ -82,8 +91,8 @@ function sumBestScores(progress) {
 function normalizeUserProfile(userInfo) {
   requireObject(userInfo, "World leaderboard userInfo");
   return {
-    nickname: requireNonEmptyString(userInfo.nickName, "World leaderboard nickName"),
-    avatarUrl: requireNonEmptyString(userInfo.avatarUrl, "World leaderboard avatarUrl")
+    nickname: requireString(userInfo.nickName, "World leaderboard nickName"),
+    avatarUrl: requireString(userInfo.avatarUrl, "World leaderboard avatarUrl")
   };
 }
 
@@ -96,8 +105,8 @@ function normalizeCachedUserProfileRecord(record) {
   return {
     version: PROFILE_STORAGE_VERSION,
     profile: {
-      nickname: requireNonEmptyString(record.profile.nickname, "World leaderboard cached nickname"),
-      avatarUrl: requireNonEmptyString(record.profile.avatarUrl, "World leaderboard cached avatarUrl")
+      nickname: requireString(record.profile.nickname, "World leaderboard cached nickname"),
+      avatarUrl: requireString(record.profile.avatarUrl, "World leaderboard cached avatarUrl")
     },
     updatedAt: requireNonNegativeInteger(record.updatedAt, "World leaderboard cached updatedAt")
   };
@@ -108,8 +117,8 @@ function normalizeEntry(entry, index) {
   return {
     rank: requirePositiveInteger(entry.rank, "World leaderboard entry rank"),
     playerId: requireNonEmptyString(entry.playerId, "World leaderboard entry playerId"),
-    nickname: requireNonEmptyString(entry.nickname, "World leaderboard entry nickname"),
-    avatarUrl: requireNonEmptyString(entry.avatarUrl, "World leaderboard entry avatarUrl"),
+    nickname: requireString(entry.nickname, "World leaderboard entry nickname"),
+    avatarUrl: requireString(entry.avatarUrl, "World leaderboard entry avatarUrl"),
     score: requireNonNegativeInteger(entry.score, "World leaderboard entry score"),
     completedLevels: requireNonNegativeInteger(entry.completedLevels, "World leaderboard entry completedLevels"),
     isSelf: entry.isSelf === true
@@ -185,8 +194,8 @@ WorldLeaderboardService.prototype.loadCachedUserProfile = function () {
 WorldLeaderboardService.prototype.saveCachedUserProfile = function (profile) {
   requireObject(profile, "World leaderboard cached profile");
   var normalizedProfile = {
-    nickname: requireNonEmptyString(profile.nickname, "World leaderboard cached nickname"),
-    avatarUrl: requireNonEmptyString(profile.avatarUrl, "World leaderboard cached avatarUrl")
+    nickname: requireString(profile.nickname, "World leaderboard cached nickname"),
+    avatarUrl: requireString(profile.avatarUrl, "World leaderboard cached avatarUrl")
   };
   StrictStorage.writeJson(PROFILE_STORAGE_KEY, PROFILE_STORAGE_NAMESPACE, {
     version: PROFILE_STORAGE_VERSION,
@@ -196,14 +205,47 @@ WorldLeaderboardService.prototype.saveCachedUserProfile = function (profile) {
   return normalizedProfile;
 };
 
+WorldLeaderboardService.prototype.createAnonymousUserProfile = function () {
+  return {
+    nickname: DEFAULT_PROFILE_NICKNAME,
+    avatarUrl: DEFAULT_PROFILE_AVATAR_URL
+  };
+};
+
 WorldLeaderboardService.prototype.buildSubmission = function (progress, userProfile) {
   var profile = requireObject(userProfile, "World leaderboard user profile");
   return {
-    nickname: requireNonEmptyString(profile.nickname, "World leaderboard nickname"),
-    avatarUrl: requireNonEmptyString(profile.avatarUrl, "World leaderboard avatarUrl"),
+    nickname: requireString(profile.nickname, "World leaderboard nickname"),
+    avatarUrl: requireString(profile.avatarUrl, "World leaderboard avatarUrl"),
     score: sumBestScores(progress),
     completedLevels: countCompletedLevels(progress)
   };
+};
+
+WorldLeaderboardService.prototype.submit = function (progress, userProfile) {
+  var submission = this.buildSubmission(progress, userProfile);
+  return this._requireCloud().callFunction({
+    name: this.functionName,
+    data: {
+      action: "submit",
+      profile: {
+        nickname: submission.nickname,
+        avatarUrl: submission.avatarUrl
+      },
+      score: submission.score,
+      completedLevels: submission.completedLevels
+    }
+  }).then(function (response) {
+    var result = normalizeCloudFunctionResult(response, this.functionName);
+    requireObject(result, this.functionName + " submit result");
+    if (result.accepted !== true) {
+      throw new Error(this.functionName + " submit result must be accepted.");
+    }
+    return {
+      accepted: true,
+      updatedAt: requireNonNegativeInteger(result.updatedAt, this.functionName + " submit updatedAt")
+    };
+  }.bind(this));
 };
 
 WorldLeaderboardService.prototype.submitAndList = function (progress, userProfile) {

@@ -8,6 +8,7 @@ var hideGameCircleWelfareViewNode = Shared.hideGameCircleWelfareViewNode;
 
 module.exports = {
   _loadLevelById: function (levelId, successLogPrefix, failStatusMessage) {
+    this._recordCurrentAttemptQuit("start_new_level");
     this._cancelGameplayBundleIdleRelease();
     this._persistRouteEditorIfDirty();
     this._hideAwardView();
@@ -35,6 +36,10 @@ module.exports = {
     }.bind(this)).then(function (levelConfig) {
       this.currentLevelConfig = levelConfig;
       this._currentLevelId = Math.max(1, Number(levelId) || 1);
+      this._currentRunContext = {
+        mode: "campaign",
+        levelId: this._currentLevelId
+      };
       this._rememberSelectedLevel(this._currentLevelId);
       this._prepareRouteEditorForLevel(levelConfig, this._currentLevelId);
       var snapshot = this.gameManager.startLevel(levelConfig);

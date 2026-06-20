@@ -146,7 +146,7 @@ cc.Class({
       tooltip: "世界排行榜使用的微信云函数名称。"
     },
     worldLeaderboardLimit: {
-      default: 50,
+      default: 100,
       tooltip: "世界排行榜单次拉取的最大条目数。"
     },
     startupPreloadLevelCount: {
@@ -433,6 +433,8 @@ cc.Class({
   _trackTelemetry: lazyTelemetryMethods._trackTelemetry,
   _beginLevelAttemptTracking: lazyTelemetryMethods._beginLevelAttemptTracking,
   _trackRuntimeTelemetryEvent: lazyTelemetryMethods._trackRuntimeTelemetryEvent,
+  _recordAttemptPowerupUsed: lazyTelemetryMethods._recordAttemptPowerupUsed,
+  _recordCurrentAttemptQuit: lazyTelemetryMethods._recordCurrentAttemptQuit,
   _onRuntimeStateTransition: lazyTelemetryMethods._onRuntimeStateTransition,
   _buildAttemptRewardKey: lazyAdRewardMethods._buildAttemptRewardKey,
   _hasGrantedAttemptReward: lazyAdRewardMethods._hasGrantedAttemptReward,
@@ -689,7 +691,10 @@ cc.Class({
   _applyCurrentLevelBestScoreFlag: GameBootstrapUiFlowMethods._applyCurrentLevelBestScoreFlag,
   _applyCurrentLevelClearRewardItems: GameBootstrapUiFlowMethods._applyCurrentLevelClearRewardItems,
   _grantCurrentLevelClearRewardItems: GameBootstrapUiFlowMethods._grantCurrentLevelClearRewardItems,
+  _grantRandomChallengeRewardItems: GameBootstrapUiFlowMethods._grantRandomChallengeRewardItems,
   _recordCurrentLevelWin: GameBootstrapUiFlowMethods._recordCurrentLevelWin,
+  _submitWorldLeaderboardProgressAfterLevelClear: GameBootstrapUiFlowMethods._submitWorldLeaderboardProgressAfterLevelClear,
+  _recordRandomChallengeWin: GameBootstrapUiFlowMethods._recordRandomChallengeWin,
   _calculateStarRating: GameBootstrapUiFlowMethods._calculateStarRating,
   _getLevelStarCount: GameBootstrapUiFlowMethods._getLevelStarCount,
   _isLevelCompleted: GameBootstrapUiFlowMethods._isLevelCompleted,
@@ -699,6 +704,8 @@ cc.Class({
   _resolveLatestAccessibleLevelId: GameBootstrapUiFlowMethods._resolveLatestAccessibleLevelId,
   _resolveCurrentMapLevelId: GameBootstrapUiFlowMethods._resolveCurrentMapLevelId,
   _onLevelSelectQuickStartTap: GameBootstrapUiFlowMethods._onLevelSelectQuickStartTap,
+  _startRandomChallengeRun: GameBootstrapUiFlowMethods._startRandomChallengeRun,
+  _onLevelSelectRandomChallengeTap: GameBootstrapUiFlowMethods._onLevelSelectRandomChallengeTap,
   _onLevelSelectBackToCurrentLevelTap: GameBootstrapUiFlowMethods._onLevelSelectBackToCurrentLevelTap
 });
 
