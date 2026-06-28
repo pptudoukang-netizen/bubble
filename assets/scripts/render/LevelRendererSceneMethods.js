@@ -14,15 +14,14 @@ function attachLevelRendererSceneMethods(LevelRenderer, deps) {
   var HUD_STAR_RESOURCES = deps.HUD_STAR_RESOURCES;
   var PREFAB_PATHS = deps.PREFAB_PATHS;
   var SpriteProxyLayerHelper = deps.SpriteProxyLayerHelper;
+  var PropDescriptionViewController = deps.PropDescriptionViewController;
   var JAR_RENDER_Y_OFFSET = deps.JAR_RENDER_Y_OFFSET;
   var GUIDE_DOT_SPACING = deps.GUIDE_DOT_SPACING;
   var GUIDE_DOT_RADIUS = deps.GUIDE_DOT_RADIUS;
   var GUIDE_DOT_SIZE = deps.GUIDE_DOT_SIZE;
   var GUIDE_DOT_MAX_COUNT = deps.GUIDE_DOT_MAX_COUNT;
   var GUIDE_DOT_SPRITE_PATH = deps.GUIDE_DOT_SPRITE_PATH;
-  var GUIDE_DOT_PULSE_DURATION = deps.GUIDE_DOT_PULSE_DURATION;
-  var GUIDE_DOT_PULSE_SCALE_LARGE = deps.GUIDE_DOT_PULSE_SCALE_LARGE;
-  var GUIDE_DOT_PULSE_SCALE_SMALL = deps.GUIDE_DOT_PULSE_SCALE_SMALL;
+  var GUIDE_DOT_TINTS = deps.GUIDE_DOT_TINTS;
   var BARRIER_HAMMER_HINT_SIZE = deps.BARRIER_HAMMER_HINT_SIZE;
   var BARRIER_HAMMER_HINT_OFFSET_X = deps.BARRIER_HAMMER_HINT_OFFSET_X;
   var BARRIER_HAMMER_HINT_OFFSET_Y = deps.BARRIER_HAMMER_HINT_OFFSET_Y;
@@ -33,14 +32,13 @@ function attachLevelRendererSceneMethods(LevelRenderer, deps) {
   var BARRIER_HAMMER_HINT_PAUSE_DURATION = deps.BARRIER_HAMMER_HINT_PAUSE_DURATION;
   var TEST_SLOT_RADIUS = deps.TEST_SLOT_RADIUS;
   var ICE_OVERLAY_OPACITY = deps.ICE_OVERLAY_OPACITY;
-  var NEXT_SHOT_OFFSET_X = deps.NEXT_SHOT_OFFSET_X;
-  var NEXT_SHOT_OFFSET_Y = deps.NEXT_SHOT_OFFSET_Y;
   var BOARD_BUBBLE_SIZE = deps.BOARD_BUBBLE_SIZE;
   var NEXT_SHOT_BUBBLE_SIZE = deps.NEXT_SHOT_BUBBLE_SIZE;
   var JAR_RENDER_SIZE = deps.JAR_RENDER_SIZE;
   var POPUP_CONTENT_CONTAINER_NAME = deps.POPUP_CONTENT_CONTAINER_NAME;
   var WIN_VIEW_PROXY_ROOT_NAME = "win_view_auto_proxy_root";
   var LOSE_VIEW_PROXY_ROOT_NAME = "lose_view_auto_proxy_root";
+  var PAUSE_VIEW_PROXY_ROOT_NAME = "pause_view_auto_proxy_root";
   var POPUP_OPEN_ANIM_DURATION = deps.POPUP_OPEN_ANIM_DURATION;
   var POPUP_OPEN_ANIM_FROM_SCALE = deps.POPUP_OPEN_ANIM_FROM_SCALE;
   var WIN_POPUP_OPEN_ANIM_DURATION = deps.WIN_POPUP_OPEN_ANIM_DURATION;
@@ -90,7 +88,7 @@ function attachLevelRendererSceneMethods(LevelRenderer, deps) {
   var ensureOutline = deps.ensureOutline;
   var clearChildren = deps.clearChildren;
   var getOrCreateChild = deps.getOrCreateChild;
-  var buildLoseUnfinishedTargetEntries = deps.buildLoseUnfinishedTargetEntries;
+  var buildLoseTargetEntries = deps.buildLoseTargetEntries;
   var buildWinCompletedTargetEntries = deps.buildWinCompletedTargetEntries;
   var buildWinCollectEntries = deps.buildWinCollectEntries;
   var buildHudTargetDisplayData = deps.buildHudTargetDisplayData;
@@ -107,6 +105,7 @@ function attachLevelRendererSceneMethods(LevelRenderer, deps) {
   var pointDistance = deps.pointDistance;
   var resolveImpactBounceSpeed = deps.resolveImpactBounceSpeed;
   var getJarBaseY = deps.getJarBaseY;
+  var JarScoreConfig = deps.JarScoreConfig;
   var resolveBallCode = deps.resolveBallCode;
   var isIceBallLike = deps.isIceBallLike;
   var resolveIceInnerColor = deps.resolveIceInnerColor;
@@ -116,25 +115,30 @@ function attachLevelRendererSceneMethods(LevelRenderer, deps) {
   var buildAdRevivePlan = deps.buildAdRevivePlan;
   var resolveLoseRewardEntry = deps.resolveLoseRewardEntry;
   var clamp = deps.clamp;
-  var DANGER_WARNING_SHAKE_LEFT_X = -20;
-  var DANGER_WARNING_SHAKE_RIGHT_X = 18;
-  var DANGER_WARNING_SHAKE_STEP = 0.045;
   var HUD_STAR_MARKER_FALLBACK_RATIOS = [0.3 / 0.85, 0.6 / 0.85, 1];
   var LOSE_NO_REVIVE_TARGET_LAYOUT_Y = -10;
   var LOSE_NO_REVIVE_ACTION_BUTTON_Y = -285;
-  var LOSE_TOP_INFO_TARGET_COLORS = {
-    R: cc.color(255, 0, 0),
-    G: cc.color(46, 190, 42),
-    B: cc.color(53, 174, 255),
-    Y: cc.color(255, 220, 40),
-    P: cc.color(205, 92, 255),
-    RAINBOW: cc.color(255, 0, 0),
-    ICE_SNOWBALL: cc.color(255, 255, 255)
-  };
   var MOLOTOV_BLAST_MIN_VISUAL_DURATION = 0.36;
   var MOLOTOV_BLAST_SWELL_DURATION_RATIO = 0.42;
   var MOLOTOV_BLAST_SWELL_SCALE = 1.52;
   var MOLOTOV_BLAST_PEAK_SCALE = 2.15;
+  var SHOOTER_HANDOFF_DURATION = 0.34;
+  var SHOOTER_HANDOFF_ARC_HEIGHT = 52;
+  var GAME_ENTRY_COUNTDOWN_INTERVAL = 0.8;
+  var GAME_ENTRY_GO_SCALE_DURATION = 0.5;
+  var GAME_ENTRY_GO_HOLD_DURATION = 0.2;
+  var GAME_ENTRY_GO_START_SCALE = 0.2;
+  var GAME_ENTRY_GO_END_SCALE = 1.2;
+  var SHOOTER_PREFAB_LAYOUT_NODE_NAMES = [
+    "handler_milu",
+    "CurrentBallAnchor",
+    "ChangeBtn",
+    "Shooter",
+    "ShooterBase",
+    "NextBallDock",
+    "NextBallAnchor",
+    "Surplus"
+  ];
 
   function ensureLoseOriginalY(node, description) {
     if (!node || !node.isValid) {
@@ -178,6 +182,67 @@ function attachLevelRendererSceneMethods(LevelRenderer, deps) {
       throw new Error(parentDescription + "/" + childName + " is required.");
     }
     return childNode;
+  }
+
+  function syncShooterPrefabLayout(shooterPanel, aimOrigin) {
+    if (
+      !aimOrigin ||
+      typeof aimOrigin.x !== "number" ||
+      !isFinite(aimOrigin.x) ||
+      typeof aimOrigin.y !== "number" ||
+      !isFinite(aimOrigin.y)
+    ) {
+      throw new Error("ShooterPanel layout requires a finite aim origin.");
+    }
+
+    var layoutNodes = {};
+    SHOOTER_PREFAB_LAYOUT_NODE_NAMES.forEach(function (nodeName) {
+      layoutNodes[nodeName] = requireChildNode(shooterPanel, nodeName, "ShooterPanel");
+    });
+
+    if (!shooterPanel.__shooterPrefabRelativeLayout) {
+      var prefabOriginNode = layoutNodes.CurrentBallAnchor;
+      var prefabOriginX = prefabOriginNode.x;
+      var prefabOriginY = prefabOriginNode.y;
+      if (
+        typeof prefabOriginX !== "number" ||
+        !isFinite(prefabOriginX) ||
+        typeof prefabOriginY !== "number" ||
+        !isFinite(prefabOriginY)
+      ) {
+        throw new Error("ShooterPanel/CurrentBallAnchor prefab position must be finite.");
+      }
+
+      shooterPanel.__shooterPrefabRelativeLayout = {};
+      SHOOTER_PREFAB_LAYOUT_NODE_NAMES.forEach(function (nodeName) {
+        var node = layoutNodes[nodeName];
+        if (
+          typeof node.x !== "number" ||
+          !isFinite(node.x) ||
+          typeof node.y !== "number" ||
+          !isFinite(node.y)
+        ) {
+          throw new Error("ShooterPanel/" + nodeName + " prefab position must be finite.");
+        }
+        shooterPanel.__shooterPrefabRelativeLayout[nodeName] = {
+          x: node.x - prefabOriginX,
+          y: node.y - prefabOriginY
+        };
+      });
+    }
+
+    SHOOTER_PREFAB_LAYOUT_NODE_NAMES.forEach(function (nodeName) {
+      var relativePosition = shooterPanel.__shooterPrefabRelativeLayout[nodeName];
+      if (!relativePosition) {
+        throw new Error("ShooterPanel prefab relative layout is missing " + nodeName + ".");
+      }
+      layoutNodes[nodeName].setPosition(
+        aimOrigin.x + relativePosition.x,
+        aimOrigin.y + relativePosition.y
+      );
+    });
+
+    return layoutNodes;
   }
 
   function requireLabelComponent(node, description) {
@@ -303,94 +368,41 @@ function attachLevelRendererSceneMethods(LevelRenderer, deps) {
     return node;
   }
 
-  function setLoseTopInfoTarget(topInfoNode, prefix, entry) {
-    var numNode = resetLoseTopInfoNode(topInfoNode, prefix + "_text_num");
-    var unitNode = resetLoseTopInfoNode(topInfoNode, prefix + "_text2");
-    var nameNode = resetLoseTopInfoNode(topInfoNode, prefix + "_text_ball");
-    numNode.active = true;
-    unitNode.active = true;
-    nameNode.active = true;
-    setRequiredLabelString(numNode, entry.remainingText, "LoseView/top_info/" + prefix + "_text_num");
-    setRequiredLabelString(unitNode, " 个", "LoseView/top_info/" + prefix + "_text2");
-    setRequiredLabelString(nameNode, entry.displayName, "LoseView/top_info/" + prefix + "_text_ball");
-    if (!LOSE_TOP_INFO_TARGET_COLORS[entry.iconCode]) {
-      throw new Error("LoseView top_info unsupported target color: " + entry.iconCode);
+  function renderLoseTopInfo(topInfoNode, runtimeSnapshot) {
+    if (!runtimeSnapshot || !runtimeSnapshot.winStats || typeof runtimeSnapshot.winStats !== "object") {
+      throw new Error("LoseView top_info requires runtimeSnapshot.winStats.");
     }
-    nameNode.color = LOSE_TOP_INFO_TARGET_COLORS[entry.iconCode];
-    return [numNode, unitNode, nameNode];
-  }
-
-  function hideLoseTopInfoTarget(topInfoNode, prefix) {
-    [
-      prefix + "_text_num",
-      prefix + "_text2",
-      prefix + "_text_ball"
-    ].forEach(function (childName) {
-      var node = resetLoseTopInfoNode(topInfoNode, childName);
-      node.active = false;
-    });
-  }
-
-  function centerLoseTopInfoActiveNodes(activeNodes) {
-    var minX = Infinity;
-    var maxX = -Infinity;
-    activeNodes.forEach(function (node) {
-      if (!node || !node.isValid || !node.active) {
-        return;
-      }
-      var width = Number(node.width);
-      if (!Number.isFinite(width) || width <= 0) {
-        throw new Error("LoseView top_info node width must be positive: " + node.name);
-      }
-      var anchorX = node.anchorX;
-      if (!Number.isFinite(anchorX)) {
-        throw new Error("LoseView top_info node anchorX must be finite: " + node.name);
-      }
-      minX = Math.min(minX, node.x - (width * anchorX));
-      maxX = Math.max(maxX, node.x + (width * (1 - anchorX)));
-    });
-    if (!Number.isFinite(minX) || !Number.isFinite(maxX) || maxX <= minX) {
-      throw new Error("LoseView top_info active node bounds are invalid.");
+    var starThresholds = runtimeSnapshot.winStats.starThresholds;
+    if (!starThresholds || !Number.isInteger(starThresholds.star1) || starThresholds.star1 <= 0) {
+      throw new Error("LoseView top_info requires positive integer one-star threshold.");
     }
-    var offsetX = -((minX + maxX) / 2);
-    activeNodes.forEach(function (node) {
-      if (node && node.isValid && node.active) {
-        node.setPosition(node.x + offsetX, node.y);
-      }
-    });
-  }
-
-  function renderLoseTopInfo(topInfoNode, entries) {
-    var activeNodes = [];
+    var score = Number(runtimeSnapshot.score);
+    if (!Number.isFinite(score) || score < 0) {
+      throw new Error("LoseView top_info requires non-negative runtime score.");
+    }
+    var remainingScore = Math.max(0, starThresholds.star1 - Math.floor(score));
     var text1Node = resetLoseTopInfoNode(topInfoNode, "text1");
+    var numNode = resetLoseTopInfoNode(topInfoNode, "target1_text_num");
     text1Node.active = true;
+    numNode.active = true;
     setRequiredLabelString(text1Node, "还差 ", "LoseView/top_info/text1");
-    activeNodes.push(text1Node);
-    activeNodes = activeNodes.concat(setLoseTopInfoTarget(topInfoNode, "target1", entries[0]));
-
-    var separateNode = resetLoseTopInfoNode(topInfoNode, "text_separate");
-    if (entries.length === 2) {
-      separateNode.active = true;
-      setRequiredLabelString(separateNode, "、", "LoseView/top_info/text_separate");
-      activeNodes.push(separateNode);
-      activeNodes = activeNodes.concat(setLoseTopInfoTarget(topInfoNode, "target2", entries[1]));
-    } else {
-      separateNode.active = false;
-      hideLoseTopInfoTarget(topInfoNode, "target2");
+    setRequiredLabelString(numNode, String(remainingScore), "LoseView/top_info/target1_text_num");
+    var layout = topInfoNode.getComponent(cc.Layout);
+    if (!layout || typeof layout.updateLayout !== "function") {
+      throw new Error("LoseView top_info requires cc.Layout.updateLayout.");
     }
-
-    centerLoseTopInfoActiveNodes(activeNodes);
+    layout.updateLayout();
   }
 
-  function renderLoseUnfinishedTargets(renderer, loseContent, entries) {
+  function renderLoseTargets(renderer, loseContent, entries, runtimeSnapshot) {
     if (!Array.isArray(entries) || entries.length <= 0 || entries.length > 2) {
-      throw new Error("LoseView unfinished target entries must contain one or two items.");
+      throw new Error("LoseView target entries must contain one or two items.");
     }
     var targetLayoutNode = requireChildNode(loseContent, "target_layout", "LoseView");
     renderLoseTargetCard(renderer, targetLayoutNode, "target1", entries[0]);
     renderLoseTargetCard(renderer, targetLayoutNode, "target2", entries[1]);
     layoutLoseTargetCards(targetLayoutNode, entries);
-    renderLoseTopInfo(requireChildNode(loseContent, "top_info", "LoseView"), entries);
+    renderLoseTopInfo(requireChildNode(loseContent, "top_info", "LoseView"), runtimeSnapshot);
   }
 
   function renderLoseReviveGain(renderer, loseContent, levelConfig, runtimeSnapshot, canRevive) {
@@ -459,13 +471,6 @@ function attachLevelRendererSceneMethods(LevelRenderer, deps) {
     renderer._bindLoseButton(coinButtonNode, "coin");
   }
 
-  var DANGER_NORMAL_BAND_OPACITY = 110;
-  var DANGER_WARNING_BAND_OPACITY = 215;
-  var DANGER_NORMAL_LABEL_COLOR = cc.color(255, 250, 235);
-  var DANGER_WARNING_LABEL_COLOR = cc.color(255, 236, 220);
-  var DANGER_NORMAL_OUTLINE_COLOR = cc.color(151, 86, 86);
-  var DANGER_WARNING_OUTLINE_COLOR = cc.color(148, 28, 28);
-  var DANGER_WARNING_ROW_THRESHOLD = Math.max(1, Number(BoardLayout.rowHeight) || 64);
   var HUD_STAR_PARTICLE_NODE_NAME = "starParticle";
   var HUD_STAR_PARTICLE_DURATION = 0.7;
   var RAINBOW_COLOR_SELECTOR_BUTTON_SIZE = 72;
@@ -521,20 +526,25 @@ LevelRenderer.prototype._ensureHudStarAnimationState = function () {
   }
 };
 
+LevelRenderer.prototype._ensureGameViewPrefabReady = function () {
+  return this.prefabFactory.load(PREFAB_PATHS.gameView);
+};
+
 LevelRenderer.prototype._mountGameViewScaffold = function () {
   if (!this.layers) {
-    return;
+    throw new Error("Gameplay layers are required before mounting GameView scaffold.");
   }
 
   var gameViewNode = this.prefabFactory.instantiate(PREFAB_PATHS.gameView, this.layers.hud, "GameView");
   if (!gameViewNode) {
-    return;
+    throw new Error("GameView prefab must be preloaded before mount: " + PREFAB_PATHS.gameView);
   }
   gameViewNode.setPosition(0, 0);
   gameViewNode.active = true;
 
   var mountedBgNode = this._moveGameViewChildToLayer(gameViewNode, "bg", this.layers.background, "bg");
   var mountedDangerLineNode = this._moveGameViewChildToLayer(gameViewNode, "DangerLine", this.layers.dangerLine, "DangerLine");
+  mountedDangerLineNode.active = false;
   var mountedBottomPanelNode = this._moveGameViewChildToLayer(gameViewNode, "BttomPanel", this.layers.hud, "BttomPanel");
   this._flushGameViewScaffoldLayout([
     gameViewNode,
@@ -542,6 +552,104 @@ LevelRenderer.prototype._mountGameViewScaffold = function () {
     mountedDangerLineNode,
     mountedBottomPanelNode
   ]);
+};
+
+LevelRenderer.prototype.playGameEntryCountdown = function () {
+  var gameViewNode = this._getGameViewNode();
+  if (!gameViewNode || !gameViewNode.isValid) {
+    throw new Error("Game entry countdown requires GameView.");
+  }
+
+  var timerNode = requireChildNode(gameViewNode, "timer", "GameView");
+  var timerLabel = timerNode.getComponent(cc.Label);
+  if (!timerLabel) {
+    throw new Error("GameView/timer requires cc.Label.");
+  }
+  var goNode = requireChildNode(gameViewNode, "go", "GameView");
+  if (!goNode.getComponent(cc.Sprite)) {
+    throw new Error("GameView/go requires cc.Sprite.");
+  }
+  if (
+    typeof cc.sequence !== "function" ||
+    typeof cc.spawn !== "function" ||
+    typeof cc.callFunc !== "function" ||
+    typeof cc.delayTime !== "function" ||
+    typeof cc.scaleTo !== "function" ||
+    typeof cc.fadeTo !== "function"
+  ) {
+    throw new Error("Game entry countdown requires Cocos action APIs.");
+  }
+  if (gameViewNode.__gameEntryCountdownActive === true) {
+    throw new Error("Game entry countdown is already active.");
+  }
+
+  timerNode.stopAllActions();
+  goNode.stopAllActions();
+  gameViewNode.__gameEntryCountdownActive = true;
+  timerNode.active = true;
+  timerNode.opacity = 255;
+  timerLabel.string = "3";
+  goNode.active = false;
+  goNode.opacity = 0;
+  goNode.setScale(GAME_ENTRY_GO_START_SCALE);
+
+  return new Promise(function (resolve) {
+    gameViewNode.runAction(cc.sequence(
+      cc.delayTime(GAME_ENTRY_COUNTDOWN_INTERVAL),
+      cc.callFunc(function () {
+        timerLabel.string = "2";
+      }),
+      cc.delayTime(GAME_ENTRY_COUNTDOWN_INTERVAL),
+      cc.callFunc(function () {
+        timerLabel.string = "1";
+      }),
+      cc.delayTime(GAME_ENTRY_COUNTDOWN_INTERVAL),
+      cc.callFunc(function () {
+        timerNode.active = false;
+        goNode.active = true;
+        goNode.opacity = 0;
+        goNode.setScale(GAME_ENTRY_GO_START_SCALE);
+        goNode.runAction(cc.sequence(
+          cc.spawn(
+            cc.scaleTo(GAME_ENTRY_GO_SCALE_DURATION, GAME_ENTRY_GO_END_SCALE),
+            cc.fadeTo(GAME_ENTRY_GO_SCALE_DURATION, 255)
+          ),
+          cc.delayTime(GAME_ENTRY_GO_HOLD_DURATION),
+          cc.callFunc(function () {
+            goNode.active = false;
+            gameViewNode.__gameEntryCountdownActive = false;
+            resolve();
+          })
+        ));
+      })
+    ));
+  });
+};
+
+LevelRenderer.prototype.syncBoardLayoutHudBottomLineAsync = function () {
+  var self = this;
+  this._ensureLayers();
+  return this._ensureGameViewPrefabReady().then(function () {
+    self.syncBoardLayoutHudBottomLine();
+  });
+};
+
+LevelRenderer.prototype.syncBoardLayoutHudBottomLine = function () {
+  this._ensureLayers();
+  var gameViewNode = this.layers.hud.getChildByName("GameView");
+  if (!gameViewNode || !gameViewNode.isValid) {
+    this._mountGameViewScaffold();
+    gameViewNode = this.layers.hud.getChildByName("GameView");
+  }
+  if (!gameViewNode || !gameViewNode.isValid) {
+    throw new Error("GameView is required before syncing HudPanel bottom line.");
+  }
+  var hudPanelNode = gameViewNode.getChildByName("HudPanel");
+  if (!hudPanelNode || !hudPanelNode.isValid) {
+    throw new Error("GameView requires HudPanel before syncing board viewport HUD boundary.");
+  }
+  this._flushGameViewScaffoldLayout([gameViewNode, hudPanelNode]);
+  BoardLayout.syncHudBottomLineYFromHudPanel(hudPanelNode, this.layers.board);
 };
 
 LevelRenderer.prototype._moveGameViewChildToLayer = function (gameViewNode, childName, targetLayer, targetName) {
@@ -641,8 +749,8 @@ LevelRenderer.prototype._resolveTopRowBubbleVisualTopY = function (boardSnapshot
   if (typeof boardSnapshot.topAttachY !== "number" || !isFinite(boardSnapshot.topAttachY)) {
     throw new Error("Board snapshot topAttachY must be a finite number.");
   }
-  if (typeof boardSnapshot.dropOffsetRows !== "number" || !isFinite(boardSnapshot.dropOffsetRows)) {
-    throw new Error("Board snapshot dropOffsetRows must be a finite number.");
+  if (typeof boardSnapshot.viewportOffsetY !== "number" || !isFinite(boardSnapshot.viewportOffsetY)) {
+    throw new Error("Board snapshot viewportOffsetY must be a finite number.");
   }
   if (!Array.isArray(boardSnapshot.cells)) {
     throw new Error("Board snapshot cells must be an array.");
@@ -678,7 +786,7 @@ LevelRenderer.prototype._resolveTopRowBubbleVisualTopY = function (boardSnapshot
     topRow,
     0,
     boardSnapshot.maxColumns,
-    boardSnapshot.dropOffsetRows
+    boardSnapshot.viewportOffsetY
   );
   return topRowCenter.y + bubbleRadius;
 };
@@ -747,13 +855,12 @@ LevelRenderer.prototype._renderHud = function (levelConfig, runtimeSnapshot) {
   this._setHudLabel(panel, "LevelValue", String(levelConfig.level.levelId));
   // this._setHudLabel(panel, "ScoreTitle", "得分");
   this._setHudLabel(panel, "ScoreValue", String(runtimeSnapshot.score));
-  this._renderHudLeftBall(panel, runtimeSnapshot);
   // this._setHudLabel(panel, "TargetTitle", "目标:");
   this._renderHudTargets(panel, hudTargetDisplay);
   this._renderHudStarProgress(panel, runtimeSnapshot);
-  var setButtonNode = requireChildNode(panel, "set_btn", "HudPanel");
-  this._bindBottomPanelButton(setButtonNode, "open_settings");
-  this._setBottomPanelButtonEnabled(setButtonNode, true, {
+  var pauseButtonNode = requireChildNode(panel, "pause_btn", "HudPanel");
+  this._bindBottomPanelButton(pauseButtonNode, "open_pause");
+  this._setBottomPanelButtonEnabled(pauseButtonNode, true, {
     dimWhenDisabled: false
   });
   var stateValueNode = panel.getChildByName("StateValue");
@@ -1495,6 +1602,7 @@ LevelRenderer.prototype._renderBottomPanel = function (runtimeSnapshot) {
   var bombButtonNode = requireChildNode(propsContentNode, "bomb_btn", "BttomPanel/props_scroll/view/content");
   var threeLineButtonNode = requireChildNode(propsContentNode, "eliminate_three_line_btn", "BttomPanel/props_scroll/view/content");
   var plusBallButtonNode = requireChildNode(propsContentNode, "plus_ball_btn", "BttomPanel/props_scroll/view/content");
+  var directionsButtonNode = requireChildNode(panel, "directions_btn", "BttomPanel");
 
   this._rebindBottomPanelPowerupIcon(rainbowButtonNode, "rainbow");
   this._rebindBottomPanelPowerupIcon(destroyButtonNode, "barrier_hammer");
@@ -1505,6 +1613,10 @@ LevelRenderer.prototype._renderBottomPanel = function (runtimeSnapshot) {
   this._bindBottomPanelButton(bombButtonNode, "use_blast");
   this._bindBottomPanelButton(threeLineButtonNode, "use_three_line_elimination");
   this._bindBottomPanelButton(plusBallButtonNode, "use_plus_three_balls");
+  this._bindBottomPanelButton(directionsButtonNode, "open_prop_description");
+  this._setBottomPanelButtonEnabled(directionsButtonNode, true, {
+    dimWhenDisabled: false
+  });
 
   var skillInventory = runtimeSnapshot && runtimeSnapshot.shooter && runtimeSnapshot.shooter.skillInventory
     ? runtimeSnapshot.shooter.skillInventory
@@ -1599,20 +1711,6 @@ LevelRenderer.prototype._resolveHudTargetSlot = function (targetLayout, slotName
     targetNode: targetNode,
     description: "HudPanel/target_layout/" + cardName + "/" + slotName
   };
-};
-
-LevelRenderer.prototype._renderHudLeftBall = function (panel, runtimeSnapshot) {
-  var leftBallNode = requireChildNode(panel, "LeftBall", "HudPanel");
-  var leftBallLabel = leftBallNode.getComponent(cc.Label);
-  if (!leftBallLabel) {
-    throw new Error("HudPanel/LeftBall requires cc.Label.");
-  }
-  if (!runtimeSnapshot || !Number.isInteger(runtimeSnapshot.remainingShots) || runtimeSnapshot.remainingShots < 0) {
-    throw new Error("HUD LeftBall requires non-negative integer remainingShots.");
-  }
-
-  leftBallNode.active = true;
-  leftBallLabel.string = String(runtimeSnapshot.remainingShots);
 };
 
 LevelRenderer.prototype._renderHudTargets = function (panel, targetDisplay) {
@@ -1788,7 +1886,7 @@ LevelRenderer.prototype._resolveIceSnowballCollectStartPositionInGameView = func
     return this._convertBoardPointToGameView(entry.x, entry.y);
   }
 
-  if (!boardSnapshot || !Number.isInteger(boardSnapshot.maxColumns) || !Number.isInteger(boardSnapshot.dropOffsetRows)) {
+  if (!boardSnapshot || !Number.isInteger(boardSnapshot.maxColumns) || !Number.isInteger(boardSnapshot.viewportOffsetY)) {
     throw new Error("Ice snowball collect entry position requires board snapshot.");
   }
   if (!Number.isInteger(entry.row) || !Number.isInteger(entry.col)) {
@@ -1799,7 +1897,7 @@ LevelRenderer.prototype._resolveIceSnowballCollectStartPositionInGameView = func
     entry.row,
     entry.col,
     boardSnapshot.maxColumns,
-    boardSnapshot.dropOffsetRows
+    boardSnapshot.viewportOffsetY
   );
   return this._convertBoardPointToGameView(boardPos.x, boardPos.y);
 };
@@ -1900,10 +1998,7 @@ LevelRenderer.prototype._resolveShooterParticleStartPosition = function () {
     throw new Error("ShooterPanel is required for HUD star particle start position.");
   }
 
-  var shooterNode = shooterPanel.getChildByName("CurrentBallAnchor") || shooterPanel.getChildByName("ShooterBase");
-  if (!shooterNode || !shooterNode.isValid) {
-    throw new Error("Shooter visual node is required for HUD star particle start position.");
-  }
+  var shooterNode = requireChildNode(shooterPanel, "CurrentBallAnchor", "ShooterPanel");
   return this._convertNodePositionToGameView(shooterNode);
 };
 
@@ -2151,7 +2246,7 @@ LevelRenderer.prototype._renderHudStarProgress = function (panel, runtimeSnapsho
       cell.row,
       cell.col,
       boardSnapshot.maxColumns,
-      boardSnapshot.dropOffsetRows,
+      boardSnapshot.viewportOffsetY,
       resolveBoardBubblePrefabPath(cell),
       resolveBallVisualKey(cell)
     ].join("|");
@@ -2669,7 +2764,7 @@ LevelRenderer.prototype._renderBoard = function (boardSnapshot) {
     }
 
     this.boardCellRenderKeys[cellId] = renderKey;
-    var cellPosition = BoardLayout.getCellPosition(cell.row, cell.col, boardSnapshot.maxColumns, boardSnapshot.dropOffsetRows);
+    var cellPosition = BoardLayout.getCellPosition(cell.row, cell.col, boardSnapshot.maxColumns, boardSnapshot.viewportOffsetY);
     var bubbleNode = this._acquireBoardBubbleNode(cell);
     bubbleNode.__boardTick = currentTick;
     bubbleNode.setPosition(cellPosition.x, cellPosition.y);
@@ -2934,8 +3029,8 @@ LevelRenderer.prototype._playKeyUnlockAnimation = function (runtimeSnapshot) {
 
     var targetCells = findUnlockedTargetsForKey(keyCell, unlockedCells);
     var primaryTarget = targetCells[0];
-    var keyPosition = BoardLayout.getCellPosition(keyCell.row, keyCell.col, boardSnapshot.maxColumns, boardSnapshot.dropOffsetRows);
-    var targetPosition = BoardLayout.getCellPosition(primaryTarget.row, primaryTarget.col, boardSnapshot.maxColumns, boardSnapshot.dropOffsetRows);
+    var keyPosition = BoardLayout.getCellPosition(keyCell.row, keyCell.col, boardSnapshot.maxColumns, boardSnapshot.viewportOffsetY);
+    var targetPosition = BoardLayout.getCellPosition(primaryTarget.row, primaryTarget.col, boardSnapshot.maxColumns, boardSnapshot.viewportOffsetY);
     var travelDistance = pointDistance(keyPosition, targetPosition);
     var arcHeight = Math.max(64, Math.min(140, travelDistance * 0.28));
 
@@ -2953,7 +3048,7 @@ LevelRenderer.prototype._playKeyUnlockAnimation = function (runtimeSnapshot) {
         targetNode.opacity = 0;
       }
 
-      var lockPosition = BoardLayout.getCellPosition(targetCell.row, targetCell.col, boardSnapshot.maxColumns, boardSnapshot.dropOffsetRows);
+      var lockPosition = BoardLayout.getCellPosition(targetCell.row, targetCell.col, boardSnapshot.maxColumns, boardSnapshot.viewportOffsetY);
       var lockFx = instantiateRequired(this.prefabFactory, PREFAB_PATHS.lockingBubbleItem, this.layers.board, "LockUnlockFx_" + targetCell.id, "Key unlock animation LockingBubbleItem");
       lockFx.setPosition(lockPosition.x, lockPosition.y);
       lockFx.setScale(1);
@@ -3100,13 +3195,13 @@ LevelRenderer.prototype._playSplitterSpawnAnimation = function (runtimeSnapshot)
       spawnedCell.sourceSplitterRow,
       spawnedCell.sourceSplitterCol,
       boardSnapshot.maxColumns,
-      boardSnapshot.dropOffsetRows
+      boardSnapshot.viewportOffsetY
     );
     var endPosition = BoardLayout.getCellPosition(
       spawnedCell.row,
       spawnedCell.col,
       boardSnapshot.maxColumns,
-      boardSnapshot.dropOffsetRows
+      boardSnapshot.viewportOffsetY
     );
 
     var fxNode = new cc.Node("SplitterSpawnFx_" + spawnedCell.id);
@@ -3212,7 +3307,7 @@ LevelRenderer.prototype._playMolotovBlastAnimation = function (runtimeSnapshot) 
       trigger.row,
       trigger.col,
       boardSnapshot.maxColumns,
-      boardSnapshot.dropOffsetRows
+      boardSnapshot.viewportOffsetY
     ), "Molotov blast");
     if (this.molotovBlastAnimatedIds[normalizedId]) {
       return;
@@ -3560,7 +3655,7 @@ LevelRenderer.prototype._playIceThawShake = function (runtimeSnapshot) {
       if (
         !boardSnapshot ||
         !Number.isInteger(boardSnapshot.maxColumns) ||
-        !Number.isInteger(boardSnapshot.dropOffsetRows) ||
+        !Number.isInteger(boardSnapshot.viewportOffsetY) ||
         !Number.isInteger(cell.row) ||
         !Number.isInteger(cell.col)
       ) {
@@ -3570,7 +3665,7 @@ LevelRenderer.prototype._playIceThawShake = function (runtimeSnapshot) {
         cell.row,
         cell.col,
         boardSnapshot.maxColumns,
-        boardSnapshot.dropOffsetRows
+        boardSnapshot.viewportOffsetY
       );
       baseX = cellPosition.x;
       baseY = cellPosition.y;
@@ -3889,7 +3984,7 @@ LevelRenderer.prototype._renderTestGrid = function (boardSnapshot) {
     for (var col = 0; col < rowColumns; col += 1) {
       var key = row + ":" + col;
       var isOccupied = !!occupied[key];
-      var cellPosition = BoardLayout.getCellPosition(row, col, boardSnapshot.maxColumns, boardSnapshot.dropOffsetRows);
+      var cellPosition = BoardLayout.getCellPosition(row, col, boardSnapshot.maxColumns, boardSnapshot.viewportOffsetY);
       var slotNode = this._acquireTestSlotNode(row, col);
       slotNode.__testGridTick = currentTick;
       slotNode.setPosition(cellPosition.x, cellPosition.y);
@@ -3963,110 +4058,6 @@ LevelRenderer.prototype._recycleInactiveTestSlotNodes = function (activeTick) {
 
     delete this.testSlotNodes[slotId];
   }
-};
-
-LevelRenderer.prototype._evaluateDangerLineState = function (boardSnapshot) {
-  if (!boardSnapshot || !Array.isArray(boardSnapshot.cells) || boardSnapshot.cells.length <= 0) {
-    return {
-      nearDanger: false,
-      dangerReached: false
-    };
-  }
-
-  var minGap = Number.POSITIVE_INFINITY;
-  boardSnapshot.cells.forEach(function (cell) {
-    if (!cell) {
-      return;
-    }
-
-    var cellPosition = BoardLayout.getCellPosition(
-      cell.row,
-      cell.col,
-      boardSnapshot.maxColumns,
-      boardSnapshot.dropOffsetRows
-    );
-    var bubbleBottomY = cellPosition.y - BoardLayout.bubbleRadius;
-    var gapToDanger = bubbleBottomY - BoardLayout.dangerLineY;
-    if (gapToDanger < minGap) {
-      minGap = gapToDanger;
-    }
-  });
-
-  var reached = minGap <= 0;
-  return {
-    nearDanger: minGap > 0 && minGap <= DANGER_WARNING_ROW_THRESHOLD,
-    dangerReached: reached
-  };
-};
-
-LevelRenderer.prototype._setDangerLineWarningActive = function (dangerNode, enabled) {
-  if (!dangerNode || !dangerNode.isValid) {
-    return;
-  }
-
-  var shouldEnable = !!enabled;
-  if (shouldEnable === this.dangerLineWarningActive) {
-    return;
-  }
-
-  this.dangerLineWarningActive = shouldEnable;
-  dangerNode.stopAllActions();
-
-  if (!shouldEnable) {
-    dangerNode.x = 0;
-    return;
-  }
-
-  if (typeof cc.tween === "function") {
-    cc.tween(dangerNode)
-      .to(DANGER_WARNING_SHAKE_STEP, { x: DANGER_WARNING_SHAKE_LEFT_X })
-      .to(DANGER_WARNING_SHAKE_STEP, { x: DANGER_WARNING_SHAKE_RIGHT_X })
-      .to(DANGER_WARNING_SHAKE_STEP, { x: DANGER_WARNING_SHAKE_LEFT_X * 0.7 })
-      .to(DANGER_WARNING_SHAKE_STEP, { x: DANGER_WARNING_SHAKE_RIGHT_X * 0.7 })
-      .union()
-      .repeatForever()
-      .start();
-    return;
-  }
-
-  var sequence = cc.sequence(
-    cc.moveTo(DANGER_WARNING_SHAKE_STEP, DANGER_WARNING_SHAKE_LEFT_X, dangerNode.y),
-    cc.moveTo(DANGER_WARNING_SHAKE_STEP, DANGER_WARNING_SHAKE_RIGHT_X, dangerNode.y),
-    cc.moveTo(DANGER_WARNING_SHAKE_STEP, DANGER_WARNING_SHAKE_LEFT_X * 0.7, dangerNode.y),
-    cc.moveTo(DANGER_WARNING_SHAKE_STEP, DANGER_WARNING_SHAKE_RIGHT_X * 0.7, dangerNode.y)
-  );
-  dangerNode.runAction(cc.repeatForever(sequence));
-};
-
-LevelRenderer.prototype._renderDangerLine = function (runtimeSnapshot) {
-  var node = this.layers.dangerLine.getChildByName("DangerLine");
-  if (!node) {
-    node = this._instantiateOrCreate(PREFAB_PATHS.dangerLine, this.layers.dangerLine, "DangerLine");
-  }
-
-  var dangerLineX = this.dangerLineWarningActive ? node.x : 0;
-  node.setPosition(dangerLineX, BoardLayout.dangerLineY);
-
-  var band = getOrCreateChild(node, "BandBg");
-  var boardSnapshot = runtimeSnapshot && runtimeSnapshot.board ? runtimeSnapshot.board : null;
-  var dangerState = this._evaluateDangerLineState(boardSnapshot);
-  var shouldShowDangerLine = dangerState.nearDanger || dangerState.dangerReached;
-  node.active = shouldShowDangerLine;
-  if (!shouldShowDangerLine) {
-    this._setDangerLineWarningActive(node, false);
-    this.dangerLineReady = true;
-    return;
-  }
-
-  var isWarning = dangerState.nearDanger || dangerState.dangerReached;
-  band.opacity = isWarning ? DANGER_WARNING_BAND_OPACITY : DANGER_NORMAL_BAND_OPACITY;
-  band.color = isWarning ? cc.color(255, 74, 74) : cc.color(255, 255, 255);
-  var labelNode = getOrCreateChild(node, "Label");
-  labelNode.color = isWarning ? DANGER_WARNING_LABEL_COLOR : DANGER_NORMAL_LABEL_COLOR;
-  ensureLabel(labelNode, "危险线", 38, 42);
-  ensureOutline(labelNode, isWarning ? DANGER_WARNING_OUTLINE_COLOR : DANGER_NORMAL_OUTLINE_COLOR, 3);
-  this._setDangerLineWarningActive(node, isWarning);
-  this.dangerLineReady = true;
 };
 
 LevelRenderer.prototype._renderRainbowColorSelector = function (shooterPanel, shooterSnapshot, aim) {
@@ -4158,16 +4149,9 @@ LevelRenderer.prototype._renderShooter = function (shooterSnapshot, activeProjec
   var aim = shooterSnapshot && shooterSnapshot.aim
     ? shooterSnapshot.aim
     : { origin: BoardLayout.shooterOrigin, direction: { x: 0, y: 1 } };
+  var layoutNodes = syncShooterPrefabLayout(shooterPanel, aim.origin);
   var shooterAngle = computeShooterAngle(aim.direction);
-  var fortNode = getOrCreateChild(shooterPanel, "ShooterBase");
-  var fortFrame = this.spriteFrameCache["image/ball/fort"];
-  if (fortFrame && fortNode.__fortApplied !== true) {
-    ensureSprite(fortNode, fortFrame);
-    fortNode.setContentSize(fortFrame.getOriginalSize());
-    fortNode.__fortApplied = true;
-  }
-  fortNode.setPosition(aim.origin.x, aim.origin.y);
-  fortNode.angle = shooterAngle;
+  layoutNodes.Shooter.angle = shooterAngle;
 
   var trajectory = shooterSnapshot.trajectory;
   var canUsePowerup = !!(shooterSnapshot && shooterSnapshot.canUsePowerups);
@@ -4176,8 +4160,7 @@ LevelRenderer.prototype._renderShooter = function (shooterSnapshot, activeProjec
     ? shooterSnapshot.skillInventory
     : {};
   var swapCount = Math.max(0, Math.floor(Number(shooterInventory.swap) || 0));
-  var currentAnchor = getOrCreateChild(shooterPanel, "CurrentBallAnchor");
-  currentAnchor.setPosition(aim.origin.x, aim.origin.y);
+  var currentAnchor = layoutNodes.CurrentBallAnchor;
   currentAnchor.setScale(1);
   var currentBallLike = shooterSnapshot.currentBall || shooterSnapshot.currentColor;
   currentAnchor.active = !!currentBallLike;
@@ -4186,15 +4169,9 @@ LevelRenderer.prototype._renderShooter = function (shooterSnapshot, activeProjec
   }
   this._renderRainbowColorSelector(shooterPanel, shooterSnapshot, aim);
 
-  var changeButtonNode = shooterPanel.getChildByName("ChangeBtn");
+  var changeButtonNode = layoutNodes.ChangeBtn;
   var hasSwapInventory = swapCount > 0;
-  if (changeButtonNode) {
-    if (!changeButtonNode.__positionInitialized) {
-      changeButtonNode.setPosition(aim.origin.x, aim.origin.y);
-      changeButtonNode.__positionInitialized = true;
-    }
-    changeButtonNode.active = hasSwapInventory;
-  }
+  changeButtonNode.active = hasSwapInventory;
   this._setShooterChangeButtonSpin(changeButtonNode, hasSwapInventory);
   if (hasSwapInventory) {
     this._bindBottomPanelButton(changeButtonNode, "use_swap");
@@ -4209,39 +4186,43 @@ LevelRenderer.prototype._renderShooter = function (shooterSnapshot, activeProjec
     );
   }
 
-  var nextAnchor = getOrCreateChild(shooterPanel, "NextBallAnchor");
-  nextAnchor.setPosition(aim.origin.x + NEXT_SHOT_OFFSET_X, aim.origin.y + NEXT_SHOT_OFFSET_Y);
+  var nextAnchor = layoutNodes.NextBallAnchor;
   nextAnchor.setScale(1);
-  nextAnchor.opacity = 200;
+  nextAnchor.opacity = 255;
   var nextBallLike = shooterSnapshot.nextBall || shooterSnapshot.nextColor;
   nextAnchor.active = !!nextBallLike;
   if (nextAnchor.active) {
     this._applyBallVisualCached(nextAnchor, nextBallLike, NEXT_SHOT_BUBBLE_SIZE);
   }
+  this._syncShooterBallHandoff(
+    shooterPanel,
+    layoutNodes,
+    shooterSnapshot,
+    activeProjectile,
+    currentBallLike,
+    nextBallLike
+  );
 
   var shotsValue = Math.max(0, Math.floor(Number(remainingShots) || 0));
-  var surplusNode = shooterPanel.getChildByName("Surplus");
-  if (!surplusNode) {
-    throw new Error("ShooterPanel requires Surplus node.");
-  }
+  var surplusNode = layoutNodes.Surplus;
   var surplusLabel = surplusNode.getComponent(cc.Label);
   if (!surplusLabel) {
     throw new Error("ShooterPanel Surplus requires cc.Label.");
   }
-  var nextAnchorSize = nextAnchor.getContentSize();
-  var surplusSize = surplusNode.getContentSize();
-  if (!nextAnchorSize || !surplusSize || nextAnchorSize.height <= 0 || surplusSize.height <= 0) {
-    throw new Error("ShooterPanel Surplus positioning requires valid node sizes.");
+  surplusLabel.string = shooterSnapshot && shooterSnapshot.infiniteShots ? "无限" : String(shotsValue);
+  if (!shooterSnapshot.infiniteShots && shotsValue < 10) {
+    surplusLabel.node.color = cc.color(255, 72, 72);
+  } else {
+    surplusLabel.node.color = cc.Color.WHITE;
   }
-  surplusNode.setPosition(
-    nextAnchor.x,
-    nextAnchor.y + nextAnchorSize.height * 0.5 + surplusSize.height * 0.5 + 8
-  );
-  surplusLabel.string = shooterSnapshot && shooterSnapshot.infiniteShots ? "无限" : "剩余" + shotsValue;
 
   var ghost = getOrCreateChild(shooterPanel, "GhostBubble");
   var hasTrajectory = !!(trajectory && trajectory.targetCellPosition && trajectory.pathPoints && trajectory.pathPoints.length >= 2);
-  var shouldShowGhost = BoardLayout.showGhostBubble !== false;
+  var wallBounceCount = hasTrajectory && Number.isInteger(trajectory.wallBounceCount)
+    ? trajectory.wallBounceCount
+    : 0;
+  var ricochetGuideActive = !!(shooterSnapshot && shooterSnapshot.ricochetGuideActive);
+  var shouldShowGhost = BoardLayout.showGhostBubble !== false && (ricochetGuideActive || wallBounceCount === 0);
   ghost.active = shouldShowGhost && !activeProjectile && hasTrajectory && !!currentBallLike;
   if (ghost.active) {
     ghost.setPosition(trajectory.targetCellPosition.x, trajectory.targetCellPosition.y);
@@ -4262,12 +4243,137 @@ LevelRenderer.prototype._renderShooter = function (shooterSnapshot, activeProjec
 
   this._syncShooterGuideDots(shooterPanel, shooterSnapshot, activeProjectile);
 
-  var dock = getOrCreateChild(shooterPanel, "NextBallDock");
+  var dock = layoutNodes.NextBallDock;
   dock.active = false;
+};
+
+LevelRenderer.prototype._syncShooterBallHandoff = function (
+  shooterPanel,
+  layoutNodes,
+  shooterSnapshot,
+  activeProjectile,
+  currentBallLike,
+  nextBallLike
+) {
+  var revision = shooterSnapshot.queueAdvanceRevision;
+  if (!Number.isInteger(revision) || revision < 0) {
+    throw new Error("Shooter handoff requires a non-negative queueAdvanceRevision.");
+  }
+
+  if (typeof shooterPanel.__lastQueueAdvanceRevision !== "number") {
+    shooterPanel.__lastQueueAdvanceRevision = revision;
+    return;
+  }
+  if (revision < shooterPanel.__lastQueueAdvanceRevision) {
+    throw new Error("Shooter queueAdvanceRevision cannot move backwards.");
+  }
+
+  if (revision > shooterPanel.__lastQueueAdvanceRevision) {
+    if (revision !== shooterPanel.__lastQueueAdvanceRevision + 1) {
+      throw new Error("Shooter queueAdvanceRevision must advance one step at a time.");
+    }
+    if (!activeProjectile) {
+      throw new Error("Shooter handoff animation requires an active projectile.");
+    }
+    if (!currentBallLike) {
+      throw new Error("Shooter handoff animation requires the promoted current ball.");
+    }
+    if (shooterPanel.__shooterHandoffInProgress) {
+      throw new Error("Shooter handoff animation cannot overlap.");
+    }
+
+    shooterPanel.__lastQueueAdvanceRevision = revision;
+    this._playShooterBallHandoff(
+      shooterPanel,
+      layoutNodes.CurrentBallAnchor,
+      layoutNodes.NextBallAnchor,
+      currentBallLike,
+      nextBallLike,
+      revision
+    );
+  }
+
+  if (shooterPanel.__shooterHandoffInProgress) {
+    layoutNodes.CurrentBallAnchor.active = false;
+    layoutNodes.NextBallAnchor.active = false;
+  }
+};
+
+LevelRenderer.prototype._playShooterBallHandoff = function (
+  shooterPanel,
+  currentAnchor,
+  nextAnchor,
+  promotedBallLike,
+  nextBallLike,
+  revision
+) {
+  var handoffNode = getOrCreateChild(shooterPanel, "NextBallHandoff");
+  handoffNode.stopAllActions();
+  handoffNode.active = true;
+  handoffNode.opacity = 255;
+  handoffNode.setScale(1);
+  handoffNode.setPosition(nextAnchor.x, nextAnchor.y);
+  this._applyBallVisualCached(handoffNode, promotedBallLike, NEXT_SHOT_BUBBLE_SIZE);
+
+  currentAnchor.active = false;
+  nextAnchor.active = false;
+  shooterPanel.__shooterHandoffInProgress = true;
+
+  var deltaX = currentAnchor.x - nextAnchor.x;
+  var deltaY = currentAnchor.y - nextAnchor.y;
+  var controlPoint1 = cc.v2(
+    nextAnchor.x + deltaX * 0.34,
+    nextAnchor.y + deltaY * 0.34 + SHOOTER_HANDOFF_ARC_HEIGHT
+  );
+  var controlPoint2 = cc.v2(
+    nextAnchor.x + deltaX * 0.72,
+    nextAnchor.y + deltaY * 0.72 + SHOOTER_HANDOFF_ARC_HEIGHT
+  );
+  var destination = cc.v2(currentAnchor.x, currentAnchor.y);
+  var targetScale = BOARD_BUBBLE_SIZE.width / NEXT_SHOT_BUBBLE_SIZE.width;
+
+  handoffNode.runAction(cc.sequence(
+    cc.spawn(
+      cc.bezierTo(
+        SHOOTER_HANDOFF_DURATION,
+        [controlPoint1, controlPoint2, destination]
+      ).easing(cc.easeSineInOut()),
+      cc.scaleTo(SHOOTER_HANDOFF_DURATION, targetScale)
+    ),
+    cc.callFunc(function () {
+      if (shooterPanel.__lastQueueAdvanceRevision !== revision) {
+        throw new Error("Shooter handoff revision changed before animation completed.");
+      }
+      handoffNode.active = false;
+      handoffNode.setScale(1);
+      shooterPanel.__shooterHandoffInProgress = false;
+      currentAnchor.active = !!promotedBallLike;
+      nextAnchor.active = !!nextBallLike;
+    })
+  ));
 };
 
 LevelRenderer.prototype._syncShooterGuideDots = function (shooterPanel, shooterSnapshot, activeProjectile) {
   var guideDots = getOrCreateChild(shooterPanel, "GuideDots");
+  var currentBall = shooterSnapshot ? shooterSnapshot.currentBall : null;
+  if (currentBall) {
+    if (currentBall.ballCategory === "normal") {
+      if (currentBall.entityCategory !== "normal_ball") {
+        throw new Error("Guide dot normal ball requires entityCategory normal_ball.");
+      }
+      if (typeof currentBall.color !== "string" || !GUIDE_DOT_TINTS[currentBall.color]) {
+        throw new Error("Guide dot normal ball requires a supported color.");
+      }
+      this.lastGuideDotColorCode = currentBall.color;
+    } else if (currentBall.ballCategory === "skill") {
+      if (currentBall.entityCategory !== "skill_ball" ||
+        (currentBall.entityType !== "rainbow" && currentBall.entityType !== "blast")) {
+        throw new Error("Guide dot skill ball requires a supported firing powerup.");
+      }
+    } else {
+      throw new Error("Guide dot current ball requires normal or skill ballCategory.");
+    }
+  }
   var trajectory = shooterSnapshot ? shooterSnapshot.trajectory : null;
   var hasTrajectory = !!(
     trajectory &&
@@ -4296,10 +4402,13 @@ LevelRenderer.prototype._syncShooterGuideDots = function (shooterPanel, shooterS
     !!(guidePath && guidePath.length >= 2);
 
   if (shouldShowGuide) {
-    var guideKey = buildGuidePathKey(guidePath);
+    if (!this.lastGuideDotColorCode || !GUIDE_DOT_TINTS[this.lastGuideDotColorCode]) {
+      throw new Error("Visible guide dots require a previously resolved normal ball color.");
+    }
+    var guideKey = buildGuidePathKey(guidePath) + "|" + this.lastGuideDotColorCode;
     guideDots.active = true;
     if (!this.lastGuideDotsVisible || guideKey !== this.lastGuidePathKey) {
-      this._renderGuideDots(guideDots, guidePath);
+      this._renderGuideDots(guideDots, guidePath, this.lastGuideDotColorCode);
       this.lastGuidePathKey = guideKey;
     }
     this.lastGuideDotsVisible = true;
@@ -4327,9 +4436,8 @@ LevelRenderer.prototype._renderShooterAimAngleOnly = function (shooterSnapshot, 
   }
 
   var aim = shooterSnapshot.aim;
-  var fortNode = getOrCreateChild(shooterPanel, "ShooterBase");
-  fortNode.setPosition(aim.origin.x, aim.origin.y);
-  fortNode.angle = computeShooterAngle(aim.direction);
+  var layoutNodes = syncShooterPrefabLayout(shooterPanel, aim.origin);
+  layoutNodes.Shooter.angle = computeShooterAngle(aim.direction);
   // 轻量刷新只跳过炮台 UI 重绘，辅助线仍按当前轨迹每帧更新。
   this._syncShooterGuideDots(shooterPanel, shooterSnapshot, activeProjectile);
 };
@@ -4369,12 +4477,16 @@ LevelRenderer.prototype._applyBallVisualCached = function (node, ballLike, force
   node.__ballVisualKey = cacheKey;
 };
 
-LevelRenderer.prototype._renderGuideDots = function (guideContainer, pathPoints) {
+LevelRenderer.prototype._renderGuideDots = function (guideContainer, pathPoints, colorCode) {
   var guideCanvas = getOrCreateChild(guideContainer, "GuideDotsCanvas");
   var dotFrame = this.spriteFrameCache[GUIDE_DOT_SPRITE_PATH];
   if (!dotFrame || !pathPoints || pathPoints.length < 2) {
-    this._setGuideDotsActiveCount(guideCanvas, 0, dotFrame);
+    this._setGuideDotsActiveCount(guideCanvas, 0, dotFrame, null);
     return;
+  }
+  var dotTint = GUIDE_DOT_TINTS[colorCode];
+  if (!dotTint) {
+    throw new Error("Guide dot tint is missing for color: " + colorCode);
   }
 
   var positions = [];
@@ -4407,14 +4519,13 @@ LevelRenderer.prototype._renderGuideDots = function (guideContainer, pathPoints)
     positions = sampled;
   }
 
-  this._setGuideDotsActiveCount(guideCanvas, positions.length, dotFrame);
+  this._setGuideDotsActiveCount(guideCanvas, positions.length, dotFrame, dotTint);
   for (var pointIndex = 0; pointIndex < positions.length; pointIndex += 1) {
     var dotNode = this.guideDotNodes[pointIndex];
     if (!dotNode || !cc.isValid(dotNode)) {
-      continue;
+      throw new Error("Guide dot node is missing after allocation: " + pointIndex);
     }
     dotNode.setPosition(positions[pointIndex].x, positions[pointIndex].y);
-    this._applyGuideDotPulse(dotNode, pointIndex);
   }
 };
 
@@ -4557,8 +4668,9 @@ LevelRenderer.prototype._renderJarCollisionMasks = function (runtimeSnapshot) {
 };
 LevelRenderer.prototype._renderBottomJars = function (levelConfig, runtimeSnapshot) {
   var jarColors = levelConfig.level.jarColors || ["R", "G", "B"];
+  var jarCount = jarColors.length;
   var jarProgress = runtimeSnapshot.jars ? runtimeSnapshot.jars.collectedByColor : {};
-  var jarPositions = BoardLayout.getJarCenterPositions(jarColors.length);
+  var jarPositions = BoardLayout.getJarCenterPositions(jarCount);
 
 
   jarColors.forEach(function (colorCode, index) {
@@ -4568,6 +4680,13 @@ LevelRenderer.prototype._renderBottomJars = function (levelConfig, runtimeSnapsh
     this._applyJarVisual(jarNode, colorCode);
     this._applyJarMaskVisual(jarNode, colorCode);
     this._ensureJarDropContainer(jarNode);
+
+    var scoreNode = jarNode.getChildByName("score");
+    if (!scoreNode || !scoreNode.isValid) {
+      throw new Error("JarItem prefab requires score child node.");
+    }
+    var baseScore = JarScoreConfig.getBaseScoreForJarIndex(jarCount, index);
+    ensureLabel(scoreNode, String(baseScore), 40, 40);
 
     var countNode = getOrCreateChild(jarNode, "CountLabel");
     countNode.setPosition(0, -118);
@@ -5170,6 +5289,127 @@ LevelRenderer.prototype._bindLoseButton = function (buttonNode, action) {
   }, this);
 };
 
+LevelRenderer.prototype._bindPauseButton = function (buttonNode, action) {
+  if (!buttonNode || !buttonNode.isValid) {
+    throw new Error("PauseView button is required for action: " + action);
+  }
+  if (!buttonNode.getComponent(cc.Button)) {
+    throw new Error("PauseView button requires cc.Button: " + buttonNode.name);
+  }
+  if (buttonNode.__pauseBoundAction === action) {
+    return;
+  }
+  if (buttonNode.__pauseBoundAction) {
+    throw new Error("PauseView button already has a different action: " + buttonNode.name);
+  }
+
+  buttonNode.__pauseBoundAction = action;
+  buttonNode.on(cc.Node.EventType.TOUCH_END, function (event) {
+    if (event) {
+      event.stopPropagation();
+    }
+    this._invokePauseAction(action);
+  }, this);
+};
+
+LevelRenderer.prototype.showPauseView = function () {
+  if (!this.layers || !this.layers.modal || !this.layers.modal.isValid) {
+    throw new Error("PauseView requires the gameplay modal layer.");
+  }
+  var existing = this.layers.modal.getChildByName("PauseView");
+  if (existing && existing.active) {
+    throw new Error("PauseView is already active.");
+  }
+
+  var pauseView = existing || this._instantiateOrCreate(PREFAB_PATHS.pauseView, this.layers.modal, "PauseView");
+  if (!pauseView || !pauseView.isValid) {
+    throw new Error("PauseView prefab could not be instantiated.");
+  }
+  pauseView.active = true;
+  pauseView.setPosition(0, 0);
+  SpriteProxyLayerHelper.destroyProxyRoot(pauseView, PAUSE_VIEW_PROXY_ROOT_NAME);
+  this._ensurePopupMaskVisible(pauseView, 164);
+  var pauseContent = this._ensurePopupContentContainer(pauseView);
+  var panel = requireChildNode(pauseContent, "Panel", "PauseView content");
+
+  this._bindPauseButton(requireChildNode(panel, "btn_close", "PauseView/Panel"), "continue");
+  this._bindPauseButton(requireChildNode(panel, "continue", "PauseView/Panel"), "continue");
+  this._bindPauseButton(requireChildNode(panel, "rechage", "PauseView/Panel"), "retry");
+  this._bindPauseButton(requireChildNode(panel, "back", "PauseView/Panel"), "exit");
+  SpriteProxyLayerHelper.rebuildAutoProxyTree({
+    rootNode: pauseView,
+    proxyRootName: PAUSE_VIEW_PROXY_ROOT_NAME
+  });
+  this._playPopupContentOpenAnimation(pauseContent);
+};
+
+LevelRenderer.prototype.hidePauseView = function () {
+  if (!this.layers || !this.layers.modal || !this.layers.modal.isValid) {
+    throw new Error("PauseView hide requires the gameplay modal layer.");
+  }
+  var pauseView = this.layers.modal.getChildByName("PauseView");
+  if (!pauseView || !pauseView.isValid || !pauseView.active) {
+    throw new Error("Cannot hide an inactive PauseView.");
+  }
+  pauseView.active = false;
+};
+
+LevelRenderer.prototype.showPropDescriptionView = function (levelConfig) {
+  if (!this.layers || !this.layers.modal || !this.layers.modal.isValid) {
+    throw new Error("PropDescriptionView requires the gameplay modal layer.");
+  }
+  if (!levelConfig || typeof levelConfig !== "object" || Array.isArray(levelConfig)) {
+    throw new Error("PropDescriptionView requires current levelConfig.");
+  }
+  var existing = this.layers.modal.getChildByName("PropDescriptionView");
+  if (existing && existing.active) {
+    throw new Error("PropDescriptionView is already active.");
+  }
+
+  var viewNode = existing || this._instantiateOrCreate(
+    PREFAB_PATHS.propDescriptionView,
+    this.layers.modal,
+    "PropDescriptionView"
+  );
+  if (!viewNode || !viewNode.isValid) {
+    throw new Error("PropDescriptionView prefab could not be instantiated.");
+  }
+  viewNode.active = true;
+  viewNode.setPosition(0, 0);
+  this._ensurePopupMaskVisible(viewNode, 164);
+  var popupContent = this._ensurePopupContentContainer(viewNode);
+  requireChildNode(popupContent, "Panel", "PropDescriptionView content");
+
+  if (
+    !this.propDescriptionViewController ||
+    this.propDescriptionViewController.node !== viewNode ||
+    !this.propDescriptionViewController.node.isValid
+  ) {
+    this.propDescriptionViewController = new PropDescriptionViewController({
+      node: viewNode,
+      onClose: function () {
+        this._invokeGameplayAction("close_prop_description");
+      }.bind(this)
+    });
+  }
+  this.propDescriptionViewController.render({
+    levelConfig: levelConfig,
+    spriteFrameCache: this.spriteFrameCache
+  });
+  this._playPopupContentOpenAnimation(popupContent);
+};
+
+LevelRenderer.prototype.hidePropDescriptionView = function () {
+  if (!this.layers || !this.layers.modal || !this.layers.modal.isValid) {
+    throw new Error("PropDescriptionView hide requires the gameplay modal layer.");
+  }
+  var viewNode = this.layers.modal.getChildByName("PropDescriptionView");
+  if (!viewNode || !viewNode.isValid || !viewNode.active) {
+    throw new Error("Cannot hide an inactive PropDescriptionView.");
+  }
+  viewNode.active = false;
+};
+
 LevelRenderer.prototype._renderWinView = function (runtimeSnapshot) {
   var existing = this.layers.modal.getChildByName("WinView");
   var wasActive = !!(existing && existing.active);
@@ -5287,11 +5527,11 @@ LevelRenderer.prototype._renderLoseView = function (runtimeSnapshot) {
     this._playPopupContentOpenAnimation(loseContent);
   }
 
-  if (typeof buildLoseUnfinishedTargetEntries !== "function") {
-    throw new Error("LoseView requires buildLoseUnfinishedTargetEntries.");
+  if (typeof buildLoseTargetEntries !== "function") {
+    throw new Error("LoseView requires buildLoseTargetEntries.");
   }
-  var unfinishedTargetEntries = buildLoseUnfinishedTargetEntries(this.currentLevelConfig, runtimeSnapshot);
-  renderLoseUnfinishedTargets(this, loseContent, unfinishedTargetEntries);
+  var targetEntries = buildLoseTargetEntries(this.currentLevelConfig, runtimeSnapshot);
+  renderLoseTargets(this, loseContent, targetEntries, runtimeSnapshot);
 
   var loseRewardEntry = typeof resolveLoseRewardEntry === "function"
     ? resolveLoseRewardEntry(runtimeSnapshot.state)

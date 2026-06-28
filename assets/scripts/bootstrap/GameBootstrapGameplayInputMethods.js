@@ -6,7 +6,7 @@ var RUNTIME_REFRESH_SCOPE = require("../render/LevelRenderer").RUNTIME_REFRESH_S
 
 module.exports = {
   update: function (dt) {
-    if (this.isSelectingLevel) {
+    if (this.isSelectingLevel || this.isGameplayPaused) {
       return;
     }
 
@@ -68,7 +68,7 @@ module.exports = {
   },
 
   _onAimStart: function (event) {
-    if (!this.currentLevelConfig || this.isRestarting || this.isSelectingLevel) {
+    if (!this.currentLevelConfig || this.isRestarting || this.isSelectingLevel || this.isGameplayPaused) {
       return;
     }
 
@@ -106,7 +106,7 @@ module.exports = {
   },
 
   _onAimMove: function (event) {
-    if (!this.currentLevelConfig || this.isRestarting || this.isSelectingLevel) {
+    if (!this.currentLevelConfig || this.isRestarting || this.isSelectingLevel || this.isGameplayPaused) {
       return;
     }
 
@@ -173,7 +173,7 @@ module.exports = {
   },
 
   _onFireTouch: function (event) {
-    if (!this.currentLevelConfig || this.isRestarting || this.isSelectingLevel) {
+    if (!this.currentLevelConfig || this.isRestarting || this.isSelectingLevel || this.isGameplayPaused) {
       return;
     }
 
@@ -221,7 +221,7 @@ module.exports = {
   },
 
   _onAimCancel: function () {
-    if (!this.currentLevelConfig || this.isRestarting || this.isSelectingLevel) {
+    if (!this.currentLevelConfig || this.isRestarting || this.isSelectingLevel || this.isGameplayPaused) {
       return;
     }
 

@@ -12,6 +12,17 @@ var RandomChallengeRules = require("../config/RandomChallengeRules");
 var StarRatingPolicy = Shared.StarRatingPolicy;
 var hideGameCircleWelfareViewNode = Shared.hideGameCircleWelfareViewNode;
 
+function isWechatGameRuntime() {
+  return !!(
+    typeof cc !== "undefined" &&
+    cc &&
+    cc.sys &&
+    typeof cc.sys.platform !== "undefined" &&
+    typeof cc.sys.WECHAT_GAME !== "undefined" &&
+    cc.sys.platform === cc.sys.WECHAT_GAME
+  );
+}
+
 function requireNonEmptyString(value, fieldName) {
   if (typeof value !== "string") {
     throw new Error(fieldName + " must be a string.");
@@ -124,12 +135,15 @@ function getCurrentLevelClearRewardItems(levelConfig) {
   });
 }
 
-function resolveAwardedClearRewardItems(rewardItems, isFirstCompletion) {
+function resolveAwardedClearRewardItems(rewardItems, isFirstCompletion, collectionRewardCompleted) {
   if (!Array.isArray(rewardItems)) {
     throw new Error("Level clear reward items must be an array.");
   }
   if (typeof isFirstCompletion !== "boolean") {
     throw new Error("Level clear reward first-completion flag is required.");
+  }
+  if (typeof collectionRewardCompleted !== "boolean") {
+    throw new Error("Level clear collection reward completion flag is required.");
   }
 
   return rewardItems.filter(function (item) {
@@ -141,6 +155,9 @@ function resolveAwardedClearRewardItems(rewardItems, isFirstCompletion) {
       if (!Number.isInteger(count) || count <= 0) {
         throw new Error("Repeat level clear coin reward must be a positive integer.");
       }
+    }
+    if (collectionRewardCompleted) {
+      count *= 2;
     }
     return {
       id: item.id,
@@ -702,15 +719,19 @@ module.exports = {
     var currentState = snapshot.state;
     if (currentState === "won" && previousState !== "won") {
       this._playSfx("win");
+      if (!snapshot.winStats || typeof snapshot.winStats.collectionRewardCompleted !== "boolean") {
+        throw new Error("Level clear requires boolean winStats.collectionRewardCompleted.");
+      }
+      var collectionRewardCompleted = snapshot.winStats.collectionRewardCompleted;
       if (isRandomChallengeContext(this._currentRunContext)) {
         this._recordRandomChallengeWin(snapshot);
-        this._currentLevelAwardedClearRewardItems = this._grantRandomChallengeRewardItems();
+        this._currentLevelAwardedClearRewardItems = this._grantRandomChallengeRewardItems(collectionRewardCompleted);
       } else {
         var isFirstCompletion = !this._isLevelCompleted(this._currentLevelId);
         this._recordCurrentLevelWin(snapshot);
         this._currentLevelAwardedClearRewardItems = this._currentLevelEnteredByTestUnlock === true
           ? []
-          : this._grantCurrentLevelClearRewardItems(isFirstCompletion);
+          : this._grantCurrentLevelClearRewardItems(isFirstCompletion, collectionRewardCompleted);
       }
     } else if (
       currentState !== previousState &&
@@ -780,19 +801,24 @@ module.exports = {
     return snapshot;
   },
 
-  _grantCurrentLevelClearRewardItems: function (isFirstCompletion) {
+  _grantCurrentLevelClearRewardItems: function (isFirstCompletion, collectionRewardCompleted) {
     if (typeof isFirstCompletion !== "boolean") {
       throw new Error("Level clear reward grant requires first-completion flag.");
     }
     var configuredRewardItems = getCurrentLevelClearRewardItems(this.currentLevelConfig);
-    var awardedRewardItems = resolveAwardedClearRewardItems(configuredRewardItems, isFirstCompletion);
+    var awardedRewardItems = resolveAwardedClearRewardItems(
+      configuredRewardItems,
+      isFirstCompletion,
+      collectionRewardCompleted
+    );
     return grantRewardItemsToPlayer(this, awardedRewardItems, "Level clear reward");
   },
 
-  _grantRandomChallengeRewardItems: function () {
+  _grantRandomChallengeRewardItems: function (collectionRewardCompleted) {
     requireRandomChallengeContext(this._currentRunContext);
     var rewardItems = getCurrentLevelClearRewardItems(this.currentLevelConfig);
-    return grantRewardItemsToPlayer(this, rewardItems, "Random challenge reward");
+    var awardedRewardItems = resolveAwardedClearRewardItems(rewardItems, true, collectionRewardCompleted);
+    return grantRewardItemsToPlayer(this, awardedRewardItems, "Random challenge reward");
   },
 
   _recordCurrentLevelWin: function (snapshot) {
@@ -810,7 +836,11 @@ module.exports = {
     var score = resolveWinSnapshotScore(snapshot);
     this.levelProgress = this.levelProgressStore.recordCompletion(this.levelProgress, this._currentLevelId, stars, score);
     this.levelProgressStore.save(this.levelProgress);
-    this._submitWorldLeaderboardProgressAfterLevelClear();
+    if (isWechatGameRuntime()) {
+      this._submitWorldLeaderboardProgressAfterLevelClear();
+    } else {
+      Logger.info("Skip world leaderboard progress submit outside WeChat game runtime.");
+    }
 
     Logger.info("Level completion recorded", {
       levelId: this._currentLevelId,
@@ -1051,31 +1081,37 @@ module.exports = {
         configHash: run.configHash
       };
       this._prepareRouteEditorForLevel(levelConfig, this._currentLevelId);
-      var snapshot = this.gameManager.startLevel(levelConfig);
-      if (typeof this._applyPendingNextRoundRewards === "function") {
-        snapshot = this._applyPendingNextRoundRewards(snapshot);
-      }
-      if (typeof this._beginLevelAttemptTracking === "function") {
-        this._beginLevelAttemptTracking(levelConfig, snapshot);
-      }
-      this._lastRuntimeState = snapshot ? snapshot.state : null;
-      return this.levelRenderer.renderLevel(levelConfig, snapshot).then(function () {
-        this.isRestarting = false;
-        this.isSelectingLevel = false;
-        this._hideLevelSelectView();
-        this._setDropTestButtonVisible(true);
-        this._renderRouteEditor();
-        this._refreshRouteEditorButtons();
-        this._setStatus(this._formatStatus(levelConfig, snapshot));
-        this._playGameplayBackgroundMusic();
-        Logger.info("Random challenge started", {
-          seed: run.seed,
-          difficultyTier: run.difficultyTier,
-          configHash: run.configHash
-        });
-        this._logAssetManagerStats("gameplay");
-        this._syncSpecialIntroduceForRuntimeSnapshot(snapshot);
-        return null;
+      return this.levelRenderer.syncBoardLayoutHudBottomLineAsync().then(function () {
+        var snapshot = this.gameManager.startLevel(levelConfig);
+        if (typeof this._applyPendingNextRoundRewards === "function") {
+          snapshot = this._applyPendingNextRoundRewards(snapshot);
+        }
+        if (typeof this._beginLevelAttemptTracking === "function") {
+          this._beginLevelAttemptTracking(levelConfig, snapshot);
+        }
+        this._lastRuntimeState = snapshot ? snapshot.state : null;
+        return this.levelRenderer.renderLevel(levelConfig, snapshot).then(function () {
+          this.isSelectingLevel = false;
+          this._hideLevelSelectView();
+          this._renderRouteEditor();
+          this._refreshRouteEditorButtons();
+          this._setStatus(this._formatStatus(levelConfig, snapshot));
+          this._playGameplayBackgroundMusic();
+          Logger.info("Random challenge started", {
+            seed: run.seed,
+            difficultyTier: run.difficultyTier,
+            configHash: run.configHash
+          });
+          this._logAssetManagerStats("gameplay");
+          this.levelRenderer.setGameplayInteractionEnabled(false);
+          return this.levelRenderer.playGameEntryCountdown().then(function () {
+            this.levelRenderer.setGameplayInteractionEnabled(true);
+            this.isRestarting = false;
+            this._setDropTestButtonVisible(true);
+            this._syncSpecialIntroduceForRuntimeSnapshot(snapshot);
+            return null;
+          }.bind(this));
+        }.bind(this));
       }.bind(this));
     }.bind(this)).catch(function (error) {
       this.isRestarting = false;

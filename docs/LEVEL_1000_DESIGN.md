@@ -6,10 +6,13 @@ The 1000-level campaign extends the current 40-level bubble shooter progression 
 
 ## Progression Structure
 
-Levels 1-40 remain the existing shipped chapter. Levels 41-1000 are generated from deterministic templates and mirror the same JSON schema used by the current levels. Levels 1-100 are bundled locally; levels 101-1000 are grouped into remote 100-level packs for WeChat cloud storage.
+Levels 1-100 use the deterministic first-100 design rules in `tools/first-100-level-design.js`. Levels 1-10 are bundled locally, levels 11-100 use the first remote pack, and levels 101-1000 remain grouped into remote 100-level packs for WeChat cloud storage.
 
 The new campaign uses these chapters:
 
+- Levels 1-9: compact color clusters, support reading, and silhouette fundamentals.
+- Levels 10-15: stone, rainbow, and blast introductions.
+- Levels 16-40: ice-route training with bounded legacy-skill combinations.
 - Levels 41-60: molotov intro and two-molotov chain basics.
 - Levels 61-80: splitter intro with single-color split reinforcement.
 - Levels 81-100: locked ball and key intro.
@@ -18,7 +21,7 @@ The new campaign uses these chapters:
 - Levels 181-200: first full reactive mechanics exam.
 - Levels 201-1000: four 100-level cycle themes: blast chain routes, growth and keys, symbolic patterns, full system mastery.
 
-Every chapter keeps `clear_all` as the primary win condition and alternates between `collect_any` and `collect_color` as the secondary goal.
+Levels 1-100 use one explicit `collect_color` primary target. Levels containing at least three ice balls add an exact `collect_ice_snowball` secondary target whose value equals the configured ice count.
 
 ## New Entity Rules
 
@@ -106,6 +109,10 @@ Rule:
 
 ## Board Pattern Strategy
 
+Levels 1-100 rotate through ten real occupancy silhouettes: `roof_bands`, `twin_wings`, `hollow_v`, `support_bridge`, `diamond_core`, `side_gate`, `diagonal_wave`, `heart_pocket`, `split_islands`, and `crown_exam`. The silhouette is generated before special placement and color assignment. Every board keeps a connected top anchor, colors are assigned in compact chunks, and special entities occupy cells inside the declared silhouette.
+
+The first-100 quality gates require every level to use the exact deterministic silhouette, keep special density at or below 30%, use at most four special entity types, and pass the clustered color checks. Difficulty follows a ten-level wave: the opening levels teach or reinforce, levels 8-9 raise pressure, and level 10 is the chapter exam before the next wave resets.
+
 Generated levels use symbolic board silhouettes to increase variety:
 
 - `arrow`: directional route reading.
@@ -124,6 +131,8 @@ Special entities are placed on explicit `.` slots in `layout`; the layout remain
 ## Generation Rules
 
 The generator is `tools/generate-1000-level-configs.js`.
+
+For the staged first-100 rebuild, run `npm run generate:levels-first100`. This command rewrites only the first 100 CSV rows, local levels 1-10, `levels_pack_011_100.json`, and that pack's manifest hash/size entry. It intentionally leaves levels 101-1000 and their remote packs unchanged.
 
 It preserves existing levels 1-40, writes generated levels 41-100 locally, and groups levels 101-1000 into remote packs.
 

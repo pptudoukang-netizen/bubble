@@ -10,7 +10,30 @@ var GameManager = require("../assets/scripts/core/GameManager");
 var LevelPackCompactCodec = require("../assets/scripts/config/LevelPackCompactCodec");
 var LevelPackManifest = require("../assets/scripts/config/LevelPackManifest");
 var SpecialAnimationTiming = require("../assets/scripts/config/SpecialAnimationTiming");
+var StarRatingPolicy = require("../assets/scripts/core/StarRatingPolicy");
 var TrajectoryPredictor = require("../assets/scripts/systems/TrajectoryPredictor");
+var BoardViewportSystem = require("../assets/scripts/systems/BoardViewportSystem");
+
+function syncHudBottomLineYForValidation() {
+  if (typeof BoardLayout.boardStartY !== "number" || !isFinite(BoardLayout.boardStartY)) {
+    throw new Error("Validation requires BoardLayout.boardStartY.");
+  }
+  if (typeof BoardLayout.bubbleRadius !== "number" || !isFinite(BoardLayout.bubbleRadius)) {
+    throw new Error("Validation requires BoardLayout.bubbleRadius.");
+  }
+  BoardLayout.hudBottomLineY = BoardLayout.boardStartY + BoardLayout.bubbleRadius;
+}
+
+function createGridWithViewport(levelConfig) {
+  syncHudBottomLineYForValidation();
+  var grid = new BubbleGrid();
+  var viewport = new BoardViewportSystem();
+  grid.attachBoardViewport(viewport);
+  grid.initialize({});
+  viewport.configureLevel(levelConfig);
+  grid.configureLevel(levelConfig);
+  return grid;
+}
 
 var LEVEL_DIR = path.resolve(__dirname, "../assets/resources/config/levels");
 var MANIFEST_PATH = path.resolve(__dirname, "../assets/resources/config/level_manifest.json");
@@ -148,13 +171,10 @@ function buildRegressionCases() {
 
 function runCase(levelCase) {
   var levelConfig = createLevelConfig(levelCase.levelId);
-  var grid = new BubbleGrid();
+  var grid = createGridWithViewport(levelConfig);
   var predictor = new TrajectoryPredictor();
 
-  grid.initialize({});
   predictor.initialize({});
-
-  grid.configureLevel(levelConfig);
   predictor.configureLevel(levelConfig);
 
   var origin = {
@@ -205,7 +225,7 @@ function runCase(levelCase) {
 
 function runKeyUnlockBoardAdvanceDelayCase() {
   var manager = new GameManager();
-  var advancedCount = 0;
+  var settlePlanned = false;
   var hadCc = Object.prototype.hasOwnProperty.call(global, "cc");
   var previousCc = global.cc;
 
@@ -215,55 +235,59 @@ function runKeyUnlockBoardAdvanceDelayCase() {
     error: function () {}
   };
   try {
-    manager.dropInterval = 1;
     manager.shotsFired = 1;
+    manager.state = "running";
+    manager._tryTopAnchorCollapse = function () {
+      return false;
+    };
     manager.lastResolution = {
+      impact: {
+        seq: 1,
+        center: { x: 0, y: 0 },
+        neighbors: [{ id: "n1", row: 1, col: 1, x: 0, y: 0 }],
+        pushDistance: 10,
+        bounceSpeed: 100
+      },
       collectedKeys: [
         { id: "key_1", row: 1, col: 1 }
       ],
       unlockedLockedBalls: [
         { id: "locked_1", row: 1, col: 2, __sourceKeyId: "key_1" }
       ],
-      boardDropped: false
+      boardViewportAdjusted: false
+    };
+    manager.systems.boardViewportSystem = {
+      introActive: false,
+      isMoving: function () {
+        return settlePlanned;
+      },
+      planSettle: function () {
+        settlePlanned = true;
+        return true;
+      }
     };
     manager.systems.bubbleGrid = {
-      advanceRows: function (rows) {
-        if (rows !== 1) {
-          throw new Error("Board advance regression expected one row.");
-        }
-        advancedCount += 1;
-      },
-      getDropOffsetRows: function () {
-        return advancedCount;
+      snapshot: function () {
+        return { cells: [{ row: 1, col: 1 }] };
       }
     };
 
-    if (!manager._scheduleBoardAdvanceAfterImpact()) {
-      throw new Error("Key unlock board advance regression expected scheduled advance.");
+    if (!manager._applyPostImpactBoardShiftPolicy(manager.lastResolution)) {
+      throw new Error("Post-impact board shift regression expected deferred viewport settle.");
     }
 
-    var keyUnlockDuration = SpecialAnimationTiming.keyUnlock.totalDuration;
-    if (manager._updatePendingBoardAdvance(keyUnlockDuration - 0.001)) {
-      throw new Error("Board advanced before key unlock animation finished.");
+    var combinedDelay = manager.pendingBoardAdvanceSpecialAnimationDelay;
+    if (combinedDelay <= 0) {
+      throw new Error("Post-impact regression expected positive special animation delay.");
     }
-    if (advancedCount !== 0) {
-      throw new Error("Board advance count changed during key unlock animation.");
-    }
-    if (manager._updatePendingBoardAdvance(0.001)) {
-      throw new Error("Board advanced in the same frame key unlock animation finished.");
-    }
-    var impactBounceDuration = SpecialAnimationTiming.calculateImpactBounceTotalDuration(
-      SpecialAnimationTiming.impactBounce.defaultPushDistance,
-      BoardLayout.impactBounceSpeed
-    );
-    if (manager._updatePendingBoardAdvance(impactBounceDuration - 0.001)) {
-      throw new Error("Board advanced before post-impact delay finished.");
+    if (manager._updatePendingBoardAdvance(combinedDelay - 0.001)) {
+      throw new Error("Viewport settle started before post-impact animation delay finished.");
     }
     if (!manager._updatePendingBoardAdvance(0.001)) {
-      throw new Error("Board did not advance after key unlock animation and impact delay.");
+      throw new Error("Viewport settle did not start after post-impact animation delay.");
     }
-    if (advancedCount !== 1 || manager.lastResolution.boardDropped !== true) {
-      throw new Error("Board advance regression did not mark the expected single drop.");
+    if (!settlePlanned || manager.lastResolution.boardViewportAdjusted !== true) {
+      throw new Error("Viewport settle regression did not mark boardViewportAdjusted.");
     }
   } finally {
     if (hadCc) {
@@ -276,7 +300,7 @@ function runKeyUnlockBoardAdvanceDelayCase() {
 
 function runImpactBounceBoardAdvanceDelayCase() {
   var manager = new GameManager();
-  var advancedCount = 0;
+  var settlePlanned = false;
   var hadCc = Object.prototype.hasOwnProperty.call(global, "cc");
   var previousCc = global.cc;
 
@@ -286,52 +310,55 @@ function runImpactBounceBoardAdvanceDelayCase() {
     error: function () {}
   };
   try {
-    manager.dropInterval = 1;
     manager.shotsFired = 1;
+    manager.state = "running";
+    manager._tryTopAnchorCollapse = function () {
+      return false;
+    };
     manager.lastResolution = {
       collectedKeys: [],
       unlockedLockedBalls: [],
       impact: {
         seq: 1,
+        center: { x: 0, y: 0 },
+        neighbors: [{ id: "n1", row: 1, col: 1, x: 0, y: 0 }],
         pushDistance: SpecialAnimationTiming.impactBounce.defaultPushDistance,
         bounceSpeed: BoardLayout.impactBounceSpeed
       },
-      boardDropped: false
+      boardViewportAdjusted: false
+    };
+    manager.systems.boardViewportSystem = {
+      introActive: false,
+      isMoving: function () {
+        return settlePlanned;
+      },
+      planSettle: function () {
+        settlePlanned = true;
+        return true;
+      }
     };
     manager.systems.bubbleGrid = {
-      advanceRows: function (rows) {
-        if (rows !== 1) {
-          throw new Error("Impact board advance regression expected one row.");
-        }
-        advancedCount += 1;
-      },
-      getDropOffsetRows: function () {
-        return advancedCount;
+      snapshot: function () {
+        return { cells: [{ row: 1, col: 1 }] };
       }
     };
 
-    if (!manager._scheduleBoardAdvanceAfterImpact()) {
-      throw new Error("Impact board advance regression expected scheduled advance.");
+    if (!manager._applyPostImpactBoardShiftPolicy(manager.lastResolution)) {
+      throw new Error("Impact post-shift regression expected deferred viewport settle.");
     }
 
-    var impactBounceDuration = SpecialAnimationTiming.calculateImpactBounceTotalDuration(
-      SpecialAnimationTiming.impactBounce.defaultPushDistance,
-      BoardLayout.impactBounceSpeed
-    );
-    if (impactBounceDuration <= 0.2) {
-      throw new Error("Impact board advance delay must cover bounce animation and settle frame.");
+    var impactDelay = manager.pendingBoardAdvanceSpecialAnimationDelay;
+    if (impactDelay <= 0.2) {
+      throw new Error("Impact viewport settle delay must cover bounce animation.");
     }
-    if (manager._updatePendingBoardAdvance(impactBounceDuration - 0.001)) {
-      throw new Error("Board advanced before impact bounce animation finished.");
-    }
-    if (advancedCount !== 0) {
-      throw new Error("Board advance count changed during impact bounce animation.");
+    if (manager._updatePendingBoardAdvance(impactDelay - 0.001)) {
+      throw new Error("Viewport settle started before impact bounce animation finished.");
     }
     if (!manager._updatePendingBoardAdvance(0.001)) {
-      throw new Error("Board did not advance after impact bounce animation finished.");
+      throw new Error("Viewport settle did not start after impact bounce animation finished.");
     }
-    if (advancedCount !== 1 || manager.lastResolution.boardDropped !== true) {
-      throw new Error("Impact board advance regression did not mark the expected single drop.");
+    if (!settlePlanned || manager.lastResolution.boardViewportAdjusted !== true) {
+      throw new Error("Impact viewport settle regression did not mark boardViewportAdjusted.");
     }
   } finally {
     if (hadCc) {
@@ -344,7 +371,7 @@ function runImpactBounceBoardAdvanceDelayCase() {
 
 function runImpactBounceBoardAdvanceSameUpdateFrameCase() {
   var manager = new GameManager();
-  var advancedCount = 0;
+  var settlePlanned = false;
   var hadCc = Object.prototype.hasOwnProperty.call(global, "cc");
   var previousCc = global.cc;
 
@@ -354,51 +381,53 @@ function runImpactBounceBoardAdvanceSameUpdateFrameCase() {
     error: function () {}
   };
   try {
-    manager.dropInterval = 1;
     manager.shotsFired = 1;
+    manager.state = "running";
+    manager._tryTopAnchorCollapse = function () {
+      return false;
+    };
     manager.boardAdvanceUpdateSerial = 3;
     manager.lastResolution = {
       collectedKeys: [],
       unlockedLockedBalls: [],
       impact: {
         seq: 1,
+        center: { x: 0, y: 0 },
+        neighbors: [{ id: "n1", row: 1, col: 1, x: 0, y: 0 }],
         pushDistance: SpecialAnimationTiming.impactBounce.defaultPushDistance,
         bounceSpeed: BoardLayout.impactBounceSpeed
       },
-      boardDropped: false
+      boardViewportAdjusted: false
+    };
+    manager.systems.boardViewportSystem = {
+      introActive: false,
+      isMoving: function () {
+        return settlePlanned;
+      },
+      planSettle: function () {
+        settlePlanned = true;
+        return true;
+      }
     };
     manager.systems.bubbleGrid = {
-      advanceRows: function (rows) {
-        if (rows !== 1) {
-          throw new Error("Impact same-frame regression expected one row.");
-        }
-        advancedCount += 1;
-      },
-      getDropOffsetRows: function () {
-        return advancedCount;
+      snapshot: function () {
+        return { cells: [{ row: 1, col: 1 }] };
       }
     };
 
-    if (!manager._scheduleBoardAdvanceAfterImpact()) {
-      throw new Error("Impact same-frame regression expected scheduled advance.");
+    if (!manager._applyPostImpactBoardShiftPolicy(manager.lastResolution)) {
+      throw new Error("Impact same-frame regression expected deferred viewport settle.");
     }
+    manager.pendingBoardAdvanceScheduledUpdateSerial = manager.boardAdvanceUpdateSerial;
     if (manager._updatePendingBoardAdvance(999)) {
-      throw new Error("Board advanced in the same update frame the impact bounce was scheduled.");
+      throw new Error("Viewport settle started in the scheduling update frame.");
     }
-    if (advancedCount !== 0) {
-      throw new Error("Board advance count changed in the scheduling update frame.");
-    }
-
     manager.boardAdvanceUpdateSerial = 4;
-    var impactBounceDuration = SpecialAnimationTiming.calculateImpactBounceTotalDuration(
-      SpecialAnimationTiming.impactBounce.defaultPushDistance,
-      BoardLayout.impactBounceSpeed
-    );
-    if (!manager._updatePendingBoardAdvance(impactBounceDuration)) {
-      throw new Error("Board did not advance after impact bounce delay on the next update frame.");
+    if (!manager._updatePendingBoardAdvance(999)) {
+      throw new Error("Viewport settle did not start on the next update frame.");
     }
-    if (advancedCount !== 1 || manager.lastResolution.boardDropped !== true) {
-      throw new Error("Impact same-frame regression did not mark the expected single drop.");
+    if (!settlePlanned || manager.lastResolution.boardViewportAdjusted !== true) {
+      throw new Error("Impact same-frame viewport settle regression failed.");
     }
   } finally {
     if (hadCc) {
@@ -411,7 +440,6 @@ function runImpactBounceBoardAdvanceSameUpdateFrameCase() {
 
 function runKeyUnlockSingleTargetCase() {
   var manager = createKeyUnlockRegressionManager();
-  var grid = new BubbleGrid();
   var levelConfig = {
     coordinateSystem: "odd-r-hex",
     level: {
@@ -429,8 +457,7 @@ function runKeyUnlockSingleTargetCase() {
     }
   };
   var resolution = createKeyUnlockResolution();
-
-  grid.configureLevel(levelConfig);
+  var grid = createGridWithViewport(levelConfig);
   var keyCell = grid.getCell(1, 1);
   if (!keyCell || keyCell.entityCategory !== "key_ball") {
     throw new Error("Key unlock regression setup failed to create key cell.");
@@ -457,7 +484,6 @@ function runKeyUnlockSingleTargetCase() {
 
 function runKeyUnlockNearestTargetCase() {
   var manager = createKeyUnlockRegressionManager();
-  var grid = new BubbleGrid();
   var levelConfig = {
     coordinateSystem: "odd-r-hex",
     level: {
@@ -476,8 +502,7 @@ function runKeyUnlockNearestTargetCase() {
     }
   };
   var resolution = createKeyUnlockResolution();
-
-  grid.configureLevel(levelConfig);
+  var grid = createGridWithViewport(levelConfig);
   var keyCell = grid.getCell(1, 1);
   if (!keyCell || keyCell.entityCategory !== "key_ball") {
     throw new Error("Key nearest-target regression setup failed to create key cell.");
@@ -495,7 +520,6 @@ function runKeyUnlockNearestTargetCase() {
 
 function runKeyUnlockCompetitiveNearestCase() {
   var manager = createKeyUnlockRegressionManager();
-  var grid = new BubbleGrid();
   var levelConfig = {
     coordinateSystem: "odd-r-hex",
     level: {
@@ -515,8 +539,7 @@ function runKeyUnlockCompetitiveNearestCase() {
     }
   };
   var resolution = createKeyUnlockResolution();
-
-  grid.configureLevel(levelConfig);
+  var grid = createGridWithViewport(levelConfig);
   var leftKey = grid.getCell(2, 1);
   var rightKey = grid.getCell(2, 5);
   if (!leftKey || !rightKey) {
@@ -544,7 +567,6 @@ function runKeyUnlockCompetitiveNearestCase() {
 
 function runKeyUnlockSequentialWaveCase() {
   var manager = createKeyUnlockRegressionManager();
-  var grid = new BubbleGrid();
   var levelConfig = {
     coordinateSystem: "odd-r-hex",
     level: {
@@ -565,8 +587,7 @@ function runKeyUnlockSequentialWaveCase() {
     }
   };
   var resolution = createKeyUnlockResolution();
-
-  grid.configureLevel(levelConfig);
+  var grid = createGridWithViewport(levelConfig);
   var farKey = grid.getCell(2, 1);
   var nearKey = grid.getCell(2, 3);
   if (!farKey || !nearKey) {
@@ -597,11 +618,11 @@ function runKeyUnlockSequentialWaveCase() {
 
 function runKeyUnlockUnsupportedFallsCase() {
   var manager = new GameManager();
-  var grid = new BubbleGrid();
   var support = require("../assets/scripts/systems/SupportSystem");
   var supportSystem = new support();
   var falling = require("../assets/scripts/systems/FallingMarbleSystem");
   var fallingMarbleSystem = new falling();
+  var fairyAssistSystem = manager.systems.fairyAssistSystem;
   var levelConfig = {
     coordinateSystem: "odd-r-hex",
     colors: ["R", "G", "B"],
@@ -633,9 +654,11 @@ function runKeyUnlockUnsupportedFallsCase() {
   var jars = require("../assets/scripts/systems/JarCollectorSystem");
   var jarCollectorSystem = new jars();
 
-  grid.configureLevel(levelConfig);
+  var grid = createGridWithViewport(levelConfig);
   supportSystem.configureLevel(levelConfig);
   matchSystem.configureLevel(levelConfig);
+  fairyAssistSystem.configureLevel(levelConfig);
+  fallingMarbleSystem.attachFairyAssistSystem(fairyAssistSystem);
   fallingMarbleSystem.configureLevel(levelConfig);
   jarCollectorSystem.configureLevel(levelConfig);
 
@@ -643,6 +666,7 @@ function runKeyUnlockUnsupportedFallsCase() {
     bubbleGrid: grid,
     supportSystem: supportSystem,
     matchSystem: matchSystem,
+    fairyAssistSystem: fairyAssistSystem,
     fallingMarbleSystem: fallingMarbleSystem,
     jarCollectorSystem: jarCollectorSystem
   };
@@ -870,13 +894,89 @@ function runFloatingIceDropThawBeforeFallCase() {
   }
 }
 
-function runObjectiveWinRequiresStarAndAllTargetsCase() {
+function runCollectionRewardDoesNotClearRemainingBoardCase() {
   var manager = new GameManager();
   manager.currentLevel = {
     level: {
+      bonusObjectives: [],
       winConditions: [
-        { type: "collect_any", value: 3 },
+        { type: "collect_any", value: 2 }
+      ]
+    }
+  };
+  manager.requiredStarCount = 1;
+  manager.scoreHeatBand = {
+    min: 100,
+    target: 200,
+    max: 300
+  };
+  manager.score = 150;
+  manager.remainingShots = 3;
+  manager.state = "running";
+  manager.lastResolution = {
+    matched: [],
+    floating: [],
+    collected: []
+  };
+
+  var boardCells = [
+    { id: "board_r1", row: 1, col: 1, color: "R", entityCategory: "normal_ball", entityType: null },
+    { id: "board_r2", row: 2, col: 2, color: "B", entityCategory: "normal_ball", entityType: null }
+  ];
+  manager.systems = {
+    bubbleGrid: {
+      getCells: function () {
+        return boardCells.slice();
+      },
+      removeCells: function (cells) {
+        boardCells = [];
+        return cells.slice();
+      }
+    },
+    fallingMarbleSystem: {
+      hasActiveDrops: function () {
+        return false;
+      },
+      registerDrops: function (cells, grid, options) {
+        throw new Error("Collection reward completion must not register victory board drops.");
+      }
+    },
+    jarCollectorSystem: {
+      jarColors: ["R", "B"],
+      collectedByColor: { R: 2, B: 0 },
+      collectedTotal: 2,
+      objectiveTarget: 2,
+      lastCollected: [],
+      snapshot: function () {
+        return {
+          collectedTotal: 2,
+          collectedByColor: { R: 2, B: 0 }
+        };
+      }
+    }
+  };
+  manager.cachedJarSnapshot = null;
+  manager.cachedJarSnapshotKey = "";
+
+  manager._resolveOutOfShotsOutcome();
+
+  if (manager.state !== "out_of_shots") {
+    throw new Error("Completed collection reward must not pass with remaining board cells.");
+  }
+  if (boardCells.length !== 2) {
+    throw new Error("Completed collection reward must leave remaining board cells unchanged.");
+  }
+}
+
+function runClearWinRequiresStarAndEmptyBoardCase() {
+  var manager = new GameManager();
+  manager.currentLevel = {
+    level: {
+      bonusObjectives: [
         { type: "collect_ice_snowball", value: 2 }
+      ],
+      winConditions: [
+        { type: "collect_any", value: 3 }
       ]
     }
   };
@@ -899,75 +999,313 @@ function runObjectiveWinRequiresStarAndAllTargetsCase() {
       };
     }
   };
+  var boardCells = [];
+  manager.systems.bubbleGrid = {
+    getCells: function () {
+      return boardCells.slice();
+    }
+  };
   manager.cachedJarSnapshot = null;
   manager.cachedJarSnapshotKey = "";
   manager.iceCollectedTotal = 2;
   manager.score = 99;
 
-  if (manager._isObjectiveWinCompleted()) {
-    throw new Error("Objective win must require at least one star.");
+  if (manager._isClearWinCompleted()) {
+    throw new Error("Clear win must require at least one star.");
   }
 
   manager.score = 100;
   manager.iceCollectedTotal = 1;
   manager.cachedJarSnapshot = null;
   manager.cachedJarSnapshotKey = "";
-  if (manager._isObjectiveWinCompleted()) {
-    throw new Error("Objective win must require every collection objective.");
+  if (!manager._isClearWinCompleted()) {
+    throw new Error("Clear win must ignore incomplete collection reward targets.");
+  }
+  if (manager._areCollectionRewardObjectivesCompleted()) {
+    throw new Error("Collection reward completion must still require every collection target.");
   }
 
+  boardCells = [{ id: "remaining", row: 0, col: 0, color: "R" }];
+  if (manager._isClearWinCompleted()) {
+    throw new Error("Clear win must require an empty board.");
+  }
+
+  boardCells = [];
   manager.iceCollectedTotal = 2;
   manager.cachedJarSnapshot = null;
   manager.cachedJarSnapshotKey = "";
-  if (!manager._isObjectiveWinCompleted()) {
-    throw new Error("Objective win should pass after one star and all collection objectives are complete.");
+  if (!manager._isClearWinCompleted()) {
+    throw new Error("Clear win should pass after one star with an empty board.");
+  }
+  if (!manager._areCollectionRewardObjectivesCompleted()) {
+    throw new Error("Collection reward should complete after every collection target is complete.");
+  }
+}
+
+function runOneStarTargetScoreCase() {
+  var oneStarTargetScore = StarRatingPolicy.resolveOneStarTargetScore({
+    level: {
+      targetScore: 2580
+    }
+  });
+  if (oneStarTargetScore !== 774) {
+    throw new Error("One-star target score must use the runtime star threshold policy.");
   }
 }
 
 function runReviveDangerSpaceKeepsLockedBallCase() {
-  var grid = new BubbleGrid();
-  var levelConfig = {
+  var grid = createGridWithViewport({
     coordinateSystem: "odd-r-hex",
     level: {
       initialDropSpaceRows: 8,
       layout: [
-        "..........",
-        "..........",
-        "..........",
-        "..........",
-        "..........",
-        "..........",
-        "..........",
-        "..........",
-        ".........."
+        "RRRRRRRRRR",
+        "RRRRRRRRRR",
+        "RRRRRRRRRR",
+        "RRRRRRRRRR",
+        "RRRRRRRRRR",
+        "RRRRRRRRRR",
+        "RRRRRRRRRR"
       ],
-      specialEntities: [
-        {
-          id: "locked_revive_anchor",
-          entityCategory: "locked_ball",
-          entityType: "locked",
-          lockedColor: "R",
-          row: 8,
-          col: 4
-        }
-      ]
+      specialEntities: []
     }
+  });
+  var shiftRoomRows = 2;
+  var maxOffsetY = grid.boardViewport.getMaxOffsetY();
+  grid.boardViewport.offsetY = maxOffsetY - shiftRoomRows * BoardLayout.rowHeight;
+  grid.boardViewport.targetOffsetY = grid.boardViewport.offsetY;
+  var beforeOffsetY = grid.getViewportOffsetY();
+  grid.boardViewport.shiftOffsetYByRows(-shiftRoomRows);
+  if (grid.getViewportOffsetY() !== beforeOffsetY + 2 * BoardLayout.rowHeight) {
+    throw new Error("Ad revive viewport shift must update BubbleGrid cell coordinates.");
+  }
+}
+
+function runBoardIntroViewportCase() {
+  var BoardViewportConfig = require("../assets/scripts/config/BoardViewportConfig");
+  var BoardViewportSystem = require("../assets/scripts/systems/BoardViewportSystem");
+
+  syncHudBottomLineYForValidation();
+
+  function buildRowCells(topRow, bottomRow) {
+    var cells = [];
+    for (var row = topRow; row <= bottomRow; row += 1) {
+      cells.push({ row: row, col: 0 });
+    }
+    return cells;
+  }
+
+  function planIntro(cells) {
+    var viewport = new BoardViewportSystem();
+    return viewport.planIntroPosition(cells);
+  }
+
+  function assertTopRowAlignedToHud(cells, offsetY) {
+    var topRow = cells.reduce(function (min, cell) {
+      return Math.min(min, cell.row);
+    }, cells[0].row);
+    var topEdgeY = BoardLayout.boardStartY - topRow * BoardLayout.rowHeight + offsetY + BoardLayout.bubbleRadius;
+    if (Math.abs(topEdgeY - BoardLayout.getHudBottomLineY()) > 0.5) {
+      throw new Error("Top row must align to HUD bottom edge, got topEdgeY=" + topEdgeY + ".");
+    }
+  }
+
+  function assertBottomRowAlignedToHudSlot(cells, offsetY, slotNumber) {
+    var bottomRow = cells.reduce(function (max, cell) {
+      return Math.max(max, cell.row);
+    }, cells[0].row);
+    var bottomCenterY = BoardLayout.boardStartY - bottomRow * BoardLayout.rowHeight + offsetY;
+    var expectedCenterY = BoardLayout.getHudBottomLineY() - BoardLayout.bubbleRadius - (slotNumber - 1) * BoardLayout.rowHeight;
+    if (Math.abs(bottomCenterY - expectedCenterY) > 0.5) {
+      throw new Error("Bottom row must align to HUD slot " + slotNumber + ", got centerY=" + bottomCenterY + ".");
+    }
+  }
+
+  var threeRowCells = buildRowCells(0, 2);
+  var threeIntro = planIntro(threeRowCells);
+  if (threeIntro.needsScroll) {
+    throw new Error("3-row board intro must not scroll.");
+  }
+  assertTopRowAlignedToHud(threeRowCells, threeIntro.targetOffsetY);
+  if (BoardViewportSystem.countVisibleOccupiedRows(threeRowCells, threeIntro.targetOffsetY) !== 3) {
+    throw new Error("3-row board intro must show all 3 rows in viewport.");
+  }
+
+  var tenRowCells = buildRowCells(0, 9);
+  var tenIntro = planIntro(tenRowCells);
+  if (tenIntro.needsScroll) {
+    throw new Error("10-row board intro must not scroll.");
+  }
+  assertTopRowAlignedToHud(tenRowCells, tenIntro.targetOffsetY);
+  if (BoardViewportSystem.countVisibleOccupiedRows(tenRowCells, tenIntro.targetOffsetY) !== 10) {
+    throw new Error("10-row board intro must show all 10 rows below HUD.");
+  }
+
+  var elevenRowCells = buildRowCells(0, 10);
+  var elevenIntro = planIntro(elevenRowCells);
+  if (!elevenIntro.needsScroll) {
+    throw new Error("11-row board intro must scroll upward.");
+  }
+  assertBottomRowAlignedToHudSlot(elevenRowCells, elevenIntro.startOffsetY, BoardViewportConfig.introVisibleRows);
+  assertBottomRowAlignedToHudSlot(elevenRowCells, elevenIntro.targetOffsetY, BoardViewportConfig.targetVisibleRows);
+  if (Math.abs(elevenIntro.targetOffsetY - elevenIntro.startOffsetY - 4 * BoardLayout.rowHeight) > 0.5) {
+    throw new Error("11-row board intro must move upward from row 14 to row 10.");
+  }
+
+  var sevenRowCells = buildRowCells(0, 6);
+  var sevenIntro = planIntro(sevenRowCells);
+  if (sevenIntro.needsScroll) {
+    throw new Error("7-row board intro must not scroll.");
+  }
+  assertTopRowAlignedToHud(sevenRowCells, sevenIntro.targetOffsetY);
+  if (BoardViewportSystem.countVisibleOccupiedRows(sevenRowCells, sevenIntro.targetOffsetY) !== 7) {
+    throw new Error("7-row board intro must show all 7 rows in viewport.");
+  }
+
+  var twentyRowCells = buildRowCells(0, 19);
+  var twentyIntro = planIntro(twentyRowCells);
+  if (!twentyIntro.needsScroll) {
+    throw new Error("20-row board intro must scroll upward.");
+  }
+  assertBottomRowAlignedToHudSlot(twentyRowCells, twentyIntro.startOffsetY, BoardViewportConfig.introVisibleRows);
+  assertBottomRowAlignedToHudSlot(twentyRowCells, twentyIntro.targetOffsetY, BoardViewportConfig.targetVisibleRows);
+  if (BoardViewportSystem.countVisibleOccupiedRows(twentyRowCells, twentyIntro.startOffsetY) !== BoardViewportConfig.introVisibleRows) {
+    throw new Error("20-row board intro must initially show exactly 14 rows below HUD.");
+  }
+  if (BoardViewportSystem.countVisibleOccupiedRows(twentyRowCells, twentyIntro.targetOffsetY) !== BoardViewportConfig.targetVisibleRows) {
+    throw new Error("20-row board intro must end with exactly 10 visible rows.");
+  }
+  if (twentyIntro.targetOffsetY <= twentyIntro.startOffsetY) {
+    throw new Error("20-row board intro target offset must be above start offset.");
+  }
+}
+
+function runBoardMidGameViewportSettleCase() {
+  var BoardViewportConfig = require("../assets/scripts/config/BoardViewportConfig");
+  var BoardViewportSystem = require("../assets/scripts/systems/BoardViewportSystem");
+
+  syncHudBottomLineYForValidation();
+
+  function buildRowCells(topRow, bottomRow) {
+    var cells = [];
+    for (var row = topRow; row <= bottomRow; row += 1) {
+      cells.push({ row: row, col: 0 });
+    }
+    return cells;
+  }
+
+  var viewport = new BoardViewportSystem();
+  var tenRowCells = buildRowCells(0, 9);
+  var tenRowIntro = viewport.planIntroPosition(tenRowCells);
+  if (tenRowIntro.needsScroll) {
+    throw new Error("10-row mid-game settle setup must not intro-scroll.");
+  }
+  viewport.offsetY = tenRowIntro.targetOffsetY;
+  viewport.targetOffsetY = tenRowIntro.targetOffsetY;
+  viewport.introActive = false;
+  viewport.phase = "idle";
+
+  var elevenRowCells = buildRowCells(0, 10);
+  if (BoardViewportSystem.countVisibleOccupiedRows(elevenRowCells, viewport.offsetY) !== 11) {
+    throw new Error("11-row board must show 11 rows before mid-game settle.");
+  }
+
+  viewport.planSettle({ cells: elevenRowCells });
+  if (!viewport.isMoving()) {
+    throw new Error("11-row mid-game settle must trigger viewport movement.");
+  }
+  if (Math.abs(viewport.targetOffsetY - viewport.offsetY - BoardLayout.rowHeight) > 0.5) {
+    throw new Error("11-row mid-game settle must scroll upward exactly one row.");
+  }
+  if (BoardViewportSystem.countVisibleOccupiedRows(elevenRowCells, viewport.targetOffsetY) !== BoardViewportConfig.targetVisibleRows) {
+    throw new Error("11-row mid-game settle must cap visible rows to targetVisibleRows.");
+  }
+  if (viewport.getMaxOffsetY() < viewport.targetOffsetY) {
+    throw new Error("11-row mid-game settle must refresh maxOffsetY for expanded board span.");
+  }
+
+  var moveStartOffsetY = viewport.offsetY;
+  var moveTargetOffsetY = viewport.targetOffsetY;
+  viewport.update(viewport.moveDurationSec / 2);
+  var expectedHalfOffsetY = (moveStartOffsetY + moveTargetOffsetY) / 2;
+  if (Math.abs(viewport.offsetY - expectedHalfOffsetY) > 0.5) {
+    throw new Error("Mid-game board movement must remain linear at half duration.");
+  }
+  viewport.update(viewport.moveDurationSec - viewport.moveElapsedSec);
+
+  var thirteenRowCells = buildRowCells(0, 12);
+  viewport.planSettle({ cells: thirteenRowCells });
+  viewport.update(viewport.moveDurationSec);
+  var thirteenRowOffsetY = viewport.offsetY;
+  viewport.planSettle({ cells: elevenRowCells });
+  if (!viewport.isMoving() || viewport.targetOffsetY >= thirteenRowOffsetY) {
+    throw new Error("Row reduction above 10 rows must move the board downward.");
+  }
+  viewport.update(viewport.moveDurationSec);
+
+  var nineRowCells = buildRowCells(0, 8);
+  viewport.planSettle({ cells: nineRowCells });
+  if (!viewport.isMoving() || viewport.targetOffsetY >= viewport.offsetY) {
+    throw new Error("Board reduced below 10 rows must return its top row to the HUD edge.");
+  }
+  viewport.update(viewport.moveDurationSec);
+  var nineRowOffsetY = viewport.offsetY;
+  viewport.planSettle({ cells: buildRowCells(0, 7) });
+  if (viewport.isMoving() || Math.abs(viewport.offsetY - nineRowOffsetY) > 0.5) {
+    throw new Error("Board already below 10 rows with top at HUD must not move after another bottom-row reduction.");
+  }
+}
+
+function runBoardViewportFireLockCase() {
+  var manager = new GameManager();
+  manager.state = "running";
+  manager.shotsFired = 3;
+  manager.systems.boardViewportSystem.phase = "settling";
+  manager.getRuntimeSnapshot = function () {
+    return { inputLocked: true };
   };
 
-  grid.configureLevel(levelConfig);
-  grid.advanceRows(10);
-
-  var result = grid.ensureDangerLineSpaceRows(3);
-  if (result.shiftRows !== 3) {
-    throw new Error("Ad revive danger space must shift the board up three rows when initial top space allows it.");
+  var snapshot = manager.fireShot();
+  if (manager.shotsFired !== 3 || !snapshot.inputLocked) {
+    throw new Error("Board viewport movement must lock firing until movement completes.");
   }
-  if (result.removedCells.length !== 0) {
-    throw new Error("Ad revive danger space must not remove cells when three-row shift is available.");
-  }
+}
 
-  var lockedCell = grid.getCell(8, 4);
-  if (!lockedCell || lockedCell.entityCategory !== "locked_ball" || lockedCell.entityType !== "locked") {
-    throw new Error("Ad revive danger space must keep unsupported locked balls on the board.");
+function runStoneBallJarScoreZeroCase() {
+  var methods = require("../assets/scripts/core/GameManagerShotResolutionMethods");
+  var GameManagerCtor = require("../assets/scripts/core/GameManager");
+  var JarCollectorSystem = require("../assets/scripts/systems/JarCollectorSystem");
+  var manager = new GameManagerCtor();
+  manager.score = 500;
+  manager.lastResolution = { scoreDelta: 0 };
+  manager.systems = {
+    jarCollectorSystem: new JarCollectorSystem()
+  };
+  manager.systems.jarCollectorSystem.jarCount = 1;
+  manager.systems.jarCollectorSystem.jarColors = ["R"];
+  manager._getScoreRule = function (key) {
+    if (key === "jarCollectBase") {
+      return 60;
+    }
+    return 0;
+  };
+  manager._pushRuntimeEvent = function () {};
+
+  var gained = manager._applyJarCollectionScore([
+    {
+      id: "stone_drop_1",
+      entityCategory: "obstacle_ball",
+      entityType: "stone",
+      jarIndex: 0,
+      bonusMultiplier: 1,
+      fairyMultiplier: 1
+    }
+  ]);
+  if (gained !== 0) {
+    throw new Error("Stone ball jar collection must score 0 points.");
+  }
+  if (manager.score !== 500) {
+    throw new Error("Stone ball jar collection must not change total score.");
   }
 }
 
@@ -1011,10 +1349,20 @@ function main() {
   console.log("[OK]", "adjacent_ice_thaw_snowball_collection", "neighbor thaw and direct ice removal count snowballs once");
   runFloatingIceDropThawBeforeFallCase();
   console.log("[OK]", "floating_ice_drop_thaw_before_fall", "floating ice thaws, flies, then drops inner ball");
-  runObjectiveWinRequiresStarAndAllTargetsCase();
-  console.log("[OK]", "objective_win_requires_star_and_all_targets", "requires one star and every collection target");
+  runCollectionRewardDoesNotClearRemainingBoardCase();
+  console.log("[OK]", "collection_reward_does_not_clear_board", "keeps remaining board cells and does not pass");
+  runClearWinRequiresStarAndEmptyBoardCase();
+  console.log("[OK]", "clear_win_requires_star_and_empty_board", "ignores collection targets for pass and requires an empty board");
+  runOneStarTargetScoreCase();
+  console.log("[OK]", "one_star_target_score", "uses the same one-star threshold policy as runtime scoring");
   runReviveDangerSpaceKeepsLockedBallCase();
   console.log("[OK]", "revive_danger_space_keeps_locked_ball", "shifted board up without removing unsupported locked ball");
+  runStoneBallJarScoreZeroCase();
+  console.log("[OK]", "stone_ball_jar_score_zero", "stone ball in jar scores 0 and keeps total score");
+  runBoardIntroViewportCase();
+  runBoardMidGameViewportSettleCase();
+  runBoardViewportFireLockCase();
+  console.log("[OK]", "board_viewport", "14-row intro, 10-row runtime alignment, linear movement, and fire lock passed");
 
   if (failed) {
     console.log("\nShot regression validation failed.");

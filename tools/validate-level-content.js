@@ -6,6 +6,7 @@ var path = require("path");
 var BoardLayout = require("../assets/scripts/config/BoardLayout");
 var LevelPackCompactCodec = require("../assets/scripts/config/LevelPackCompactCodec");
 var ClusteredLevelLayout = require("./clustered-level-layout");
+var FirstHundredLevelDesign = require("./first-100-level-design");
 
 var LEVEL_DIR = path.resolve(__dirname, "../assets/resources/config/levels");
 var REMOTE_PACK_DIR = path.resolve(__dirname, "../remote-level-packs");
@@ -536,6 +537,9 @@ function validateLevelData(data, expectedLevelId) {
   if (!Array.isArray(level.layout) || !level.layout.length) {
     issues.push("layout must be non-empty array");
   } else {
+    if (level.layout.length < 7) {
+      issues.push("layout must contain at least 7 rows");
+    }
     var normalizedLayoutRows = [];
     level.layout.forEach(function (rowString, rowIndex) {
       if (typeof rowString !== "string") {
@@ -561,6 +565,22 @@ function validateLevelData(data, expectedLevelId) {
       normalizedLayoutRows[rowIndex] = normalizedRow;
     });
 
+    if (normalizedLayoutRows.length) {
+      var topRow = normalizedLayoutRows[0];
+      var topExpectedColumns = getExpectedRowColumns(0);
+      var topSpecialCols = {};
+      (level.specialEntities || []).forEach(function (entity) {
+        if (entity && entity.row === 0 && Number.isInteger(entity.col)) {
+          topSpecialCols[entity.col] = true;
+        }
+      });
+      for (var topCol = 0; topCol < topExpectedColumns; topCol += 1) {
+        if (topRow.charAt(topCol) === "." && !topSpecialCols[topCol]) {
+          issues.push("layout top row must be filled at col #" + topCol);
+        }
+      }
+    }
+
     validateSpecialEntities(level, normalizedLayoutRows, issues);
   }
 
@@ -568,7 +588,24 @@ function validateLevelData(data, expectedLevelId) {
   validateObjectives(level.bonusObjectives, "bonus", level, issues);
   if (ClusteredLevelLayout.shouldRedesign(expectedLevelId)) {
     try {
-      ClusteredLevelLayout.validateClusteredLevel(level);
+      var clusteredMetrics = ClusteredLevelLayout.validateClusteredLevel(level);
+      var requiredGroupedRatio = expectedLevelId <= 40 ? 0.7 : 0.55;
+      if (clusteredMetrics.groupedRatio < requiredGroupedRatio) {
+        issues.push(
+          "first-100 grouped color coverage must be >= " +
+          Math.round(requiredGroupedRatio * 100) + "%"
+        );
+      }
+      if (clusteredMetrics.isolatedRatio > 0.1) {
+        issues.push("first-100 isolated color ratio must be <= 10%");
+      }
+    } catch (error) {
+      issues.push(error.message);
+    }
+  }
+  if (expectedLevelId <= FirstHundredLevelDesign.LAST_LEVEL_ID) {
+    try {
+      FirstHundredLevelDesign.validateGeneratedLevel(level);
     } catch (error) {
       issues.push(error.message);
     }

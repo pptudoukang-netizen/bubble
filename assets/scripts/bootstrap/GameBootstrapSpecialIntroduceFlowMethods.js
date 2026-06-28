@@ -4,87 +4,13 @@ var Logger = require("../utils/Logger");
 var UiModalReleaseHelper = require("../utils/UiModalReleaseHelper");
 var PopupPanelAnimator = require("../ui/PopupPanelAnimator");
 var IntroduceViewController = require("../ui/IntroduceViewController");
+var PropDescriptionConfig = require("../config/PropDescriptionConfig");
 
 var INTRODUCE_VIEW_PREFAB_PATH = "prefabs/ui/IntroduceView";
 var INTRODUCE_VIEW_Z_INDEX = 520;
-var INTRODUCE_ORDER = [
-  "ice_snowball",
-  "ice",
-  "splitter",
-  "locked",
-  "molotov",
-  "blast",
-  "stone",
-  "rainbow"
-];
-var INTRODUCE_DEFINITIONS = {
-  ice_snowball: {
-    title: "雪块",
-    summary: "打碎冰冻球后会掉落雪块，收集到目标数量即可完成关卡目标。",
-    effectTitle: "收集目标",
-    effectDescription: "雪块不会作为普通颜色球消除，主要通过融化冰冻球获得。",
-    iconPath: "image/ball/ice_ball"
-  },
-  ice: {
-    title: "冰冻球",
-    summary: "冰冻球外层有冰壳，需要先融化冰层，内部颜色球才会参与消除。",
-    effectTitle: "障碍作用",
-    effectDescription: "优先处理冰冻球，可以打开后续消除路线并产出雪块目标。",
-    iconPath: "image/ball/ice_ball"
-  },
-  splitter: {
-    title: "分裂球",
-    summary: "分裂球被击中后会生成同色球，帮助你制造更多连消机会。",
-    effectTitle: "特殊效果",
-    effectDescription: "利用分裂球扩展同色区域，能更快打通棋盘结构。",
-    iconPath: "image/ball/split_red_ball"
-  },
-  locked: {
-    title: "锁定球",
-    summary: "锁定球暂时无法直接消除，需要先击中对应钥匙解除锁定。",
-    effectTitle: "解锁规则",
-    effectDescription: "找到钥匙球并完成解锁后，锁定球才会回到可处理状态。",
-    iconPath: "image/ball/locking_ball"
-  },
-  molotov: {
-    title: "火焰瓶",
-    summary: "火焰瓶被触发后会影响周围区域，适合处理密集障碍。",
-    effectTitle: "范围效果",
-    effectDescription: "把火焰瓶留给关键结构，能一次打开更多路线。",
-    iconPath: "image/props/fire_box"
-  },
-  blast: {
-    title: "炸弹",
-    summary: "收集炸弹球后会获得局内炸弹技能，可用于清理指定区域。",
-    effectTitle: "技能补给",
-    effectDescription: "炸弹适合在颜色难以匹配或障碍集中时使用。",
-    iconPath: "image/ball/bomb_ball"
-  },
-  stone: {
-    title: "石头",
-    summary: "石头不会按普通颜色匹配消除，会阻挡你的消除路线。",
-    effectTitle: "障碍作用",
-    effectDescription: "借助炸弹、火焰瓶或周围结构变化来处理石头。",
-    iconPath: "image/ball/stone_ball"
-  },
-  rainbow: {
-    title: "彩虹球",
-    summary: "收集彩虹球后会获得彩虹技能，可选择需要的颜色发射。",
-    effectTitle: "技能补给",
-    effectDescription: "彩虹球适合补齐关键颜色，帮助完成收集目标。",
-    iconPath: "image/ball/rainbow_ball"
-  }
-};
-var INTRODUCE_KEY_BY_ENTITY_TYPE = {
-  ice: "ice",
-  splitter: "splitter",
-  locked: "locked",
-  key: "locked",
-  molotov: "molotov",
-  blast: "blast",
-  stone: "stone",
-  rainbow: "rainbow"
-};
+var INTRODUCE_ORDER = PropDescriptionConfig.SPECIAL_ORDER;
+var INTRODUCE_DEFINITIONS = PropDescriptionConfig.SPECIAL_DEFINITIONS;
+var INTRODUCE_KEY_BY_ENTITY_TYPE = PropDescriptionConfig.SPECIAL_KEY_BY_ENTITY_TYPE;
 var hasOwn = Object.prototype.hasOwnProperty;
 
 function requireDefinition(key) {

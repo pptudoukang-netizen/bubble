@@ -82,6 +82,8 @@ module.exports = {
     this.currentLevelConfig = null;
     this.isRestarting = false;
     this.isSelectingLevel = false;
+    this.isGameplayPaused = false;
+    this.isPropDescriptionViewOpen = false;
     this._levelSelectNode = null;
     this._levelSelectViewPrefab = null;
     this._levelMapPrefabs = null;
@@ -508,6 +510,11 @@ module.exports = {
         onWatchAd: this._onLoseWatchAdTap.bind(this),
         onCoinRevive: this._onLoseCoinReviveTap.bind(this)
       });
+      this.levelRenderer.setPauseActionHandlers({
+        onContinue: this._continuePausedLevel.bind(this),
+        onRetryLevel: this._retryPausedLevel.bind(this),
+        onExitLevel: this._exitPausedLevel.bind(this)
+      });
       this.levelRenderer.setResultViewLifecycleHandlers({
         onWinViewShow: this._showWinNativeTemplateAd.bind(this),
         onWinViewHide: this._hideWinNativeTemplateAd.bind(this),
@@ -515,7 +522,10 @@ module.exports = {
         onLoseViewHide: this._hideLoseNativeTemplateAd.bind(this)
       });
       this.levelRenderer.setGameplayActionHandlers({
+        onOpenPause: this._openPauseView.bind(this),
         onOpenSettings: this._onGameplaySettingTap.bind(this),
+        onOpenPropDescription: this._openPropDescriptionView.bind(this),
+        onClosePropDescription: this._closePropDescriptionView.bind(this),
         onUseRainbow: function () {
           this._onUseSkillBallTap("rainbow");
         }.bind(this),

@@ -10,7 +10,7 @@
             "G": "green",
             "B": "blue"
         },
-        "pattern": "flame"
+        "pattern": "diamond_core"
     },
     "sharedDefaults": {
         "collectMode": "any_with_same_color_bonus",
@@ -32,11 +32,12 @@
     },
     "level": {
         "levelId": 5,
-        "code": "L005_MOLOTOV_INTRO",
-        "difficulty": "advanced",
+        "code": "L005_CLUSTER_FUNDAMENTALS",
+        "difficulty": "hard",
         "teaches": [
-            "molotov",
-            "flame_pattern"
+            "color_cluster",
+            "support_drop",
+            "diamond_core_pattern"
         ],
         "colorCount": 3,
         "colors": [
@@ -44,9 +45,9 @@
             "G",
             "B"
         ],
-        "shotLimit": 26,
-        "targetScore": 3840,
-        "dropInterval": 6,
+        "shotLimit": 19,
+        "targetScore": 2220,
+        "dropInterval": 8,
         "jarCount": 3,
         "jarColors": [
             "R",
@@ -66,8 +67,8 @@
         "winConditions": [
             {
                 "type": "collect_color",
-                "color": "B",
-                "value": 20
+                "color": "R",
+                "value": 11
             }
         ],
         "bonusObjectives": [
@@ -83,17 +84,17 @@
             }
         ],
         "layout": [
-            "RGBRGBRGBR",
-            "GBRGBRGBR",
-            "GBRGBRGBGG",
-            "BGGBGGBGG",
-            "BGGBBBBBBB",
-            ".........",
-            "..........",
+            "BBBBGGGGRR",
+            "...GRR...",
+            "...GGGR...",
+            "..BBRRR..",
+            "..BBRRRB..",
+            "...GBB...",
+            "....GG....",
             "........."
         ],
-        "designNotes": "Generated from LEVEL_CONFIG_TABLE_1_1000.csv. Chapter `molotov_intro` uses molotov with a flame board silhouette.",
-        "difficultyScore": 34,
+        "designNotes": "Generated from LEVEL_CONFIG_TABLE_1_1000.csv. Chapter `cluster_fundamentals` uses color_cluster, support_drop with a diamond_core board silhouette.",
+        "difficultyScore": 35,
         "specialEntities": [],
         "levelType": "normal",
         "playMode": "shot_limited",
@@ -102,11 +103,7 @@
             "allowed": [
                 "three_line_elimination",
                 "plus_three_balls"
-            ],
-            "maxGrantsPerRun": {
-                "three_line_elimination": 1,
-                "plus_three_balls": 1
-            }
+            ]
         }
     },
     "difficultyScaleMax": 100

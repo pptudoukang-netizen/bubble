@@ -50,6 +50,96 @@ module.exports = {
     });
   },
 
+  _openPauseView: function () {
+    if (this.isRestarting || this.isSelectingLevel) {
+      throw new Error("PauseView cannot open outside active gameplay.");
+    }
+    if (!this.currentLevelConfig || !this.gameManager || !this.levelRenderer) {
+      throw new Error("PauseView requires an active gameplay runtime.");
+    }
+    if (this.isGameplayPaused) {
+      throw new Error("Gameplay is already paused.");
+    }
+    if (this._isTerminalState()) {
+      throw new Error("PauseView cannot open after gameplay has ended.");
+    }
+
+    if (this.gameManager.isAiming) {
+      var snapshot = this.gameManager.endAim();
+      this.levelRenderer.refreshRuntime(this.currentLevelConfig, snapshot);
+    }
+    this.levelRenderer.showPauseView();
+    this.isGameplayPaused = true;
+    this._playSfx("uiClick");
+  },
+
+  _continuePausedLevel: function () {
+    this._requirePausedGameplay("continue");
+    this.levelRenderer.hidePauseView();
+    this.isGameplayPaused = false;
+    this._playSfx("uiClick");
+  },
+
+  _openPropDescriptionView: function () {
+    if (this.isRestarting || this.isSelectingLevel) {
+      throw new Error("PropDescriptionView cannot open outside active gameplay.");
+    }
+    if (!this.currentLevelConfig || !this.gameManager || !this.levelRenderer) {
+      throw new Error("PropDescriptionView requires an active gameplay runtime.");
+    }
+    if (this.isGameplayPaused || this.isPropDescriptionViewOpen) {
+      throw new Error("PropDescriptionView cannot open while gameplay is paused.");
+    }
+    if (this._isTerminalState()) {
+      throw new Error("PropDescriptionView cannot open after gameplay has ended.");
+    }
+
+    if (this.gameManager.isAiming) {
+      var snapshot = this.gameManager.endAim();
+      this.levelRenderer.refreshRuntime(this.currentLevelConfig, snapshot);
+    }
+    this.levelRenderer.showPropDescriptionView(this.currentLevelConfig);
+    this.isPropDescriptionViewOpen = true;
+    this.isGameplayPaused = true;
+    this._playSfx("uiClick");
+  },
+
+  _closePropDescriptionView: function () {
+    if (!this.isPropDescriptionViewOpen || !this.isGameplayPaused) {
+      throw new Error("PropDescriptionView close requires an active description modal.");
+    }
+    if (!this.currentLevelConfig || !this.gameManager || !this.levelRenderer) {
+      throw new Error("PropDescriptionView close requires an active gameplay runtime.");
+    }
+    this.levelRenderer.hidePropDescriptionView();
+    this.isPropDescriptionViewOpen = false;
+    this.isGameplayPaused = false;
+    this._playSfx("uiClick");
+  },
+
+  _retryPausedLevel: function () {
+    this._requirePausedGameplay("retry");
+    this.levelRenderer.hidePauseView();
+    this.isGameplayPaused = false;
+    this._restartCurrentLevel();
+  },
+
+  _exitPausedLevel: function () {
+    this._requirePausedGameplay("exit");
+    this.levelRenderer.hidePauseView();
+    this.isGameplayPaused = false;
+    this._onBackToLevelTap();
+  },
+
+  _requirePausedGameplay: function (action) {
+    if (!this.isGameplayPaused) {
+      throw new Error("PauseView " + action + " requires paused gameplay.");
+    }
+    if (!this.currentLevelConfig || !this.gameManager || !this.levelRenderer) {
+      throw new Error("PauseView " + action + " requires an active gameplay runtime.");
+    }
+  },
+
   _isTerminalState: function () {
     var snapshot = this.gameManager.getRuntimeSnapshot();
     return snapshot.state === "won" ||

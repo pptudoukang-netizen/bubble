@@ -20,6 +20,8 @@ var UI_BUNDLE_PREFABS = {
   GamingCircleView: true,
   IntroduceView: true,
   LoseView: true,
+  PauseView: true,
+  PropDescriptionView: true,
   PowerTipsView: true,
   RankingItem: true,
   RankingView: true,

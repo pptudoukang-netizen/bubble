@@ -17,6 +17,11 @@ var molotovBlast = {
   blastTriggerDelay: 0
 };
 
+var fairyAssist = {
+  flyInDuration: 0.45,
+  flyOutDuration: 0.18
+};
+
 function requirePositiveNumber(value, fieldName) {
   var numberValue = Number(value);
   if (!isFinite(numberValue) || numberValue <= 0) {
@@ -70,6 +75,7 @@ iceSnowballCollect.floatingIceDropDelay =
 module.exports = Object.freeze({
   keyUnlock: Object.freeze(keyUnlock),
   molotovBlast: Object.freeze(molotovBlast),
+  fairyAssist: Object.freeze(fairyAssist),
   impactBounce: Object.freeze(impactBounce),
   iceSnowballCollect: Object.freeze(iceSnowballCollect),
   calculateImpactBounceTotalDuration: calculateImpactBounceTotalDuration

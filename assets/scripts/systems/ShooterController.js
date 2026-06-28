@@ -76,6 +76,7 @@ function ShooterController() {
   this.nextBall = null;
   this.currentColor = null;
   this.nextColor = null;
+  this.queueAdvanceRevision = 0;
   this.aimDirection = { x: 0, y: 1 };
   this.origin = clone(BoardLayout.shooterOrigin);
   this.maxAimAngleDeg = 75;
@@ -98,6 +99,7 @@ ShooterController.prototype.configureLevel = function (levelConfig) {
   this.skillInventory.barrier_hammer = Math.max(0, Math.floor(Number(initialPowerups.barrier_hammer) || 0));
   this.currentBall = this._pickNormalBall();
   this.nextBall = this._pickNormalBall();
+  this.queueAdvanceRevision = 0;
   if (Array.isArray(levelConfig.level.initialShotBalls)) {
     this._applyInitialShotBalls(levelConfig.level.initialShotBalls);
   }
@@ -144,6 +146,7 @@ ShooterController.prototype.advanceQueue = function () {
   var firedBall = clone(this.currentBall);
   this.currentBall = this.nextBall ? clone(this.nextBall) : this._pickNormalBall();
   this.nextBall = this._pickNormalBall();
+  this.queueAdvanceRevision += 1;
   this._syncLegacyColorFields();
 
   return {
@@ -151,6 +154,7 @@ ShooterController.prototype.advanceQueue = function () {
     firedColor: resolveBallDisplayCode(firedBall),
     currentBall: clone(this.currentBall),
     nextBall: clone(this.nextBall),
+    queueAdvanceRevision: this.queueAdvanceRevision,
     currentColor: this.currentColor,
     nextColor: this.nextColor
   };
@@ -387,6 +391,7 @@ ShooterController.prototype.getShooterStateForRender = function () {
   return {
     currentBall: this.currentBall,
     nextBall: this.nextBall,
+    queueAdvanceRevision: this.queueAdvanceRevision,
     skillInventory: this.skillInventory,
     currentColor: this.currentColor,
     nextColor: this.nextColor,
@@ -402,6 +407,7 @@ ShooterController.prototype.getShooterState = function () {
   return {
     currentBall: clone(this.currentBall),
     nextBall: clone(this.nextBall),
+    queueAdvanceRevision: this.queueAdvanceRevision,
     skillInventory: clone(this.skillInventory),
     currentColor: this.currentColor,
     nextColor: this.nextColor,
@@ -451,6 +457,7 @@ ShooterController.prototype.snapshot = function () {
   snapshot.shotLimit = this.shotLimit;
   snapshot.currentBall = clone(this.currentBall);
   snapshot.nextBall = clone(this.nextBall);
+  snapshot.queueAdvanceRevision = this.queueAdvanceRevision;
   snapshot.skillInventory = clone(this.skillInventory);
   snapshot.currentColor = this.currentColor;
   snapshot.nextColor = this.nextColor;

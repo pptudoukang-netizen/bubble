@@ -8,6 +8,7 @@ var SelectedPowerupsStore = Shared.SelectedPowerupsStore;
 var BackpackViewController = Shared.BackpackViewController;
 var StartGameViewController = Shared.StartGameViewController;
 var PopupPanelAnimator = Shared.PopupPanelAnimator;
+var StarRatingPolicy = Shared.StarRatingPolicy;
 var SpriteProxyLayerHelper = require("../utils/SpriteProxyLayerHelper");
 var INVENTORY_VIEW_PREFAB_PATH = Shared.INVENTORY_VIEW_PREFAB_PATH;
 var START_GAME_VIEW_PREFAB_PATH = Shared.START_GAME_VIEW_PREFAB_PATH;
@@ -1366,6 +1367,7 @@ module.exports = {
     return this._startGameViewController.render({
       levelId: normalizeStartGameLevelId(this._startGameLevelId),
       staminaCost: LEVEL_ENTRY_STAMINA_COST,
+      oneStarTargetScore: StarRatingPolicy.resolveOneStarTargetScore(this._startGameLevelConfig),
       inventory: this.playerInventory,
       objectives: buildStartGameObjectives(this._startGameLevelConfig),
       showAwardTips: shouldShowFirstClearAwardTips(this, this._startGameLevelId),

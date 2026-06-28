@@ -346,7 +346,7 @@ RankingViewController.prototype._ensureScrollView = function (panel) {
   scrollView.vertical = true;
   scrollView.inertia = true;
   scrollView.brake = 0.55;
-  scrollView.elastic = true;
+  scrollView.elastic = false;
   scrollView.bounceDuration = 0.23;
   scrollView.scrollEvents = [];
 
@@ -674,9 +674,17 @@ RankingViewController.prototype.render = function (entries) {
   }
 
   this._rebuildStaticRenderProxies();
-  var contentHeight = Math.max(LIST_HEIGHT, (safeEntries.length * ROW_STRIDE) - ROW_GAP);
+  if (!this._nodes.viewport || !this._nodes.viewport.isValid) {
+    throw new Error("RankingView viewport is required before rendering entries.");
+  }
+  var viewportHeight = this._nodes.viewport.height;
+  var rowsHeight = (safeEntries.length * ROW_STRIDE) - ROW_GAP;
+  var contentHeight = Math.max(viewportHeight, rowsHeight);
   content.setContentSize(LIST_WIDTH, contentHeight);
-  content.setPosition(0, Math.min(0, (LIST_HEIGHT - contentHeight) * 0.5));
+  content.setPosition(0, (viewportHeight - contentHeight) * 0.5);
+  if (this._nodes.scrollView) {
+    this._nodes.scrollView.vertical = rowsHeight > viewportHeight;
+  }
   this.ensureRankingItemPrefab().then(function () {
     this._ensureRowPool();
     if (this._nodes.scrollView && typeof this._nodes.scrollView.scrollToTop === "function") {

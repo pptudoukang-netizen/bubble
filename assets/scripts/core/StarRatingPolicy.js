@@ -1,5 +1,38 @@
 "use strict";
 
+var STAR_SCORE_BAND_RATIOS = {
+  star1: 0.3,
+  star2: 0.6,
+  star3: 0.85
+};
+
+function requirePositiveInteger(value, fieldName) {
+  var numberValue = Number(value);
+  if (!Number.isInteger(numberValue) || numberValue <= 0) {
+    throw new Error(fieldName + " must be a positive integer.");
+  }
+  return numberValue;
+}
+
+function buildStarThresholdsFromTargetScore(targetScore) {
+  var requiredTargetScore = requirePositiveInteger(targetScore, "Star target score");
+  var star1 = Math.max(1, Math.round(requiredTargetScore * STAR_SCORE_BAND_RATIOS.star1));
+  var star2 = Math.max(star1, Math.round(requiredTargetScore * STAR_SCORE_BAND_RATIOS.star2));
+  var star3 = Math.max(star2, Math.round(requiredTargetScore * STAR_SCORE_BAND_RATIOS.star3));
+  return {
+    star1: star1,
+    star2: star2,
+    star3: star3
+  };
+}
+
+function resolveOneStarTargetScore(levelConfig) {
+  if (!levelConfig || typeof levelConfig !== "object" || !levelConfig.level || typeof levelConfig.level !== "object") {
+    throw new Error("One-star target score requires level config.");
+  }
+  return buildStarThresholdsFromTargetScore(levelConfig.level.targetScore).star1;
+}
+
 function buildDefaultThresholds(scoreHeatBand) {
   return {
     star1: Math.max(0, Math.floor(Number(scoreHeatBand && scoreHeatBand.min) || 0)),
@@ -49,5 +82,7 @@ function calculateStarRatingFromSnapshot(snapshot) {
 }
 
 module.exports = {
+  buildStarThresholdsFromTargetScore: buildStarThresholdsFromTargetScore,
+  resolveOneStarTargetScore: resolveOneStarTargetScore,
   calculateStarRatingFromSnapshot: calculateStarRatingFromSnapshot
 };

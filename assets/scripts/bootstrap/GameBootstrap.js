@@ -241,6 +241,10 @@ cc.Class({
       default: "sound/ding0",
       tooltip: "球落入缸底被收集时播放的音效资源路径。"
     },
+    breakSfxResource: {
+      default: "sound/break",
+      tooltip: "棋盘中球消除时播放的音效资源路径。"
+    },
     rewardedVideoAdUnitId: {
       default: "",
       tooltip: "微信激励视频广告位 ID。发布前必须配置。"
@@ -478,6 +482,13 @@ cc.Class({
   _loadInitialLevel: GameBootstrapLevelRuntimeMethods._loadInitialLevel,
   _getStartupLevelId: GameBootstrapLevelRuntimeMethods._getStartupLevelId,
   _restartCurrentLevel: GameBootstrapLevelRuntimeMethods._restartCurrentLevel,
+  _openPauseView: GameBootstrapLevelRuntimeMethods._openPauseView,
+  _continuePausedLevel: GameBootstrapLevelRuntimeMethods._continuePausedLevel,
+  _openPropDescriptionView: GameBootstrapLevelRuntimeMethods._openPropDescriptionView,
+  _closePropDescriptionView: GameBootstrapLevelRuntimeMethods._closePropDescriptionView,
+  _retryPausedLevel: GameBootstrapLevelRuntimeMethods._retryPausedLevel,
+  _exitPausedLevel: GameBootstrapLevelRuntimeMethods._exitPausedLevel,
+  _requirePausedGameplay: GameBootstrapLevelRuntimeMethods._requirePausedGameplay,
   _isTerminalState: GameBootstrapLevelRuntimeMethods._isTerminalState,
   _createStatusOverlay: GameBootstrapUiFlowMethods._createStatusOverlay,
   _syncDebugOverlayVisibility: GameBootstrapUiFlowMethods._syncDebugOverlayVisibility,

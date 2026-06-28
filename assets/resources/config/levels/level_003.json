@@ -10,7 +10,7 @@
             "G": "green",
             "B": "blue"
         },
-        "pattern": "spiral"
+        "pattern": "hollow_v"
     },
     "sharedDefaults": {
         "collectMode": "any_with_same_color_bonus",
@@ -32,11 +32,12 @@
     },
     "level": {
         "levelId": 3,
-        "code": "L003_MOLOTOV_INTRO",
+        "code": "L003_CLUSTER_FUNDAMENTALS",
         "difficulty": "advanced",
         "teaches": [
-            "molotov",
-            "spiral_pattern"
+            "color_cluster",
+            "support_drop",
+            "hollow_v_pattern"
         ],
         "colorCount": 3,
         "colors": [
@@ -44,9 +45,9 @@
             "G",
             "B"
         ],
-        "shotLimit": 25,
-        "targetScore": 2940,
-        "dropInterval": 6,
+        "shotLimit": 20,
+        "targetScore": 2040,
+        "dropInterval": 8,
         "jarCount": 3,
         "jarColors": [
             "R",
@@ -66,8 +67,8 @@
         "winConditions": [
             {
                 "type": "collect_color",
-                "color": "R",
-                "value": 15
+                "color": "G",
+                "value": 10
             }
         ],
         "bonusObjectives": [
@@ -87,17 +88,17 @@
             }
         ],
         "layout": [
-            "GBRGBRGBRG",
-            "BRGBRGBRG",
-            "BRGBRGBRGB",
-            "RGBRGBRBB",
-            "RBBRBBRB..",
-            ".........",
-            "..........",
-            "........."
+            "GGBBBBRRRR",
+            "..GB.BB..",
+            "..GB..BR..",
+            "..G...B..",
+            ".GG....RR.",
+            ".G.....R.",
+            ".G......R.",
+            "G.......R"
         ],
-        "designNotes": "Generated from LEVEL_CONFIG_TABLE_1_1000.csv. Chapter `molotov_intro` uses molotov with a spiral board silhouette.",
-        "difficultyScore": 34,
+        "designNotes": "Generated from LEVEL_CONFIG_TABLE_1_1000.csv. Chapter `cluster_fundamentals` uses color_cluster, support_drop with a hollow_v board silhouette.",
+        "difficultyScore": 29,
         "specialEntities": [],
         "levelType": "normal",
         "playMode": "shot_limited",
@@ -106,11 +107,7 @@
             "allowed": [
                 "three_line_elimination",
                 "plus_three_balls"
-            ],
-            "maxGrantsPerRun": {
-                "three_line_elimination": 1,
-                "plus_three_balls": 1
-            }
+            ]
         }
     },
     "difficultyScaleMax": 100

@@ -10,7 +10,7 @@
             "G": "green",
             "B": "blue"
         },
-        "pattern": "gate"
+        "pattern": "support_bridge"
     },
     "sharedDefaults": {
         "collectMode": "any_with_same_color_bonus",
@@ -32,11 +32,12 @@
     },
     "level": {
         "levelId": 4,
-        "code": "L004_MOLOTOV_INTRO",
-        "difficulty": "advanced",
+        "code": "L004_CLUSTER_FUNDAMENTALS",
+        "difficulty": "hard",
         "teaches": [
-            "molotov",
-            "gate_pattern"
+            "color_cluster",
+            "support_drop",
+            "support_bridge_pattern"
         ],
         "colorCount": 3,
         "colors": [
@@ -44,9 +45,9 @@
             "G",
             "B"
         ],
-        "shotLimit": 25,
-        "targetScore": 2940,
-        "dropInterval": 6,
+        "shotLimit": 18,
+        "targetScore": 2040,
+        "dropInterval": 8,
         "jarCount": 3,
         "jarColors": [
             "R",
@@ -66,8 +67,8 @@
         "winConditions": [
             {
                 "type": "collect_color",
-                "color": "G",
-                "value": 15
+                "color": "B",
+                "value": 10
             }
         ],
         "bonusObjectives": [
@@ -87,17 +88,17 @@
             }
         ],
         "layout": [
-            "RGBRGBRGBR",
-            "GBRGBRGBR",
-            "GBRGBRGBRG",
-            "BRGBRGBGG",
-            "BGBBBBBBB.",
+            "RRGGBBBBRR",
+            "RRGGGBBBR",
+            "....G.....",
+            "....G....",
+            "RRGGGBBBRR",
             ".........",
             "..........",
             "........."
         ],
-        "designNotes": "Generated from LEVEL_CONFIG_TABLE_1_1000.csv. Chapter `molotov_intro` uses molotov with a gate board silhouette.",
-        "difficultyScore": 34,
+        "designNotes": "Generated from LEVEL_CONFIG_TABLE_1_1000.csv. Chapter `cluster_fundamentals` uses color_cluster, support_drop with a support_bridge board silhouette.",
+        "difficultyScore": 32,
         "specialEntities": [],
         "levelType": "normal",
         "playMode": "shot_limited",
@@ -106,11 +107,7 @@
             "allowed": [
                 "three_line_elimination",
                 "plus_three_balls"
-            ],
-            "maxGrantsPerRun": {
-                "three_line_elimination": 1,
-                "plus_three_balls": 1
-            }
+            ]
         }
     },
     "difficultyScaleMax": 100

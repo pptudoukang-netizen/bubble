@@ -7,6 +7,7 @@ var path = require("path");
 var BoardLayout = require("../assets/scripts/config/BoardLayout");
 var LevelPackCompactCodec = require("../assets/scripts/config/LevelPackCompactCodec");
 var ClusteredLevelLayout = require("./clustered-level-layout");
+var FirstHundredLevelDesign = require("./first-100-level-design");
 
 var PROJECT_ROOT = path.resolve(__dirname, "..");
 var RESOURCE_LEVEL_DIR = path.join(PROJECT_ROOT, "assets/resources/config/levels");
@@ -747,6 +748,15 @@ function buildRewardItemsFromTable(levelId) {
 }
 
 function getChapter(levelId) {
+  if (levelId <= 9) {
+    return "cluster_fundamentals";
+  }
+  if (levelId <= 15) {
+    return "legacy_skill_intro";
+  }
+  if (levelId <= 40) {
+    return "ice_route_training";
+  }
   if (levelId <= 60) {
     return "molotov_intro";
   }
@@ -771,6 +781,15 @@ function getChapter(levelId) {
 
 function getMechanics(levelId) {
   var chapter = getChapter(levelId);
+  if (chapter === "cluster_fundamentals") {
+    return ["color_cluster", "support_drop"];
+  }
+  if (chapter === "legacy_skill_intro") {
+    return ["legacy_skill_ball"];
+  }
+  if (chapter === "ice_route_training") {
+    return ["ice_route"];
+  }
   if (chapter === "molotov_intro") {
     return ["molotov"];
   }
@@ -961,15 +980,39 @@ function makeLevel(levelId, placementVariant) {
   }
   var progress = (levelId - 1) / (TARGET_LEVEL_COUNT - 1);
   var tableRow = getTableRow(levelId);
+  var firstHundredSpec = levelId <= FirstHundredLevelDesign.LAST_LEVEL_ID
+    ? FirstHundredLevelDesign.buildLevelSpec(levelId)
+    : null;
+  if (firstHundredSpec) {
+    FirstHundredLevelDesign.assertTableRowMatchesDesign(tableRow);
+  }
   validateTableTargets(tableRow);
   var colors = getActiveColors(tableRow);
-  var patternName = PATTERNS[levelId % PATTERNS.length];
+  var patternName = firstHundredSpec
+    ? firstHundredSpec.patternName
+    : PATTERNS[levelId % PATTERNS.length];
   var rows = makeEmptyRows(tableRow.rowCount);
   var specialEntities = buildTableSpecialEntities(tableRow, colors);
-  placeTableSpecialEntities(rows, specialEntities, levelId, placementVariant);
+  if (levelId <= FirstHundredLevelDesign.LAST_LEVEL_ID) {
+    FirstHundredLevelDesign.buildBoard({
+      levelId: levelId,
+      rows: rows,
+      colors: colors,
+      colorCounts: tableRow.colorCounts,
+      specialEntities: specialEntities,
+      placementVariant: placementVariant
+    });
+  } else {
+    placeTableSpecialEntities(rows, specialEntities, levelId, placementVariant);
+  }
   fillTableLayoutColors(rows, specialEntities, tableRow, colors);
   var mechanics = getMechanics(levelId);
-  var jarColors = resolveJarColors(colors, tableRow.target1);
+  var jarColors = firstHundredSpec
+    ? firstHundredSpec.jarColors.slice()
+    : resolveJarColors(colors, tableRow.target1);
+  var firstHundredTuning = firstHundredSpec
+    ? firstHundredSpec.tuning
+    : null;
 
   var spawnWeights = {};
   colors.forEach(function (color, index) {
@@ -997,20 +1040,29 @@ function makeLevel(levelId, placementVariant) {
       fallingRules: {
         maxDynamicMarbles: 10,
         maxBounces: 2,
-        enableMarbleMarbleCollision: true
+        enableMarbleMarbleCollision: true,
+        gravity: 900,
+        initialSpeedY: 120,
+        horizontalSpeed: 165,
+        maxDropLifeTime: 6,
+        bounceDamping: 0.82
       }
     },
     level: {
       levelId: levelId,
       code: "L" + padLevelId(levelId) + "_" + getChapter(levelId).toUpperCase(),
-      difficulty: progress < 0.18 ? "advanced" : (progress < 0.55 ? "hard" : "expert"),
+      difficulty: firstHundredTuning
+        ? firstHundredTuning.difficulty
+        : (progress < 0.18 ? "advanced" : (progress < 0.55 ? "hard" : "expert")),
       teaches: mechanics.concat([patternName + "_pattern"]),
       colorCount: colors.length,
       colors: colors,
       shotLimit: tableRow.shotLimit,
       targetScore: buildTargetScoreFromTable(tableRow),
-      dropInterval: Math.max(3, 6 - Math.floor(progress * 4)),
-      jarCount: Math.min(4, colors.length),
+      dropInterval: firstHundredTuning
+        ? firstHundredTuning.dropInterval
+        : Math.max(3, 6 - Math.floor(progress * 4)),
+      jarCount: jarColors.length,
       jarColors: jarColors,
       spawnWeights: spawnWeights,
       jarRules: {
@@ -1027,7 +1079,9 @@ function makeLevel(levelId, placementVariant) {
       clearRewardItems: buildRewardItemsFromTable(levelId),
       layout: rows,
       designNotes: "Generated from LEVEL_CONFIG_TABLE_1_1000.csv. Chapter `" + getChapter(levelId) + "` uses " + mechanics.join(", ") + " with a " + patternName + " board silhouette.",
-      difficultyScore: Math.min(100, 34 + Math.floor(progress * 66)),
+      difficultyScore: firstHundredTuning
+        ? firstHundredTuning.difficultyScore
+        : Math.min(100, 34 + Math.floor(progress * 66)),
       specialEntities: specialEntities,
       levelType: "normal",
       playMode: "shot_limited",
@@ -1038,35 +1092,6 @@ function makeLevel(levelId, placementVariant) {
     },
     difficultyScaleMax: 100
   };
-
-  if (levelId === 8) {
-    config.layoutNotes.pattern = "double_support_drop";
-    config.level.code = "L008_DOUBLE_SUPPORT_DROP";
-    config.level.teaches = ["four_color_intro", "support_drop"];
-    config.level.dropInterval = 8;
-    config.level.spawnWeights = {
-      R: 0.8,
-      G: 1.4,
-      B: 1.4,
-      Y: 0.8
-    };
-    config.level.adPowerupRules.maxGrantsPerRun = {
-      three_line_elimination: 1,
-      plus_three_balls: 1
-    };
-    config.level.layout = [
-      "BBBGGGYYYY",
-      "BBBGGGYYY",
-      "BB..G..YYY",
-      ".BB...GG.",
-      ".RR...RRR.",
-      ".RR...RR.",
-      "..........",
-      "........."
-    ];
-    config.level.designNotes = "Handcrafted four-color tutorial: clear the blue and green supports to drop two suspended red target groups.";
-    config.level.difficultyScore = 26;
-  }
 
   return config;
 }
@@ -1363,40 +1388,43 @@ function syncMirror() {
   });
 }
 
+function buildRemotePack(range) {
+  if (!range || !Number.isInteger(range.from) || !Number.isInteger(range.to) || range.from > range.to) {
+    throw new Error("Remote pack range is invalid.");
+  }
+  var from = range.from;
+  var to = range.to;
+  var packId = getPackId(from, to);
+  var pack = {
+    schemaVersion: 1,
+    packId: packId,
+    from: from,
+    to: to,
+    levels: {}
+  };
+  for (var levelId = from; levelId <= to; levelId += 1) {
+    pack.levels["level_" + padLevelId(levelId)] = loadLevelForPack(levelId, from, to);
+  }
+  var compactPack = LevelPackCompactCodec.compactPack(pack);
+  var packText = toCompactJsonText(compactPack);
+  var packFileName = getPackFileName(from, to);
+  fs.writeFileSync(path.join(REMOTE_PACK_DIR, packFileName), packText, "utf8");
+  return {
+    id: packId,
+    from: from,
+    to: to,
+    fileID: CLOUD_FILE_ID_PREFIX + "/" + CLOUD_PACK_ROOT + "/" + packFileName,
+    sha256: sha256Text(packText),
+    bytes: Buffer.byteLength(packText, "utf8"),
+    format: LevelPackCompactCodec.PACK_FORMAT_COMPACT_V1
+  };
+}
+
 function buildRemotePacks() {
   ensureDirectory(REMOTE_PACK_DIR);
-
-  var manifestPacks = [];
-  buildRemotePackRanges().forEach(function (range) {
-    var from = range.from;
-    var to = range.to;
-    var packId = getPackId(from, to);
-    var pack = {
-      schemaVersion: 1,
-      packId: packId,
-      from: from,
-      to: to,
-      levels: {}
-    };
-    for (var levelId = from; levelId <= to; levelId += 1) {
-      pack.levels["level_" + padLevelId(levelId)] = loadLevelForPack(levelId, from, to);
-    }
-
-    var compactPack = LevelPackCompactCodec.compactPack(pack);
-    var packText = toCompactJsonText(compactPack);
-    var packFileName = getPackFileName(from, to);
-    fs.writeFileSync(path.join(REMOTE_PACK_DIR, packFileName), packText, "utf8");
-    manifestPacks.push({
-      id: packId,
-      from: from,
-      to: to,
-      fileID: CLOUD_FILE_ID_PREFIX + "/" + CLOUD_PACK_ROOT + "/" + packFileName,
-      sha256: sha256Text(packText),
-      bytes: Buffer.byteLength(packText, "utf8"),
-      format: LevelPackCompactCodec.PACK_FORMAT_COMPACT_V1
-    });
+  return buildRemotePackRanges().map(function (range) {
+    return buildRemotePack(range);
   });
-  return manifestPacks;
 }
 
 function writeManifest(packs) {
@@ -1413,6 +1441,39 @@ function writeManifest(packs) {
   writeManifestMeta();
 }
 
+function updateFirstHundredManifestPack(packEntry) {
+  var manifest = JSON.parse(stripBom(fs.readFileSync(MANIFEST_PATH, "utf8")));
+  if (!Array.isArray(manifest.packs)) {
+    throw new Error("Level manifest packs must be an array.");
+  }
+  var matchCount = 0;
+  manifest.packs = manifest.packs.map(function (pack) {
+    if (pack.id !== packEntry.id) {
+      return pack;
+    }
+    matchCount += 1;
+    return packEntry;
+  });
+  if (matchCount !== 1) {
+    throw new Error("Level manifest must contain exactly one " + packEntry.id + " entry.");
+  }
+  writeJson(MANIFEST_PATH, manifest);
+  writeManifestMeta();
+}
+
+function rebuildFirstHundred() {
+  resetGeneratedSpecialPositionState();
+  normalizeManualLocalLevels();
+  ensureDirectory(REMOTE_PACK_DIR);
+  var firstRemotePack = buildRemotePack({
+    from: LOCAL_LEVEL_MAX + 1,
+    to: FirstHundredLevelDesign.LAST_LEVEL_ID
+  });
+  updateFirstHundredManifestPack(firstRemotePack);
+  syncMirror();
+  console.log("Rebuilt levels 1-100 and updated the 11-100 remote pack manifest entry.");
+}
+
 function main() {
   if (!fs.existsSync(RESOURCE_LEVEL_DIR)) {
     throw new Error("Missing resources level directory.");
@@ -1422,6 +1483,15 @@ function main() {
   }
   if (!fs.existsSync(RESOURCE_CONFIG_DIR)) {
     throw new Error("Missing resources config directory.");
+  }
+
+  var args = process.argv.slice(2);
+  if (args.length === 1 && args[0] === "--first100") {
+    rebuildFirstHundred();
+    return;
+  }
+  if (args.length !== 0) {
+    throw new Error("Unsupported level generator arguments: " + args.join(" "));
   }
 
   resetGeneratedSpecialPositionState();

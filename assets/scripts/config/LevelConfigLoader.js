@@ -48,6 +48,7 @@ var AD_RUN_POWERUP_TYPES = {
   plus_three_balls: true
 };
 var MIN_INITIAL_DROP_SPACE_ROWS = 8;
+var MIN_LAYOUT_ROWS = 7;
 var MAX_JAR_COUNT = 4;
 var MAX_SHOT_LIMIT = 40;
 var CLEAR_REWARD_START_LEVEL_ID = 1;
@@ -97,10 +98,35 @@ function normalizeLayoutRows(layout, levelColors, levelKey) {
   if (!Array.isArray(layout) || layout.length === 0) {
     throw new Error("Level layout must be a non-empty array: " + levelKey);
   }
+  if (layout.length < MIN_LAYOUT_ROWS) {
+    throw new Error("Level layout must contain at least " + MIN_LAYOUT_ROWS + " rows: " + levelKey);
+  }
 
   return layout.map(function (rowString, rowIndex) {
     return validateRowString(rowIndex, rowString, levelColors, levelKey);
   });
+}
+
+function validateTopRowFilled(layout, specialEntities, levelKey) {
+  var topRow = layout[TOP_BOARD_ROW_INDEX];
+  if (typeof topRow !== "string") {
+    throw new Error("Level layout top row must be a string: " + levelKey);
+  }
+  var expectedColumns = BoardLayout.getRowColumnCount(TOP_BOARD_ROW_INDEX, BoardLayout.defaultColumns);
+  var occupiedBySpecial = {};
+  (specialEntities || []).forEach(function (entity) {
+    if (entity && entity.row === TOP_BOARD_ROW_INDEX && Number.isInteger(entity.col)) {
+      occupiedBySpecial[entity.col] = true;
+    }
+  });
+  for (var colIndex = 0; colIndex < expectedColumns; colIndex += 1) {
+    var cellCode = topRow.charAt(colIndex);
+    if (cellCode === "." && !occupiedBySpecial[colIndex]) {
+      throw new Error(
+        "Level layout top row must be filled at col " + colIndex + ": " + levelKey
+      );
+    }
+  }
 }
 
 function validateEntityType(category, entityType) {
@@ -527,6 +553,7 @@ function normalizeLevelConfig(rawConfig, levelKey) {
   });
 
   config.level.layout = normalizeLayoutRows(config.level.layout, config.level.colors, levelKey);
+  validateTopRowFilled(config.level.layout, config.level.specialEntities, levelKey);
 
   if (!Number.isInteger(config.level.colorCount) || config.level.colorCount !== config.level.colors.length) {
     throw new Error("level.colorCount must equal level.colors.length: " + levelKey);

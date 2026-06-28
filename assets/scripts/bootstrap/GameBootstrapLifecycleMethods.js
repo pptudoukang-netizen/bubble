@@ -98,6 +98,9 @@ module.exports = {
     }
 
     if (this.levelRenderer && this.gameManager && this.currentLevelConfig && !this.isRestarting && !this.isSelectingLevel) {
+      if (typeof this.levelRenderer.syncBoardLayoutHudBottomLine === "function") {
+        this.levelRenderer.syncBoardLayoutHudBottomLine();
+      }
       var snapshot = this.gameManager.getRuntimeSnapshot();
       if (snapshot && snapshot.state === "won" && typeof this._applyCurrentLevelBestScoreFlag === "function") {
         this._applyCurrentLevelBestScoreFlag(snapshot);

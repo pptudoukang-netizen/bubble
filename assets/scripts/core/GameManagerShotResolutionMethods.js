@@ -1,6 +1,9 @@
 "use strict";
 
 var SpecialAnimationTiming = require("../config/SpecialAnimationTiming");
+var BoardViewportSystem = require("../systems/BoardViewportSystem");
+var EliminationSequenceBuilder = require("./EliminationSequenceBuilder");
+var JarScoreConfig = require("../config/JarScoreConfig");
 
 function createGameManagerShotResolutionMethods(deps) {
   var Logger = deps.Logger;
@@ -320,14 +323,19 @@ function createGameManagerShotResolutionMethods(deps) {
       }
 
       var jarCollectBase = this._getScoreRule("jarCollectBase");
+      var jarCount = this.systems.jarCollectorSystem.jarCount;
       var scoreBoostMultiplier = this.jarScoreBoostActive
         ? Math.max(1, Number(this.jarScoreBoostMultiplier) || 1)
         : 1;
       var isScoreBoosted = scoreBoostMultiplier > 1;
       var computeDropPoints = function (drop) {
-        var dropMultiplier = typeof drop.bonusMultiplier === "number" ? Math.max(1, drop.bonusMultiplier) : 1;
-        var multiplier = dropMultiplier * scoreBoostMultiplier;
-        return Math.round(jarCollectBase * multiplier);
+        var baseScore = JarScoreConfig.getBaseScoreForJarIndex(jarCount, drop.jarIndex);
+        var sameColorMultiplier = typeof drop.bonusMultiplier === "number" ? Math.max(1, drop.bonusMultiplier) : 1;
+        if (typeof drop.fairyMultiplier !== "number" || !isFinite(drop.fairyMultiplier) || drop.fairyMultiplier < 1) {
+          throw new Error("Scored jar drop requires fairyMultiplier >= 1.");
+        }
+        var multiplier = sameColorMultiplier * drop.fairyMultiplier * scoreBoostMultiplier;
+        return Math.round(baseScore * multiplier);
       };
       var gainedByJarIndex = {};
       var gained = 0;
@@ -348,12 +356,41 @@ function createGameManagerShotResolutionMethods(deps) {
       jarScoreEntries.sort(function (left, right) {
         return left.jar_index - right.jar_index;
       });
+      var scoredDropEntries = scoredDrops.map(function (drop) {
+        var baseScore = JarScoreConfig.getBaseScoreForJarIndex(jarCount, drop.jarIndex);
+        return {
+          drop_id: drop.id,
+          jar_index: drop.jarIndex,
+          base_score: baseScore,
+          same_color_multiplier: drop.bonusMultiplier,
+          fairy_multiplier: drop.fairyMultiplier,
+          score_boost_multiplier: scoreBoostMultiplier,
+          final_score: computeDropPoints(drop)
+        };
+      });
+      var stoneDropEntries = collectedDrops.filter(function (drop) {
+        return drop && drop.entityCategory === "obstacle_ball" && drop.entityType === "stone";
+      }).map(function (drop) {
+        return {
+          drop_id: drop.id,
+          jar_index: drop.jarIndex,
+          base_score: 0,
+          same_color_multiplier: 1,
+          fairy_multiplier: 1,
+          score_boost_multiplier: 1,
+          final_score: 0
+        };
+      });
+      if (stoneDropEntries.length) {
+        Array.prototype.push.apply(scoredDropEntries, stoneDropEntries);
+      }
       var sameColorCount = scoredDrops.reduce(function (count, drop) {
         return count + (drop.sameColor ? 1 : 0);
       }, 0);
       var bonusGained = scoredDrops.reduce(function (sum, drop) {
+        var baseScore = JarScoreConfig.getBaseScoreForJarIndex(jarCount, drop.jarIndex);
         var total = computeDropPoints(drop);
-        return sum + Math.max(0, total - jarCollectBase);
+        return sum + Math.max(0, total - baseScore);
       }, 0);
 
       this.score += gained;
@@ -368,6 +405,7 @@ function createGameManagerShotResolutionMethods(deps) {
           count: scoredDrops.length,
           gained: gained,
           entries: jarScoreEntries,
+          drop_entries: scoredDropEntries,
           is_score_boosted: isScoreBoosted,
           boost_multiplier: scoreBoostMultiplier
         });
@@ -419,24 +457,75 @@ function createGameManagerShotResolutionMethods(deps) {
       return gained;
     },
 
+    _scheduleBoardViewportSettle: function (resolution) {
+      var viewport = this.systems.boardViewportSystem;
+      var grid = this.systems.bubbleGrid;
+      if (!viewport || !grid) {
+        throw new Error("Board viewport settle requires BoardViewportSystem and BubbleGrid.");
+      }
+      if (viewport.introActive) {
+        return false;
+      }
+      var boardSnapshot = grid.snapshot();
+      viewport.planSettle(boardSnapshot);
+      if (resolution) {
+        resolution.boardViewportAdjusted = viewport.isMoving();
+      }
+      if (viewport.isMoving() && typeof this._pushRuntimeEvent === "function") {
+        this._pushRuntimeEvent("board_view_move_started", {
+          targetOffsetY: viewport.targetOffsetY
+        });
+      }
+      return viewport.isMoving();
+    },
+
+    _onBoardViewportMoveFinished: function () {
+      if (typeof this._pushRuntimeEvent === "function") {
+        this._pushRuntimeEvent("board_view_move_finished", {});
+      }
+    },
+
+    _tryTopAnchorCollapse: function () {
+      if (this.state !== "running" && this.state !== "out_of_shots_pending") {
+        return false;
+      }
+      var grid = this.systems.bubbleGrid;
+      var cells = grid.getCells();
+      if (!cells.length) {
+        return false;
+      }
+      if (!Number.isInteger(grid.maxColumns) || grid.maxColumns <= 0) {
+        throw new Error("Top anchor collapse requires positive integer bubbleGrid.maxColumns.");
+      }
+      if (!BoardViewportSystem.shouldTriggerTopAnchorCollapse(cells, grid.maxColumns)) {
+        return false;
+      }
+      if (typeof this._pushRuntimeEvent === "function") {
+        this._pushRuntimeEvent("top_anchor_collapse_started", {
+          topRowCount: BoardViewportSystem.countTopRowOccupied(cells),
+          topRowEmptySlots: BoardViewportSystem.countTopRowEmptySlots(cells, grid.maxColumns)
+        });
+      }
+      var removedCells = grid.removeCells(cells);
+      if (this.lastResolution) {
+        this.lastResolution.topAnchorCollapse = true;
+        this._appendUniqueCells(this.lastResolution.floating, removedCells);
+      }
+      this._registerResolutionDrops(removedCells, grid, this.lastResolution, {
+        dropKind: "victory_board_drop"
+      });
+      this.state = "won_pending";
+      return true;
+    },
+
     _ensureMinimumVisibleBoardRows: function (resolution) {
-      var grid = this.systems && this.systems.bubbleGrid ? this.systems.bubbleGrid : null;
-      if (!grid || typeof grid.ensureMinimumVisibleRows !== "function") {
-        throw new Error("Minimum visible board rows require BubbleGrid.ensureMinimumVisibleRows.");
+      if (this._tryTopAnchorCollapse()) {
+        return true;
       }
-      var result = grid.ensureMinimumVisibleRows(6);
-      if (result.shiftRows > 0) {
-        if (typeof this._markBoardAdvancedThisFrame !== "function") {
-          throw new Error("Board advance tracking requires GameManager._markBoardAdvancedThisFrame.");
-        }
-        this._markBoardAdvancedThisFrame();
-        if (resolution) {
-          resolution.boardDropped = true;
-          resolution.visibleRowShiftRows = result.shiftRows;
-        }
-        Logger.info("Board advanced for minimum visible rows", result);
+      if (this.state !== "running" && this.state !== "out_of_shots_pending") {
+        return false;
       }
-      return result;
+      return this._scheduleBoardViewportSettle(resolution);
     },
 
     _refreshShotPlan: function (force) {
@@ -497,7 +586,7 @@ function createGameManagerShotResolutionMethods(deps) {
 
       return [
         grid.version,
-        grid.dropOffsetRows,
+        grid.getViewportOffsetY(),
         this.systems.trajectoryPredictor.maxBounces,
         quantizedOX,
         quantizedOY,
@@ -981,6 +1070,24 @@ function createGameManagerShotResolutionMethods(deps) {
       }
     },
 
+    _resolveFairyAssistsAfterResolution: function (resolution) {
+      if (!resolution || !Array.isArray(resolution.fairyAssistEvents)) {
+        throw new Error("Fairy assist resolution requires resolution.fairyAssistEvents.");
+      }
+      if (resolution.fairyAssistResolved === true) {
+        throw new Error("Fairy assist resolution cannot run twice for one shot.");
+      }
+      if (!this.systems || !this.systems.fairyAssistSystem) {
+        throw new Error("Fairy assist resolution requires FairyAssistSystem.");
+      }
+
+      resolution.fairyAssistEvents = this.systems.fairyAssistSystem.resolveAfterShot(
+        resolution,
+        this.systems.bubbleGrid
+      );
+      resolution.fairyAssistResolved = true;
+    },
+
     _resetMolotovBlastSequence: function () {
       this.pendingMolotovBlastQueue = [];
       this.activeMolotovBlast = null;
@@ -1112,6 +1219,7 @@ function createGameManagerShotResolutionMethods(deps) {
       });
 
       var removedByBlast = grid.removeCells(blastCells);
+      this._pushBubbleBreakEvent(removedByBlast);
       removedByBlast.forEach(function (cell) {
         cell.__molotovBlastVelocity = buildMolotovBlastDropVelocity(active, cell, grid);
       });
@@ -1152,6 +1260,7 @@ function createGameManagerShotResolutionMethods(deps) {
           throw new Error("Molotov blast completion cell is not molotov.");
         }
         var removedMolotov = grid.removeCells([liveMolotov]);
+        this._pushBubbleBreakEvent(removedMolotov);
         this._appendUniqueCells(this.molotovPendingResolutionContext.allRemoved, removedMolotov);
         resolution.matched = this.molotovPendingResolutionContext.allRemoved.slice();
         resolution.collected = this.molotovPendingResolutionContext.allRemoved.slice();
@@ -1229,9 +1338,9 @@ function createGameManagerShotResolutionMethods(deps) {
       };
 
       this._cancelPendingSplitterSpawnsForDroppedCells(syncRemoved);
-      this._registerResolutionDrops(syncRemoved, this.systems.bubbleGrid, resolution);
       this.systems.jarCollectorSystem.collect([]);
 
+      this._pushBubbleBreakEvent(syncRemoved);
       resolution.matched = syncRemoved.slice();
       resolution.collected = syncRemoved.slice();
       resolution.boardCleared = false;
@@ -1272,20 +1381,19 @@ function createGameManagerShotResolutionMethods(deps) {
 
       this.molotovResolutionPending = false;
       this.molotovPendingResolutionContext = null;
+      this._resolveFairyAssistsAfterResolution(resolution);
 
       if (resolution.boardCleared) {
         this._resolveBoardClearedOutcome();
+        return;
+      }
+      if (this._tryTopAnchorCollapse()) {
         return;
       }
       if (this._applyPostImpactBoardShiftPolicy(resolution)) {
         return;
       }
       if (this._scheduleBoardAdvanceAfterImpact()) {
-        return;
-      }
-      if (grid.hasReachedDangerLine()) {
-        resolution.dangerReached = true;
-        this.state = "lost_danger";
         return;
       }
       if (!this.isTimedInfiniteShots && this.remainingShots <= 0) {
@@ -1724,11 +1832,12 @@ function createGameManagerShotResolutionMethods(deps) {
       var removedAll = removedBlastCells.concat(removedReactive).concat(resolution.floating);
       this._cancelPendingSplitterSpawnsForDroppedCells(removedAll);
 
-      this._registerResolutionDrops(removedAll, grid, resolution);
+      this._registerResolutionDrops(resolution.floating, grid, resolution);
       this.systems.jarCollectorSystem.collect([]);
 
-
-      resolution.matched = removedBlastCells.concat(removedReactive);
+      var matchedCells = removedBlastCells.concat(removedReactive);
+      this._pushBubbleBreakEvent(matchedCells);
+      resolution.matched = matchedCells;
       resolution.collected = removedAll;
       resolution.impact = this._createImpactEventFromCell(centerCoordinate);
       resolution.boardCleared = grid.getCells().length === 0;
@@ -1784,17 +1893,20 @@ function createGameManagerShotResolutionMethods(deps) {
         var attachedBubble = grid.addBubble(targetCell, attachedColor);
         this.lastResolution = this._resolveAttachment(attachedBubble);
       }
+      if (!this.molotovResolutionPending) {
+        this._resolveFairyAssistsAfterResolution(this.lastResolution);
+      }
       var deferredBoardShift = this._applyPostImpactBoardShiftPolicy(this.lastResolution);
 
-      var noDropTriggered = !(
+      var noEliminationTriggered = !(
         this.lastResolution &&
-        Array.isArray(this.lastResolution.collected) &&
-        this.lastResolution.collected.length > 0
+        Array.isArray(this.lastResolution.matched) &&
+        this.lastResolution.matched.length > 0
       );
-      if (noDropTriggered) {
+      if (noEliminationTriggered) {
         this._resetComboStreak();
         if (typeof this._pushRuntimeEvent === "function") {
-          this._pushRuntimeEvent("shot_no_drop");
+          this._pushRuntimeEvent("shot_no_elimination");
         }
       }
 
@@ -1803,6 +1915,11 @@ function createGameManagerShotResolutionMethods(deps) {
 
       if (this.lastResolution.boardCleared) {
         this._resolveBoardClearedOutcome();
+        return;
+      }
+
+      if (this._tryTopAnchorCollapse()) {
+        this.pendingShotPlan = null;
         return;
       }
 
@@ -1819,14 +1936,11 @@ function createGameManagerShotResolutionMethods(deps) {
         return;
       }
 
-      if (this._scheduleBoardAdvanceAfterImpact()) {
+      if (this._ensureMinimumVisibleBoardRows(this.lastResolution)) {
         this.pendingShotPlan = null;
-        return;
-      }
-
-      if (grid.hasReachedDangerLine()) {
-        this.lastResolution.dangerReached = true;
-        this.state = "lost_danger";
+        if (this.state === "won_pending") {
+          return;
+        }
         return;
       }
 
@@ -1893,10 +2007,22 @@ function createGameManagerShotResolutionMethods(deps) {
       var collectedCells = removedMatches.concat(removedReactiveMatches).concat(resolution.floating);
       this._cancelPendingSplitterSpawnsForDroppedCells(collectedCells);
 
-      this._registerResolutionDrops(collectedCells, grid, resolution);
+      var matchedCellsForScore = removedMatches.concat(removedReactiveMatches);
+      var eliminationData = EliminationSequenceBuilder.buildEliminationSequence(
+        attachedBubble,
+        matchedCellsForScore,
+        grid,
+        this._getScoreRule("matchedDrop")
+      );
+      resolution.eliminationSequence = eliminationData.eliminationSequence;
+      resolution.scoreEvents = eliminationData.scoreEvents;
+
+      this._registerResolutionDrops(resolution.floating, grid, resolution);
       this.systems.jarCollectorSystem.collect([]);
 
-      resolution.matched = removedMatches.concat(removedReactiveMatches);
+      var matchedCells = matchedCellsForScore;
+      this._pushBubbleBreakEvent(matchedCells);
+      resolution.matched = matchedCells;
       resolution.collected = collectedCells;
       resolution.boardCleared = grid.getCells().length === 0;
       this._applyResolutionDropScore(resolution, "matchedDrop");
@@ -1912,21 +2038,6 @@ function createGameManagerShotResolutionMethods(deps) {
       });
 
       return resolution;
-    },
-
-    _advanceBoardIfNeeded: function () {
-      if (!this.dropInterval || this.shotsFired % this.dropInterval !== 0) {
-        return;
-      }
-
-      this.systems.bubbleGrid.advanceRows(1);
-      if (typeof this._markBoardAdvancedThisFrame !== "function") {
-        throw new Error("Board advance tracking requires GameManager._markBoardAdvancedThisFrame.");
-      }
-      this._markBoardAdvancedThisFrame();
-      this.lastResolution.boardDropped = true;
-      Logger.info("Board advanced", this.systems.bubbleGrid.getDropOffsetRows());
-      return true;
     },
 
     _isPrimaryObjectiveCompleted: function () {
@@ -1960,18 +2071,7 @@ function createGameManagerShotResolutionMethods(deps) {
         return;
       }
 
-      var grid = this.systems.bubbleGrid;
-      var dangerReached = grid.hasReachedDangerLine();
-      if (dangerReached && this.lastResolution) {
-        this.lastResolution.dangerReached = true;
-      }
-
-      if (dangerReached) {
-        this.state = "lost_danger";
-        return;
-      }
-
-      if (!this._isObjectiveWinCompleted()) {
+      if (!this._isClearWinCompleted()) {
         this.state = "lost_objective";
         return;
       }
@@ -1981,7 +2081,7 @@ function createGameManagerShotResolutionMethods(deps) {
         return;
       }
 
-      this._resolveObjectiveCompletedOutcome();
+      this._resolveClearWinOutcome();
     },
 
     _beginSurplusShotBonus: function () {
@@ -2021,7 +2121,7 @@ function createGameManagerShotResolutionMethods(deps) {
       this.remainingShots = 0;
       this.isAiming = false;
       this.pendingShotPlan = null;
-      fallingMarbleSystem.registerSurplusShotsFromOrigin(drainedBalls, origin);
+      fallingMarbleSystem.registerSurplusShotsFromOrigin(drainedBalls, origin, this.levelRandomSeed);
       this.state = "won_surplus_shots_pending";
 
       if (typeof this._pushRuntimeEvent === "function") {

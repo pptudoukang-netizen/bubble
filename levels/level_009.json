@@ -11,7 +11,7 @@
             "B": "blue",
             "Y": "yellow"
         },
-        "pattern": "wave"
+        "pattern": "split_islands"
     },
     "sharedDefaults": {
         "collectMode": "any_with_same_color_bonus",
@@ -33,11 +33,12 @@
     },
     "level": {
         "levelId": 9,
-        "code": "L009_MOLOTOV_INTRO",
-        "difficulty": "advanced",
+        "code": "L009_CLUSTER_FUNDAMENTALS",
+        "difficulty": "expert",
         "teaches": [
-            "molotov",
-            "wave_pattern"
+            "color_cluster",
+            "support_drop",
+            "split_islands_pattern"
         ],
         "colorCount": 4,
         "colors": [
@@ -46,9 +47,9 @@
             "B",
             "Y"
         ],
-        "shotLimit": 24,
-        "targetScore": 2580,
-        "dropInterval": 6,
+        "shotLimit": 20,
+        "targetScore": 1860,
+        "dropInterval": 7,
         "jarCount": 4,
         "jarColors": [
             "R",
@@ -70,8 +71,8 @@
         "winConditions": [
             {
                 "type": "collect_color",
-                "color": "G",
-                "value": 13
+                "color": "B",
+                "value": 9
             }
         ],
         "bonusObjectives": [
@@ -88,16 +89,16 @@
         ],
         "layout": [
             "BBBBBYYYYY",
-            "GGGGGRRRR",
-            "YYYYYRRRRG",
-            "GBBBBBGGG",
-            "GGGBBBBBYY",
-            "YYY......",
-            "..........",
-            "........."
+            ".GGG.GGR.",
+            ".BBR..RRR.",
+            ".BB...GG.",
+            ".RRR..GGG.",
+            ".RR...Y..",
+            "..Y....Y..",
+            "..Y...Y.."
         ],
-        "designNotes": "Generated from LEVEL_CONFIG_TABLE_1_1000.csv. Chapter `molotov_intro` uses molotov with a wave board silhouette.",
-        "difficultyScore": 34,
+        "designNotes": "Generated from LEVEL_CONFIG_TABLE_1_1000.csv. Chapter `cluster_fundamentals` uses color_cluster, support_drop with a split_islands board silhouette.",
+        "difficultyScore": 47,
         "specialEntities": [],
         "levelType": "normal",
         "playMode": "shot_limited",
@@ -106,11 +107,7 @@
             "allowed": [
                 "three_line_elimination",
                 "plus_three_balls"
-            ],
-            "maxGrantsPerRun": {
-                "three_line_elimination": 1,
-                "plus_three_balls": 1
-            }
+            ]
         }
     },
     "difficultyScaleMax": 100

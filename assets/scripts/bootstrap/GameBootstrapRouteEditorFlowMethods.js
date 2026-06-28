@@ -42,43 +42,40 @@ module.exports = {
       };
       this._rememberSelectedLevel(this._currentLevelId);
       this._prepareRouteEditorForLevel(levelConfig, this._currentLevelId);
-      var snapshot = this.gameManager.startLevel(levelConfig);
-      if (typeof this._applySelectedPowerupsToRuntime === "function") {
-        snapshot = this._applySelectedPowerupsToRuntime(snapshot);
-      }
-      if (typeof this._applyPendingNextRoundRewards === "function") {
-        snapshot = this._applyPendingNextRoundRewards(snapshot);
-      }
-      if (typeof this._beginLevelAttemptTracking === "function") {
-        this._beginLevelAttemptTracking(levelConfig, snapshot);
-      }
-      this._lastRuntimeState = snapshot ? snapshot.state : null;
-      return this.levelRenderer.renderLevel(levelConfig, snapshot).then(function () {
-        try {
+      return this.levelRenderer.syncBoardLayoutHudBottomLineAsync().then(function () {
+        var snapshot = this.gameManager.startLevel(levelConfig);
+        if (typeof this._applySelectedPowerupsToRuntime === "function") {
+          snapshot = this._applySelectedPowerupsToRuntime(snapshot);
+        }
+        if (typeof this._applyPendingNextRoundRewards === "function") {
+          snapshot = this._applyPendingNextRoundRewards(snapshot);
+        }
+        if (typeof this._beginLevelAttemptTracking === "function") {
+          this._beginLevelAttemptTracking(levelConfig, snapshot);
+        }
+        this._lastRuntimeState = snapshot ? snapshot.state : null;
+        return this.levelRenderer.renderLevel(levelConfig, snapshot).then(function () {
           if (this._pendingRouteEditorAutoEnable) {
             this._routeEditorState.enabled = true;
             this._pendingRouteEditorAutoEnable = false;
           }
-          this.isRestarting = false;
           this.isSelectingLevel = false;
           this._hideLevelSelectView();
-          this._setDropTestButtonVisible(true);
           this._renderRouteEditor();
           this._refreshRouteEditorButtons();
           this._setStatus(this._formatStatus(levelConfig, snapshot));
           this._playGameplayBackgroundMusic();
           Logger.info(successLogPrefix || "Level started", levelConfig.level.code);
           this._logAssetManagerStats("gameplay");
-          this._syncSpecialIntroduceForRuntimeSnapshot(snapshot);
-          return this._showNewUserGuideForGameplay();
-        } catch (postLoadError) {
-          // 濠电姷鏁告慨鐑藉极閹间礁纾婚柣鎰惈缁犳壆绱掔€ｎ偒鍎ラ柛銈嗘礋閺屾盯顢曢敐鍡欘槰闂佺顑呴崐鍧楀箖濡ゅ懏鏅查幖瀛樼箖閸犳岸姊洪崫銉ユ瀻闁硅櫕锕㈠濠氭偄閾忓湱锛滃┑鈽嗗灥濞咃綁顢栭崒鐐粹拺闁告繂瀚ˉ鐐碘偓鍏夊亾闁归棿绀侀拑鐔兼煟閺冨洢鈧偓闁稿鎸搁埥澶娾枍椤撗傜凹闁逛究鍔戝畷濂告偄閸撲胶鐣鹃梻浣虹帛閸旀牞銇愰崘顔肩劦妞ゆ巻鍋撴繛灏栤偓鎰佸殨妞ゆ劑鍩勯崥瀣煕閵夘垶妾柛鏇炲暣濮婃椽宕楅梻纾嬪焻闂佺閰ｆ禍鍫曞春閳ь剚銇勯幒鎴濐仾婵炴嚪鍕╀簻妞ゆ挴鍓濈涵鍫曟煙閻熸澘顏€规洦鍋婂畷鐔煎礂閸濄儳锛涢梻鍌氬€峰ù鍥敋閺嶎厼绐楅柡宥庡幗閺呮繈鏌曢崼婵愭▓闁轰礁顑夐弻銊モ攽閸♀晜笑缂佺偓鍎抽崥瀣箞閵娿儙鐔煎传閸曨喖鐓橀梻浣虹帛閹稿宕归崜浣瑰床婵炴垯鍨圭粻锝夋煟閹邦厽缍戠痪鏉跨Ф缁辨挻鎷呴崜鍙壭﹀銈嗘处閸欏啴骞婇悙鐑樼劶鐎广儱妫楀▓銈咁渻閵堝棗绗傜紒鈧笟鈧幃鐢稿级濞嗙偓瀵岄梺闈涚墕濡稒鏅堕鍕厾鐟滅増甯為悾娲煙椤旀枻鑰挎鐐存崌楠炴帡宕卞鍡樼秾闂傚倷娴囬～澶愬磿瀹曞洨涓嶇€广儱顦悞鍨亜閹达絾顥夊ù婊堢畺濮婄粯绗熼埀顒勫焵椤掑倸浠滈柤娲诲灡閺呭爼顢涘鍛紲濡炪倖妫侀崑鎰版倿閸濄儮鍋撶憴鍕┛缂傚秮鍋撳銈忕畱濠€閬嶅焵椤掑喚娼愭繛娴嬫櫇閹广垹鈹戠€ｎ亜鐎俊銈忕到閸燁偆绮堥崘顏佸亾閻熸澘顥忛柛鐘愁殕缁轰粙寮介鐔叉嫼闂佸憡绻傜€氬嘲危濞差亝鐓曢悗锝庡墮瀛濋柧鑽ゅ仱閺屾盯寮撮妸銉т哗婵℃鎳樺娲偡闁箑娈舵繝娈垮枤閺佹悂鍩€椤掍浇澹樻い顓犲厴瀵寮撮悢椋庣獮闂佺硶鍓濋敋婵炲懏宀稿铏圭矙濞嗘儳鍓遍梺鐟版啞閹倿宕洪悙鍝勭闁挎洍鍋撶紒鈧€ｎ喗鐓忓┑鐐茬仢閸旀瑥顭?          this.isRestarting = false;
-          this.isSelectingLevel = false;
-          var postLoadMessage = postLoadError && postLoadError.stack
-            ? postLoadError.stack
-            : (postLoadError && postLoadError.message ? postLoadError.message : String(postLoadError));
-          Logger.warn("Post-load UI sync failed", postLoadMessage);
-        }
+          this.levelRenderer.setGameplayInteractionEnabled(false);
+          return this.levelRenderer.playGameEntryCountdown().then(function () {
+            this.levelRenderer.setGameplayInteractionEnabled(true);
+            this.isRestarting = false;
+            this._setDropTestButtonVisible(true);
+            this._syncSpecialIntroduceForRuntimeSnapshot(snapshot);
+            return this._showNewUserGuideForGameplay();
+          }.bind(this));
+        }.bind(this));
       }.bind(this));
     }.bind(this)).catch(function (error) {
       this.isRestarting = false;

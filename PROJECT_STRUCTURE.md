@@ -29,7 +29,9 @@
 - `tools/sync-loading-splash-template.js`：将 `assets/loading/loading_bg.jpg` 同步到 Web 构建模板目录。
 - `open-data/`：历史微信开放数据域逻辑。当前世界排行榜由主域源码和云函数实现，不再依赖开放数据域读取好友云存储。
 - `tools/`：校验、同步、构建修复、调试辅助脚本。
-- `tools/clustered-level-layout.js`、`tools/redesign-first-100-clustered-levels.js`：前 100 关聚类棋盘重设计规则与定向生成入口；对登记的问题关卡强制校验同色块覆盖率、孤球率和目标色连通块，并同步本地关卡、11-100 远程包及 manifest。
+- `tools/first-100-level-design.js`：前 100 关权威设计规则，统一定义 10 种棋盘轮廓、颜色数量、特殊球投放、目标、发射数和每 10 关难度波形，并严格校验实际棋盘与规则一致。
+- `tools/rebuild-first-100-level-configs.js`：前 100 关定向重建入口；先同步 `LEVEL_CONFIG_TABLE_1_1000.csv` 前 100 行，再只重建本地 1-10、远程包 11-100 和对应 manifest 条目，不改写 101-1000 关远程包。运行命令为 `npm run generate:levels-first100`。
+- `tools/clustered-level-layout.js`、`tools/redesign-first-100-clustered-levels.js`：前 100 关颜色聚类规则与已有配置重排入口；所有前 100 关强制校验同色块覆盖率、孤球率和目标色连通块。
 - `settings/`：Cocos Creator 项目设置。
 - `package.json`：校验脚本入口。
 
@@ -46,7 +48,7 @@
 - `GameBootstrapLazyModule.js` / `GameBootstrapLazyRegistry.js`：非首屏必需的 bootstrap 方法模块（签到/任务/商店/游戏圈/设置/广告/telemetry/背包等）通过 `GameBootstrapLazyModule` 在首次调用时再 `require` 对应模块；各 loader 必须使用 Cocos 可静态分析的字符串字面量路径，禁止运行时变量 `require(path)` 或对 UI Controller 做 getter 懒加载。
 - `GameBootstrapGameplayInputMethods.js`：局内触摸输入、瞄准、发射、update 驱动。
 - `GameBootstrapNewUserGuideMethods.js`：新账号首次进入的新手引导覆盖层，使用 `resources/image/finger.png` 指引快速开始、开局按钮和首次局内发射操作。
-- `GameBootstrapLevelRuntimeMethods.js`：启动关卡、重开、终态判断。
+- `GameBootstrapLevelRuntimeMethods.js`：启动关卡、重开、终态判断，以及局内暂停编排；`GameView/pause_btn` 打开 `PauseView`，暂停期间停止玩法 update 与输入，继续恢复，重玩复用当前关卡重开链路，退出复用返回选关链路。
 - `GameBootstrapLevelSelectFlowMethods.js`：选关页面、关卡进度、胜利记录、星级，并预加载 `map` 分包浮岛地图资源。
 - `GameBootstrapRouteEditorFlowMethods.js`：加载关卡与路线编辑器流程。
 - `GameBootstrapPowerupInventoryMethods.js`：背包、开局道具、局内技能球和广告补给。
@@ -79,8 +81,8 @@
 
 路径：`assets/scripts/core`
 
-- `GameManager.js`：玩法状态机和运行时核心。负责开局、瞄准、发射、技能、结算、胜负、分数、运行时事件、runtime snapshot。过关要求为星级达到 1 星且 `winConditions` 中所有收集目标完成；达成后进入 `won_surplus_shots_pending`（剩余发射球抛物线入缸，可选）、`won_settlement_pending`（入缸后 1 秒）并最终切到 `won` 触发 `WinView`。
-- `GameManagerShotResolutionMethods.js`：发射命中后的消除、掉落、收集等结算扩展；`_resolveBoardClearedOutcome` / `_beginSurplusShotBonus` 处理清屏后的剩余球奖励。
+- `GameManager.js`：玩法状态机和运行时核心。负责开局、瞄准、发射、技能、结算、胜负、分数、运行时事件、runtime snapshot。过关要求为星级达到 1 星且棋盘全部球自然消除或掉落；`bonusObjectives` / `winConditions` 中的收集目标只决定本次过关奖励是否翻倍，不再触发胜利或强制全盘掉落。清屏后进入 `won_pending` 等待掉落球全部结算，再进入 `won_surplus_shots_pending`（剩余发射球抛物线入缸，可选）、`won_settlement_pending`（入缸后 1 秒）并最终切到 `won` 触发 `WinView`。
+- `GameManagerShotResolutionMethods.js`：发射命中后的消除、掉落、收集等结算扩展；`_resolveBoardClearedOutcome` / `_beginSurplusShotBonus` 处理自然清屏后的星级校验、剩余球奖励与终局结算。
 - `AdRevivePolicy.js`：广告复活策略，统一复活补球、目标色选择和 LoseView 描述文案。
 - `ProjectileMath.js`：弹道与几何计算。
 - `StarRatingPolicy.js`：星级计算策略。
@@ -91,10 +93,12 @@
 
 玩法底层系统：
 
-- `BubbleGrid.js`：棋盘格与格子状态。
+- `BubbleGrid.js`：棋盘格与格子状态；几何坐标通过附着的 `BoardViewportSystem.offsetY` 计算，不再使用整数 `dropOffsetRows`。
+- `BoardViewportSystem.js`：棋盘不超过 10 行时顶部贴 HUD 下沿；超过 10 行时开场以 HUD 下方第 14 行为底行起点匀速上移，局内吸附结算后匀速调整到 HUD 下方保留 10 行，移动期间锁定发射；逻辑第 0 行空槽 ≥6 或只剩顶部一行时，结算后立即触发全盘崩塌判定。
 - `MatchSystem.js`：同色匹配消除。
 - `SupportSystem.js`：连通/悬空判断。
-- `FallingMarbleSystem.js`：掉落球运动；`registerSurplusShotsFromOrigin` 负责清屏后炮台剩余球的随机抛物线入缸。
+- `FairyAssistSystem.js`：管理 `GameView/geniuses` 六个固定协助精灵槽位；按纯消除数量生成红/黄/绿精灵、未消除时移除最早两只，并维护碰撞去重与光效层数 snapshot。
+- `FallingMarbleSystem.js`：掉落球运动（默认重力 900）；`maxDynamicMarbles` 限制同时活跃的坠落球数量，超出部分进入 `deferredDrops` 并在有空位时自动补入；固定精灵反弹、红黄绿倍率、绿色精灵单次一分为二；清屏后余球每 0.2s 连续抛射入缸（不等上一颗入缸），炮台每 0.2s 在 15°～165° 间按 15° 步进往返旋转。
 - `JarCollectorSystem.js`：底部罐子收集。
 - `ShooterController.js`：射手和待发球；`drainRemainingShotBalls` 在剩余球奖励阶段排空炮台队列。
 - `TrajectoryPredictor.js`：瞄准轨迹预测。
@@ -107,7 +111,9 @@
 渲染层只根据关卡配置和 runtime snapshot 同步 Cocos 节点：
 
 - `LevelRenderer.js`：渲染入口、资源预加载、事件 handler、公共节点/资源逻辑。
-- `LevelRendererSceneMethods.js`：棋盘、特殊球预制体（火焰瓶、分裂球、锁定球、钥匙）、钥匙解锁动画、分裂球生成抛物线飞入动画、HUD（含 `set_btn` 打开设置）、底部道具面板、弹道、掉落、罐子、胜负弹窗等具体渲染。
+- `LevelRendererSceneMethods.js`：棋盘、特殊球预制体（火焰瓶、分裂球、锁定球、钥匙）、钥匙解锁动画、分裂球生成抛物线飞入动画、HUD（含 `set_btn` 打开设置）、底部道具面板、弹道、掉落、罐子、胜负弹窗，以及 `GameView/timer`、`GameView/go` 的开局倒计时动画等具体渲染。
+- `LevelRendererFairyMethods.js`：严格绑定 `GameView/geniuses/genius1...6`，渲染三色精灵、飞入/替换/离场动画，并用单个复用光效 Sprite 表达碰撞层数。
+- `BubbleShatterRenderer.js`：普通匹配球消除时的 Shader 碎裂渲染器；在棋盘节点回收前复制球的 SpriteFrame 与位置，以单球单 Sprite 的片元 Shader 生成中心块和八个放射碎片，不参与棋盘状态与掉落结算。
 - `PrefabFactory.js`：预制体实例化辅助。
 - `RenderNodeHelpers.js`：节点操作辅助。
 
@@ -123,6 +129,10 @@
 - `LevelPackCompactCodec.js`：远程关卡包 `compact-schema-v1` 编解码器；生成器写入压缩格式，运行时和离线工具读取后先展开为完整关卡结构。
 - `RemoteLevelPackLoader.js`：读取 manifest，使用 `wx.cloud.getTempFileURL` 获取远程包临时地址，再用 `wx.downloadFile` 下载到本地用户文件缓存，按 manifest 校验 `compact-schema-v1` 格式并展开，最后按单关复用 `LevelConfigLoader` 的规范化校验；同时提供按当前关卡预下载下一远程包的能力。
 - `BoardLayout.js`：棋盘布局参数。
+- `BoardViewportConfig.js`：10 行局内视口、14 行开场定位与匀速移动参数；HUD 下沿由 `BoardLayout.syncHudBottomLineYFromHudPanel()` 从 `HudPanel` 实测；炮管安全线由 `BoardLayout.getCannonTopLineY()` 推导。
+- `FairyAssistConfig.js`：固定精灵六槽坐标、红黄绿消除区间与倍率、碰撞反弹、绿色分裂和资源路径的严格配置。
+- `FallingRulesDefaults.js`：坠落物理首版默认值（gravity 900 等）。
+- `JarScoreConfig.js`：1～4 缸按槽位的基础分表。
 - `AimTuningProfiles.js`：瞄准调参配置。
 - `DailyTaskConfig.js`、`DailySignInConfig.js`、`ShopGoodsConfig.js`、`ShopRulesConfig.js`、`StarChestConfig.js`、`GameCircleWelfareConfig.js` 等：业务静态配置。
 - `RuntimeModeConfig.js`：运行模式配置。
@@ -163,6 +173,7 @@
 
 - `LoadingViewController.js`
 - `StartGameViewController.js`
+- `PropDescriptionViewController.js`：局内道具说明弹窗；从当前关卡配置筛选特殊球，并固定列出全部六种局内道具，图标按宽 80 等比渲染，列表 Sprite 使用代理分层。
 - `BackpackViewController.js`
 - `InventoryViewController.js`
 - `DailyTaskViewController.js`
@@ -214,17 +225,21 @@
 6. `LevelManager` 对 1-10 使用 `LevelConfigLoader` 加载本地 `levels/level_###.json`；对 11-1000 使用 `RemoteLevelPackLoader` 按 manifest 下载云存储关卡包，再复用同一套校验。
 7. `gameManager.startLevel(levelConfig)` 生成运行时状态。
 8. `levelRenderer.renderLevel(levelConfig, snapshot)` 渲染局内场景。
+9. 隐藏选关页后保持 `isRestarting` 门控，`levelRenderer.playGameEntryCountdown()` 依次播放 3、2、1、GO；动画结束才恢复玩法 update、触摸和局内按钮，并继续特殊球介绍或新手引导。
 
 ### 局内交互
 
 1. `GameBootstrapGameplayInputMethods` 接收触摸。
-2. 瞄准输入传给 `gameManager.beginAim` / `setAim` / `endAim`。
-3. 发射触发 `gameManager.fireShot`。
-4. `GameManager` 调用 systems 完成命中、消除、掉落、收集、胜负判断。
-5. 每次掉落、收集和计分完成后，`GameManager` 检查是否同时满足 1 星与 `winConditions` 中所有收集目标；满足后不再要求清屏，也不继续等待棋盘下压。
-6. 达成目标且仍有 `remainingShots` 时进入 `won_surplus_shots_pending`：`ShooterController.drainRemainingShotBalls` 排空炮台队列，`FallingMarbleSystem.registerSurplusShotsFromOrigin` 从炮台随机抛物线入缸计分；全部入缸后进入 `won_settlement_pending`，停顿 1 秒再切到 `won`。无剩余发射球时直接进入 `won_settlement_pending`。
-7. `GameBootstrap.update` 刷新 `GameManager.update(dt)`，再让 `LevelRenderer.refreshRuntime` 同步画面。
-8. runtime event 驱动音效、震动、埋点、结果弹窗和奖励流程；`WinView` 仅在 `state === "won"` 时弹出。
+2. `GameView/BttomPanel/directions_btn` 打开 `PropDescriptionView`；弹窗展示期间暂停玩法 update 与输入，关闭后恢复。
+3. 瞄准输入传给 `gameManager.beginAim` / `setAim` / `endAim`。
+4. 发射触发 `gameManager.fireShot`。
+5. `GameManager` 调用 systems 完成命中、消除、掉落、收集、胜负判断。
+6. 匹配消除球在原位置碎裂，只有 `SupportSystem` 判定的悬空球进入 `FallingMarbleSystem`；有消除且无悬空球时由 `FairyAssistSystem` 生成固定精灵，未消除时按分数加成等级从高到低离场两只（同等级时更早入场的先离场）。
+7. 坠落球碰撞固定精灵后累加倍率并反弹；普通球首次碰撞绿色精灵时由两个子球替换，两个子球分别落缸计分。
+8. 棋盘全部球通过正常消除或悬空掉落清空后，`GameManager` 先等待所有掉落球、分裂生成和燃烧瓶结算结束，再检查最终分数是否达到 1 星；达到则继续胜利结算，未达到则失败。`bonusObjectives` / `winConditions` 中的收集目标不参与通关判定，只在胜利奖励发放时决定奖励是否翻倍。
+9. 棋盘剩余球全部入缸后，若仍有 `remainingShots` 则进入 `won_surplus_shots_pending`：`ShooterController.drainRemainingShotBalls` 排空炮台队列，`FallingMarbleSystem.registerSurplusShotsFromOrigin` 每 0.2s 连续抛射、炮台每 0.2s 在 15°～165° 间旋转；全部入缸后进入 `won_settlement_pending`，停顿 1 秒再切到 `won`。无剩余发射球时直接进入 `won_settlement_pending`。
+10. `GameBootstrap.update` 刷新 `GameManager.update(dt)`，再让 `LevelRenderer.refreshRuntime` 同步画面。
+11. runtime event 驱动音效、震动、埋点、结果弹窗和奖励流程；`WinView` 仅在 `state === "won"` 时弹出。
 
 ### 新手引导
 
@@ -279,8 +294,10 @@
 - `npm run validate:level-sync`
 - `npm run validate:aim`
 - `npm run validate:shots`
+- `npm run validate:fairy-gameplay`
 - `npm run validate:release`
 - `npm run generate:levels1000`
+- `npm run generate:levels-first100`
 - `npm run generate:floating-map`
 - `npm run clean:wechat-cloudfunctions`
 - `npm run validate`

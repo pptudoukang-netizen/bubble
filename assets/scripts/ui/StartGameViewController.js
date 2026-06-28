@@ -317,6 +317,7 @@ StartGameViewController.prototype._resolveNodes = function () {
     staminaCostLabelNode: requireChildNode(playButtonNode, "num", "Panel/play_btn"),
     targetNode: targetNode,
     targetTitleNode: requireChildNode(targetNode, "target_title", "Panel/target"),
+    targetScoreLabelNode: requireChildNode(targetNode, "target_score", "Panel/target"),
     targetLayoutNode: targetLayoutNode,
     targetBallNode: targetBallNode,
     targetBallCountLabelNode: requireChildNode(targetBallNode, "num", "Panel/target/traget_layout/target_ball"),
@@ -782,6 +783,7 @@ StartGameViewController.prototype._renderPropSelectionState = function () {
 StartGameViewController.prototype._renderContent = function (options) {
   var levelId = requirePositiveInteger(options.levelId, "StartGameView levelId");
   var staminaCost = requirePositiveInteger(options.staminaCost, "StartGameView staminaCost");
+  var oneStarTargetScore = requirePositiveInteger(options.oneStarTargetScore, "StartGameView one-star target score");
   requireObject(options.inventory, "StartGameView inventory");
   requireObject(options.objectives, "StartGameView objectives");
   var temporaryPurchasesByItemId = normalizeTemporaryPurchases(options.temporaryPurchasesByItemId);
@@ -816,6 +818,11 @@ StartGameViewController.prototype._renderContent = function (options) {
   setLabelText(this._nodes.levelLabelNode, "第" + levelId + "关", "Panel/title_bg/level");
   setLabelText(this._nodes.staminaCostLabelNode, String(staminaCost), "Panel/play_btn/num");
   setLabelText(this._nodes.targetTitleNode, "收集目标", "Panel/target/target_title");
+  setLabelText(
+    this._nodes.targetScoreLabelNode,
+    "目标：掉落全部琉璃球且达到" + oneStarTargetScore + "分",
+    "Panel/target/target_score"
+  );
   this._renderStartGameTargetSlot(
     options.objectives.ball,
     this._nodes.targetBallNode,

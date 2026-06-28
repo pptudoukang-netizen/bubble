@@ -2,11 +2,10 @@
 
 var BoardLayout = require("../assets/scripts/config/BoardLayout");
 
-var REDESIGN_LEVEL_IDS = [
-  9, 10, 12, 13, 15, 16, 19, 29, 36, 37, 38, 40,
-  75, 77, 78, 79, 80, 81, 82, 83, 84, 85, 87, 89,
-  90, 91, 93, 95, 96, 98, 99, 100
-];
+var REDESIGN_LEVEL_IDS = [];
+for (var redesignLevelId = 1; redesignLevelId <= 100; redesignLevelId += 1) {
+  REDESIGN_LEVEL_IDS.push(redesignLevelId);
+}
 var REDESIGN_LEVEL_ID_MAP = {};
 var ADJACENCY_DISTANCE = BoardLayout.bubbleDiameter + 8;
 

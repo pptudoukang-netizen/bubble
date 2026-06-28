@@ -9,7 +9,7 @@
             "R": "red",
             "B": "blue"
         },
-        "pattern": "heart"
+        "pattern": "roof_bands"
     },
     "sharedDefaults": {
         "collectMode": "any_with_same_color_bonus",
@@ -31,11 +31,12 @@
     },
     "level": {
         "levelId": 1,
-        "code": "L001_MOLOTOV_INTRO",
+        "code": "L001_CLUSTER_FUNDAMENTALS",
         "difficulty": "advanced",
         "teaches": [
-            "molotov",
-            "heart_pattern"
+            "color_cluster",
+            "support_drop",
+            "roof_bands_pattern"
         ],
         "colorCount": 2,
         "colors": [
@@ -43,8 +44,8 @@
             "B"
         ],
         "shotLimit": 14,
-        "targetScore": 2400,
-        "dropInterval": 6,
+        "targetScore": 2580,
+        "dropInterval": 8,
         "jarCount": 3,
         "jarColors": [
             "R",
@@ -64,7 +65,7 @@
             {
                 "type": "collect_color",
                 "color": "B",
-                "value": 5
+                "value": 13
             }
         ],
         "bonusObjectives": [
@@ -84,17 +85,17 @@
             }
         ],
         "layout": [
-            "RBRBRBRBRB",
-            "RBRBRBRBR",
-            "BRBRBR....",
+            "RRBBBRRBBB",
+            "RRBBBRRRB",
+            ".RBBBRRR..",
             ".........",
             "..........",
             ".........",
             "..........",
             "........."
         ],
-        "designNotes": "Generated from LEVEL_CONFIG_TABLE_1_1000.csv. Chapter `molotov_intro` uses molotov with a heart board silhouette.",
-        "difficultyScore": 34,
+        "designNotes": "Generated from LEVEL_CONFIG_TABLE_1_1000.csv. Chapter `cluster_fundamentals` uses color_cluster, support_drop with a roof_bands board silhouette.",
+        "difficultyScore": 23,
         "specialEntities": [],
         "levelType": "normal",
         "playMode": "shot_limited",
@@ -103,11 +104,7 @@
             "allowed": [
                 "three_line_elimination",
                 "plus_three_balls"
-            ],
-            "maxGrantsPerRun": {
-                "three_line_elimination": 1,
-                "plus_three_balls": 1
-            }
+            ]
         }
     },
     "difficultyScaleMax": 100

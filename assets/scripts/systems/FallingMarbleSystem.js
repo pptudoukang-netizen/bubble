@@ -2,6 +2,8 @@
 
 var BaseSystem = require("./BaseSystem");
 var BoardLayout = require("../config/BoardLayout");
+var FairyAssistConfig = require("../config/FairyAssistConfig");
+var FallingRulesDefaults = require("../config/FallingRulesDefaults");
 
 function clone(data) {
   return JSON.parse(JSON.stringify(data));
@@ -24,6 +26,16 @@ function reflectVector(vector, normal) {
   return {
     x: vector.x - 2 * dot * normal.x,
     y: vector.y - 2 * dot * normal.y
+  };
+}
+
+function rotateVector(vector, degrees) {
+  var radians = degrees * Math.PI / 180;
+  var cosine = Math.cos(radians);
+  var sine = Math.sin(radians);
+  return {
+    x: vector.x * cosine - vector.y * sine,
+    y: vector.x * sine + vector.y * cosine
   };
 }
 
@@ -51,16 +63,54 @@ function resolveInitialDropVelocity(cell, standardVelocity) {
   return standardVelocity;
 }
 
+function resolveDropKind(options) {
+  if (!options || !Object.prototype.hasOwnProperty.call(options, "dropKind")) {
+    return null;
+  }
+  if (options.dropKind !== "victory_board_drop") {
+    throw new Error("FallingMarbleSystem.registerDrops unsupported dropKind: " + options.dropKind);
+  }
+  return options.dropKind;
+}
+
 function createEmptyUpdateResult() {
   return {
     updated: false,
     collected: [],
     missed: [],
-    bounced: 0
+    bounced: 0,
+    fairyHits: [],
+    splits: []
   };
 }
 
-var SURPLUS_SHOTS_PER_FRAME = 1;
+var SURPLUS_SHOT_INTERVAL_SEC = 0.2;
+var SURPLUS_TURRET_ROTATE_INTERVAL_SEC = 0.2;
+var SURPLUS_TURRET_ANGLE_MIN_DEG = 15;
+var SURPLUS_TURRET_ANGLE_MAX_DEG = 165;
+var SURPLUS_TURRET_ANGLE_STEP_DEG = 15;
+var SURPLUS_TURRET_ANGLE_LADDER = [];
+for (
+  var surplusAngleDeg = SURPLUS_TURRET_ANGLE_MIN_DEG;
+  surplusAngleDeg <= SURPLUS_TURRET_ANGLE_MAX_DEG;
+  surplusAngleDeg += SURPLUS_TURRET_ANGLE_STEP_DEG
+) {
+  SURPLUS_TURRET_ANGLE_LADDER.push(surplusAngleDeg);
+}
+
+function resolveLaunchDeviationFromTurretAngleDeg(turretAngleDeg) {
+  if (typeof turretAngleDeg !== "number" || !isFinite(turretAngleDeg)) {
+    throw new Error("Surplus turret angle must be finite.");
+  }
+  if (
+    turretAngleDeg < SURPLUS_TURRET_ANGLE_MIN_DEG ||
+    turretAngleDeg > SURPLUS_TURRET_ANGLE_MAX_DEG ||
+    turretAngleDeg % SURPLUS_TURRET_ANGLE_STEP_DEG !== 0
+  ) {
+    throw new Error("Surplus turret angle must be a 15° step between 15° and 165°.");
+  }
+  return 90 - turretAngleDeg;
+}
 
 function FallingMarbleSystem() {
   BaseSystem.call(this, "FallingMarbleSystem");
@@ -72,10 +122,10 @@ function FallingMarbleSystem() {
   this.lastCollectedDrops = [];
   this.lastMissedDrops = [];
   this.lastBounceCount = 0;
-  this.gravity = 2200;
-  this.initialSpeedY = 220;
-  this.horizontalSpeed = 190;
-  this.bounceDamping = 0.78;
+  this.gravity = FallingRulesDefaults.gravity;
+  this.initialSpeedY = FallingRulesDefaults.initialSpeedY;
+  this.horizontalSpeed = FallingRulesDefaults.horizontalSpeed;
+  this.bounceDamping = FallingRulesDefaults.bounceDamping;
   this.cleanupY = BoardLayout.jarBaseY - BoardLayout.bubbleDiameter * 4;
   this.jarCount = 0;
   this.jarColors = [];
@@ -91,7 +141,7 @@ function FallingMarbleSystem() {
   this._renderSnapshotDirty = true;
   this._dropLeftLimit = BoardLayout.boardLeft + BoardLayout.bubbleRadius;
   this._dropRightLimit = BoardLayout.boardRight - BoardLayout.bubbleRadius;
-  this.maxDropLifeTime = 3.2;
+  this.maxDropLifeTime = FallingRulesDefaults.maxDropLifeTime;
   this.maxRimBounces = 5;
   this.stuckDistanceThreshold = 2.5;
   this.stuckTimeThreshold = 0.32;
@@ -106,12 +156,31 @@ function FallingMarbleSystem() {
   this.pendingSurplusShotBalls = [];
   this.pendingSurplusShotOrigin = null;
   this.pendingSurplusShotIndex = 0;
+  this.pendingSurplusShotTimer = 0;
+  this.surplusTurretAngleDeg = 90;
+  this.surplusTurretRotateTimer = 0;
+  this.surplusAngleCursor = 0;
+  this.surplusAngleDirection = 1;
+  this.surplusVolleySeed = 0;
+  this.fairyAssistSystem = null;
+  this.deferredDrops = [];
 }
 
 FallingMarbleSystem.prototype = Object.create(BaseSystem.prototype);
 FallingMarbleSystem.prototype.constructor = FallingMarbleSystem;
 
+FallingMarbleSystem.prototype.attachFairyAssistSystem = function (fairyAssistSystem) {
+  if (!fairyAssistSystem || typeof fairyAssistSystem.resolveFirstCollision !== "function") {
+    throw new Error("FallingMarbleSystem.attachFairyAssistSystem requires FairyAssistSystem.");
+  }
+  this.fairyAssistSystem = fairyAssistSystem;
+  return this;
+};
+
 FallingMarbleSystem.prototype.configureLevel = function (levelConfig) {
+  if (!this.fairyAssistSystem) {
+    throw new Error("FallingMarbleSystem.configureLevel requires attached FairyAssistSystem.");
+  }
   BaseSystem.prototype.configureLevel.call(this, levelConfig);
   var rules = (levelConfig.sharedDefaults && levelConfig.sharedDefaults.fallingRules) || {};
 
@@ -123,15 +192,15 @@ FallingMarbleSystem.prototype.configureLevel = function (levelConfig) {
   this.lastCollectedDrops = [];
   this.lastMissedDrops = [];
   this.lastBounceCount = 0;
-  this.gravity = typeof rules.gravity === "number" ? Math.max(300, rules.gravity) : 2200;
-  this.initialSpeedY = typeof rules.initialSpeedY === "number" ? Math.max(0, rules.initialSpeedY) : 220;
-  this.horizontalSpeed = typeof rules.horizontalSpeed === "number" ? Math.max(40, rules.horizontalSpeed) : 190;
+  this.gravity = typeof rules.gravity === "number" ? Math.max(300, rules.gravity) : FallingRulesDefaults.gravity;
+  this.initialSpeedY = typeof rules.initialSpeedY === "number" ? Math.max(0, rules.initialSpeedY) : FallingRulesDefaults.initialSpeedY;
+  this.horizontalSpeed = typeof rules.horizontalSpeed === "number" ? Math.max(40, rules.horizontalSpeed) : FallingRulesDefaults.horizontalSpeed;
   this.jarGapAttractAccel = typeof rules.jarGapAttractAccel === "number" ? Math.max(0, rules.jarGapAttractAccel) : 760;
   this.jarGapMaxSpeed = typeof rules.jarGapMaxSpeed === "number" ? Math.max(40, rules.jarGapMaxSpeed) : 260;
-  this.maxDropLifeTime = typeof rules.maxDropLifeTime === "number" ? Math.max(1.2, rules.maxDropLifeTime) : 3.2;
+  this.maxDropLifeTime = typeof rules.maxDropLifeTime === "number" ? Math.max(1.2, rules.maxDropLifeTime) : FallingRulesDefaults.maxDropLifeTime;
   this.stuckDistanceThreshold = typeof rules.stuckDistanceThreshold === "number" ? Math.max(0.5, rules.stuckDistanceThreshold) : 2.5;
   this.stuckTimeThreshold = typeof rules.stuckTimeThreshold === "number" ? Math.max(0.08, rules.stuckTimeThreshold) : 0.32;
-  this.bounceDamping = typeof rules.bounceDamping === "number" ? clamp(rules.bounceDamping, 0.45, 0.95) : 0.78;
+  this.bounceDamping = typeof rules.bounceDamping === "number" ? clamp(rules.bounceDamping, 0.45, 0.95) : FallingRulesDefaults.bounceDamping;
   var cleanupUpperBound = BoardLayout.jarBaseY - BoardLayout.bubbleDiameter * 1.5;
   var defaultCleanupY = BoardLayout.jarBaseY - BoardLayout.bubbleDiameter * 4;
   this.cleanupY = typeof rules.cleanupY === "number"
@@ -173,6 +242,13 @@ FallingMarbleSystem.prototype.configureLevel = function (levelConfig) {
   this.pendingSurplusShotBalls = [];
   this.pendingSurplusShotOrigin = null;
   this.pendingSurplusShotIndex = 0;
+  this.pendingSurplusShotTimer = 0;
+  this.surplusTurretAngleDeg = 90;
+  this.surplusTurretRotateTimer = 0;
+  this.surplusAngleCursor = 0;
+  this.surplusAngleDirection = 1;
+  this.surplusVolleySeed = 0;
+  this.deferredDrops = [];
   return this;
 };
 
@@ -260,24 +336,62 @@ FallingMarbleSystem.prototype._buildJarZones = function () {
 };
 
 FallingMarbleSystem.prototype.hasActiveDrops = function () {
-  return this.activeDrops.length > 0 || this.pendingSurplusShotBalls.length > 0;
+  return (
+    this.activeDrops.length > 0 ||
+    this.deferredDrops.length > 0 ||
+    this.pendingSurplusShotBalls.length > 0
+  );
 };
 
-FallingMarbleSystem.prototype._buildDropFromCell = function (cell, index, grid, startDelay) {
+FallingMarbleSystem.prototype._countActiveDrops = function (drops) {
+  var source = drops || this.activeDrops;
+  var count = 0;
+  for (var index = 0; index < source.length; index += 1) {
+    if (source[index].active) {
+      count += 1;
+    }
+  }
+  return count;
+};
+
+FallingMarbleSystem.prototype._flushDeferredDrops = function () {
+  if (!this.deferredDrops.length) {
+    return 0;
+  }
+  if (this.maxDynamicMarbles <= 0) {
+    throw new Error("FallingMarbleSystem._flushDeferredDrops requires positive maxDynamicMarbles.");
+  }
+
+  var activated = 0;
+  while (this.deferredDrops.length > 0 && this._countActiveDrops() < this.maxDynamicMarbles) {
+    var drop = this.deferredDrops.shift();
+    this._activateDropBatch([drop]);
+    activated += 1;
+  }
+  return activated;
+};
+
+FallingMarbleSystem.prototype._buildDropFromCell = function (cell, index, grid, startDelay, dropKind) {
   if (!cell || !grid || typeof grid.getCellPosition !== "function") {
     throw new Error("FallingMarbleSystem._buildDropFromCell requires cell and grid.");
+  }
+  if (typeof cell.id !== "string" && typeof cell.id !== "number") {
+    throw new Error("FallingMarbleSystem drop cell requires id.");
   }
 
   var start = grid.getCellPosition(cell.row, cell.col);
   var direction = index % 2 === 0 ? -1 : 1;
   var spread = 1 + (index % 4) * 0.18;
-  var standardVelocity = {
+  var standardVelocity = dropKind === "victory_board_drop" ? {
+    x: direction * this.horizontalSpeed * spread,
+    y: -(60 + (index % 5) * 18)
+  } : {
     x: direction * this.horizontalSpeed * spread,
     y: this.initialSpeedY + index * 35
   };
 
   return {
-    id: (cell.id || (cell.row + "_" + cell.col)) + "_drop_" + (this._dropSerial += 1),
+    id: String(cell.id) + "_drop_" + (this._dropSerial += 1),
     sourceId: cell.id,
     color: cell.color,
     entityCategory: cell.entityCategory || "normal_ball",
@@ -303,7 +417,15 @@ FallingMarbleSystem.prototype._buildDropFromCell = function (cell, index, grid, 
     inJar: false,
     jarIndex: -1,
     jarColor: null,
-    active: true
+    active: true,
+    dropKind: dropKind,
+    rootDropId: Object.prototype.hasOwnProperty.call(cell, "rootDropId")
+      ? String(cell.rootDropId)
+      : String(cell.id),
+    hitFairyIds: [],
+    fairyBonusSteps: 0,
+    finalMultiplier: 1,
+    splitGeneration: 0
   };
 };
 
@@ -311,15 +433,69 @@ FallingMarbleSystem.prototype._activateDropBatch = function (drops) {
   if (!drops || !drops.length) {
     return [];
   }
+  if (this.maxDynamicMarbles <= 0) {
+    throw new Error("FallingMarbleSystem._activateDropBatch requires positive maxDynamicMarbles.");
+  }
 
-  Array.prototype.push.apply(this.activeDrops, drops);
-  this.totalFallen += drops.length;
-  this._renderSnapshotDirty = true;
-  return drops;
+  var activated = [];
+  var activeCount = this._countActiveDrops();
+  for (var index = 0; index < drops.length; index += 1) {
+    var drop = drops[index];
+    if (activeCount + activated.length >= this.maxDynamicMarbles) {
+      this.deferredDrops.push(drop);
+      continue;
+    }
+    activated.push(drop);
+  }
+
+  if (activated.length > 0) {
+    Array.prototype.push.apply(this.activeDrops, activated);
+    this.totalFallen += activated.length;
+    this._renderSnapshotDirty = true;
+  }
+  return activated;
 };
 
 FallingMarbleSystem.prototype.hasPendingSurplusShots = function () {
   return this.pendingSurplusShotBalls.length > 0;
+};
+
+FallingMarbleSystem.prototype._resetSurplusAngleState = function (seed) {
+  if (!Number.isInteger(seed)) {
+    throw new Error("FallingMarbleSystem surplus volley requires integer seed.");
+  }
+  this.surplusVolleySeed = seed;
+  var startFromLowEnd = seed % 2 === 0;
+  this.surplusAngleCursor = startFromLowEnd ? 0 : SURPLUS_TURRET_ANGLE_LADDER.length - 1;
+  this.surplusAngleDirection = startFromLowEnd ? 1 : -1;
+  this.surplusTurretAngleDeg = SURPLUS_TURRET_ANGLE_LADDER[this.surplusAngleCursor];
+  this.surplusTurretRotateTimer = SURPLUS_TURRET_ROTATE_INTERVAL_SEC;
+};
+
+FallingMarbleSystem.prototype._advanceSurplusTurretAngle = function () {
+  var nextCursor = this.surplusAngleCursor + this.surplusAngleDirection;
+  if (nextCursor < 0 || nextCursor >= SURPLUS_TURRET_ANGLE_LADDER.length) {
+    this.surplusAngleDirection = -this.surplusAngleDirection;
+    nextCursor = this.surplusAngleCursor + this.surplusAngleDirection;
+  }
+  if (nextCursor < 0 || nextCursor >= SURPLUS_TURRET_ANGLE_LADDER.length) {
+    throw new Error("FallingMarbleSystem surplus turret angle cursor out of range.");
+  }
+  this.surplusAngleCursor = nextCursor;
+  this.surplusTurretAngleDeg = SURPLUS_TURRET_ANGLE_LADDER[this.surplusAngleCursor];
+};
+
+FallingMarbleSystem.prototype.getSurplusTurretAimDirection = function () {
+  var launchDeviationDeg = resolveLaunchDeviationFromTurretAngleDeg(this.surplusTurretAngleDeg);
+  var radians = launchDeviationDeg * Math.PI / 180;
+  return normalize({
+    x: Math.sin(radians),
+    y: Math.cos(radians)
+  });
+};
+
+FallingMarbleSystem.prototype.isSurplusVolleyActive = function () {
+  return this.pendingSurplusShotBalls.length > 0 || this.pendingSurplusShotOrigin !== null;
 };
 
 FallingMarbleSystem.prototype._createSurplusShotDrop = function (ball, spawnIndex, origin) {
@@ -330,11 +506,11 @@ FallingMarbleSystem.prototype._createSurplusShotDrop = function (ball, spawnInde
     throw new Error("Surplus shot drop requires shooter origin.");
   }
 
-  var lateralSign = spawnIndex % 2 === 0 ? -1 : 1;
-  var lateralSpread = 0.95 + Math.random() * 1.05;
-  var upwardSpeed = 820 + Math.random() * 560;
-  var horizontalSpeed = lateralSign * this.horizontalSpeed * lateralSpread * (0.85 + Math.random() * 0.75);
-  var spawnOffsetX = lateralSign * BoardLayout.bubbleRadius * (0.55 + Math.random() * 0.75);
+  var launchDeviationDeg = resolveLaunchDeviationFromTurretAngleDeg(this.surplusTurretAngleDeg);
+  var angleRad = launchDeviationDeg * Math.PI / 180;
+  var launchSpeed = 980;
+  var horizontalSpeed = Math.sin(angleRad) * launchSpeed;
+  var upwardSpeed = Math.cos(angleRad) * launchSpeed;
 
   return {
     id: "surplus_shot_" + (this._dropSerial += 1),
@@ -347,7 +523,7 @@ FallingMarbleSystem.prototype._createSurplusShotDrop = function (ball, spawnInde
     row: -1,
     col: -1,
     position: {
-      x: origin.x + spawnOffsetX,
+      x: origin.x,
       y: origin.y + BoardLayout.bubbleRadius * 0.15
     },
     velocity: {
@@ -356,7 +532,7 @@ FallingMarbleSystem.prototype._createSurplusShotDrop = function (ball, spawnInde
     },
     remainingBounces: this.maxBounces,
     rotation: 0,
-    rotationSpeed: lateralSign * (200 + Math.random() * 160),
+    rotationSpeed: horizontalSpeed >= 0 ? 220 : -220,
     jarCooldown: 0,
     rimBounceCount: 0,
     lastRimBounceSpeed: 0,
@@ -368,7 +544,14 @@ FallingMarbleSystem.prototype._createSurplusShotDrop = function (ball, spawnInde
     jarIndex: -1,
     jarColor: null,
     active: true,
-    dropKind: "surplus_shot"
+    dropKind: "surplus_shot",
+    launchAngleDeg: launchDeviationDeg,
+    turretAngleDeg: this.surplusTurretAngleDeg,
+    rootDropId: "surplus_shot_" + spawnIndex,
+    hitFairyIds: [],
+    fairyBonusSteps: 0,
+    finalMultiplier: 1,
+    splitGeneration: 0
   };
 };
 
@@ -385,26 +568,60 @@ FallingMarbleSystem.prototype._spawnSurplusShotBatch = function (balls, origin, 
   return this._activateDropBatch(spawned);
 };
 
-FallingMarbleSystem.prototype._processPendingSurplusShots = function () {
+FallingMarbleSystem.prototype._spawnNextSurplusShot = function () {
   if (!this.pendingSurplusShotBalls.length) {
+    return [];
+  }
+  if (!this.pendingSurplusShotOrigin) {
+    throw new Error("FallingMarbleSystem pending surplus shots require origin.");
+  }
+  if (this._countActiveDrops() >= this.maxDynamicMarbles) {
+    return [];
+  }
+  var ball = this.pendingSurplusShotBalls.shift();
+  var drop = this._createSurplusShotDrop(ball, this.pendingSurplusShotIndex, this.pendingSurplusShotOrigin);
+  this.pendingSurplusShotIndex += 1;
+  this.lastDrops = this._activateDropBatch([drop]);
+  if (!this.pendingSurplusShotBalls.length) {
+    this.pendingSurplusShotOrigin = null;
+  }
+  return this.lastDrops;
+};
+
+FallingMarbleSystem.prototype._processPendingSurplusShots = function (dt) {
+  var volleyActive = this.isSurplusVolleyActive();
+  if (!volleyActive) {
+    this.pendingSurplusShotTimer = 0;
+    this.surplusTurretRotateTimer = 0;
     return;
   }
   if (!this.pendingSurplusShotOrigin) {
     throw new Error("FallingMarbleSystem pending surplus shots require origin.");
   }
 
-  var batchSize = Math.min(SURPLUS_SHOTS_PER_FRAME, this.pendingSurplusShotBalls.length);
-  if (!batchSize) {
+  var safeDt = typeof dt === "number" && isFinite(dt) && dt > 0 ? dt : 0;
+  if (safeDt > 0) {
+    this.surplusTurretRotateTimer -= safeDt;
+    if (this.surplusTurretRotateTimer <= 0) {
+      this._advanceSurplusTurretAngle();
+      this.surplusTurretRotateTimer = SURPLUS_TURRET_ROTATE_INTERVAL_SEC;
+    }
+  }
+
+  if (!this.pendingSurplusShotBalls.length) {
     return;
   }
 
-  var batch = this.pendingSurplusShotBalls.slice(0, batchSize);
-  this.pendingSurplusShotBalls = this.pendingSurplusShotBalls.slice(batchSize);
-  this.lastDrops = this._spawnSurplusShotBatch(batch, this.pendingSurplusShotOrigin, this.pendingSurplusShotIndex);
-  this.pendingSurplusShotIndex += batch.length;
+  this.pendingSurplusShotTimer -= safeDt;
+  if (this.pendingSurplusShotTimer > 0) {
+    return;
+  }
 
-  if (!this.pendingSurplusShotBalls.length) {
-    this.pendingSurplusShotOrigin = null;
+  this._spawnNextSurplusShot();
+  if (this.pendingSurplusShotBalls.length) {
+    this.pendingSurplusShotTimer = SURPLUS_SHOT_INTERVAL_SEC;
+  } else {
+    this.pendingSurplusShotTimer = 0;
     this.pendingSurplusShotIndex = 0;
   }
 };
@@ -423,21 +640,25 @@ FallingMarbleSystem.prototype.registerDrops = function (cells, grid, options) {
     }
     startDelay = options.startDelay;
   }
+  var dropKind = resolveDropKind(options);
 
   this.lastDrops = cells.map(function (cell, index) {
-    return this._buildDropFromCell(cell, index, grid, startDelay);
+    return this._buildDropFromCell(cell, index, grid, startDelay, dropKind);
   }, this);
 
   this._activateDropBatch(this.lastDrops);
   return this.lastDrops;
 };
 
-FallingMarbleSystem.prototype.registerSurplusShotsFromOrigin = function (balls, origin) {
+FallingMarbleSystem.prototype.registerSurplusShotsFromOrigin = function (balls, origin, levelSeed) {
   if (!balls || !balls.length) {
     throw new Error("FallingMarbleSystem.registerSurplusShotsFromOrigin requires at least one ball.");
   }
   if (!origin || typeof origin.x !== "number" || typeof origin.y !== "number") {
     throw new Error("FallingMarbleSystem.registerSurplusShotsFromOrigin requires shooter origin.");
+  }
+  if (!Number.isInteger(levelSeed)) {
+    throw new Error("FallingMarbleSystem.registerSurplusShotsFromOrigin requires integer levelSeed.");
   }
   if (this.maxDynamicMarbles <= 0) {
     throw new Error("FallingMarbleSystem.registerSurplusShotsFromOrigin requires positive maxDynamicMarbles.");
@@ -446,13 +667,18 @@ FallingMarbleSystem.prototype.registerSurplusShotsFromOrigin = function (balls, 
     throw new Error("FallingMarbleSystem.registerSurplusShotsFromOrigin cannot run while surplus shots are pending.");
   }
 
+  this._resetSurplusAngleState(levelSeed);
   this.pendingSurplusShotBalls = balls.slice();
   this.pendingSurplusShotOrigin = {
     x: origin.x,
     y: origin.y
   };
   this.pendingSurplusShotIndex = 0;
-  this._processPendingSurplusShots();
+  this.pendingSurplusShotTimer = 0;
+  this._spawnNextSurplusShot();
+  if (this.pendingSurplusShotBalls.length) {
+    this.pendingSurplusShotTimer = SURPLUS_SHOT_INTERVAL_SEC;
+  }
   return this.lastDrops;
 };
 
@@ -597,8 +823,107 @@ FallingMarbleSystem.prototype._createCollectedEvent = function (drop, zone) {
     jarIndex: zone ? zone.index : -1,
     jarColor: zone ? zone.color : null,
     sameColor: sameColor,
-    bonusMultiplier: sameColor ? zone.sameColorBonus : 1
+    bonusMultiplier: sameColor ? zone.sameColorBonus : 1,
+    fairyBonusSteps: drop.fairyBonusSteps,
+    fairyMultiplier: drop.finalMultiplier,
+    finalMultiplier: drop.finalMultiplier,
+    rootDropId: drop.rootDropId,
+    splitGeneration: drop.splitGeneration,
+    hitFairyIds: drop.hitFairyIds.slice()
   };
+};
+
+FallingMarbleSystem.prototype._isFairySplittableDrop = function (drop) {
+  return !!(
+    drop &&
+    drop.entityCategory === "normal_ball" &&
+    drop.entityType === null &&
+    typeof drop.color === "string" &&
+    drop.color &&
+    drop.splitGeneration === 0
+  );
+};
+
+FallingMarbleSystem.prototype._createSplitChildren = function (drop) {
+  if (!this._isFairySplittableDrop(drop)) {
+    throw new Error("Green fairy split requires a splittable normal drop.");
+  }
+  var angles = [-FairyAssistConfig.splitAngleDegrees, FairyAssistConfig.splitAngleDegrees];
+  return angles.map(function (angle, index) {
+    var child = clone(drop);
+    child.id = drop.rootDropId + "_fairy_split_" + (this._dropSerial += 1);
+    child.velocity = rotateVector(drop.velocity, angle);
+    child.rotationSpeed = index === 0 ? -Math.abs(drop.rotationSpeed) : Math.abs(drop.rotationSpeed);
+    child.splitGeneration = 1;
+    child.active = true;
+    child.lifeTime = 0;
+    child.stuckTimer = 0;
+    child.lastStuckX = child.position.x;
+    child.lastStuckY = child.position.y;
+    return child;
+  }, this);
+};
+
+FallingMarbleSystem.prototype._applyFairyCollision = function (drop, activeDropCount) {
+  if (!this.fairyAssistSystem) {
+    throw new Error("FallingMarbleSystem fairy collision requires FairyAssistSystem.");
+  }
+  var collision = this.fairyAssistSystem.resolveFirstCollision(drop, BoardLayout.bubbleRadius);
+  if (!collision) {
+    return null;
+  }
+
+  var normal;
+  var distance = Math.sqrt(collision.dx * collision.dx + collision.dy * collision.dy);
+  if (distance > 0.000001) {
+    normal = {
+      x: collision.dx / distance,
+      y: collision.dy / distance
+    };
+  } else {
+    normal = normalize({
+      x: -drop.velocity.x,
+      y: -drop.velocity.y
+    });
+    if (normal.x === 0 && normal.y === 0) {
+      normal = { x: 0, y: 1 };
+    }
+  }
+
+  var reflected = reflectVector(drop.velocity, normal);
+  drop.velocity.x = reflected.x * FairyAssistConfig.bounceDamping;
+  drop.velocity.y = Math.max(
+    reflected.y * FairyAssistConfig.bounceDamping,
+    FairyAssistConfig.minimumUpwardSpeed
+  );
+  drop.position.x = collision.fairy.position.x + normal.x * collision.collisionDistance;
+  drop.position.y = collision.fairy.position.y + normal.y * collision.collisionDistance;
+  drop.fairyBonusSteps += collision.fairy.bonusStep;
+  drop.finalMultiplier = 1 + drop.fairyBonusSteps;
+
+  var result = {
+    fairyId: collision.fairy.id,
+    fairyColor: collision.fairy.color,
+    dropId: drop.id,
+    bonusStep: collision.fairy.bonusStep,
+    finalMultiplier: drop.finalMultiplier,
+    splitChildren: []
+  };
+
+  if (collision.fairy.canSplit && this._isFairySplittableDrop(drop)) {
+    if (!Number.isInteger(activeDropCount) || activeDropCount <= 0) {
+      throw new Error("Green fairy split requires positive active drop count.");
+    }
+    if (activeDropCount + 1 > this.maxDynamicMarbles) {
+      throw new Error(
+        "Green fairy split exceeds maxDynamicMarbles: " +
+        (activeDropCount + 1) + " > " + this.maxDynamicMarbles + "."
+      );
+    }
+    result.splitChildren = this._createSplitChildren(drop);
+    drop.active = false;
+  }
+  return result;
 };
 
 FallingMarbleSystem.prototype._createMissedEvent = function (drop) {
@@ -653,8 +978,8 @@ FallingMarbleSystem.prototype._applyRimArcBounce = function (drop, zone, side, e
   var decayByPrevious = previousBounceSpeed > 0
     ? previousBounceSpeed * this.rimBounceDecay
     : decayByCount;
-  // 反弹速度只允许衰减：受“反射速度 / 次数衰减 / 上次衰减”三重上限约束。
-  var targetBounceSpeed = Math.min(currentSpeed, decayByCount, decayByPrevious);
+  // Inspector 配置决定首次缸口反弹速度；后续反弹只允许按次数和上次速度继续衰减。
+  var targetBounceSpeed = Math.min(decayByCount, decayByPrevious);
   targetBounceSpeed = Math.max(this.rimBounceLiftMin + 1, targetBounceSpeed);
   var speedScale = targetBounceSpeed / currentSpeed;
   var finalSideSpeed = sideSpeed * speedScale;
@@ -775,8 +1100,10 @@ FallingMarbleSystem.prototype._processJarInteraction = function (drop) {
 
 FallingMarbleSystem.prototype.update = function (dt) {
   var result = createEmptyUpdateResult();
+  var safeDt = typeof dt === "number" && isFinite(dt) && dt > 0 ? dt : 0;
 
-  this._processPendingSurplusShots();
+  this._processPendingSurplusShots(safeDt);
+  this._flushDeferredDrops();
 
   var layoutSignature = this._buildLayoutSignature();
   if (layoutSignature !== this._layoutSignature) {
@@ -786,7 +1113,7 @@ FallingMarbleSystem.prototype.update = function (dt) {
     this._renderSnapshotDirty = true;
   }
 
-  if (!dt || dt <= 0 || !this.activeDrops.length) {
+  if (!safeDt || !this.activeDrops.length) {
     this.lastCollectedDrops = [];
     this.lastMissedDrops = [];
     this.lastBounceCount = 0;
@@ -797,6 +1124,10 @@ FallingMarbleSystem.prototype.update = function (dt) {
   var rightLimit = this._dropRightLimit;
 
   var drops = this.activeDrops;
+  var activeDropCount = drops.reduce(function (count, drop) {
+    return count + (drop.active ? 1 : 0);
+  }, 0);
+  var spawnedDrops = [];
   var writeIndex = 0;
   for (var readIndex = 0; readIndex < drops.length; readIndex += 1) {
     var drop = drops[readIndex];
@@ -816,6 +1147,7 @@ FallingMarbleSystem.prototype.update = function (dt) {
     drop.lifeTime = (drop.lifeTime || 0) + dt;
     if (drop.lifeTime >= this.maxDropLifeTime) {
       this._consumeDropInteraction(result, this._forceDropResolution(drop, true));
+      activeDropCount -= 1;
       continue;
     }
 
@@ -837,6 +1169,29 @@ FallingMarbleSystem.prototype.update = function (dt) {
       }
     }
 
+    var fairyCollision = this._applyFairyCollision(drop, activeDropCount + spawnedDrops.length);
+    if (fairyCollision) {
+      result.fairyHits.push({
+        fairyId: fairyCollision.fairyId,
+        fairyColor: fairyCollision.fairyColor,
+        dropId: fairyCollision.dropId,
+        bonusStep: fairyCollision.bonusStep,
+        finalMultiplier: fairyCollision.finalMultiplier
+      });
+      if (fairyCollision.splitChildren.length > 0) {
+        Array.prototype.push.apply(spawnedDrops, fairyCollision.splitChildren);
+        result.splits.push({
+          rootDropId: drop.rootDropId,
+          sourceDropId: drop.id,
+          childDropIds: fairyCollision.splitChildren.map(function (child) {
+            return child.id;
+          })
+        });
+        activeDropCount -= 1;
+        continue;
+      }
+    }
+
     var jarInteraction = this._processJarInteraction(drop);
     if (jarInteraction) {
       this._consumeDropInteraction(result, jarInteraction);
@@ -844,18 +1199,22 @@ FallingMarbleSystem.prototype.update = function (dt) {
       if (drop.active) {
         drops[writeIndex] = drop;
         writeIndex += 1;
+      } else {
+        activeDropCount -= 1;
       }
       continue;
     }
 
     this._consumeDropInteraction(result, this._resolveStuckDropIfNeeded(drop, dt));
     if (!drop.active) {
+      activeDropCount -= 1;
       continue;
     }
 
     if (drop.position.y <= this.cleanupY) {
       drop.active = false;
       result.missed.push(this._createMissedEvent(drop));
+      activeDropCount -= 1;
     }
     if (drop.active) {
       drops[writeIndex] = drop;
@@ -865,6 +1224,11 @@ FallingMarbleSystem.prototype.update = function (dt) {
   if (writeIndex !== drops.length) {
     drops.length = writeIndex;
   }
+  if (spawnedDrops.length > 0) {
+    Array.prototype.push.apply(drops, spawnedDrops);
+    this.totalFallen += spawnedDrops.length;
+  }
+  this._flushDeferredDrops();
 
   this.lastCollectedDrops = result.collected.slice();
   this.lastMissedDrops = result.missed.slice();

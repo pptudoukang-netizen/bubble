@@ -15,7 +15,8 @@ module.exports = {
         win: this.winSfxResource,
         lose: this.loseSfxResource,
         jarBounce: this._parseAudioResourceList(this.jarBounceSfxResources),
-        jarCollectBottom: this.jarCollectBottomSfxResource
+        jarCollectBottom: this.jarCollectBottomSfxResource,
+        break: this.breakSfxResource
       }
     };
   },
@@ -182,6 +183,11 @@ module.exports = {
 
       if (event.type === "jar_collect_bottom") {
         this._playSfx("jarCollectBottom");
+        return;
+      }
+
+      if (event.type === "bubble_break") {
+        this._playSfx("break");
         return;
       }
 

@@ -8,10 +8,13 @@ var TrajectoryPredictor = require("../systems/TrajectoryPredictor");
 var BubbleGrid = require("../systems/BubbleGrid");
 var MatchSystem = require("../systems/MatchSystem");
 var SupportSystem = require("../systems/SupportSystem");
+var FairyAssistSystem = require("../systems/FairyAssistSystem");
+var BoardViewportSystem = require("../systems/BoardViewportSystem");
 var FallingMarbleSystem = require("../systems/FallingMarbleSystem");
 var JarCollectorSystem = require("../systems/JarCollectorSystem");
 var ProjectileMath = require("./ProjectileMath");
 var AdRevivePolicy = require("./AdRevivePolicy");
+var StarRatingPolicy = require("./StarRatingPolicy");
 var createGameManagerShotResolutionMethods = require("./GameManagerShotResolutionMethods");
 
 var clone = ProjectileMath.clone;
@@ -89,10 +92,16 @@ function createEmptyResolution() {
     spawnedBySplitters: [],
     collectedKeys: [],
     unlockedLockedBalls: [],
+    fairyAssistEvents: [],
+    fairyAssistResolved: false,
     impact: null,
     scoreDelta: 0,
     boardCleared: false,
     boardDropped: false,
+    boardViewportAdjusted: false,
+    topAnchorCollapse: false,
+    eliminationSequence: [],
+    scoreEvents: [],
     dangerReached: false
   };
 }
@@ -184,12 +193,6 @@ var DEFAULT_JAR_SCORE_BOOST_MULTIPLIER = 2;
 var DEFAULT_JAR_SCORE_BOOST_DURATION_MS = 5000;
 // 第二次连消起每次额外 +100，UI 显示为连击+1、+2…
 var COMBO_BONUS_PER_HIT = 100;
-var STAR_SCORE_BAND_RATIOS = {
-  min: 0.3,
-  target: 0.6,
-  max: 0.85
-};
-
 function resolveBallDisplayCode(ball) {
   if (!ball) {
     return null;
@@ -365,16 +368,19 @@ function findPrimaryCollectionObjective(levelConfig) {
   return null;
 }
 
-function listWinCollectionObjectives(levelConfig) {
+function listCollectionRewardObjectives(levelConfig) {
   var level = levelConfig && levelConfig.level ? levelConfig.level : null;
   if (!level) {
-    throw new Error("Win objective evaluation requires level config.");
+    throw new Error("Collection reward evaluation requires level config.");
   }
   if (!Array.isArray(level.winConditions)) {
-    throw new Error("Win objective evaluation requires level.winConditions array.");
+    throw new Error("Collection reward evaluation requires level.winConditions array.");
+  }
+  if (!Array.isArray(level.bonusObjectives)) {
+    throw new Error("Collection reward evaluation requires level.bonusObjectives array.");
   }
 
-  return level.winConditions.filter(function (objective) {
+  return level.bonusObjectives.concat(level.winConditions).filter(function (objective) {
     return objective && COLLECTION_OBJECTIVE_TYPES[objective.type] === true;
   });
 }
@@ -498,14 +504,12 @@ function buildScoreHeatBand(levelConfig, scoreProfile) {
   }
 
   targetScore = Math.max(1, targetScore);
-  var min = Math.max(1, Math.round(targetScore * STAR_SCORE_BAND_RATIOS.min));
-  var target = Math.max(min, Math.round(targetScore * STAR_SCORE_BAND_RATIOS.target));
-  var max = Math.max(target, Math.round(targetScore * STAR_SCORE_BAND_RATIOS.max));
+  var starThresholds = StarRatingPolicy.buildStarThresholdsFromTargetScore(targetScore);
 
   return {
-    min: min,
-    target: target,
-    max: max,
+    min: starThresholds.star1,
+    target: starThresholds.star2,
+    max: starThresholds.star3,
     targetScore: targetScore,
     difficulty: scoreProfile ? scoreProfile.difficulty : "normal",
     multiplier: scoreProfile ? Number(scoreProfile.multiplier.toFixed(3)) : 1
@@ -582,12 +586,16 @@ function GameManager(options) {
   this.systems = {
     shooterController: new ShooterController(),
     trajectoryPredictor: new TrajectoryPredictor(),
+    boardViewportSystem: new BoardViewportSystem(),
     bubbleGrid: new BubbleGrid(),
     matchSystem: new MatchSystem(),
     supportSystem: new SupportSystem(),
+    fairyAssistSystem: new FairyAssistSystem(),
     fallingMarbleSystem: new FallingMarbleSystem(),
     jarCollectorSystem: new JarCollectorSystem()
   };
+  this.systems.bubbleGrid.attachBoardViewport(this.systems.boardViewportSystem);
+  this.systems.fallingMarbleSystem.attachFairyAssistSystem(this.systems.fairyAssistSystem);
 }
 
 GameManager.prototype.bootstrap = function () {
@@ -619,13 +627,13 @@ GameManager.prototype.startLevel = function (levelConfig) {
   this._lastTimerRenderBucket = this.isTimedInfiniteShots
     ? Math.ceil(this.remainingTimeMs / TIMED_LEVEL_RENDER_BUCKET_MS)
     : -1;
-  this.requiredStarCount = this.isTimedInfiniteShots ? assertPositiveInteger(level.requiredStarCount, "level.requiredStarCount") : 1;
+  this.requiredStarCount = 1;
   this.remainingShots = this.isTimedInfiniteShots ? 0 : assertPositiveInteger(level.shotLimit, "level.shotLimit");
   this.score = 0;
   this.comboStreak = 0;
   this.maxComboStreak = 0;
   this.shotsFired = 0;
-  this.dropInterval = assertPositiveInteger(level.dropInterval, "level.dropInterval");
+  this.levelRandomSeed = assertPositiveInteger(level.levelId, "level.levelId");
   this.lastFiredColor = null;
   this.lastResolution = createEmptyResolution();
   this.activeProjectile = null;
@@ -801,9 +809,8 @@ GameManager.prototype._applyPostImpactBoardShiftPolicy = function (resolution) {
     throw new Error("Post-impact board shift cannot start while board advance is already pending.");
   }
 
-  var needsDropIntervalAdvance = !!(this.dropInterval && this.shotsFired % this.dropInterval === 0);
   this.pendingDeferredEnsureMinimumVisibleBoardRows = true;
-  this.pendingDropIntervalBoardAdvance = needsDropIntervalAdvance;
+  this.pendingDropIntervalBoardAdvance = false;
   this.pendingBoardAdvanceSpecialAnimationDelay = Math.max(
     this._resolveBoardAdvanceSpecialAnimationDelay(resolution),
     BOARD_ADVANCE_AFTER_IMPACT_DELAY
@@ -821,10 +828,7 @@ GameManager.prototype._flushDeferredBoardShiftAfterImpact = function () {
     this.pendingDeferredEnsureMinimumVisibleBoardRows = false;
     this._ensureMinimumVisibleBoardRows(this.lastResolution);
   }
-  if (this.pendingDropIntervalBoardAdvance) {
-    this.pendingDropIntervalBoardAdvance = false;
-    this._advanceBoardIfNeeded();
-  }
+  this.pendingDropIntervalBoardAdvance = false;
 };
 
 GameManager.prototype._getScoreRule = function (key) {
@@ -853,6 +857,13 @@ GameManager.prototype._markBoardAdvancedThisFrame = function () {
 };
 
 GameManager.prototype._isBoardAdvanceBusy = function () {
+  var viewport = this.systems.boardViewportSystem;
+  if (viewport && typeof viewport.isMoving === "function" && viewport.isMoving()) {
+    return true;
+  }
+  if (viewport && viewport.introActive) {
+    return true;
+  }
   return this._isWaitingBoardAdvance() || this._hasBoardAdvancedThisFrame();
 };
 
@@ -1025,18 +1036,7 @@ GameManager.prototype._updatePendingSplitterSpawns = function (dt) {
 };
 
 GameManager.prototype._scheduleBoardAdvanceAfterImpact = function () {
-  if (!this.dropInterval || this.shotsFired % this.dropInterval !== 0) {
-    return false;
-  }
-
-  this.pendingBoardAdvanceSpecialAnimationDelay = this._resolveBoardAdvanceSpecialAnimationDelay(this.lastResolution);
-  this.pendingBoardAdvanceDelay = 0;
-  this.pendingDropIntervalBoardAdvance = true;
-  this.pendingBoardAdvanceScheduledUpdateSerial = Math.floor(assertFiniteNumber(
-    this.boardAdvanceUpdateSerial,
-    "GameManager boardAdvanceUpdateSerial"
-  ));
-  return true;
+  return false;
 };
 
 GameManager.prototype._updatePendingBoardAdvance = function (dt) {
@@ -1062,9 +1062,6 @@ GameManager.prototype._updatePendingBoardAdvance = function (dt) {
       return false;
     }
     remainingDt = Math.max(0, remainingDt - previousAnimationDelay);
-    if (remainingDt <= 0) {
-      return false;
-    }
   }
 
   this.pendingBoardAdvanceDelay = Math.max(0, this.pendingBoardAdvanceDelay - remainingDt);
@@ -1171,21 +1168,22 @@ GameManager.prototype._updateJarScoreBoost = function (dt) {
 };
 
 GameManager.prototype._resolveOutOfShotsOutcome = function () {
-  if (this._isObjectiveWinCompleted()) {
-    this._resolveObjectiveCompletedOutcome();
-    return;
-  }
-
-  var grid = this.systems.bubbleGrid;
-  if (grid && grid.hasReachedDangerLine()) {
-    if (this.lastResolution) {
-      this.lastResolution.dangerReached = true;
-    }
-    this.state = "lost_danger";
+  if (this.systems.bubbleGrid.getCells().length === 0) {
+    this._resolveBoardClearedOutcome();
     return;
   }
 
   this.state = "out_of_shots";
+};
+
+GameManager.prototype._pushBubbleBreakEvent = function (removedCells) {
+  if (!Array.isArray(removedCells) || !removedCells.length) {
+    return;
+  }
+
+  this._pushRuntimeEvent("bubble_break", {
+    count: removedCells.length
+  });
 };
 
 GameManager.prototype._pushRuntimeEvent = function (type, payload) {
@@ -1351,10 +1349,10 @@ GameManager.prototype._getPrimaryObjectiveProgressValue = function (objective, j
   return 0;
 };
 
-GameManager.prototype._areWinCollectionObjectivesCompleted = function () {
-  var objectives = listWinCollectionObjectives(this.currentLevel);
+GameManager.prototype._areCollectionRewardObjectivesCompleted = function () {
+  var objectives = listCollectionRewardObjectives(this.currentLevel);
   if (!objectives.length) {
-    throw new Error("level.winConditions must contain at least one collection objective.");
+    throw new Error("Level must contain at least one collection reward objective.");
   }
 
   var jarsSnapshot = this._getCachedJarSnapshot();
@@ -1364,7 +1362,7 @@ GameManager.prototype._areWinCollectionObjectivesCompleted = function () {
 
   for (var index = 0; index < objectives.length; index += 1) {
     var objective = objectives[index];
-    var target = assertPositiveInteger(objective.value, "Win collection objective value");
+    var target = assertPositiveInteger(objective.value, "Collection reward objective value");
     if (this._getPrimaryObjectiveProgressValue(objective, jarsSnapshot) < target) {
       return false;
     }
@@ -1376,16 +1374,16 @@ GameManager.prototype._areWinCollectionObjectivesCompleted = function () {
 GameManager.prototype._hasRequiredStarRating = function () {
   var requiredStarCount = assertPositiveInteger(this.requiredStarCount, "GameManager.requiredStarCount");
   if (requiredStarCount !== 1) {
-    throw new Error("Objective win requires requiredStarCount to be 1.");
+    throw new Error("Clear win requires requiredStarCount to be 1.");
   }
   return calculateStarRating(this.score, this.scoreHeatBand) >= requiredStarCount;
 };
 
-GameManager.prototype._isObjectiveWinCompleted = function () {
-  return this._areWinCollectionObjectivesCompleted() && this._hasRequiredStarRating();
+GameManager.prototype._isClearWinCompleted = function () {
+  return this._hasRequiredStarRating() && this.systems.bubbleGrid.getCells().length === 0;
 };
 
-GameManager.prototype._resolveObjectiveCompletedOutcome = function () {
+GameManager.prototype._resolveClearWinOutcome = function () {
   if (this.isTimedInfiniteShots) {
     this.state = "won";
     return;
@@ -1807,6 +1805,7 @@ GameManager.prototype.useThreeLineElimination = function (expectedRows) {
     return targetRowMap[cell.row] === true;
   });
   var removedLineCells = grid.removeCells(lineCells);
+  this._pushBubbleBreakEvent(removedLineCells);
   var resolution = createEmptyResolution();
   resolution.matched = removedLineCells;
   if (removedLineCells.length) {
@@ -1829,8 +1828,6 @@ GameManager.prototype.useThreeLineElimination = function (expectedRows) {
 
   if (resolution.boardCleared) {
     this._resolveBoardClearedOutcome();
-  } else if (this._isTimedWinCompleted()) {
-    this.state = "won";
   }
 
   this._pushRuntimeEvent("ad_powerup_three_line_elimination", {
@@ -2241,6 +2238,7 @@ GameManager.prototype.useBarrierHammerAt = function (point) {
 
   if (isStoneBall(targetCell)) {
     var removedObstacle = grid.removeCells([targetCell]);
+    this._pushBubbleBreakEvent(removedObstacle);
     var floatingCells = this.systems.supportSystem.findFloatingCells(grid);
     var removedFloating = grid.removeCells(floatingCells);
 
@@ -2287,14 +2285,6 @@ GameManager.prototype.useBarrierHammerAt = function (point) {
   };
 };
 
-GameManager.prototype._isTimedWinCompleted = function () {
-  if (!this.isTimedInfiniteShots) {
-    return false;
-  }
-
-  return this._isObjectiveWinCompleted();
-};
-
 GameManager.prototype.pauseTimedLevelTimer = function () {
   if (!this.isTimedInfiniteShots) {
     return this.getRuntimeSnapshot();
@@ -2330,10 +2320,6 @@ GameManager.prototype.update = function (dt) {
         this._lastTimerRenderBucket = nextTimerRenderBucket;
         timerChanged = true;
       }
-    }
-    if (this._isTimedWinCompleted()) {
-      this.state = "won";
-      return this.getRuntimeSnapshot(this._drainRuntimeEvents());
     }
     if (this.remainingTimeMs <= 0) {
       this.state = "lost_objective";
@@ -2413,14 +2399,26 @@ GameManager.prototype.update = function (dt) {
   }
 
   var fallingStep = this.systems.fallingMarbleSystem.update(dt);
+  var viewportFinished = this.systems.boardViewportSystem.update(dt);
+  if (viewportFinished && typeof this._onBoardViewportMoveFinished === "function") {
+    this._onBoardViewportMoveFinished();
+  }
   var fallingUpdated = !!(fallingStep && fallingStep.updated);
   var collectedDrops = fallingStep && Array.isArray(fallingStep.collected) ? fallingStep.collected : [];
+  var fairyHits = fallingStep && Array.isArray(fallingStep.fairyHits) ? fallingStep.fairyHits : [];
+  var fairySplits = fallingStep && Array.isArray(fallingStep.splits) ? fallingStep.splits : [];
   var runtimeEvents = this._drainRuntimeEvents();
   var bounceCount = fallingStep ? Math.max(0, Math.floor(Number(fallingStep.bounced) || 0)) : 0;
 
   for (var bounceIndex = 0; bounceIndex < bounceCount; bounceIndex += 1) {
     this._pushRuntimeEvent("jar_rim_bounce");
   }
+  fairyHits.forEach(function (hit) {
+    this._pushRuntimeEvent("fairy_assist_hit", hit);
+  }, this);
+  fairySplits.forEach(function (split) {
+    this._pushRuntimeEvent("fairy_assist_split", split);
+  }, this);
   runtimeEvents = runtimeEvents.concat(this._drainRuntimeEvents());
 
   if (collectedDrops.length) {
@@ -2446,37 +2444,22 @@ GameManager.prototype.update = function (dt) {
           jarIndex: drop.jarIndex,
           jarColor: drop.jarColor,
           sameColor: !!drop.sameColor,
-          bonusMultiplier: typeof drop.bonusMultiplier === "number" ? drop.bonusMultiplier : 1
+          bonusMultiplier: typeof drop.bonusMultiplier === "number" ? drop.bonusMultiplier : 1,
+          fairyBonusSteps: drop.fairyBonusSteps,
+          fairyMultiplier: drop.fairyMultiplier,
+          finalMultiplier: drop.finalMultiplier,
+          rootDropId: drop.rootDropId,
+          splitGeneration: drop.splitGeneration,
+          hitFairyIds: drop.hitFairyIds.slice()
         };
       }));
     }
   }
   runtimeEvents = runtimeEvents.concat(this._drainRuntimeEvents());
-  if (this.state === "running" && this._isTimedWinCompleted()) {
-    this.state = "won";
-    return this.getRuntimeSnapshot(runtimeEvents);
-  }
-
   var scoreBoostChanged = this._updateJarScoreBoost(dt);
   runtimeEvents = runtimeEvents.concat(this._drainRuntimeEvents());
 
-  var preBoardAdvanceHasProjectile = !!this.activeProjectile;
-  var preBoardAdvanceHasFallingDrops = this.systems.fallingMarbleSystem.hasActiveDrops();
-  var preBoardAdvanceHasPendingSplitterSpawns = this._hasPendingSplitterSpawns();
-  var preBoardAdvanceHasPendingMolotovBlasts = this._hasPendingMolotovBlasts();
-  if (
-    this.state === "running" &&
-    this._isObjectiveWinCompleted() &&
-    !preBoardAdvanceHasProjectile &&
-    !preBoardAdvanceHasFallingDrops &&
-    !preBoardAdvanceHasPendingSplitterSpawns &&
-    !preBoardAdvanceHasPendingMolotovBlasts
-  ) {
-    this._resolveObjectiveCompletedOutcome();
-    return this.getRuntimeSnapshot(runtimeEvents);
-  }
-
-  var boardAdvancedThisFrame = this._updatePendingBoardAdvance(dt) || this._hasBoardAdvancedThisFrame();
+  var boardAdvancedThisFrame = viewportFinished || this._updatePendingBoardAdvance(dt) || this._hasBoardAdvancedThisFrame();
   var splitterSpawned = boardAdvancedThisFrame ? false : this._updatePendingSplitterSpawns(dt);
   var molotovBlastUpdated = boardAdvancedThisFrame ? false : this._updatePendingMolotovBlasts(dt);
   runtimeEvents = runtimeEvents.concat(this._drainRuntimeEvents());
@@ -2512,13 +2495,7 @@ GameManager.prototype.update = function (dt) {
   }
 
   if (boardAdvancedThisFrame && (this.state === "running" || this.state === "out_of_shots_pending")) {
-    var grid = this.systems.bubbleGrid;
-    if (grid.hasReachedDangerLine()) {
-      if (this.lastResolution) {
-        this.lastResolution.dangerReached = true;
-      }
-      this.state = "lost_danger";
-    } else if (this.state === "running" && !this.isTimedInfiniteShots && this.remainingShots <= 0) {
+    if (this.state === "running" && !this.isTimedInfiniteShots && this.remainingShots <= 0) {
       this.state = hasFallingDrops ? "out_of_shots_pending" : "out_of_shots";
     }
   }
@@ -2744,7 +2721,9 @@ GameManager.prototype.getRuntimeSnapshot = function (runtimeEvents, renderOption
     throw new Error("getRuntimeSnapshot renderOptions.refreshScope must be string.");
   }
   var fallingSystem = this.systems.fallingMarbleSystem;
+  var fairyAssistSystem = this.systems.fairyAssistSystem;
   var systemSnapshots = {
+    fairyAssistSystem: fairyAssistSystem.snapshotForRender(),
     // Renderer currently relies on falling snapshot (active drops + jar zones).
     fallingMarbleSystem: typeof fallingSystem.snapshotForRender === "function"
       ? fallingSystem.snapshotForRender()
@@ -2765,7 +2744,7 @@ GameManager.prototype.getRuntimeSnapshot = function (runtimeEvents, renderOption
   shooterSnapshot.aimGuidePath = this._getCachedAimGuidePath(
     shooterSnapshot.aim ? shooterSnapshot.aim.origin : BoardLayout.shooterOrigin,
     shooterSnapshot.aim ? shooterSnapshot.aim.direction : { x: 0, y: 1 },
-    this.systems.trajectoryPredictor ? this.systems.trajectoryPredictor.maxBounces : 0,
+    shooterSnapshot.ricochetGuideActive ? (this.systems.trajectoryPredictor ? this.systems.trajectoryPredictor.maxBounces : 0) : 0,
     topAttachY
   );
   shooterSnapshot.isAiming = this.isAiming;
@@ -2784,6 +2763,22 @@ GameManager.prototype.getRuntimeSnapshot = function (runtimeEvents, renderOption
     ? this.pendingShotPlan
     : null;
 
+  if (this.state === "won_surplus_shots_pending") {
+    var fallingMarbleSystem = this.systems.fallingMarbleSystem;
+    if (!fallingMarbleSystem || typeof fallingMarbleSystem.getSurplusTurretAimDirection !== "function") {
+      throw new Error("Surplus shot render requires FallingMarbleSystem.getSurplusTurretAimDirection.");
+    }
+    var surplusAimOrigin = shooterSnapshot.aim && shooterSnapshot.aim.origin
+      ? shooterSnapshot.aim.origin
+      : BoardLayout.shooterOrigin;
+    shooterSnapshot.aim = {
+      origin: surplusAimOrigin,
+      direction: fallingMarbleSystem.getSurplusTurretAimDirection()
+    };
+    shooterSnapshot.trajectory = null;
+    shooterSnapshot.aimGuidePath = [];
+  }
+
   return {
     state: this.state,
     surplusShotsSettling: this.state === "won_surplus_shots_pending",
@@ -2800,7 +2795,9 @@ GameManager.prototype.getRuntimeSnapshot = function (runtimeEvents, renderOption
     jarScoreBoostActive: this.jarScoreBoostActive,
     jarScoreBoostMultiplier: this.jarScoreBoostMultiplier,
     jarScoreBoostRemainingMs: Math.max(0, Math.floor(Number(this.jarScoreBoostRemainingMs) || 0)),
-    dropInterval: this.dropInterval,
+    dropInterval: 0,
+    boardViewport: this.systems.boardViewportSystem.snapshot(),
+    inputLocked: this._isBoardAdvanceBusy() || this.state !== "running",
     turnsUntilDrop: this.getTurnsUntilDrop(),
     lastFiredColor: this.lastFiredColor,
     // Keep runtime snapshot light during flight to avoid per-frame deep-clone spikes.
@@ -2821,6 +2818,7 @@ GameManager.prototype.getRuntimeSnapshot = function (runtimeEvents, renderOption
       starRating: calculateStarRating(this.score, this.scoreHeatBand),
       starProgress: calculateStarProgress(this.score, this.scoreHeatBand),
       starThresholds: normalizeStarThresholds(this.scoreHeatBand),
+      collectionRewardCompleted: this._areCollectionRewardObjectivesCompleted(),
       scoreHeatBand: this.scoreHeatBand,
       scoreDifficulty: this.scoreHeatBand ? this.scoreHeatBand.difficulty : "normal",
       maxComboStreak: this.maxComboStreak
