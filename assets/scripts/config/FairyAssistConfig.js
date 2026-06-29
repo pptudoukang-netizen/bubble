@@ -116,7 +116,8 @@ var CONFIG = {
   colorRules: COLOR_RULES,
   slots: SLOTS,
   removeCountOnMiss: 2,
-  fairyCollisionRadius: 36,
+  maxCollisionsPerFairy: 5,
+  fairyCollisionRadius: 20,
   bounceDamping: 0.82,
   minimumUpwardSpeed: 180,
   splitAngleDegrees: 18,
@@ -127,6 +128,9 @@ var CONFIG = {
 
 if (!Number.isInteger(CONFIG.removeCountOnMiss) || CONFIG.removeCountOnMiss <= 0) {
   throw new Error("FairyAssistConfig.removeCountOnMiss must be a positive integer.");
+}
+if (!Number.isInteger(CONFIG.maxCollisionsPerFairy) || CONFIG.maxCollisionsPerFairy <= 0) {
+  throw new Error("FairyAssistConfig.maxCollisionsPerFairy must be a positive integer.");
 }
 requirePositiveFiniteNumber(CONFIG.fairyCollisionRadius, "FairyAssistConfig.fairyCollisionRadius");
 requirePositiveFiniteNumber(CONFIG.bounceDamping, "FairyAssistConfig.bounceDamping");

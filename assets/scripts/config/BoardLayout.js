@@ -8,6 +8,8 @@ var BoardLayout = {
   projectileSpeed: 960,
   impactBounceSpeed: 220,
   jarRimBounceSpeed: 260,
+  dropGravity: 900,
+  dropInitialSpeedY: 240,
   bubbleRadius: 36,
   boardLeft: -324,
   boardRight: 324,
@@ -22,6 +24,8 @@ var BoardLayout = {
   jarHeight: 230,
   jarSideCollisionWidth: 40,
   jarSlotWidth: 237,
+  jarSpacingReduction: 20,
+  jarSideYOffset: 20,
   jarLayoutWidth: 0,
   defaultColumns: 10,
   hudBottomLineY: null
@@ -114,7 +118,14 @@ BoardLayout.getJarCenterPositions = function (jarCount) {
     gap = (layoutWidth - totalSlotWidth) / (count - 1);
   }
 
-  var step = slotWidth + gap;
+  var spacingReduction = this.jarSpacingReduction;
+  if (typeof spacingReduction !== "number" || !isFinite(spacingReduction)) {
+    throw new Error("BoardLayout.jarSpacingReduction must be a finite number.");
+  }
+  var step = slotWidth + gap - spacingReduction;
+  if (step <= 0) {
+    throw new Error("Jar layout step must be positive after jarSpacingReduction.");
+  }
   var positions = [];
 
   if (count % 2 === 1) {
@@ -137,6 +148,65 @@ BoardLayout.getJarCenterPositions = function (jarCount) {
   }
 
   return positions;
+};
+
+BoardLayout.getJarRenderYOffset = function (jarIndex, jarCount) {
+  var count = Math.max(0, Math.floor(jarCount || 0));
+  if (count <= 1) {
+    return 0;
+  }
+  if (!Number.isInteger(jarIndex) || jarIndex < 0 || jarIndex >= count) {
+    throw new Error("BoardLayout.getJarRenderYOffset requires valid jarIndex for jarCount " + count + ".");
+  }
+  var sideOffset = this.jarSideYOffset;
+  if (typeof sideOffset !== "number" || !isFinite(sideOffset)) {
+    throw new Error("BoardLayout.jarSideYOffset must be a finite number.");
+  }
+
+  var positions = this.getJarCenterPositions(count);
+  var jarX = positions[jarIndex];
+  if (count % 2 === 1) {
+    return jarX === 0 ? 0 : sideOffset;
+  }
+  if (count === 2) {
+    return sideOffset;
+  }
+
+  var minAbsX = positions.reduce(function (minValue, x) {
+    return Math.min(minValue, Math.abs(x));
+  }, Infinity);
+  return Math.abs(jarX) > minAbsX + 0.001 ? sideOffset : 0;
+};
+
+BoardLayout.getJarRenderZIndex = function (jarIndex, jarCount) {
+  var count = Math.max(0, Math.floor(jarCount || 0));
+  if (!count) {
+    return 0;
+  }
+  if (!Number.isInteger(jarIndex) || jarIndex < 0 || jarIndex >= count) {
+    throw new Error("BoardLayout.getJarRenderZIndex requires valid jarIndex for jarCount " + count + ".");
+  }
+  if (count === 1) {
+    return 0;
+  }
+
+  var positions = this.getJarCenterPositions(count);
+  var absValues = positions.map(function (x) {
+    return Math.abs(x);
+  });
+  var maxAbsX = absValues.reduce(function (maxValue, value) {
+    return Math.max(maxValue, value);
+  }, 0);
+  var minAbsX = absValues.reduce(function (minValue, value) {
+    return Math.min(minValue, value);
+  }, Infinity);
+  if (maxAbsX - minAbsX < 0.001) {
+    return 0;
+  }
+
+  var jarAbsX = Math.abs(positions[jarIndex]);
+  var centerWeight = (maxAbsX - jarAbsX) / (maxAbsX - minAbsX);
+  return Math.round(centerWeight * (count - 1));
 };
 
 module.exports = BoardLayout;

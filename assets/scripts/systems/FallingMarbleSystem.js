@@ -63,6 +63,66 @@ function resolveInitialDropVelocity(cell, standardVelocity) {
   return standardVelocity;
 }
 
+var DROP_LAUNCH_ANGLE_MIN_DEG = 15;
+var DROP_LAUNCH_ANGLE_MAX_DEG = 165;
+
+function hashDropLaunchUnit(seedMaterial) {
+  if (typeof seedMaterial !== "string" || !seedMaterial) {
+    throw new Error("Drop launch hash requires non-empty seed material.");
+  }
+  var hash = 2166136261;
+  for (var index = 0; index < seedMaterial.length; index += 1) {
+    hash ^= seedMaterial.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0) / 4294967295;
+}
+
+function buildDownwardLaunchVelocity(speed, seedMaterial) {
+  if (typeof speed !== "number" || !isFinite(speed) || speed <= 0) {
+    throw new Error("Drop launch speed must be a positive finite number.");
+  }
+  var unit = hashDropLaunchUnit(seedMaterial);
+  var angleDeg = DROP_LAUNCH_ANGLE_MIN_DEG + unit * (DROP_LAUNCH_ANGLE_MAX_DEG - DROP_LAUNCH_ANGLE_MIN_DEG);
+  var angleRad = angleDeg * Math.PI / 180;
+  var vx = Math.cos(angleRad) * speed;
+  var vy = -Math.sin(angleRad) * speed;
+  var minAbsHorizontal = speed * Math.sin(DROP_LAUNCH_ANGLE_MIN_DEG * Math.PI / 180);
+  if (Math.abs(vx) < minAbsHorizontal) {
+    var horizontalSign = unit >= 0.5 ? 1 : -1;
+    vx = horizontalSign * minAbsHorizontal;
+    var remainingVerticalSpeedSq = speed * speed - vx * vx;
+    if (remainingVerticalSpeedSq <= 0) {
+      throw new Error("Drop launch speed too low for minimum horizontal component.");
+    }
+    vy = -Math.sqrt(remainingVerticalSpeedSq);
+  }
+  return {
+    x: vx,
+    y: vy
+  };
+}
+
+function buildDropLaunchSeed(sourceId, launchIndex, dropSerial) {
+  if (typeof sourceId !== "string" && typeof sourceId !== "number") {
+    throw new Error("Drop launch seed requires sourceId.");
+  }
+  if (!Number.isInteger(launchIndex) || launchIndex < 0) {
+    throw new Error("Drop launch seed requires non-negative integer launchIndex.");
+  }
+  if (!Number.isInteger(dropSerial) || dropSerial <= 0) {
+    throw new Error("Drop launch seed requires positive integer dropSerial.");
+  }
+  return String(sourceId) + ":" + launchIndex + ":" + dropSerial;
+}
+
+function resolveDownwardLaunchSpeed(fallingSystem, index) {
+  if (!Number.isInteger(index) || index < 0) {
+    throw new Error("Drop launch speed requires non-negative integer index.");
+  }
+  return fallingSystem.initialSpeedY + (index % 5) * 36;
+}
+
 function resolveDropKind(options) {
   if (!options || !Object.prototype.hasOwnProperty.call(options, "dropKind")) {
     return null;
@@ -76,6 +136,7 @@ function resolveDropKind(options) {
 function createEmptyUpdateResult() {
   return {
     updated: false,
+    surplusUpdated: false,
     collected: [],
     missed: [],
     bounced: 0,
@@ -86,6 +147,7 @@ function createEmptyUpdateResult() {
 
 var SURPLUS_SHOT_INTERVAL_SEC = 0.2;
 var SURPLUS_TURRET_ROTATE_INTERVAL_SEC = 0.2;
+var DEFERRED_DROP_STAGGER_SEC = 0.05;
 var SURPLUS_TURRET_ANGLE_MIN_DEG = 15;
 var SURPLUS_TURRET_ANGLE_MAX_DEG = 165;
 var SURPLUS_TURRET_ANGLE_STEP_DEG = 15;
@@ -122,8 +184,8 @@ function FallingMarbleSystem() {
   this.lastCollectedDrops = [];
   this.lastMissedDrops = [];
   this.lastBounceCount = 0;
-  this.gravity = FallingRulesDefaults.gravity;
-  this.initialSpeedY = FallingRulesDefaults.initialSpeedY;
+  this.gravity = Math.max(300, Number(BoardLayout.dropGravity));
+  this.initialSpeedY = Math.max(0, Number(BoardLayout.dropInitialSpeedY));
   this.horizontalSpeed = FallingRulesDefaults.horizontalSpeed;
   this.bounceDamping = FallingRulesDefaults.bounceDamping;
   this.cleanupY = BoardLayout.jarBaseY - BoardLayout.bubbleDiameter * 4;
@@ -164,6 +226,8 @@ function FallingMarbleSystem() {
   this.surplusVolleySeed = 0;
   this.fairyAssistSystem = null;
   this.deferredDrops = [];
+  this.pendingEliminationPresentationRelease = false;
+  this.lastUpdateDt = 0;
 }
 
 FallingMarbleSystem.prototype = Object.create(BaseSystem.prototype);
@@ -184,7 +248,13 @@ FallingMarbleSystem.prototype.configureLevel = function (levelConfig) {
   BaseSystem.prototype.configureLevel.call(this, levelConfig);
   var rules = (levelConfig.sharedDefaults && levelConfig.sharedDefaults.fallingRules) || {};
 
-  this.maxDynamicMarbles = rules.maxDynamicMarbles || 0;
+  if (
+    !Number.isInteger(FallingRulesDefaults.maxDynamicMarbles) ||
+    FallingRulesDefaults.maxDynamicMarbles <= 0
+  ) {
+    throw new Error("FallingRulesDefaults.maxDynamicMarbles must be a positive integer.");
+  }
+  this.maxDynamicMarbles = FallingRulesDefaults.maxDynamicMarbles;
   this.maxBounces = rules.maxBounces || 0;
   this.totalFallen = 0;
   this.lastDrops = [];
@@ -192,8 +262,8 @@ FallingMarbleSystem.prototype.configureLevel = function (levelConfig) {
   this.lastCollectedDrops = [];
   this.lastMissedDrops = [];
   this.lastBounceCount = 0;
-  this.gravity = typeof rules.gravity === "number" ? Math.max(300, rules.gravity) : FallingRulesDefaults.gravity;
-  this.initialSpeedY = typeof rules.initialSpeedY === "number" ? Math.max(0, rules.initialSpeedY) : FallingRulesDefaults.initialSpeedY;
+  this.gravity = Math.max(300, Number(BoardLayout.dropGravity));
+  this.initialSpeedY = Math.max(0, Number(BoardLayout.dropInitialSpeedY));
   this.horizontalSpeed = typeof rules.horizontalSpeed === "number" ? Math.max(40, rules.horizontalSpeed) : FallingRulesDefaults.horizontalSpeed;
   this.jarGapAttractAccel = typeof rules.jarGapAttractAccel === "number" ? Math.max(0, rules.jarGapAttractAccel) : 760;
   this.jarGapMaxSpeed = typeof rules.jarGapMaxSpeed === "number" ? Math.max(40, rules.jarGapMaxSpeed) : 260;
@@ -309,12 +379,13 @@ FallingMarbleSystem.prototype._buildJarZones = function () {
   var outerHalfWidth = jarHalfWidth;
   var innerHalfWidth = Math.max(0, jarHalfWidth - edgeThickness);
   var jarHeight = Math.max(1, Number(BoardLayout.jarHeight) || 230);
-  var jarCenterY = getJarRenderCenterY();
-  var mouthY = jarCenterY + jarHeight * 0.24;
-  var bottomY = jarCenterY - jarHeight * 0.42;
+  var baseJarCenterY = getJarRenderCenterY();
 
   var zones = [];
   for (var index = 0; index < count; index += 1) {
+    var jarCenterY = baseJarCenterY + BoardLayout.getJarRenderYOffset(index, count);
+    var mouthY = jarCenterY + jarHeight * 0.24;
+    var bottomY = jarCenterY - jarHeight * 0.42;
     zones.push({
       index: index,
       color: this.jarColors[index] || null,
@@ -347,11 +418,115 @@ FallingMarbleSystem.prototype._countActiveDrops = function (drops) {
   var source = drops || this.activeDrops;
   var count = 0;
   for (var index = 0; index < source.length; index += 1) {
-    if (source[index].active) {
+    var drop = source[index];
+    if (drop.active && drop.inJar !== true) {
       count += 1;
     }
   }
   return count;
+};
+
+FallingMarbleSystem.prototype._applyDropLaunchVelocity = function (drop, launchIndex) {
+  if (!drop) {
+    throw new Error("Drop launch velocity requires drop.");
+  }
+  if (typeof drop.sourceId !== "string" && typeof drop.sourceId !== "number") {
+    throw new Error("Drop launch velocity requires sourceId.");
+  }
+  if (!Number.isInteger(launchIndex) || launchIndex < 0) {
+    throw new Error("Drop launch velocity requires non-negative integer launchIndex.");
+  }
+  if (!Number.isInteger(drop.launchDropSerial) || drop.launchDropSerial <= 0) {
+    throw new Error("Drop launch velocity requires positive launchDropSerial.");
+  }
+
+  var launchSpeed = resolveDownwardLaunchSpeed(this, launchIndex);
+  var launchSeed = buildDropLaunchSeed(drop.sourceId, launchIndex, drop.launchDropSerial);
+  var launchVelocity = buildDownwardLaunchVelocity(launchSpeed, launchSeed);
+  drop.velocity = {
+    x: launchVelocity.x,
+    y: launchVelocity.y
+  };
+  drop.launchIndex = launchIndex;
+  return drop;
+};
+
+FallingMarbleSystem.prototype._advanceDropMotion = function (drop, dt) {
+  if (!drop || drop.active !== true) {
+    throw new Error("Drop motion advance requires active drop.");
+  }
+  if (typeof dt !== "number" || !Number.isFinite(dt) || dt < 0) {
+    throw new Error("Drop motion advance requires non-negative finite dt.");
+  }
+  if (dt <= 0) {
+    return;
+  }
+  drop.jarCooldown = Math.max(0, (drop.jarCooldown || 0) - dt);
+  this._applyGapAttraction(drop, dt);
+  drop.velocity.y -= this.gravity * dt;
+  drop.position.x += drop.velocity.x * dt;
+  drop.position.y += drop.velocity.y * dt;
+  drop.rotation += drop.rotationSpeed * dt;
+  drop.lifeTime = (drop.lifeTime || 0) + dt;
+};
+
+FallingMarbleSystem.prototype.requestEliminationPresentationDropRelease = function () {
+  this.pendingEliminationPresentationRelease = true;
+};
+
+FallingMarbleSystem.prototype.processPendingEliminationPresentationRelease = function (dt) {
+  if (this.pendingEliminationPresentationRelease !== true) {
+    return false;
+  }
+  this.pendingEliminationPresentationRelease = false;
+  this.releaseEliminationPresentationDropHold(dt);
+  return true;
+};
+
+FallingMarbleSystem.prototype._prepareDeferredDropForActivation = function (drop, activationIndex) {
+  if (!drop || drop.active !== true) {
+    throw new Error("Deferred drop activation requires active drop.");
+  }
+  if (!drop.position || typeof drop.position.x !== "number" || !isFinite(drop.position.x)) {
+    throw new Error("Deferred drop activation requires finite position.x.");
+  }
+  if (typeof drop.position.y !== "number" || !isFinite(drop.position.y)) {
+    throw new Error("Deferred drop activation requires finite position.y.");
+  }
+  if (!drop.velocity || typeof drop.velocity.x !== "number" || !isFinite(drop.velocity.x)) {
+    throw new Error("Deferred drop activation requires finite velocity.x.");
+  }
+  if (typeof drop.velocity.y !== "number" || !isFinite(drop.velocity.y)) {
+    throw new Error("Deferred drop activation requires finite velocity.y.");
+  }
+  if (drop.dropKind === "surplus_shot") {
+    throw new Error("Deferred drop queue cannot contain surplus_shot drops.");
+  }
+  if (!Number.isInteger(activationIndex) || activationIndex < 0) {
+    throw new Error("Deferred drop activation requires non-negative integer activationIndex.");
+  }
+  if (!Number.isInteger(drop.launchIndex) || drop.launchIndex < 0) {
+    throw new Error("Deferred drop activation requires non-negative integer launchIndex.");
+  }
+
+  this._applyDropLaunchVelocity(drop, drop.launchIndex);
+
+  if (activationIndex > 0) {
+    var existingDelay = typeof drop.startDelay === "number" && isFinite(drop.startDelay) && drop.startDelay > 0
+      ? drop.startDelay
+      : 0;
+    drop.startDelay = existingDelay + activationIndex * DEFERRED_DROP_STAGGER_SEC;
+  }
+
+  drop.lifeTime = 0;
+  drop.stuckTimer = 0;
+  drop.lastStuckX = drop.position.x;
+  drop.lastStuckY = drop.position.y;
+  drop.inJar = false;
+  drop.jarIndex = -1;
+  drop.jarColor = null;
+  drop.jarCooldown = 0;
+  return drop;
 };
 
 FallingMarbleSystem.prototype._flushDeferredDrops = function () {
@@ -365,13 +540,21 @@ FallingMarbleSystem.prototype._flushDeferredDrops = function () {
   var activated = 0;
   while (this.deferredDrops.length > 0 && this._countActiveDrops() < this.maxDynamicMarbles) {
     var drop = this.deferredDrops.shift();
+    this._prepareDeferredDropForActivation(drop, activated);
     this._activateDropBatch([drop]);
     activated += 1;
   }
   return activated;
 };
 
-FallingMarbleSystem.prototype._buildDropFromCell = function (cell, index, grid, startDelay, dropKind) {
+FallingMarbleSystem.prototype._buildDropFromCell = function (
+  cell,
+  index,
+  grid,
+  startDelay,
+  dropKind,
+  holdUntilEliminationPresentationComplete
+) {
   if (!cell || !grid || typeof grid.getCellPosition !== "function") {
     throw new Error("FallingMarbleSystem._buildDropFromCell requires cell and grid.");
   }
@@ -380,15 +563,15 @@ FallingMarbleSystem.prototype._buildDropFromCell = function (cell, index, grid, 
   }
 
   var start = grid.getCellPosition(cell.row, cell.col);
-  var direction = index % 2 === 0 ? -1 : 1;
-  var spread = 1 + (index % 4) * 0.18;
-  var standardVelocity = dropKind === "victory_board_drop" ? {
-    x: direction * this.horizontalSpeed * spread,
-    y: -(60 + (index % 5) * 18)
-  } : {
-    x: direction * this.horizontalSpeed * spread,
-    y: this.initialSpeedY + index * 35
+  var dropSerial = this._dropSerial + 1;
+  var launchSpeed = resolveDownwardLaunchSpeed(this, index);
+  var launchSeed = buildDropLaunchSeed(cell.id, index, dropSerial);
+  var launchVelocity = buildDownwardLaunchVelocity(launchSpeed, launchSeed);
+  var standardVelocity = {
+    x: launchVelocity.x,
+    y: launchVelocity.y
   };
+  var rotationDirection = launchVelocity.x >= 0 ? 1 : -1;
 
   return {
     id: String(cell.id) + "_drop_" + (this._dropSerial += 1),
@@ -405,9 +588,10 @@ FallingMarbleSystem.prototype._buildDropFromCell = function (cell, index, grid, 
     velocity: resolveInitialDropVelocity(cell, standardVelocity),
     remainingBounces: this.maxBounces,
     rotation: 0,
-    rotationSpeed: direction * (180 + index * 25),
+    rotationSpeed: rotationDirection * (180 + index * 25),
     jarCooldown: 0,
     startDelay: startDelay,
+    holdUntilEliminationPresentationComplete: holdUntilEliminationPresentationComplete === true,
     rimBounceCount: 0,
     lastRimBounceSpeed: 0,
     lifeTime: 0,
@@ -418,6 +602,8 @@ FallingMarbleSystem.prototype._buildDropFromCell = function (cell, index, grid, 
     jarIndex: -1,
     jarColor: null,
     active: true,
+    launchIndex: index,
+    launchDropSerial: dropSerial,
     dropKind: dropKind,
     rootDropId: Object.prototype.hasOwnProperty.call(cell, "rootDropId")
       ? String(cell.rootDropId)
@@ -445,6 +631,23 @@ FallingMarbleSystem.prototype._activateDropBatch = function (drops) {
       this.deferredDrops.push(drop);
       continue;
     }
+    if (!Number.isInteger(drop.launchIndex) || drop.launchIndex < 0) {
+      throw new Error("FallingMarbleSystem._activateDropBatch requires non-negative integer launchIndex.");
+    }
+    if (!Number.isInteger(drop.launchDropSerial) || drop.launchDropSerial <= 0) {
+      throw new Error("FallingMarbleSystem._activateDropBatch requires positive launchDropSerial.");
+    }
+    if (drop.dropKind !== "surplus_shot") {
+      this._applyDropLaunchVelocity(drop, drop.launchIndex);
+    } else if (
+      !drop.velocity ||
+      typeof drop.velocity.x !== "number" ||
+      !isFinite(drop.velocity.x) ||
+      typeof drop.velocity.y !== "number" ||
+      !isFinite(drop.velocity.y)
+    ) {
+      throw new Error("Surplus shot activation requires finite launch velocity.");
+    }
     activated.push(drop);
   }
 
@@ -454,6 +657,29 @@ FallingMarbleSystem.prototype._activateDropBatch = function (drops) {
     this._renderSnapshotDirty = true;
   }
   return activated;
+};
+
+FallingMarbleSystem.prototype.releaseEliminationPresentationDropHold = function (dt) {
+  var safeDt = typeof dt === "number" && Number.isFinite(dt) && dt > 0 ? dt : 0;
+  var released = false;
+  this.activeDrops.forEach(function (drop) {
+    if (drop && drop.holdUntilEliminationPresentationComplete === true) {
+      drop.holdUntilEliminationPresentationComplete = false;
+      released = true;
+      if (safeDt > 0) {
+        this._advanceDropMotion(drop, safeDt);
+      }
+    }
+  }, this);
+  this.deferredDrops.forEach(function (drop) {
+    if (drop && drop.holdUntilEliminationPresentationComplete === true) {
+      drop.holdUntilEliminationPresentationComplete = false;
+      released = true;
+    }
+  });
+  if (released) {
+    this._renderSnapshotDirty = true;
+  }
 };
 
 FallingMarbleSystem.prototype.hasPendingSurplusShots = function () {
@@ -506,11 +732,12 @@ FallingMarbleSystem.prototype._createSurplusShotDrop = function (ball, spawnInde
     throw new Error("Surplus shot drop requires shooter origin.");
   }
 
+  var launchDirection = this.getSurplusTurretAimDirection();
   var launchDeviationDeg = resolveLaunchDeviationFromTurretAngleDeg(this.surplusTurretAngleDeg);
-  var angleRad = launchDeviationDeg * Math.PI / 180;
   var launchSpeed = 980;
-  var horizontalSpeed = Math.sin(angleRad) * launchSpeed;
-  var upwardSpeed = Math.cos(angleRad) * launchSpeed;
+  var horizontalSpeed = launchDirection.x * launchSpeed;
+  var upwardSpeed = launchDirection.y * launchSpeed;
+  var dropSerial = this._dropSerial + 1;
 
   return {
     id: "surplus_shot_" + (this._dropSerial += 1),
@@ -544,6 +771,8 @@ FallingMarbleSystem.prototype._createSurplusShotDrop = function (ball, spawnInde
     jarIndex: -1,
     jarColor: null,
     active: true,
+    launchIndex: spawnIndex,
+    launchDropSerial: dropSerial,
     dropKind: "surplus_shot",
     launchAngleDeg: launchDeviationDeg,
     turretAngleDeg: this.surplusTurretAngleDeg,
@@ -593,37 +822,41 @@ FallingMarbleSystem.prototype._processPendingSurplusShots = function (dt) {
   if (!volleyActive) {
     this.pendingSurplusShotTimer = 0;
     this.surplusTurretRotateTimer = 0;
-    return;
+    return false;
   }
   if (!this.pendingSurplusShotOrigin) {
     throw new Error("FallingMarbleSystem pending surplus shots require origin.");
   }
 
+  var updated = false;
   var safeDt = typeof dt === "number" && isFinite(dt) && dt > 0 ? dt : 0;
   if (safeDt > 0) {
     this.surplusTurretRotateTimer -= safeDt;
     if (this.surplusTurretRotateTimer <= 0) {
       this._advanceSurplusTurretAngle();
       this.surplusTurretRotateTimer = SURPLUS_TURRET_ROTATE_INTERVAL_SEC;
+      updated = true;
     }
   }
 
   if (!this.pendingSurplusShotBalls.length) {
-    return;
+    return updated;
   }
 
   this.pendingSurplusShotTimer -= safeDt;
   if (this.pendingSurplusShotTimer > 0) {
-    return;
+    return updated;
   }
 
   this._spawnNextSurplusShot();
+  updated = true;
   if (this.pendingSurplusShotBalls.length) {
     this.pendingSurplusShotTimer = SURPLUS_SHOT_INTERVAL_SEC;
   } else {
     this.pendingSurplusShotTimer = 0;
     this.pendingSurplusShotIndex = 0;
   }
+  return updated;
 };
 
 FallingMarbleSystem.prototype.registerDrops = function (cells, grid, options) {
@@ -640,10 +873,24 @@ FallingMarbleSystem.prototype.registerDrops = function (cells, grid, options) {
     }
     startDelay = options.startDelay;
   }
+  var holdUntilEliminationPresentationComplete = false;
+  if (options && Object.prototype.hasOwnProperty.call(options, "holdUntilEliminationPresentationComplete")) {
+    if (options.holdUntilEliminationPresentationComplete !== true) {
+      throw new Error("FallingMarbleSystem.registerDrops holdUntilEliminationPresentationComplete must be true when provided.");
+    }
+    holdUntilEliminationPresentationComplete = true;
+  }
   var dropKind = resolveDropKind(options);
 
   this.lastDrops = cells.map(function (cell, index) {
-    return this._buildDropFromCell(cell, index, grid, startDelay, dropKind);
+    return this._buildDropFromCell(
+      cell,
+      index,
+      grid,
+      startDelay,
+      dropKind,
+      holdUntilEliminationPresentationComplete
+    );
   }, this);
 
   this._activateDropBatch(this.lastDrops);
@@ -865,6 +1112,9 @@ FallingMarbleSystem.prototype._createSplitChildren = function (drop) {
 };
 
 FallingMarbleSystem.prototype._applyFairyCollision = function (drop, activeDropCount) {
+  if (drop && drop.dropKind === "victory_board_drop") {
+    return null;
+  }
   if (!this.fairyAssistSystem) {
     throw new Error("FallingMarbleSystem fairy collision requires FairyAssistSystem.");
   }
@@ -1101,8 +1351,9 @@ FallingMarbleSystem.prototype._processJarInteraction = function (drop) {
 FallingMarbleSystem.prototype.update = function (dt) {
   var result = createEmptyUpdateResult();
   var safeDt = typeof dt === "number" && isFinite(dt) && dt > 0 ? dt : 0;
+  this.lastUpdateDt = safeDt;
 
-  this._processPendingSurplusShots(safeDt);
+  result.surplusUpdated = this._processPendingSurplusShots(safeDt);
   this._flushDeferredDrops();
 
   var layoutSignature = this._buildLayoutSignature();
@@ -1136,6 +1387,12 @@ FallingMarbleSystem.prototype.update = function (dt) {
     }
 
     result.updated = true;
+    if (drop.holdUntilEliminationPresentationComplete === true) {
+      drops[writeIndex] = drop;
+      writeIndex += 1;
+      this._renderSnapshotDirty = true;
+      continue;
+    }
     if (typeof drop.startDelay === "number" && drop.startDelay > 0) {
       drop.startDelay = Math.max(0, drop.startDelay - dt);
       drops[writeIndex] = drop;
@@ -1159,13 +1416,13 @@ FallingMarbleSystem.prototype.update = function (dt) {
     drop.rotation += drop.rotationSpeed * dt;
 
     if (!drop.inJar && (drop.position.x < leftLimit || drop.position.x > rightLimit)) {
-      if (drop.remainingBounces > 0) {
-        drop.position.x = clamp(drop.position.x, leftLimit, rightLimit);
-        drop.velocity.x = -drop.velocity.x * this.bounceDamping;
-        drop.velocity.y = Math.max(drop.velocity.y, -420) + 140;
-        drop.remainingBounces -= 1;
-      } else {
-        drop.position.x = clamp(drop.position.x, leftLimit, rightLimit);
+      drop.position.x = clamp(drop.position.x, leftLimit, rightLimit);
+      if (drop.dropKind !== "victory_board_drop") {
+        if (drop.remainingBounces > 0) {
+          drop.velocity.x = -drop.velocity.x * this.bounceDamping;
+          drop.velocity.y = Math.max(drop.velocity.y, -420) + 140;
+          drop.remainingBounces -= 1;
+        }
       }
     }
 
@@ -1239,10 +1496,11 @@ FallingMarbleSystem.prototype.update = function (dt) {
 };
 
 FallingMarbleSystem.prototype.snapshotForRender = function () {
+  var visibleDropCount = this._countVisibleFallingDrops();
   if (!this._renderSnapshotCache) {
     this._renderSnapshotCache = {
       activeDrops: this.activeDrops,
-      activeDropCount: this.activeDrops.length,
+      activeDropCount: visibleDropCount,
       jarZones: this.jarZones
     };
     this._renderSnapshotDirty = false;
@@ -1251,11 +1509,21 @@ FallingMarbleSystem.prototype.snapshotForRender = function () {
 
   if (this._renderSnapshotDirty) {
     this._renderSnapshotCache.activeDrops = this.activeDrops;
-    this._renderSnapshotCache.activeDropCount = this.activeDrops.length;
+    this._renderSnapshotCache.activeDropCount = visibleDropCount;
     this._renderSnapshotCache.jarZones = this.jarZones;
     this._renderSnapshotDirty = false;
   }
   return this._renderSnapshotCache;
+};
+
+FallingMarbleSystem.prototype._countVisibleFallingDrops = function () {
+  var count = 0;
+  for (var index = 0; index < this.activeDrops.length; index += 1) {
+    if (this.activeDrops[index].active) {
+      count += 1;
+    }
+  }
+  return count;
 };
 
 FallingMarbleSystem.prototype.snapshot = function () {

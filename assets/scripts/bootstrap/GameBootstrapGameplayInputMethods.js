@@ -10,11 +10,25 @@ module.exports = {
       return;
     }
 
-    if (!this.currentLevelConfig || this.isRestarting) {
+    if (!this.currentLevelConfig) {
       return;
     }
     if (!this.gameManager || !this.levelRenderer) {
       return;
+    }
+    if (this.isRestarting) {
+      if (typeof this.gameManager.updateBoardViewportIntro !== "function") {
+        throw new Error("GameBootstrap requires GameManager.updateBoardViewportIntro during level entry.");
+      }
+      var entrySnapshot = this.gameManager.updateBoardViewportIntro(dt);
+      if (entrySnapshot) {
+        this.levelRenderer.refreshRuntime(this.currentLevelConfig, entrySnapshot);
+      }
+      return;
+    }
+
+    if (typeof this.levelRenderer.syncFairyAssistCollisionCenters === "function") {
+      this.levelRenderer.syncFairyAssistCollisionCenters();
     }
 
     var snapshot = this.gameManager.update(dt);
@@ -29,6 +43,26 @@ module.exports = {
     if (!snapshot.activeProjectile) {
       this._setStatus(this._formatStatus(this.currentLevelConfig, snapshot));
     }
+  },
+
+  lateUpdate: function (dt) {
+    if (this.isSelectingLevel || this.isGameplayPaused || this.isRestarting) {
+      return;
+    }
+    if (!this.currentLevelConfig || !this.gameManager || !this.levelRenderer) {
+      return;
+    }
+    var fallingMarbleSystem = this.gameManager.systems.fallingMarbleSystem;
+    if (!fallingMarbleSystem || typeof fallingMarbleSystem.processPendingEliminationPresentationRelease !== "function") {
+      throw new Error("GameBootstrap lateUpdate requires FallingMarbleSystem.processPendingEliminationPresentationRelease.");
+    }
+    if (!fallingMarbleSystem.processPendingEliminationPresentationRelease(dt)) {
+      return;
+    }
+    var snapshot = this.gameManager.getRuntimeSnapshot();
+    this.levelRenderer.refreshRuntime(this.currentLevelConfig, snapshot, {
+      scope: RUNTIME_REFRESH_SCOPE.FALLING
+    });
   },
 
   _bindInput: function () {

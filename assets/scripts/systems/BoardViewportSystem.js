@@ -77,10 +77,7 @@ function computeDirectDisplayOffsetY(cells) {
   return computeOffsetForTopRowAtHud(cells);
 }
 
-function computeIntroTargetOffsetY(cells, startOffsetY) {
-  if (typeof startOffsetY !== "number" || !isFinite(startOffsetY)) {
-    throw new Error("BoardViewportSystem intro start offset must be finite.");
-  }
+function computeIntroTargetOffsetY(cells) {
   var occupiedRows = collectOccupiedRows(cells);
   var logicalSpan = occupiedRows[occupiedRows.length - 1] - occupiedRows[0] + 1;
   if (logicalSpan <= BoardViewportConfig.targetVisibleRows) {
@@ -166,7 +163,6 @@ BoardViewportSystem.prototype.planIntroPosition = function (cells) {
   }
 
   var occupiedRows = collectOccupiedRows(cells);
-  var bottomRow = occupiedRows[occupiedRows.length - 1];
   var logicalSpan = occupiedRows[occupiedRows.length - 1] - occupiedRows[0] + 1;
   var startOffsetY;
   var targetOffsetY;
@@ -175,8 +171,8 @@ BoardViewportSystem.prototype.planIntroPosition = function (cells) {
     targetOffsetY = computeDirectDisplayOffsetY(cells);
     startOffsetY = targetOffsetY;
   } else {
-    startOffsetY = computeOffsetForBottomRowAtHudSlot(bottomRow, BoardViewportConfig.introVisibleRows);
-    targetOffsetY = computeIntroTargetOffsetY(cells, startOffsetY);
+    startOffsetY = computeDirectDisplayOffsetY(cells);
+    targetOffsetY = computeIntroTargetOffsetY(cells);
   }
 
   this.minOffsetY = computeOffsetForTopRowAtHud(cells);
@@ -250,16 +246,27 @@ BoardViewportSystem.prototype.shiftOffsetYByRows = function (rowCount) {
   if (!Number.isInteger(rowCount)) {
     throw new Error("BoardViewportSystem.shiftOffsetYByRows requires integer rowCount.");
   }
+  if (this.isMoving()) {
+    throw new Error("BoardViewportSystem.shiftOffsetYByRows cannot start while viewport is moving.");
+  }
   var nextOffsetY = this.offsetY - rowCount * BoardLayout.rowHeight;
   if (nextOffsetY > this.maxOffsetY) {
     throw new Error("BoardViewportSystem offsetY cannot move above top HUD limit.");
   }
-  this.offsetY = nextOffsetY;
-  this.targetOffsetY = this.offsetY;
-  this.phase = "idle";
-  this.moveDurationSec = 0;
+  if (Math.abs(nextOffsetY - this.offsetY) <= 0.5) {
+    this.targetOffsetY = this.offsetY;
+    this.phase = "idle";
+    this.moveDurationSec = 0;
+    this.moveElapsedSec = 0;
+    return this.offsetY;
+  }
+  var rowDelta = Math.abs(nextOffsetY - this.offsetY) / BoardLayout.rowHeight;
+  this.moveStartOffsetY = this.offsetY;
+  this.targetOffsetY = nextOffsetY;
+  this.moveDurationSec = BoardViewportConfig.gameplayMoveDurationPerRowSec * rowDelta;
   this.moveElapsedSec = 0;
-  return this.offsetY;
+  this.phase = "settling";
+  return nextOffsetY;
 };
 
 BoardViewportSystem.prototype.update = function (dt) {

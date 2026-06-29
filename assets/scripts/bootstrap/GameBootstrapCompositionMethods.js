@@ -493,6 +493,8 @@ module.exports = {
         levelManager: this.levelManager
       });
       this.levelRenderer = new LevelRenderer(this.node);
+      this.levelRenderer.setFairyAssistSystem(this.gameManager.systems.fairyAssistSystem);
+      this.levelRenderer.setFallingMarbleSystem(this.gameManager.systems.fallingMarbleSystem);
       this.levelRenderer.setLoseAdPresentation({
         showVideoIcon: this._hasRewardedVideoAdConfig()
       });

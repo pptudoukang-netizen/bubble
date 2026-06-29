@@ -2,14 +2,37 @@
 
 var EFFECT_RESOURCE_PATH = "effects/BubbleShatter";
 var SHATTER_LIFETIME = 0.48;
+var SHATTER_SEQUENCE_INTERVAL_SEC = 0.02;
 var FIRST_FRAME_BURST_TIME = 0.055;
 var EXPANDED_QUAD_SCALE = 3;
 var SHATTER_SPREAD = 0.92;
 var SHATTER_GRAVITY = 0.5;
 var SHATTER_ROTATION = 2.4;
 var SHATTER_FADE_START = 0.62;
+var ELIMINATION_DROP_RELEASE_EARLY_SEC = 0.5;
 var UV_EPSILON = 0.000001;
 var UV_CORNER_EPSILON = 0.0001;
+var SCHEDULE_ONCE_REPEAT = 0;
+
+function requireDirectorScheduler(description) {
+  if (!cc || !cc.director || typeof cc.director.getScheduler !== "function") {
+    throw new Error(description + " requires cc.director.getScheduler.");
+  }
+  var scheduler = cc.director.getScheduler();
+  if (!scheduler || typeof scheduler.schedule !== "function" || typeof scheduler.unschedule !== "function") {
+    throw new Error(description + " requires director scheduler APIs.");
+  }
+  return scheduler;
+}
+
+function resolvePresentationReleaseDelaySec(lastShatterStartDelaySec) {
+  var safeLastStartDelaySec = assertFiniteNumber(lastShatterStartDelaySec, "Presentation release last shatter start delay");
+  if (safeLastStartDelaySec < 0) {
+    throw new Error("Presentation release last shatter start delay must be non-negative.");
+  }
+  var shatterVisualLeadSec = SHATTER_LIFETIME * SHATTER_FADE_START - FIRST_FRAME_BURST_TIME;
+  return Math.max(0, safeLastStartDelaySec + shatterVisualLeadSec - ELIMINATION_DROP_RELEASE_EARLY_SEC);
+}
 
 function assertFiniteNumber(value, fieldName) {
   var numberValue = Number(value);
@@ -204,7 +227,20 @@ function BubbleShatterRenderer(options) {
   this.nodePool = [];
   this.currentResolution = null;
   this.playedCellIds = {};
+  this.pendingCellIds = {};
+  this.pendingScheduleCallbacks = {};
+  this.presentationCompleteHandler = null;
+  this.presentationTrackedResolution = null;
+  this.presentationCompleteNotified = false;
+  this.presentationReleaseCallback = null;
 }
+
+BubbleShatterRenderer.prototype.setPresentationCompleteHandler = function (handler) {
+  if (typeof handler !== "function") {
+    throw new Error("BubbleShatterRenderer requires presentationCompleteHandler function.");
+  }
+  this.presentationCompleteHandler = handler;
+};
 
 BubbleShatterRenderer.prototype.setLayer = function (layer) {
   if (!layer || !layer.isValid) {
@@ -250,10 +286,246 @@ BubbleShatterRenderer.prototype.preload = function () {
 BubbleShatterRenderer.prototype.reset = function () {
   var active = this.activeComponents.slice();
   active.forEach(function (component) {
-    this._releaseComponent(component);
+    this._releaseComponent(component, true);
   }, this);
+  this._cancelPendingSchedules();
+  this._resetPresentationTracking(true);
   this.currentResolution = null;
   this.playedCellIds = {};
+};
+
+BubbleShatterRenderer.prototype._resetPresentationTracking = function (notifyComplete) {
+  this._cancelPendingPresentationRelease();
+  if (notifyComplete === true) {
+    this._notifyPresentationComplete();
+  }
+  this.presentationTrackedResolution = null;
+  this.presentationCompleteNotified = false;
+};
+
+BubbleShatterRenderer.prototype._armPresentationRelease = function (resolution, playPlan) {
+  if (!Array.isArray(playPlan)) {
+    throw new Error("Bubble shatter presentation release requires playPlan array.");
+  }
+  this.presentationTrackedResolution = resolution;
+  this.presentationCompleteNotified = false;
+  if (!playPlan.length) {
+    this._notifyPresentationComplete();
+    return;
+  }
+  var lastEntry = playPlan[playPlan.length - 1];
+  if (!Number.isFinite(lastEntry.delaySec) || lastEntry.delaySec < 0) {
+    throw new Error("Bubble shatter presentation release requires non-negative last delaySec.");
+  }
+  var releaseDelaySec = resolvePresentationReleaseDelaySec(lastEntry.delaySec);
+  this._schedulePresentationRelease(releaseDelaySec);
+};
+
+BubbleShatterRenderer.prototype._schedulePresentationRelease = function (delaySec) {
+  if (!Number.isFinite(delaySec) || delaySec < 0) {
+    throw new Error("Bubble shatter presentation release delaySec must be a non-negative number.");
+  }
+  this._cancelPendingPresentationRelease();
+  if (delaySec <= 0) {
+    this._notifyPresentationComplete();
+    return;
+  }
+  if (!this.layer || !this.layer.isValid) {
+    throw new Error("Bubble shatter presentation release requires mounted layer.");
+  }
+  var self = this;
+  this.presentationReleaseCallback = function () {
+    self.presentationReleaseCallback = null;
+    self._notifyPresentationComplete();
+  };
+  var scheduler = requireDirectorScheduler("Bubble shatter presentation release");
+  scheduler.schedule(this.presentationReleaseCallback, this.layer, 0, SCHEDULE_ONCE_REPEAT, delaySec, false);
+};
+
+BubbleShatterRenderer.prototype._cancelPendingPresentationRelease = function () {
+  if (
+    this.presentationReleaseCallback &&
+    this.layer &&
+    this.layer.isValid
+  ) {
+    var scheduler = requireDirectorScheduler("Bubble shatter presentation release cancel");
+    scheduler.unschedule(this.presentationReleaseCallback, this.layer);
+  }
+  this.presentationReleaseCallback = null;
+};
+
+BubbleShatterRenderer.prototype._notifyPresentationComplete = function () {
+  if (this.presentationCompleteNotified) {
+    return;
+  }
+  this.presentationCompleteNotified = true;
+  if (typeof this.presentationCompleteHandler !== "function") {
+    return;
+  }
+  this.presentationCompleteHandler();
+};
+
+BubbleShatterRenderer.prototype.isCellShatterPending = function (cellId) {
+  if (typeof cellId !== "string" && typeof cellId !== "number") {
+    throw new Error("Bubble shatter pending lookup requires cell id.");
+  }
+  return !!this.pendingCellIds[String(cellId)];
+};
+
+BubbleShatterRenderer.prototype._cancelPendingSchedules = function () {
+  if (this.layer && this.layer.isValid && Object.keys(this.pendingScheduleCallbacks).length > 0) {
+    var scheduler = requireDirectorScheduler("Bubble shatter pending schedule cancel");
+    for (var cellId in this.pendingScheduleCallbacks) {
+      if (Object.prototype.hasOwnProperty.call(this.pendingScheduleCallbacks, cellId)) {
+        scheduler.unschedule(this.pendingScheduleCallbacks[cellId], this.layer);
+      }
+    }
+  }
+  this.pendingCellIds = {};
+  this.pendingScheduleCallbacks = {};
+};
+
+BubbleShatterRenderer.prototype._hideBoardBubbleNode = function (cellId, boardBubbleNodes) {
+  var sourceNode = boardBubbleNodes[String(cellId)];
+  if (sourceNode && sourceNode.isValid) {
+    sourceNode.active = false;
+  }
+};
+
+BubbleShatterRenderer.prototype._buildPlayPlan = function (resolution) {
+  var matchedById = {};
+  resolution.matched.forEach(function (cell) {
+    matchedById[String(cell.id)] = cell;
+  });
+
+  var entries = [];
+  if (Array.isArray(resolution.eliminationSequence) && resolution.eliminationSequence.length > 0) {
+    resolution.eliminationSequence.forEach(function (sequenceEntry) {
+      if (!sequenceEntry || typeof sequenceEntry !== "object" || Array.isArray(sequenceEntry)) {
+        throw new Error("Bubble shatter elimination sequence entry must be an object.");
+      }
+      var cellId = String(sequenceEntry.cellId);
+      var cell = matchedById[cellId];
+      if (!cell) {
+        throw new Error("Bubble shatter elimination sequence cell is missing from matched: " + cellId);
+      }
+      if (!this._isEligibleCell(cell)) {
+        return;
+      }
+      if (!Number.isFinite(Number(sequenceEntry.delayMs)) || Number(sequenceEntry.delayMs) < 0) {
+        throw new Error("Bubble shatter elimination sequence delayMs must be a non-negative number: " + cellId);
+      }
+      entries.push({
+        cell: cell,
+        delaySec: Number(sequenceEntry.delayMs) / 1000,
+        worldPosition: sequenceEntry.worldPosition
+      });
+    }, this);
+    return entries;
+  }
+
+  var eligibleIndex = 0;
+  resolution.matched.forEach(function (cell) {
+    if (!this._isEligibleCell(cell)) {
+      return;
+    }
+    entries.push({
+      cell: cell,
+      delaySec: eligibleIndex * SHATTER_SEQUENCE_INTERVAL_SEC,
+      worldPosition: null
+    });
+    eligibleIndex += 1;
+  }, this);
+  return entries;
+};
+
+BubbleShatterRenderer.prototype._scheduleCellShatter = function (
+  entry,
+  resolution,
+  boardSnapshot,
+  boardBubbleNodes,
+  spriteFrameCache
+) {
+  var cell = entry.cell;
+  var cellId = String(cell.id);
+  if (this.playedCellIds[cellId] || this.pendingCellIds[cellId]) {
+    return;
+  }
+
+  var delaySec = entry.delaySec;
+  if (!Number.isFinite(delaySec) || delaySec < 0) {
+    throw new Error("Bubble shatter delay must be a non-negative finite number: " + cellId);
+  }
+
+  var playPosition = this._resolveCellPosition(cell, resolution, boardSnapshot, boardBubbleNodes, entry.worldPosition);
+  var self = this;
+  var callback = function () {
+    delete self.pendingCellIds[cellId];
+    delete self.pendingScheduleCallbacks[cellId];
+    self._playCellShatter(cell, playPosition, resolution, boardSnapshot, boardBubbleNodes, spriteFrameCache);
+  };
+
+  if (delaySec <= 0) {
+    callback();
+    return;
+  }
+
+  this.pendingCellIds[cellId] = true;
+  this.pendingScheduleCallbacks[cellId] = callback;
+  var scheduler = requireDirectorScheduler("Bubble shatter delayed play");
+  scheduler.schedule(callback, this.layer, 0, SCHEDULE_ONCE_REPEAT, delaySec, false);
+};
+
+BubbleShatterRenderer.prototype._playCellShatter = function (
+  cell,
+  presetPosition,
+  resolution,
+  boardSnapshot,
+  boardBubbleNodes,
+  spriteFrameCache
+) {
+  if (typeof cell.id !== "string" && typeof cell.id !== "number") {
+    throw new Error("Bubble shatter matched cell requires id.");
+  }
+  var cellId = String(cell.id);
+  if (this.playedCellIds[cellId]) {
+    return;
+  }
+  if (!Number.isInteger(cell.row) || !Number.isInteger(cell.col)) {
+    throw new Error("Bubble shatter matched cell requires integer coordinates: " + cellId);
+  }
+
+  this._hideBoardBubbleNode(cellId, boardBubbleNodes);
+
+  var ballCode = this.resolveBallCode(cell);
+  if (typeof ballCode !== "string" || !ballCode) {
+    throw new Error("Bubble shatter matched cell requires ball visual code: " + cellId);
+  }
+  var spritePath = this.ballResources[ballCode];
+  if (typeof spritePath !== "string" || !spritePath) {
+    throw new Error("Bubble shatter ball resource is missing: " + ballCode);
+  }
+  var spriteFrame = spriteFrameCache[spritePath];
+  if (!spriteFrame || !spriteFrame.isValid) {
+    throw new Error("Bubble shatter SpriteFrame is not preloaded: " + spritePath);
+  }
+
+  var position = this._resolveCellPosition(cell, resolution, boardSnapshot, boardBubbleNodes, presetPosition);
+  var component = this._acquireComponent();
+  component.node.name = "BubbleShatter_" + cellId;
+  component.node.parent = this.layer;
+  component.node.setPosition(position.x, position.y);
+  component.node.active = true;
+  component.initialize({
+    effectAsset: this.effectAsset,
+    spriteFrame: spriteFrame,
+    width: this.bubbleWidth,
+    height: this.bubbleHeight,
+    seed: hashStringToUnit(cellId),
+    releaseHandler: this._releaseComponent.bind(this)
+  });
+  this.activeComponents.push(component);
+  this.playedCellIds[cellId] = true;
 };
 
 BubbleShatterRenderer.prototype._isEligibleCell = function (cell) {
@@ -275,7 +547,23 @@ BubbleShatterRenderer.prototype._isEligibleCell = function (cell) {
   throw new Error("Unsupported bubble shatter entityCategory: " + cell.entityCategory);
 };
 
-BubbleShatterRenderer.prototype._resolveCellPosition = function (cell, resolution, boardSnapshot, boardBubbleNodes) {
+BubbleShatterRenderer.prototype._resolveCellPosition = function (
+  cell,
+  resolution,
+  boardSnapshot,
+  boardBubbleNodes,
+  presetPosition
+) {
+  if (
+    presetPosition &&
+    typeof presetPosition === "object" &&
+    !Array.isArray(presetPosition) &&
+    Number.isFinite(Number(presetPosition.x)) &&
+    Number.isFinite(Number(presetPosition.y))
+  ) {
+    return cc.v2(Number(presetPosition.x), Number(presetPosition.y));
+  }
+
   var cellId = String(cell.id);
   var sourceNode = boardBubbleNodes[cellId];
   if (sourceNode && sourceNode.isValid) {
@@ -315,7 +603,7 @@ BubbleShatterRenderer.prototype._acquireComponent = function () {
   return component;
 };
 
-BubbleShatterRenderer.prototype._releaseComponent = function (component) {
+BubbleShatterRenderer.prototype._releaseComponent = function (component, skipPresentationFinish) {
   if (!component || !component.node || !component.node.isValid) {
     throw new Error("Bubble shatter release requires valid component.");
   }
@@ -353,54 +641,18 @@ BubbleShatterRenderer.prototype.playResolution = function (resolution, boardSnap
   }
 
   if (this.currentResolution !== resolution) {
+    this._cancelPendingSchedules();
+    this._resetPresentationTracking(true);
     this.currentResolution = resolution;
     this.playedCellIds = {};
   }
 
-  resolution.matched.forEach(function (cell) {
-    if (!this._isEligibleCell(cell)) {
-      return;
-    }
-    if (typeof cell.id !== "string" && typeof cell.id !== "number") {
-      throw new Error("Bubble shatter matched cell requires id.");
-    }
-    var cellId = String(cell.id);
-    if (this.playedCellIds[cellId]) {
-      return;
-    }
-    if (!Number.isInteger(cell.row) || !Number.isInteger(cell.col)) {
-      throw new Error("Bubble shatter matched cell requires integer coordinates: " + cellId);
-    }
-
-    var ballCode = this.resolveBallCode(cell);
-    if (typeof ballCode !== "string" || !ballCode) {
-      throw new Error("Bubble shatter matched cell requires ball visual code: " + cellId);
-    }
-    var spritePath = this.ballResources[ballCode];
-    if (typeof spritePath !== "string" || !spritePath) {
-      throw new Error("Bubble shatter ball resource is missing: " + ballCode);
-    }
-    var spriteFrame = spriteFrameCache[spritePath];
-    if (!spriteFrame || !spriteFrame.isValid) {
-      throw new Error("Bubble shatter SpriteFrame is not preloaded: " + spritePath);
-    }
-
-    var position = this._resolveCellPosition(cell, resolution, boardSnapshot, boardBubbleNodes);
-    var component = this._acquireComponent();
-    component.node.name = "BubbleShatter_" + cellId;
-    component.node.parent = this.layer;
-    component.node.setPosition(position.x, position.y);
-    component.node.active = true;
-    component.initialize({
-      effectAsset: this.effectAsset,
-      spriteFrame: spriteFrame,
-      width: this.bubbleWidth,
-      height: this.bubbleHeight,
-      seed: hashStringToUnit(cellId),
-      releaseHandler: this._releaseComponent.bind(this)
-    });
-    this.activeComponents.push(component);
-    this.playedCellIds[cellId] = true;
+  var playPlan = this._buildPlayPlan(resolution);
+  if (this.presentationTrackedResolution !== resolution) {
+    this._armPresentationRelease(resolution, playPlan);
+  }
+  playPlan.forEach(function (entry) {
+    this._scheduleCellShatter(entry, resolution, boardSnapshot, boardBubbleNodes, spriteFrameCache);
   }, this);
 };
 

@@ -20,6 +20,16 @@ function requireFinitePoint(point, fieldName) {
   return point;
 }
 
+function countDropHitsOnFairy(drop, fairyId) {
+  var hitCount = 0;
+  for (var index = 0; index < drop.hitFairyIds.length; index += 1) {
+    if (drop.hitFairyIds[index] === fairyId) {
+      hitCount += 1;
+    }
+  }
+  return hitCount;
+}
+
 function findColorRule(eliminatedCount) {
   if (!Number.isInteger(eliminatedCount) || eliminatedCount <= 0) {
     throw new Error("Fairy assist color requires a positive elimination count.");
@@ -40,6 +50,7 @@ function FairyAssistSystem() {
   this.revision = 0;
   this._fairySerial = 0;
   this._entrySerial = 0;
+  this.collisionCentersSynced = false;
   this._resetSlots();
 }
 
@@ -68,7 +79,34 @@ FairyAssistSystem.prototype.configureLevel = function (levelConfig) {
   this.revision = 0;
   this._fairySerial = 0;
   this._entrySerial = 0;
+  this.collisionCentersSynced = false;
   this._resetSlots();
+  return this;
+};
+
+FairyAssistSystem.prototype.syncCollisionCenters = function (centers) {
+  if (!Array.isArray(centers) || centers.length !== this.slots.length) {
+    throw new Error("FairyAssistSystem.syncCollisionCenters requires one center per slot.");
+  }
+
+  for (var index = 0; index < centers.length; index += 1) {
+    var center = centers[index];
+    if (!center || center.index !== index) {
+      throw new Error("FairyAssistSystem.syncCollisionCenters requires contiguous slot indexes.");
+    }
+    var slot = this.slots[index];
+    if (!slot || slot.index !== index) {
+      throw new Error("FairyAssistSystem slot state is inconsistent at index " + index + ".");
+    }
+    var boardPoint = requireFinitePoint(center, "Fairy collision center at index " + index);
+    slot.position.x = boardPoint.x;
+    slot.position.y = boardPoint.y;
+    if (slot.fairy) {
+      slot.fairy.position.x = boardPoint.x;
+      slot.fairy.position.y = boardPoint.y;
+    }
+  }
+  this.collisionCentersSynced = true;
   return this;
 };
 
@@ -200,6 +238,9 @@ FairyAssistSystem.prototype.resolveAfterShot = function (resolution, grid) {
 };
 
 FairyAssistSystem.prototype.resolveFirstCollision = function (drop, bubbleRadius) {
+  if (!this.collisionCentersSynced) {
+    throw new Error("FairyAssistSystem collision requires board-space centers synced from renderer.");
+  }
   if (!drop || !drop.position || !Array.isArray(drop.hitFairyIds)) {
     throw new Error("FairyAssistSystem collision requires drop position and hitFairyIds.");
   }
@@ -212,7 +253,10 @@ FairyAssistSystem.prototype.resolveFirstCollision = function (drop, bubbleRadius
   var collisionDistanceSq = collisionDistance * collisionDistance;
   for (var index = 0; index < this.slots.length; index += 1) {
     var fairy = this.slots[index].fairy;
-    if (fairy === null || drop.hitFairyIds.indexOf(fairy.id) !== -1) {
+    if (fairy === null) {
+      continue;
+    }
+    if (countDropHitsOnFairy(drop, fairy.id) >= FairyAssistConfig.maxCollisionsPerFairy) {
       continue;
     }
     var dx = drop.position.x - fairy.position.x;

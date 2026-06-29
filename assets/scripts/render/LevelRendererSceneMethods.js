@@ -7,6 +7,7 @@ function attachLevelRendererSceneMethods(LevelRenderer, deps) {
   var SpecialAnimationTiming = deps.SpecialAnimationTiming;
   var BALL_RESOURCES = deps.BALL_RESOURCES;
   var WIN_BOTTLE_RESOURCES = deps.WIN_BOTTLE_RESOURCES;
+  var WIN_TARGET_STATUS_RESOURCES = deps.WIN_TARGET_STATUS_RESOURCES;
   var JAR_RESOURCES = deps.JAR_RESOURCES;
   var JAR_MASK_RESOURCES = deps.JAR_MASK_RESOURCES;
   var REWARD_ITEM_RESOURCES = deps.REWARD_ITEM_RESOURCES;
@@ -89,7 +90,7 @@ function attachLevelRendererSceneMethods(LevelRenderer, deps) {
   var clearChildren = deps.clearChildren;
   var getOrCreateChild = deps.getOrCreateChild;
   var buildLoseTargetEntries = deps.buildLoseTargetEntries;
-  var buildWinCompletedTargetEntries = deps.buildWinCompletedTargetEntries;
+  var buildWinTargetEntries = deps.buildWinTargetEntries;
   var buildWinCollectEntries = deps.buildWinCollectEntries;
   var buildHudTargetDisplayData = deps.buildHudTargetDisplayData;
   var applyIceSnowballHudDisplayProgress = deps.applyIceSnowballHudDisplayProgress;
@@ -650,6 +651,9 @@ LevelRenderer.prototype.syncBoardLayoutHudBottomLine = function () {
   }
   this._flushGameViewScaffoldLayout([gameViewNode, hudPanelNode]);
   BoardLayout.syncHudBottomLineYFromHudPanel(hudPanelNode, this.layers.board);
+  if (this._fairyAssistSystem) {
+    this.syncFairyAssistCollisionCenters();
+  }
 };
 
 LevelRenderer.prototype._moveGameViewChildToLayer = function (gameViewNode, childName, targetLayer, targetName) {
@@ -1886,7 +1890,12 @@ LevelRenderer.prototype._resolveIceSnowballCollectStartPositionInGameView = func
     return this._convertBoardPointToGameView(entry.x, entry.y);
   }
 
-  if (!boardSnapshot || !Number.isInteger(boardSnapshot.maxColumns) || !Number.isInteger(boardSnapshot.viewportOffsetY)) {
+  if (
+    !boardSnapshot ||
+    !Number.isInteger(boardSnapshot.maxColumns) ||
+    typeof boardSnapshot.viewportOffsetY !== "number" ||
+    !isFinite(boardSnapshot.viewportOffsetY)
+  ) {
     throw new Error("Ice snowball collect entry position requires board snapshot.");
   }
   if (!Number.isInteger(entry.row) || !Number.isInteger(entry.col)) {
@@ -2741,6 +2750,7 @@ LevelRenderer.prototype._syncBarrierHammerStoneHints = function (runtimeSnapshot
 
 LevelRenderer.prototype._renderBoard = function (boardSnapshot) {
   this.lastBoardVersion = boardSnapshot.version;
+  this.lastBoardViewportOffsetY = boardSnapshot.viewportOffsetY;
   this.boardRenderTick += 1;
   var currentTick = this.boardRenderTick;
   if (!this.boardCellRenderKeys || typeof this.boardCellRenderKeys !== "object") {
@@ -2875,6 +2885,9 @@ LevelRenderer.prototype._recycleInactiveBoardBubbleNodes = function (activeTick)
     if (node && node.__boardTick === activeTick) {
       continue;
     }
+    if (this.bubbleShatterRenderer && this.bubbleShatterRenderer.isCellShatterPending(cellId)) {
+      continue;
+    }
 
     if (node) {
       this._removeBarrierHammerHintNodeByCellId(cellId);
@@ -2913,7 +2926,7 @@ LevelRenderer.prototype._renderFallingDrops = function (runtimeSnapshot) {
     if (!dropId) {
       return;
     }
-    if (typeof drop.startDelay === "number" && drop.startDelay > 0) {
+    if (!drop.active) {
       return;
     }
 
@@ -2921,7 +2934,7 @@ LevelRenderer.prototype._renderFallingDrops = function (runtimeSnapshot) {
     dropNode.__fallingTick = currentTick;
     dropNode.setPosition(drop.position.x, drop.position.y);
     dropNode.angle = drop.rotation || 0;
-    dropNode.opacity = 230;
+    dropNode.opacity = 255;
     this._applyBoardBubbleVisualCached(dropNode, drop, BOARD_BUBBLE_SIZE);
   }, this);
   this._recycleInactiveFallingDropNodes(currentTick);
@@ -3655,7 +3668,8 @@ LevelRenderer.prototype._playIceThawShake = function (runtimeSnapshot) {
       if (
         !boardSnapshot ||
         !Number.isInteger(boardSnapshot.maxColumns) ||
-        !Number.isInteger(boardSnapshot.viewportOffsetY) ||
+        typeof boardSnapshot.viewportOffsetY !== "number" ||
+        !isFinite(boardSnapshot.viewportOffsetY) ||
         !Number.isInteger(cell.row) ||
         !Number.isInteger(cell.col)
       ) {
@@ -4675,7 +4689,9 @@ LevelRenderer.prototype._renderBottomJars = function (levelConfig, runtimeSnapsh
 
   jarColors.forEach(function (colorCode, index) {
     var jarNode = this._instantiateOrCreate(PREFAB_PATHS.jarItem, this.layers.jars, "BottomJar_" + index);
-    jarNode.setPosition(jarPositions[index] || 0, getJarBaseY() + JAR_RENDER_Y_OFFSET);
+    var jarYOffset = BoardLayout.getJarRenderYOffset(index, jarCount);
+    jarNode.setPosition(jarPositions[index] || 0, getJarBaseY() + JAR_RENDER_Y_OFFSET + jarYOffset);
+    jarNode.zIndex = BoardLayout.getJarRenderZIndex(index, jarCount);
     jarNode.setScale(1);
     this._applyJarVisual(jarNode, colorCode);
     this._applyJarMaskVisual(jarNode, colorCode);
@@ -4714,9 +4730,10 @@ LevelRenderer.prototype._renderJarOcclusionLayer = function (jarColors, jarPosit
 
     var maskNode = new cc.Node("JarOcclusion_" + index);
     maskNode.parent = this.layers.jarOcclusion;
-    maskNode.setPosition(jarPositions[index] || 0, getJarBaseY());
+    var jarYOffset = BoardLayout.getJarRenderYOffset(index, jarColors.length);
+    maskNode.setPosition(jarPositions[index] || 0, getJarBaseY() + jarYOffset);
     maskNode.setScale(1);
-    maskNode.zIndex = index;
+    maskNode.zIndex = BoardLayout.getJarRenderZIndex(index, jarColors.length);
     maskNode.opacity = 255;
     ensureSprite(maskNode, spriteFrame);
     maskNode.setContentSize(JAR_RENDER_SIZE);
@@ -4885,17 +4902,26 @@ LevelRenderer.prototype._renderWinMaxCombo = function (scoreBgNode, runtimeSnaps
   this._setWinValueText(batterValueNode, String(comboDisplay));
 };
 
-LevelRenderer.prototype._renderWinCollectList = function (winContent, levelConfig, runtimeSnapshot) {
+LevelRenderer.prototype._renderWinCollectList = function (winContent, levelConfig, runtimeSnapshot, targetEntries) {
   var collectBgNode = winContent ? winContent.getChildByName("collect_bg") : null;
   if (!collectBgNode) {
     throw new Error("WinView requires collect_bg.");
+  }
+  if (!Array.isArray(targetEntries)) {
+    throw new Error("WinView collect list requires target entries.");
   }
 
   var collectListNode = requireWinChild(collectBgNode, "collect_list", "collect_bg");
   var templateNode = requireWinChild(collectListNode, "bottle", "collect_list");
   var entries = buildWinCollectEntries(levelConfig, runtimeSnapshot);
+  var hasNoCompletedTargets = targetEntries.length > 0 && targetEntries.every(function (entry) {
+    if (!entry || typeof entry.completed !== "boolean") {
+      throw new Error("WinView target entry requires completed state.");
+    }
+    return !entry.completed;
+  });
 
-  if (entries.length === 0) {
+  if (entries.length === 0 && !hasNoCompletedTargets) {
     collectBgNode.active = false;
     return;
   }
@@ -4945,15 +4971,17 @@ LevelRenderer.prototype._renderWinCollectList = function (winContent, levelConfi
   }
 };
 
-LevelRenderer.prototype._renderWinTargetList = function (winContent, levelConfig, runtimeSnapshot) {
+LevelRenderer.prototype._renderWinTargetList = function (winContent, levelConfig, runtimeSnapshot, entries) {
   var targetBgNode = winContent ? winContent.getChildByName("target_bg") : null;
   if (!targetBgNode) {
     throw new Error("WinView requires target_bg.");
   }
+  if (!Array.isArray(entries)) {
+    throw new Error("WinView target list requires target entries.");
+  }
 
   var targetListNode = requireWinChild(targetBgNode, "target_list", "target_bg");
   var templateNode = requireWinChild(targetListNode, "target", "target_list");
-  var entries = buildWinCompletedTargetEntries(levelConfig, runtimeSnapshot);
 
   if (entries.length === 0) {
     targetBgNode.active = false;
@@ -4994,7 +5022,13 @@ LevelRenderer.prototype._renderWinTargetList = function (winContent, levelConfig
     ensureSprite(targetNode, spriteFrame);
     var targetDesNode = requireWinChild(targetNode, "target_des", targetNode.name);
     var gouNode = requireWinChild(targetNode, "gou", targetNode.name);
+    var statusPath = entry.completed ? WIN_TARGET_STATUS_RESOURCES.complete : WIN_TARGET_STATUS_RESOURCES.incomplete;
+    var statusSpriteFrame = this.spriteFrameCache[statusPath];
+    if (!statusSpriteFrame) {
+      throw new Error("WinView target status sprite is not preloaded: " + statusPath);
+    }
     this._setWinValueText(targetDesNode, entry.description);
+    ensureSprite(gouNode, statusSpriteFrame);
     gouNode.active = true;
   }, this);
 
@@ -5270,7 +5304,7 @@ LevelRenderer.prototype._playWinPopupOpenAnimation = function (winContent, starR
       maxComboStreak: Math.floor(winStats.maxComboStreak),
       rewardItems: getRuntimeWinClearRewardItems(runtimeSnapshot),
       collectEntries: buildWinCollectEntries(levelConfig, runtimeSnapshot),
-      targetEntries: buildWinCompletedTargetEntries(levelConfig, runtimeSnapshot),
+      targetEntries: buildWinTargetEntries(levelConfig, runtimeSnapshot),
       starRating: Math.floor(starRating)
     });
   }
@@ -5453,12 +5487,13 @@ LevelRenderer.prototype._renderWinView = function (runtimeSnapshot) {
   var totalScore = requireFiniteWinNumber(winStats.totalScore, "WinView totalScore");
   var scoreBgNode = winContent ? winContent.getChildByName("score_bg") : null;
   var rewardItems = getRuntimeWinClearRewardItems(runtimeSnapshot);
+  var targetEntries = buildWinTargetEntries(this.currentLevelConfig, runtimeSnapshot);
   this._setWinValueText(requireWinChild(scoreBgNode, "score_value", "score_bg"), String(totalScore));
   this._renderWinAwardInfo(winContent, rewardItems);
   this._renderWinMaxScoreStamp(scoreBgNode, runtimeSnapshot);
   this._renderWinMaxCombo(scoreBgNode, runtimeSnapshot);
-  this._renderWinCollectList(winContent, this.currentLevelConfig, runtimeSnapshot);
-  this._renderWinTargetList(winContent, this.currentLevelConfig, runtimeSnapshot);
+  this._renderWinCollectList(winContent, this.currentLevelConfig, runtimeSnapshot, targetEntries);
+  this._renderWinTargetList(winContent, this.currentLevelConfig, runtimeSnapshot, targetEntries);
 
   var starRating = resolveWinStarRating(this.currentLevelConfig, runtimeSnapshot);
   this._renderWinStars(winContent, starRating);

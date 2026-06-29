@@ -541,6 +541,7 @@ function GameManager(options) {
   this._aimGuidePathCache = null;
   this._cachedAdRunPowerupAllowed = null;
   this.cachedBoardVersion = -1;
+  this.cachedBoardViewportOffsetY = null;
   this.cachedBoardSnapshot = null;
   this.cachedJarSnapshotKey = "";
   this.cachedJarSnapshot = null;
@@ -646,6 +647,7 @@ GameManager.prototype.startLevel = function (levelConfig) {
   this._aimGuidePathCache = null;
   this._cachedAdRunPowerupAllowed = null;
   this.cachedBoardVersion = -1;
+  this.cachedBoardViewportOffsetY = null;
   this.cachedBoardSnapshot = null;
   this.cachedJarSnapshotKey = "";
   this.cachedJarSnapshot = null;
@@ -1218,11 +1220,36 @@ GameManager.prototype._drainRuntimeEvents = function () {
 
 GameManager.prototype._getCachedBoardSnapshot = function () {
   var grid = this.systems.bubbleGrid;
-  if (!this.cachedBoardSnapshot || this.cachedBoardVersion !== grid.version) {
+  var viewportOffsetY = grid.getViewportOffsetY();
+  if (
+    !this.cachedBoardSnapshot ||
+    this.cachedBoardVersion !== grid.version ||
+    this.cachedBoardViewportOffsetY !== viewportOffsetY
+  ) {
     this.cachedBoardSnapshot = grid.snapshot();
     this.cachedBoardVersion = grid.version;
+    this.cachedBoardViewportOffsetY = viewportOffsetY;
   }
   return this.cachedBoardSnapshot;
+};
+
+GameManager.prototype.updateBoardViewportIntro = function (dt) {
+  var safeDt = assertFiniteNumber(dt, "GameManager.updateBoardViewportIntro dt");
+  if (safeDt < 0) {
+    throw new Error("GameManager.updateBoardViewportIntro dt must be non-negative.");
+  }
+  var viewport = this.systems.boardViewportSystem;
+  if (!viewport || typeof viewport.update !== "function") {
+    throw new Error("GameManager.updateBoardViewportIntro requires BoardViewportSystem.");
+  }
+  if (!viewport.introActive && !viewport.isMoving()) {
+    return null;
+  }
+  var viewportFinished = viewport.update(safeDt);
+  if (viewportFinished && typeof this._onBoardViewportMoveFinished === "function") {
+    this._onBoardViewportMoveFinished();
+  }
+  return this.getRuntimeSnapshot(this._drainRuntimeEvents(), { refreshScope: "full" });
 };
 
 GameManager.prototype._buildJarSnapshotKey = function () {
@@ -1815,7 +1842,9 @@ GameManager.prototype.useThreeLineElimination = function (expectedRows) {
   var floatingCells = this.systems.supportSystem.findFloatingCells(grid);
   var removedFloating = grid.removeCells(floatingCells);
   var fallingCandidates = removedLineCells.concat(removedFloating);
-  this._registerResolutionDrops(fallingCandidates, grid, resolution);
+  this._registerResolutionDrops(fallingCandidates, grid, resolution, undefined, {
+    matchedCellsForDelay: removedLineCells
+  });
   this.systems.jarCollectorSystem.collect([]);
 
   resolution.floating = removedFloating;
@@ -1873,6 +1902,9 @@ GameManager.prototype.reviveFromAd = function () {
   var gridSpaceResult = this.systems.bubbleGrid.ensureDangerLineSpaceRows(revivePlan.dangerLineSpaceRows);
   if (gridSpaceResult.shiftRows > 0) {
     this._markBoardAdvancedThisFrame();
+    this._pushRuntimeEvent("board_view_move_started", {
+      targetOffsetY: gridSpaceResult.viewportOffsetY
+    });
   }
   var previousRemainingShots = this.remainingShots;
   this.remainingShots = previousRemainingShots + revivePlan.grantedShots;
@@ -2398,11 +2430,14 @@ GameManager.prototype.update = function (dt) {
     }
   }
 
+  var viewportWasMoving = this.systems.boardViewportSystem.isMoving();
   var fallingStep = this.systems.fallingMarbleSystem.update(dt);
+  var surplusUpdated = !!(fallingStep && fallingStep.surplusUpdated);
   var viewportFinished = this.systems.boardViewportSystem.update(dt);
   if (viewportFinished && typeof this._onBoardViewportMoveFinished === "function") {
     this._onBoardViewportMoveFinished();
   }
+  var viewportUpdated = viewportWasMoving || viewportFinished;
   var fallingUpdated = !!(fallingStep && fallingStep.updated);
   var collectedDrops = fallingStep && Array.isArray(fallingStep.collected) ? fallingStep.collected : [];
   var fairyHits = fallingStep && Array.isArray(fallingStep.fairyHits) ? fallingStep.fairyHits : [];
@@ -2538,6 +2573,8 @@ GameManager.prototype.update = function (dt) {
     !collectedDrops.length &&
     !scoreBoostChanged &&
     !splitterSpawned &&
+    !surplusUpdated &&
+    !viewportUpdated &&
     !boardAdvancedThisFrame &&
     !runtimeEvents.length &&
     !timerChanged
@@ -2554,6 +2591,8 @@ GameManager.prototype.update = function (dt) {
     collectedDrops.length ||
     scoreBoostChanged ||
     splitterSpawned ||
+    surplusUpdated ||
+    viewportUpdated ||
     boardAdvancedThisFrame ||
     runtimeEvents.length ||
     timerChanged
@@ -2566,6 +2605,8 @@ GameManager.prototype.update = function (dt) {
       collectedDrops.length === 0 &&
       !scoreBoostChanged &&
       !splitterSpawned &&
+      !surplusUpdated &&
+      !viewportUpdated &&
       !boardAdvancedThisFrame &&
       runtimeEvents.length === 0 &&
       !timerChanged
@@ -2579,6 +2620,8 @@ GameManager.prototype.update = function (dt) {
       collectedDrops.length === 0 &&
       !scoreBoostChanged &&
       !splitterSpawned &&
+      !surplusUpdated &&
+      !viewportUpdated &&
       !boardAdvancedThisFrame &&
       runtimeEvents.length === 0
     ) {
@@ -2589,6 +2632,8 @@ GameManager.prototype.update = function (dt) {
       collectedDrops.length === 0 &&
       !scoreBoostChanged &&
       !splitterSpawned &&
+      !surplusUpdated &&
+      !viewportUpdated &&
       !boardAdvancedThisFrame &&
       runtimeEvents.length === 0 &&
       !timerChanged

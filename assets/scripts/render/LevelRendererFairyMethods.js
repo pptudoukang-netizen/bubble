@@ -448,6 +448,55 @@ function replaceFairyNode(renderer, node, fairy, slotConfig, token) {
 }
 
 function attachLevelRendererFairyMethods(LevelRenderer) {
+  LevelRenderer.prototype.setFairyAssistSystem = function (fairyAssistSystem) {
+    if (!fairyAssistSystem || typeof fairyAssistSystem.syncCollisionCenters !== "function") {
+      throw new Error("LevelRenderer.setFairyAssistSystem requires FairyAssistSystem.");
+    }
+    this._fairyAssistSystem = fairyAssistSystem;
+    return this;
+  };
+
+  LevelRenderer.prototype.syncFairyAssistCollisionCenters = function () {
+    if (!this._fairyAssistSystem) {
+      throw new Error("LevelRenderer.syncFairyAssistCollisionCenters requires bound FairyAssistSystem.");
+    }
+    if (!this.layers || !this.layers.board) {
+      throw new Error("Board layer is required before syncing fairy collision centers.");
+    }
+    var root = requireFairyRoot(this);
+    var boardLayer = this.layers.board;
+    var centers = FairyAssistConfig.slots.map(function (slotConfig) {
+      var slotNode = root.getChildByName(slotConfig.nodeName);
+      if (!slotNode || !slotNode.isValid) {
+        throw new Error("GameView/geniuses requires node " + slotConfig.nodeName + " for collision sync.");
+      }
+      if (typeof slotNode.convertToWorldSpaceAR !== "function") {
+        throw new Error("Fairy slot node must support convertToWorldSpaceAR: " + slotConfig.nodeName + ".");
+      }
+      if (typeof boardLayer.convertToNodeSpaceAR !== "function") {
+        throw new Error("Board layer must support convertToNodeSpaceAR.");
+      }
+      var worldPos = slotNode.convertToWorldSpaceAR(cc.v2(0, 0));
+      var boardPos = boardLayer.convertToNodeSpaceAR(worldPos);
+      if (
+        !boardPos ||
+        typeof boardPos.x !== "number" ||
+        !isFinite(boardPos.x) ||
+        typeof boardPos.y !== "number" ||
+        !isFinite(boardPos.y)
+      ) {
+        throw new Error("Fairy slot collision center conversion failed at " + slotConfig.nodeName + ".");
+      }
+      return {
+        index: slotConfig.index,
+        x: boardPos.x,
+        y: boardPos.y
+      };
+    });
+    this._fairyAssistSystem.syncCollisionCenters(centers);
+    return this;
+  };
+
   LevelRenderer.prototype._renderFairyAssists = function (runtimeSnapshot) {
     if (!runtimeSnapshot || !runtimeSnapshot.systems || !runtimeSnapshot.systems.fairyAssistSystem) {
       throw new Error("Fairy rendering requires runtime FairyAssistSystem snapshot.");
@@ -480,8 +529,8 @@ function attachLevelRendererFairyMethods(LevelRenderer) {
         hideFairyNode(node, hideToken);
         return;
       }
-      if (!fairy.position || fairy.position.x !== slotConfig.x || fairy.position.y !== slotConfig.y) {
-        throw new Error("Fairy snapshot position must match slot " + slotConfig.nodeName + ".");
+      if (!fairy.position) {
+        throw new Error("Fairy snapshot position is required for slot " + slotConfig.nodeName + ".");
       }
 
       if (node.__fairyId === fairy.id) {

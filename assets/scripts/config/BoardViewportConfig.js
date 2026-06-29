@@ -16,15 +16,10 @@ function assertPositiveInteger(value, fieldName) {
 
 var BoardViewportConfig = {
   targetVisibleRows: assertPositiveInteger(10, "targetVisibleRows"),
-  introVisibleRows: assertPositiveInteger(14, "introVisibleRows"),
   minLayoutRows: assertPositiveInteger(7, "minLayoutRows"),
   topCollapseMinEmptySlots: assertPositiveInteger(6, "topCollapseMinEmptySlots"),
   introScrollSpeedPxPerSec: assertPositiveFiniteNumber(320, "introScrollSpeedPxPerSec"),
   gameplayMoveDurationPerRowSec: assertPositiveFiniteNumber(0.30, "gameplayMoveDurationPerRowSec")
 };
-
-if (BoardViewportConfig.introVisibleRows <= BoardViewportConfig.targetVisibleRows) {
-  throw new Error("BoardViewportConfig.introVisibleRows must exceed targetVisibleRows.");
-}
 
 module.exports = BoardViewportConfig;

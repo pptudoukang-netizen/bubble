@@ -157,6 +157,16 @@ function getScrollOffsetY(scrollView) {
   return Math.max(0, Math.floor(Number(offset && offset.y) || 0));
 }
 
+function requirePositiveNodeHeight(node, description) {
+  if (!node || !node.isValid) {
+    throw new Error(description + " is required.");
+  }
+  if (!Number.isFinite(node.height) || node.height <= 0) {
+    throw new Error(description + " height must be positive.");
+  }
+  return node.height;
+}
+
 function setSpriteFrame(sprite, spriteFrame) {
   if (!sprite || !sprite.node || !sprite.node.isValid || !spriteFrame) {
     return;
@@ -286,6 +296,7 @@ function RankingViewController(options) {
   this._rowProxyRoot = null;
   this._rowProxyLayers = {};
   this._rowProxyRecords = [];
+  this._clampingScrollOffset = false;
   this._nodes = this._resolveNodes();
   this._bindActions();
   this.ensureSpriteFrames();
@@ -367,9 +378,9 @@ RankingViewController.prototype._ensureScrollView = function (panel) {
     content.parent = viewport;
   }
   content.name = "content";
-  content.setAnchorPoint(0.5, 0.5);
+  content.setAnchorPoint(0.5, 1);
   content.setContentSize(listWidth, listHeight);
-  content.setPosition(0, 0);
+  content.setPosition(0, listHeight * 0.5);
 
   scrollView.content = content;
   scrollView.node.off(cc.ScrollView.EventType.SCROLLING, this._updateVirtualRows, this);
@@ -677,11 +688,11 @@ RankingViewController.prototype.render = function (entries) {
   if (!this._nodes.viewport || !this._nodes.viewport.isValid) {
     throw new Error("RankingView viewport is required before rendering entries.");
   }
-  var viewportHeight = this._nodes.viewport.height;
+  var viewportHeight = this._getViewportHeight();
   var rowsHeight = (safeEntries.length * ROW_STRIDE) - ROW_GAP;
   var contentHeight = Math.max(viewportHeight, rowsHeight);
   content.setContentSize(LIST_WIDTH, contentHeight);
-  content.setPosition(0, (viewportHeight - contentHeight) * 0.5);
+  content.setPosition(0, viewportHeight * 0.5);
   if (this._nodes.scrollView) {
     this._nodes.scrollView.vertical = rowsHeight > viewportHeight;
   }
@@ -700,7 +711,7 @@ RankingViewController.prototype._ensureRowPool = function () {
     return;
   }
 
-  var visibleCount = Math.ceil(LIST_HEIGHT / ROW_STRIDE) + ROW_POOL_BUFFER;
+  var visibleCount = Math.ceil(this._getViewportHeight() / ROW_STRIDE) + ROW_POOL_BUFFER;
   var targetCount = Math.max(MIN_ROW_POOL_SIZE, Math.min(this._entries.length, visibleCount));
   while (this._rowPool.length < targetCount) {
     var row = this._createRankRow(content);
@@ -755,6 +766,33 @@ RankingViewController.prototype._cachePrefabRankRowRefs = function (row) {
   };
 };
 
+RankingViewController.prototype._getViewportHeight = function () {
+  return requirePositiveNodeHeight(this._nodes.viewport, "RankingView viewport");
+};
+
+RankingViewController.prototype._clampScrollOffsetY = function (scrollOffsetY) {
+  var viewportHeight = this._getViewportHeight();
+  var contentHeight = requirePositiveNodeHeight(this._nodes.content, "RankingView content");
+  var maxScrollOffsetY = Math.max(0, Math.ceil(contentHeight - viewportHeight));
+  var clampedOffsetY = Math.max(0, Math.min(scrollOffsetY, maxScrollOffsetY));
+  if (clampedOffsetY !== scrollOffsetY && this._clampingScrollOffset !== true) {
+    if (!this._nodes.scrollView || !this._nodes.scrollView.node || !this._nodes.scrollView.node.isValid) {
+      throw new Error("RankingView ScrollView is required before clamping offset.");
+    }
+    if (typeof this._nodes.scrollView.stopAutoScroll !== "function" || typeof this._nodes.scrollView.scrollToOffset !== "function") {
+      throw new Error("RankingView ScrollView requires stopAutoScroll and scrollToOffset.");
+    }
+    this._clampingScrollOffset = true;
+    try {
+      this._nodes.scrollView.stopAutoScroll();
+      this._nodes.scrollView.scrollToOffset(cc.v2(0, clampedOffsetY), 0);
+    } finally {
+      this._clampingScrollOffset = false;
+    }
+  }
+  return clampedOffsetY;
+};
+
 RankingViewController.prototype._updateVirtualRows = function () {
   if (!this._nodes || !this._nodes.content || !this._nodes.content.isValid) {
     return;
@@ -766,7 +804,7 @@ RankingViewController.prototype._updateVirtualRows = function () {
 
   this._ensureRowPool();
 
-  var scrollOffsetY = getScrollOffsetY(this._nodes.scrollView);
+  var scrollOffsetY = this._clampScrollOffsetY(getScrollOffsetY(this._nodes.scrollView));
   var firstIndex = Math.floor(scrollOffsetY / ROW_STRIDE);
   var maxFirstIndex = Math.max(0, this._entries.length - this._rowPool.length);
   firstIndex = Math.max(0, Math.min(firstIndex, maxFirstIndex));
@@ -780,7 +818,7 @@ RankingViewController.prototype._updateVirtualRows = function () {
     }
 
     row.active = true;
-    row.setPosition(0, (this._nodes.content.height * 0.5) - (ROW_HEIGHT * 0.5) - (entryIndex * ROW_STRIDE));
+    row.setPosition(0, -(ROW_HEIGHT * 0.5) - (entryIndex * ROW_STRIDE));
     this._renderRankRow(row, this._entries[entryIndex], entryIndex);
   }
   this._rebuildRowRenderProxies();

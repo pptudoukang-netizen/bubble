@@ -61,7 +61,7 @@
 - `GameBootstrapAdRewardMethods.js`：激励广告、广告奖励、频控。
 - `GameBootstrapAudioMethods.js`：背景音乐、音效、震动。
 - `GameBootstrapShareFlowMethods.js`：微信分享。
-- `GameBootstrapRuntimeConfigMethods.js`：运行模式、视口、安全区、棋盘参数。
+- `GameBootstrapRuntimeConfigMethods.js`：运行模式、视口、安全区、棋盘参数；Inspector 中的 `projectileSpeed`/`impactBounceSpeed`/`jarRimBounceSpeed`/`dropGravity`/`dropInitialSpeedY` 经 `_applyBoardTuningFromProperties` 写入 `BoardLayout`，进关前再次同步以支持运行时调参。
 - `GameBootstrapLifecycleMethods.js`：生命周期和 resize 处理。
 
 `GameBootstrapShared.js` 汇总所有依赖和常量，是 bootstrap 层的共享依赖入口。
@@ -94,11 +94,11 @@
 玩法底层系统：
 
 - `BubbleGrid.js`：棋盘格与格子状态；几何坐标通过附着的 `BoardViewportSystem.offsetY` 计算，不再使用整数 `dropOffsetRows`。
-- `BoardViewportSystem.js`：棋盘不超过 10 行时顶部贴 HUD 下沿；超过 10 行时开场以 HUD 下方第 14 行为底行起点匀速上移，局内吸附结算后匀速调整到 HUD 下方保留 10 行，移动期间锁定发射；逻辑第 0 行空槽 ≥6 或只剩顶部一行时，结算后立即触发全盘崩塌判定。
+- `BoardViewportSystem.js`：棋盘不超过 10 行时顶部贴 HUD 下沿；超过 10 行时开场和局内吸附结算后都匀速上移到 HUD 下方保留 10 行，移动期间锁定发射；逻辑第 0 行空槽 ≥6 或只剩顶部一行时，结算后立即触发全盘崩塌判定。
 - `MatchSystem.js`：同色匹配消除。
 - `SupportSystem.js`：连通/悬空判断。
-- `FairyAssistSystem.js`：管理 `GameView/geniuses` 六个固定协助精灵槽位；按纯消除数量生成红/黄/绿精灵、未消除时移除最早两只，并维护碰撞去重与光效层数 snapshot。
-- `FallingMarbleSystem.js`：掉落球运动（默认重力 900）；`maxDynamicMarbles` 限制同时活跃的坠落球数量，超出部分进入 `deferredDrops` 并在有空位时自动补入；固定精灵反弹、红黄绿倍率、绿色精灵单次一分为二；清屏后余球每 0.2s 连续抛射入缸（不等上一颗入缸），炮台每 0.2s 在 15°～165° 间按 15° 步进往返旋转。
+- `FairyAssistSystem.js`：管理 `GameView/geniuses` 六个固定协助精灵槽位；按纯消除数量生成红/黄/绿精灵、未消除时移除最早两只；碰撞中心由 `LevelRenderer.syncFairyAssistCollisionCenters` 从槽位节点转换到棋盘坐标后再参与判定，并维护每精灵最多 5 次碰撞计数与光效层数 snapshot。
+- `FallingMarbleSystem.js`：掉落球运动（默认重力 900）；`maxDynamicMarbles` 当前由 `FallingRulesDefaults.maxDynamicMarbles`（9999，试验值）统一控制，暂忽略关卡 `fallingRules.maxDynamicMarbles: 10`，一次注册的全部掉落球会立即进入物理模拟；固定精灵反弹、红黄绿倍率、绿色精灵单次一分为二；清屏后余球每 0.2s 连续抛射入缸（不等上一颗入缸），炮台每 0.2s 在 15°～165° 间按 15° 步进往返旋转。
 - `JarCollectorSystem.js`：底部罐子收集。
 - `ShooterController.js`：射手和待发球；`drainRemainingShotBalls` 在剩余球奖励阶段排空炮台队列。
 - `TrajectoryPredictor.js`：瞄准轨迹预测。
@@ -129,8 +129,8 @@
 - `LevelPackCompactCodec.js`：远程关卡包 `compact-schema-v1` 编解码器；生成器写入压缩格式，运行时和离线工具读取后先展开为完整关卡结构。
 - `RemoteLevelPackLoader.js`：读取 manifest，使用 `wx.cloud.getTempFileURL` 获取远程包临时地址，再用 `wx.downloadFile` 下载到本地用户文件缓存，按 manifest 校验 `compact-schema-v1` 格式并展开，最后按单关复用 `LevelConfigLoader` 的规范化校验；同时提供按当前关卡预下载下一远程包的能力。
 - `BoardLayout.js`：棋盘布局参数。
-- `BoardViewportConfig.js`：10 行局内视口、14 行开场定位与匀速移动参数；HUD 下沿由 `BoardLayout.syncHudBottomLineYFromHudPanel()` 从 `HudPanel` 实测；炮管安全线由 `BoardLayout.getCannonTopLineY()` 推导。
-- `FairyAssistConfig.js`：固定精灵六槽坐标、红黄绿消除区间与倍率、碰撞反弹、绿色分裂和资源路径的严格配置。
+- `BoardViewportConfig.js`：10 行视口与开场/局内匀速移动参数；HUD 下沿由 `BoardLayout.syncHudBottomLineYFromHudPanel()` 从 `HudPanel` 实测；炮管安全线由 `BoardLayout.getCannonTopLineY()` 推导。
+- `FairyAssistConfig.js`：固定精灵六槽坐标、红黄绿消除区间与倍率、每精灵最多 5 次碰撞、碰撞反弹、绿色分裂和资源路径的严格配置。
 - `FallingRulesDefaults.js`：坠落物理首版默认值（gravity 900 等）。
 - `JarScoreConfig.js`：1～4 缸按槽位的基础分表。
 - `AimTuningProfiles.js`：瞄准调参配置。

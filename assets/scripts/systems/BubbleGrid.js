@@ -1195,42 +1195,41 @@ BubbleGrid.prototype.ensureDangerLineSpaceRows = function (minimumRows) {
   if (!this.cells.length) {
     throw new Error("Cannot ensure danger line space without board cells.");
   }
+  var self = this;
+  function getBubbleBottomYAtOffset(cell, viewportOffsetY) {
+    var cellPosition = BoardLayout.getCellPosition(cell.row, cell.col, self.maxColumns, viewportOffsetY);
+    return cellPosition.y - BoardLayout.bubbleRadius;
+  }
+  function computeLowestBubbleBottomYAtOffset(cells, viewportOffsetY) {
+    return cells.reduce(function (lowestBottomY, cell) {
+      return Math.min(lowestBottomY, getBubbleBottomYAtOffset(cell, viewportOffsetY));
+    }, Infinity);
+  }
 
   var requiredSpacePixels = minimumRows * BoardLayout.rowHeight;
   var requiredBubbleBottomY = BoardLayout.dangerLineY + requiredSpacePixels;
-  var lowestBubbleBottomY = this.cells.reduce(function (lowestBottomY, cell) {
-    var cellPosition = this.getCellPosition(cell.row, cell.col);
-    var bubbleBottomY = cellPosition.y - BoardLayout.bubbleRadius;
-    return Math.min(lowestBottomY, bubbleBottomY);
-  }.bind(this), Infinity);
+  var currentOffsetY = this.getViewportOffsetY();
+  var lowestBubbleBottomY = computeLowestBubbleBottomYAtOffset(this.cells, currentOffsetY);
   var currentSpacePixels = lowestBubbleBottomY - BoardLayout.dangerLineY;
   var requestedShiftRows = currentSpacePixels < requiredSpacePixels
     ? Math.ceil((requiredSpacePixels - currentSpacePixels) / BoardLayout.rowHeight)
     : 0;
-  var currentOffsetY = this.getViewportOffsetY();
   var maxUpwardShiftRows = Math.floor(
     (this.boardViewport.getMaxOffsetY() - currentOffsetY) / BoardLayout.rowHeight
   );
   var shiftRows = Math.min(requestedShiftRows, Math.max(0, maxUpwardShiftRows));
+  var targetOffsetY = currentOffsetY + shiftRows * BoardLayout.rowHeight;
 
   if (shiftRows > 0) {
-    this.boardViewport.shiftOffsetYByRows(-shiftRows);
-    this.version += 1;
-    this._rebuildCaches();
-    this.assertNoVisualOverlap("ensureDangerLineSpaceRows shift");
-    lowestBubbleBottomY = this.cells.reduce(function (lowestBottomYAfterShift, cell) {
-      var cellPosition = this.getCellPosition(cell.row, cell.col);
-      var bubbleBottomY = cellPosition.y - BoardLayout.bubbleRadius;
-      return Math.min(lowestBottomYAfterShift, bubbleBottomY);
-    }.bind(this), Infinity);
+    targetOffsetY = this.boardViewport.shiftOffsetYByRows(-shiftRows);
+    lowestBubbleBottomY = computeLowestBubbleBottomYAtOffset(this.cells, targetOffsetY);
     currentSpacePixels = lowestBubbleBottomY - BoardLayout.dangerLineY;
   }
 
   var removedCells = [];
   if (currentSpacePixels < requiredSpacePixels) {
     var cellsInDangerSpace = this.cells.filter(function (cell) {
-      var cellPosition = this.getCellPosition(cell.row, cell.col);
-      return cellPosition.y - BoardLayout.bubbleRadius < requiredBubbleBottomY;
+      return getBubbleBottomYAtOffset(cell, targetOffsetY) < requiredBubbleBottomY;
     }, this);
     removedCells = this.removeCells(cellsInDangerSpace);
     if (!removedCells.length) {
@@ -1239,11 +1238,7 @@ BubbleGrid.prototype.ensureDangerLineSpaceRows = function (minimumRows) {
     if (!this.cells.length) {
       throw new Error("Danger line space removal cleared the board.");
     }
-    lowestBubbleBottomY = this.cells.reduce(function (lowestBottomYAfterRemoval, cell) {
-      var cellPosition = this.getCellPosition(cell.row, cell.col);
-      var bubbleBottomY = cellPosition.y - BoardLayout.bubbleRadius;
-      return Math.min(lowestBottomYAfterRemoval, bubbleBottomY);
-    }.bind(this), Infinity);
+    lowestBubbleBottomY = computeLowestBubbleBottomYAtOffset(this.cells, targetOffsetY);
     currentSpacePixels = lowestBubbleBottomY - BoardLayout.dangerLineY;
     if (currentSpacePixels < requiredSpacePixels) {
       throw new Error("Danger line space remains below required rows after removal.");
@@ -1253,7 +1248,7 @@ BubbleGrid.prototype.ensureDangerLineSpaceRows = function (minimumRows) {
   return {
     shiftRows: shiftRows,
     removedCells: removedCells,
-    viewportOffsetY: this.getViewportOffsetY(),
+    viewportOffsetY: targetOffsetY,
     spaceRows: currentSpacePixels / BoardLayout.rowHeight
   };
 };

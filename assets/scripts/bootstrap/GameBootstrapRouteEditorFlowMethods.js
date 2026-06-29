@@ -43,6 +43,7 @@ module.exports = {
       this._rememberSelectedLevel(this._currentLevelId);
       this._prepareRouteEditorForLevel(levelConfig, this._currentLevelId);
       return this.levelRenderer.syncBoardLayoutHudBottomLineAsync().then(function () {
+        this._applyBoardTuningFromProperties();
         var snapshot = this.gameManager.startLevel(levelConfig);
         if (typeof this._applySelectedPowerupsToRuntime === "function") {
           snapshot = this._applySelectedPowerupsToRuntime(snapshot);

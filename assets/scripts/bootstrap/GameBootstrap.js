@@ -169,6 +169,14 @@ cc.Class({
       default: 260,
       tooltip: "掉落球碰到缸口边缘时的反弹速度（像素/秒），用于调试入缸手感。"
     },
+    dropGravity: {
+      default: 900,
+      tooltip: "掉落球重力加速度（像素/秒²），用于调试下落手感。"
+    },
+    dropInitialSpeedY: {
+      default: 240,
+      tooltip: "掉落球向下初速度基准值（像素/秒），实际会在 5 档间循环偏移。"
+    },
     aimRefreshMinDistance: {
       default: 6,
       tooltip: "瞄准拖动时触发辅助线刷新的最小位移阈值（像素）。"
@@ -340,6 +348,7 @@ cc.Class({
   _preloadStartupLevelConfigs: GameBootstrapStartupMethods._preloadStartupLevelConfigs,
   _delay: GameBootstrapStartupMethods._delay,
   update: GameBootstrapGameplayInputMethods.update,
+  lateUpdate: GameBootstrapGameplayInputMethods.lateUpdate,
   _bindInput: GameBootstrapGameplayInputMethods._bindInput,
   _getShooterOriginPoint: GameBootstrapGameplayInputMethods._getShooterOriginPoint,
   _isShotTouchPointValid: GameBootstrapGameplayInputMethods._isShotTouchPointValid,

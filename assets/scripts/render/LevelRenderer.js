@@ -83,6 +83,11 @@ var WIN_BOTTLE_RESOURCES = {
   P: "image/win/bottle_purple"
 };
 
+var WIN_TARGET_STATUS_RESOURCES = {
+  complete: "image/commone/gou",
+  incomplete: "image/commone/x"
+};
+
 var WIN_TARGET_COLOR_NAMES = {
   R: "红球",
   G: "绿球",
@@ -125,7 +130,7 @@ var PREFAB_PATHS = {
 
 var JAR_RENDER_Y_OFFSET = Number(BoardLayout.jarRenderYOffset) || 0;
 var GUIDE_DOT_SPACING = 42;
-var GUIDE_DOT_RADIUS = 4;
+var GUIDE_DOT_RADIUS = 8;
 var GUIDE_DOT_SIZE = GUIDE_DOT_RADIUS * 2;
 var GUIDE_DOT_MAX_COUNT = 64;
 var GUIDE_DOT_SPRITE_PATH = "image/ball/white_point";
@@ -433,6 +438,12 @@ function buildWinTargetDescription(objective, targetValue) {
 }
 
 function buildWinCompletedTargetEntries(levelConfig, runtimeSnapshot) {
+  return buildWinTargetEntries(levelConfig, runtimeSnapshot).filter(function (entry) {
+    return entry.completed;
+  });
+}
+
+function buildWinTargetEntries(levelConfig, runtimeSnapshot) {
   var objectives = getCollectionObjectiveList(levelConfig);
   var entries = [];
 
@@ -449,19 +460,20 @@ function buildWinCompletedTargetEntries(levelConfig, runtimeSnapshot) {
     }
 
     var display = buildObjectiveDisplayForObjective(objective, runtimeSnapshot);
-    if (display.remaining > 0) {
-      return;
-    }
     if (!Number.isInteger(display.target) || display.target <= 0) {
       throw new Error("Win target objective requires positive integer target value.");
     }
     if (typeof display.iconCode !== "string" || !display.iconCode) {
       throw new Error("Win target objective requires iconCode.");
     }
+    if (!Number.isInteger(display.remaining) || display.remaining < 0) {
+      throw new Error("Win target objective requires non-negative integer remaining.");
+    }
 
     entries.push({
       iconCode: display.iconCode,
-      description: buildWinTargetDescription(objective, display.target)
+      description: buildWinTargetDescription(objective, display.target),
+      completed: display.remaining <= 0
     });
   });
 
@@ -1076,6 +1088,7 @@ function LevelRenderer(rootNode) {
   this.lastRuntimeSnapshot = null;
   this.displayedIceSnowballCollectedTotal = 0;
   this.lastBoardVersion = -1;
+  this.lastBoardViewportOffsetY = null;
   this.whiteMaskFrames = {};
   this.whiteMaskTextures = [];
   this.lastHudRenderKey = "";
@@ -1281,6 +1294,18 @@ LevelRenderer.prototype.setGameplayActionHandlers = function (handlers) {
   };
 };
 
+LevelRenderer.prototype.setFallingMarbleSystem = function (fallingMarbleSystem) {
+  if (
+    !fallingMarbleSystem ||
+    typeof fallingMarbleSystem.requestEliminationPresentationDropRelease !== "function"
+  ) {
+    throw new Error("LevelRenderer.setFallingMarbleSystem requires FallingMarbleSystem.");
+  }
+  this.bubbleShatterRenderer.setPresentationCompleteHandler(function () {
+    fallingMarbleSystem.requestEliminationPresentationDropRelease();
+  });
+};
+
 LevelRenderer.prototype._invokeWinAction = function (action) {
   var handler = null;
   if (action === "next") {
@@ -1425,6 +1450,7 @@ LevelRenderer.prototype.renderLevel = function (levelConfig, runtimeSnapshot) {
   this.lastRuntimeSnapshot = runtimeSnapshot;
   this.displayedIceSnowballCollectedTotal = 0;
   this.lastBoardVersion = -1;
+  this.lastBoardViewportOffsetY = null;
   this.lastHudRenderKey = "";
   this.lastHudStarRating = null;
   this.hudStarDisplayedRating = null;
@@ -1497,6 +1523,9 @@ LevelRenderer.prototype.renderLevel = function (levelConfig, runtimeSnapshot) {
 
     this._mountGameViewScaffold();
     this.syncBoardLayoutHudBottomLine();
+    if (this._fairyAssistSystem) {
+      this.syncFairyAssistCollisionCenters();
+    }
     this._renderBackground();
     this._renderHud(levelConfig, runtimeSnapshot);
     this._initializeComboBatterHud();
@@ -1612,7 +1641,12 @@ LevelRenderer.prototype._refreshRuntimeTimer = function (runtimeSnapshot) {
 };
 
 LevelRenderer.prototype._refreshRuntimeFull = function (levelConfig, runtimeSnapshot) {
-  var boardChanged = runtimeSnapshot.board.version !== this.lastBoardVersion;
+  var boardViewportOffsetY = runtimeSnapshot.board.viewportOffsetY;
+  if (typeof boardViewportOffsetY !== "number" || !isFinite(boardViewportOffsetY)) {
+    throw new Error("Runtime board viewportOffsetY must be a finite number.");
+  }
+  var boardChanged = runtimeSnapshot.board.version !== this.lastBoardVersion ||
+    boardViewportOffsetY !== this.lastBoardViewportOffsetY;
   this.bubbleShatterRenderer.playResolution(
     runtimeSnapshot.lastResolution,
     runtimeSnapshot.board,
@@ -1965,6 +1999,8 @@ LevelRenderer.prototype._collectCommonSpritePaths = function () {
     JAR_MASK_RESOURCES.P,
     HUD_STAR_RESOURCES.lit,
     HUD_STAR_RESOURCES.unlit,
+    WIN_TARGET_STATUS_RESOURCES.complete,
+    WIN_TARGET_STATUS_RESOURCES.incomplete,
     REWARD_ITEM_RESOURCES.coin,
     REWARD_ITEM_RESOURCES.stamina,
     POWERUP_ICON_RESOURCES.rainbow,
@@ -2035,6 +2071,7 @@ var LEVEL_RENDERER_SCENE_DEPS = {
   SpecialAnimationTiming: SpecialAnimationTiming,
   BALL_RESOURCES: BALL_RESOURCES,
   WIN_BOTTLE_RESOURCES: WIN_BOTTLE_RESOURCES,
+  WIN_TARGET_STATUS_RESOURCES: WIN_TARGET_STATUS_RESOURCES,
   JAR_RESOURCES: JAR_RESOURCES,
   JAR_MASK_RESOURCES: JAR_MASK_RESOURCES,
   REWARD_ITEM_RESOURCES: REWARD_ITEM_RESOURCES,
@@ -2103,6 +2140,7 @@ var LEVEL_RENDERER_SCENE_DEPS = {
   buildObjectiveDisplayData: buildObjectiveDisplayData,
   buildLoseTargetEntries: buildLoseTargetEntries,
   buildWinCompletedTargetEntries: buildWinCompletedTargetEntries,
+  buildWinTargetEntries: buildWinTargetEntries,
   buildWinCollectEntries: buildWinCollectEntries,
   buildHudTargetDisplayData: buildHudTargetDisplayData,
   applyIceSnowballHudDisplayProgress: applyIceSnowballHudDisplayProgress,

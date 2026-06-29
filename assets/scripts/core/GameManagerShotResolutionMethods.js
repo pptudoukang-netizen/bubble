@@ -513,6 +513,8 @@ function createGameManagerShotResolutionMethods(deps) {
       }
       this._registerResolutionDrops(removedCells, grid, this.lastResolution, {
         dropKind: "victory_board_drop"
+      }, {
+        matchedCellsForDelay: removedCells
       });
       this.state = "won_pending";
       return true;
@@ -1017,7 +1019,61 @@ function createGameManagerShotResolutionMethods(deps) {
       };
     },
 
-    _registerResolutionDrops: function (cells, grid, resolution, dropOptions) {
+    _buildResolutionDropRegisterOptions: function (resolution, dropOptions, timingOptions) {
+      if (
+        dropOptions !== undefined &&
+        (
+          !dropOptions ||
+          typeof dropOptions !== "object" ||
+          Array.isArray(dropOptions)
+        )
+      ) {
+        throw new Error("Resolution drop registration dropOptions must be an object when provided.");
+      }
+      if (
+        timingOptions !== undefined &&
+        (
+          !timingOptions ||
+          typeof timingOptions !== "object" ||
+          Array.isArray(timingOptions)
+        )
+      ) {
+        throw new Error("Resolution drop registration timingOptions must be an object when provided.");
+      }
+
+      var matchedCellsForDelay = timingOptions && timingOptions.matchedCellsForDelay;
+      if (
+        matchedCellsForDelay !== undefined &&
+        (!Array.isArray(matchedCellsForDelay) || !matchedCellsForDelay.length)
+      ) {
+        throw new Error("Resolution drop registration matchedCellsForDelay must be a non-empty array when provided.");
+      }
+
+      var requiresEliminationHold = EliminationSequenceBuilder.resolveRequiresEliminationPresentationHold(
+        resolution,
+        matchedCellsForDelay
+      );
+      var baseDelay = 0;
+      if (dropOptions && Object.prototype.hasOwnProperty.call(dropOptions, "startDelay")) {
+        if (
+          typeof dropOptions.startDelay !== "number" ||
+          !Number.isFinite(dropOptions.startDelay) ||
+          dropOptions.startDelay < 0
+        ) {
+          throw new Error("Resolution drop registration dropOptions.startDelay must be a non-negative number.");
+        }
+        baseDelay = dropOptions.startDelay;
+      }
+
+      var registerOptions = dropOptions ? Object.assign({}, dropOptions) : {};
+      registerOptions.startDelay = baseDelay;
+      if (requiresEliminationHold) {
+        registerOptions.holdUntilEliminationPresentationComplete = true;
+      }
+      return registerOptions;
+    },
+
+    _registerResolutionDrops: function (cells, grid, resolution, dropOptions, timingOptions) {
       if (!Array.isArray(cells)) {
         throw new Error("Resolution drop registration requires cells array.");
       }
@@ -1031,6 +1087,16 @@ function createGameManagerShotResolutionMethods(deps) {
       ) {
         throw new Error("Resolution drop registration dropOptions must be an object when provided.");
       }
+      if (
+        timingOptions !== undefined &&
+        (
+          !timingOptions ||
+          typeof timingOptions !== "object" ||
+          Array.isArray(timingOptions)
+        )
+      ) {
+        throw new Error("Resolution drop registration timingOptions must be an object when provided.");
+      }
 
       var pendingCells = cells.filter(function (cell) {
         if (!cell) {
@@ -1043,12 +1109,13 @@ function createGameManagerShotResolutionMethods(deps) {
       }
 
       var prepared = this._prepareResolutionDropCells(pendingCells, resolution);
+      var registerOptions = this._buildResolutionDropRegisterOptions(resolution, dropOptions, timingOptions);
       var immediateCandidates = this._splitMolotovDropCandidates(prepared.immediate);
       if (immediateCandidates.immediate.length) {
         this.systems.fallingMarbleSystem.registerDrops(
           immediateCandidates.immediate,
           grid,
-          dropOptions
+          registerOptions
         );
         immediateCandidates.immediate.forEach(function (cell) {
           cell.__resolutionDropRegistered = true;
@@ -1058,10 +1125,15 @@ function createGameManagerShotResolutionMethods(deps) {
       if (prepared.delayedIce.length) {
         var delayedCandidates = this._splitMolotovDropCandidates(prepared.delayedIce);
         if (delayedCandidates.immediate.length) {
+          var delayedIceRegisterOptions = this._buildResolutionDropRegisterOptions(
+            resolution,
+            { startDelay: FLOATING_ICE_DROP_DELAY },
+            timingOptions
+          );
           this.systems.fallingMarbleSystem.registerDrops(
             delayedCandidates.immediate,
             grid,
-            { startDelay: FLOATING_ICE_DROP_DELAY }
+            delayedIceRegisterOptions
           );
           delayedCandidates.immediate.forEach(function (cell) {
             cell.__resolutionDropRegistered = true;
@@ -1234,7 +1306,15 @@ function createGameManagerShotResolutionMethods(deps) {
       this._appendUniqueCells(this.molotovPendingResolutionContext.allRemoved, removedKeys);
       this._appendUniqueCells(this.molotovPendingResolutionContext.allRemoved, removedByBlast);
       this._cancelPendingSplitterSpawnsForDroppedCells(removedByBlast.concat(removedKeys));
-      this._registerResolutionDrops(removedByBlast.concat(removedKeys), grid, resolution);
+      this._registerResolutionDrops(
+        removedByBlast.concat(removedKeys),
+        grid,
+        resolution,
+        undefined,
+        {
+          matchedCellsForDelay: this.molotovPendingResolutionContext.allRemoved.slice()
+        }
+      );
 
       resolution.matched = this.molotovPendingResolutionContext.allRemoved.slice();
       resolution.collected = this.molotovPendingResolutionContext.allRemoved.slice();
@@ -1370,7 +1450,15 @@ function createGameManagerShotResolutionMethods(deps) {
       this._appendUniqueCells(resolution.floating, removedFloating);
 
       this._cancelPendingSplitterSpawnsForDroppedCells(resolution.floating);
-      this._registerResolutionDrops(resolution.floating, grid, resolution);
+      this._registerResolutionDrops(
+        resolution.floating,
+        grid,
+        resolution,
+        undefined,
+        {
+          matchedCellsForDelay: context.allRemoved
+        }
+      );
       this.systems.jarCollectorSystem.collect([]);
 
       resolution.matched = context.allRemoved.slice();
@@ -1832,10 +1920,18 @@ function createGameManagerShotResolutionMethods(deps) {
       var removedAll = removedBlastCells.concat(removedReactive).concat(resolution.floating);
       this._cancelPendingSplitterSpawnsForDroppedCells(removedAll);
 
-      this._registerResolutionDrops(resolution.floating, grid, resolution);
+      var matchedCells = removedBlastCells.concat(removedReactive);
+      this._registerResolutionDrops(
+        resolution.floating,
+        grid,
+        resolution,
+        undefined,
+        {
+          matchedCellsForDelay: matchedCells
+        }
+      );
       this.systems.jarCollectorSystem.collect([]);
 
-      var matchedCells = removedBlastCells.concat(removedReactive);
       this._pushBubbleBreakEvent(matchedCells);
       resolution.matched = matchedCells;
       resolution.collected = removedAll;
@@ -2017,12 +2113,11 @@ function createGameManagerShotResolutionMethods(deps) {
       resolution.eliminationSequence = eliminationData.eliminationSequence;
       resolution.scoreEvents = eliminationData.scoreEvents;
 
+      resolution.matched = matchedCellsForScore;
       this._registerResolutionDrops(resolution.floating, grid, resolution);
       this.systems.jarCollectorSystem.collect([]);
 
-      var matchedCells = matchedCellsForScore;
-      this._pushBubbleBreakEvent(matchedCells);
-      resolution.matched = matchedCells;
+      this._pushBubbleBreakEvent(matchedCellsForScore);
       resolution.collected = collectedCells;
       resolution.boardCleared = grid.getCells().length === 0;
       this._applyResolutionDropScore(resolution, "matchedDrop");
@@ -2073,11 +2168,6 @@ function createGameManagerShotResolutionMethods(deps) {
 
       if (!this._isClearWinCompleted()) {
         this.state = "lost_objective";
-        return;
-      }
-
-      if (!this.isTimedInfiniteShots && this.remainingShots > 0) {
-        this._beginSurplusShotBonus();
         return;
       }
 

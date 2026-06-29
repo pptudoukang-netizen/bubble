@@ -35,6 +35,8 @@ module.exports = {
     var projectileSpeed = Number(this.projectileSpeed);
     var impactBounceSpeed = Number(this.impactBounceSpeed);
     var jarRimBounceSpeed = Number(this.jarRimBounceSpeed);
+    var dropGravity = Number(this.dropGravity);
+    var dropInitialSpeedY = Number(this.dropInitialSpeedY);
     var guideFrontClipRadiusScale = Number(this.guideFrontClipRadiusScale);
     var guideDotPulseSpeedScale = Number(this.guideDotPulseSpeedScale);
 
@@ -46,6 +48,12 @@ module.exports = {
     }
     if (!Number.isFinite(jarRimBounceSpeed) || jarRimBounceSpeed < 120) {
       throw new Error("jarRimBounceSpeed must be >= 120 in GameBootstrap properties.");
+    }
+    if (!Number.isFinite(dropGravity) || dropGravity < 300) {
+      throw new Error("dropGravity must be >= 300 in GameBootstrap properties.");
+    }
+    if (!Number.isFinite(dropInitialSpeedY) || dropInitialSpeedY < 0) {
+      throw new Error("dropInitialSpeedY must be >= 0 in GameBootstrap properties.");
     }
     if (typeof this.showGhostBubble !== "boolean") {
       throw new Error("showGhostBubble must be boolean in GameBootstrap properties.");
@@ -60,6 +68,8 @@ module.exports = {
     BoardLayout.projectileSpeed = projectileSpeed;
     BoardLayout.impactBounceSpeed = impactBounceSpeed;
     BoardLayout.jarRimBounceSpeed = jarRimBounceSpeed;
+    BoardLayout.dropGravity = dropGravity;
+    BoardLayout.dropInitialSpeedY = dropInitialSpeedY;
     BoardLayout.showGhostBubble = this.showGhostBubble;
     BoardLayout.guideFrontClipRadiusScale = guideFrontClipRadiusScale;
     BoardLayout.guideDotPulseSpeedScale = guideDotPulseSpeedScale;

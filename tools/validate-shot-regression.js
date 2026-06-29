@@ -1076,8 +1076,22 @@ function runReviveDangerSpaceKeepsLockedBallCase() {
   grid.boardViewport.targetOffsetY = grid.boardViewport.offsetY;
   var beforeOffsetY = grid.getViewportOffsetY();
   grid.boardViewport.shiftOffsetYByRows(-shiftRoomRows);
-  if (grid.getViewportOffsetY() !== beforeOffsetY + 2 * BoardLayout.rowHeight) {
-    throw new Error("Ad revive viewport shift must update BubbleGrid cell coordinates.");
+  if (grid.getViewportOffsetY() !== beforeOffsetY) {
+    throw new Error("Ad revive viewport shift must not directly set BubbleGrid cell coordinates.");
+  }
+  if (!grid.boardViewport.isMoving()) {
+    throw new Error("Ad revive viewport shift must start animated movement.");
+  }
+  if (Math.abs(grid.boardViewport.targetOffsetY - beforeOffsetY - 2 * BoardLayout.rowHeight) > 0.5) {
+    throw new Error("Ad revive viewport shift must target the requested row offset.");
+  }
+  grid.boardViewport.update(grid.boardViewport.moveDurationSec / 2);
+  if (Math.abs(grid.getViewportOffsetY() - (beforeOffsetY + BoardLayout.rowHeight)) > 0.5) {
+    throw new Error("Ad revive viewport shift must move linearly at half duration.");
+  }
+  grid.boardViewport.update(grid.boardViewport.moveDurationSec - grid.boardViewport.moveElapsedSec);
+  if (Math.abs(grid.getViewportOffsetY() - (beforeOffsetY + 2 * BoardLayout.rowHeight)) > 0.5) {
+    throw new Error("Ad revive viewport shift must reach the target through update.");
   }
 }
 
@@ -1146,10 +1160,10 @@ function runBoardIntroViewportCase() {
   if (!elevenIntro.needsScroll) {
     throw new Error("11-row board intro must scroll upward.");
   }
-  assertBottomRowAlignedToHudSlot(elevenRowCells, elevenIntro.startOffsetY, BoardViewportConfig.introVisibleRows);
+  assertTopRowAlignedToHud(elevenRowCells, elevenIntro.startOffsetY);
   assertBottomRowAlignedToHudSlot(elevenRowCells, elevenIntro.targetOffsetY, BoardViewportConfig.targetVisibleRows);
-  if (Math.abs(elevenIntro.targetOffsetY - elevenIntro.startOffsetY - 4 * BoardLayout.rowHeight) > 0.5) {
-    throw new Error("11-row board intro must move upward from row 14 to row 10.");
+  if (Math.abs(elevenIntro.targetOffsetY - elevenIntro.startOffsetY - BoardLayout.rowHeight) > 0.5) {
+    throw new Error("11-row board intro must move upward exactly one row.");
   }
 
   var sevenRowCells = buildRowCells(0, 6);
@@ -1167,11 +1181,8 @@ function runBoardIntroViewportCase() {
   if (!twentyIntro.needsScroll) {
     throw new Error("20-row board intro must scroll upward.");
   }
-  assertBottomRowAlignedToHudSlot(twentyRowCells, twentyIntro.startOffsetY, BoardViewportConfig.introVisibleRows);
+  assertTopRowAlignedToHud(twentyRowCells, twentyIntro.startOffsetY);
   assertBottomRowAlignedToHudSlot(twentyRowCells, twentyIntro.targetOffsetY, BoardViewportConfig.targetVisibleRows);
-  if (BoardViewportSystem.countVisibleOccupiedRows(twentyRowCells, twentyIntro.startOffsetY) !== BoardViewportConfig.introVisibleRows) {
-    throw new Error("20-row board intro must initially show exactly 14 rows below HUD.");
-  }
   if (BoardViewportSystem.countVisibleOccupiedRows(twentyRowCells, twentyIntro.targetOffsetY) !== BoardViewportConfig.targetVisibleRows) {
     throw new Error("20-row board intro must end with exactly 10 visible rows.");
   }
@@ -1204,6 +1215,11 @@ function runBoardMidGameViewportSettleCase() {
   viewport.targetOffsetY = tenRowIntro.targetOffsetY;
   viewport.introActive = false;
   viewport.phase = "idle";
+
+  viewport.planSettle({ cells: tenRowCells });
+  if (viewport.isMoving()) {
+    throw new Error("Post-resolution board with final 10 rows must not move after a temporary 11th-row attachment is cleared.");
+  }
 
   var elevenRowCells = buildRowCells(0, 10);
   if (BoardViewportSystem.countVisibleOccupiedRows(elevenRowCells, viewport.offsetY) !== 11) {
@@ -1268,6 +1284,84 @@ function runBoardViewportFireLockCase() {
   var snapshot = manager.fireShot();
   if (manager.shotsFired !== 3 || !snapshot.inputLocked) {
     throw new Error("Board viewport movement must lock firing until movement completes.");
+  }
+}
+
+function runBoardViewportRenderRefreshCase() {
+  var levelRendererSource = fs.readFileSync(
+    path.resolve(__dirname, "../assets/scripts/render/LevelRenderer.js"),
+    "utf8"
+  );
+  var levelRendererSceneSource = fs.readFileSync(
+    path.resolve(__dirname, "../assets/scripts/render/LevelRendererSceneMethods.js"),
+    "utf8"
+  );
+  if (levelRendererSource.indexOf("lastBoardViewportOffsetY") < 0) {
+    throw new Error("LevelRenderer must cache the last rendered board viewport offset.");
+  }
+  if (levelRendererSource.indexOf("boardViewportOffsetY !== this.lastBoardViewportOffsetY") < 0) {
+    throw new Error("LevelRenderer must refresh board rendering when viewportOffsetY changes.");
+  }
+  if (levelRendererSceneSource.indexOf("this.lastBoardViewportOffsetY = boardSnapshot.viewportOffsetY") < 0) {
+    throw new Error("Board render must record the rendered viewportOffsetY.");
+  }
+  if (levelRendererSceneSource.indexOf("Number.isInteger(boardSnapshot.viewportOffsetY)") >= 0) {
+    throw new Error("Board viewport render paths must accept fractional viewportOffsetY during linear movement.");
+  }
+  var gameManagerSource = fs.readFileSync(
+    path.resolve(__dirname, "../assets/scripts/core/GameManager.js"),
+    "utf8"
+  );
+  if (gameManagerSource.indexOf("var viewportWasMoving = this.systems.boardViewportSystem.isMoving()") < 0) {
+    throw new Error("GameManager.update must detect in-progress board viewport movement before update.");
+  }
+  if (gameManagerSource.indexOf("viewportUpdated ||") < 0) {
+    throw new Error("GameManager.update must return render snapshots while board viewport is moving.");
+  }
+}
+
+function runBoardViewportSnapshotCacheCase() {
+  var manager = new GameManager();
+  var viewportOffsetY = 0;
+  var snapshotCalls = 0;
+  manager.systems.bubbleGrid = {
+    version: 1,
+    getViewportOffsetY: function () {
+      return viewportOffsetY;
+    },
+    snapshot: function () {
+      snapshotCalls += 1;
+      return {
+        version: this.version,
+        viewportOffsetY: viewportOffsetY,
+        snapshotCall: snapshotCalls
+      };
+    }
+  };
+
+  var firstSnapshot = manager._getCachedBoardSnapshot();
+  var secondSnapshot = manager._getCachedBoardSnapshot();
+  if (firstSnapshot !== secondSnapshot || snapshotCalls !== 1) {
+    throw new Error("Board snapshot cache must reuse identical version and viewportOffsetY.");
+  }
+
+  viewportOffsetY = 12.5;
+  var movedSnapshot = manager._getCachedBoardSnapshot();
+  if (movedSnapshot === firstSnapshot || movedSnapshot.viewportOffsetY !== 12.5 || snapshotCalls !== 2) {
+    throw new Error("Board snapshot cache must refresh when viewportOffsetY changes.");
+  }
+}
+
+function runBoardViewportEntryUpdateCase() {
+  var gameplaySource = fs.readFileSync(
+    path.resolve(__dirname, "../assets/scripts/bootstrap/GameBootstrapGameplayInputMethods.js"),
+    "utf8"
+  );
+  if (gameplaySource.indexOf("this.gameManager.updateBoardViewportIntro(dt)") < 0) {
+    throw new Error("Level entry update must advance board viewport intro while isRestarting.");
+  }
+  if (gameplaySource.indexOf("this.levelRenderer.refreshRuntime(this.currentLevelConfig, entrySnapshot)") < 0) {
+    throw new Error("Level entry update must refresh rendering for board viewport intro snapshots.");
   }
 }
 
@@ -1362,7 +1456,10 @@ function main() {
   runBoardIntroViewportCase();
   runBoardMidGameViewportSettleCase();
   runBoardViewportFireLockCase();
-  console.log("[OK]", "board_viewport", "14-row intro, 10-row runtime alignment, linear movement, and fire lock passed");
+  runBoardViewportRenderRefreshCase();
+  runBoardViewportSnapshotCacheCase();
+  runBoardViewportEntryUpdateCase();
+  console.log("[OK]", "board_viewport", "10-row intro/runtime alignment, final-row settle, render refresh, snapshot cache, entry update, linear movement, and fire lock passed");
 
   if (failed) {
     console.log("\nShot regression validation failed.");
