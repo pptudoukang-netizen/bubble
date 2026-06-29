@@ -1292,8 +1292,8 @@ function runBoardViewportRenderRefreshCase() {
     path.resolve(__dirname, "../assets/scripts/render/LevelRenderer.js"),
     "utf8"
   );
-  var levelRendererSceneSource = fs.readFileSync(
-    path.resolve(__dirname, "../assets/scripts/render/LevelRendererSceneMethods.js"),
+  var levelRendererSceneBoardSource = fs.readFileSync(
+    path.resolve(__dirname, "../assets/scripts/render/LevelRendererSceneBoardMethods.js"),
     "utf8"
   );
   if (levelRendererSource.indexOf("lastBoardViewportOffsetY") < 0) {
@@ -1302,10 +1302,10 @@ function runBoardViewportRenderRefreshCase() {
   if (levelRendererSource.indexOf("boardViewportOffsetY !== this.lastBoardViewportOffsetY") < 0) {
     throw new Error("LevelRenderer must refresh board rendering when viewportOffsetY changes.");
   }
-  if (levelRendererSceneSource.indexOf("this.lastBoardViewportOffsetY = boardSnapshot.viewportOffsetY") < 0) {
+  if (levelRendererSceneBoardSource.indexOf("this.lastBoardViewportOffsetY = boardSnapshot.viewportOffsetY") < 0) {
     throw new Error("Board render must record the rendered viewportOffsetY.");
   }
-  if (levelRendererSceneSource.indexOf("Number.isInteger(boardSnapshot.viewportOffsetY)") >= 0) {
+  if (levelRendererSceneBoardSource.indexOf("Number.isInteger(boardSnapshot.viewportOffsetY)") >= 0) {
     throw new Error("Board viewport render paths must accept fractional viewportOffsetY during linear movement.");
   }
   var gameManagerSource = fs.readFileSync(

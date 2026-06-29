@@ -140,6 +140,7 @@ function createEmptyUpdateResult() {
     collected: [],
     missed: [],
     bounced: 0,
+    bounceEvents: [],
     fairyHits: [],
     splits: []
   };
@@ -611,6 +612,7 @@ FallingMarbleSystem.prototype._buildDropFromCell = function (
     hitFairyIds: [],
     fairyBonusSteps: 0,
     finalMultiplier: 1,
+    glowStacks: 0,
     splitGeneration: 0
   };
 };
@@ -780,6 +782,7 @@ FallingMarbleSystem.prototype._createSurplusShotDrop = function (ball, spawnInde
     hitFairyIds: [],
     fairyBonusSteps: 0,
     finalMultiplier: 1,
+    glowStacks: 0,
     splitGeneration: 0
   };
 };
@@ -971,7 +974,13 @@ FallingMarbleSystem.prototype._consumeDropInteraction = function (result, intera
   }
 
   if (interaction.bounced) {
+    if (!Number.isInteger(interaction.bounceCount) || interaction.bounceCount < 1) {
+      throw new Error("FallingMarbleSystem bounced interaction requires positive integer bounceCount.");
+    }
     result.bounced += 1;
+    result.bounceEvents.push({
+      bounceCount: interaction.bounceCount
+    });
   }
 
   if (interaction.collected) {
@@ -1074,6 +1083,7 @@ FallingMarbleSystem.prototype._createCollectedEvent = function (drop, zone) {
     fairyBonusSteps: drop.fairyBonusSteps,
     fairyMultiplier: drop.finalMultiplier,
     finalMultiplier: drop.finalMultiplier,
+    glowStacks: drop.glowStacks,
     rootDropId: drop.rootDropId,
     splitGeneration: drop.splitGeneration,
     hitFairyIds: drop.hitFairyIds.slice()
@@ -1150,6 +1160,10 @@ FallingMarbleSystem.prototype._applyFairyCollision = function (drop, activeDropC
   drop.position.y = collision.fairy.position.y + normal.y * collision.collisionDistance;
   drop.fairyBonusSteps += collision.fairy.bonusStep;
   drop.finalMultiplier = 1 + drop.fairyBonusSteps;
+  if (!Number.isInteger(drop.glowStacks) || drop.glowStacks < 0) {
+    throw new Error("Falling drop glowStacks must be a non-negative integer.");
+  }
+  drop.glowStacks = Math.min(FairyAssistConfig.maxGlowStacks, drop.glowStacks + 1);
 
   var result = {
     fairyId: collision.fairy.id,
@@ -1340,6 +1354,7 @@ FallingMarbleSystem.prototype._processJarInteraction = function (drop) {
       this._applyRimArcBounce(drop, zone, side, edgeType, bottomPoint);
       return {
         bounced: true,
+        bounceCount: drop.rimBounceCount,
         edgeType: edgeType
       };
     }

@@ -123,7 +123,7 @@ var CONFIG = {
   splitAngleDegrees: 18,
   spriteWidth: 200,
   spriteHeight: 160,
-  maxGlowStacks: 12
+  maxGlowStacks: 5
 };
 
 if (!Number.isInteger(CONFIG.removeCountOnMiss) || CONFIG.removeCountOnMiss <= 0) {

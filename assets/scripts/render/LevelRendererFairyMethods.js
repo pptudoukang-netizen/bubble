@@ -18,6 +18,9 @@ function requireFairyTiming() {
   if (typeof timing.flyOutDuration !== "number" || !isFinite(timing.flyOutDuration) || timing.flyOutDuration <= 0) {
     throw new Error("SpecialAnimationTiming.fairyAssist.flyOutDuration must be positive.");
   }
+  if (typeof timing.flyOutDistance !== "number" || !isFinite(timing.flyOutDistance) || timing.flyOutDistance <= 0) {
+    throw new Error("SpecialAnimationTiming.fairyAssist.flyOutDistance must be positive.");
+  }
   return timing;
 }
 
@@ -403,48 +406,51 @@ function playFairyEntry(renderer, node, fairy, slotConfig, token) {
   ));
 }
 
+function playFairyDepartFlyOut(node, token, onComplete) {
+  if (!node || !node.isValid) {
+    throw new Error("Fairy depart fly out requires valid node.");
+  }
+  var startX = node.x;
+  var startY = node.y;
+  if (typeof startX !== "number" || !isFinite(startX) || typeof startY !== "number" || !isFinite(startY)) {
+    throw new Error("Fairy depart fly out requires finite node position.");
+  }
+
+  hideFairyGlow(node);
+  node.stopAllActions();
+  node.runAction(cc.sequence(
+    cc.moveTo(FAIRY_TIMING.flyOutDuration, startX, startY + FAIRY_TIMING.flyOutDistance),
+    cc.callFunc(function () {
+      if (node.__fairyRenderToken !== token) {
+        return;
+      }
+      if (typeof onComplete === "function") {
+        onComplete();
+      }
+    })
+  ));
+}
+
 function hideFairyNode(node, token) {
   if (!node.__fairyId) {
     hideFairyGlow(node);
     node.active = false;
     return;
   }
-  hideFairyGlow(node);
-  node.stopAllActions();
-  node.runAction(cc.sequence(
-    cc.spawn(
-      cc.fadeOut(FAIRY_TIMING.flyOutDuration),
-      cc.scaleTo(FAIRY_TIMING.flyOutDuration, 0.65)
-    ),
-    cc.callFunc(function () {
-      if (node.__fairyRenderToken !== token) {
-        return;
-      }
-      node.active = false;
-      node.__fairyId = null;
-      node.__fairyColor = null;
-      node.__fairyEntering = false;
-      node.__fairyGlowStacks = 0;
-      hideFairyGlow(node);
-    })
-  ));
+  playFairyDepartFlyOut(node, token, function () {
+    node.active = false;
+    node.__fairyId = null;
+    node.__fairyColor = null;
+    node.__fairyEntering = false;
+    node.__fairyGlowStacks = 0;
+    hideFairyGlow(node);
+  });
 }
 
 function replaceFairyNode(renderer, node, fairy, slotConfig, token) {
-  hideFairyGlow(node);
-  node.stopAllActions();
-  node.runAction(cc.sequence(
-    cc.spawn(
-      cc.fadeOut(FAIRY_TIMING.flyOutDuration),
-      cc.scaleTo(FAIRY_TIMING.flyOutDuration, 0.65)
-    ),
-    cc.callFunc(function () {
-      if (node.__fairyRenderToken !== token) {
-        return;
-      }
-      playFairyEntry(renderer, node, fairy, slotConfig, token);
-    })
-  ));
+  playFairyDepartFlyOut(node, token, function () {
+    playFairyEntry(renderer, node, fairy, slotConfig, token);
+  });
 }
 
 function attachLevelRendererFairyMethods(LevelRenderer) {

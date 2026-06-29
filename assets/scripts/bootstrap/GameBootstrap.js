@@ -242,8 +242,8 @@ cc.Class({
       tooltip: "胜利音效资源路径。"
     },
     jarBounceSfxResources: {
-      default: "sound/ding0,sound/ding1,sound/ding2,sound/ding3,sound/ding4,sound/ding5",
-      tooltip: "掉落玻璃球与缸碰撞时随机播放的音效资源列表，使用英文逗号分隔。"
+      default: "sound/piano1,sound/piano2,sound/piano3,sound/piano4,sound/piano5,sound/piano6,sound/piano7",
+      tooltip: "掉落玻璃球与缸碰撞时按碰撞次数播放的音效资源列表（piano1-7），使用英文逗号分隔。"
     },
     jarCollectBottomSfxResource: {
       default: "sound/ding0",
@@ -252,6 +252,14 @@ cc.Class({
     breakSfxResource: {
       default: "sound/break",
       tooltip: "棋盘中球消除时播放的音效资源路径。"
+    },
+    fairyAssistHitSfxResource: {
+      default: "sound/duang1",
+      tooltip: "掉落玻璃球与精灵碰撞时播放的音效资源路径。"
+    },
+    fairyAssistDepartSfxResource: {
+      default: "sound/fly",
+      tooltip: "精灵向上飞出屏幕消失时播放的音效资源路径。"
     },
     rewardedVideoAdUnitId: {
       default: "",

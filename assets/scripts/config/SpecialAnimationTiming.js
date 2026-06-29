@@ -19,7 +19,8 @@ var molotovBlast = {
 
 var fairyAssist = {
   flyInDuration: 0.45,
-  flyOutDuration: 0.18
+  flyOutDuration: 0.35,
+  flyOutDistance: 880
 };
 
 function requirePositiveNumber(value, fieldName) {

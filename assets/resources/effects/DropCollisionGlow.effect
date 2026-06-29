@@ -1,0 +1,127 @@
+CCEffect %{
+  techniques:
+  - passes:
+    - vert: drop-collision-glow-vs:vert
+      frag: drop-collision-glow-fs:frag
+      depthStencilState:
+        depthTest: false
+        depthWrite: false
+      blendState:
+        targets:
+        - blend: true
+          blendSrc: src_alpha
+          blendDst: one_minus_src_alpha
+          blendDstAlpha: one_minus_src_alpha
+      rasterizerState:
+        cullMode: none
+      properties:
+        texture: { value: white }
+        uvOriginAxisX: { value: [0.0, 0.0, 1.0, 0.0] }
+        uvAxisY: { value: [0.0, 1.0, 1.0, 1.0] }
+        glowColor: { value: [1.0, 0.72, 0.18, 1.0] }
+        glowParams: { value: [0.2, 0.018, 0.46, 0.66] }
+}%
+
+CCProgram drop-collision-glow-vs %{
+  precision highp float;
+  #include <cc-global>
+  #include <cc-local>
+
+  in vec3 a_position;
+  in vec2 a_uv0;
+  in vec4 a_color;
+
+  out vec2 uv0;
+  out vec4 color;
+
+  vec4 vert () {
+    vec4 pos = vec4(a_position, 1.0);
+    #if CC_USE_MODEL
+      pos = cc_matViewProj * cc_matWorld * pos;
+    #else
+      pos = cc_matViewProj * pos;
+    #endif
+    uv0 = a_uv0;
+    color = a_color;
+    return pos;
+  }
+}%
+
+CCProgram drop-collision-glow-fs %{
+  precision highp float;
+  #include <texture>
+
+  in vec2 uv0;
+  in vec4 color;
+
+  uniform sampler2D texture;
+  uniform DropCollisionGlowUv {
+    vec4 uvOriginAxisX;
+    vec4 uvAxisY;
+  };
+  uniform DropCollisionGlowParams {
+    vec4 glowColor;
+    vec4 glowParams;
+  };
+
+  bool insideUnitSquare(vec2 point) {
+    return point.x >= 0.0 && point.x <= 1.0 && point.y >= 0.0 && point.y <= 1.0;
+  }
+
+  vec2 toLocalUv(vec2 atlasUv) {
+    vec2 origin = uvOriginAxisX.xy;
+    vec2 axisX = uvOriginAxisX.zw;
+    vec2 axisY = uvAxisY.xy;
+    vec2 delta = atlasUv - origin;
+    return vec2(
+      dot(delta, axisX) / uvAxisY.z,
+      dot(delta, axisY) / uvAxisY.w
+    );
+  }
+
+  vec2 toAtlasUv(vec2 localUv) {
+    return uvOriginAxisX.xy + uvOriginAxisX.zw * localUv.x + uvAxisY.xy * localUv.y;
+  }
+
+  float sampleAlpha(vec2 localUv) {
+    if (!insideUnitSquare(localUv)) {
+      return 0.0;
+    }
+    vec4 sampledColor = vec4(1.0);
+    CCTexture(texture, toAtlasUv(localUv), sampledColor);
+    #if USE_BGRA
+      sampledColor = sampledColor.bgra;
+    #endif
+    return sampledColor.a;
+  }
+
+  vec4 frag () {
+    vec2 localUv = toLocalUv(uv0);
+    float radius = glowParams.y;
+    vec2 stepX = vec2(radius, 0.0);
+    vec2 stepY = vec2(0.0, radius);
+    vec2 stepD = vec2(radius * 0.70710678, radius * 0.70710678);
+
+    float centerAlpha = sampleAlpha(localUv);
+    float sample0 = sampleAlpha(localUv + stepX);
+    float sample1 = sampleAlpha(localUv - stepX);
+    float sample2 = sampleAlpha(localUv + stepY);
+    float sample3 = sampleAlpha(localUv - stepY);
+    float sample4 = sampleAlpha(localUv + stepD);
+    float sample5 = sampleAlpha(localUv - stepD);
+    float sample6 = sampleAlpha(localUv + vec2(stepD.x, -stepD.y));
+    float sample7 = sampleAlpha(localUv + vec2(-stepD.x, stepD.y));
+    float neighborMax = max(max(max(sample0, sample1), max(sample2, sample3)), max(max(sample4, sample5), max(sample6, sample7)));
+    float neighborMin = min(min(min(sample0, sample1), min(sample2, sample3)), min(min(sample4, sample5), min(sample6, sample7)));
+
+    float outerGlow = max(neighborMax - centerAlpha, 0.0);
+    float innerRim = centerAlpha * max(centerAlpha - neighborMin, 0.0);
+    float bodyCover = centerAlpha * glowParams.w;
+    float alpha = (outerGlow * 0.72 + innerRim * 0.68 + bodyCover) * glowParams.z;
+    alpha *= 0.86 + glowParams.x * 0.34;
+    if (alpha <= 0.003) {
+      discard;
+    }
+    return vec4(glowColor.rgb, min(alpha, 1.0) * color.a * glowColor.a);
+  }
+}%

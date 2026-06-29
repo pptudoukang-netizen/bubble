@@ -1208,6 +1208,36 @@ GameManager.prototype._pushRuntimeEvent = function (type, payload) {
   this.pendingRuntimeEvents.push(eventData);
 };
 
+GameManager.prototype._pushFairyAssistDepartEvents = function (events) {
+  if (!Array.isArray(events)) {
+    throw new Error("Fairy assist depart events requires array.");
+  }
+
+  events.forEach(function (event) {
+    if (!event || typeof event.type !== "string") {
+      throw new Error("Fairy assist event requires type.");
+    }
+    if (event.type === "remove") {
+      if (typeof event.fairyId !== "string" || !event.fairyId) {
+        throw new Error("Fairy assist remove event requires fairyId.");
+      }
+      this._pushRuntimeEvent("fairy_assist_depart", {
+        fairyId: event.fairyId,
+        reason: "remove"
+      });
+      return;
+    }
+    if (event.type === "spawn") {
+      if (typeof event.replacedFairyId === "string" && event.replacedFairyId) {
+        this._pushRuntimeEvent("fairy_assist_depart", {
+          fairyId: event.replacedFairyId,
+          reason: "replace"
+        });
+      }
+    }
+  }, this);
+};
+
 GameManager.prototype._drainRuntimeEvents = function () {
   if (!Array.isArray(this.pendingRuntimeEvents) || !this.pendingRuntimeEvents.length) {
     return [];
@@ -2443,11 +2473,15 @@ GameManager.prototype.update = function (dt) {
   var fairyHits = fallingStep && Array.isArray(fallingStep.fairyHits) ? fallingStep.fairyHits : [];
   var fairySplits = fallingStep && Array.isArray(fallingStep.splits) ? fallingStep.splits : [];
   var runtimeEvents = this._drainRuntimeEvents();
-  var bounceCount = fallingStep ? Math.max(0, Math.floor(Number(fallingStep.bounced) || 0)) : 0;
-
-  for (var bounceIndex = 0; bounceIndex < bounceCount; bounceIndex += 1) {
-    this._pushRuntimeEvent("jar_rim_bounce");
-  }
+  var bounceEvents = fallingStep && Array.isArray(fallingStep.bounceEvents) ? fallingStep.bounceEvents : [];
+  bounceEvents.forEach(function (bounceEvent) {
+    if (!bounceEvent || !Number.isInteger(bounceEvent.bounceCount) || bounceEvent.bounceCount < 1) {
+      throw new Error("FallingMarbleSystem bounce event requires positive integer bounceCount.");
+    }
+    this._pushRuntimeEvent("jar_rim_bounce", {
+      bounceCount: bounceEvent.bounceCount
+    });
+  }, this);
   fairyHits.forEach(function (hit) {
     this._pushRuntimeEvent("fairy_assist_hit", hit);
   }, this);

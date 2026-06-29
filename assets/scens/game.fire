@@ -1717,7 +1717,7 @@
     "shotSfxResource": "sound/btn2",
     "loseSfxResource": "sound/lose",
     "winSfxResource": "sound/win1",
-    "jarBounceSfxResources": "sound/ding6,sound/ding6,sound/ding6,sound/ding6",
+    "jarBounceSfxResources": "sound/piano1,sound/piano2,sound/piano3,sound/piano4,sound/piano5,sound/piano6,sound/piano7",
     "jarCollectBottomSfxResource": "sound/ding0",
     "breakSfxResource": "sound/break",
     "rewardedVideoAdUnitId": "adunit-a6c99a9ee6bc8015",

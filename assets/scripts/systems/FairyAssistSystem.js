@@ -266,7 +266,6 @@ FairyAssistSystem.prototype.resolveFirstCollision = function (drop, bubbleRadius
     }
 
     drop.hitFairyIds.push(fairy.id);
-    fairy.glowStacks += 1;
     this.revision += 1;
     return {
       fairy: fairy,

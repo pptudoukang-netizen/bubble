@@ -111,7 +111,15 @@
 渲染层只根据关卡配置和 runtime snapshot 同步 Cocos 节点：
 
 - `LevelRenderer.js`：渲染入口、资源预加载、事件 handler、公共节点/资源逻辑。
-- `LevelRendererSceneMethods.js`：棋盘、特殊球预制体（火焰瓶、分裂球、锁定球、钥匙）、钥匙解锁动画、分裂球生成抛物线飞入动画、HUD（含 `set_btn` 打开设置）、底部道具面板、弹道、掉落、罐子、胜负弹窗，以及 `GameView/timer`、`GameView/go` 的开局倒计时动画等具体渲染。
+- `LevelRendererSceneMethods.js`：场景渲染薄编排层，按域挂载下列子模块。
+- `LevelRendererSceneShared.js`：场景渲染跨域公共节点 helper（`requireChildNode`、Label 写入等）。
+- `LevelRendererSceneScaffoldMethods.js`：`GameView` 脚手架、背景/大陆/渐变层、开局倒计时与 HUD 底线同步。
+- `LevelRendererSceneBoardMethods.js`：棋盘球池、掉落球、调试网格与棋盘格视觉状态。
+- `LevelRendererSceneShooterMethods.js`：炮台、瞄准辅助线、彩虹选色、路线编辑器与飞行球视觉缓存。
+- `LevelRendererSceneFxMethods.js`：钥匙/分裂/燃烧瓶/冰球等一次性动画、障碍锤提示、震屏与冲击反弹。
+- `LevelRendererSceneHudMethods.js`：HUD 目标、星级进度、连击/分数飘字、定时器与底部道具栏。
+- `LevelRendererSceneJarMethods.js`：底部罐子、罐内掉落遮挡与碰撞遮罩。
+- `LevelRendererScenePopupMethods.js`：胜/负/暂停/道具说明弹窗与结果浮层渲染（含 Sprite 代理分层）。
 - `LevelRendererFairyMethods.js`：严格绑定 `GameView/geniuses/genius1...6`，渲染三色精灵、飞入/替换/离场动画，并用单个复用光效 Sprite 表达碰撞层数。
 - `BubbleShatterRenderer.js`：普通匹配球消除时的 Shader 碎裂渲染器；在棋盘节点回收前复制球的 SpriteFrame 与位置，以单球单 Sprite 的片元 Shader 生成中心块和八个放射碎片，不参与棋盘状态与掉落结算。
 - `PrefabFactory.js`：预制体实例化辅助。

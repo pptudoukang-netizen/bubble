@@ -99,6 +99,7 @@ function buildDrop(id, fairy, splitGeneration) {
     hitFairyIds: [],
     fairyBonusSteps: 0,
     finalMultiplier: 1,
+    glowStacks: 0,
     splitGeneration: splitGeneration
   };
 }
@@ -286,6 +287,28 @@ function testMaxCollisionsPerFairyCap() {
   assert.strictEqual(drop.hitFairyIds.length, FairyAssistConfig.maxCollisionsPerFairy);
   assert.strictEqual(drop.fairyBonusSteps, FairyAssistConfig.maxCollisionsPerFairy);
   assert.strictEqual(drop.finalMultiplier, FairyAssistConfig.maxCollisionsPerFairy + 1);
+}
+
+function testDropGlowStacksCap() {
+  var systems = createSystems(20);
+  systems.fairy.resolveAfterShot(buildResolution(1, 0), buildGrid());
+  var redFairy = systems.fairy.snapshotForRender().slots[0].fairy;
+  var drop = buildDrop("red_glow", redFairy, 1);
+  systems.falling.activeDrops = [drop];
+
+  for (var hitIndex = 0; hitIndex < FairyAssistConfig.maxGlowStacks + 2; hitIndex += 1) {
+    drop.position.x = redFairy.position.x;
+    drop.position.y = resolveFairyCollisionProbeY(redFairy);
+    drop.velocity.x = 0;
+    drop.velocity.y = -100;
+    var update = systems.falling.update(0.01);
+    assert.strictEqual(update.fairyHits.length, hitIndex < FairyAssistConfig.maxCollisionsPerFairy ? 1 : 0);
+    assert.strictEqual(redFairy.glowStacks, 0);
+    assert.strictEqual(
+      drop.glowStacks,
+      Math.min(hitIndex + 1, FairyAssistConfig.maxGlowStacks, FairyAssistConfig.maxCollisionsPerFairy)
+    );
+  }
 }
 
 function testCollisionDiameterContract() {
@@ -661,12 +684,14 @@ function testCollectedMultiplierContract() {
 
 assert.strictEqual(BoardLayout.bubbleRadius, 36);
 assert.strictEqual(FairyAssistConfig.fairyCollisionRadius * 2, 40);
+assert.strictEqual(FairyAssistConfig.maxGlowStacks, 5);
 testPrefabAndAssetContract();
 testSpawnRules();
 testMissRemovalPriority();
 testReplacementPriority();
 testGreenSplitAndCollisionDedupe();
 testMaxCollisionsPerFairyCap();
+testDropGlowStacksCap();
 testCollisionDiameterContract();
 testGreenSplitCapacityFailure();
 testDeferredDropCapacity();

@@ -19,6 +19,8 @@ var PropDescriptionViewController = require("../ui/PropDescriptionViewController
 var attachLevelRendererSceneMethods = require("./LevelRendererSceneMethods");
 var attachLevelRendererFairyMethods = require("./LevelRendererFairyMethods");
 
+var DROP_COLLISION_GLOW_EFFECT_RESOURCE_PATH = "effects/DropCollisionGlow";
+
 var loadSpriteFrame = RenderNodeHelpers.loadSpriteFrame;
 var createSolidWhiteSpriteFrame = RenderNodeHelpers.createSolidWhiteSpriteFrame;
 var ensureSprite = RenderNodeHelpers.ensureSprite;
@@ -132,7 +134,10 @@ var JAR_RENDER_Y_OFFSET = Number(BoardLayout.jarRenderYOffset) || 0;
 var GUIDE_DOT_SPACING = 42;
 var GUIDE_DOT_RADIUS = 8;
 var GUIDE_DOT_SIZE = GUIDE_DOT_RADIUS * 2;
+var GUIDE_DOT_FAR_SCALE = 0.5;
 var GUIDE_DOT_MAX_COUNT = 64;
+var GUIDE_DOT_MIN_SCALE = 0.5;
+var GUIDE_DOT_MAX_SCALE = 1;
 var GUIDE_DOT_SPRITE_PATH = "image/ball/white_point";
 var GUIDE_DOT_TINTS = {
   R: { r: 255, g: 80, b: 80 },
@@ -1083,6 +1088,8 @@ function LevelRenderer(rootNode) {
     bubbleWidth: BOARD_BUBBLE_SIZE.width,
     bubbleHeight: BOARD_BUBBLE_SIZE.height
   });
+  this.dropCollisionGlowEffectAsset = null;
+  this.dropCollisionGlowEffectLoadPromise = null;
   this._sharedWarmupPromise = null;
   this.currentLevelConfig = null;
   this.lastRuntimeSnapshot = null;
@@ -1217,13 +1224,48 @@ LevelRenderer.prototype.warmupSharedAssets = function () {
   this._sharedWarmupPromise = Promise.all([
     this._preloadSprites(this._collectCommonSpritePaths()),
     this.prefabFactory.preload(this._collectPrefabPaths()),
-    this.bubbleShatterRenderer.preload()
+    this.bubbleShatterRenderer.preload(),
+    this._preloadDropCollisionGlowEffect()
   ]).catch(function (error) {
     this._sharedWarmupPromise = null;
     throw error;
   }.bind(this));
 
   return this._sharedWarmupPromise;
+};
+
+LevelRenderer.prototype._preloadDropCollisionGlowEffect = function () {
+  if (cc.game.renderType === cc.game.RENDER_TYPE_CANVAS) {
+    throw new Error("Drop collision glow shader requires WebGL renderer.");
+  }
+  if (this.dropCollisionGlowEffectAsset && this.dropCollisionGlowEffectAsset.isValid) {
+    return Promise.resolve(this.dropCollisionGlowEffectAsset);
+  }
+  if (this.dropCollisionGlowEffectLoadPromise) {
+    return this.dropCollisionGlowEffectLoadPromise;
+  }
+  if (!cc.EffectAsset) {
+    throw new Error("Drop collision glow requires cc.EffectAsset.");
+  }
+
+  this.dropCollisionGlowEffectLoadPromise = new Promise(function (resolve, reject) {
+    cc.resources.load(DROP_COLLISION_GLOW_EFFECT_RESOURCE_PATH, cc.EffectAsset, function (error, effectAsset) {
+      if (error) {
+        reject(new Error("Drop collision glow effect load failed: " + error.message));
+        return;
+      }
+      if (!effectAsset || !effectAsset.isValid) {
+        reject(new Error("Drop collision glow effect asset is invalid: " + DROP_COLLISION_GLOW_EFFECT_RESOURCE_PATH));
+        return;
+      }
+      this.dropCollisionGlowEffectAsset = effectAsset;
+      resolve(effectAsset);
+    }.bind(this));
+  }.bind(this)).catch(function (error) {
+    this.dropCollisionGlowEffectLoadPromise = null;
+    throw error;
+  }.bind(this));
+  return this.dropCollisionGlowEffectLoadPromise;
 };
 
 LevelRenderer.prototype.setWinActionHandlers = function (handlers) {
@@ -1917,6 +1959,8 @@ LevelRenderer.prototype.releaseAfterGameplayBundleUnload = function () {
   }.bind(this));
   this.spriteFrameCache = {};
   this.spriteFrameLoadPromises = {};
+  this.dropCollisionGlowEffectAsset = null;
+  this.dropCollisionGlowEffectLoadPromise = null;
   this._sharedWarmupPromise = null;
   this.lastHudRenderKey = "";
   this.lastJarRenderKey = "";
@@ -2082,6 +2126,7 @@ var LEVEL_RENDERER_SCENE_DEPS = {
   GUIDE_DOT_SPACING: GUIDE_DOT_SPACING,
   GUIDE_DOT_RADIUS: GUIDE_DOT_RADIUS,
   GUIDE_DOT_SIZE: GUIDE_DOT_SIZE,
+  GUIDE_DOT_FAR_SCALE: GUIDE_DOT_FAR_SCALE,
   GUIDE_DOT_MAX_COUNT: GUIDE_DOT_MAX_COUNT,
   GUIDE_DOT_SPRITE_PATH: GUIDE_DOT_SPRITE_PATH,
   GUIDE_DOT_TINTS: GUIDE_DOT_TINTS,
@@ -2094,6 +2139,7 @@ var LEVEL_RENDERER_SCENE_DEPS = {
   BARRIER_HAMMER_HINT_STRIKE_DURATION: BARRIER_HAMMER_HINT_STRIKE_DURATION,
   BARRIER_HAMMER_HINT_PAUSE_DURATION: BARRIER_HAMMER_HINT_PAUSE_DURATION,
   TEST_SLOT_RADIUS: TEST_SLOT_RADIUS,
+  FairyAssistConfig: FairyAssistConfig,
   ICE_OVERLAY_OPACITY: ICE_OVERLAY_OPACITY,
   BOARD_BUBBLE_SIZE: BOARD_BUBBLE_SIZE,
   NEXT_SHOT_BUBBLE_SIZE: NEXT_SHOT_BUBBLE_SIZE,

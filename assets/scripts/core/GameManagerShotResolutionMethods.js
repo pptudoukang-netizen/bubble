@@ -1157,6 +1157,7 @@ function createGameManagerShotResolutionMethods(deps) {
         resolution,
         this.systems.bubbleGrid
       );
+      this._pushFairyAssistDepartEvents(resolution.fairyAssistEvents);
       resolution.fairyAssistResolved = true;
     },
 

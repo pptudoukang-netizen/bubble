@@ -16,7 +16,9 @@ module.exports = {
         lose: this.loseSfxResource,
         jarBounce: this._parseAudioResourceList(this.jarBounceSfxResources),
         jarCollectBottom: this.jarCollectBottomSfxResource,
-        break: this.breakSfxResource
+        break: this.breakSfxResource,
+        fairyAssistHit: this.fairyAssistHitSfxResource,
+        fairyAssistDepart: this.fairyAssistDepartSfxResource
       }
     };
   },
@@ -100,6 +102,20 @@ module.exports = {
     this.audioManager.playSfx(name);
   },
 
+  _resolveJarBounceSfxPath: function (bounceCount) {
+    if (!Number.isInteger(bounceCount) || bounceCount < 1) {
+      throw new Error("Jar bounce sfx requires positive integer bounceCount.");
+    }
+
+    var pianoPaths = this._parseAudioResourceList(this.jarBounceSfxResources);
+    if (pianoPaths.length < 7) {
+      throw new Error("Jar bounce sfx resources must include at least 7 entries (piano1-7).");
+    }
+
+    var pianoIndex = Math.min(7, bounceCount);
+    return pianoPaths[pianoIndex - 1];
+  },
+
   _canPlayJarBounceSfx: function (now, playedThisFrame) {
     if (!Number.isFinite(now)) {
       throw new Error("Jar bounce sfx throttle requires finite timestamp.");
@@ -173,16 +189,24 @@ module.exports = {
       this._trackRuntimeTelemetryEvent(event, snapshot);
 
       if (event.type === "jar_rim_bounce") {
+        if (!Number.isInteger(event.bounceCount) || event.bounceCount < 1) {
+          throw new Error("jar_rim_bounce runtime event requires positive integer bounceCount.");
+        }
         if (!this._canPlayJarBounceSfx(now, jarBouncePlayedThisFrame)) {
           return;
         }
         jarBouncePlayedThisFrame += 1;
-        this._playSfx("jarBounce");
+        this._playSfx(this._resolveJarBounceSfxPath(event.bounceCount));
         return;
       }
 
-      if (event.type === "jar_collect_bottom") {
-        this._playSfx("jarCollectBottom");
+      if (event.type === "fairy_assist_hit") {
+        this._playSfx("fairyAssistHit");
+        return;
+      }
+
+      if (event.type === "fairy_assist_depart") {
+        this._playSfx("fairyAssistDepart");
         return;
       }
 
