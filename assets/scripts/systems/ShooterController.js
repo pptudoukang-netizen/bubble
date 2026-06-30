@@ -127,6 +127,11 @@ ShooterController.prototype._applyInitialShotBalls = function (initialShotBalls)
   }
 };
 
+ShooterController.prototype.resetAimDirection = function () {
+  this.aimDirection = { x: 0, y: 1 };
+  return this.getAimState();
+};
+
 ShooterController.prototype.setAimFromPoint = function (point) {
   var dx = point.x - this.origin.x;
   var dy = point.y - this.origin.y;

@@ -134,7 +134,7 @@ cc.Class({
       tooltip: "玩家信息云端存储使用的微信云函数名称。"
     },
     playerProfileCloudSyncDebounceMs: {
-      default: 800,
+      default: 5000,
       tooltip: "玩家信息本地写入后延迟上传云端的合并等待时间（毫秒）。"
     },
     worldLeaderboardCloudEnvId: {
@@ -246,7 +246,7 @@ cc.Class({
       tooltip: "掉落玻璃球与缸碰撞时按碰撞次数播放的音效资源列表（piano1-7），使用英文逗号分隔。"
     },
     jarCollectBottomSfxResource: {
-      default: "sound/ding0",
+      default: "sound/score",
       tooltip: "球落入缸底被收集时播放的音效资源路径。"
     },
     breakSfxResource: {
@@ -260,6 +260,10 @@ cc.Class({
     fairyAssistDepartSfxResource: {
       default: "sound/fly",
       tooltip: "精灵向上飞出屏幕消失时播放的音效资源路径。"
+    },
+    gameEntryCountdownSfxResource: {
+      default: "sound/time",
+      tooltip: "开局 3-2-1-GO 倒计时音效资源路径（Resources 相对路径）。"
     },
     rewardedVideoAdUnitId: {
       default: "",
@@ -350,6 +354,8 @@ cc.Class({
   _playLevelSelectBackgroundMusic: GameBootstrapAudioMethods._playLevelSelectBackgroundMusic,
   _playGameplayBackgroundMusic: GameBootstrapAudioMethods._playGameplayBackgroundMusic,
   _playSfx: GameBootstrapAudioMethods._playSfx,
+  _runGameEntryCountdown: GameBootstrapAudioMethods._runGameEntryCountdown,
+  _resolveJarBouncePianoPath: GameBootstrapAudioMethods._resolveJarBouncePianoPath,
   _canPlayJarBounceSfx: GameBootstrapAudioMethods._canPlayJarBounceSfx,
   _triggerShortVibration: GameBootstrapAudioMethods._triggerShortVibration,
   _playRuntimeAudioEvents: GameBootstrapAudioMethods._playRuntimeAudioEvents,
@@ -555,6 +561,7 @@ cc.Class({
   _refreshLevelSelectNativeTemplateAdLayout: GameBootstrapUiFlowMethods._refreshLevelSelectNativeTemplateAdLayout,
   _refreshPlayerResources: GameBootstrapUiFlowMethods._refreshPlayerResources,
   _refreshStaminaRecoveryState: GameBootstrapUiFlowMethods._refreshStaminaRecoveryState,
+  _ensureStaminaRecoveryStateInMemory: GameBootstrapUiFlowMethods._ensureStaminaRecoveryStateInMemory,
   _saveStaminaRecoveryState: GameBootstrapUiFlowMethods._saveStaminaRecoveryState,
   _markStaminaRecoveryBaseline: GameBootstrapUiFlowMethods._markStaminaRecoveryBaseline,
   _applyNaturalStaminaRecovery: GameBootstrapUiFlowMethods._applyNaturalStaminaRecovery,

@@ -105,13 +105,111 @@ function buildDrop(id, fairy, splitGeneration) {
 }
 
 function syncFairyCollisionCentersForTests(fairySystem) {
-  fairySystem.syncCollisionCenters(FairyAssistConfig.slots.map(function (slotConfig) {
+  fairySystem.syncCollisionCenters(readPrefabFairySlotCenters().map(function (slotCenter) {
     return {
-      index: slotConfig.index,
-      x: slotConfig.x,
-      y: slotConfig.y
+      index: slotCenter.index,
+      x: slotCenter.x,
+      y: slotCenter.y
     };
   }));
+}
+
+function readGameViewPrefab() {
+  var prefabPath = path.join(__dirname, "..", "assets", "resources", "prefabs", "ui", "GameView.prefab");
+  return JSON.parse(fs.readFileSync(prefabPath, "utf8"));
+}
+
+function readFairyAnimationBundleMeta() {
+  var metaPath = path.join(__dirname, "..", "assets", "animation.meta");
+  assert(fs.existsSync(metaPath), "Missing animation bundle meta.");
+  return JSON.parse(fs.readFileSync(metaPath, "utf8"));
+}
+
+function findPrefabGeniusesIndex(prefab) {
+  var geniusesIndex = prefab.findIndex(function (entry) {
+    return entry && entry.__type__ === "cc.Node" && entry._name === "geniuses";
+  });
+  assert(geniusesIndex >= 0, "GameView requires geniuses node.");
+  return geniusesIndex;
+}
+
+function findPrefabFairySlotNode(prefab, geniusesIndex, slotConfig) {
+  var node = prefab.find(function (entry) {
+    return entry &&
+      entry.__type__ === "cc.Node" &&
+      entry._name === slotConfig.nodeName &&
+      entry._parent &&
+      entry._parent.__id__ === geniusesIndex;
+  });
+  assert(node, "Missing GameView/geniuses/" + slotConfig.nodeName + ".");
+  assert(node._trs && Array.isArray(node._trs.array), "Invalid transform for GameView/geniuses/" + slotConfig.nodeName + ".");
+  assert.strictEqual(typeof node._trs.array[0], "number", "Invalid x for GameView/geniuses/" + slotConfig.nodeName + ".");
+  assert.strictEqual(typeof node._trs.array[1], "number", "Invalid y for GameView/geniuses/" + slotConfig.nodeName + ".");
+  return node;
+}
+
+function readPrefabFairySlotCenters() {
+  var prefab = readGameViewPrefab();
+  var geniusesIndex = findPrefabGeniusesIndex(prefab);
+  return FairyAssistConfig.slots.map(function (slotConfig) {
+    var node = findPrefabFairySlotNode(prefab, geniusesIndex, slotConfig);
+    return {
+      index: slotConfig.index,
+      x: node._trs.array[0],
+      y: node._trs.array[1]
+    };
+  });
+}
+
+function assertFairyAnimationPrefabContract(rule) {
+  assert(rule && typeof rule.prefabPath === "string" && rule.prefabPath, "Fairy color rule requires prefabPath.");
+  var relativePath = rule.prefabPath + ".prefab";
+  var absolutePath = path.join(__dirname, "..", "assets", "animation", relativePath.replace(/\//g, path.sep));
+  assert(fs.existsSync(absolutePath), "Missing fairy animation prefab: " + relativePath);
+  assert(fs.existsSync(absolutePath + ".meta"), "Missing fairy animation prefab meta: " + relativePath);
+
+  var prefab = JSON.parse(fs.readFileSync(absolutePath, "utf8"));
+  var rootNode = prefab.find(function (entry) {
+    return entry && entry.__type__ === "cc.Node";
+  });
+  assert(rootNode, "Fairy animation prefab requires root node: " + relativePath);
+  assert(rootNode._contentSize && rootNode._contentSize.width > 0 && rootNode._contentSize.height > 0, "Fairy animation prefab requires positive size: " + relativePath);
+  var animation = prefab.find(function (entry) {
+    return entry && entry.__type__ === "cc.Animation";
+  });
+  assert(animation, "Fairy animation prefab requires cc.Animation: " + relativePath);
+  assert(animation._defaultClip && animation._defaultClip.__uuid__, "Fairy animation prefab requires default clip: " + relativePath);
+  assert(Array.isArray(animation._clips) && animation._clips.length > 0, "Fairy animation prefab requires clips: " + relativePath);
+}
+
+function getActiveFairies(fairySystem) {
+  return fairySystem.snapshotForRender().slots.filter(function (slot) {
+    return slot.fairy !== null;
+  }).map(function (slot) {
+    return slot.fairy;
+  });
+}
+
+function findFairyByColor(fairySystem, color) {
+  var matches = getActiveFairies(fairySystem).filter(function (fairy) {
+    return fairy.color === color;
+  });
+  if (matches.length !== 1) {
+    throw new Error("Expected exactly one active " + color + " fairy, found " + matches.length + ".");
+  }
+  return matches[0];
+}
+
+function findFairiesByColor(fairySystem, color) {
+  return getActiveFairies(fairySystem).filter(function (fairy) {
+    return fairy.color === color;
+  });
+}
+
+function collectActiveColors(fairySystem) {
+  return getActiveFairies(fairySystem).map(function (fairy) {
+    return fairy.color;
+  }).sort();
 }
 
 function createSystems(maxDynamicMarbles) {
@@ -145,34 +243,35 @@ function createSystemsWithJar(maxDynamicMarbles) {
 }
 
 function testPrefabAndAssetContract() {
-  var prefabPath = path.join(__dirname, "..", "assets", "resources", "prefabs", "ui", "GameView.prefab");
-  var prefab = JSON.parse(fs.readFileSync(prefabPath, "utf8"));
-  var geniusesIndex = prefab.findIndex(function (entry) {
-    return entry && entry.__type__ === "cc.Node" && entry._name === "geniuses";
-  });
-  assert(geniusesIndex >= 0, "GameView requires geniuses node.");
+  var prefab = readGameViewPrefab();
+  var geniusesIndex = findPrefabGeniusesIndex(prefab);
   var geniuses = prefab[geniusesIndex];
   assert.strictEqual(geniuses._children.length, 6);
 
   FairyAssistConfig.slots.forEach(function (slotConfig) {
-    var node = prefab.find(function (entry) {
-      return entry &&
-        entry.__type__ === "cc.Node" &&
-        entry._name === slotConfig.nodeName &&
-        entry._parent &&
-        entry._parent.__id__ === geniusesIndex;
-    });
-    assert(node, "Missing GameView/geniuses/" + slotConfig.nodeName + ".");
-    assert.strictEqual(node._trs.array[0], slotConfig.x);
-    assert.strictEqual(node._trs.array[1], slotConfig.y);
+    findPrefabFairySlotNode(prefab, geniusesIndex, slotConfig);
   });
 
+  var animationMeta = readFairyAnimationBundleMeta();
+  assert.strictEqual(animationMeta.isBundle, true, "assets/animation must be a bundle.");
+  assert(animationMeta.compressionType && animationMeta.compressionType.wechatgame === "subpackage", "assets/animation must build as WeChat subpackage.");
   FairyAssistConfig.colorRules.forEach(function (rule) {
-    var relativePath = rule.assetPath + ".png";
-    var absolutePath = path.join(__dirname, "..", "assets", "resources", relativePath.replace(/\//g, path.sep));
-    assert(fs.existsSync(absolutePath), "Missing fairy asset: " + relativePath);
-    assert(fs.existsSync(absolutePath + ".meta"), "Missing fairy asset meta: " + relativePath);
+    assertFairyAnimationPrefabContract(rule);
   });
+}
+
+function testRandomEmptySlotSelection() {
+  var systems = createSystems(20);
+  var grid = buildGrid();
+  var usedSlotIndexes = {};
+  for (var attempt = 0; attempt < 48; attempt += 1) {
+    systems.fairy.configureLevel(buildLevelConfig(20));
+    syncFairyCollisionCentersForTests(systems.fairy);
+    systems.fairy.resolveAfterShot(buildResolution(1, 0), grid);
+    var fairy = findFairyByColor(systems.fairy, "red");
+    usedSlotIndexes[fairy.slotIndex] = true;
+  }
+  assert(Object.keys(usedSlotIndexes).length > 1, "Fairy spawn must pick among empty slots randomly.");
 }
 
 function testSpawnRules() {
@@ -181,21 +280,17 @@ function testSpawnRules() {
   systems.fairy.resolveAfterShot(buildResolution(1, 0), grid);
   systems.fairy.resolveAfterShot(buildResolution(6, 0), grid);
   systems.fairy.resolveAfterShot(buildResolution(10, 0), grid);
-  assert.deepStrictEqual(
-    systems.fairy.snapshotForRender().slots.slice(0, 3).map(function (slot) {
-      return slot.fairy.color;
-    }),
-    ["red", "yellow", "green"]
-  );
+  assert.deepStrictEqual(collectActiveColors(systems.fairy), ["green", "red", "yellow"]);
 
-  var beforeFloatingResolution = systems.fairy.snapshotForRender().revision;
-  systems.fairy.resolveAfterShot(buildResolution(10, 1), grid);
-  assert.strictEqual(systems.fairy.snapshotForRender().revision, beforeFloatingResolution);
+  var floatingResolutionEvents = systems.fairy.resolveAfterShot(buildResolution(10, 1), grid);
+  assert.strictEqual(floatingResolutionEvents.length, 1);
+  assert.strictEqual(floatingResolutionEvents[0].type, "spawn");
+  assert.strictEqual(floatingResolutionEvents[0].color, "green");
+  assert.deepStrictEqual(collectActiveColors(systems.fairy), ["green", "green", "red", "yellow"]);
 
   systems.fairy.resolveAfterShot(buildResolution(0, 0), grid);
-  assert.strictEqual(systems.fairy.snapshotForRender().slots[0].fairy, null);
-  assert.strictEqual(systems.fairy.snapshotForRender().slots[1].fairy, null);
-  assert.strictEqual(systems.fairy.snapshotForRender().slots[2].fairy.color, "green");
+  assert.deepStrictEqual(collectActiveColors(systems.fairy), ["red", "yellow"]);
+  assert.strictEqual(getActiveFairies(systems.fairy).length, 2);
 }
 
 function testMissRemovalPriority() {
@@ -205,18 +300,14 @@ function testMissRemovalPriority() {
   systems.fairy.resolveAfterShot(buildResolution(6, 0), grid);
   systems.fairy.resolveAfterShot(buildResolution(10, 0), grid);
   systems.fairy.resolveAfterShot(buildResolution(0, 0), grid);
-  var slots = systems.fairy.snapshotForRender().slots;
-  assert.strictEqual(slots[0].fairy, null);
-  assert.strictEqual(slots[1].fairy, null);
-  assert.strictEqual(slots[2].fairy.color, "green");
+  assert.deepStrictEqual(collectActiveColors(systems.fairy), ["red"]);
+  assert.strictEqual(getActiveFairies(systems.fairy).length, 1);
 
   systems.fairy.resolveAfterShot(buildResolution(10, 0), grid);
   systems.fairy.resolveAfterShot(buildResolution(6, 0), grid);
   systems.fairy.resolveAfterShot(buildResolution(0, 0), grid);
-  slots = systems.fairy.snapshotForRender().slots;
-  assert.strictEqual(slots[0].fairy, null);
-  assert.strictEqual(slots[1].fairy.color, "yellow");
-  assert.strictEqual(slots[2].fairy, null);
+  assert.deepStrictEqual(collectActiveColors(systems.fairy), ["red"]);
+  assert.strictEqual(getActiveFairies(systems.fairy).length, 1);
 }
 
 function testReplacementPriority() {
@@ -225,16 +316,23 @@ function testReplacementPriority() {
   [1, 6, 10, 1, 6, 10].forEach(function (matchedCount) {
     systems.fairy.resolveAfterShot(buildResolution(matchedCount, 0), grid);
   });
+  var oldestRed = findFairiesByColor(systems.fairy, "red").reduce(function (oldest, fairy) {
+    return !oldest || fairy.enteredAt < oldest.enteredAt ? fairy : oldest;
+  }, null);
+  assert(oldestRed, "replacement priority test requires at least one red fairy.");
+  var replacedSlotIndex = oldestRed.slotIndex;
   systems.fairy.resolveAfterShot(buildResolution(6, 0), grid);
   var slots = systems.fairy.snapshotForRender().slots;
-  assert.strictEqual(slots[0].fairy.color, "yellow");
-  assert.strictEqual(slots[3].fairy.color, "red");
+  assert.strictEqual(slots[replacedSlotIndex].fairy.color, "yellow");
+  assert.strictEqual(findFairiesByColor(systems.fairy, "red").length, 1);
+  assert.strictEqual(findFairiesByColor(systems.fairy, "yellow").length, 3);
+  assert.strictEqual(findFairiesByColor(systems.fairy, "green").length, 2);
 }
 
 function testGreenSplitAndCollisionDedupe() {
   var systems = createSystems(20);
   systems.fairy.resolveAfterShot(buildResolution(10, 0), buildGrid());
-  var greenFairy = systems.fairy.snapshotForRender().slots[0].fairy;
+  var greenFairy = findFairyByColor(systems.fairy, "green");
   systems.falling.activeDrops = [buildDrop("green_root", greenFairy, 0)];
 
   var update = systems.falling.update(0.01);
@@ -262,7 +360,7 @@ function testGreenSplitAndCollisionDedupe() {
 function testMaxCollisionsPerFairyCap() {
   var systems = createSystems(20);
   systems.fairy.resolveAfterShot(buildResolution(1, 0), buildGrid());
-  var redFairy = systems.fairy.snapshotForRender().slots[0].fairy;
+  var redFairy = findFairyByColor(systems.fairy, "red");
   var drop = buildDrop("red_repeat", redFairy, 1);
   systems.falling.activeDrops = [drop];
 
@@ -292,7 +390,7 @@ function testMaxCollisionsPerFairyCap() {
 function testDropGlowStacksCap() {
   var systems = createSystems(20);
   systems.fairy.resolveAfterShot(buildResolution(1, 0), buildGrid());
-  var redFairy = systems.fairy.snapshotForRender().slots[0].fairy;
+  var redFairy = findFairyByColor(systems.fairy, "red");
   var drop = buildDrop("red_glow", redFairy, 1);
   systems.falling.activeDrops = [drop];
 
@@ -315,7 +413,7 @@ function testCollisionDiameterContract() {
   var combinedCollisionDistance = FairyAssistConfig.fairyCollisionRadius + BoardLayout.bubbleRadius;
   var outsideSystems = createSystems(20);
   outsideSystems.fairy.resolveAfterShot(buildResolution(1, 0), buildGrid());
-  var outsideFairy = outsideSystems.fairy.snapshotForRender().slots[0].fairy;
+  var outsideFairy = findFairyByColor(outsideSystems.fairy, "red");
   var outsideDrop = buildDrop("outside_drop", outsideFairy, 1);
   outsideDrop.position.y = outsideFairy.position.y + combinedCollisionDistance + 1;
   outsideDrop.velocity.y = 0;
@@ -324,7 +422,7 @@ function testCollisionDiameterContract() {
 
   var insideSystems = createSystems(20);
   insideSystems.fairy.resolveAfterShot(buildResolution(1, 0), buildGrid());
-  var insideFairy = insideSystems.fairy.snapshotForRender().slots[0].fairy;
+  var insideFairy = findFairyByColor(insideSystems.fairy, "red");
   var insideDrop = buildDrop("inside_drop", insideFairy, 1);
   insideDrop.position.y = insideFairy.position.y + combinedCollisionDistance - 1;
   insideDrop.velocity.y = 0;
@@ -336,7 +434,7 @@ function testGreenSplitCapacityFailure() {
   var systems = createSystems(1);
   systems.falling.maxDynamicMarbles = 1;
   systems.fairy.resolveAfterShot(buildResolution(10, 0), buildGrid());
-  var greenFairy = systems.fairy.snapshotForRender().slots[0].fairy;
+  var greenFairy = findFairyByColor(systems.fairy, "green");
   systems.falling.activeDrops = [buildDrop("capacity_root", greenFairy, 0)];
   assert.throws(function () {
     systems.falling.update(0.01);
@@ -451,6 +549,10 @@ function testDropLaunchUsesDownwardAngleCone() {
       angleDeg >= 15 - 0.01 && angleDeg <= 165 + 0.01,
       "launch angle out of range: " + angleDeg
     );
+    assert.ok(
+      angleDeg <= 75 + 0.01 || angleDeg >= 105 - 0.01,
+      "launch angle must avoid vertical down: " + angleDeg
+    );
   }
 }
 
@@ -520,7 +622,7 @@ function testDeferredVictoryDropActivationKeepsHorizontalSpeed() {
 function testVictoryBoardDropIgnoresFairyBounce() {
   var systems = createSystems(20);
   systems.fairy.resolveAfterShot(buildResolution(1, 0), buildGrid());
-  var fairy = systems.fairy.snapshotForRender().slots[0].fairy;
+  var fairy = findFairyByColor(systems.fairy, "red");
   var grid = {
     getCellPosition: function () {
       return {
@@ -569,12 +671,15 @@ function testVictoryBoardDropRimBounces() {
   };
 
   systems.falling.registerDrops([cell], grid, { dropKind: "victory_board_drop" });
-  systems.falling.update(0.01);
+  systems.falling.activeDrops[0].glowStacks = FairyAssistConfig.maxGlowStacks;
+  var update = systems.falling.update(0.01);
   var drop = systems.falling.activeDrops[0];
   assert(drop, "victory board rim drop should remain active after rim bounce.");
   assert.strictEqual(drop.inJar, false);
   assert.strictEqual(drop.jarIndex, -1);
   assert.strictEqual(systems.falling.lastBounceCount, 1);
+  assert.strictEqual(update.bounceEvents.length, 1);
+  assert.strictEqual(update.bounceEvents[0].glowStacks, FairyAssistConfig.maxGlowStacks);
   assert.ok(drop.velocity.y > 0, "victory board rim drop must bounce upward off jar rim.");
 }
 
@@ -610,14 +715,188 @@ function testVictoryBoardDropSkipsWallBounce() {
     hitFairyIds: [],
     fairyBonusSteps: 0,
     finalMultiplier: 1,
+    glowStacks: 0,
     splitGeneration: 0
   };
   systems.falling.activeDrops = [drop];
   systems.falling.update(0.01);
   assert.strictEqual(systems.falling.lastBounceCount, 0);
   assert.strictEqual(drop.remainingBounces, 2);
+  assert.ok(drop.velocity.x > 0, "victory board drop must get horizontal escape from side wall.");
   assert.ok(drop.velocity.y <= 0, "victory board drop must not gain upward speed from wall bounce.");
   assert.ok(drop.position.x >= leftLimit, "victory board drop must clamp to wall without rebound.");
+}
+
+function buildSideWallDrop(id, x, velocityX, remainingBounces) {
+  return {
+    id: id,
+    sourceId: id,
+    color: "R",
+    entityCategory: "normal_ball",
+    entityType: null,
+    row: 0,
+    col: 0,
+    position: { x: x, y: 0 },
+    velocity: { x: velocityX, y: -100 },
+    remainingBounces: remainingBounces,
+    rotation: 0,
+    rotationSpeed: 0,
+    jarCooldown: 0,
+    rimBounceCount: 0,
+    lastRimBounceSpeed: 0,
+    lifeTime: 0,
+    stuckTimer: 0,
+    lastStuckX: x,
+    lastStuckY: 0,
+    inJar: false,
+    jarIndex: -1,
+    jarColor: null,
+    active: true,
+    dropKind: null,
+    rootDropId: id,
+    hitFairyIds: [],
+    fairyBonusSteps: 0,
+    finalMultiplier: 1,
+    glowStacks: 0,
+    splitGeneration: 0
+  };
+}
+
+function testSideWallBounceKeepsHorizontalEscapeVelocity() {
+  var systems = createSystems(5);
+  var minEscapeSpeed = systems.falling.horizontalSpeed * 0.45;
+  var leftDrop = buildSideWallDrop("left_wall_escape", systems.falling._dropLeftLimit - 2, -1, 2);
+  systems.falling.activeDrops = [leftDrop];
+  systems.falling.update(0.01);
+  assert.ok(leftDrop.velocity.x >= minEscapeSpeed, "left wall bounce must push drop back into screen.");
+  assert.ok(leftDrop.velocity.y > 0, "side wall bounce with remaining bounces must lift the drop.");
+  assert.strictEqual(leftDrop.remainingBounces, 1);
+
+  var rightDrop = buildSideWallDrop("right_wall_escape", systems.falling._dropRightLimit + 2, 1, 2);
+  systems.falling.activeDrops = [rightDrop];
+  systems.falling.update(0.01);
+  assert.ok(rightDrop.velocity.x <= -minEscapeSpeed, "right wall bounce must push drop back into screen.");
+  assert.ok(rightDrop.velocity.y > 0, "right wall bounce with remaining bounces must lift the drop.");
+  assert.strictEqual(rightDrop.remainingBounces, 1);
+
+  var exhaustedDrop = buildSideWallDrop("exhausted_wall_escape", systems.falling._dropLeftLimit - 2, -1, 0);
+  systems.falling.activeDrops = [exhaustedDrop];
+  systems.falling.update(0.01);
+  assert.ok(exhaustedDrop.velocity.x >= minEscapeSpeed, "exhausted side-wall drop must still get horizontal escape velocity.");
+  assert.ok(exhaustedDrop.velocity.y <= -100, "exhausted side-wall drop must not receive extra upward bounce.");
+  assert.strictEqual(exhaustedDrop.remainingBounces, 0);
+
+  var pinnedDrop = buildSideWallDrop("pinned_wall_escape", systems.falling._dropRightLimit, 0, 2);
+  systems.falling.activeDrops = [pinnedDrop];
+  systems.falling.update(0.01);
+  assert.ok(pinnedDrop.velocity.x <= -minEscapeSpeed, "pinned right-wall drop must escape even without crossing the wall.");
+  assert.strictEqual(pinnedDrop.remainingBounces, 1);
+
+  var victoryDrop = buildSideWallDrop("victory_pinned_wall_escape", systems.falling._dropRightLimit, 0, 2);
+  victoryDrop.dropKind = "victory_board_drop";
+  systems.falling.activeDrops = [victoryDrop];
+  systems.falling.update(0.01);
+  assert.ok(victoryDrop.velocity.x <= -minEscapeSpeed, "victory board drop must escape side wall without crossing it.");
+  assert.ok(victoryDrop.velocity.y <= -100, "victory board drop must not receive side-wall lift.");
+  assert.strictEqual(victoryDrop.remainingBounces, 2);
+}
+
+function testLeftmostJarOuterRimBounce() {
+  var levelConfig = buildLevelConfig(5);
+  levelConfig.level.jarCount = 4;
+  levelConfig.level.jarColors = ["R", "G", "B", "Y"];
+  var fairySystem = new FairyAssistSystem();
+  fairySystem.configureLevel(levelConfig);
+  syncFairyCollisionCentersForTests(fairySystem);
+  var fallingSystem = new FallingMarbleSystem();
+  fallingSystem.attachFairyAssistSystem(fairySystem);
+  fallingSystem.configureLevel(levelConfig);
+
+  var leftZone = fallingSystem.jarZones.reduce(function (best, zone) {
+    return !best || zone.x < best.x ? zone : best;
+  }, null);
+  assert(leftZone, "leftmost jar outer rim test requires jar zone.");
+  var outerEdgeX = leftZone.x - leftZone.outerHalfWidth;
+  var grid = {
+    getCellPosition: function () {
+      return {
+        x: outerEdgeX,
+        y: leftZone.mouthY + BoardLayout.bubbleRadius * 0.2
+      };
+    }
+  };
+  var cell = {
+    id: "leftmost_outer_rim",
+    row: 0,
+    col: 0,
+    color: "R",
+    entityCategory: "normal_ball",
+    entityType: null
+  };
+
+  fallingSystem.registerDrops([cell], grid);
+  var drop = fallingSystem.activeDrops[0];
+  drop.position.x = outerEdgeX + 4;
+  drop.velocity = { x: -80, y: -180 };
+  var update = fallingSystem.update(0.016);
+  assert.strictEqual(update.bounceEvents.length, 1, "leftmost outer rim overshoot must emit jar bounce.");
+  assert.strictEqual(fallingSystem.lastBounceCount, 1);
+  assert.ok(drop.velocity.y > 0, "leftmost outer rim must bounce upward off jar rim.");
+  assert.strictEqual(fallingSystem._dropLeftLimit, BoardLayout.boardLeft);
+  assert.strictEqual(fallingSystem._dropRightLimit, BoardLayout.boardRight);
+  assert.ok(
+    drop.position.x >= fallingSystem._dropLeftLimit,
+    "leftmost outer rim bounce must clamp to side wall without wall rebound."
+  );
+}
+
+function testRightmostJarOuterRimBounceStaysInsideScreen() {
+  var levelConfig = buildLevelConfig(5);
+  levelConfig.level.jarCount = 4;
+  levelConfig.level.jarColors = ["R", "G", "B", "Y"];
+  var fairySystem = new FairyAssistSystem();
+  fairySystem.configureLevel(levelConfig);
+  syncFairyCollisionCentersForTests(fairySystem);
+  var fallingSystem = new FallingMarbleSystem();
+  fallingSystem.attachFairyAssistSystem(fairySystem);
+  fallingSystem.configureLevel(levelConfig);
+
+  var rightZone = fallingSystem.jarZones.reduce(function (best, zone) {
+    return !best || zone.x > best.x ? zone : best;
+  }, null);
+  assert(rightZone, "rightmost jar outer rim test requires jar zone.");
+  var outerEdgeX = rightZone.x + rightZone.outerHalfWidth;
+  var grid = {
+    getCellPosition: function () {
+      return {
+        x: outerEdgeX,
+        y: rightZone.mouthY + BoardLayout.bubbleRadius * 0.2
+      };
+    }
+  };
+  var cell = {
+    id: "rightmost_outer_rim",
+    row: 0,
+    col: 0,
+    color: "R",
+    entityCategory: "normal_ball",
+    entityType: null
+  };
+
+  fallingSystem.registerDrops([cell], grid);
+  var drop = fallingSystem.activeDrops[0];
+  drop.position.x = outerEdgeX - 4;
+  drop.velocity = { x: 80, y: -180 };
+  var update = fallingSystem.update(0.016);
+  assert.strictEqual(update.bounceEvents.length, 1, "rightmost outer rim overshoot must emit jar bounce.");
+  assert.strictEqual(fallingSystem.lastBounceCount, 1);
+  assert.ok(drop.velocity.y > 0, "rightmost outer rim must bounce upward off jar rim.");
+  assert.strictEqual(fallingSystem._dropLeftLimit, BoardLayout.boardLeft);
+  assert.strictEqual(fallingSystem._dropRightLimit, BoardLayout.boardRight);
+  assert.ok(
+    drop.position.x <= fallingSystem._dropRightLimit,
+    "rightmost outer rim bounce must keep the falling ball inside the side wall."
+  );
 }
 
 function testTopAnchorCollapseStartsSurplusVolley() {
@@ -640,6 +919,7 @@ function assertSurplusDropVelocityMatchesTurretAim(fallingSystem, drop) {
   var aimDirection = fallingSystem.getSurplusTurretAimDirection();
   var speed = Math.sqrt(drop.velocity.x * drop.velocity.x + drop.velocity.y * drop.velocity.y);
   assert.ok(speed > 0, "surplus shot must launch with positive speed.");
+  assert.ok(Math.abs(drop.velocity.x) > 0.000001, "surplus shot must not launch vertically.");
   assert.ok(Math.abs((drop.velocity.x / speed) - aimDirection.x) < 0.000001);
   assert.ok(Math.abs((drop.velocity.y / speed) - aimDirection.y) < 0.000001);
 }
@@ -660,12 +940,22 @@ function testSurplusShotVelocityMatchesTurretAim() {
     origin
   );
   assertSurplusDropVelocityMatchesTurretAim(systems.falling, nextDrop);
+
+  for (var index = 0; index < 16; index += 1) {
+    systems.falling._advanceSurplusTurretAngle();
+    var cycledDrop = systems.falling._createSurplusShotDrop(
+      { color: "B", entityCategory: "normal_ball", entityType: null },
+      index + 2,
+      origin
+    );
+    assertSurplusDropVelocityMatchesTurretAim(systems.falling, cycledDrop);
+  }
 }
 
 function testCollectedMultiplierContract() {
   var systems = createSystems(20);
   systems.fairy.resolveAfterShot(buildResolution(1, 0), buildGrid());
-  var redFairy = systems.fairy.snapshotForRender().slots[0].fairy;
+  var redFairy = findFairyByColor(systems.fairy, "red");
   var drop = buildDrop("red_root", redFairy, 1);
   systems.falling.activeDrops = [drop];
   systems.falling.update(0.01);
@@ -679,13 +969,16 @@ function testCollectedMultiplierContract() {
   });
   assert.strictEqual(collected.fairyMultiplier, 2);
   assert.strictEqual(collected.bonusMultiplier, 1.6);
+  assert.strictEqual(collected.glowStacks, 1);
   assert.deepStrictEqual(collected.hitFairyIds, [redFairy.id]);
 }
 
 assert.strictEqual(BoardLayout.bubbleRadius, 36);
 assert.strictEqual(FairyAssistConfig.fairyCollisionRadius * 2, 40);
-assert.strictEqual(FairyAssistConfig.maxGlowStacks, 5);
+assert.strictEqual(FairyAssistConfig.maxCollisionsPerFairy, 7);
+assert.strictEqual(FairyAssistConfig.maxGlowStacks, 7);
 testPrefabAndAssetContract();
+testRandomEmptySlotSelection();
 testSpawnRules();
 testMissRemovalPriority();
 testReplacementPriority();
@@ -704,6 +997,9 @@ testDeferredVictoryDropActivationKeepsHorizontalSpeed();
 testVictoryBoardDropIgnoresFairyBounce();
 testVictoryBoardDropRimBounces();
 testVictoryBoardDropSkipsWallBounce();
+testSideWallBounceKeepsHorizontalEscapeVelocity();
+testLeftmostJarOuterRimBounce();
+testRightmostJarOuterRimBounceStaysInsideScreen();
 testTopAnchorCollapseStartsSurplusVolley();
 testSurplusShotVelocityMatchesTurretAim();
 testCollectedMultiplierContract();

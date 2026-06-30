@@ -50,200 +50,41 @@ function requireSlotNode(root, slotSnapshot, slotConfig) {
     throw new Error("GameView/geniuses requires node " + slotConfig.nodeName + ".");
   }
   if (node.__fairySlotContractValidated !== true) {
-    if (
-      Math.abs(node.x - slotConfig.x) > SLOT_POSITION_EPSILON ||
-      Math.abs(node.y - slotConfig.y) > SLOT_POSITION_EPSILON
-    ) {
-      throw new Error(
-        "GameView/geniuses/" + slotConfig.nodeName +
-        " position must match FairyAssistConfig."
-      );
-    }
+    readPrefabSlotPosition(node, slotConfig.nodeName);
     node.__fairySlotContractValidated = true;
   }
   return node;
 }
 
-function isPositiveFiniteSize(size) {
-  return (
-    size &&
-    typeof size.width === "number" &&
-    isFinite(size.width) &&
-    size.width > 0 &&
-    typeof size.height === "number" &&
-    isFinite(size.height) &&
-    size.height > 0
-  );
-}
-
-function readSpriteFrameOriginalSize(spriteFrame) {
-  if (!spriteFrame || typeof spriteFrame.getOriginalSize !== "function") {
-    return null;
+function readPrefabSlotPosition(node, nodeName) {
+  if (!node || !node.isValid) {
+    throw new Error("Fairy slot position requires valid node: " + nodeName + ".");
   }
-  var size = spriteFrame.getOriginalSize();
-  if (isPositiveFiniteSize(size)) {
-    return {
-      width: size.width,
-      height: size.height
-    };
+  if (node.__fairySlotPrefabPosition) {
+    var cached = node.__fairySlotPrefabPosition;
+    if (
+      typeof cached.x !== "number" ||
+      !isFinite(cached.x) ||
+      typeof cached.y !== "number" ||
+      !isFinite(cached.y)
+    ) {
+      throw new Error("Fairy slot cached prefab position is invalid: " + nodeName + ".");
+    }
+    return cached;
   }
-  if (isPositiveFiniteSize(spriteFrame._originalSize)) {
-    return {
-      width: spriteFrame._originalSize.width,
-      height: spriteFrame._originalSize.height
-    };
-  }
-  return null;
-}
-
-function requireSpriteFrameOriginalSize(spriteFrame, description) {
-  var size = readSpriteFrameOriginalSize(spriteFrame);
-  if (size) {
-    return size;
-  }
-  if (!spriteFrame || typeof spriteFrame.getRect !== "function") {
-    throw new Error(description + " spriteFrame original size is invalid.");
-  }
-  var rect = spriteFrame.getRect();
-  if (!isPositiveFiniteSize(rect)) {
-    throw new Error(description + " spriteFrame original size is invalid.");
-  }
-  var offset = requireSpriteFrameOffset(spriteFrame, description);
   if (
-    Math.abs(offset.x) > SLOT_POSITION_EPSILON ||
-    Math.abs(offset.y) > SLOT_POSITION_EPSILON
+    typeof node.x !== "number" ||
+    !isFinite(node.x) ||
+    typeof node.y !== "number" ||
+    !isFinite(node.y)
   ) {
-    throw new Error(description + " spriteFrame original size is invalid for trimmed frame.");
+    throw new Error("Fairy slot prefab position must be finite: " + nodeName + ".");
   }
-  return {
-    width: rect.width,
-    height: rect.height
+  node.__fairySlotPrefabPosition = {
+    x: node.x,
+    y: node.y
   };
-}
-
-function requireSpriteFrameOffset(spriteFrame, description) {
-  if (!spriteFrame || typeof spriteFrame.getOffset !== "function") {
-    throw new Error(description + " requires spriteFrame with getOffset.");
-  }
-  var offset = spriteFrame.getOffset();
-  if (
-    !offset ||
-    typeof offset.x !== "number" ||
-    !isFinite(offset.x) ||
-    typeof offset.y !== "number" ||
-    !isFinite(offset.y)
-  ) {
-    throw new Error(description + " spriteFrame offset is invalid.");
-  }
-  return offset;
-}
-
-function isUntrimmedSpriteFrame(spriteFrame, description) {
-  var originalSize = requireSpriteFrameOriginalSize(spriteFrame, description);
-  var rect = spriteFrame.getRect();
-  if (
-    !rect ||
-    rect.width !== originalSize.width ||
-    rect.height !== originalSize.height
-  ) {
-    return false;
-  }
-  var offset = requireSpriteFrameOffset(spriteFrame, description);
-  return (
-    Math.abs(offset.x) <= SLOT_POSITION_EPSILON &&
-    Math.abs(offset.y) <= SLOT_POSITION_EPSILON
-  );
-}
-
-function resolveFullTextureRect(spriteFrame, description) {
-  var originalSize = requireSpriteFrameOriginalSize(spriteFrame, description);
-  var currentRect = spriteFrame.getRect();
-  if (
-    !currentRect ||
-    typeof currentRect.x !== "number" ||
-    !isFinite(currentRect.x) ||
-    typeof currentRect.y !== "number" ||
-    !isFinite(currentRect.y)
-  ) {
-    throw new Error(description + " spriteFrame rect position is invalid.");
-  }
-  var offset = requireSpriteFrameOffset(spriteFrame, description);
-  var trimX = offset.x + originalSize.width / 2 - currentRect.width / 2;
-  var trimY = offset.y + originalSize.height / 2 - currentRect.height / 2;
-  return cc.rect(
-    currentRect.x - trimX,
-    currentRect.y - trimY,
-    originalSize.width,
-    originalSize.height
-  );
-}
-
-function createUntrimmedSpriteFrame(spriteFrame, assetPath) {
-  if (!spriteFrame) {
-    throw new Error("Untrimmed fairy sprite requires spriteFrame: " + assetPath);
-  }
-  if (isUntrimmedSpriteFrame(spriteFrame, assetPath)) {
-    return spriteFrame;
-  }
-  if (typeof spriteFrame.getTexture !== "function") {
-    throw new Error("Untrimmed fairy sprite requires getTexture: " + assetPath);
-  }
-  var texture = spriteFrame.getTexture();
-  if (!texture) {
-    throw new Error("Untrimmed fairy sprite requires texture: " + assetPath);
-  }
-  if (typeof cc.SpriteFrame !== "function") {
-    throw new Error("Untrimmed fairy sprite requires cc.SpriteFrame.");
-  }
-  var originalSize = requireSpriteFrameOriginalSize(spriteFrame, assetPath);
-  var fullRect = resolveFullTextureRect(spriteFrame, assetPath);
-  var untrimmed = new cc.SpriteFrame(texture);
-  untrimmed.setRect(fullRect);
-  if (typeof untrimmed.setOriginalSize === "function") {
-    untrimmed.setOriginalSize(cc.size(originalSize.width, originalSize.height));
-  }
-  if (typeof untrimmed.setOffset === "function") {
-    untrimmed.setOffset(cc.v2(0, 0));
-  }
-  return untrimmed;
-}
-
-function retainGeneratedSpriteFrame(spriteFrame, assetPath) {
-  if (!spriteFrame) {
-    throw new Error("Cannot retain empty generated fairy sprite frame: " + assetPath);
-  }
-  if (typeof spriteFrame.addRef !== "function") {
-    throw new Error("SpriteFrame.addRef is required for generated fairy sprite: " + assetPath);
-  }
-  spriteFrame.addRef();
-  return spriteFrame;
-}
-
-function resolveFairySpriteFrame(renderer, assetPath) {
-  var spriteFrame = renderer.spriteFrameCache[assetPath];
-  if (!spriteFrame) {
-    throw new Error("Fairy sprite was not preloaded: " + assetPath);
-  }
-  if (isUntrimmedSpriteFrame(spriteFrame, assetPath)) {
-    return spriteFrame;
-  }
-  var untrimmedKey = assetPath + "__untrimmed";
-  if (renderer.spriteFrameCache[untrimmedKey]) {
-    return renderer.spriteFrameCache[untrimmedKey];
-  }
-  var untrimmed = createUntrimmedSpriteFrame(spriteFrame, assetPath);
-  renderer.spriteFrameCache[untrimmedKey] = retainGeneratedSpriteFrame(untrimmed, untrimmedKey);
-  return renderer.spriteFrameCache[untrimmedKey];
-}
-
-function applyFairySpriteFrame(sprite, spriteFrame, description) {
-  if (!sprite || !sprite.node) {
-    throw new Error(description + " requires cc.Sprite.");
-  }
-  var size = requireSpriteFrameOriginalSize(spriteFrame, description);
-  sprite.spriteFrame = spriteFrame;
-  sprite.sizeMode = cc.Sprite.SizeMode.CUSTOM;
-  sprite.node.setContentSize(size.width, size.height);
+  return node.__fairySlotPrefabPosition;
 }
 
 function resolveFairySpawnPosition(renderer, spawnFrom) {
@@ -262,36 +103,87 @@ function resolveFairySpawnPosition(renderer, spawnFrom) {
   return renderer._convertBoardPointToGameView(spawnFrom.x, spawnFrom.y);
 }
 
-function requireFairySprite(node) {
-  var sprite = node.getComponent(cc.Sprite);
-  if (!sprite) {
-    sprite = node.addComponent(cc.Sprite);
+function destroyNode(node) {
+  if (!node || !node.isValid) {
+    return;
   }
-  if (!sprite) {
-    throw new Error("Fairy slot requires cc.Sprite: " + node.name);
-  }
-  return sprite;
+  node.stopAllActions();
+  node.removeFromParent(false);
+  node.destroy();
 }
 
-function requireGlowNode(node) {
-  var glowNode = node.getChildByName("FairyGlow");
-  if (!glowNode) {
-    glowNode = new cc.Node("FairyGlow");
-    glowNode.parent = node;
-    glowNode.setPosition(0, 0);
-    glowNode.zIndex = -1;
+function disableSlotSprite(node) {
+  var sprite = node.getComponent(cc.Sprite);
+  if (!sprite) {
+    return;
   }
-  var glowSprite = glowNode.getComponent(cc.Sprite);
-  if (!glowSprite) {
-    glowSprite = glowNode.addComponent(cc.Sprite);
+  sprite.spriteFrame = null;
+  sprite.enabled = false;
+}
+
+function playRequiredPrefabAnimation(node, description) {
+  if (!node || !node.isValid) {
+    throw new Error(description + " requires valid prefab node.");
   }
-  if (!glowSprite) {
-    throw new Error("Fairy glow node requires cc.Sprite.");
+  var animation = node.getComponent(cc.Animation);
+  if (!animation) {
+    throw new Error(description + " requires cc.Animation.");
   }
-  return {
-    node: glowNode,
-    sprite: glowSprite
-  };
+  var clip = animation.defaultClip || null;
+  if (!clip && typeof animation.getClips === "function") {
+    var clips = animation.getClips();
+    if (Array.isArray(clips) && clips.length > 0) {
+      clip = clips[0];
+    }
+  }
+  if (!clip) {
+    throw new Error(description + " requires an animation clip.");
+  }
+  if (typeof clip.name === "string" && clip.name) {
+    animation.play(clip.name);
+    return;
+  }
+  animation.play();
+}
+
+function instantiateFairyPrefab(renderer, prefabPath, parent, nodeName, description) {
+  if (!renderer || !renderer.fairyPrefabCache) {
+    throw new Error(description + " requires fairy prefab cache.");
+  }
+  if (typeof prefabPath !== "string" || !prefabPath) {
+    throw new Error(description + " requires prefabPath.");
+  }
+  var prefab = renderer.fairyPrefabCache[prefabPath];
+  if (!prefab) {
+    throw new Error(description + " prefab was not preloaded: " + prefabPath);
+  }
+  var prefabNode = cc.instantiate(prefab);
+  if (!prefabNode || !prefabNode.isValid) {
+    throw new Error(description + " prefab instantiate failed: " + prefabPath);
+  }
+  prefabNode.name = nodeName;
+  prefabNode.parent = parent;
+  prefabNode.setPosition(0, 0);
+  prefabNode.opacity = 255;
+  prefabNode.scale = 1;
+  prefabNode.active = true;
+  playRequiredPrefabAnimation(prefabNode, description);
+  return prefabNode;
+}
+
+function requireFairyVisualNode(renderer, node, prefabPath) {
+  disableSlotSprite(node);
+  var visualNode = node.getChildByName("FairyPrefabVisual");
+  if (visualNode && visualNode.isValid && node.__fairyPrefabPath === prefabPath) {
+    visualNode.active = true;
+    return visualNode;
+  }
+  if (visualNode) {
+    destroyNode(visualNode);
+  }
+  visualNode = instantiateFairyPrefab(renderer, prefabPath, node, "FairyPrefabVisual", "Fairy slot " + node.name);
+  node.__fairyPrefabPath = prefabPath;
+  return visualNode;
 }
 
 function hideFairyGlow(node) {
@@ -305,13 +197,10 @@ function hideFairyGlow(node) {
   glowNode.opacity = 255;
 }
 
-function applyGlow(node, spriteFrame, glowStacks) {
+function applyGlow(renderer, node, prefabPath, glowStacks) {
   if (!Number.isInteger(glowStacks) || glowStacks < 0) {
     throw new Error("Fairy glowStacks must be a non-negative integer.");
   }
-  var glow = requireGlowNode(node);
-  applyFairySpriteFrame(glow.sprite, spriteFrame, "Fairy glow");
-  glow.node.stopAllActions();
   node.__fairyGlowStacks = glowStacks;
 
   if (glowStacks === 0) {
@@ -319,12 +208,25 @@ function applyGlow(node, spriteFrame, glowStacks) {
     return;
   }
 
+  var glowNode = node.getChildByName("FairyGlow");
+  if (glowNode && glowNode.isValid && node.__fairyGlowPrefabPath !== prefabPath) {
+    destroyNode(glowNode);
+    glowNode = null;
+  }
+  if (!glowNode || !glowNode.isValid) {
+    glowNode = instantiateFairyPrefab(renderer, prefabPath, node, "FairyGlow", "Fairy glow");
+    glowNode.zIndex = -1;
+    node.__fairyGlowPrefabPath = prefabPath;
+  }
+  glowNode.stopAllActions();
+  glowNode.active = true;
+  playRequiredPrefabAnimation(glowNode, "Fairy glow");
+
   var visualStacks = Math.min(glowStacks, FairyAssistConfig.maxGlowStacks);
   var baseScale = 1.04 + visualStacks * 0.025;
   var peakScale = baseScale + 0.08;
-  glow.node.active = true;
-  glow.node.opacity = Math.min(210, 48 + visualStacks * 13);
-  glow.node.scale = baseScale;
+  glowNode.opacity = Math.min(210, 48 + visualStacks * 13);
+  glowNode.scale = baseScale;
 
   var pulseCycle = cc.sequence(
     cc.scaleTo(GLOW_PULSE_DURATION, peakScale),
@@ -349,30 +251,28 @@ function applyGlow(node, spriteFrame, glowStacks) {
   pulseActions.push(cc.callFunc(function () {
     hideFairyGlow(node);
   }));
-  glow.node.runAction(cc.sequence.apply(cc, pulseActions));
+  glowNode.runAction(cc.sequence.apply(cc, pulseActions));
 }
 
 function configureFairyNode(renderer, node, fairy) {
   if (!fairy || typeof fairy.id !== "string" || !fairy.id) {
     throw new Error("Fairy render state requires id.");
   }
-  if (typeof fairy.assetPath !== "string" || !fairy.assetPath) {
-    throw new Error("Fairy render state requires assetPath.");
+  if (typeof fairy.prefabPath !== "string" || !fairy.prefabPath) {
+    throw new Error("Fairy render state requires prefabPath.");
   }
-  var spriteFrame = resolveFairySpriteFrame(renderer, fairy.assetPath);
 
-  var sprite = requireFairySprite(node);
-  applyFairySpriteFrame(sprite, spriteFrame, "Fairy slot " + node.name);
+  requireFairyVisualNode(renderer, node, fairy.prefabPath);
   node.__fairyId = fairy.id;
   node.__fairyColor = fairy.color;
   node.__fairyEntering = false;
   node.active = true;
   node.opacity = 255;
   node.scale = 1;
-  applyGlow(node, spriteFrame, fairy.glowStacks);
+  applyGlow(renderer, node, fairy.prefabPath, fairy.glowStacks);
 }
 
-function playFairyEntry(renderer, node, fairy, slotConfig, token) {
+function playFairyEntry(renderer, node, fairy, slotPosition, token) {
   configureFairyNode(renderer, node, fairy);
   node.__fairyEntering = true;
   var spawnPosition = resolveFairySpawnPosition(renderer, fairy.spawnFrom);
@@ -380,13 +280,13 @@ function playFairyEntry(renderer, node, fairy, slotConfig, token) {
   node.opacity = 0;
   node.scale = 0.72;
 
-  var deltaX = slotConfig.x - spawnPosition.x;
-  var deltaY = slotConfig.y - spawnPosition.y;
+  var deltaX = slotPosition.x - spawnPosition.x;
+  var deltaY = slotPosition.y - spawnPosition.y;
   var controlLift = Math.max(80, Math.abs(deltaY) * 0.22);
   var bezier = [
     cc.v2(spawnPosition.x + deltaX * 0.3, spawnPosition.y + deltaY * 0.3 + controlLift),
     cc.v2(spawnPosition.x + deltaX * 0.7, spawnPosition.y + deltaY * 0.7 + controlLift),
-    cc.v2(slotConfig.x, slotConfig.y)
+    cc.v2(slotPosition.x, slotPosition.y)
   ];
   node.runAction(cc.sequence(
     cc.spawn(
@@ -399,7 +299,7 @@ function playFairyEntry(renderer, node, fairy, slotConfig, token) {
         return;
       }
       node.__fairyEntering = false;
-      node.setPosition(slotConfig.x, slotConfig.y);
+      node.setPosition(slotPosition.x, slotPosition.y);
       node.opacity = 255;
       node.scale = 1;
     })
@@ -447,9 +347,9 @@ function hideFairyNode(node, token) {
   });
 }
 
-function replaceFairyNode(renderer, node, fairy, slotConfig, token) {
+function replaceFairyNode(renderer, node, fairy, slotPosition, token) {
   playFairyDepartFlyOut(node, token, function () {
-    playFairyEntry(renderer, node, fairy, slotConfig, token);
+    playFairyEntry(renderer, node, fairy, slotPosition, token);
   });
 }
 
@@ -476,13 +376,14 @@ function attachLevelRendererFairyMethods(LevelRenderer) {
       if (!slotNode || !slotNode.isValid) {
         throw new Error("GameView/geniuses requires node " + slotConfig.nodeName + " for collision sync.");
       }
-      if (typeof slotNode.convertToWorldSpaceAR !== "function") {
-        throw new Error("Fairy slot node must support convertToWorldSpaceAR: " + slotConfig.nodeName + ".");
+      var slotPosition = readPrefabSlotPosition(slotNode, slotConfig.nodeName);
+      if (typeof root.convertToWorldSpaceAR !== "function") {
+        throw new Error("Fairy slot root must support convertToWorldSpaceAR.");
       }
       if (typeof boardLayer.convertToNodeSpaceAR !== "function") {
         throw new Error("Board layer must support convertToNodeSpaceAR.");
       }
-      var worldPos = slotNode.convertToWorldSpaceAR(cc.v2(0, 0));
+      var worldPos = root.convertToWorldSpaceAR(cc.v2(slotPosition.x, slotPosition.y));
       var boardPos = boardLayer.convertToNodeSpaceAR(worldPos);
       if (
         !boardPos ||
@@ -516,6 +417,7 @@ function attachLevelRendererFairyMethods(LevelRenderer) {
     FairyAssistConfig.slots.forEach(function (slotConfig) {
       var slotSnapshot = snapshot.slots[slotConfig.index];
       var node = requireSlotNode(root, slotSnapshot, slotConfig);
+      var slotPosition = readPrefabSlotPosition(node, slotConfig.nodeName);
       var fairy = slotSnapshot.fairy;
 
       if (fairy === null) {
@@ -542,18 +444,17 @@ function attachLevelRendererFairyMethods(LevelRenderer) {
       if (node.__fairyId === fairy.id) {
         node.__fairyPendingTargetId = fairy.id;
         if (node.__fairyEntering !== true) {
-          node.setPosition(slotConfig.x, slotConfig.y);
+          node.setPosition(slotPosition.x, slotPosition.y);
           node.active = true;
           node.opacity = 255;
           node.scale = 1;
         }
         if (node.__fairyGlowStacks !== fairy.glowStacks) {
-          var sprite = requireFairySprite(node);
-          if (!sprite.spriteFrame) {
-            throw new Error("Active fairy slot requires spriteFrame.");
+          if (typeof fairy.prefabPath !== "string" || !fairy.prefabPath) {
+            throw new Error("Active fairy slot requires prefabPath.");
           }
-          var glowSpriteFrame = resolveFairySpriteFrame(this, fairy.assetPath);
-          applyGlow(node, glowSpriteFrame, fairy.glowStacks);
+          requireFairyVisualNode(this, node, fairy.prefabPath);
+          applyGlow(this, node, fairy.prefabPath, fairy.glowStacks);
         }
         return;
       }
@@ -568,11 +469,11 @@ function attachLevelRendererFairyMethods(LevelRenderer) {
       var token = node.__fairyRenderToken;
 
       if (node.__fairyId && node.active) {
-        replaceFairyNode(this, node, fairy, slotConfig, token);
+        replaceFairyNode(this, node, fairy, slotPosition, token);
         return;
       }
       node.stopAllActions();
-      playFairyEntry(this, node, fairy, slotConfig, token);
+      playFairyEntry(this, node, fairy, slotPosition, token);
     }, this);
   };
 }

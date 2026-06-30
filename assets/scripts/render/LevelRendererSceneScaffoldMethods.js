@@ -6,8 +6,8 @@ function attachLevelRendererSceneScaffoldMethods(LevelRenderer, deps) {
   var BoardLayout = deps.BoardLayout;
   var PREFAB_PATHS = deps.PREFAB_PATHS;
   var requireChildNode = SceneShared.requireChildNode;
-  var GAME_ENTRY_COUNTDOWN_INTERVAL = 0.8;
-  var GAME_ENTRY_GO_SCALE_DURATION = 0.5;
+  var GAME_ENTRY_COUNTDOWN_STEP_INTERVAL = 1;
+  var GAME_ENTRY_GO_SCALE_DURATION = 0.3;
   var GAME_ENTRY_GO_HOLD_DURATION = 0.2;
   var GAME_ENTRY_GO_START_SCALE = 0.2;
   var GAME_ENTRY_GO_END_SCALE = 1.2;
@@ -81,15 +81,15 @@ LevelRenderer.prototype.playGameEntryCountdown = function () {
 
   return new Promise(function (resolve) {
     gameViewNode.runAction(cc.sequence(
-      cc.delayTime(GAME_ENTRY_COUNTDOWN_INTERVAL),
+      cc.delayTime(GAME_ENTRY_COUNTDOWN_STEP_INTERVAL),
       cc.callFunc(function () {
         timerLabel.string = "2";
       }),
-      cc.delayTime(GAME_ENTRY_COUNTDOWN_INTERVAL),
+      cc.delayTime(GAME_ENTRY_COUNTDOWN_STEP_INTERVAL),
       cc.callFunc(function () {
         timerLabel.string = "1";
       }),
-      cc.delayTime(GAME_ENTRY_COUNTDOWN_INTERVAL),
+      cc.delayTime(GAME_ENTRY_COUNTDOWN_STEP_INTERVAL),
       cc.callFunc(function () {
         timerNode.active = false;
         goNode.active = true;

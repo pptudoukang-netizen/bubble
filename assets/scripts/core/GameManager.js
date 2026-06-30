@@ -2,6 +2,7 @@
 
 var Logger = require("../utils/Logger");
 var BoardLayout = require("../config/BoardLayout");
+var FairyAssistConfig = require("../config/FairyAssistConfig");
 var SpecialAnimationTiming = require("../config/SpecialAnimationTiming");
 var ShooterController = require("../systems/ShooterController");
 var TrajectoryPredictor = require("../systems/TrajectoryPredictor");
@@ -104,6 +105,28 @@ function createEmptyResolution() {
     scoreEvents: [],
     dangerReached: false
   };
+}
+
+function requireDropGlowStacks(value, description) {
+  if (!Number.isInteger(value) || value < 0 || value > FairyAssistConfig.maxGlowStacks) {
+    throw new Error(description + " requires glowStacks in [0, " + FairyAssistConfig.maxGlowStacks + "].");
+  }
+  return value;
+}
+
+function resolveCollectedDropAudioGlowStacks(collectedDrops) {
+  if (!Array.isArray(collectedDrops) || !collectedDrops.length) {
+    throw new Error("Collected drop audio requires non-empty collectedDrops.");
+  }
+
+  var maxGlowStacks = 0;
+  collectedDrops.forEach(function (drop) {
+    var glowStacks = requireDropGlowStacks(drop.glowStacks, "Collected drop audio");
+    if (glowStacks > maxGlowStacks) {
+      maxGlowStacks = glowStacks;
+    }
+  });
+  return maxGlowStacks;
 }
 
 var RAINBOW_TIE_BREAK_ORDER = {
@@ -558,6 +581,8 @@ function GameManager(options) {
   this.impactSequence = 0;
   this.runtimeEventSequence = 0;
   this.pendingRuntimeEvents = [];
+  this.surplusShotAimRecenterRevision = 0;
+  this.surplusShotAimRecentered = false;
   this.pendingBoardAdvanceSpecialAnimationDelay = 0;
   this.pendingBoardAdvanceDelay = 0;
   this.pendingDeferredEnsureMinimumVisibleBoardRows = false;
@@ -659,6 +684,8 @@ GameManager.prototype.startLevel = function (levelConfig) {
   this.impactSequence = 0;
   this.runtimeEventSequence = 0;
   this.pendingRuntimeEvents = [];
+  this.surplusShotAimRecenterRevision = 0;
+  this.surplusShotAimRecentered = false;
   this.pendingBoardAdvanceSpecialAnimationDelay = 0;
   this.pendingBoardAdvanceDelay = 0;
   this.pendingDeferredEnsureMinimumVisibleBoardRows = false;
@@ -1569,6 +1596,7 @@ GameManager.prototype.fireShot = function () {
   }
 
   var queueResult = this.systems.shooterController.advanceQueue();
+  this.systems.shooterController.resetAimDirection();
 
   if (!this.isTimedInfiniteShots) {
     this.remainingShots -= 1;
@@ -2478,8 +2506,10 @@ GameManager.prototype.update = function (dt) {
     if (!bounceEvent || !Number.isInteger(bounceEvent.bounceCount) || bounceEvent.bounceCount < 1) {
       throw new Error("FallingMarbleSystem bounce event requires positive integer bounceCount.");
     }
+    var glowStacks = requireDropGlowStacks(bounceEvent.glowStacks, "FallingMarbleSystem bounce event");
     this._pushRuntimeEvent("jar_rim_bounce", {
-      bounceCount: bounceEvent.bounceCount
+      bounceCount: bounceEvent.bounceCount,
+      glowStacks: glowStacks
     });
   }, this);
   fairyHits.forEach(function (hit) {
@@ -2492,7 +2522,8 @@ GameManager.prototype.update = function (dt) {
 
   if (collectedDrops.length) {
     this._pushRuntimeEvent("jar_collect_bottom", {
-      count: collectedDrops.length
+      count: collectedDrops.length,
+      glowStacks: resolveCollectedDropAudioGlowStacks(collectedDrops)
     });
     this._registerIceSnowballCollection(collectedDrops);
     this._injectCollectedSkillBalls(collectedDrops);
@@ -2517,6 +2548,7 @@ GameManager.prototype.update = function (dt) {
           fairyBonusSteps: drop.fairyBonusSteps,
           fairyMultiplier: drop.fairyMultiplier,
           finalMultiplier: drop.finalMultiplier,
+          glowStacks: drop.glowStacks,
           rootDropId: drop.rootDropId,
           splitGeneration: drop.splitGeneration,
           hitFairyIds: drop.hitFairyIds.slice()
@@ -2536,6 +2568,15 @@ GameManager.prototype.update = function (dt) {
   var hasFallingDrops = this.systems.fallingMarbleSystem.hasActiveDrops();
   var hasPendingSplitterSpawns = this._hasPendingSplitterSpawns();
   var hasPendingMolotovBlasts = this._hasPendingMolotovBlasts();
+
+  if (
+    this.state === "won_surplus_shots_pending" &&
+    !this.surplusShotAimRecentered &&
+    !this.systems.fallingMarbleSystem.hasPendingSurplusShots()
+  ) {
+    this.surplusShotAimRecentered = true;
+    this.surplusShotAimRecenterRevision += 1;
+  }
 
   if (
     splitterSpawned &&
@@ -2842,18 +2883,27 @@ GameManager.prototype.getRuntimeSnapshot = function (runtimeEvents, renderOption
     ? this.pendingShotPlan
     : null;
 
+  shooterSnapshot.surplusShotAimRecenterRevision = this.surplusShotAimRecenterRevision;
   if (this.state === "won_surplus_shots_pending") {
     var fallingMarbleSystem = this.systems.fallingMarbleSystem;
     if (!fallingMarbleSystem || typeof fallingMarbleSystem.getSurplusTurretAimDirection !== "function") {
       throw new Error("Surplus shot render requires FallingMarbleSystem.getSurplusTurretAimDirection.");
     }
+    if (typeof fallingMarbleSystem.isSurplusVolleyActive !== "function") {
+      throw new Error("Surplus shot render requires FallingMarbleSystem.isSurplusVolleyActive.");
+    }
     var surplusAimOrigin = shooterSnapshot.aim && shooterSnapshot.aim.origin
       ? shooterSnapshot.aim.origin
       : BoardLayout.shooterOrigin;
-    shooterSnapshot.aim = {
-      origin: surplusAimOrigin,
-      direction: fallingMarbleSystem.getSurplusTurretAimDirection()
-    };
+    var surplusAimDirection = fallingMarbleSystem.getSurplusTurretAimDirection();
+    if (fallingMarbleSystem.isSurplusVolleyActive()) {
+      shooterSnapshot.aim = {
+        origin: surplusAimOrigin,
+        direction: surplusAimDirection
+      };
+    } else if (this.surplusShotAimRecentered) {
+      shooterSnapshot.surplusShotAimRecenterDirection = surplusAimDirection;
+    }
     shooterSnapshot.trajectory = null;
     shooterSnapshot.aimGuidePath = [];
   }

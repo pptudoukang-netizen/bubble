@@ -34,6 +34,7 @@ function attachLevelRendererSceneShooterMethods(LevelRenderer, deps) {
   var ensureOutline = deps.ensureOutline;
   var SHOOTER_HANDOFF_DURATION = 0.34;
   var SHOOTER_HANDOFF_ARC_HEIGHT = 52;
+  var SHOOTER_AIM_RECENTER_DURATION = 0.28;
   var SHOOTER_PREFAB_LAYOUT_NODE_NAMES = [
     "handler_milu",
     "CurrentBallAnchor",
@@ -200,8 +201,13 @@ LevelRenderer.prototype._renderShooter = function (shooterSnapshot, activeProjec
     ? shooterSnapshot.aim
     : { origin: BoardLayout.shooterOrigin, direction: { x: 0, y: 1 } };
   var layoutNodes = syncShooterPrefabLayout(shooterPanel, aim.origin);
-  var shooterAngle = computeShooterAngle(aim.direction);
-  layoutNodes.Shooter.angle = shooterAngle;
+  this._syncShooterAimRecenter(
+    shooterPanel,
+    layoutNodes.Shooter,
+    shooterSnapshot,
+    activeProjectile,
+    computeShooterAngle(aim.direction)
+  );
 
   var trajectory = shooterSnapshot.trajectory;
   var canUsePowerup = !!(shooterSnapshot && shooterSnapshot.canUsePowerups);
@@ -349,6 +355,100 @@ LevelRenderer.prototype._syncShooterBallHandoff = function (
   }
 };
 
+LevelRenderer.prototype._syncShooterAimRecenter = function (
+  shooterPanel,
+  shooterNode,
+  shooterSnapshot,
+  activeProjectile,
+  targetAngle
+) {
+  var revision = shooterSnapshot.queueAdvanceRevision;
+  if (!Number.isInteger(revision) || revision < 0) {
+    throw new Error("Shooter aim recenter requires a non-negative queueAdvanceRevision.");
+  }
+  var surplusRecenterRevision = shooterSnapshot.surplusShotAimRecenterRevision;
+  if (!Number.isInteger(surplusRecenterRevision) || surplusRecenterRevision < 0) {
+    throw new Error("Shooter aim recenter requires a non-negative surplusShotAimRecenterRevision.");
+  }
+
+  if (typeof shooterPanel.__lastAimRecenterRevision !== "number") {
+    shooterPanel.__lastAimRecenterRevision = revision;
+    shooterNode.angle = targetAngle;
+  }
+  if (typeof shooterPanel.__lastSurplusAimRecenterRevision !== "number") {
+    shooterPanel.__lastSurplusAimRecenterRevision = surplusRecenterRevision;
+  }
+  if (revision < shooterPanel.__lastAimRecenterRevision) {
+    throw new Error("Shooter aim recenter queueAdvanceRevision cannot move backwards.");
+  }
+  if (surplusRecenterRevision < shooterPanel.__lastSurplusAimRecenterRevision) {
+    throw new Error("Shooter aim recenter surplusShotAimRecenterRevision cannot move backwards.");
+  }
+
+  if (revision > shooterPanel.__lastAimRecenterRevision) {
+    if (revision !== shooterPanel.__lastAimRecenterRevision + 1) {
+      throw new Error("Shooter aim recenter queueAdvanceRevision must advance one step at a time.");
+    }
+    if (!activeProjectile) {
+      throw new Error("Shooter aim recenter requires an active projectile.");
+    }
+    if (shooterPanel.__shooterAimRecenterInProgress) {
+      throw new Error("Shooter aim recenter animation cannot overlap.");
+    }
+
+    shooterPanel.__lastAimRecenterRevision = revision;
+    this._playShooterAimRecenter(shooterPanel, shooterNode, revision);
+    return;
+  }
+
+  if (surplusRecenterRevision > shooterPanel.__lastSurplusAimRecenterRevision) {
+    if (shooterPanel.__shooterAimRecenterInProgress) {
+      throw new Error("Shooter surplus aim recenter animation cannot overlap.");
+    }
+    var surplusRecenterDirection = shooterSnapshot.surplusShotAimRecenterDirection;
+    if (
+      !surplusRecenterDirection ||
+      typeof surplusRecenterDirection.x !== "number" ||
+      !isFinite(surplusRecenterDirection.x) ||
+      typeof surplusRecenterDirection.y !== "number" ||
+      !isFinite(surplusRecenterDirection.y)
+    ) {
+      throw new Error("Shooter surplus aim recenter requires a finite surplusShotAimRecenterDirection.");
+    }
+
+    shooterPanel.__lastSurplusAimRecenterRevision = surplusRecenterRevision;
+    shooterNode.angle = computeShooterAngle(surplusRecenterDirection);
+    this._playShooterAimRecenter(shooterPanel, shooterNode, revision);
+    return;
+  }
+
+  if (!shooterPanel.__shooterAimRecenterInProgress) {
+    shooterNode.angle = targetAngle;
+  }
+};
+
+LevelRenderer.prototype._playShooterAimRecenter = function (shooterPanel, shooterNode, revision) {
+  var fromAngle = shooterNode.angle;
+  if (Math.abs(fromAngle) < 0.01) {
+    shooterNode.angle = 0;
+    return;
+  }
+
+  shooterNode.stopAllActions();
+  shooterPanel.__shooterAimRecenterInProgress = true;
+
+  shooterNode.runAction(cc.sequence(
+    cc.rotateTo(SHOOTER_AIM_RECENTER_DURATION, 0).easing(cc.easeSineOut()),
+    cc.callFunc(function () {
+      if (shooterPanel.__lastAimRecenterRevision !== revision) {
+        throw new Error("Shooter aim recenter revision changed before animation completed.");
+      }
+      shooterPanel.__shooterAimRecenterInProgress = false;
+      shooterNode.angle = 0;
+    })
+  ));
+};
+
 LevelRenderer.prototype._playShooterBallHandoff = function (
   shooterPanel,
   currentAnchor,
@@ -487,7 +587,12 @@ LevelRenderer.prototype._renderShooterAimAngleOnly = function (shooterSnapshot, 
 
   var aim = shooterSnapshot.aim;
   var layoutNodes = syncShooterPrefabLayout(shooterPanel, aim.origin);
-  layoutNodes.Shooter.angle = computeShooterAngle(aim.direction);
+  var shooterNode = layoutNodes.Shooter;
+  if (shooterPanel.__shooterAimRecenterInProgress) {
+    shooterNode.stopAllActions();
+    shooterPanel.__shooterAimRecenterInProgress = false;
+  }
+  shooterNode.angle = computeShooterAngle(aim.direction);
   // 轻量刷新只跳过炮台 UI 重绘，辅助线仍按当前轨迹每帧更新。
   this._syncShooterGuideDots(shooterPanel, shooterSnapshot, activeProjectile);
 };

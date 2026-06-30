@@ -1,9 +1,11 @@
 "use strict";
 
 var Shared = require("./GameBootstrapShared");
+var FairyAssistConfig = require("../config/FairyAssistConfig");
 
 var JAR_BOUNCE_SFX_MIN_INTERVAL_MS = 80;
 var JAR_BOUNCE_SFX_MAX_PER_FRAME = 2;
+var JAR_BOUNCE_PIANO_SLOT_COUNT = FairyAssistConfig.maxGlowStacks;
 
 module.exports = {
   _buildAudioConfig: function () {
@@ -18,7 +20,8 @@ module.exports = {
         jarCollectBottom: this.jarCollectBottomSfxResource,
         break: this.breakSfxResource,
         fairyAssistHit: this.fairyAssistHitSfxResource,
-        fairyAssistDepart: this.fairyAssistDepartSfxResource
+        fairyAssistDepart: this.fairyAssistDepartSfxResource,
+        gameEntryCountdown: this.gameEntryCountdownSfxResource
       }
     };
   },
@@ -102,18 +105,38 @@ module.exports = {
     this.audioManager.playSfx(name);
   },
 
-  _resolveJarBounceSfxPath: function (bounceCount) {
-    if (!Number.isInteger(bounceCount) || bounceCount < 1) {
-      throw new Error("Jar bounce sfx requires positive integer bounceCount.");
+  _runGameEntryCountdown: function () {
+    if (!this.levelRenderer || typeof this.levelRenderer.playGameEntryCountdown !== "function") {
+      throw new Error("Game entry countdown requires levelRenderer.playGameEntryCountdown.");
+    }
+
+    this._playSfx("gameEntryCountdown");
+    return this.levelRenderer.playGameEntryCountdown();
+  },
+
+  _resolveJarBouncePianoPath: function (pianoSlotIndex) {
+    if (
+      !Number.isInteger(pianoSlotIndex) ||
+      pianoSlotIndex < 1 ||
+      pianoSlotIndex > JAR_BOUNCE_PIANO_SLOT_COUNT
+    ) {
+      throw new Error(
+        "Jar bounce sfx requires piano slot index in [1, " + JAR_BOUNCE_PIANO_SLOT_COUNT + "]."
+      );
     }
 
     var pianoPaths = this._parseAudioResourceList(this.jarBounceSfxResources);
-    if (pianoPaths.length < 7) {
-      throw new Error("Jar bounce sfx resources must include at least 7 entries (piano1-7).");
+    if (pianoPaths.length < JAR_BOUNCE_PIANO_SLOT_COUNT) {
+      throw new Error(
+        "Jar bounce sfx resources must include at least " +
+        JAR_BOUNCE_PIANO_SLOT_COUNT +
+        " entries (piano1-" +
+        JAR_BOUNCE_PIANO_SLOT_COUNT +
+        ")."
+      );
     }
 
-    var pianoIndex = Math.min(7, bounceCount);
-    return pianoPaths[pianoIndex - 1];
+    return pianoPaths[pianoSlotIndex - 1];
   },
 
   _canPlayJarBounceSfx: function (now, playedThisFrame) {
@@ -196,7 +219,8 @@ module.exports = {
           return;
         }
         jarBouncePlayedThisFrame += 1;
-        this._playSfx(this._resolveJarBounceSfxPath(event.bounceCount));
+        var rimBouncePianoSlot = Math.min(JAR_BOUNCE_PIANO_SLOT_COUNT, event.bounceCount);
+        this._playSfx(this._resolveJarBouncePianoPath(rimBouncePianoSlot));
         return;
       }
 
@@ -207,6 +231,11 @@ module.exports = {
 
       if (event.type === "fairy_assist_depart") {
         this._playSfx("fairyAssistDepart");
+        return;
+      }
+
+      if (event.type === "jar_collect_bottom") {
+        this._playSfx("jarCollectBottom");
         return;
       }
 

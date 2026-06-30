@@ -107,10 +107,12 @@ GameCircleWelfareStore.prototype.load = function (now) {
   var state = StrictStorage.readJsonOrCreate(STORAGE_KEY, NAMESPACE, function () {
     return createInitialState(this.activityId);
   }.bind(this));
-  state = normalizeState(state, this.activityId);
-  state = this.ensureCurrentDay(state, now || new Date());
-  this.save(state);
-  return clone(state);
+  var normalized = normalizeState(state, this.activityId);
+  var refreshed = this.ensureCurrentDay(normalized, now || new Date());
+  if (JSON.stringify(state) !== JSON.stringify(refreshed)) {
+    this.save(refreshed);
+  }
+  return clone(refreshed);
 };
 
 GameCircleWelfareStore.prototype.save = function (state) {

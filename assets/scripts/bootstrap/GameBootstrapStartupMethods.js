@@ -5,6 +5,7 @@ var Logger = Shared.Logger;
 var BundleLoader = Shared.BundleLoader;
 var LoadingViewController = Shared.LoadingViewController;
 var ShopStateService = Shared.ShopStateService;
+var StrictStorage = require("../utils/StrictStorage");
 
 function isWechatGameRuntime() {
   return !!(
@@ -338,7 +339,9 @@ module.exports = {
 
     this._deferredPlayerCloudProfileSyncPromise = this._syncPlayerProfileFromCloud().then(function (result) {
       if (result && result.source === "cloud") {
-        this._refreshLevelSelectAfterCloudProfileSync();
+        StrictStorage.suspendWriteObserver(function () {
+          this._refreshLevelSelectAfterCloudProfileSync();
+        }.bind(this));
       }
       return result;
     }.bind(this)).catch(function (error) {

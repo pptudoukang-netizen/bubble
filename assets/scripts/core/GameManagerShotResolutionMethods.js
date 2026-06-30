@@ -30,6 +30,7 @@ function createGameManagerShotResolutionMethods(deps) {
   var KEY_UNLOCK_DROP_DELAY = SpecialAnimationTiming.keyUnlock.totalDuration;
   var MOLOTOV_BLAST_DROP_INNER_SPEED = 860;
   var MOLOTOV_BLAST_DROP_OUTER_SPEED = 640;
+  var ELIMINATION_SEQUENCE_INTERVAL_MS = 30;
 
   function requireFinitePoint(point, ownerName) {
     if (
@@ -262,9 +263,121 @@ function createGameManagerShotResolutionMethods(deps) {
     };
   }
 
+  function resolveNextEliminationDelayMs(resolution) {
+    if (!resolution || !Array.isArray(resolution.eliminationSequence)) {
+      throw new Error("Molotov elimination presentation requires resolution.eliminationSequence.");
+    }
+
+    var maxDelayMs = -ELIMINATION_SEQUENCE_INTERVAL_MS;
+    resolution.eliminationSequence.forEach(function (entry) {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+        throw new Error("Molotov elimination presentation sequence entry must be an object.");
+      }
+      var delayMs = Number(entry.delayMs);
+      if (!Number.isFinite(delayMs) || delayMs < 0) {
+        throw new Error("Molotov elimination presentation delayMs must be non-negative.");
+      }
+      if (delayMs > maxDelayMs) {
+        maxDelayMs = delayMs;
+      }
+    });
+    return maxDelayMs + ELIMINATION_SEQUENCE_INTERVAL_MS;
+  }
+
+  function appendMolotovEliminationSequence(resolution, cells, grid) {
+    if (!resolution || !Array.isArray(resolution.eliminationSequence)) {
+      throw new Error("Molotov elimination presentation requires resolution.eliminationSequence.");
+    }
+    if (!Array.isArray(cells)) {
+      throw new Error("Molotov elimination presentation requires cells array.");
+    }
+    if (!grid || typeof grid.getCellPosition !== "function") {
+      throw new Error("Molotov elimination presentation requires grid.getCellPosition.");
+    }
+
+    var sequenceCellIds = {};
+    resolution.eliminationSequence.forEach(function (entry) {
+      if (!entry || (typeof entry.cellId !== "string" && typeof entry.cellId !== "number")) {
+        throw new Error("Molotov elimination presentation sequence entry requires cellId.");
+      }
+      sequenceCellIds[String(entry.cellId)] = true;
+    });
+
+    var nextDelayMs = resolveNextEliminationDelayMs(resolution);
+    cells.forEach(function (cell) {
+      if (!cell || (typeof cell.id !== "string" && typeof cell.id !== "number")) {
+        throw new Error("Molotov elimination presentation requires removed cell id.");
+      }
+      if (cell.entityCategory !== "normal_ball") {
+        return;
+      }
+      if (!Number.isInteger(cell.row) || !Number.isInteger(cell.col)) {
+        throw new Error("Molotov elimination presentation requires cell coordinates: " + cell.id);
+      }
+      var cellId = String(cell.id);
+      if (sequenceCellIds[cellId]) {
+        return;
+      }
+
+      var worldPosition = requireFinitePoint(
+        grid.getCellPosition(cell.row, cell.col),
+        "Molotov elimination presentation cell"
+      );
+      resolution.eliminationSequence.push({
+        cellId: cell.id,
+        row: cell.row,
+        col: cell.col,
+        worldPosition: {
+          x: worldPosition.x,
+          y: worldPosition.y
+        },
+        removeType: "molotov_blast",
+        points: 0,
+        delayMs: nextDelayMs
+      });
+      sequenceCellIds[cellId] = true;
+      nextDelayMs += ELIMINATION_SEQUENCE_INTERVAL_MS;
+    });
+  }
+
   return {
     _resetComboStreak: function () {
       this.comboStreak = 0;
+    },
+
+    _resolveComboAttachAnchor: function (resolution) {
+      if (!resolution) {
+        throw new Error("Combo attach anchor requires resolution.");
+      }
+
+      var attachedCell = resolution.attachedCell;
+      if (
+        attachedCell &&
+        Number.isInteger(attachedCell.row) &&
+        Number.isInteger(attachedCell.col)
+      ) {
+        return {
+          row: attachedCell.row,
+          col: attachedCell.col
+        };
+      }
+
+      var impact = resolution.impact;
+      if (
+        impact &&
+        impact.center &&
+        typeof impact.center.x === "number" &&
+        isFinite(impact.center.x) &&
+        typeof impact.center.y === "number" &&
+        isFinite(impact.center.y)
+      ) {
+        return {
+          x: impact.center.x,
+          y: impact.center.y
+        };
+      }
+
+      throw new Error("Combo attach anchor requires resolution.attachedCell or impact.center.");
     },
 
     _registerComboElimination: function (resolution) {
@@ -292,11 +405,20 @@ function createGameManagerShotResolutionMethods(deps) {
       resolution.scoreDelta += bonusGained;
 
       if (typeof this._pushRuntimeEvent === "function") {
-        this._pushRuntimeEvent("combo_bonus_awarded", {
+        var attachAnchor = this._resolveComboAttachAnchor(resolution);
+        var comboEventPayload = {
           combo_display: comboDisplay,
           combo_streak: this.comboStreak,
           bonus_gained: bonusGained
-        });
+        };
+        if (Object.prototype.hasOwnProperty.call(attachAnchor, "row")) {
+          comboEventPayload.attach_row = attachAnchor.row;
+          comboEventPayload.attach_col = attachAnchor.col;
+        } else {
+          comboEventPayload.attach_x = attachAnchor.x;
+          comboEventPayload.attach_y = attachAnchor.y;
+        }
+        this._pushRuntimeEvent("combo_bonus_awarded", comboEventPayload);
       }
 
       Logger.info("Combo bonus", {
@@ -1293,6 +1415,7 @@ function createGameManagerShotResolutionMethods(deps) {
 
       var removedByBlast = grid.removeCells(blastCells);
       this._pushBubbleBreakEvent(removedByBlast);
+      appendMolotovEliminationSequence(resolution, removedByBlast, grid);
       removedByBlast.forEach(function (cell) {
         cell.__molotovBlastVelocity = buildMolotovBlastDropVelocity(active, cell, grid);
       });
@@ -1342,6 +1465,7 @@ function createGameManagerShotResolutionMethods(deps) {
         }
         var removedMolotov = grid.removeCells([liveMolotov]);
         this._pushBubbleBreakEvent(removedMolotov);
+        appendMolotovEliminationSequence(resolution, removedMolotov, grid);
         this._appendUniqueCells(this.molotovPendingResolutionContext.allRemoved, removedMolotov);
         resolution.matched = this.molotovPendingResolutionContext.allRemoved.slice();
         resolution.collected = this.molotovPendingResolutionContext.allRemoved.slice();
@@ -1422,6 +1546,7 @@ function createGameManagerShotResolutionMethods(deps) {
       this.systems.jarCollectorSystem.collect([]);
 
       this._pushBubbleBreakEvent(syncRemoved);
+      appendMolotovEliminationSequence(resolution, syncRemoved, this.systems.bubbleGrid);
       resolution.matched = syncRemoved.slice();
       resolution.collected = syncRemoved.slice();
       resolution.boardCleared = false;
@@ -2194,6 +2319,9 @@ function createGameManagerShotResolutionMethods(deps) {
       if (!fallingMarbleSystem || typeof fallingMarbleSystem.registerSurplusShotsFromOrigin !== "function") {
         throw new Error("Surplus shot bonus requires FallingMarbleSystem.registerSurplusShotsFromOrigin.");
       }
+      if (typeof fallingMarbleSystem.hasPendingSurplusShots !== "function") {
+        throw new Error("Surplus shot bonus requires FallingMarbleSystem.hasPendingSurplusShots.");
+      }
 
       if (this.activeProjectile) {
         throw new Error("Surplus shot bonus cannot start while projectile is active.");
@@ -2212,8 +2340,13 @@ function createGameManagerShotResolutionMethods(deps) {
       this.remainingShots = 0;
       this.isAiming = false;
       this.pendingShotPlan = null;
+      this.surplusShotAimRecentered = false;
       fallingMarbleSystem.registerSurplusShotsFromOrigin(drainedBalls, origin, this.levelRandomSeed);
       this.state = "won_surplus_shots_pending";
+      if (!fallingMarbleSystem.hasPendingSurplusShots()) {
+        this.surplusShotAimRecentered = true;
+        this.surplusShotAimRecenterRevision += 1;
+      }
 
       if (typeof this._pushRuntimeEvent === "function") {
         this._pushRuntimeEvent("surplus_shots_started", {

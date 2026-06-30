@@ -318,6 +318,13 @@ module.exports = {
     return this.staminaRecoveryState;
   },
 
+  _ensureStaminaRecoveryStateInMemory: function () {
+    if (this.staminaRecoveryState && typeof this.staminaRecoveryState === "object") {
+      return this.staminaRecoveryState;
+    }
+    return this._refreshStaminaRecoveryState();
+  },
+
   _saveStaminaRecoveryState: function (state) {
     if (!this.staminaRecoveryStore || typeof this.staminaRecoveryStore.save !== "function") {
       throw new Error("GameBootstrap requires StaminaRecoveryStore.save.");
@@ -346,7 +353,7 @@ module.exports = {
     }
 
     var currentStamina = requireNonNegativeInteger(this.playerResources.stamina, "Player stamina");
-    this._refreshStaminaRecoveryState();
+    this._ensureStaminaRecoveryStateInMemory();
     var lastRecoveryAt = requireNonNegativeInteger(this.staminaRecoveryState.lastRecoveryAt, "Stamina recovery lastRecoveryAt");
     var nowMs = safeNow.getTime();
     if (nowMs < lastRecoveryAt) {
@@ -399,7 +406,7 @@ module.exports = {
       return STAMINA_FULL_TEXT;
     }
 
-    this._refreshStaminaRecoveryState();
+    this._ensureStaminaRecoveryStateInMemory();
     var lastRecoveryAt = requireNonNegativeInteger(this.staminaRecoveryState.lastRecoveryAt, "Stamina recovery lastRecoveryAt");
     var nowMs = safeNow.getTime();
     if (nowMs < lastRecoveryAt) {
@@ -717,7 +724,11 @@ module.exports = {
       throw new Error("LevelView love_info requires time label.");
     }
 
-    this._refreshPlayerResources();
+    if (!this.playerResources || typeof this.playerResources !== "object") {
+      throw new Error("Player resources are required for stamina recovery status.");
+    }
+
+    this._applyNaturalStaminaRecovery(new Date());
     if (loveLabel) {
       var staminaText = String(this.playerResources.stamina);
       if (loveLabel.string !== staminaText) {

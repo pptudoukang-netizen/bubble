@@ -55,7 +55,9 @@ function NewGiftStore() {}
 NewGiftStore.prototype.load = function () {
   var state = StrictStorage.readJsonOrCreate(STORAGE_KEY, NAMESPACE, createInitialState);
   var normalized = normalizeState(state);
-  this.save(normalized);
+  if (JSON.stringify(state) !== JSON.stringify(normalized)) {
+    this.save(normalized);
+  }
   return clone(normalized);
 };
 

@@ -19,7 +19,7 @@ var molotovBlast = {
 
 var fairyAssist = {
   flyInDuration: 0.45,
-  flyOutDuration: 0.35,
+  flyOutDuration: 0.65,
   flyOutDistance: 880
 };
 

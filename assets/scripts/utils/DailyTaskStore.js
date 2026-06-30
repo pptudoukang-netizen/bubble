@@ -121,7 +121,9 @@ DailyTaskStore.prototype.load = function (now) {
     return createInitialState(todayKey);
   });
   var state = this.ensureDailyReset(normalizeState(rawState), now);
-  this.save(state);
+  if (JSON.stringify(rawState) !== JSON.stringify(state)) {
+    this.save(state);
+  }
   return clone(state);
 };
 

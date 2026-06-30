@@ -770,6 +770,86 @@ function runMolotovChainQueueCase() {
   }
 }
 
+function runMolotovEliminationSequencePositionCase() {
+  var manager = new GameManager();
+  var blastedCell = {
+    id: "1_7",
+    row: 1,
+    col: 7,
+    color: "R",
+    entityCategory: "normal_ball",
+    entityType: null
+  };
+  var grid = {
+    getCoordinatesWithinRadius: function (row, col, radius) {
+      if (row !== 1 || col !== 6 || radius !== 2) {
+        throw new Error("Molotov elimination sequence regression queried unexpected radius.");
+      }
+      return [
+        { row: 1, col: 6, distance: 0 },
+        { row: 1, col: 7, distance: 1 }
+      ];
+    },
+    getCell: function (row, col) {
+      if (row === 1 && col === 7) {
+        return blastedCell;
+      }
+      return null;
+    },
+    removeCells: function (cells) {
+      return cells.slice();
+    },
+    getCellPosition: function (row, col) {
+      return {
+        x: col * 10,
+        y: row * 10
+      };
+    }
+  };
+  var resolution = {
+    matched: [],
+    collected: [],
+    reactiveTriggered: [],
+    eliminationSequence: []
+  };
+
+  manager.systems = {
+    bubbleGrid: grid
+  };
+  manager.molotovPendingResolutionContext = {
+    allRemoved: []
+  };
+  manager.molotovBlastTriggeredIds = {};
+  manager._triggerAdjacentKeys = function () {
+    return [];
+  };
+  manager._triggerAdjacentSplitters = function () {};
+  manager._collectAdjacentMolotovs = function () {
+    return [];
+  };
+  manager._queueMolotovBlasts = function () {};
+  manager._cancelPendingSplitterSpawnsForDroppedCells = function () {};
+  manager._registerResolutionDrops = function () {};
+
+  manager._executeMolotovBlastPhase({
+    id: "molotov_source",
+    row: 1,
+    col: 6,
+    blastRadius: 2
+  }, grid, resolution);
+
+  if (resolution.eliminationSequence.length !== 1) {
+    throw new Error("Molotov blast must append one elimination sequence entry for the blasted normal ball.");
+  }
+  var entry = resolution.eliminationSequence[0];
+  if (entry.cellId !== "1_7") {
+    throw new Error("Molotov blast elimination sequence must preserve blasted cell id.");
+  }
+  if (!entry.worldPosition || entry.worldPosition.x !== 70 || entry.worldPosition.y !== 10) {
+    throw new Error("Molotov blast elimination sequence must preserve pre-removal worldPosition.");
+  }
+}
+
 function runAdjacentIceThawSnowballCollectionCase() {
   var manager = new GameManager();
   manager.iceCollectedTotal = 0;
@@ -1439,6 +1519,8 @@ function main() {
   console.log("[OK]", "key_unlock_unsupported_falls", "unsupported unlocked locked ball falls instead of disappearing");
   runMolotovChainQueueCase();
   console.log("[OK]", "molotov_chain_queue", "adjacent molotov queued after neighbor removal");
+  runMolotovEliminationSequencePositionCase();
+  console.log("[OK]", "molotov_elimination_sequence_position", "blasted normal balls keep pre-removal positions");
   runAdjacentIceThawSnowballCollectionCase();
   console.log("[OK]", "adjacent_ice_thaw_snowball_collection", "neighbor thaw and direct ice removal count snowballs once");
   runFloatingIceDropThawBeforeFallCase();

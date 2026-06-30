@@ -1,6 +1,6 @@
 "use strict";
 
-var ELIMINATION_INTERVAL_MS = 20;
+var ELIMINATION_INTERVAL_MS = 30;
 var SHATTER_PRESENTATION_LIFETIME_SEC = 0.48;
 
 function keyFor(row, col) {

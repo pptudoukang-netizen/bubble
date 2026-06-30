@@ -17,16 +17,10 @@ function attachLevelRendererSceneBoardMethods(LevelRenderer, deps) {
   var isIceBallLike = deps.isIceBallLike;
   var resolveIceInnerColor = deps.resolveIceInnerColor;
   var DROP_COLLISION_GLOW_NODE_NAME = "DropCollisionGlow";
-  var DROP_GLOW_UV_EPSILON = 0.000001;
-  var DROP_GLOW_UV_CORNER_EPSILON = 0.0001;
-
-  function requireFiniteNumber(value, fieldName) {
-    var numberValue = Number(value);
-    if (!isFinite(numberValue)) {
-      throw new Error(fieldName + " must be finite.");
-    }
-    return numberValue;
-  }
+  var DROP_COLLISION_GLOW_SIZE = {
+    width: 86,
+    height: 86
+  };
 
   function requirePositiveSize(size, fieldName) {
     if (
@@ -41,42 +35,6 @@ function attachLevelRendererSceneBoardMethods(LevelRenderer, deps) {
       throw new Error(fieldName + " must be a positive size.");
     }
     return size;
-  }
-
-  function buildDropGlowUvBasis(spriteFrame) {
-    if (!spriteFrame || !spriteFrame.isValid) {
-      throw new Error("Drop collision glow requires valid SpriteFrame.");
-    }
-    var uv = spriteFrame.uv;
-    if (!uv || uv.length < 8) {
-      throw new Error("Drop collision glow requires four UV corners.");
-    }
-
-    var originX = requireFiniteNumber(uv[0], "Drop collision glow UV origin x");
-    var originY = requireFiniteNumber(uv[1], "Drop collision glow UV origin y");
-    var axisXX = requireFiniteNumber(uv[2], "Drop collision glow UV right x") - originX;
-    var axisXY = requireFiniteNumber(uv[3], "Drop collision glow UV right y") - originY;
-    var axisYX = requireFiniteNumber(uv[4], "Drop collision glow UV top x") - originX;
-    var axisYY = requireFiniteNumber(uv[5], "Drop collision glow UV top y") - originY;
-    var axisXLengthSquared = axisXX * axisXX + axisXY * axisXY;
-    var axisYLengthSquared = axisYX * axisYX + axisYY * axisYY;
-    if (axisXLengthSquared <= DROP_GLOW_UV_EPSILON || axisYLengthSquared <= DROP_GLOW_UV_EPSILON) {
-      throw new Error("Drop collision glow UV basis is degenerate.");
-    }
-
-    var expectedTopRightX = originX + axisXX + axisYX;
-    var expectedTopRightY = originY + axisXY + axisYY;
-    if (
-      Math.abs(expectedTopRightX - Number(uv[6])) > DROP_GLOW_UV_CORNER_EPSILON ||
-      Math.abs(expectedTopRightY - Number(uv[7])) > DROP_GLOW_UV_CORNER_EPSILON
-    ) {
-      throw new Error("Drop collision glow UV corners must form a parallelogram.");
-    }
-
-    return {
-      originAxisX: cc.v4(originX, originY, axisXX, axisXY),
-      axisY: cc.v4(axisYX, axisYY, axisXLengthSquared, axisYLengthSquared)
-    };
   }
 
   function resolveDropGlowSpriteTarget(dropNode) {
@@ -121,16 +79,6 @@ function attachLevelRendererSceneBoardMethods(LevelRenderer, deps) {
     hideDropCollisionGlowFrom(iconNode);
   }
 
-  function requireDropCollisionGlowEffect(renderer) {
-    if (!renderer || !renderer.dropCollisionGlowEffectAsset || !renderer.dropCollisionGlowEffectAsset.isValid) {
-      throw new Error("Drop collision glow effect must be preloaded before rendering.");
-    }
-    if (!cc.Material || typeof cc.Material.create !== "function") {
-      throw new Error("Drop collision glow requires cc.Material.create.");
-    }
-    return renderer.dropCollisionGlowEffectAsset;
-  }
-
   function ensureDropCollisionGlowNode(targetNode) {
     var glowNode = targetNode.getChildByName(DROP_COLLISION_GLOW_NODE_NAME);
     if (!glowNode) {
@@ -163,42 +111,17 @@ function attachLevelRendererSceneBoardMethods(LevelRenderer, deps) {
     }
 
     var target = resolveDropGlowSpriteTarget(dropNode);
-    var spriteFrame = target.sprite.spriteFrame;
     var glow = ensureDropCollisionGlowNode(target.node);
-    var effectAsset = requireDropCollisionGlowEffect(renderer);
-    if (!glow.node.__dropCollisionGlowMaterial || glow.node.__dropCollisionGlowEffectAsset !== effectAsset) {
-      var material = cc.Material.create(effectAsset);
-      if (!material) {
-        throw new Error("Drop collision glow material creation failed.");
-      }
-      glow.node.__dropCollisionGlowMaterial = glow.sprite.setMaterial(0, material);
-      glow.node.__dropCollisionGlowEffectAsset = effectAsset;
-    }
-    var glowMaterial = glow.node.__dropCollisionGlowMaterial;
-    if (!glowMaterial) {
-      throw new Error("Drop collision glow material is missing.");
+    var glowSpriteFrame = renderer.spriteFrameCache[BALL_RESOURCES.LIGHT];
+    if (!glowSpriteFrame) {
+      throw new Error("Drop collision glow light sprite was not preloaded: " + BALL_RESOURCES.LIGHT);
     }
 
-    var targetSize = requirePositiveSize(target.node.getContentSize(), "Drop collision glow target size");
-    var levelRatio = visualStacks / FairyAssistConfig.maxGlowStacks;
-    var uvBasis = buildDropGlowUvBasis(spriteFrame);
-    ensureSprite(glow.node, spriteFrame);
-    glow.node.setContentSize(targetSize);
+    ensureSprite(glow.node, glowSpriteFrame);
+    glow.node.setContentSize(DROP_COLLISION_GLOW_SIZE);
     glow.node.active = true;
-    glow.node.opacity = 255;
+    glow.node.opacity = Math.min(255, 55 + visualStacks * 28);
     glow.node.setScale(1);
-    glowMaterial.setProperty("uvOriginAxisX", uvBasis.originAxisX);
-    glowMaterial.setProperty("uvAxisY", uvBasis.axisY);
-    glowMaterial.setProperty("glowColor", cc.v4(1, 0.72, 0.18, 1));
-    glowMaterial.setProperty(
-      "glowParams",
-      cc.v4(
-        levelRatio,
-        (2.2 + levelRatio * 3.4) / Math.max(targetSize.width, targetSize.height),
-        0.32 + levelRatio * 0.58,
-        0.52 + levelRatio * 0.58
-      )
-    );
   }
 
   function isBoardSpecialPrefabCell(cell) {

@@ -1105,7 +1105,7 @@ module.exports = {
           });
           this._logAssetManagerStats("gameplay");
           this.levelRenderer.setGameplayInteractionEnabled(false);
-          return this.levelRenderer.playGameEntryCountdown().then(function () {
+          return this._runGameEntryCountdown().then(function () {
             this.levelRenderer.setGameplayInteractionEnabled(true);
             this.isRestarting = false;
             this._setDropTestButtonVisible(true);

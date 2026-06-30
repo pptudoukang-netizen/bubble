@@ -62,10 +62,7 @@ FairyAssistSystem.prototype._resetSlots = function () {
     return {
       index: slotConfig.index,
       nodeName: slotConfig.nodeName,
-      position: {
-        x: slotConfig.x,
-        y: slotConfig.y
-      },
+      position: null,
       fairy: null
     };
   });
@@ -99,8 +96,10 @@ FairyAssistSystem.prototype.syncCollisionCenters = function (centers) {
       throw new Error("FairyAssistSystem slot state is inconsistent at index " + index + ".");
     }
     var boardPoint = requireFinitePoint(center, "Fairy collision center at index " + index);
-    slot.position.x = boardPoint.x;
-    slot.position.y = boardPoint.y;
+    slot.position = {
+      x: boardPoint.x,
+      y: boardPoint.y
+    };
     if (slot.fairy) {
       slot.fairy.position.x = boardPoint.x;
       slot.fairy.position.y = boardPoint.y;
@@ -124,6 +123,9 @@ FairyAssistSystem.prototype._removeByDeparturePriority = function (count) {
   }
 
   var active = this._getActiveFairies().sort(function (left, right) {
+    if (left.bonusStep !== right.bonusStep) {
+      return right.bonusStep - left.bonusStep;
+    }
     return left.enteredAt - right.enteredAt;
   });
   var removals = active.slice(0, count);
@@ -150,13 +152,18 @@ FairyAssistSystem.prototype._removeByDeparturePriority = function (count) {
 };
 
 FairyAssistSystem.prototype._resolveDestinationSlot = function () {
+  var emptySlots = [];
   for (var index = 0; index < this.slots.length; index += 1) {
     if (this.slots[index].fairy === null) {
-      return {
-        slot: this.slots[index],
-        replacedFairy: null
-      };
+      emptySlots.push(this.slots[index]);
     }
+  }
+  if (emptySlots.length > 0) {
+    var randomIndex = Math.floor(Math.random() * emptySlots.length);
+    return {
+      slot: emptySlots[randomIndex],
+      replacedFairy: null
+    };
   }
 
   var occupied = this.slots.slice().sort(function (left, right) {
@@ -175,16 +182,20 @@ FairyAssistSystem.prototype._resolveDestinationSlot = function () {
 };
 
 FairyAssistSystem.prototype._spawnFairy = function (eliminatedCount, spawnFrom) {
+  if (!this.collisionCentersSynced) {
+    throw new Error("FairyAssistSystem spawn requires board-space centers synced from renderer.");
+  }
   var rule = findColorRule(eliminatedCount);
   var destination = this._resolveDestinationSlot();
   var slot = destination.slot;
+  requireFinitePoint(slot.position, "Fairy assist destination slot position");
   var replacedFairy = destination.replacedFairy;
   var fairy = {
     id: "fairy_assist_" + (this._fairySerial += 1),
     color: rule.color,
     bonusStep: rule.bonusStep,
     canSplit: rule.canSplit,
-    assetPath: rule.assetPath,
+    prefabPath: rule.prefabPath,
     slotIndex: slot.index,
     position: {
       x: slot.position.x,
@@ -221,9 +232,6 @@ FairyAssistSystem.prototype.resolveAfterShot = function (resolution, grid) {
 
   if (resolution.matched.length === 0) {
     return this._removeByDeparturePriority(FairyAssistConfig.removeCountOnMiss);
-  }
-  if (resolution.floating.length > 0) {
-    return [];
   }
 
   var lastEliminated = resolution.matched[resolution.matched.length - 1];

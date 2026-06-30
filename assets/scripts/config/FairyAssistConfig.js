@@ -7,7 +7,7 @@ var COLOR_RULES = [
     maxEliminated: 5,
     bonusStep: 1,
     canSplit: false,
-    assetPath: "image/genius/red"
+    prefabPath: "prefabs/genius_red"
   },
   {
     color: "yellow",
@@ -15,7 +15,7 @@ var COLOR_RULES = [
     maxEliminated: 9,
     bonusStep: 2,
     canSplit: false,
-    assetPath: "image/genius/yellow"
+    prefabPath: "prefabs/genius_yellow"
   },
   {
     color: "green",
@@ -23,17 +23,17 @@ var COLOR_RULES = [
     maxEliminated: Number.MAX_SAFE_INTEGER,
     bonusStep: 3,
     canSplit: true,
-    assetPath: "image/genius/green"
+    prefabPath: "prefabs/genius_green"
   }
 ];
 
 var SLOTS = [
-  { index: 0, nodeName: "genius1", x: -226.537, y: -198.01 },
-  { index: 1, nodeName: "genius2", x: -3.356, y: -194.654 },
-  { index: 2, nodeName: "genius3", x: 214.791, y: -181.229 },
-  { index: 3, nodeName: "genius4", x: -203.044, y: -62.088 },
-  { index: 4, nodeName: "genius5", x: -23.493, y: -58.732 },
-  { index: 5, nodeName: "genius6", x: 224.859, y: -55.376 }
+  { index: 0, nodeName: "genius1" },
+  { index: 1, nodeName: "genius2" },
+  { index: 2, nodeName: "genius3" },
+  { index: 3, nodeName: "genius4" },
+  { index: 4, nodeName: "genius5" },
+  { index: 5, nodeName: "genius6" }
 ];
 
 function requirePositiveFiniteNumber(value, fieldName) {
@@ -72,8 +72,8 @@ function validateColorRules(rules) {
     if (typeof rule.canSplit !== "boolean") {
       throw new Error("FairyAssistConfig canSplit must be boolean for " + rule.color + ".");
     }
-    if (typeof rule.assetPath !== "string" || !rule.assetPath) {
-      throw new Error("FairyAssistConfig assetPath is required for " + rule.color + ".");
+    if (typeof rule.prefabPath !== "string" || !rule.prefabPath) {
+      throw new Error("FairyAssistConfig prefabPath is required for " + rule.color + ".");
     }
     expectedMin = rule.maxEliminated + 1;
   });
@@ -103,9 +103,6 @@ function validateSlots(slots) {
       throw new Error("FairyAssistConfig slot nodeName is duplicated: " + slot.nodeName);
     }
     nodeNames[slot.nodeName] = true;
-    if (typeof slot.x !== "number" || !isFinite(slot.x) || typeof slot.y !== "number" || !isFinite(slot.y)) {
-      throw new Error("FairyAssistConfig slot position must be finite at index " + index + ".");
-    }
   });
 }
 
@@ -116,14 +113,14 @@ var CONFIG = {
   colorRules: COLOR_RULES,
   slots: SLOTS,
   removeCountOnMiss: 2,
-  maxCollisionsPerFairy: 5,
+  maxCollisionsPerFairy: 7,
   fairyCollisionRadius: 20,
   bounceDamping: 0.82,
   minimumUpwardSpeed: 180,
   splitAngleDegrees: 18,
   spriteWidth: 200,
   spriteHeight: 160,
-  maxGlowStacks: 5
+  maxGlowStacks: 7
 };
 
 if (!Number.isInteger(CONFIG.removeCountOnMiss) || CONFIG.removeCountOnMiss <= 0) {

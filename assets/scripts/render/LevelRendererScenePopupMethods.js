@@ -180,24 +180,20 @@ function attachLevelRendererScenePopupMethods(LevelRenderer, deps) {
   }
 
   function renderLoseTopInfo(topInfoNode, runtimeSnapshot) {
-    if (!runtimeSnapshot || !runtimeSnapshot.winStats || typeof runtimeSnapshot.winStats !== "object") {
-      throw new Error("LoseView top_info requires runtimeSnapshot.winStats.");
-    }
-    var starThresholds = runtimeSnapshot.winStats.starThresholds;
-    if (!starThresholds || !Number.isInteger(starThresholds.star1) || starThresholds.star1 <= 0) {
-      throw new Error("LoseView top_info requires positive integer one-star threshold.");
+    if (!runtimeSnapshot || typeof runtimeSnapshot !== "object") {
+      throw new Error("LoseView top_info requires runtimeSnapshot.");
     }
     var score = Number(runtimeSnapshot.score);
     if (!Number.isFinite(score) || score < 0) {
       throw new Error("LoseView top_info requires non-negative runtime score.");
     }
-    var remainingScore = Math.max(0, starThresholds.star1 - Math.floor(score));
+    var earnedScore = Math.floor(score);
     var text1Node = resetLoseTopInfoNode(topInfoNode, "text1");
     var numNode = resetLoseTopInfoNode(topInfoNode, "target1_text_num");
     text1Node.active = true;
     numNode.active = true;
-    setRequiredLabelString(text1Node, "还差 ", "LoseView/top_info/text1");
-    setRequiredLabelString(numNode, String(remainingScore), "LoseView/top_info/target1_text_num");
+    setRequiredLabelString(text1Node, "本局得分 ", "LoseView/top_info/text1");
+    setRequiredLabelString(numNode, String(earnedScore), "LoseView/top_info/target1_text_num");
     var layout = topInfoNode.getComponent(cc.Layout);
     if (!layout || typeof layout.updateLayout !== "function") {
       throw new Error("LoseView top_info requires cc.Layout.updateLayout.");

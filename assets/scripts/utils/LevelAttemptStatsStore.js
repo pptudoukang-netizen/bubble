@@ -259,7 +259,9 @@ function LevelAttemptStatsStore() {}
 LevelAttemptStatsStore.prototype.load = function () {
   var rawState = StrictStorage.readJsonOrCreate(STORAGE_KEY, NAMESPACE, createInitialState);
   var normalized = normalizeState(rawState);
-  this.save(normalized);
+  if (JSON.stringify(rawState) !== JSON.stringify(normalized)) {
+    this.save(normalized);
+  }
   return clone(normalized);
 };
 

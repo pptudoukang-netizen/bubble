@@ -16,6 +16,7 @@
 - `assets/map/`：地图分包资源，包含无限浮岛选关地图配置、浮岛预制体、地标预制体、传送阵和主角图片。
 - `assets/ui/`：UI 分包资源，包含弹窗预制体与 UI 图片；`assets/ui/image/commone/` 存放被 `assets/ui/prefabs/` 下两个及以上预制体共同引用的图片，其余按界面分子目录（如 `win/`、`shop/`、`sign/`）。
 - `assets/game/`：局内 HUD 图片分包（微信 `subpackage`），`GameView` 等预制体仍引用该分包内 sprite；进入局内前由 `BundleLoader.ensureGameplayBundleLoaded()` 加载。
+- `assets/animation/`：动画资源分包（微信 `subpackage`），当前包含局内固定精灵红/黄/绿三个动画 prefab；局内由 `LevelRenderer` 加载 `animation` bundle 后实例化。
 - `assets/image/`：主场景图片资源，按引用范围分子目录：`common/`（选关 `LevelView` 与局内 `GameView` 共用）、`level_view/`（仅选关）、`icon/`（选关入口图标）。局内专用图片已迁至 `assets/game/`。
 - `assets/resources/config/levels/`：本地内置关卡 JSON 配置，文件名形如 `level_001.json`；当前只内置 `level_001.json` 到 `level_010.json`。
 - `assets/resources/config/level_manifest.json`：11-1000 关远程包清单，包含云环境、包范围、云存储 fileID、sha256、字节数与远程包格式。
@@ -97,7 +98,7 @@
 - `BoardViewportSystem.js`：棋盘不超过 10 行时顶部贴 HUD 下沿；超过 10 行时开场和局内吸附结算后都匀速上移到 HUD 下方保留 10 行，移动期间锁定发射；逻辑第 0 行空槽 ≥6 或只剩顶部一行时，结算后立即触发全盘崩塌判定。
 - `MatchSystem.js`：同色匹配消除。
 - `SupportSystem.js`：连通/悬空判断。
-- `FairyAssistSystem.js`：管理 `GameView/geniuses` 六个固定协助精灵槽位；按纯消除数量生成红/黄/绿精灵、未消除时移除最早两只；碰撞中心由 `LevelRenderer.syncFairyAssistCollisionCenters` 从槽位节点转换到棋盘坐标后再参与判定，并维护每精灵最多 5 次碰撞计数与光效层数 snapshot。
+- `FairyAssistSystem.js`：管理 `GameView/geniuses` 六个固定协助精灵槽位；只要本次发射产生消除，就按匹配消除数量生成红/黄/绿精灵，未消除时移除最早两只；碰撞中心由 `LevelRenderer.syncFairyAssistCollisionCenters` 从槽位节点转换到棋盘坐标后再参与判定，并维护每精灵最多 7 次碰撞计数与光效层数 snapshot。
 - `FallingMarbleSystem.js`：掉落球运动（默认重力 900）；`maxDynamicMarbles` 当前由 `FallingRulesDefaults.maxDynamicMarbles`（9999，试验值）统一控制，暂忽略关卡 `fallingRules.maxDynamicMarbles: 10`，一次注册的全部掉落球会立即进入物理模拟；固定精灵反弹、红黄绿倍率、绿色精灵单次一分为二；清屏后余球每 0.2s 连续抛射入缸（不等上一颗入缸），炮台每 0.2s 在 15°～165° 间按 15° 步进往返旋转。
 - `JarCollectorSystem.js`：底部罐子收集。
 - `ShooterController.js`：射手和待发球；`drainRemainingShotBalls` 在剩余球奖励阶段排空炮台队列。
@@ -120,7 +121,7 @@
 - `LevelRendererSceneHudMethods.js`：HUD 目标、星级进度、连击/分数飘字、定时器与底部道具栏。
 - `LevelRendererSceneJarMethods.js`：底部罐子、罐内掉落遮挡与碰撞遮罩。
 - `LevelRendererScenePopupMethods.js`：胜/负/暂停/道具说明弹窗与结果浮层渲染（含 Sprite 代理分层）。
-- `LevelRendererFairyMethods.js`：严格绑定 `GameView/geniuses/genius1...6`，渲染三色精灵、飞入/替换/离场动画，并用单个复用光效 Sprite 表达碰撞层数。
+- `LevelRendererFairyMethods.js`：严格绑定 `GameView/geniuses/genius1...6`，从 `animation` 分包实例化三色精灵动画 prefab，保留飞入/替换/离场动画，并用同 prefab 的后置克隆表达碰撞层数。
 - `BubbleShatterRenderer.js`：普通匹配球消除时的 Shader 碎裂渲染器；在棋盘节点回收前复制球的 SpriteFrame 与位置，以单球单 Sprite 的片元 Shader 生成中心块和八个放射碎片，不参与棋盘状态与掉落结算。
 - `PrefabFactory.js`：预制体实例化辅助。
 - `RenderNodeHelpers.js`：节点操作辅助。
@@ -138,7 +139,7 @@
 - `RemoteLevelPackLoader.js`：读取 manifest，使用 `wx.cloud.getTempFileURL` 获取远程包临时地址，再用 `wx.downloadFile` 下载到本地用户文件缓存，按 manifest 校验 `compact-schema-v1` 格式并展开，最后按单关复用 `LevelConfigLoader` 的规范化校验；同时提供按当前关卡预下载下一远程包的能力。
 - `BoardLayout.js`：棋盘布局参数。
 - `BoardViewportConfig.js`：10 行视口与开场/局内匀速移动参数；HUD 下沿由 `BoardLayout.syncHudBottomLineYFromHudPanel()` 从 `HudPanel` 实测；炮管安全线由 `BoardLayout.getCannonTopLineY()` 推导。
-- `FairyAssistConfig.js`：固定精灵六槽坐标、红黄绿消除区间与倍率、每精灵最多 5 次碰撞、碰撞反弹、绿色分裂和资源路径的严格配置。
+- `FairyAssistConfig.js`：固定精灵六槽节点、红黄绿消除区间与倍率、每精灵最多 7 次碰撞、碰撞反弹、绿色分裂和 animation prefab 路径的严格配置。
 - `FallingRulesDefaults.js`：坠落物理首版默认值（gravity 900 等）。
 - `JarScoreConfig.js`：1～4 缸按槽位的基础分表。
 - `AimTuningProfiles.js`：瞄准调参配置。
@@ -156,7 +157,7 @@
 - 商店：`ShopConfigService.js`、`ShopStateService.js`、`ShopPurchaseService.js`
 - 星星宝箱：`StarChestService.js`、`StarChestRewardService.js`
 - 微信能力：`WechatShareService.js`、`FriendGiftService.js`、`GameCircleButtonAdapter.js`、`WorldLeaderboardService.js`
-- 玩家云端档案：`PlayerCloudProfileService.js` 通过 `playerProfile` 微信云函数同步本地玩家状态到云数据库 `player_profiles`，同步内容包含关卡进度、资源、背包、签到、商店、游戏圈福利与关卡尝试统计。
+- 玩家云端档案：`PlayerCloudProfileService.js` 通过 `playerProfile` 微信云函数同步本地玩家状态到云数据库 `player_profiles`，同步内容包含关卡进度、资源、背包、签到、商店、游戏圈福利与关卡尝试统计。本地写入经 `StrictStorage` 观察者合并上传（默认 5s debounce）；`Store.load()` 仅在 normalize 后数据变化时写回；选关页体力倒计时 ticker 只读内存状态，仅在自然恢复体力时写 storage；云端拉取后刷新选关 UI 在 `suspendWriteObserver` 内执行以避免冗余上传。
 - 世界排行榜：玩家普通关卡过关后，`WorldLeaderboardService.js` 立即用本地最佳成绩和已过关数调用 `worldLeaderboard` 微信云函数写入云数据库 `world_leaderboard`。未授权昵称头像时数据库中的 `nickname` 与 `avatarUrl` 保持空字符串；用户后续授权后，排行榜入口会保存 `bubble_world_leaderboard_profile_v1` 并再次上报覆盖云端资料。排行榜只拉取前 100 名；展示时空头像使用默认头像，空昵称显示“微信用户”。
 - 游戏圈福利：`GameCircleWelfareService.js`
 - 埋点：`TelemetryService.js`
@@ -242,7 +243,7 @@
 3. 瞄准输入传给 `gameManager.beginAim` / `setAim` / `endAim`。
 4. 发射触发 `gameManager.fireShot`。
 5. `GameManager` 调用 systems 完成命中、消除、掉落、收集、胜负判断。
-6. 匹配消除球在原位置碎裂，只有 `SupportSystem` 判定的悬空球进入 `FallingMarbleSystem`；有消除且无悬空球时由 `FairyAssistSystem` 生成固定精灵，未消除时按分数加成等级从高到低离场两只（同等级时更早入场的先离场）。
+6. 匹配消除球在原位置碎裂，只有 `SupportSystem` 判定的悬空球进入 `FallingMarbleSystem`；只要本次发射产生消除，不管是否产生悬空掉落球，都会由 `FairyAssistSystem` 生成固定精灵，未消除时按分数加成等级从高到低离场两只（同等级时更早入场的先离场）。
 7. 坠落球碰撞固定精灵后累加倍率并反弹；普通球首次碰撞绿色精灵时由两个子球替换，两个子球分别落缸计分。
 8. 棋盘全部球通过正常消除或悬空掉落清空后，`GameManager` 先等待所有掉落球、分裂生成和燃烧瓶结算结束，再检查最终分数是否达到 1 星；达到则继续胜利结算，未达到则失败。`bonusObjectives` / `winConditions` 中的收集目标不参与通关判定，只在胜利奖励发放时决定奖励是否翻倍。
 9. 棋盘剩余球全部入缸后，若仍有 `remainingShots` 则进入 `won_surplus_shots_pending`：`ShooterController.drainRemainingShotBalls` 排空炮台队列，`FallingMarbleSystem.registerSurplusShotsFromOrigin` 每 0.2s 连续抛射、炮台每 0.2s 在 15°～165° 间旋转；全部入缸后进入 `won_settlement_pending`，停顿 1 秒再切到 `won`。无剩余发射球时直接进入 `won_settlement_pending`。

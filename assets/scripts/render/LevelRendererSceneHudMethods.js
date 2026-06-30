@@ -117,13 +117,29 @@ var COMBO_BATTER_POP_SCALE = 1.2;
 
 var JAR_FRACTION_MOUTH_OFFSET_RATIO = 0.24;
 var JAR_FRACTION_START_Y_OFFSET = 20;
-var JAR_FRACTION_POP_DURATION = 0.15;
-var JAR_FRACTION_SETTLE_DURATION = 0.1;
-var JAR_FRACTION_HOLD_DURATION = 0.55;
+var JAR_FRACTION_RISE_DURATION = 0.55;
 var JAR_FRACTION_FADE_DURATION = 0.25;
 var JAR_FRACTION_RISE_DISTANCE = 72;
-var JAR_FRACTION_POP_SCALE = 1.15;
+var JAR_FRACTION_END_SCALE = 2;
 var JAR_FRACTION_START_SCALE = 0.6;
+
+var BALL_SCORE_FADE_IN_DURATION = 0.2;
+var BALL_SCORE_HOLD_DURATION = 0.5;
+var BALL_SCORE_FADE_OUT_RISE_DURATION = 0.2;
+var BALL_SCORE_RISE_DISTANCE = 20;
+var BALL_SCORE_Z_INDEX = 1200;
+var SCHEDULE_ONCE_REPEAT = 0;
+
+function requireDirectorScheduler(description) {
+  if (!cc || !cc.director || typeof cc.director.getScheduler !== "function") {
+    throw new Error(description + " requires cc.director.getScheduler.");
+  }
+  var scheduler = cc.director.getScheduler();
+  if (!scheduler || typeof scheduler.schedule !== "function" || typeof scheduler.unschedule !== "function") {
+    throw new Error(description + " requires director scheduler APIs.");
+  }
+  return scheduler;
+}
 
 LevelRenderer.prototype._initializeComboBatterHud = function () {
   var gameViewNode = this._getGameViewNode();
@@ -151,6 +167,43 @@ LevelRenderer.prototype._initializeComboBatterHud = function () {
   batterNode.setScale(1, 1);
   batterLabel.string = "0";
   this.lastComboBatterEventId = -1;
+};
+
+LevelRenderer.prototype._resolveComboBatterPositionInGameView = function (comboEvent, runtimeSnapshot) {
+  if (!comboEvent || typeof comboEvent !== "object") {
+    throw new Error("Combo batter position requires combo event.");
+  }
+  if (!runtimeSnapshot || !runtimeSnapshot.board) {
+    throw new Error("Combo batter position requires runtimeSnapshot.board.");
+  }
+
+  var boardSnapshot = runtimeSnapshot.board;
+  if (Number.isInteger(comboEvent.attach_row) && Number.isInteger(comboEvent.attach_col)) {
+    if (!Number.isInteger(boardSnapshot.maxColumns)) {
+      throw new Error("Combo batter position requires boardSnapshot.maxColumns.");
+    }
+    if (typeof boardSnapshot.viewportOffsetY !== "number" || !isFinite(boardSnapshot.viewportOffsetY)) {
+      throw new Error("Combo batter position requires boardSnapshot.viewportOffsetY.");
+    }
+    var boardPos = BoardLayout.getCellPosition(
+      comboEvent.attach_row,
+      comboEvent.attach_col,
+      boardSnapshot.maxColumns,
+      boardSnapshot.viewportOffsetY
+    );
+    return this._convertBoardPointToGameView(boardPos.x, boardPos.y);
+  }
+
+  if (
+    typeof comboEvent.attach_x === "number" &&
+    isFinite(comboEvent.attach_x) &&
+    typeof comboEvent.attach_y === "number" &&
+    isFinite(comboEvent.attach_y)
+  ) {
+    return this._convertBoardPointToGameView(comboEvent.attach_x, comboEvent.attach_y);
+  }
+
+  throw new Error("combo_bonus_awarded requires attach_row/attach_col or attach_x/attach_y.");
 };
 
 LevelRenderer.prototype._playComboBatterDisplay = function (runtimeSnapshot) {
@@ -208,6 +261,10 @@ LevelRenderer.prototype._playComboBatterDisplay = function (runtimeSnapshot) {
   batterNode.setScale(0.6, 0.6);
   batterLabel.string = "+" + String(comboDisplay);
 
+  var attachPosition = this._resolveComboBatterPositionInGameView(comboEvent, runtimeSnapshot);
+  batterNode.setPosition(attachPosition.x, attachPosition.y);
+  batterNode.zIndex = 1200;
+
   cc.tween(batterNode)
     .to(COMBO_BATTER_POP_DURATION, {
       scale: COMBO_BATTER_POP_SCALE
@@ -257,6 +314,359 @@ LevelRenderer.prototype._initializeFractionHud = function () {
   fractionLabel.string = "+0";
   this.lastJarCollectScoredEventId = -1;
   this._recycleJarFractionNodesBeforeHudClear();
+};
+
+LevelRenderer.prototype._initializeBallScoreHud = function () {
+  var gameViewNode = this._getGameViewNode();
+  if (!gameViewNode || !gameViewNode.isValid) {
+    throw new Error("GameView node is required for ball score HUD.");
+  }
+
+  var templateNode = gameViewNode.getChildByName("ball_score");
+  if (!templateNode || !templateNode.isValid) {
+    throw new Error("GameView.ball_score node is missing.");
+  }
+
+  var scoreLabel = templateNode.getComponent(cc.Label);
+  if (!scoreLabel) {
+    throw new Error("GameView.ball_score label component is missing.");
+  }
+
+  if (typeof cc.Tween === "undefined" || typeof cc.Tween.stopAllByTarget !== "function") {
+    throw new Error("Ball score HUD requires cc.Tween.stopAllByTarget.");
+  }
+
+  cc.Tween.stopAllByTarget(templateNode);
+  templateNode.active = false;
+  templateNode.opacity = 255;
+  templateNode.setScale(1, 1);
+  scoreLabel.string = "+0";
+  this.currentBallScoreResolution = null;
+  this.playedBallScoreCellIds = {};
+  this.pendingBallScoreCellIds = {};
+  this.pendingBallScoreCallbacks = {};
+  this._pruneBallScoreNodePool();
+};
+
+LevelRenderer.prototype._pruneBallScoreNodePool = function () {
+  if (!Array.isArray(this.ballScoreNodePool)) {
+    throw new Error("ballScoreNodePool must be an array.");
+  }
+  this.ballScoreNodePool = this.ballScoreNodePool.filter(function (node) {
+    return !!(node && node.isValid);
+  });
+};
+
+LevelRenderer.prototype._cancelPendingBallScoreSchedules = function () {
+  if (!this.pendingBallScoreCallbacks || typeof this.pendingBallScoreCallbacks !== "object") {
+    throw new Error("pendingBallScoreCallbacks must be an object.");
+  }
+
+  var pendingCellIds = Object.keys(this.pendingBallScoreCallbacks);
+  if (!pendingCellIds.length) {
+    this.pendingBallScoreCellIds = {};
+    return;
+  }
+
+  var gameViewNode = this._getGameViewNode();
+  if (!gameViewNode || !gameViewNode.isValid) {
+    throw new Error("GameView node is required to cancel ball score schedules.");
+  }
+
+  var scheduler = requireDirectorScheduler("Ball score pending schedule cancel");
+  for (var index = 0; index < pendingCellIds.length; index += 1) {
+    var cellId = pendingCellIds[index];
+    scheduler.unschedule(this.pendingBallScoreCallbacks[cellId], gameViewNode);
+  }
+  this.pendingBallScoreCellIds = {};
+  this.pendingBallScoreCallbacks = {};
+};
+
+LevelRenderer.prototype._recycleBallScoreNode = function (scoreNode) {
+  if (!scoreNode || !scoreNode.isValid) {
+    throw new Error("Ball score recycle requires a valid node.");
+  }
+  if (scoreNode.__isBallScoreClone !== true) {
+    throw new Error("Ball score recycle requires pooled clone node.");
+  }
+  if (!Array.isArray(this.ballScoreNodePool)) {
+    throw new Error("ballScoreNodePool must be an array.");
+  }
+  if (typeof cc.Tween === "undefined" || typeof cc.Tween.stopAllByTarget !== "function") {
+    throw new Error("Ball score recycle requires cc.Tween.stopAllByTarget.");
+  }
+
+  cc.Tween.stopAllByTarget(scoreNode);
+  scoreNode.active = false;
+  scoreNode.opacity = 255;
+  scoreNode.setScale(1, 1);
+  var scoreLabel = scoreNode.getComponent(cc.Label);
+  if (!scoreLabel) {
+    throw new Error("Ball score recycle requires cc.Label.");
+  }
+  scoreLabel.string = "+0";
+  scoreNode.removeFromParent(false);
+  this.ballScoreNodePool.push(scoreNode);
+};
+
+LevelRenderer.prototype._recycleBallScoreNodesBeforeHudClear = function () {
+  if (!Array.isArray(this.ballScoreNodePool)) {
+    throw new Error("ballScoreNodePool must be an array.");
+  }
+
+  var gameViewNode = this._getGameViewNode();
+  if (gameViewNode && gameViewNode.isValid) {
+    var children = gameViewNode.children.slice();
+    for (var index = 0; index < children.length; index += 1) {
+      var childNode = children[index];
+      if (!childNode || !childNode.isValid || childNode.__isBallScoreClone !== true) {
+        continue;
+      }
+      this._recycleBallScoreNode(childNode);
+    }
+  }
+
+  this._pruneBallScoreNodePool();
+};
+
+LevelRenderer.prototype._resetBallScoreHudBeforeHudClear = function () {
+  this._cancelPendingBallScoreSchedules();
+  this._recycleBallScoreNodesBeforeHudClear();
+  this.currentBallScoreResolution = null;
+  this.playedBallScoreCellIds = {};
+  this.pendingBallScoreCellIds = {};
+};
+
+LevelRenderer.prototype._acquireBallScoreNode = function (gameViewNode, templateNode) {
+  if (!gameViewNode || !gameViewNode.isValid) {
+    throw new Error("GameView node is required to acquire ball score node.");
+  }
+  if (!templateNode || !templateNode.isValid) {
+    throw new Error("GameView.ball_score template node is required.");
+  }
+  if (typeof cc.instantiate !== "function") {
+    throw new Error("Ball score display requires cc.instantiate.");
+  }
+  if (!Array.isArray(this.ballScoreNodePool)) {
+    throw new Error("ballScoreNodePool must be an array.");
+  }
+  if (typeof cc.Tween === "undefined" || typeof cc.Tween.stopAllByTarget !== "function") {
+    throw new Error("Ball score acquire requires cc.Tween.stopAllByTarget.");
+  }
+
+  this._pruneBallScoreNodePool();
+  var scoreNode = this.ballScoreNodePool.length ? this.ballScoreNodePool.pop() : null;
+  if (!scoreNode) {
+    scoreNode = cc.instantiate(templateNode);
+    scoreNode.__isBallScoreClone = true;
+  }
+  if (!scoreNode.isValid) {
+    throw new Error("Ball score pooled node is invalid.");
+  }
+  if (scoreNode.__isBallScoreClone !== true) {
+    throw new Error("Ball score pooled node must be marked as clone.");
+  }
+
+  cc.Tween.stopAllByTarget(scoreNode);
+  scoreNode.parent = gameViewNode;
+  scoreNode.active = true;
+  scoreNode.opacity = 0;
+  scoreNode.setScale(1, 1);
+  scoreNode.zIndex = BALL_SCORE_Z_INDEX;
+  return scoreNode;
+};
+
+LevelRenderer.prototype._findBallScoreSequenceEntry = function (resolution, cellId) {
+  if (!resolution || typeof resolution !== "object" || Array.isArray(resolution)) {
+    throw new Error("Ball score sequence lookup requires resolution.");
+  }
+  if (!Array.isArray(resolution.eliminationSequence)) {
+    throw new Error("Ball score display requires eliminationSequence array.");
+  }
+  for (var index = 0; index < resolution.eliminationSequence.length; index += 1) {
+    var sequenceEntry = resolution.eliminationSequence[index];
+    if (!sequenceEntry || typeof sequenceEntry !== "object" || Array.isArray(sequenceEntry)) {
+      throw new Error("Ball score elimination sequence entry must be an object.");
+    }
+    if (String(sequenceEntry.cellId) === cellId) {
+      return sequenceEntry;
+    }
+  }
+  return null;
+};
+
+LevelRenderer.prototype._resolveBallScorePositionInGameView = function (scoreEvent, resolution, boardSnapshot) {
+  if (!scoreEvent || typeof scoreEvent !== "object" || Array.isArray(scoreEvent)) {
+    throw new Error("Ball score display requires score event.");
+  }
+  if (typeof scoreEvent.cellId !== "string" && typeof scoreEvent.cellId !== "number") {
+    throw new Error("Ball score event requires cellId.");
+  }
+
+  var cellId = String(scoreEvent.cellId);
+  var sequenceEntry = this._findBallScoreSequenceEntry(resolution, cellId);
+  var worldPosition = sequenceEntry ? sequenceEntry.worldPosition : null;
+  if (
+    worldPosition &&
+    typeof worldPosition === "object" &&
+    !Array.isArray(worldPosition) &&
+    Number.isFinite(Number(worldPosition.x)) &&
+    Number.isFinite(Number(worldPosition.y))
+  ) {
+    return this._convertBoardPointToGameView(Number(worldPosition.x), Number(worldPosition.y));
+  }
+
+  if (
+    !boardSnapshot ||
+    !Number.isInteger(boardSnapshot.maxColumns) ||
+    typeof boardSnapshot.viewportOffsetY !== "number" ||
+    !isFinite(boardSnapshot.viewportOffsetY)
+  ) {
+    throw new Error("Ball score display requires board snapshot.");
+  }
+  if (!Number.isInteger(scoreEvent.row) || !Number.isInteger(scoreEvent.col)) {
+    throw new Error("Ball score event requires row and col when worldPosition is missing.");
+  }
+
+  var boardPos = BoardLayout.getCellPosition(
+    scoreEvent.row,
+    scoreEvent.col,
+    boardSnapshot.maxColumns,
+    boardSnapshot.viewportOffsetY
+  );
+  return this._convertBoardPointToGameView(boardPos.x, boardPos.y);
+};
+
+LevelRenderer.prototype._spawnBallScoreDisplay = function (scoreEvent, position) {
+  if (!scoreEvent || typeof scoreEvent !== "object" || Array.isArray(scoreEvent)) {
+    throw new Error("Ball score display requires score event.");
+  }
+  var points = Number(scoreEvent.points);
+  if (!Number.isInteger(points) || points <= 0) {
+    throw new Error("Ball score event requires positive integer points.");
+  }
+  if (!position || typeof position.x !== "number" || typeof position.y !== "number" || !isFinite(position.x) || !isFinite(position.y)) {
+    throw new Error("Ball score display requires finite position.");
+  }
+
+  var gameViewNode = this._getGameViewNode();
+  if (!gameViewNode || !gameViewNode.isValid) {
+    throw new Error("GameView node is required for ball score display.");
+  }
+
+  var templateNode = gameViewNode.getChildByName("ball_score");
+  if (!templateNode || !templateNode.isValid) {
+    throw new Error("GameView.ball_score node is missing.");
+  }
+  if (typeof cc.tween !== "function") {
+    throw new Error("Ball score display requires cc.tween.");
+  }
+
+  var renderer = this;
+  var scoreNode = this._acquireBallScoreNode(gameViewNode, templateNode);
+  scoreNode.name = "ball_score_" + String(scoreEvent.cellId);
+  scoreNode.setPosition(position.x, position.y);
+
+  var scoreLabel = scoreNode.getComponent(cc.Label);
+  if (!scoreLabel) {
+    throw new Error("Ball score clone requires cc.Label.");
+  }
+  scoreLabel.string = "+" + String(points);
+
+  var startY = scoreNode.y;
+  cc.tween(scoreNode)
+    .to(BALL_SCORE_FADE_IN_DURATION, {
+      opacity: 255
+    })
+    .delay(BALL_SCORE_HOLD_DURATION)
+    .parallel(
+      cc.tween().to(BALL_SCORE_FADE_OUT_RISE_DURATION, {
+        y: startY + BALL_SCORE_RISE_DISTANCE
+      }, {
+        easing: "quadOut"
+      }),
+      cc.tween().to(BALL_SCORE_FADE_OUT_RISE_DURATION, {
+        opacity: 0
+      })
+    )
+    .call(function () {
+      renderer._recycleBallScoreNode(scoreNode);
+    })
+    .start();
+};
+
+LevelRenderer.prototype._scheduleBallScoreEvent = function (scoreEvent, resolution, boardSnapshot) {
+  if (!scoreEvent || typeof scoreEvent !== "object" || Array.isArray(scoreEvent)) {
+    throw new Error("Ball score schedule requires score event.");
+  }
+  if (typeof scoreEvent.cellId !== "string" && typeof scoreEvent.cellId !== "number") {
+    throw new Error("Ball score schedule requires cellId.");
+  }
+  var cellId = String(scoreEvent.cellId);
+  if (this.playedBallScoreCellIds[cellId] || this.pendingBallScoreCellIds[cellId]) {
+    return;
+  }
+
+  var points = Number(scoreEvent.points);
+  if (!Number.isInteger(points) || points <= 0) {
+    throw new Error("Ball score event requires positive integer points: " + cellId);
+  }
+  var delayMs = Number(scoreEvent.delayMs);
+  if (!Number.isFinite(delayMs) || delayMs < 0) {
+    throw new Error("Ball score event delayMs must be a non-negative number: " + cellId);
+  }
+
+  var position = this._resolveBallScorePositionInGameView(scoreEvent, resolution, boardSnapshot);
+  var self = this;
+  var callback = function () {
+    delete self.pendingBallScoreCellIds[cellId];
+    delete self.pendingBallScoreCallbacks[cellId];
+    self.playedBallScoreCellIds[cellId] = true;
+    self._spawnBallScoreDisplay(scoreEvent, position);
+  };
+
+  if (delayMs <= 0) {
+    callback();
+    return;
+  }
+
+  var gameViewNode = this._getGameViewNode();
+  if (!gameViewNode || !gameViewNode.isValid) {
+    throw new Error("GameView node is required to schedule ball score display.");
+  }
+
+  this.pendingBallScoreCellIds[cellId] = true;
+  this.pendingBallScoreCallbacks[cellId] = callback;
+  var scheduler = requireDirectorScheduler("Ball score delayed display");
+  scheduler.schedule(callback, gameViewNode, 0, SCHEDULE_ONCE_REPEAT, delayMs / 1000, false);
+};
+
+LevelRenderer.prototype._playBallScoreDisplay = function (runtimeSnapshot) {
+  if (!runtimeSnapshot || !runtimeSnapshot.lastResolution) {
+    throw new Error("Ball score display requires runtimeSnapshot.lastResolution.");
+  }
+  if (!runtimeSnapshot.board) {
+    throw new Error("Ball score display requires runtimeSnapshot.board.");
+  }
+
+  var resolution = runtimeSnapshot.lastResolution;
+  if (!Array.isArray(resolution.scoreEvents)) {
+    throw new Error("Ball score display requires scoreEvents array.");
+  }
+  if (resolution !== this.currentBallScoreResolution) {
+    this._cancelPendingBallScoreSchedules();
+    this.currentBallScoreResolution = resolution;
+    this.playedBallScoreCellIds = {};
+    this.pendingBallScoreCellIds = {};
+    this.pendingBallScoreCallbacks = {};
+  }
+  if (!resolution.scoreEvents.length) {
+    return;
+  }
+
+  for (var index = 0; index < resolution.scoreEvents.length; index += 1) {
+    this._scheduleBallScoreEvent(resolution.scoreEvents[index], resolution, runtimeSnapshot.board);
+  }
 };
 
 LevelRenderer.prototype._pruneJarFractionNodePool = function () {
@@ -425,24 +835,21 @@ LevelRenderer.prototype._spawnJarFractionDisplay = function (entry) {
   fractionLabel.string = "+" + String(gained);
 
   var startY = fractionNode.y;
+  var fadeDelay = Math.max(0, JAR_FRACTION_RISE_DURATION - JAR_FRACTION_FADE_DURATION);
   cc.tween(fractionNode)
-    .to(JAR_FRACTION_POP_DURATION, {
-      scale: JAR_FRACTION_POP_SCALE
-    }, {
-      easing: "backOut"
-    })
-    .to(JAR_FRACTION_SETTLE_DURATION, {
-      scale: 1
-    })
-    .delay(JAR_FRACTION_HOLD_DURATION)
     .parallel(
-      cc.tween().to(JAR_FRACTION_FADE_DURATION, {
-        opacity: 0
+      cc.tween().to(JAR_FRACTION_RISE_DURATION, {
+        scale: JAR_FRACTION_END_SCALE
+      }, {
+        easing: "quadOut"
       }),
-      cc.tween().to(JAR_FRACTION_FADE_DURATION, {
+      cc.tween().to(JAR_FRACTION_RISE_DURATION, {
         y: startY + JAR_FRACTION_RISE_DISTANCE
       }, {
         easing: "quadOut"
+      }),
+      cc.tween().delay(fadeDelay).to(JAR_FRACTION_FADE_DURATION, {
+        opacity: 0
       })
     )
     .call(function () {

@@ -96,8 +96,11 @@ PlayerResourceStore.prototype.load = function (now) {
     return createInitialResources(this.dailyStamina);
   }.bind(this));
   var resetApplied = this.applyDailyReset(rawResources, now);
-  this.save(resetApplied);
-  return clone(resetApplied);
+  var normalized = normalizeResources(resetApplied);
+  if (JSON.stringify(rawResources) !== JSON.stringify(normalized)) {
+    this.save(normalized);
+  }
+  return clone(normalized);
 };
 
 PlayerResourceStore.prototype.save = function (resources) {

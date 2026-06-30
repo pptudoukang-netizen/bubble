@@ -19,8 +19,6 @@ var PropDescriptionViewController = require("../ui/PropDescriptionViewController
 var attachLevelRendererSceneMethods = require("./LevelRendererSceneMethods");
 var attachLevelRendererFairyMethods = require("./LevelRendererFairyMethods");
 
-var DROP_COLLISION_GLOW_EFFECT_RESOURCE_PATH = "effects/DropCollisionGlow";
-
 var loadSpriteFrame = RenderNodeHelpers.loadSpriteFrame;
 var createSolidWhiteSpriteFrame = RenderNodeHelpers.createSolidWhiteSpriteFrame;
 var ensureSprite = RenderNodeHelpers.ensureSprite;
@@ -48,7 +46,8 @@ var BALL_RESOURCES = {
   SPLIT_Y: "image/ball/split_yellow_ball",
   SPLIT_P: "image/ball/split_purple_ball",
   ICE_SNOWBALL: "image/ball/ice_ball",
-  BLOCKADE_LINE: "image/ball/blockade_line"
+  BLOCKADE_LINE: "image/ball/blockade_line",
+  LIGHT: "image/ball/light_ball"
 };
 
 var JAR_RESOURCES = {
@@ -89,6 +88,7 @@ var WIN_TARGET_STATUS_RESOURCES = {
   complete: "image/commone/gou",
   incomplete: "image/commone/x"
 };
+var FAIRY_ANIMATION_BUNDLE_NAME = "animation";
 
 var WIN_TARGET_COLOR_NAMES = {
   R: "红球",
@@ -781,6 +781,7 @@ function buildShooterRenderKey(runtimeSnapshot) {
     resolveRuntimeBallKey(shooter.currentBall || shooter.currentColor),
     resolveRuntimeBallKey(shooter.nextBall || shooter.nextColor),
     shooter.queueAdvanceRevision,
+    shooter.surplusShotAimRecenterRevision,
     Math.max(0, Math.floor(Number(shooter.skillInventory && shooter.skillInventory.swap) || 0)),
     trajectory && trajectory.targetCell ? (trajectory.targetCell.row + ":" + trajectory.targetCell.col) : "",
     projectile && projectile.position
@@ -1079,6 +1080,8 @@ function LevelRenderer(rootNode) {
   this.rootNode = rootNode;
   this.spriteFrameCache = {};
   this.spriteFrameLoadPromises = {};
+  this.fairyPrefabCache = {};
+  this.fairyPrefabLoadPromises = {};
   this.layers = null;
   this.prefabFactory = new PrefabFactory();
   this.bubbleShatterRenderer = new BubbleShatterRenderer({
@@ -1088,8 +1091,6 @@ function LevelRenderer(rootNode) {
     bubbleWidth: BOARD_BUBBLE_SIZE.width,
     bubbleHeight: BOARD_BUBBLE_SIZE.height
   });
-  this.dropCollisionGlowEffectAsset = null;
-  this.dropCollisionGlowEffectLoadPromise = null;
   this._sharedWarmupPromise = null;
   this.currentLevelConfig = null;
   this.lastRuntimeSnapshot = null;
@@ -1138,6 +1139,11 @@ function LevelRenderer(rootNode) {
   this.fallingDropNodePool = {};
   this.fallingRenderTick = 1;
   this.jarFractionNodePool = [];
+  this.ballScoreNodePool = [];
+  this.currentBallScoreResolution = null;
+  this.playedBallScoreCellIds = {};
+  this.pendingBallScoreCellIds = {};
+  this.pendingBallScoreCallbacks = {};
   this.winActionHandlers = {
     onNextLevel: null,
     onRetryLevel: null
@@ -1223,49 +1229,15 @@ LevelRenderer.prototype.warmupSharedAssets = function () {
 
   this._sharedWarmupPromise = Promise.all([
     this._preloadSprites(this._collectCommonSpritePaths()),
+    this._preloadFairyPrefabs(),
     this.prefabFactory.preload(this._collectPrefabPaths()),
-    this.bubbleShatterRenderer.preload(),
-    this._preloadDropCollisionGlowEffect()
+    this.bubbleShatterRenderer.preload()
   ]).catch(function (error) {
     this._sharedWarmupPromise = null;
     throw error;
   }.bind(this));
 
   return this._sharedWarmupPromise;
-};
-
-LevelRenderer.prototype._preloadDropCollisionGlowEffect = function () {
-  if (cc.game.renderType === cc.game.RENDER_TYPE_CANVAS) {
-    throw new Error("Drop collision glow shader requires WebGL renderer.");
-  }
-  if (this.dropCollisionGlowEffectAsset && this.dropCollisionGlowEffectAsset.isValid) {
-    return Promise.resolve(this.dropCollisionGlowEffectAsset);
-  }
-  if (this.dropCollisionGlowEffectLoadPromise) {
-    return this.dropCollisionGlowEffectLoadPromise;
-  }
-  if (!cc.EffectAsset) {
-    throw new Error("Drop collision glow requires cc.EffectAsset.");
-  }
-
-  this.dropCollisionGlowEffectLoadPromise = new Promise(function (resolve, reject) {
-    cc.resources.load(DROP_COLLISION_GLOW_EFFECT_RESOURCE_PATH, cc.EffectAsset, function (error, effectAsset) {
-      if (error) {
-        reject(new Error("Drop collision glow effect load failed: " + error.message));
-        return;
-      }
-      if (!effectAsset || !effectAsset.isValid) {
-        reject(new Error("Drop collision glow effect asset is invalid: " + DROP_COLLISION_GLOW_EFFECT_RESOURCE_PATH));
-        return;
-      }
-      this.dropCollisionGlowEffectAsset = effectAsset;
-      resolve(effectAsset);
-    }.bind(this));
-  }.bind(this)).catch(function (error) {
-    this.dropCollisionGlowEffectLoadPromise = null;
-    throw error;
-  }.bind(this));
-  return this.dropCollisionGlowEffectLoadPromise;
 };
 
 LevelRenderer.prototype.setWinActionHandlers = function (handlers) {
@@ -1552,6 +1524,7 @@ LevelRenderer.prototype.renderLevel = function (levelConfig, runtimeSnapshot) {
     clearChildren(this.layers.jarOcclusion);
     clearChildren(this.layers.jars);
     this._recycleJarFractionNodesBeforeHudClear();
+    this._resetBallScoreHudBeforeHudClear();
     clearChildren(this.layers.hud);
     clearChildren(this.layers.dangerLine);
     clearChildren(this.layers.overlay);
@@ -1572,6 +1545,7 @@ LevelRenderer.prototype.renderLevel = function (levelConfig, runtimeSnapshot) {
     this._renderHud(levelConfig, runtimeSnapshot);
     this._initializeComboBatterHud();
     this._initializeFractionHud();
+    this._initializeBallScoreHud();
     this._renderJarScoreBoostTimer(runtimeSnapshot);
     this._renderTimedLevelTimer(runtimeSnapshot);
     this._renderBottomPanel(runtimeSnapshot);
@@ -1695,6 +1669,7 @@ LevelRenderer.prototype._refreshRuntimeFull = function (levelConfig, runtimeSnap
     this.boardBubbleNodes,
     this.spriteFrameCache
   );
+  this._playBallScoreDisplay(runtimeSnapshot);
   if (boardChanged) {
     this._renderBoard(runtimeSnapshot.board);
     this._renderTestGrid(runtimeSnapshot.board);
@@ -1959,8 +1934,7 @@ LevelRenderer.prototype.releaseAfterGameplayBundleUnload = function () {
   }.bind(this));
   this.spriteFrameCache = {};
   this.spriteFrameLoadPromises = {};
-  this.dropCollisionGlowEffectAsset = null;
-  this.dropCollisionGlowEffectLoadPromise = null;
+  this.fairyPrefabLoadPromises = {};
   this._sharedWarmupPromise = null;
   this.lastHudRenderKey = "";
   this.lastJarRenderKey = "";
@@ -2031,6 +2005,7 @@ LevelRenderer.prototype._collectCommonSpritePaths = function () {
     BALL_RESOURCES.SPLIT_P,
     BALL_RESOURCES.ICE_SNOWBALL,
     BALL_RESOURCES.BLOCKADE_LINE,
+    BALL_RESOURCES.LIGHT,
     JAR_RESOURCES.R,
     JAR_RESOURCES.G,
     JAR_RESOURCES.B,
@@ -2052,10 +2027,7 @@ LevelRenderer.prototype._collectCommonSpritePaths = function () {
     COMMENT_ANIMATION_RESOURCES.good,
     COMMENT_ANIMATION_RESOURCES.great,
     COMMENT_ANIMATION_RESOURCES.excellent,
-    COMMENT_ANIMATION_RESOURCES.unbelievable,
-    FairyAssistConfig.colorRules[0].assetPath,
-    FairyAssistConfig.colorRules[1].assetPath,
-    FairyAssistConfig.colorRules[2].assetPath
+    COMMENT_ANIMATION_RESOURCES.unbelievable
   ];
   PropDescriptionConfig.getAllIconPaths().forEach(function (path) {
     paths.push(path);
@@ -2085,6 +2057,55 @@ LevelRenderer.prototype._collectPrefabPaths = function () {
   return preloadPaths.filter(function (path, index, list) {
     return !!path && list.indexOf(path) === index;
   });
+};
+
+LevelRenderer.prototype._collectFairyPrefabPaths = function () {
+  return FairyAssistConfig.colorRules.map(function (rule) {
+    if (!rule || typeof rule.prefabPath !== "string" || !rule.prefabPath) {
+      throw new Error("Fairy prefab path is required for color rule.");
+    }
+    return rule.prefabPath;
+  }).filter(function (path, index, list) {
+    return list.indexOf(path) === index;
+  });
+};
+
+LevelRenderer.prototype._preloadFairyPrefabs = function () {
+  var paths = this._collectFairyPrefabPaths();
+  return BundleLoader.ensureNamedBundleLoaded(FAIRY_ANIMATION_BUNDLE_NAME).then(function (bundle) {
+    return Promise.all(paths.map(function (path) {
+      if (this.fairyPrefabCache[path]) {
+        return Promise.resolve(this.fairyPrefabCache[path]);
+      }
+      if (this.fairyPrefabLoadPromises[path]) {
+        return this.fairyPrefabLoadPromises[path];
+      }
+
+      this.fairyPrefabLoadPromises[path] = new Promise(function (resolve, reject) {
+        if (!bundle || typeof bundle.load !== "function") {
+          reject(new Error("Fairy animation bundle is invalid."));
+          return;
+        }
+        bundle.load(path, cc.Prefab, function (error, prefab) {
+          if (error) {
+            reject(new Error("Load fairy prefab failed `" + FAIRY_ANIMATION_BUNDLE_NAME + "/" + path + "`: " + error.message));
+            return;
+          }
+          if (!prefab) {
+            reject(new Error("Load fairy prefab returned empty asset: " + FAIRY_ANIMATION_BUNDLE_NAME + "/" + path));
+            return;
+          }
+          this.fairyPrefabCache[path] = prefab;
+          delete this.fairyPrefabLoadPromises[path];
+          resolve(prefab);
+        }.bind(this));
+      }.bind(this)).catch(function (error) {
+        delete this.fairyPrefabLoadPromises[path];
+        throw error;
+      }.bind(this));
+      return this.fairyPrefabLoadPromises[path];
+    }, this));
+  }.bind(this));
 };
 
 LevelRenderer.prototype._preloadSprites = function (paths) {

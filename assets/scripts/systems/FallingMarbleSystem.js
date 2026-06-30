@@ -65,6 +65,8 @@ function resolveInitialDropVelocity(cell, standardVelocity) {
 
 var DROP_LAUNCH_ANGLE_MIN_DEG = 15;
 var DROP_LAUNCH_ANGLE_MAX_DEG = 165;
+var DROP_LAUNCH_VERTICAL_ANGLE_DEG = 90;
+var DROP_LAUNCH_VERTICAL_EXCLUSION_DEG = 15;
 
 function hashDropLaunchUnit(seedMaterial) {
   if (typeof seedMaterial !== "string" || !seedMaterial) {
@@ -83,24 +85,24 @@ function buildDownwardLaunchVelocity(speed, seedMaterial) {
     throw new Error("Drop launch speed must be a positive finite number.");
   }
   var unit = hashDropLaunchUnit(seedMaterial);
-  var angleDeg = DROP_LAUNCH_ANGLE_MIN_DEG + unit * (DROP_LAUNCH_ANGLE_MAX_DEG - DROP_LAUNCH_ANGLE_MIN_DEG);
+  var angleDeg = resolveDownwardLaunchAngleDeg(unit);
   var angleRad = angleDeg * Math.PI / 180;
-  var vx = Math.cos(angleRad) * speed;
-  var vy = -Math.sin(angleRad) * speed;
-  var minAbsHorizontal = speed * Math.sin(DROP_LAUNCH_ANGLE_MIN_DEG * Math.PI / 180);
-  if (Math.abs(vx) < minAbsHorizontal) {
-    var horizontalSign = unit >= 0.5 ? 1 : -1;
-    vx = horizontalSign * minAbsHorizontal;
-    var remainingVerticalSpeedSq = speed * speed - vx * vx;
-    if (remainingVerticalSpeedSq <= 0) {
-      throw new Error("Drop launch speed too low for minimum horizontal component.");
-    }
-    vy = -Math.sqrt(remainingVerticalSpeedSq);
-  }
   return {
-    x: vx,
-    y: vy
+    x: Math.cos(angleRad) * speed,
+    y: -Math.sin(angleRad) * speed
   };
+}
+
+function resolveDownwardLaunchAngleDeg(unit) {
+  if (typeof unit !== "number" || !isFinite(unit) || unit < 0 || unit > 1) {
+    throw new Error("Drop launch angle unit must be a finite number between 0 and 1.");
+  }
+  var leftMax = DROP_LAUNCH_VERTICAL_ANGLE_DEG - DROP_LAUNCH_VERTICAL_EXCLUSION_DEG;
+  var rightMin = DROP_LAUNCH_VERTICAL_ANGLE_DEG + DROP_LAUNCH_VERTICAL_EXCLUSION_DEG;
+  if (unit < 0.5) {
+    return DROP_LAUNCH_ANGLE_MIN_DEG + unit * 2 * (leftMax - DROP_LAUNCH_ANGLE_MIN_DEG);
+  }
+  return rightMin + (unit - 0.5) * 2 * (DROP_LAUNCH_ANGLE_MAX_DEG - rightMin);
 }
 
 function buildDropLaunchSeed(sourceId, launchIndex, dropSerial) {
@@ -158,7 +160,9 @@ for (
   surplusAngleDeg <= SURPLUS_TURRET_ANGLE_MAX_DEG;
   surplusAngleDeg += SURPLUS_TURRET_ANGLE_STEP_DEG
 ) {
-  SURPLUS_TURRET_ANGLE_LADDER.push(surplusAngleDeg);
+  if (surplusAngleDeg !== DROP_LAUNCH_VERTICAL_ANGLE_DEG) {
+    SURPLUS_TURRET_ANGLE_LADDER.push(surplusAngleDeg);
+  }
 }
 
 function resolveLaunchDeviationFromTurretAngleDeg(turretAngleDeg) {
@@ -168,9 +172,10 @@ function resolveLaunchDeviationFromTurretAngleDeg(turretAngleDeg) {
   if (
     turretAngleDeg < SURPLUS_TURRET_ANGLE_MIN_DEG ||
     turretAngleDeg > SURPLUS_TURRET_ANGLE_MAX_DEG ||
-    turretAngleDeg % SURPLUS_TURRET_ANGLE_STEP_DEG !== 0
+    turretAngleDeg % SURPLUS_TURRET_ANGLE_STEP_DEG !== 0 ||
+    turretAngleDeg === DROP_LAUNCH_VERTICAL_ANGLE_DEG
   ) {
-    throw new Error("Surplus turret angle must be a 15° step between 15° and 165°.");
+    throw new Error("Surplus turret angle must be a non-vertical 15° step between 15° and 165°.");
   }
   return 90 - turretAngleDeg;
 }
@@ -202,8 +207,8 @@ function FallingMarbleSystem() {
   this._dropSerial = 0;
   this._renderSnapshotCache = null;
   this._renderSnapshotDirty = true;
-  this._dropLeftLimit = BoardLayout.boardLeft + BoardLayout.bubbleRadius;
-  this._dropRightLimit = BoardLayout.boardRight - BoardLayout.bubbleRadius;
+  this._dropLeftLimit = BoardLayout.boardLeft;
+  this._dropRightLimit = BoardLayout.boardRight;
   this.maxDropLifeTime = FallingRulesDefaults.maxDropLifeTime;
   this.maxRimBounces = 5;
   this.stuckDistanceThreshold = 2.5;
@@ -336,23 +341,8 @@ FallingMarbleSystem.prototype._buildLayoutSignature = function () {
 };
 
 FallingMarbleSystem.prototype._rebuildDropBounds = function () {
-  var leftLimit = BoardLayout.boardLeft + BoardLayout.bubbleRadius;
-  var rightLimit = BoardLayout.boardRight - BoardLayout.bubbleRadius;
-  if (this.jarZones && this.jarZones.length) {
-    var jarMinX = this.jarZones.reduce(function (minValue, zone) {
-      return Math.min(minValue, zone.x - zone.outerHalfWidth);
-    }, Number.POSITIVE_INFINITY);
-    var jarMaxX = this.jarZones.reduce(function (maxValue, zone) {
-      return Math.max(maxValue, zone.x + zone.outerHalfWidth);
-    }, Number.NEGATIVE_INFINITY);
-
-    // Avoid wall bounce before reaching outer jar mouths, especially for side jars.
-    leftLimit = Math.min(leftLimit, jarMinX - BoardLayout.bubbleRadius * 0.25);
-    rightLimit = Math.max(rightLimit, jarMaxX + BoardLayout.bubbleRadius * 0.25);
-  }
-
-  this._dropLeftLimit = leftLimit;
-  this._dropRightLimit = rightLimit;
+  this._dropLeftLimit = BoardLayout.boardLeft;
+  this._dropRightLimit = BoardLayout.boardRight;
 
   if (this.jarZones && this.jarZones.length) {
     this._jarAttractTopY = this.jarZones.reduce(function (maxValue, zone) {
@@ -469,6 +459,53 @@ FallingMarbleSystem.prototype._advanceDropMotion = function (drop, dt) {
   drop.position.y += drop.velocity.y * dt;
   drop.rotation += drop.rotationSpeed * dt;
   drop.lifeTime = (drop.lifeTime || 0) + dt;
+  this._clampDropToSideBounds(drop);
+};
+
+FallingMarbleSystem.prototype._clampDropToSideBounds = function (drop) {
+  if (!drop || !drop.position || typeof drop.position.x !== "number" || !isFinite(drop.position.x)) {
+    throw new Error("Falling drop side-bound clamp requires finite position.x.");
+  }
+  var clampedX = clamp(drop.position.x, this._dropLeftLimit, this._dropRightLimit);
+  if (clampedX === drop.position.x) {
+    return false;
+  }
+  drop.position.x = clampedX;
+  return true;
+};
+
+FallingMarbleSystem.prototype._isDropPressingSideBounds = function (drop) {
+  if (!drop || !drop.position || typeof drop.position.x !== "number" || !isFinite(drop.position.x)) {
+    throw new Error("Falling drop side-bound contact requires finite position.x.");
+  }
+  if (!drop.velocity || typeof drop.velocity.x !== "number" || !isFinite(drop.velocity.x)) {
+    throw new Error("Falling drop side-bound contact requires finite velocity.x.");
+  }
+
+  var epsilon = 0.001;
+  return (
+    (drop.position.x <= this._dropLeftLimit + epsilon && drop.velocity.x <= 0) ||
+    (drop.position.x >= this._dropRightLimit - epsilon && drop.velocity.x >= 0)
+  );
+};
+
+FallingMarbleSystem.prototype._applySideWallEscape = function (drop, allowLift) {
+  if (!drop || !drop.velocity || typeof drop.velocity.x !== "number" || !isFinite(drop.velocity.x)) {
+    throw new Error("Falling drop side-wall escape requires finite velocity.x.");
+  }
+  if (!drop.position || typeof drop.position.x !== "number" || !isFinite(drop.position.x)) {
+    throw new Error("Falling drop side-wall escape requires finite position.x.");
+  }
+
+  var escapeDirection = drop.position.x <= this._dropLeftLimit ? 1 : -1;
+  var minEscapeSpeed = Math.max(40, this.horizontalSpeed * 0.45);
+  var reboundSpeed = Math.max(Math.abs(drop.velocity.x) * this.bounceDamping, minEscapeSpeed);
+  drop.velocity.x = escapeDirection * reboundSpeed;
+
+  if (allowLift === true && drop.remainingBounces > 0) {
+    drop.velocity.y = Math.max(drop.velocity.y, -420) + 140;
+    drop.remainingBounces -= 1;
+  }
 };
 
 FallingMarbleSystem.prototype.requestEliminationPresentationDropRelease = function () {
@@ -977,9 +1014,13 @@ FallingMarbleSystem.prototype._consumeDropInteraction = function (result, intera
     if (!Number.isInteger(interaction.bounceCount) || interaction.bounceCount < 1) {
       throw new Error("FallingMarbleSystem bounced interaction requires positive integer bounceCount.");
     }
+    if (!Number.isInteger(interaction.glowStacks) || interaction.glowStacks < 0) {
+      throw new Error("FallingMarbleSystem bounced interaction requires non-negative integer glowStacks.");
+    }
     result.bounced += 1;
     result.bounceEvents.push({
-      bounceCount: interaction.bounceCount
+      bounceCount: interaction.bounceCount,
+      glowStacks: interaction.glowStacks
     });
   }
 
@@ -1355,6 +1396,7 @@ FallingMarbleSystem.prototype._processJarInteraction = function (drop) {
       return {
         bounced: true,
         bounceCount: drop.rimBounceCount,
+        glowStacks: drop.glowStacks,
         edgeType: edgeType
       };
     }
@@ -1385,9 +1427,6 @@ FallingMarbleSystem.prototype.update = function (dt) {
     this.lastBounceCount = 0;
     return result;
   }
-
-  var leftLimit = this._dropLeftLimit;
-  var rightLimit = this._dropRightLimit;
 
   var drops = this.activeDrops;
   var activeDropCount = drops.reduce(function (count, drop) {
@@ -1430,17 +1469,6 @@ FallingMarbleSystem.prototype.update = function (dt) {
     drop.position.y += drop.velocity.y * dt;
     drop.rotation += drop.rotationSpeed * dt;
 
-    if (!drop.inJar && (drop.position.x < leftLimit || drop.position.x > rightLimit)) {
-      drop.position.x = clamp(drop.position.x, leftLimit, rightLimit);
-      if (drop.dropKind !== "victory_board_drop") {
-        if (drop.remainingBounces > 0) {
-          drop.velocity.x = -drop.velocity.x * this.bounceDamping;
-          drop.velocity.y = Math.max(drop.velocity.y, -420) + 140;
-          drop.remainingBounces -= 1;
-        }
-      }
-    }
-
     var fairyCollision = this._applyFairyCollision(drop, activeDropCount + spawnedDrops.length);
     if (fairyCollision) {
       result.fairyHits.push({
@@ -1469,12 +1497,23 @@ FallingMarbleSystem.prototype.update = function (dt) {
       this._consumeDropInteraction(result, jarInteraction);
 
       if (drop.active) {
+        this._clampDropToSideBounds(drop);
+        if (this._isDropPressingSideBounds(drop)) {
+          this._applySideWallEscape(drop, false);
+        }
         drops[writeIndex] = drop;
         writeIndex += 1;
       } else {
         activeDropCount -= 1;
       }
       continue;
+    }
+
+    var clampedToSideBounds = this._clampDropToSideBounds(drop);
+    if (
+      (clampedToSideBounds || this._isDropPressingSideBounds(drop))
+    ) {
+      this._applySideWallEscape(drop, drop.dropKind !== "victory_board_drop");
     }
 
     this._consumeDropInteraction(result, this._resolveStuckDropIfNeeded(drop, dt));
