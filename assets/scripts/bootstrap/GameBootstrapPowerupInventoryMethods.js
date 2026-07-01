@@ -10,9 +10,13 @@ var StartGameViewController = Shared.StartGameViewController;
 var PopupPanelAnimator = Shared.PopupPanelAnimator;
 var StarRatingPolicy = Shared.StarRatingPolicy;
 var SpriteProxyLayerHelper = require("../utils/SpriteProxyLayerHelper");
+var PopupPresentationHelper = require("../utils/PopupPresentationHelper");
+var PropDescriptionConfig = require("../config/PropDescriptionConfig");
+var PropDescriptionViewController = require("../ui/PropDescriptionViewController");
 var INVENTORY_VIEW_PREFAB_PATH = Shared.INVENTORY_VIEW_PREFAB_PATH;
 var START_GAME_VIEW_PREFAB_PATH = Shared.START_GAME_VIEW_PREFAB_PATH;
 var POWER_TIPS_VIEW_PREFAB_PATH = Shared.POWER_TIPS_VIEW_PREFAB_PATH;
+var PROP_DESCRIPTION_VIEW_PREFAB_PATH = Shared.PROP_DESCRIPTION_VIEW_PREFAB_PATH;
 var POWERUP_TYPE_BY_ITEM_ID = Shared.POWERUP_TYPE_BY_ITEM_ID;
 var ITEM_ID_BY_POWERUP_TYPE = Shared.ITEM_ID_BY_POWERUP_TYPE;
 var MAX_SELECTED_POWERUPS = Shared.MAX_SELECTED_POWERUPS;
@@ -30,10 +34,12 @@ var START_GAME_POWERUP_UNLOCK_LEVEL_BY_ITEM_ID = {
   rainbow_ball: 10,
   blast_ball: 15,
   barrier_hammer: 20,
+  snow_removal: 16,
   three_line_elimination: 1,
-  plus_three_balls: 1
+  plus_three_balls: 1,
+  precise_aim: 1
 };
-var START_GAME_PERSISTENT_POWERUP_ITEM_IDS = ["swap_ball", "rainbow_ball", "blast_ball", "barrier_hammer"];
+var START_GAME_PERSISTENT_POWERUP_ITEM_IDS = ["swap_ball", "rainbow_ball", "blast_ball", "barrier_hammer", "snow_removal"];
 var START_GAME_TEMPORARY_POWERUP_CONFIG_BY_ITEM_ID = {
   three_line_elimination: {
     displayName: "消三行",
@@ -44,6 +50,11 @@ var START_GAME_TEMPORARY_POWERUP_CONFIG_BY_ITEM_ID = {
     displayName: "加十球",
     adRunPowerupType: "plus_three_balls",
     price: 300
+  },
+  precise_aim: {
+    displayName: "精确瞄准",
+    activateRicochetGuide: true,
+    price: 500
   }
 };
 var START_GAME_OBJECTIVE_ICON_PATHS = {
@@ -62,6 +73,26 @@ var START_GAME_COLLECTION_OBJECTIVE_TYPES = {
 };
 var START_GAME_NATIVE_TEMPLATE_AD_SHOW_DELAY_SEC = 0.3;
 var START_GAME_AD_LOG_LABEL = "StartGameAd";
+var START_GAME_PROP_DESCRIPTION_VIEW_Z_INDEX = 350;
+
+function loadPropDescriptionSpriteFrame(path) {
+  if (typeof path !== "string" || path.length === 0) {
+    throw new Error("StartGameView prop description sprite path must be a non-empty string.");
+  }
+  return new Promise(function (resolve, reject) {
+    BundleLoader.loadRes(path, cc.SpriteFrame, function (error, spriteFrame) {
+      if (error) {
+        reject(new Error("Load StartGameView prop description sprite failed: " + path + ", " + String(error)));
+        return;
+      }
+      if (!spriteFrame) {
+        reject(new Error("StartGameView prop description sprite frame is empty: " + path));
+        return;
+      }
+      resolve(spriteFrame);
+    });
+  });
+}
 
 function logStartGameNativeTemplateAd() {
   Logger.warn.apply(Logger, ["[" + START_GAME_AD_LOG_LABEL + "]"].concat(Array.prototype.slice.call(arguments)));
@@ -298,6 +329,9 @@ function isStartGameTemporaryPowerupAllowed(levelConfig, itemId) {
   var config = START_GAME_TEMPORARY_POWERUP_CONFIG_BY_ITEM_ID[itemId];
   if (!config) {
     throw new Error("StartGameView temporary powerup config missing: " + itemId);
+  }
+  if (config.activateRicochetGuide === true) {
+    return true;
   }
   var rules = getStartGameAdPowerupRules(levelConfig);
   if (rules.allowed.indexOf(config.adRunPowerupType) < 0) {
@@ -582,6 +616,90 @@ module.exports = {
       return;
     }
     this._applyPlusThreeBallsUseResult(useResult);
+  },
+
+  _onUseSnowRemovalTap: function () {
+    if (!this.currentLevelConfig || this.isRestarting || this.isSelectingLevel) {
+      return;
+    }
+    if (this._isTerminalState()) {
+      return;
+    }
+    if (this._snowRemovalInProgress) {
+      return;
+    }
+
+    this._trackTelemetry("powerup_tap", {
+      powerup_type: "snow_removal"
+    });
+    this._playSfx("uiClick");
+
+    var preview = this.gameManager.previewSnowRemoval();
+    if (!preview || !preview.accepted) {
+      var previewReason = preview && typeof preview.reason === "string" ? preview.reason : "preview_failed";
+      if (previewReason === "inventory_empty") {
+        this._trackTelemetry("powerup_fail", {
+          powerup_type: "snow_removal",
+          reason: previewReason
+        });
+        this._setStatusWithTip("snow_removal_inventory_empty", null, "除雪剂道具库存不足");
+        this._tryRecoverInventoryByAd("snow_removal");
+        return;
+      }
+      if (previewReason === "no_target") {
+        this._trackTelemetry("powerup_fail", {
+          powerup_type: "snow_removal",
+          reason: previewReason
+        });
+        this._setStatusWithTip("snow_removal_no_target", null, "当前没有可清理的雪块");
+        return;
+      }
+      this._trackTelemetry("powerup_fail", {
+        powerup_type: "snow_removal",
+        reason: previewReason
+      });
+      this._setStatusWithTip("snow_removal_unavailable", null, "当前状态不可使用除雪剂");
+      return;
+    }
+
+    if (!this.levelRenderer || typeof this.levelRenderer.playSnowRemovalAnimation !== "function") {
+      throw new Error("Snow removal requires LevelRenderer.playSnowRemovalAnimation.");
+    }
+
+    this._snowRemovalInProgress = true;
+    return this.levelRenderer.playSnowRemovalAnimation().then(function () {
+      var useResult = this.gameManager.useSnowRemoval(preview.targets);
+      var snapshot = useResult && useResult.snapshot
+        ? useResult.snapshot
+        : this.gameManager.getRuntimeSnapshot();
+      if (useResult && useResult.accepted) {
+        this._recordAttemptPowerupUsed("snow_removal");
+      }
+      this._handleRuntimeStateTransition(snapshot);
+      this.levelRenderer.refreshRuntime(this.currentLevelConfig, snapshot);
+
+      if (useResult && useResult.accepted) {
+        this._consumePersistentInventoryItemForPowerup("snow_removal");
+        return;
+      }
+
+      var reason = useResult && typeof useResult.reason === "string" ? useResult.reason : "snow_removal_failed";
+      if (reason === "inventory_empty") {
+        this._setStatusWithTip("snow_removal_inventory_empty", null, "除雪剂道具库存不足");
+        this._tryRecoverInventoryByAd("snow_removal");
+        return;
+      }
+      if (reason === "no_target") {
+        this._setStatusWithTip("snow_removal_no_target", null, "当前没有可清理的雪块");
+        return;
+      }
+      this._setStatusWithTip("snow_removal_failed", null, "除雪剂使用失败");
+    }.bind(this)).then(function () {
+      this._snowRemovalInProgress = false;
+    }.bind(this), function (error) {
+      this._snowRemovalInProgress = false;
+      throw error;
+    }.bind(this));
   },
 
   _onUseSkillBallTap: function (entityType) {
@@ -1115,6 +1233,9 @@ module.exports = {
     if (!this.gameManager || typeof this.gameManager.grantPreparedAdRunPowerup !== "function") {
       throw new Error("StartGameView requires GameManager.grantPreparedAdRunPowerup.");
     }
+    if (!this.gameManager || typeof this.gameManager.activateRicochetGuide !== "function") {
+      throw new Error("StartGameView requires GameManager.activateRicochetGuide.");
+    }
 
     var levelId = normalizeStartGameLevelId(this._currentLevelId);
     var selectedItems = validateStartGameSelectedPowerups(this, levelId, this._pendingStartGamePowerups);
@@ -1140,7 +1261,12 @@ module.exports = {
         return;
       }
       var config = START_GAME_TEMPORARY_POWERUP_CONFIG_BY_ITEM_ID[itemId];
-      var grantResult = this.gameManager.grantPreparedAdRunPowerup(config.adRunPowerupType, count);
+      var grantResult;
+      if (config.activateRicochetGuide === true) {
+        grantResult = this.gameManager.activateRicochetGuide();
+      } else {
+        grantResult = this.gameManager.grantPreparedAdRunPowerup(config.adRunPowerupType, count);
+      }
       if (!grantResult || grantResult.accepted !== true) {
         throw new Error("StartGameView grant temporary powerup failed: " + itemId);
       }
@@ -1324,6 +1450,10 @@ module.exports = {
             this._playSfx("uiClick");
             return this._purchaseStartGamePowerup(itemId);
           }.bind(this),
+          onOpenPropDescription: function () {
+            this._playSfx("uiClick");
+            return this._showStartGamePropDescriptionView();
+          }.bind(this),
           onUnavailable: function (message) {
             this._setStatus(message);
             if (this.tipsPresenter && typeof this.tipsPresenter.showText === "function") {
@@ -1340,6 +1470,10 @@ module.exports = {
       this._startGameViewController.onPurchasePowerup = function (itemId) {
         this._playSfx("uiClick");
         return this._purchaseStartGamePowerup(itemId);
+      }.bind(this);
+      this._startGameViewController.onOpenPropDescription = function () {
+        this._playSfx("uiClick");
+        return this._showStartGamePropDescriptionView();
       }.bind(this);
       this._startGameLevelConfig = levelConfig;
       startGameViewNode.active = true;
@@ -1643,6 +1777,7 @@ module.exports = {
     if (options !== undefined && (!options || typeof options !== "object" || Array.isArray(options))) {
       throw new Error("StartGameView hide options must be an object when provided.");
     }
+    this._hideStartGamePropDescriptionView();
     var shouldRefundTemporaryPowerups = !options || options.refundTemporaryPowerups !== false;
     if (shouldRefundTemporaryPowerups && this._startGameTemporaryPowerupsCommitted !== true) {
       this._refundPendingStartGameTemporaryPowerups();
@@ -1657,6 +1792,121 @@ module.exports = {
       prefabKey: "_startGameViewPrefab",
       controllerKey: "_startGameViewController"
     });
+  },
+
+  _ensureStartGamePropDescriptionViewPrefab: function () {
+    if (this._startGamePropDescriptionViewPrefab) {
+      return Promise.resolve(this._startGamePropDescriptionViewPrefab);
+    }
+    return this._loadPrefab(PROP_DESCRIPTION_VIEW_PREFAB_PATH).then(function (prefab) {
+      this._startGamePropDescriptionViewPrefab = prefab;
+      return prefab;
+    }.bind(this));
+  },
+
+  _ensureStartGamePropDescriptionSpriteFrames: function () {
+    var paths = PropDescriptionConfig.getAllIconPaths();
+    var cache = this._startGamePropDescriptionSpriteFrameCache;
+    if (!cache || typeof cache !== "object" || Array.isArray(cache)) {
+      throw new Error("StartGameView prop description sprite frame cache must be an object.");
+    }
+    var missingPaths = paths.filter(function (path) {
+      return !cache[path];
+    });
+    if (missingPaths.length === 0) {
+      return Promise.resolve(cache);
+    }
+    if (this._startGamePropDescriptionSpriteLoadPromise) {
+      return this._startGamePropDescriptionSpriteLoadPromise;
+    }
+    this._startGamePropDescriptionSpriteLoadPromise = Promise.all(missingPaths.map(function (path) {
+      return loadPropDescriptionSpriteFrame(path).then(function (spriteFrame) {
+        return {
+          path: path,
+          spriteFrame: spriteFrame
+        };
+      });
+    })).then(function (results) {
+      results.forEach(function (entry) {
+        if (!entry || typeof entry.path !== "string" || !entry.spriteFrame) {
+          throw new Error("StartGameView prop description sprite load result is invalid.");
+        }
+        cache[entry.path] = entry.spriteFrame;
+      });
+      this._startGamePropDescriptionSpriteLoadPromise = null;
+      return cache;
+    }.bind(this)).catch(function (error) {
+      this._startGamePropDescriptionSpriteLoadPromise = null;
+      throw error;
+    }.bind(this));
+    return this._startGamePropDescriptionSpriteLoadPromise;
+  },
+
+  _showStartGamePropDescriptionView: function () {
+    if (!this._startGameViewNode || !this._startGameViewNode.isValid || !this._startGameViewNode.active) {
+      throw new Error("StartGameView prop description requires active StartGameView.");
+    }
+    if (!this._startGameLevelConfig) {
+      throw new Error("StartGameView prop description requires level config.");
+    }
+    if (this._isStartGamePropDescriptionViewOpen === true) {
+      throw new Error("StartGameView prop description is already open.");
+    }
+    return this._ensureStartGamePropDescriptionViewPrefab().then(function (prefab) {
+      return this._ensureStartGamePropDescriptionSpriteFrames().then(function (spriteFrameCache) {
+        var viewNode = this._startGamePropDescriptionViewNode;
+        if (!viewNode || !viewNode.isValid) {
+          viewNode = cc.instantiate(prefab);
+          if (!viewNode) {
+            throw new Error("Instantiate StartGameView PropDescriptionView prefab failed.");
+          }
+          viewNode.parent = this.node;
+          viewNode.setPosition(0, 0);
+          viewNode.zIndex = START_GAME_PROP_DESCRIPTION_VIEW_Z_INDEX;
+          this._startGamePropDescriptionViewNode = viewNode;
+          this._startGamePropDescriptionViewController = new PropDescriptionViewController({
+            node: viewNode,
+            onClose: function () {
+              this._closeStartGamePropDescriptionView();
+            }.bind(this)
+          });
+        }
+        viewNode.active = true;
+        viewNode.setPosition(0, 0);
+        PopupPresentationHelper.ensurePopupMaskVisible(
+          viewNode,
+          this.node,
+          164,
+          this._startGamePropDescriptionWhiteMaskFrames
+        );
+        var popupContent = PopupPresentationHelper.ensurePopupContentContainer(viewNode);
+        this._startGamePropDescriptionViewController.render({
+          levelConfig: this._startGameLevelConfig,
+          spriteFrameCache: spriteFrameCache
+        });
+        PopupPresentationHelper.playPopupContentOpenAnimation(popupContent);
+        this._isStartGamePropDescriptionViewOpen = true;
+      }.bind(this));
+    }.bind(this));
+  },
+
+  _hideStartGamePropDescriptionView: function () {
+    if (this._isStartGamePropDescriptionViewOpen !== true) {
+      return;
+    }
+    if (!this._startGamePropDescriptionViewNode || !this._startGamePropDescriptionViewNode.isValid) {
+      throw new Error("StartGameView prop description node is invalid.");
+    }
+    this._startGamePropDescriptionViewNode.active = false;
+    this._isStartGamePropDescriptionViewOpen = false;
+  },
+
+  _closeStartGamePropDescriptionView: function () {
+    if (this._isStartGamePropDescriptionViewOpen !== true) {
+      throw new Error("StartGameView prop description close requires an active modal.");
+    }
+    this._playSfx("uiClick");
+    this._hideStartGamePropDescriptionView();
   },
 
   _loadPreparedLevelFromLevelSelect: function (levelId, selectedItems) {

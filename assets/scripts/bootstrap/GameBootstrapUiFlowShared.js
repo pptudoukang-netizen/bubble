@@ -46,7 +46,8 @@ var SIGN_IN_ITEM_ICON_PATHS = {
   swap_ball: "image/props/gift_pack",
   rainbow_ball: "image/props/rainbow_ball",
   blast_ball: "image/props/blast_ball",
-  barrier_hammer: "image/props/barrier_hammer"
+  barrier_hammer: "image/props/barrier_hammer",
+  snow_removal: "image/props/snow_removal"
 };
 var SIGN_IN_DAY_ITEM_ICON_PATHS = {
   2: {
@@ -60,7 +61,8 @@ var SIGN_IN_ITEM_DISPLAY_NAMES = {
   swap_ball: "换球",
   rainbow_ball: "彩虹球",
   blast_ball: "炸裂球",
-  barrier_hammer: "破障锤"
+  barrier_hammer: "破障锤",
+  snow_removal: "除雪剂"
 };
 var AWARD_VIEW_PREFAB_PATH = "prefabs/ui/AwardView";
 var AWARD_ITEM_ICON_PATHS = {
@@ -69,7 +71,8 @@ var AWARD_ITEM_ICON_PATHS = {
   swap_ball: "image/props/change_ball",
   rainbow_ball: "image/props/rainbow_ball",
   blast_ball: "image/props/blast_ball",
-  barrier_hammer: "image/props/barrier_hammer"
+  barrier_hammer: "image/props/barrier_hammer",
+  snow_removal: "image/props/snow_removal"
 };
 var AWARD_ITEM_DISPLAY_NAMES = {
   coin: "金币",
@@ -77,7 +80,8 @@ var AWARD_ITEM_DISPLAY_NAMES = {
   swap_ball: "换球",
   rainbow_ball: "彩虹球",
   blast_ball: "炸裂球",
-  barrier_hammer: "破障锤"
+  barrier_hammer: "破障锤",
+  snow_removal: "除雪剂"
 };
 var hasOwn = Object.prototype.hasOwnProperty;
 

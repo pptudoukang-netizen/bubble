@@ -61,6 +61,13 @@ function resolveBallDisplayCode(ball) {
   return null;
 }
 
+function requireRemainingShotCount(value, description) {
+  if (!Number.isInteger(value) || value < 0) {
+    throw new Error(description + " must be a non-negative integer.");
+  }
+  return value;
+}
+
 function ShooterController() {
   BaseSystem.call(this, "ShooterController");
   this.shotLimit = 0;
@@ -70,7 +77,8 @@ function ShooterController() {
     rainbow: 0,
     blast: 0,
     swap: 0,
-    barrier_hammer: 0
+    barrier_hammer: 0,
+    snow_removal: 0
   };
   this.currentBall = null;
   this.nextBall = null;
@@ -97,11 +105,18 @@ ShooterController.prototype.configureLevel = function (levelConfig) {
     : {};
   this.skillInventory.swap = Math.max(0, Math.floor(Number(initialPowerups.swap) || 0));
   this.skillInventory.barrier_hammer = Math.max(0, Math.floor(Number(initialPowerups.barrier_hammer) || 0));
-  this.currentBall = this._pickNormalBall();
-  this.nextBall = this._pickNormalBall();
+  this.skillInventory.snow_removal = 0;
+  this.currentBall = null;
+  this.nextBall = null;
+  this._syncQueueForRemainingShots(
+    levelConfig.level.playMode === "timed_infinite_shots" ? 2 : this.shotLimit
+  );
   this.queueAdvanceRevision = 0;
   if (Array.isArray(levelConfig.level.initialShotBalls)) {
     this._applyInitialShotBalls(levelConfig.level.initialShotBalls);
+    this._syncQueueForRemainingShots(
+      levelConfig.level.playMode === "timed_infinite_shots" ? 2 : this.shotLimit
+    );
   }
   this._syncLegacyColorFields();
   this.aimDirection = { x: 0, y: 1 };
@@ -147,10 +162,76 @@ ShooterController.prototype.setAimFromPoint = function (point) {
   return this.getAimState();
 };
 
-ShooterController.prototype.advanceQueue = function () {
+ShooterController.prototype._syncQueueForRemainingShots = function (remainingShotCount) {
+  requireRemainingShotCount(remainingShotCount, "ShooterController remainingShotCount");
+
+  if (remainingShotCount <= 0) {
+    this.currentBall = null;
+    this.nextBall = null;
+    this._syncLegacyColorFields();
+    return {
+      currentBall: null,
+      nextBall: null
+    };
+  }
+
+  if (!this.currentBall) {
+    this.currentBall = this._pickNormalBall();
+    if (!this.currentBall) {
+      throw new Error("ShooterController requires current ball for remaining shots.");
+    }
+  }
+
+  if (remainingShotCount === 1) {
+    this.nextBall = null;
+    this._syncLegacyColorFields();
+    return {
+      currentBall: clone(this.currentBall),
+      nextBall: null
+    };
+  }
+
+  if (!this.nextBall) {
+    this.nextBall = this._pickNormalBall();
+    if (!this.nextBall) {
+      throw new Error("ShooterController requires next ball for remaining shots.");
+    }
+  }
+
+  this._syncLegacyColorFields();
+  return {
+    currentBall: clone(this.currentBall),
+    nextBall: clone(this.nextBall)
+  };
+};
+
+ShooterController.prototype.syncFiniteShotQueue = function (remainingShotCount) {
+  var result = this._syncQueueForRemainingShots(remainingShotCount);
+  return {
+    accepted: true,
+    remainingShotCount: remainingShotCount,
+    currentBall: result.currentBall,
+    nextBall: result.nextBall
+  };
+};
+
+ShooterController.prototype.advanceQueue = function (remainingShotCountAfterFire, infiniteShots) {
+  if (!this.currentBall) {
+    throw new Error("ShooterController.advanceQueue requires current ball.");
+  }
+
   var firedBall = clone(this.currentBall);
-  this.currentBall = this.nextBall ? clone(this.nextBall) : this._pickNormalBall();
-  this.nextBall = this._pickNormalBall();
+  this.currentBall = this.nextBall ? clone(this.nextBall) : null;
+  this.nextBall = null;
+
+  if (infiniteShots) {
+    this._syncQueueForRemainingShots(2);
+  } else {
+    this._syncQueueForRemainingShots(
+      requireRemainingShotCount(remainingShotCountAfterFire, "ShooterController remainingShotCountAfterFire")
+    );
+  }
+
   this.queueAdvanceRevision += 1;
   this._syncLegacyColorFields();
 
@@ -177,7 +258,7 @@ ShooterController.prototype.addSkillInventory = function (entityType, count) {
 };
 
 ShooterController.prototype.addInventory = function (entityType, count) {
-  var supportedTypes = ["rainbow", "blast", "swap", "barrier_hammer"];
+  var supportedTypes = ["rainbow", "blast", "swap", "barrier_hammer", "snow_removal"];
   if (supportedTypes.indexOf(entityType) === -1) {
     return {
       accepted: false,
@@ -208,6 +289,8 @@ ShooterController.prototype.setUpcomingNormalBalls = function (colorCode, count)
   }
   if (count >= 2) {
     this.nextBall = createNormalBall(colorCode);
+  } else {
+    this.nextBall = null;
   }
   this._syncLegacyColorFields();
   return {
@@ -235,6 +318,8 @@ ShooterController.prototype.setUpcomingRandomNormalBalls = function (count) {
     if (!this.nextBall) {
       throw new Error("ShooterController revive random next ball is missing.");
     }
+  } else {
+    this.nextBall = null;
   }
   this._syncLegacyColorFields();
   return {
@@ -348,6 +433,28 @@ ShooterController.prototype.consumeBarrierHammer = function () {
   return {
     accepted: true,
     remaining: this.skillInventory.barrier_hammer
+  };
+};
+
+ShooterController.prototype.consumeSnowRemoval = function () {
+  if (!Object.prototype.hasOwnProperty.call(this.skillInventory, "snow_removal")) {
+    throw new Error("ShooterController snow_removal inventory is missing.");
+  }
+  var snowRemovalCount = Number(this.skillInventory.snow_removal);
+  if (!Number.isInteger(snowRemovalCount) || snowRemovalCount < 0) {
+    throw new Error("ShooterController snow_removal inventory must be a non-negative integer.");
+  }
+  if (snowRemovalCount <= 0) {
+    return {
+      accepted: false,
+      reason: "inventory_empty"
+    };
+  }
+
+  this.skillInventory.snow_removal = snowRemovalCount - 1;
+  return {
+    accepted: true,
+    remaining: this.skillInventory.snow_removal
   };
 };
 

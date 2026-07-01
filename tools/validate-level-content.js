@@ -4,6 +4,7 @@ var fs = require("fs");
 var path = require("path");
 
 var BoardLayout = require("../assets/scripts/config/BoardLayout");
+var LevelBoardSupportValidator = require("../assets/scripts/config/LevelBoardSupportValidator");
 var LevelPackCompactCodec = require("../assets/scripts/config/LevelPackCompactCodec");
 var ClusteredLevelLayout = require("./clustered-level-layout");
 var FirstHundredLevelDesign = require("./first-100-level-design");
@@ -537,8 +538,8 @@ function validateLevelData(data, expectedLevelId) {
   if (!Array.isArray(level.layout) || !level.layout.length) {
     issues.push("layout must be non-empty array");
   } else {
-    if (level.layout.length < 7) {
-      issues.push("layout must contain at least 7 rows");
+    if (level.layout.length < 8) {
+      issues.push("layout must contain at least 8 rows");
     }
     var normalizedLayoutRows = [];
     level.layout.forEach(function (rowString, rowIndex) {
@@ -582,6 +583,18 @@ function validateLevelData(data, expectedLevelId) {
     }
 
     validateSpecialEntities(level, normalizedLayoutRows, issues);
+    if (Array.isArray(level.specialEntities)) {
+      try {
+        LevelBoardSupportValidator.findUnsupportedInitialCells({
+          layout: normalizedLayoutRows,
+          specialEntities: level.specialEntities
+        }, "level_" + String(expectedLevelId).padStart(3, "0")).forEach(function (cell) {
+          issues.push("initial board cell has no support at " + cell.row + ":" + cell.col);
+        });
+      } catch (supportError) {
+        issues.push(supportError.message);
+      }
+    }
   }
 
   validateObjectives(level.winConditions, "win", level, issues);

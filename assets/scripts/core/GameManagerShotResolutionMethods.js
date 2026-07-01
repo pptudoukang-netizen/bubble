@@ -345,6 +345,25 @@ function createGameManagerShotResolutionMethods(deps) {
       this.comboStreak = 0;
     },
 
+    _getMatchedDropScorePerBallForNextCombo: function (matchedRuleKey) {
+      if (typeof matchedRuleKey !== "undefined" && (typeof matchedRuleKey !== "string" || !matchedRuleKey)) {
+        throw new Error("Matched combo score rule key must be a non-empty string.");
+      }
+      var ruleKey = typeof matchedRuleKey === "undefined" ? "matchedDrop" : matchedRuleKey;
+      var baseScore = this._getScoreRule(ruleKey);
+      if (!Number.isInteger(baseScore) || baseScore < 0) {
+        throw new Error("Matched drop score rule must be a non-negative integer.");
+      }
+      if (!Number.isInteger(this.comboStreak) || this.comboStreak < 0) {
+        throw new Error("Combo streak must be a non-negative integer.");
+      }
+      if (!Number.isInteger(COMBO_BONUS_PER_HIT) || COMBO_BONUS_PER_HIT <= 0) {
+        throw new Error("Combo bonus per hit must be a positive integer.");
+      }
+
+      return baseScore + this.comboStreak * COMBO_BONUS_PER_HIT;
+    },
+
     _resolveComboAttachAnchor: function (resolution) {
       if (!resolution) {
         throw new Error("Combo attach anchor requires resolution.");
@@ -400,9 +419,17 @@ function createGameManagerShotResolutionMethods(deps) {
       }
 
       var comboDisplay = this.comboStreak - 1;
-      var bonusGained = COMBO_BONUS_PER_HIT;
-      this.score += bonusGained;
-      resolution.scoreDelta += bonusGained;
+      var comboBonusAlreadyApplied = resolution.comboMatchedScoreBonusApplied === true;
+      var bonusGained = comboBonusAlreadyApplied
+        ? resolution.comboMatchedScoreBonus
+        : COMBO_BONUS_PER_HIT;
+      if (!Number.isInteger(bonusGained) || bonusGained <= 0) {
+        throw new Error("Combo bonus gained must be a positive integer.");
+      }
+      if (!comboBonusAlreadyApplied) {
+        this.score += bonusGained;
+        resolution.scoreDelta += bonusGained;
+      }
 
       if (typeof this._pushRuntimeEvent === "function") {
         var attachAnchor = this._resolveComboAttachAnchor(resolution);
@@ -545,20 +572,45 @@ function createGameManagerShotResolutionMethods(deps) {
       return gained;
     },
 
-    _applyResolutionDropScore: function (resolution, matchedRuleKey) {
+    _applyResolutionDropScore: function (resolution, matchedRuleKey, options) {
       if (!resolution) {
         return 0;
       }
 
+      var scoreOptions = {};
+      if (typeof options !== "undefined") {
+        if (!options || typeof options !== "object" || Array.isArray(options)) {
+          throw new Error("Resolution drop score options must be an object.");
+        }
+        scoreOptions = options;
+      }
+      if (typeof matchedRuleKey !== "undefined" && (typeof matchedRuleKey !== "string" || !matchedRuleKey)) {
+        throw new Error("Matched score rule key must be a non-empty string.");
+      }
+      var ruleKey = typeof matchedRuleKey === "undefined" ? "matchedDrop" : matchedRuleKey;
       var matchedCount = Array.isArray(resolution.matched) ? resolution.matched.length : 0;
       var floatingCount = Array.isArray(resolution.floating) ? resolution.floating.length : 0;
-      var matchedScore = matchedCount * this._getScoreRule(matchedRuleKey || "matchedDrop");
+      var baseMatchedScorePerBall = this._getScoreRule(ruleKey);
+      if (!Number.isInteger(baseMatchedScorePerBall) || baseMatchedScorePerBall < 0) {
+        throw new Error("Matched drop score rule must be a non-negative integer.");
+      }
+      var matchedScorePerBall = Object.prototype.hasOwnProperty.call(scoreOptions, "matchedScorePerBall")
+        ? scoreOptions.matchedScorePerBall
+        : baseMatchedScorePerBall;
+      if (!Number.isInteger(matchedScorePerBall) || matchedScorePerBall < baseMatchedScorePerBall) {
+        throw new Error("Matched score per ball must be an integer not lower than the base score.");
+      }
+      var matchedScore = matchedCount * matchedScorePerBall;
       var floatingScore = floatingCount * this._getScoreRule("floatingDrop");
       var gained = matchedScore + floatingScore;
       if (gained <= 0) {
         return 0;
       }
 
+      var comboMatchedScoreBonus = matchedCount * (matchedScorePerBall - baseMatchedScorePerBall);
+      resolution.comboMatchedScoreBonus = comboMatchedScoreBonus;
+      resolution.comboMatchedScoreBonusApplied = comboMatchedScoreBonus > 0;
+      resolution.matchedScorePerBall = matchedScorePerBall;
       this.score += gained;
       resolution.scoreDelta += gained;
 
@@ -566,6 +618,7 @@ function createGameManagerShotResolutionMethods(deps) {
         this._pushRuntimeEvent("drop_score_awarded", {
           matched: matchedCount,
           floating: floatingCount,
+          matched_score_per_ball: matchedScorePerBall,
           gained: gained
         });
       }
@@ -573,6 +626,7 @@ function createGameManagerShotResolutionMethods(deps) {
       Logger.info("Drop score", {
         matched: matchedCount,
         floating: floatingCount,
+        matchedScorePerBall: matchedScorePerBall,
         gained: gained
       });
 
@@ -1366,6 +1420,7 @@ function createGameManagerShotResolutionMethods(deps) {
         row: next.row,
         col: next.col
       });
+      this._pushBombExplosionEvent();
       this._executeMolotovBlastPhaseAtAnimationStart(resolution);
     },
 
@@ -1740,6 +1795,7 @@ function createGameManagerShotResolutionMethods(deps) {
           entityType: unlockedCell.entityType,
           __sourceKeyId: keyCell.id
         });
+        this._pushLockOpenEvent(unlockedCell);
       });
 
       this._appendUniqueCells(resolution.unlockedLockedBalls, unlocked);
@@ -1989,37 +2045,51 @@ function createGameManagerShotResolutionMethods(deps) {
           };
         }
       }
+      if (!centerCoordinate) {
+        throw new Error("Blast shot requires a resolved explosion center.");
+      }
 
       var blastCells = [];
       var iceCellsToThaw = [];
-      if (centerCoordinate) {
-        var affectedCoords = [{
-          row: centerCoordinate.row,
-          col: centerCoordinate.col
-        }].concat(grid.getNeighborCoordinates(centerCoordinate.row, centerCoordinate.col));
-        var touched = {};
+      var affectedCoords = [{
+        row: centerCoordinate.row,
+        col: centerCoordinate.col
+      }].concat(grid.getNeighborCoordinates(centerCoordinate.row, centerCoordinate.col));
+      var touched = {};
 
-        affectedCoords.forEach(function (coord) {
-          var key = coord.row + ":" + coord.col;
-          if (touched[key]) {
+      affectedCoords.forEach(function (coord) {
+        var key = coord.row + ":" + coord.col;
+        if (touched[key]) {
+          return;
+        }
+        touched[key] = true;
+
+        var occupiedCell = grid.getCell(coord.row, coord.col);
+        if (occupiedCell) {
+          if (isIceBall(occupiedCell)) {
+            iceCellsToThaw.push(occupiedCell);
+          } else if (isLockedBall(occupiedCell)) {
             return;
+          } else {
+            blastCells.push(occupiedCell);
           }
-          touched[key] = true;
-
-          var occupiedCell = grid.getCell(coord.row, coord.col);
-          if (occupiedCell) {
-            if (isIceBall(occupiedCell)) {
-              iceCellsToThaw.push(occupiedCell);
-            } else if (isLockedBall(occupiedCell)) {
-              return;
-            } else {
-              blastCells.push(occupiedCell);
-            }
-          }
-        });
-      }
+        }
+      });
 
       var removedBlastCells = grid.removeCells(blastCells);
+      if (!Array.isArray(resolution.blastExplosions)) {
+        throw new Error("Blast resolution requires blastExplosions array.");
+      }
+      if (!Number.isInteger(this.shotsFired) || this.shotsFired <= 0) {
+        throw new Error("Blast explosion requires a positive shotsFired id.");
+      }
+      resolution.blastExplosions.push({
+        id: "blast_shot_" + this.shotsFired,
+        entityType: "blast",
+        row: centerCoordinate.row,
+        col: centerCoordinate.col
+      });
+      this._pushBombExplosionEvent();
       resolution.thawed = this._thawIceCells(iceCellsToThaw, grid);
       if (typeof this._registerIceCollection === "function") {
         resolution.iceCollected += this._registerIceCollection(resolution.thawed);
@@ -2230,11 +2300,12 @@ function createGameManagerShotResolutionMethods(deps) {
       this._cancelPendingSplitterSpawnsForDroppedCells(collectedCells);
 
       var matchedCellsForScore = removedMatches.concat(removedReactiveMatches);
+      var matchedScorePerBall = this._getMatchedDropScorePerBallForNextCombo("matchedDrop");
       var eliminationData = EliminationSequenceBuilder.buildEliminationSequence(
         attachedBubble,
         matchedCellsForScore,
         grid,
-        this._getScoreRule("matchedDrop")
+        matchedScorePerBall
       );
       resolution.eliminationSequence = eliminationData.eliminationSequence;
       resolution.scoreEvents = eliminationData.scoreEvents;
@@ -2246,7 +2317,9 @@ function createGameManagerShotResolutionMethods(deps) {
       this._pushBubbleBreakEvent(matchedCellsForScore);
       resolution.collected = collectedCells;
       resolution.boardCleared = grid.getCells().length === 0;
-      this._applyResolutionDropScore(resolution, "matchedDrop");
+      this._applyResolutionDropScore(resolution, "matchedDrop", {
+        matchedScorePerBall: matchedScorePerBall
+      });
       this._registerComboElimination(resolution);
 
       Logger.info("Resolution", {

@@ -5,6 +5,7 @@ var LevelSelectMemoryDiagnostics = require("./LevelSelectMemoryDiagnostics");
 var RESOURCES_BUNDLE_NAME = "resources";
 var UI_BUNDLE_NAME = "ui";
 var GAME_BUNDLE_NAME = "game";
+var GAME_ASSET_PREFIX = "game/";
 var UI_PREFAB_LEGACY_PREFIX = "prefabs/ui/";
 var UI_PREFAB_BUNDLE_PREFIX = "prefabs/";
 var UI_IMAGE_SIGN_PREFIX = "image/sign/";
@@ -290,6 +291,13 @@ function releaseNamedBundle(bundleName) {
 }
 
 function resolveLoadRoute(path) {
+  if (path.indexOf(GAME_ASSET_PREFIX) === 0) {
+    return {
+      bundleName: GAME_BUNDLE_NAME,
+      path: path.slice(GAME_ASSET_PREFIX.length)
+    };
+  }
+
   if (path.indexOf(UI_COMMENT_ANIMATION_LEGACY_PREFIX) === 0) {
     return {
       bundleName: UI_BUNDLE_NAME,

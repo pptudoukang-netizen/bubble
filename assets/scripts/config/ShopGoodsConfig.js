@@ -82,6 +82,22 @@ module.exports = {
       enabled: true,
       sortOrder: 40,
       tags: []
+    },
+    {
+      skuId: "sku_snow_removal_01",
+      itemId: "snow_removal",
+      itemCount: 1,
+      displayName: "除雪剂",
+      functionText: "从棋盘底部开始清理 10 个雪块",
+      iconPath: "image/props/snow_removal",
+      price: {
+        currency: "coin",
+        amount: 300
+      },
+      dailyLimit: 0,
+      enabled: true,
+      sortOrder: 50,
+      tags: []
     }
   ]
 };

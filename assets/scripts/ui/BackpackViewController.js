@@ -23,6 +23,11 @@ var ITEM_DEFINITIONS = [
     itemId: "barrier_hammer",
     displayName: "破障锤",
     iconPath: "image/props/barrier_hammer"
+  },
+  {
+    itemId: "snow_removal",
+    displayName: "除雪剂",
+    iconPath: "image/props/snow_removal"
   }
 ];
 

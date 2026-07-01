@@ -118,7 +118,7 @@
 - `LevelRendererSceneBoardMethods.js`：棋盘球池、掉落球、调试网格与棋盘格视觉状态。
 - `LevelRendererSceneShooterMethods.js`：炮台、瞄准辅助线、彩虹选色、路线编辑器与飞行球视觉缓存。
 - `LevelRendererSceneFxMethods.js`：钥匙/分裂/燃烧瓶/冰球等一次性动画、障碍锤提示、震屏与冲击反弹。
-- `LevelRendererSceneHudMethods.js`：HUD 目标、星级进度、连击/分数飘字、定时器与底部道具栏。
+- `LevelRendererSceneHudMethods.js`：HUD 目标、星级进度、连击/分数飘字、定时器与底部道具栏；道具按钮由 `prefabs/game/PropsBtn` 动态实例化到 `GameView/BttomPanel/props_scroll/view/content`。
 - `LevelRendererSceneJarMethods.js`：底部罐子、罐内掉落遮挡与碰撞遮罩。
 - `LevelRendererScenePopupMethods.js`：胜/负/暂停/道具说明弹窗与结果浮层渲染（含 Sprite 代理分层）。
 - `LevelRendererFairyMethods.js`：严格绑定 `GameView/geniuses/genius1...6`，从 `animation` 分包实例化三色精灵动画 prefab，保留飞入/替换/离场动画，并用同 prefab 的后置克隆表达碰撞层数。

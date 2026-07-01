@@ -21,7 +21,9 @@ module.exports = {
         break: this.breakSfxResource,
         fairyAssistHit: this.fairyAssistHitSfxResource,
         fairyAssistDepart: this.fairyAssistDepartSfxResource,
-        gameEntryCountdown: this.gameEntryCountdownSfxResource
+        gameEntryCountdown: this.gameEntryCountdownSfxResource,
+        bomb: this.bombSfxResource,
+        lockOpen: this.lockOpenSfxResource
       }
     };
   },
@@ -241,6 +243,16 @@ module.exports = {
 
       if (event.type === "bubble_break") {
         this._playSfx("break");
+        return;
+      }
+
+      if (event.type === "bomb_explosion") {
+        this._playSfx("bomb");
+        return;
+      }
+
+      if (event.type === "lock_open") {
+        this._playSfx("lockOpen");
         return;
       }
 

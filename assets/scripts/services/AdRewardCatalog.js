@@ -5,6 +5,7 @@ var POWERUP_DISPLAY_NAMES = {
   blast: "炸弹球",
   swap: "换球",
   barrier_hammer: "破障锤",
+  snow_removal: "除雪剂",
   three_line_elimination: "消三行",
   plus_three_balls: "加十球"
 };

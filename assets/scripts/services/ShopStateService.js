@@ -87,9 +87,12 @@ ShopStateService.prototype._migrateSkuCountsForCurrentConfig = function () {
   assertObject(this.state.shopState.dailyPurchases.skuCounts, "Shop skuCounts is required.");
 
   var skuCounts = this.state.shopState.dailyPurchases.skuCounts;
+  var changed = false;
   this.configService.getAllGoodsList().forEach(function (goods) {
     if (!Object.prototype.hasOwnProperty.call(skuCounts, goods.skuId)) {
-      throw new Error("Shop state missing sku count: " + goods.skuId);
+      skuCounts[goods.skuId] = 0;
+      changed = true;
+      return;
     }
 
     var count = skuCounts[goods.skuId];
@@ -98,6 +101,9 @@ ShopStateService.prototype._migrateSkuCountsForCurrentConfig = function () {
     }
   });
 
+  if (changed) {
+    this.store.save(this.state);
+  }
 };
 
 ShopStateService.prototype.ensureDailyReset = function (now) {

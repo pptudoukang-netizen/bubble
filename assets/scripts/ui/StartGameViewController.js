@@ -4,17 +4,21 @@ var BundleLoader = require("../utils/BundleLoader");
 var SpriteProxyLayerHelper = require("../utils/SpriteProxyLayerHelper");
 
 var POWERUP_DEFINITIONS = [
+  { itemId: "plus_three_balls", unlockLevel: 1, iconPath: "image/props/plus_ball", temporary: true },
+  { itemId: "three_line_elimination", unlockLevel: 1, iconPath: "image/props/three_line_elimination", temporary: true },
+  { itemId: "precise_aim", unlockLevel: 1, iconPath: "image/props/aim", temporary: true },
   { itemId: "swap_ball", unlockLevel: 5, iconPath: "image/props/change_ball" },
   { itemId: "rainbow_ball", unlockLevel: 10, iconPath: "image/props/rainbow_ball" },
   { itemId: "blast_ball", unlockLevel: 15, iconPath: "image/props/blast_ball" },
   { itemId: "barrier_hammer", unlockLevel: 20, iconPath: "image/props/barrier_hammer" },
-  { itemId: "three_line_elimination", unlockLevel: 1, iconPath: "image/props/three_line_elimination", temporary: true },
-  { itemId: "plus_three_balls", unlockLevel: 1, iconPath: "image/props/plus_ball", temporary: true }
+  { itemId: "snow_removal", unlockLevel: 16, iconPath: "image/props/snow_removal" }
 ];
 var LOCK_ICON_PATH = "image/commone/lock";
 var MAX_SELECTED_POWERUPS = 4;
 var PROP_ITEM_HORIZONTAL_PADDING = 12;
 var PROP_ITEM_SPACING = 16;
+var PROP_ITEM_WIDTH = 90;
+var PROP_ITEM_ICON_NODE_NAME = "icon";
 var START_GAME_RENDER_PROXY_ROOT_NAME = "start_game_render_proxy_root";
 var START_GAME_PROP_RENDER_PROXY_ROOT_NAME = "start_game_prop_render_proxy_root";
 var START_GAME_RENDER_PROXY_LAYER_NAMES = {
@@ -104,12 +108,94 @@ function getLabel(node, description) {
   return label;
 }
 
+function scalePropItemDescendant(node, ratio) {
+  requireValidNode(node, "StartGameView prop descendant");
+  if (!Number.isFinite(ratio) || ratio <= 0) {
+    throw new Error("StartGameView prop scale ratio must be a positive finite number.");
+  }
+  var position = node.getPosition();
+  if (!Number.isFinite(position.x) || !Number.isFinite(position.y)) {
+    throw new Error("StartGameView prop descendant position must be finite.");
+  }
+  node.setPosition(position.x * ratio, position.y * ratio);
+  var size = node.getContentSize();
+  if (size && Number.isFinite(size.width) && size.width > 0 && Number.isFinite(size.height) && size.height > 0) {
+    node.setContentSize(size.width * ratio, size.height * ratio);
+  }
+  var sprite = node.getComponent(cc.Sprite);
+  if (sprite) {
+    sprite.sizeMode = cc.Sprite.SizeMode.CUSTOM;
+  }
+  var label = node.getComponent(cc.Label);
+  if (label) {
+    if (!Number.isFinite(label.fontSize) || label.fontSize <= 0) {
+      throw new Error("StartGameView prop label fontSize must be positive.");
+    }
+    if (!Number.isFinite(label.lineHeight) || label.lineHeight <= 0) {
+      throw new Error("StartGameView prop label lineHeight must be positive.");
+    }
+    label.fontSize = Math.max(1, Math.round(label.fontSize * ratio));
+    label.lineHeight = Math.max(1, Math.round(label.lineHeight * ratio));
+  }
+  var children = node.children;
+  if (!Array.isArray(children)) {
+    throw new Error("StartGameView prop descendant children must be an array.");
+  }
+  children.forEach(function (child) {
+    scalePropItemDescendant(child, ratio);
+  });
+}
+
+function applyPropItemLayoutSize(propNode, referenceSize, targetWidth) {
+  requireValidNode(propNode, "StartGameView prop item");
+  if (!Number.isFinite(targetWidth) || targetWidth <= 0) {
+    throw new Error("StartGameView prop target width must be a positive finite number.");
+  }
+  if (!referenceSize || !Number.isFinite(referenceSize.width) || referenceSize.width <= 0 ||
+      !Number.isFinite(referenceSize.height) || referenceSize.height <= 0) {
+    throw new Error("StartGameView prop reference size must be valid.");
+  }
+  var ratio = targetWidth / referenceSize.width;
+  var targetHeight = referenceSize.height * ratio;
+  propNode.setContentSize(targetWidth, targetHeight);
+  var children = propNode.children;
+  if (!Array.isArray(children)) {
+    throw new Error("StartGameView prop item children must be an array.");
+  }
+  children.forEach(function (child) {
+    scalePropItemDescendant(child, ratio);
+  });
+  return {
+    width: targetWidth,
+    height: targetHeight
+  };
+}
+
 function getSprite(node, description) {
   var sprite = requireValidNode(node, description).getComponent(cc.Sprite);
   if (!sprite) {
     throw new Error("StartGameView requires " + description + " cc.Sprite.");
   }
   return sprite;
+}
+
+function setPropIconSpriteFrame(iconNode, spriteFrame, targetWidth, description) {
+  requireValidNode(iconNode, description);
+  if (!spriteFrame || typeof spriteFrame.getRect !== "function") {
+    throw new Error("StartGameView " + description + " spriteFrame is invalid.");
+  }
+  if (!Number.isFinite(targetWidth) || targetWidth <= 0) {
+    throw new Error("StartGameView " + description + " target width is invalid.");
+  }
+  var rect = spriteFrame.getRect();
+  if (!rect || !Number.isFinite(rect.width) || rect.width <= 0 ||
+      !Number.isFinite(rect.height) || rect.height <= 0) {
+    throw new Error("StartGameView " + description + " spriteFrame size is invalid.");
+  }
+  var sprite = getSprite(iconNode, description);
+  sprite.spriteFrame = spriteFrame;
+  sprite.sizeMode = cc.Sprite.SizeMode.CUSTOM;
+  iconNode.setContentSize(targetWidth, targetWidth * rect.height / rect.width);
 }
 
 function setLabelText(node, text, description) {
@@ -271,12 +357,15 @@ function StartGameViewController(options) {
   this.onPlay = requireFunction(options.onPlay, "StartGameViewController onPlay");
   this.onUnavailable = requireFunction(options.onUnavailable, "StartGameViewController onUnavailable");
   this.onPurchasePowerup = requireFunction(options.onPurchasePowerup, "StartGameViewController onPurchasePowerup");
+  this.onOpenPropDescription = requireFunction(options.onOpenPropDescription, "StartGameViewController onOpenPropDescription");
   this._nodes = this._resolveNodes();
   this._propNodes = [];
   this._spriteFrames = {};
   this._spriteLoadPromise = null;
   this._renderState = null;
   this._selectedItems = [];
+  this._propItemLayoutSize = null;
+  this._propItemIconWidth = 0;
   this._purchaseInProgressItemId = "";
   this._renderProxyRoot = null;
   this._renderProxyLayers = {};
@@ -316,7 +405,6 @@ StartGameViewController.prototype._resolveNodes = function () {
     playButton: playButtonNode,
     staminaCostLabelNode: requireChildNode(playButtonNode, "num", "Panel/play_btn"),
     targetNode: targetNode,
-    targetTitleNode: requireChildNode(targetNode, "target_title", "Panel/target"),
     targetScoreLabelNode: requireChildNode(targetNode, "target_score", "Panel/target"),
     targetLayoutNode: targetLayoutNode,
     targetBallNode: targetBallNode,
@@ -326,7 +414,9 @@ StartGameViewController.prototype._resolveNodes = function () {
     propListNode: propListNode,
     propViewNode: propViewNode,
     propContentNode: propContentNode,
-    propTemplateNode: propTemplateNode
+    propScrollView: scrollView,
+    propTemplateNode: propTemplateNode,
+    directionsButton: requireChildNode(panelNode, "directions_btn", "Panel")
   };
 };
 
@@ -361,6 +451,7 @@ StartGameViewController.prototype._updateTargetLayout = function () {
 StartGameViewController.prototype._bindActions = function () {
   bindTapOnce(this._nodes.closeButton, "__startGameCloseTapBound", this.onClose);
   bindTapWithoutScaleOnce(this._nodes.mask, "__startGameMaskTapBound", this.onClose);
+  bindTapOnce(this._nodes.directionsButton, "__startGameDirectionsTapBound", this.onOpenPropDescription);
   bindTapOnce(this._nodes.playButton, "__startGamePlayTapBound", function () {
     if (this._purchaseInProgressItemId) {
       this.onUnavailable("购买处理中，请稍候");
@@ -370,6 +461,7 @@ StartGameViewController.prototype._bindActions = function () {
   }.bind(this));
   this._bindProxySyncToNode(this._nodes.closeButton);
   this._bindProxySyncToNode(this._nodes.playButton);
+  this._bindProxySyncToNode(this._nodes.directionsButton);
 };
 
 StartGameViewController.prototype._bindProxySyncToNode = function (node) {
@@ -513,7 +605,11 @@ StartGameViewController.prototype._syncRenderProxies = function () {
 StartGameViewController.prototype._layoutPropNodes = function () {
   var contentNode = requireValidNode(this._nodes.propContentNode, "Panel/prop_listview/view/content");
   var viewSize = getValidSize(this._nodes.propViewNode, "Panel/prop_listview/view");
-  var templateSize = getValidSize(this._nodes.propTemplateNode, "Panel/prop_listview/view/content/prop");
+  var itemSize = this._propItemLayoutSize;
+  if (!itemSize || !Number.isFinite(itemSize.width) || itemSize.width <= 0 ||
+      !Number.isFinite(itemSize.height) || itemSize.height <= 0) {
+    throw new Error("StartGameView prop item layout size is required.");
+  }
   var contentAnchor = contentNode.getAnchorPoint();
   var itemAnchor = this._nodes.propTemplateNode.getAnchorPoint();
   var itemY = this._nodes.propTemplateNode.y;
@@ -522,19 +618,43 @@ StartGameViewController.prototype._layoutPropNodes = function () {
   }
   var contentWidth = Math.max(
     viewSize.width,
-    PROP_ITEM_HORIZONTAL_PADDING * 2 + templateSize.width * this._propNodes.length + PROP_ITEM_SPACING * (this._propNodes.length - 1)
+    PROP_ITEM_HORIZONTAL_PADDING * 2 + itemSize.width * this._propNodes.length + PROP_ITEM_SPACING * (this._propNodes.length - 1)
   );
   contentNode.setContentSize(contentWidth, viewSize.height);
 
   this._propNodes.forEach(function (entry, index) {
-    var x = -contentWidth * contentAnchor.x + PROP_ITEM_HORIZONTAL_PADDING + templateSize.width * itemAnchor.x + (templateSize.width + PROP_ITEM_SPACING) * index;
+    var x = -contentWidth * contentAnchor.x + PROP_ITEM_HORIZONTAL_PADDING + itemSize.width * itemAnchor.x + (itemSize.width + PROP_ITEM_SPACING) * index;
     entry.node.setPosition(x, itemY);
   }, this);
+};
+
+StartGameViewController.prototype._resetPropListScrollPosition = function () {
+  var scrollView = this._nodes.propScrollView;
+  var contentNode = requireValidNode(this._nodes.propContentNode, "Panel/prop_listview/view/content");
+  if (!scrollView || scrollView.content !== contentNode) {
+    throw new Error("StartGameView prop_listview ScrollView.content is invalid.");
+  }
+  if (typeof scrollView.stopAutoScroll !== "function") {
+    throw new Error("StartGameView prop_listview ScrollView requires stopAutoScroll.");
+  }
+  if (typeof scrollView.scrollToLeft !== "function") {
+    throw new Error("StartGameView prop_listview ScrollView requires scrollToLeft.");
+  }
+
+  scrollView.stopAutoScroll();
+  scrollView.scrollToLeft(0);
+  this._syncRenderProxies();
 };
 
 StartGameViewController.prototype._initPropNodes = function () {
   var propContentNode = requireValidNode(this._nodes.propContentNode, "Panel/prop_listview/view/content");
   var propTemplateNode = requireValidNode(this._nodes.propTemplateNode, "Panel/prop_listview/view/content/prop");
+  var referenceSize = getValidSize(propTemplateNode, "Panel/prop_listview/view/content/prop");
+  this._propItemLayoutSize = applyPropItemLayoutSize(propTemplateNode, referenceSize, PROP_ITEM_WIDTH);
+  this._propItemIconWidth = getValidSize(
+    requireChildNode(propTemplateNode, PROP_ITEM_ICON_NODE_NAME, "Panel/prop_listview/view/content/prop"),
+    "Panel/prop_listview/view/content/prop/" + PROP_ITEM_ICON_NODE_NAME
+  ).width;
 
   POWERUP_DEFINITIONS.forEach(function (definition, index) {
     var propNode = index === 0 ? propTemplateNode : cc.instantiate(propTemplateNode);
@@ -556,6 +676,7 @@ StartGameViewController.prototype._initPropNodes = function () {
     });
   }, this);
   this._layoutPropNodes();
+  this._resetPropListScrollPosition();
 
   this._propNodes.forEach(function (entry) {
     bindTapOnce(entry.node, "__startGamePropTapBound", function () {
@@ -729,14 +850,27 @@ StartGameViewController.prototype._renderPropItems = function () {
   if (!this._renderState) {
     throw new Error("StartGameView render state is required before rendering props.");
   }
+  if (!this._propItemIconWidth || !Number.isFinite(this._propItemIconWidth) || this._propItemIconWidth <= 0) {
+    throw new Error("StartGameView prop icon width is required before rendering props.");
+  }
 
   var levelId = this._renderState.levelId;
   var purchaseOptionsByItemId = this._renderState.purchaseOptionsByItemId;
+  var iconWidth = this._propItemIconWidth;
   this._propNodes.forEach(function (entry) {
     var definition = entry.definition;
     var unlocked = levelId >= definition.unlockLevel;
     var iconPath = unlocked ? definition.iconPath : LOCK_ICON_PATH;
-    getSprite(entry.iconNode, entry.node.name + "/icon").spriteFrame = this._spriteFrames[iconPath];
+    var spriteFrame = this._spriteFrames[iconPath];
+    if (!spriteFrame) {
+      throw new Error("StartGameView prop icon sprite frame is missing: " + iconPath);
+    }
+    setPropIconSpriteFrame(
+      entry.iconNode,
+      spriteFrame,
+      iconWidth,
+      entry.node.name + "/icon"
+    );
     entry.numNode.active = unlocked;
     entry.coinNode.active = false;
     entry.limitNode.active = true;
@@ -817,7 +951,6 @@ StartGameViewController.prototype._renderContent = function (options) {
 
   setLabelText(this._nodes.levelLabelNode, "第" + levelId + "关", "Panel/title_bg/level");
   setLabelText(this._nodes.staminaCostLabelNode, String(staminaCost), "Panel/play_btn/num");
-  setLabelText(this._nodes.targetTitleNode, "收集目标", "Panel/target/target_title");
   setLabelText(
     this._nodes.targetScoreLabelNode,
     "目标：掉落全部琉璃球且达到" + oneStarTargetScore + "分",
@@ -840,6 +973,7 @@ StartGameViewController.prototype._renderContent = function (options) {
   this._renderPropItems();
   this._renderPropSelectionState();
   this._rebuildRenderProxies();
+  this._resetPropListScrollPosition();
 };
 
 StartGameViewController.prototype.render = function (options) {

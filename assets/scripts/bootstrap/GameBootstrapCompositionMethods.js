@@ -286,10 +286,18 @@ module.exports = {
     this._pendingStartGamePowerups = [];
     this._pendingStartGameTemporaryPowerups = {
       three_line_elimination: 0,
-      plus_three_balls: 0
+      plus_three_balls: 0,
+      precise_aim: 0
     };
     this._pendingStartGameTemporaryPowerupCosts = {};
     this._startGameTemporaryPowerupsCommitted = false;
+    this._startGamePropDescriptionViewPrefab = null;
+    this._startGamePropDescriptionViewNode = null;
+    this._startGamePropDescriptionViewController = null;
+    this._startGamePropDescriptionSpriteFrameCache = {};
+    this._startGamePropDescriptionSpriteLoadPromise = null;
+    this._isStartGamePropDescriptionViewOpen = false;
+    this._startGamePropDescriptionWhiteMaskFrames = {};
     this._threeLineEliminationInProgress = false;
     this._powerTipsViewPrefab = null;
     this._powerTipsViewNode = null;
@@ -539,6 +547,9 @@ module.exports = {
         }.bind(this),
         onUseBarrierHammer: function () {
           this._onUseBarrierHammerTap();
+        }.bind(this),
+        onUseSnowRemoval: function () {
+          this._onUseSnowRemovalTap();
         }.bind(this),
         onUseThreeLineElimination: function () {
           this._onUseThreeLineEliminationTap();

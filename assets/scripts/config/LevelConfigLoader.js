@@ -4,6 +4,7 @@ var Logger = require("../utils/Logger");
 var BundleLoader = require("../utils/BundleLoader");
 var AimTuningProfiles = require("./AimTuningProfiles");
 var BoardLayout = require("./BoardLayout");
+var LevelBoardSupportValidator = require("./LevelBoardSupportValidator");
 
 var SPECIAL_ENTITY_TYPES = {
   skill_ball: ["rainbow", "blast"],
@@ -48,7 +49,7 @@ var AD_RUN_POWERUP_TYPES = {
   plus_three_balls: true
 };
 var MIN_INITIAL_DROP_SPACE_ROWS = 8;
-var MIN_LAYOUT_ROWS = 7;
+var MIN_LAYOUT_ROWS = 8;
 var MAX_JAR_COUNT = 4;
 var MAX_SHOT_LIMIT = 40;
 var CLEAR_REWARD_START_LEVEL_ID = 1;
@@ -615,6 +616,7 @@ function normalizeLevelConfig(rawConfig, levelKey) {
   config.level.winConditions = normalizeObjectiveList(config.level.winConditions, WIN_CONDITION_TYPES, "winConditions", config.level, levelKey);
   config.level.bonusObjectives = normalizeObjectiveList(config.level.bonusObjectives, BONUS_OBJECTIVE_TYPES, "bonusObjectives", config.level, levelKey);
   config.level.specialEntities = normalizeSpecialEntities(config.level, levelKey);
+  LevelBoardSupportValidator.assertInitialBoardSupported(config.level, levelKey);
   validateIceSnowballObjectives(config.level, levelKey);
   validateSplitterObjectives(config.level, levelKey);
   validateKeyLockCounts(config.level, levelKey);

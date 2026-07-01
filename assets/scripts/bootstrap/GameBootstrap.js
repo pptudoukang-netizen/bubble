@@ -265,6 +265,14 @@ cc.Class({
       default: "sound/time",
       tooltip: "开局 3-2-1-GO 倒计时音效资源路径（Resources 相对路径）。"
     },
+    bombSfxResource: {
+      default: "sound/bomb",
+      tooltip: "炸弹道具与燃烧瓶爆炸时播放的音效资源路径（Resources 相对路径）。"
+    },
+    lockOpenSfxResource: {
+      default: "sound/lock_open",
+      tooltip: "锁定球被钥匙解锁时播放的音效资源路径（Resources 相对路径）。"
+    },
     rewardedVideoAdUnitId: {
       default: "",
       tooltip: "微信激励视频广告位 ID。发布前必须配置。"
@@ -400,6 +408,7 @@ cc.Class({
   _applyPlusThreeBallsUseResult: lazyPowerupInventoryMethods._applyPlusThreeBallsUseResult,
   _autoUsePlusThreeBallsAfterAdGrant: lazyPowerupInventoryMethods._autoUsePlusThreeBallsAfterAdGrant,
   _onUsePlusThreeBallsTap: lazyPowerupInventoryMethods._onUsePlusThreeBallsTap,
+  _onUseSnowRemovalTap: lazyPowerupInventoryMethods._onUseSnowRemovalTap,
   _onUseSwapBallTap: lazyPowerupInventoryMethods._onUseSwapBallTap,
   _onSelectRainbowColorTap: lazyPowerupInventoryMethods._onSelectRainbowColorTap,
   _onUseBarrierHammerTap: lazyPowerupInventoryMethods._onUseBarrierHammerTap,
@@ -432,6 +441,11 @@ cc.Class({
   _purchaseStartGameTemporaryPowerup: lazyPowerupInventoryMethods._purchaseStartGameTemporaryPowerup,
   _refundPendingStartGameTemporaryPowerups: lazyPowerupInventoryMethods._refundPendingStartGameTemporaryPowerups,
   _hideStartGameView: lazyPowerupInventoryMethods._hideStartGameView,
+  _ensureStartGamePropDescriptionViewPrefab: lazyPowerupInventoryMethods._ensureStartGamePropDescriptionViewPrefab,
+  _ensureStartGamePropDescriptionSpriteFrames: lazyPowerupInventoryMethods._ensureStartGamePropDescriptionSpriteFrames,
+  _showStartGamePropDescriptionView: lazyPowerupInventoryMethods._showStartGamePropDescriptionView,
+  _hideStartGamePropDescriptionView: lazyPowerupInventoryMethods._hideStartGamePropDescriptionView,
+  _closeStartGamePropDescriptionView: lazyPowerupInventoryMethods._closeStartGamePropDescriptionView,
   _loadPreparedLevelFromLevelSelect: lazyPowerupInventoryMethods._loadPreparedLevelFromLevelSelect,
   _startPreparedLevelEntry: lazyPowerupInventoryMethods._startPreparedLevelEntry,
   _ensurePowerTipsViewPrefab: lazyPowerupInventoryMethods._ensurePowerTipsViewPrefab,

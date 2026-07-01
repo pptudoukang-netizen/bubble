@@ -4,6 +4,7 @@ function attachLevelRendererSceneBoardMethods(LevelRenderer, deps) {
   var DebugFlags = deps.DebugFlags;
   var BoardLayout = deps.BoardLayout;
   var BALL_RESOURCES = deps.BALL_RESOURCES;
+  var TOP_SLOT_STAR_RESOURCE = deps.TOP_SLOT_STAR_RESOURCE;
   var PREFAB_PATHS = deps.PREFAB_PATHS;
   var ICE_OVERLAY_OPACITY = deps.ICE_OVERLAY_OPACITY;
   var BOARD_BUBBLE_SIZE = deps.BOARD_BUBBLE_SIZE;
@@ -21,6 +22,13 @@ function attachLevelRendererSceneBoardMethods(LevelRenderer, deps) {
     width: 86,
     height: 86
   };
+  var TOP_SLOT_STAR_OFFSET_Y = 30;
+  var TOP_SLOT_STAR_Z_INDEX = -1;
+  var TOP_SLOT_STAR_DIM_OPACITY = 150;
+  var TOP_SLOT_STAR_BRIGHT_OPACITY = 255;
+  var TOP_SLOT_STAR_MIN_SCALE = 0.92;
+  var TOP_SLOT_STAR_MAX_SCALE = 1.08;
+  var TOP_SLOT_STAR_TWINKLE_DURATION = 0.45;
 
   function requirePositiveSize(size, fieldName) {
     if (
@@ -100,9 +108,29 @@ function attachLevelRendererSceneBoardMethods(LevelRenderer, deps) {
     };
   }
 
+  function isNormalColorFallingDrop(drop) {
+    if (!drop || typeof drop !== "object" || Array.isArray(drop)) {
+      throw new Error("Falling drop glow requires drop object.");
+    }
+    if (drop.entityCategory !== "normal_ball") {
+      return false;
+    }
+    if (drop.entityType !== null) {
+      return false;
+    }
+    if (typeof drop.color !== "string" || !drop.color) {
+      throw new Error("Normal falling drop glow requires color.");
+    }
+    return true;
+  }
+
   function applyDropCollisionGlow(renderer, dropNode, drop) {
     if (!drop || !Number.isInteger(drop.glowStacks) || drop.glowStacks < 0) {
       throw new Error("Falling drop glowStacks must be a non-negative integer.");
+    }
+    if (!isNormalColorFallingDrop(drop)) {
+      hideDropCollisionGlow(dropNode);
+      return;
     }
     var visualStacks = Math.min(drop.glowStacks, FairyAssistConfig.maxGlowStacks);
     if (visualStacks === 0) {
@@ -195,6 +223,101 @@ function attachLevelRendererSceneBoardMethods(LevelRenderer, deps) {
       throw new Error(ownerName + " requires child `" + childName + "`.");
     }
     return child;
+  }
+
+  function requireTopSlotStarFrame(renderer) {
+    if (typeof TOP_SLOT_STAR_RESOURCE !== "string" || !TOP_SLOT_STAR_RESOURCE) {
+      throw new Error("Top slot star resource path is required.");
+    }
+    var spriteFrame = renderer.spriteFrameCache[TOP_SLOT_STAR_RESOURCE];
+    if (!spriteFrame) {
+      throw new Error("Missing preloaded top slot star sprite frame: " + TOP_SLOT_STAR_RESOURCE);
+    }
+    if (typeof spriteFrame.getOriginalSize !== "function") {
+      throw new Error("Top slot star sprite frame requires getOriginalSize.");
+    }
+    return spriteFrame;
+  }
+
+  function requireTopSlotBoardSnapshot(boardSnapshot) {
+    if (!boardSnapshot || typeof boardSnapshot !== "object" || Array.isArray(boardSnapshot)) {
+      throw new Error("Top slot star rendering requires board snapshot.");
+    }
+    if (!Array.isArray(boardSnapshot.cells)) {
+      throw new Error("Top slot star rendering requires boardSnapshot.cells array.");
+    }
+    if (!Number.isInteger(boardSnapshot.maxColumns) || boardSnapshot.maxColumns <= 0) {
+      throw new Error("Top slot star rendering requires positive integer boardSnapshot.maxColumns.");
+    }
+    if (typeof boardSnapshot.viewportOffsetY !== "number" || !isFinite(boardSnapshot.viewportOffsetY)) {
+      throw new Error("Top slot star rendering requires finite boardSnapshot.viewportOffsetY.");
+    }
+    if (typeof boardSnapshot.topAttachY !== "number" || !isFinite(boardSnapshot.topAttachY)) {
+      throw new Error("Top slot star rendering requires finite boardSnapshot.topAttachY.");
+    }
+  }
+
+  function buildTopRowOccupiedMap(boardSnapshot) {
+    var occupied = {};
+    boardSnapshot.cells.forEach(function (cell) {
+      if (!cell || typeof cell !== "object" || Array.isArray(cell)) {
+        throw new Error("Top slot star rendering requires object board cells.");
+      }
+      if (!Number.isInteger(cell.row) || cell.row < 0) {
+        throw new Error("Top slot star rendering requires non-negative integer cell.row.");
+      }
+      if (!Number.isInteger(cell.col) || cell.col < 0) {
+        throw new Error("Top slot star rendering requires non-negative integer cell.col.");
+      }
+      if (cell.row === 0) {
+        occupied[cell.col] = true;
+      }
+    });
+    return occupied;
+  }
+
+  function applyTopSlotStarVisual(node, spriteFrame) {
+    if (!node || !node.isValid) {
+      throw new Error("Top slot star node is required.");
+    }
+    ensureSprite(node, spriteFrame);
+    node.setContentSize(spriteFrame.getOriginalSize());
+    node.active = true;
+    node.zIndex = TOP_SLOT_STAR_Z_INDEX;
+    startTopSlotStarTwinkle(node);
+  }
+
+  function startTopSlotStarTwinkle(node) {
+    if (!node || !node.isValid) {
+      throw new Error("Top slot star twinkle requires valid node.");
+    }
+    if (node.__topSlotStarTwinkleActive === true) {
+      return;
+    }
+    if (
+      typeof cc.repeatForever !== "function" ||
+      typeof cc.sequence !== "function" ||
+      typeof cc.spawn !== "function" ||
+      typeof cc.fadeTo !== "function" ||
+      typeof cc.scaleTo !== "function"
+    ) {
+      throw new Error("Top slot star twinkle requires Cocos action APIs.");
+    }
+
+    node.stopAllActions();
+    node.opacity = TOP_SLOT_STAR_DIM_OPACITY;
+    node.setScale(TOP_SLOT_STAR_MIN_SCALE);
+    node.__topSlotStarTwinkleActive = true;
+    node.runAction(cc.repeatForever(cc.sequence(
+      cc.spawn(
+        cc.fadeTo(TOP_SLOT_STAR_TWINKLE_DURATION, TOP_SLOT_STAR_BRIGHT_OPACITY),
+        cc.scaleTo(TOP_SLOT_STAR_TWINKLE_DURATION, TOP_SLOT_STAR_MAX_SCALE)
+      ),
+      cc.spawn(
+        cc.fadeTo(TOP_SLOT_STAR_TWINKLE_DURATION, TOP_SLOT_STAR_DIM_OPACITY),
+        cc.scaleTo(TOP_SLOT_STAR_TWINKLE_DURATION, TOP_SLOT_STAR_MIN_SCALE)
+      )
+    )));
   }
 
   function restoreSpriteNodeVisible(node, ownerName) {
@@ -299,6 +422,79 @@ LevelRenderer.prototype._renderBoard = function (boardSnapshot) {
   }, this);
 
   this._recycleInactiveBoardBubbleNodes(currentTick);
+  this._renderTopSlotStars(boardSnapshot);
+};
+
+LevelRenderer.prototype._renderTopSlotStars = function (boardSnapshot) {
+  if (!this.layers || !this.layers.board || !this.layers.board.isValid) {
+    throw new Error("Top slot star rendering requires board layer.");
+  }
+  requireTopSlotBoardSnapshot(boardSnapshot);
+
+  this.topSlotStarRenderTick += 1;
+  var currentTick = this.topSlotStarRenderTick;
+  var starFrame = requireTopSlotStarFrame(this);
+  var occupied = buildTopRowOccupiedMap(boardSnapshot);
+  var topRowColumns = BoardLayout.getRowColumnCount(0, boardSnapshot.maxColumns);
+  for (var col = 0; col < topRowColumns; col += 1) {
+    if (occupied[col]) {
+      continue;
+    }
+    var slotId = "0:" + col;
+    var slotPosition = BoardLayout.getCellPosition(0, col, boardSnapshot.maxColumns, boardSnapshot.viewportOffsetY);
+    var starNode = this._acquireTopSlotStarNode(slotId, starFrame);
+    starNode.__topSlotStarTick = currentTick;
+    starNode.setPosition(slotPosition.x, boardSnapshot.topAttachY + TOP_SLOT_STAR_OFFSET_Y);
+    applyTopSlotStarVisual(starNode, starFrame);
+  }
+
+  this._recycleInactiveTopSlotStarNodes(currentTick);
+};
+
+LevelRenderer.prototype._acquireTopSlotStarNode = function (slotId, spriteFrame) {
+  if (typeof slotId !== "string" || !slotId) {
+    throw new Error("Top slot star node requires slotId.");
+  }
+  var existing = this.topSlotStarNodes[slotId];
+  if (existing && existing.isValid) {
+    if (existing.parent !== this.layers.board) {
+      existing.parent = this.layers.board;
+    }
+    applyTopSlotStarVisual(existing, spriteFrame);
+    return existing;
+  }
+
+  var node = this.topSlotStarNodePool.length > 0 ? this.topSlotStarNodePool.pop() : null;
+  if (!node || !node.isValid) {
+    node = new cc.Node("TopSlotStar_" + slotId.replace(":", "_"));
+  }
+  node.name = "TopSlotStar_" + slotId.replace(":", "_");
+  if (node.parent !== this.layers.board) {
+    node.parent = this.layers.board;
+  }
+  applyTopSlotStarVisual(node, spriteFrame);
+  this.topSlotStarNodes[slotId] = node;
+  return node;
+};
+
+LevelRenderer.prototype._recycleInactiveTopSlotStarNodes = function (activeTick) {
+  for (var slotId in this.topSlotStarNodes) {
+    if (!Object.prototype.hasOwnProperty.call(this.topSlotStarNodes, slotId)) {
+      continue;
+    }
+    var node = this.topSlotStarNodes[slotId];
+    if (node && node.__topSlotStarTick === activeTick) {
+      continue;
+    }
+    if (node && node.isValid) {
+      node.stopAllActions();
+      node.__topSlotStarTwinkleActive = false;
+      node.active = false;
+      node.removeFromParent(false);
+      this.topSlotStarNodePool.push(node);
+    }
+    delete this.topSlotStarNodes[slotId];
+  }
 };
 
 LevelRenderer.prototype._acquireBoardBubbleNode = function (cell) {

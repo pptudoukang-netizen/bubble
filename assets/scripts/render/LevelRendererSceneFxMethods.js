@@ -82,18 +82,6 @@ function attachLevelRendererSceneFxMethods(LevelRenderer, deps) {
   var ensureOutline = deps.ensureOutline;
   var clearChildren = deps.clearChildren;
   var getOrCreateChild = deps.getOrCreateChild;
-  var MOLOTOV_BLAST_MIN_VISUAL_DURATION = 0.36;
-  var MOLOTOV_BLAST_SWELL_DURATION_RATIO = 0.42;
-  var MOLOTOV_BLAST_SWELL_SCALE = 1.52;
-  var MOLOTOV_BLAST_PEAK_SCALE = 2.15;
-  function requirePositiveFiniteNumber(value, ownerName) {
-    var numberValue = Number(value);
-    if (!isFinite(numberValue) || numberValue <= 0) {
-      throw new Error(ownerName + " must be a positive finite number.");
-    }
-    return numberValue;
-  }
-
   function requireFinitePoint(point, ownerName) {
     if (
       !point ||
@@ -107,15 +95,55 @@ function attachLevelRendererSceneFxMethods(LevelRenderer, deps) {
     return point;
   }
 
-  function resolveMolotovBlastVisualDuration() {
-    if (!SpecialAnimationTiming || !SpecialAnimationTiming.molotovBlast) {
-      throw new Error("Molotov blast visual requires SpecialAnimationTiming.molotovBlast.");
+  function requireExplodeAnimationClip(renderer, ownerName) {
+    if (!renderer || !renderer.explodeAnimationClip) {
+      throw new Error(ownerName + " requires preloaded explode animation clip.");
     }
-    var configuredDuration = requirePositiveFiniteNumber(
-      SpecialAnimationTiming.molotovBlast.totalDuration,
-      "Molotov blast totalDuration"
-    );
-    return Math.max(configuredDuration, MOLOTOV_BLAST_MIN_VISUAL_DURATION);
+    if (renderer.explodeAnimationClip.name !== "explode") {
+      throw new Error(ownerName + " explode animation clip name mismatch.");
+    }
+    return renderer.explodeAnimationClip;
+  }
+
+  function playExplosionAnimationAt(renderer, nodeName, position, ownerName, onFinished) {
+    var targetPosition = requireFinitePoint(position, ownerName);
+    if (!renderer.layers || !renderer.layers.board || !renderer.layers.board.isValid) {
+      throw new Error(ownerName + " requires board layer.");
+    }
+    if (typeof cc === "undefined" || !cc || typeof cc.Node !== "function") {
+      throw new Error(ownerName + " requires cc.Node.");
+    }
+
+    var clip = requireExplodeAnimationClip(renderer, ownerName);
+    var fxNode = new cc.Node(nodeName);
+    fxNode.parent = renderer.layers.board;
+    fxNode.setPosition(targetPosition.x, targetPosition.y);
+    fxNode.zIndex = 130;
+    fxNode.active = true;
+
+    var sprite = fxNode.addComponent(cc.Sprite);
+    if (!sprite) {
+      throw new Error(ownerName + " requires cc.Sprite.");
+    }
+    var animation = fxNode.addComponent(cc.Animation);
+    if (!animation) {
+      throw new Error(ownerName + " requires cc.Animation.");
+    }
+    if (typeof animation.addClip !== "function" || typeof animation.play !== "function" || typeof animation.once !== "function") {
+      throw new Error(ownerName + " requires cc.Animation addClip/play/once APIs.");
+    }
+    animation.addClip(clip);
+    animation.defaultClip = clip;
+    animation.once("finished", function () {
+      if (typeof onFinished === "function") {
+        onFinished();
+      }
+      if (fxNode && fxNode.isValid) {
+        fxNode.removeFromParent(true);
+      }
+    });
+    animation.play(clip.name);
+    return fxNode;
   }
 
   function requireNodePrefabPath(node, ownerName) {
@@ -763,19 +791,6 @@ LevelRenderer.prototype._playMolotovBlastAnimation = function (runtimeSnapshot) 
   if (!runtimeSnapshot.board || !Number.isInteger(runtimeSnapshot.board.maxColumns)) {
     throw new Error("Molotov blast animation requires board snapshot.");
   }
-  if (!this.layers || !this.layers.board || !this.layers.board.isValid) {
-    throw new Error("Molotov blast animation requires board layer.");
-  }
-  if (typeof cc === "undefined" || !cc || typeof cc.tween !== "function") {
-    throw new Error("Molotov blast animation requires cc.tween.");
-  }
-
-  var blastDuration = resolveMolotovBlastVisualDuration();
-  var swellDuration = blastDuration * MOLOTOV_BLAST_SWELL_DURATION_RATIO;
-  var burstDuration = blastDuration - swellDuration;
-  if (!isFinite(swellDuration) || swellDuration <= 0 || !isFinite(burstDuration) || burstDuration <= 0) {
-    throw new Error("Molotov blast animation duration is invalid.");
-  }
   var boardSnapshot = runtimeSnapshot.board;
 
   molotovTriggers.forEach(function (trigger) {
@@ -799,44 +814,54 @@ LevelRenderer.prototype._playMolotovBlastAnimation = function (runtimeSnapshot) 
     this.molotovBlastAnimatedIds[normalizedId] = true;
     this._hideMolotovBlastSource(normalizedId);
 
-    var animNode = instantiateRequired(
-      this.prefabFactory,
-      PREFAB_PATHS.fireBubbleItem,
-      this.layers.board,
-      "MolotovBlastFx_" + normalizedId,
-      "Molotov blast animation FireBubbleItem"
-    );
-    animNode.setPosition(blastPosition.x, blastPosition.y);
-    animNode.stopAllActions();
-    animNode.active = true;
-    animNode.opacity = 255;
-    animNode.setScale(1);
-    animNode.zIndex = 120;
-    requireVisualChild(animNode, "Icon", "Molotov blast animation FireBubbleItem").opacity = 230;
-    requireVisualChild(animNode, "fire_box", "Molotov blast animation FireBubbleItem").opacity = 255;
-
-    var cleanup = function () {
+    playExplosionAnimationAt(this, "MolotovBlastFx_" + normalizedId, blastPosition, "Molotov blast animation", function () {
       this._clearMolotovBlastHiddenSource(normalizedId);
-      if (animNode && animNode.isValid) {
-        animNode.removeFromParent(true);
-      }
-    }.bind(this);
+    }.bind(this));
+  }, this);
+};
 
-    cc.tween(animNode)
-      .to(swellDuration, {
-        scale: MOLOTOV_BLAST_SWELL_SCALE,
-        opacity: 255
-      }, {
-        easing: "sineOut"
-      })
-      .to(burstDuration, {
-        scale: MOLOTOV_BLAST_PEAK_SCALE,
-        opacity: 0
-      }, {
-        easing: "quadOut"
-      })
-      .call(cleanup)
-      .start();
+LevelRenderer.prototype._playBlastExplosionAnimation = function (runtimeSnapshot) {
+  var resolution = runtimeSnapshot && runtimeSnapshot.lastResolution ? runtimeSnapshot.lastResolution : null;
+  if (!resolution) {
+    return;
+  }
+  if (!Array.isArray(resolution.blastExplosions)) {
+    throw new Error("Blast explosion animation requires lastResolution.blastExplosions.");
+  }
+  var explosions = resolution.blastExplosions;
+  if (!explosions.length) {
+    return;
+  }
+
+  if (!runtimeSnapshot.board || !Number.isInteger(runtimeSnapshot.board.maxColumns)) {
+    throw new Error("Blast explosion animation requires board snapshot.");
+  }
+  var boardSnapshot = runtimeSnapshot.board;
+
+  explosions.forEach(function (explosion) {
+    if (!explosion || (typeof explosion.id !== "string" && typeof explosion.id !== "number")) {
+      throw new Error("Blast explosion animation requires explosion id.");
+    }
+    if (!Number.isInteger(explosion.row) || !Number.isInteger(explosion.col)) {
+      throw new Error("Blast explosion animation requires explosion coordinates.");
+    }
+    if (explosion.entityType !== "blast") {
+      throw new Error("Blast explosion animation requires entityType blast.");
+    }
+
+    var normalizedId = String(explosion.id);
+    if (this.blastExplosionAnimatedIds[normalizedId]) {
+      return;
+    }
+    this.blastExplosionAnimatedIds[normalizedId] = true;
+
+    var explosionPosition = requireFinitePoint(BoardLayout.getCellPosition(
+      explosion.row,
+      explosion.col,
+      boardSnapshot.maxColumns,
+      boardSnapshot.viewportOffsetY
+    ), "Blast explosion");
+    playExplosionAnimationAt(this, "BlastExplosionFx_" + normalizedId, explosionPosition, "Blast explosion animation", null);
   }, this);
 };
 

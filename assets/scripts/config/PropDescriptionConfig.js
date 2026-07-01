@@ -91,6 +91,12 @@ var SPECIAL_KEY_BY_ENTITY_TYPE = {
 
 var POWERUP_DEFINITIONS = [
   {
+    key: "precise_aim",
+    title: "精确瞄准",
+    description: "购买后本局立即生效，瞄准时显示完整反弹路径。",
+    iconPath: "image/props/aim"
+  },
+  {
     key: "three_line_elimination",
     title: "消三行",
     description: "立即清除棋盘最下方三行，并结算由此产生的悬空掉落。",
@@ -125,6 +131,12 @@ var POWERUP_DEFINITIONS = [
     title: "破障锤",
     description: "选择一个冰冻球或石头，直接击碎该障碍。",
     iconPath: "image/props/barrier_hammer"
+  },
+  {
+    key: "snow_removal",
+    title: "除雪剂",
+    description: "从棋盘底部开始清理最多 10 个雪块，并结算由此产生的掉落。",
+    iconPath: "image/props/snow_removal"
   }
 ];
 

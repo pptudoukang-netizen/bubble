@@ -5,6 +5,7 @@ var fs = require("fs");
 var path = require("path");
 
 var BoardLayout = require("../assets/scripts/config/BoardLayout");
+var LevelBoardSupportValidator = require("../assets/scripts/config/LevelBoardSupportValidator");
 var LevelPackCompactCodec = require("../assets/scripts/config/LevelPackCompactCodec");
 var ClusteredLevelLayout = require("./clustered-level-layout");
 var FirstHundredLevelDesign = require("./first-100-level-design");
@@ -1149,6 +1150,12 @@ function findGeneratedSpecialPositionIssue(config) {
     throw new Error("Generated config missing level.");
   }
   var level = config.level;
+  var unsupportedCells = LevelBoardSupportValidator.findUnsupportedInitialCells(level, "level_" + padLevelId(level.levelId));
+  if (unsupportedCells.length > 0) {
+    return "level " + level.levelId + " initial board has unsupported cells: " + unsupportedCells.map(function (cell) {
+      return cell.row + ":" + cell.col;
+    }).join(", ");
+  }
   var signatures = buildGeneratedSpecialPositionSignatures(level);
 
   if (generatedSpecialPositionState.previous) {

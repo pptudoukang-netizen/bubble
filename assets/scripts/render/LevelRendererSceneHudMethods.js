@@ -33,6 +33,15 @@ function attachLevelRendererSceneHudMethods(LevelRenderer, deps) {
   var HUD_STAR_PUNCH_SCALE = 1.35;
   var HUD_STAR_PUNCH_UP_DURATION = 0.12;
   var HUD_STAR_PUNCH_DOWN_DURATION = 0.14;
+  var BOTTOM_PANEL_POWERUP_SLOTS = [
+    { nodeName: "plus_ball_btn", iconKey: "plus_three_balls" },
+    { nodeName: "eliminate_three_line_btn", iconKey: "three_line_elimination" },
+    { nodeName: "rainbow_btn", iconKey: "rainbow" },
+    { nodeName: "change_btn", iconKey: "swap" },
+    { nodeName: "destroy_btn", iconKey: "barrier_hammer" },
+    { nodeName: "snow_removal_btn", iconKey: "snow_removal" },
+    { nodeName: "bomb_btn", iconKey: "blast" }
+  ];
 
 LevelRenderer.prototype._ensureHudStarAnimationState = function () {
   var lastMissing = typeof this.lastHudStarRating === "undefined";
@@ -127,8 +136,11 @@ var BALL_SCORE_FADE_IN_DURATION = 0.2;
 var BALL_SCORE_HOLD_DURATION = 0.5;
 var BALL_SCORE_FADE_OUT_RISE_DURATION = 0.2;
 var BALL_SCORE_RISE_DISTANCE = 20;
-var BALL_SCORE_Z_INDEX = 1200;
-var SCHEDULE_ONCE_REPEAT = 0;
+  var BALL_SCORE_Z_INDEX = 1200;
+  var SCHEDULE_ONCE_REPEAT = 0;
+  var SNOW_REMOVAL_FX_SIZE = 96;
+  var SNOW_REMOVAL_FX_Z_INDEX = 1300;
+  var SNOW_REMOVAL_FX_SWEEP_DISTANCE = 96;
 
 function requireDirectorScheduler(description) {
   if (!cc || !cc.director || typeof cc.director.getScheduler !== "function") {
@@ -1192,6 +1204,44 @@ LevelRenderer.prototype._setBottomPanelInventoryPresentation = function (buttonN
   }
 };
 
+LevelRenderer.prototype._ensureBottomPanelPowerupButtons = function (propsContentNode) {
+  if (!propsContentNode || !propsContentNode.isValid) {
+    throw new Error("Bottom panel powerup buttons require valid content node.");
+  }
+
+  var resolveButtonNode = function (nodeName) {
+    return requireChildNode(propsContentNode, nodeName, "BttomPanel/props_scroll/view/content");
+  };
+
+  if (!propsContentNode.__bottomPanelPowerupButtonsReady) {
+    BOTTOM_PANEL_POWERUP_SLOTS.forEach(function (slot, index) {
+      var buttonNode = this._instantiateOrCreate(PREFAB_PATHS.propsBtn, propsContentNode, slot.nodeName);
+      if (!buttonNode) {
+        throw new Error("Bottom panel powerup button prefab must be preloaded: " + PREFAB_PATHS.propsBtn);
+      }
+      buttonNode.setSiblingIndex(index);
+      this._rebindBottomPanelPowerupIcon(buttonNode, slot.iconKey);
+    }, this);
+
+    var layout = propsContentNode.getComponent(cc.Layout);
+    if (layout && typeof layout.updateLayout === "function") {
+      layout.updateLayout();
+    }
+
+    propsContentNode.__bottomPanelPowerupButtonsReady = true;
+  }
+
+  return {
+    rainbowButtonNode: resolveButtonNode("rainbow_btn"),
+    changeButtonNode: resolveButtonNode("change_btn"),
+    destroyButtonNode: resolveButtonNode("destroy_btn"),
+    snowRemovalButtonNode: resolveButtonNode("snow_removal_btn"),
+    bombButtonNode: resolveButtonNode("bomb_btn"),
+    threeLineButtonNode: resolveButtonNode("eliminate_three_line_btn"),
+    plusBallButtonNode: resolveButtonNode("plus_ball_btn")
+  };
+};
+
 LevelRenderer.prototype._rebindBottomPanelPowerupIcon = function (buttonNode, powerupType) {
   if (!buttonNode || !buttonNode.isValid) {
     throw new Error("Bottom panel powerup icon requires valid button node.");
@@ -1211,7 +1261,30 @@ LevelRenderer.prototype._rebindBottomPanelPowerupIcon = function (buttonNode, po
   if (!spriteFrame) {
     throw new Error("Missing preloaded bottom panel powerup icon: " + spritePath);
   }
+  if (typeof spriteFrame.getOriginalSize !== "function") {
+    throw new Error("Bottom panel powerup icon spriteFrame requires getOriginalSize: " + spritePath);
+  }
+  if (!cc.Sprite.SizeMode || cc.Sprite.SizeMode.CUSTOM === undefined) {
+    throw new Error("Bottom panel powerup icon requires cc.Sprite.SizeMode.CUSTOM.");
+  }
+
+  var bounds = iconNode.getContentSize();
+  if (!bounds || !Number.isFinite(bounds.width) || bounds.width <= 0 ||
+      !Number.isFinite(bounds.height) || bounds.height <= 0) {
+    throw new Error("Bottom panel powerup icon bounds must be positive: " + buttonNode.name);
+  }
+  var originalSize = spriteFrame.getOriginalSize();
+  if (!originalSize || !Number.isFinite(originalSize.width) || !Number.isFinite(originalSize.height) ||
+      originalSize.width <= 0 || originalSize.height <= 0) {
+    throw new Error("Bottom panel powerup icon original size is invalid: " + spritePath);
+  }
+
+  sprite.trim = false;
+  sprite.sizeMode = cc.Sprite.SizeMode.CUSTOM;
   sprite.spriteFrame = spriteFrame;
+
+  var scale = Math.min(bounds.width / originalSize.width, bounds.height / originalSize.height);
+  iconNode.setContentSize(originalSize.width * scale, originalSize.height * scale);
 };
 
 LevelRenderer.prototype._renderBottomPanel = function (runtimeSnapshot) {
@@ -1239,20 +1312,20 @@ LevelRenderer.prototype._renderBottomPanel = function (runtimeSnapshot) {
   var propsScrollNode = requireChildNode(panel, "props_scroll", "BttomPanel");
   var propsViewNode = requireChildNode(propsScrollNode, "view", "BttomPanel/props_scroll");
   var propsContentNode = requireChildNode(propsViewNode, "content", "BttomPanel/props_scroll/view");
-  var rainbowButtonNode = requireChildNode(propsContentNode, "rainbow_btn", "BttomPanel/props_scroll/view/content");
-  var changeButtonNode = requireChildNode(propsContentNode, "change_btn", "BttomPanel/props_scroll/view/content");
-  var destroyButtonNode = requireChildNode(propsContentNode, "destroy_btn", "BttomPanel/props_scroll/view/content");
-  var bombButtonNode = requireChildNode(propsContentNode, "bomb_btn", "BttomPanel/props_scroll/view/content");
-  var threeLineButtonNode = requireChildNode(propsContentNode, "eliminate_three_line_btn", "BttomPanel/props_scroll/view/content");
-  var plusBallButtonNode = requireChildNode(propsContentNode, "plus_ball_btn", "BttomPanel/props_scroll/view/content");
+  var powerupButtonNodes = this._ensureBottomPanelPowerupButtons(propsContentNode);
+  var rainbowButtonNode = powerupButtonNodes.rainbowButtonNode;
+  var changeButtonNode = powerupButtonNodes.changeButtonNode;
+  var destroyButtonNode = powerupButtonNodes.destroyButtonNode;
+  var snowRemovalButtonNode = powerupButtonNodes.snowRemovalButtonNode;
+  var bombButtonNode = powerupButtonNodes.bombButtonNode;
+  var threeLineButtonNode = powerupButtonNodes.threeLineButtonNode;
+  var plusBallButtonNode = powerupButtonNodes.plusBallButtonNode;
   var directionsButtonNode = requireChildNode(panel, "directions_btn", "BttomPanel");
-
-  this._rebindBottomPanelPowerupIcon(rainbowButtonNode, "rainbow");
-  this._rebindBottomPanelPowerupIcon(destroyButtonNode, "barrier_hammer");
 
   this._bindBottomPanelButton(rainbowButtonNode, "use_rainbow");
   this._bindBottomPanelButton(changeButtonNode, "use_swap");
   this._bindBottomPanelButton(destroyButtonNode, "use_barrier_hammer");
+  this._bindBottomPanelButton(snowRemovalButtonNode, "use_snow_removal");
   this._bindBottomPanelButton(bombButtonNode, "use_blast");
   this._bindBottomPanelButton(threeLineButtonNode, "use_three_line_elimination");
   this._bindBottomPanelButton(plusBallButtonNode, "use_plus_three_balls");
@@ -1268,6 +1341,13 @@ LevelRenderer.prototype._renderBottomPanel = function (runtimeSnapshot) {
   var blastCount = Math.max(0, Math.floor(Number(skillInventory.blast) || 0));
   var swapCount = Math.max(0, Math.floor(Number(skillInventory.swap) || 0));
   var destroyCount = Math.max(0, Math.floor(Number(skillInventory.barrier_hammer) || 0));
+  if (!Object.prototype.hasOwnProperty.call(skillInventory, "snow_removal")) {
+    throw new Error("Bottom panel requires snow_removal inventory count.");
+  }
+  var snowRemovalCount = Number(skillInventory.snow_removal);
+  if (!Number.isInteger(snowRemovalCount) || snowRemovalCount < 0) {
+    throw new Error("Bottom panel snow_removal count must be a non-negative integer.");
+  }
   if (!runtimeSnapshot.adRunPowerups || typeof runtimeSnapshot.adRunPowerups !== "object" || Array.isArray(runtimeSnapshot.adRunPowerups)) {
     throw new Error("Bottom panel requires adRunPowerups snapshot.");
   }
@@ -1295,6 +1375,7 @@ LevelRenderer.prototype._renderBottomPanel = function (runtimeSnapshot) {
   var canUseRainbow = canUsePowerup && !pendingBarrierHammer && rainbowCount > 0;
   var canUseSwap = canUsePowerup && !pendingBarrierHammer && swapCount > 0;
   var canUseBarrierHammer = pendingBarrierHammer || (canUsePowerup && destroyCount > 0);
+  var canUseSnowRemoval = canUsePowerup && !pendingBarrierHammer && snowRemovalCount > 0;
   var canUseBlast = canUsePowerup && !pendingBarrierHammer && blastCount > 0;
   var canUseThreeLine = canUsePowerup && !pendingBarrierHammer && threeLineCount > 0;
   var canUsePlusBall = canUsePowerup && !pendingBarrierHammer && !runtimeSnapshot.infiniteShots && plusBallCount > 0;
@@ -1302,6 +1383,7 @@ LevelRenderer.prototype._renderBottomPanel = function (runtimeSnapshot) {
   this._setBottomPanelInventoryPresentation(rainbowButtonNode, rainbowCount, "recover_inventory:rainbow");
   this._setBottomPanelInventoryPresentation(changeButtonNode, swapCount, "recover_inventory:swap");
   this._setBottomPanelInventoryPresentation(destroyButtonNode, destroyCount, "recover_inventory:barrier_hammer");
+  this._setBottomPanelInventoryPresentation(snowRemovalButtonNode, snowRemovalCount, "recover_inventory:snow_removal");
   this._setBottomPanelInventoryPresentation(bombButtonNode, blastCount, "recover_inventory:blast");
   if (adRunPowerupAllowed.three_line_elimination === true) {
     this._setBottomPanelInventoryPresentation(threeLineButtonNode, threeLineCount, "recover_ad_powerup:three_line_elimination");
@@ -1322,6 +1404,9 @@ LevelRenderer.prototype._renderBottomPanel = function (runtimeSnapshot) {
   this._setBottomPanelButtonEnabled(destroyButtonNode, destroyCount > 0 ? canUseBarrierHammer : !pendingRainbowColorSelection, {
     dimWhenDisabled: false
   });
+  this._setBottomPanelButtonEnabled(snowRemovalButtonNode, snowRemovalCount > 0 ? canUseSnowRemoval : !pendingRainbowColorSelection, {
+    dimWhenDisabled: false
+  });
   this._setBottomPanelButtonEnabled(bombButtonNode, blastCount > 0 ? canUseBlast : !pendingRainbowColorSelection, {
     dimWhenDisabled: false
   });
@@ -1330,6 +1415,76 @@ LevelRenderer.prototype._renderBottomPanel = function (runtimeSnapshot) {
   });
   this._setBottomPanelButtonEnabled(plusBallButtonNode, plusBallCount > 0 ? canUsePlusBall : !pendingRainbowColorSelection, {
     dimWhenDisabled: false
+  });
+};
+
+LevelRenderer.prototype.playSnowRemovalAnimation = function () {
+  if (typeof cc.tween !== "function") {
+    throw new Error("Snow removal animation requires cc.tween.");
+  }
+  var gameViewNode = this._getGameViewNode();
+  if (!gameViewNode || !gameViewNode.isValid) {
+    throw new Error("Snow removal animation requires GameView.");
+  }
+  var bottomPanelNode = this.layers && this.layers.hud
+    ? this.layers.hud.getChildByName("BttomPanel")
+    : null;
+  var propsScrollNode = requireChildNode(bottomPanelNode, "props_scroll", "BttomPanel");
+  var propsViewNode = requireChildNode(propsScrollNode, "view", "BttomPanel/props_scroll");
+  var propsContentNode = requireChildNode(propsViewNode, "content", "BttomPanel/props_scroll/view");
+  var snowButtonNode = requireChildNode(propsContentNode, "snow_removal_btn", "BttomPanel/props_scroll/view/content");
+  var iconNode = requireChildNode(snowButtonNode, "icon", "BttomPanel/props_scroll/view/content/snow_removal_btn");
+  var startPosition = this._convertNodePositionToGameView(iconNode);
+  var spritePath = BALL_RESOURCES.SNOW_REMOVAL_TOOLS;
+  var spriteFrame = this.spriteFrameCache[spritePath];
+  if (!spriteFrame) {
+    throw new Error("Snow removal tool sprite frame is missing: " + spritePath);
+  }
+
+  var fxNode = new cc.Node("snow_removal_tool_fx");
+  fxNode.parent = gameViewNode;
+  fxNode.zIndex = SNOW_REMOVAL_FX_Z_INDEX;
+  fxNode.setPosition(startPosition);
+  fxNode.setContentSize(SNOW_REMOVAL_FX_SIZE, SNOW_REMOVAL_FX_SIZE);
+  fxNode.scale = 0.72;
+  fxNode.opacity = 255;
+  var sprite = ensureSprite(fxNode, spriteFrame);
+  if (!cc.Sprite.SizeMode || cc.Sprite.SizeMode.CUSTOM === undefined) {
+    throw new Error("Snow removal animation requires cc.Sprite.SizeMode.CUSTOM.");
+  }
+  sprite.sizeMode = cc.Sprite.SizeMode.CUSTOM;
+
+  return new Promise(function (resolve) {
+    cc.tween(fxNode)
+      .to(0.28, {
+        x: 0,
+        y: 0,
+        scale: 1.12
+      }, {
+        easing: "quadOut"
+      })
+      .call(function () {
+        fxNode.angle = 45;
+      })
+      .to(0.16, {
+        x: -SNOW_REMOVAL_FX_SWEEP_DISTANCE
+      })
+      .to(0.28, {
+        x: SNOW_REMOVAL_FX_SWEEP_DISTANCE
+      })
+      .to(0.16, {
+        x: 0
+      })
+      .to(0.12, {
+        opacity: 0
+      })
+      .call(function () {
+        if (fxNode && fxNode.isValid) {
+          fxNode.destroy();
+        }
+        resolve();
+      })
+      .start();
   });
 };
 

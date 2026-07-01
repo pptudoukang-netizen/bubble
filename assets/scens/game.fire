@@ -1723,6 +1723,8 @@
     "fairyAssistHitSfxResource": "sound/duang1",
     "fairyAssistDepartSfxResource": "sound/fly",
     "gameEntryCountdownSfxResource": "sound/time",
+    "bombSfxResource": "sound/bomb",
+    "lockOpenSfxResource": "sound/lock_open",
     "rewardedVideoAdUnitId": "adunit-a6c99a9ee6bc8015",
     "interstitialAdUnitId": "adunit-a9355409b616c9d3",
     "startGameNativeTemplateAdUnitId": "adunit-b21f1a8f609470f5",

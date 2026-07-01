@@ -20,6 +20,11 @@ var ITEM_DEFINITIONS = [
     itemId: "barrier_hammer",
     cardName: "BarrierHammerCard",
     displayName: "破障锤"
+  },
+  {
+    itemId: "snow_removal",
+    cardName: "SnowRemovalCard",
+    displayName: "除雪剂"
   }
 ];
 var MAX_SELECTED_POWERUPS = 4;

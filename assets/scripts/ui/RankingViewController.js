@@ -297,6 +297,7 @@ function RankingViewController(options) {
   this._rowProxyLayers = {};
   this._rowProxyRecords = [];
   this._clampingScrollOffset = false;
+  this._clampingContentPosition = false;
   this._nodes = this._resolveNodes();
   this._bindActions();
   this.ensureSpriteFrames();
@@ -387,6 +388,8 @@ RankingViewController.prototype._ensureScrollView = function (panel) {
   scrollView.node.on(cc.ScrollView.EventType.SCROLLING, this._updateVirtualRows, this);
   scrollView.node.off(cc.ScrollView.EventType.SCROLL_ENDED, this._updateVirtualRows, this);
   scrollView.node.on(cc.ScrollView.EventType.SCROLL_ENDED, this._updateVirtualRows, this);
+  content.off(cc.Node.EventType.POSITION_CHANGED, this._handleContentPositionChanged, this);
+  content.on(cc.Node.EventType.POSITION_CHANGED, this._handleContentPositionChanged, this);
 
   return {
     scrollView: scrollView,
@@ -770,10 +773,14 @@ RankingViewController.prototype._getViewportHeight = function () {
   return requirePositiveNodeHeight(this._nodes.viewport, "RankingView viewport");
 };
 
-RankingViewController.prototype._clampScrollOffsetY = function (scrollOffsetY) {
+RankingViewController.prototype._getMaxScrollOffsetY = function () {
   var viewportHeight = this._getViewportHeight();
   var contentHeight = requirePositiveNodeHeight(this._nodes.content, "RankingView content");
-  var maxScrollOffsetY = Math.max(0, Math.ceil(contentHeight - viewportHeight));
+  return Math.max(0, Math.ceil(contentHeight - viewportHeight));
+};
+
+RankingViewController.prototype._clampScrollOffsetY = function (scrollOffsetY) {
+  var maxScrollOffsetY = this._getMaxScrollOffsetY();
   var clampedOffsetY = Math.max(0, Math.min(scrollOffsetY, maxScrollOffsetY));
   if (clampedOffsetY !== scrollOffsetY && this._clampingScrollOffset !== true) {
     if (!this._nodes.scrollView || !this._nodes.scrollView.node || !this._nodes.scrollView.node.isValid) {
@@ -793,6 +800,41 @@ RankingViewController.prototype._clampScrollOffsetY = function (scrollOffsetY) {
   return clampedOffsetY;
 };
 
+RankingViewController.prototype._clampContentPositionY = function () {
+  if (!this._nodes || !this._nodes.content || !this._nodes.content.isValid) {
+    throw new Error("RankingView content is required before clamping position.");
+  }
+  var content = this._nodes.content;
+  var topY = this._getViewportHeight() * 0.5;
+  var maxScrollOffsetY = this._getMaxScrollOffsetY();
+  var currentOffsetY = Number(content.y - topY) || 0;
+  var clampedOffsetY = Math.max(0, Math.min(currentOffsetY, maxScrollOffsetY));
+  if (Math.abs(clampedOffsetY - currentOffsetY) > 0.5 && this._clampingContentPosition !== true) {
+    if (!this._nodes.scrollView || typeof this._nodes.scrollView.stopAutoScroll !== "function") {
+      throw new Error("RankingView ScrollView requires stopAutoScroll before clamping content position.");
+    }
+    this._clampingContentPosition = true;
+    try {
+      this._nodes.scrollView.stopAutoScroll();
+      content.setPosition(content.x, topY + clampedOffsetY);
+      this._clampScrollOffsetY(clampedOffsetY);
+    } finally {
+      this._clampingContentPosition = false;
+    }
+  }
+  return Math.floor(clampedOffsetY);
+};
+
+RankingViewController.prototype._handleContentPositionChanged = function () {
+  if (this._clampingContentPosition === true || this._clampingScrollOffset === true) {
+    return;
+  }
+  if (!this._entries.length) {
+    return;
+  }
+  this._updateVirtualRows();
+};
+
 RankingViewController.prototype._updateVirtualRows = function () {
   if (!this._nodes || !this._nodes.content || !this._nodes.content.isValid) {
     return;
@@ -804,7 +846,8 @@ RankingViewController.prototype._updateVirtualRows = function () {
 
   this._ensureRowPool();
 
-  var scrollOffsetY = this._clampScrollOffsetY(getScrollOffsetY(this._nodes.scrollView));
+  this._clampScrollOffsetY(getScrollOffsetY(this._nodes.scrollView));
+  var scrollOffsetY = this._clampContentPositionY();
   var firstIndex = Math.floor(scrollOffsetY / ROW_STRIDE);
   var maxFirstIndex = Math.max(0, this._entries.length - this._rowPool.length);
   firstIndex = Math.max(0, Math.min(firstIndex, maxFirstIndex));

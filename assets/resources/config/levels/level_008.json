@@ -28,7 +28,12 @@
         "fallingRules": {
             "maxDynamicMarbles": 10,
             "maxBounces": 2,
-            "enableMarbleMarbleCollision": true
+            "enableMarbleMarbleCollision": true,
+            "gravity": 900,
+            "initialSpeedY": 120,
+            "horizontalSpeed": 165,
+            "maxDropLifeTime": 6,
+            "bounceDamping": 0.82
         }
     },
     "level": {

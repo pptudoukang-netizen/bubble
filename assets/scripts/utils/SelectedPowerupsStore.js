@@ -5,7 +5,7 @@ var StrictStorage = require("./StrictStorage");
 var STORAGE_KEY = "bubble_selected_powerups_v1";
 var NAMESPACE = "SelectedPowerupsStore";
 var MAX_SELECTED_POWERUPS = 4;
-var SUPPORTED_ITEM_IDS = ["swap_ball", "rainbow_ball", "blast_ball", "barrier_hammer"];
+var SUPPORTED_ITEM_IDS = ["swap_ball", "rainbow_ball", "blast_ball", "barrier_hammer", "snow_removal"];
 
 function clone(data) {
   return JSON.parse(JSON.stringify(data));

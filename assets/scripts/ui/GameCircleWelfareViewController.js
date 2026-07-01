@@ -9,7 +9,8 @@ var REWARD_ICON_PATHS = {
   swap_ball: "image/props/change_ball",
   rainbow_ball: "image/props/rainbow_ball",
   blast_ball: "image/props/blast_ball",
-  barrier_hammer: "image/props/barrier_hammer"
+  barrier_hammer: "image/props/barrier_hammer",
+  snow_removal: "image/props/snow_removal"
 };
 var GAME_CIRCLE_RENDER_PROXY_ROOT_NAME = "game_circle_render_proxy_root";
 var GAME_CIRCLE_RENDER_PROXY_LAYER_NAMES = {

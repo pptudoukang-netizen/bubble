@@ -47,7 +47,8 @@ var BALL_RESOURCES = {
   SPLIT_P: "image/ball/split_purple_ball",
   ICE_SNOWBALL: "image/ball/ice_ball",
   BLOCKADE_LINE: "image/ball/blockade_line",
-  LIGHT: "image/ball/light_ball"
+  LIGHT: "image/ball/light_ball",
+  SNOW_REMOVAL_TOOLS: "image/ball/snow_removal_tools"
 };
 
 var JAR_RESOURCES = {
@@ -73,7 +74,12 @@ var REWARD_ITEM_RESOURCES = {
 
 var POWERUP_ICON_RESOURCES = {
   rainbow: "image/props/rainbow_ball",
-  barrier_hammer: "image/props/barrier_hammer"
+  swap: "image/props/change_ball",
+  blast: "image/props/blast_ball",
+  barrier_hammer: "image/props/barrier_hammer",
+  snow_removal: "image/props/snow_removal",
+  three_line_elimination: "image/props/three_line_elimination",
+  plus_three_balls: "image/props/plus_ball"
 };
 
 var WIN_BOTTLE_RESOURCES = {
@@ -89,6 +95,8 @@ var WIN_TARGET_STATUS_RESOURCES = {
   incomplete: "image/commone/x"
 };
 var FAIRY_ANIMATION_BUNDLE_NAME = "animation";
+var EXPLODE_ANIMATION_CLIP_PATH = "explode";
+var EXPLODE_ANIMATION_CLIP_NAME = "explode";
 
 var WIN_TARGET_COLOR_NAMES = {
   R: "红球",
@@ -112,6 +120,7 @@ var HUD_STAR_RESOURCES = {
   lit: "image/ball/img101",
   unlit: "image/ball/img106"
 };
+var TOP_SLOT_STAR_RESOURCE = "game/top_star";
 
 var PREFAB_PATHS = {
   gameView: "prefabs/ui/GameView",
@@ -127,6 +136,7 @@ var PREFAB_PATHS = {
   keyBubbleItem: "prefabs/game/KeyBubbleItem",
   jarItem: "prefabs/game/JarItem",
   shooterPanel: "prefabs/game/ShooterPanel",
+  propsBtn: "prefabs/game/PropsBtn",
   previewBall: "prefabs/game/PreviewBall"
 };
 
@@ -734,6 +744,13 @@ function buildBottomPanelRenderKey(runtimeSnapshot) {
   }
   var shooter = runtimeSnapshot.shooter ? runtimeSnapshot.shooter : {};
   var skillInventory = shooter.skillInventory ? shooter.skillInventory : {};
+  if (!Object.prototype.hasOwnProperty.call(skillInventory, "snow_removal")) {
+    throw new Error("Bottom panel render key requires snow_removal count.");
+  }
+  var snowRemovalCount = Number(skillInventory.snow_removal);
+  if (!Number.isInteger(snowRemovalCount) || snowRemovalCount < 0) {
+    throw new Error("Bottom panel render key snow_removal count must be a non-negative integer.");
+  }
   var adRunPowerups = runtimeSnapshot.adRunPowerups ? runtimeSnapshot.adRunPowerups : {};
   var adRunPowerupAllowed = runtimeSnapshot.adRunPowerupAllowed ? runtimeSnapshot.adRunPowerupAllowed : {};
   return [
@@ -746,6 +763,7 @@ function buildBottomPanelRenderKey(runtimeSnapshot) {
     Math.max(0, Math.floor(Number(skillInventory.blast) || 0)),
     Math.max(0, Math.floor(Number(skillInventory.swap) || 0)),
     Math.max(0, Math.floor(Number(skillInventory.barrier_hammer) || 0)),
+    snowRemovalCount,
     Math.max(0, Math.floor(Number(adRunPowerups.three_line_elimination) || 0)),
     Math.max(0, Math.floor(Number(adRunPowerups.plus_three_balls) || 0)),
     adRunPowerupAllowed.three_line_elimination === true ? 1 : 0,
@@ -1082,6 +1100,8 @@ function LevelRenderer(rootNode) {
   this.spriteFrameLoadPromises = {};
   this.fairyPrefabCache = {};
   this.fairyPrefabLoadPromises = {};
+  this.explodeAnimationClip = null;
+  this.explodeAnimationClipPromise = null;
   this.layers = null;
   this.prefabFactory = new PrefabFactory();
   this.bubbleShatterRenderer = new BubbleShatterRenderer({
@@ -1125,11 +1145,15 @@ function LevelRenderer(rootNode) {
   this.splitterSpawnHiddenCellIds = {};
   this.molotovBlastHiddenCellIds = {};
   this.molotovBlastAnimatedIds = {};
+  this.blastExplosionAnimatedIds = {};
   this.lastCommentResolution = null;
   this.boardBubbleNodes = {};
   this.boardBubbleNodePool = {};
   this.boardCellRenderKeys = {};
   this.boardRenderTick = 1;
+  this.topSlotStarNodes = {};
+  this.topSlotStarNodePool = [];
+  this.topSlotStarRenderTick = 1;
   this.barrierHammerHintNodes = {};
   this.lastBarrierHammerHintKey = "";
   this.testSlotNodes = {};
@@ -1184,6 +1208,7 @@ function LevelRenderer(rootNode) {
     onUseBlast: null,
     onUseSwap: null,
     onUseBarrierHammer: null,
+    onUseSnowRemoval: null,
     onUseThreeLineElimination: null,
     onUsePlusThreeBalls: null,
     onRecoverAdRunPowerupByAd: null,
@@ -1230,6 +1255,7 @@ LevelRenderer.prototype.warmupSharedAssets = function () {
   this._sharedWarmupPromise = Promise.all([
     this._preloadSprites(this._collectCommonSpritePaths()),
     this._preloadFairyPrefabs(),
+    this._preloadExplodeAnimationClip(),
     this.prefabFactory.preload(this._collectPrefabPaths()),
     this.bubbleShatterRenderer.preload()
   ]).catch(function (error) {
@@ -1300,6 +1326,7 @@ LevelRenderer.prototype.setGameplayActionHandlers = function (handlers) {
     onUseBlast: typeof handlers.onUseBlast === "function" ? handlers.onUseBlast : null,
     onUseSwap: typeof handlers.onUseSwap === "function" ? handlers.onUseSwap : null,
     onUseBarrierHammer: typeof handlers.onUseBarrierHammer === "function" ? handlers.onUseBarrierHammer : null,
+    onUseSnowRemoval: typeof handlers.onUseSnowRemoval === "function" ? handlers.onUseSnowRemoval : null,
     onUseThreeLineElimination: typeof handlers.onUseThreeLineElimination === "function" ? handlers.onUseThreeLineElimination : null,
     onUsePlusThreeBalls: typeof handlers.onUsePlusThreeBalls === "function" ? handlers.onUsePlusThreeBalls : null,
     onRecoverAdRunPowerupByAd: typeof handlers.onRecoverAdRunPowerupByAd === "function" ? handlers.onRecoverAdRunPowerupByAd : null,
@@ -1397,6 +1424,8 @@ LevelRenderer.prototype._invokeGameplayAction = function (action) {
     handler = this.gameplayActionHandlers.onUseSwap;
   } else if (action === "use_barrier_hammer") {
     handler = this.gameplayActionHandlers.onUseBarrierHammer;
+  } else if (action === "use_snow_removal") {
+    handler = this.gameplayActionHandlers.onUseSnowRemoval;
   } else if (action === "use_three_line_elimination") {
     handler = this.gameplayActionHandlers.onUseThreeLineElimination;
   } else if (action === "use_plus_three_balls") {
@@ -1489,8 +1518,12 @@ LevelRenderer.prototype.renderLevel = function (levelConfig, runtimeSnapshot) {
   this.splitterSpawnHiddenCellIds = {};
   this.molotovBlastHiddenCellIds = {};
   this.molotovBlastAnimatedIds = {};
+  this.blastExplosionAnimatedIds = {};
   this.lastCommentResolution = null;
   this.boardRenderTick = 1;
+  this.topSlotStarNodes = {};
+  this.topSlotStarNodePool = [];
+  this.topSlotStarRenderTick = 1;
   this.testSlotNodes = {};
   this.testSlotNodePool = [];
   this.testGridRenderTick = 1;
@@ -1513,6 +1546,8 @@ LevelRenderer.prototype.renderLevel = function (levelConfig, runtimeSnapshot) {
     this.boardBubbleNodes = {};
     this.boardBubbleNodePool = {};
     this.boardCellRenderKeys = {};
+    this.topSlotStarNodes = {};
+    this.topSlotStarNodePool = [];
     this.barrierHammerHintNodes = {};
     this.lastBarrierHammerHintKey = "";
     clearChildren(this.layers.testGrid);
@@ -1726,6 +1761,7 @@ LevelRenderer.prototype._refreshRuntimeFull = function (levelConfig, runtimeSnap
   this._playKeyUnlockAnimation(runtimeSnapshot);
   this._playSplitterSpawnAnimation(runtimeSnapshot);
   this._playMolotovBlastAnimation(runtimeSnapshot);
+  this._playBlastExplosionAnimation(runtimeSnapshot);
   this._playCommentAnimation(runtimeSnapshot);
 
   var hasActiveProjectile = !!(runtimeSnapshot.activeProjectile);
@@ -2006,6 +2042,7 @@ LevelRenderer.prototype._collectCommonSpritePaths = function () {
     BALL_RESOURCES.ICE_SNOWBALL,
     BALL_RESOURCES.BLOCKADE_LINE,
     BALL_RESOURCES.LIGHT,
+    BALL_RESOURCES.SNOW_REMOVAL_TOOLS,
     JAR_RESOURCES.R,
     JAR_RESOURCES.G,
     JAR_RESOURCES.B,
@@ -2018,12 +2055,18 @@ LevelRenderer.prototype._collectCommonSpritePaths = function () {
     JAR_MASK_RESOURCES.P,
     HUD_STAR_RESOURCES.lit,
     HUD_STAR_RESOURCES.unlit,
+    TOP_SLOT_STAR_RESOURCE,
     WIN_TARGET_STATUS_RESOURCES.complete,
     WIN_TARGET_STATUS_RESOURCES.incomplete,
     REWARD_ITEM_RESOURCES.coin,
     REWARD_ITEM_RESOURCES.stamina,
     POWERUP_ICON_RESOURCES.rainbow,
+    POWERUP_ICON_RESOURCES.swap,
+    POWERUP_ICON_RESOURCES.blast,
     POWERUP_ICON_RESOURCES.barrier_hammer,
+    POWERUP_ICON_RESOURCES.snow_removal,
+    POWERUP_ICON_RESOURCES.three_line_elimination,
+    POWERUP_ICON_RESOURCES.plus_three_balls,
     COMMENT_ANIMATION_RESOURCES.good,
     COMMENT_ANIMATION_RESOURCES.great,
     COMMENT_ANIMATION_RESOURCES.excellent,
@@ -2045,6 +2088,7 @@ LevelRenderer.prototype._collectPrefabPaths = function () {
     PREFAB_PATHS.pauseView,
     PREFAB_PATHS.propDescriptionView,
     PREFAB_PATHS.shooterPanel,
+    PREFAB_PATHS.propsBtn,
     PREFAB_PATHS.bubbleItem,
     PREFAB_PATHS.fireBubbleItem,
     PREFAB_PATHS.splitBubbleItem,
@@ -2108,6 +2152,46 @@ LevelRenderer.prototype._preloadFairyPrefabs = function () {
   }.bind(this));
 };
 
+LevelRenderer.prototype._preloadExplodeAnimationClip = function () {
+  if (this.explodeAnimationClip) {
+    return Promise.resolve(this.explodeAnimationClip);
+  }
+  if (this.explodeAnimationClipPromise) {
+    return this.explodeAnimationClipPromise;
+  }
+
+  this.explodeAnimationClipPromise = BundleLoader.ensureNamedBundleLoaded(FAIRY_ANIMATION_BUNDLE_NAME).then(function (bundle) {
+    return new Promise(function (resolve, reject) {
+      if (!bundle || typeof bundle.load !== "function") {
+        reject(new Error("Explode animation bundle is invalid."));
+        return;
+      }
+      bundle.load(EXPLODE_ANIMATION_CLIP_PATH, cc.AnimationClip, function (error, clip) {
+        if (error) {
+          reject(new Error("Load explode animation clip failed `" + FAIRY_ANIMATION_BUNDLE_NAME + "/" + EXPLODE_ANIMATION_CLIP_PATH + "`: " + error.message));
+          return;
+        }
+        if (!clip) {
+          reject(new Error("Load explode animation clip returned empty asset: " + FAIRY_ANIMATION_BUNDLE_NAME + "/" + EXPLODE_ANIMATION_CLIP_PATH));
+          return;
+        }
+        if (clip.name !== EXPLODE_ANIMATION_CLIP_NAME) {
+          reject(new Error("Explode animation clip name mismatch: " + clip.name));
+          return;
+        }
+        this.explodeAnimationClip = clip;
+        this.explodeAnimationClipPromise = null;
+        resolve(clip);
+      }.bind(this));
+    }.bind(this));
+  }.bind(this)).catch(function (error) {
+    this.explodeAnimationClipPromise = null;
+    throw error;
+  }.bind(this));
+
+  return this.explodeAnimationClipPromise;
+};
+
 LevelRenderer.prototype._preloadSprites = function (paths) {
   return Promise.all(paths.map(function (path) {
     if (this.spriteFrameCache[path]) {
@@ -2142,6 +2226,7 @@ var LEVEL_RENDERER_SCENE_DEPS = {
   REWARD_ITEM_RESOURCES: REWARD_ITEM_RESOURCES,
   POWERUP_ICON_RESOURCES: POWERUP_ICON_RESOURCES,
   HUD_STAR_RESOURCES: HUD_STAR_RESOURCES,
+  TOP_SLOT_STAR_RESOURCE: TOP_SLOT_STAR_RESOURCE,
   PREFAB_PATHS: PREFAB_PATHS,
   JAR_RENDER_Y_OFFSET: JAR_RENDER_Y_OFFSET,
   GUIDE_DOT_SPACING: GUIDE_DOT_SPACING,

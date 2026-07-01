@@ -39,6 +39,7 @@ var AD_RUN_POWERUP_TYPES = {
   plus_three_balls: true
 };
 var PLUS_THREE_BALLS_AMOUNT = 10;
+var SNOW_REMOVAL_CLEAR_COUNT = 10;
 var SPLITTER_SPAWN_DELAY_SEC = 0.2;
 var TIMED_LEVEL_RENDER_BUCKET_MS = 250;
 
@@ -90,6 +91,7 @@ function createEmptyResolution() {
     iceCollected: 0,
     injectedSkills: [],
     reactiveTriggered: [],
+    blastExplosions: [],
     spawnedBySplitters: [],
     collectedKeys: [],
     unlockedLockedBalls: [],
@@ -214,7 +216,7 @@ var KEY_UNLOCK_BOARD_ADVANCE_BLOCK_DELAY = SpecialAnimationTiming.keyUnlock.tota
 var WIN_SETTLEMENT_DELAY_SEC = 1;
 var DEFAULT_JAR_SCORE_BOOST_MULTIPLIER = 2;
 var DEFAULT_JAR_SCORE_BOOST_DURATION_MS = 5000;
-// 第二次连消起每次额外 +100，UI 显示为连击+1、+2…
+// 第二次连消起，每个匹配碎裂球按连击层数额外加分；UI 显示为连击+1、+2…
 var COMBO_BONUS_PER_HIT = 100;
 function resolveBallDisplayCode(ball) {
   if (!ball) {
@@ -314,6 +316,32 @@ function resolveIceInnerColor(cellOrBall) {
   }
 
   return null;
+}
+
+function requireSnowRemovalTargetCoordinates(cell, description) {
+  if (!cell || !Number.isInteger(cell.row) || !Number.isInteger(cell.col)) {
+    throw new Error(description + " requires integer row and col.");
+  }
+  return cell;
+}
+
+function compareSnowRemovalTargetsFromBoardBottom(left, right) {
+  requireSnowRemovalTargetCoordinates(left, "Snow removal left target");
+  requireSnowRemovalTargetCoordinates(right, "Snow removal right target");
+  if (left.row !== right.row) {
+    return right.row - left.row;
+  }
+  return left.col - right.col;
+}
+
+function buildSnowRemovalTargetKey(targets) {
+  if (!Array.isArray(targets)) {
+    throw new Error("Snow removal target key requires target array.");
+  }
+  return targets.map(function (target) {
+    requireSnowRemovalTargetCoordinates(target, "Snow removal target");
+    return target.row + ":" + target.col;
+  }).sort().join(",");
 }
 
 function buildIceSnowballCollectEntry(cell, innerColor) {
@@ -599,6 +627,7 @@ function GameManager(options) {
   this.molotovPendingResolutionContext = null;
   this.pendingBarrierHammer = false;
   this.pendingRainbowColorSelection = null;
+  this.ricochetGuideActive = false;
   this.jarScoreBoostActive = false;
   this.jarScoreBoostMultiplier = 1;
   this.jarScoreBoostRemainingMs = 0;
@@ -702,6 +731,7 @@ GameManager.prototype.startLevel = function (levelConfig) {
   this.molotovPendingResolutionContext = null;
   this.pendingBarrierHammer = false;
   this.pendingRainbowColorSelection = null;
+  this.ricochetGuideActive = false;
   this.jarScoreBoostActive = false;
   this.jarScoreBoostMultiplier = 1;
   this.jarScoreBoostRemainingMs = 0;
@@ -1055,6 +1085,7 @@ GameManager.prototype._updatePendingSplitterSpawns = function (dt) {
   if (this.state === "won_pending" && grid.getCells().length > 0) {
     this.state = "running";
   }
+  this._ensureMinimumVisibleBoardRows(this.lastResolution);
   if (this.state === "out_of_shots_pending" && !this.systems.fallingMarbleSystem.hasActiveDrops() && !this._hasPendingSplitterSpawns() && !this._hasPendingMolotovBlasts() && !this._isBoardAdvanceBusy()) {
     this._resolveOutOfShotsOutcome();
   }
@@ -1212,6 +1243,25 @@ GameManager.prototype._pushBubbleBreakEvent = function (removedCells) {
 
   this._pushRuntimeEvent("bubble_break", {
     count: removedCells.length
+  });
+};
+
+GameManager.prototype._pushBombExplosionEvent = function () {
+  this._pushRuntimeEvent("bomb_explosion", {});
+};
+
+GameManager.prototype._pushLockOpenEvent = function (unlockedCell) {
+  if (!unlockedCell || (typeof unlockedCell.id !== "string" && typeof unlockedCell.id !== "number")) {
+    throw new Error("Lock open sfx requires unlocked cell id.");
+  }
+  if (!Number.isInteger(unlockedCell.row) || !Number.isInteger(unlockedCell.col)) {
+    throw new Error("Lock open sfx requires unlocked cell coordinates.");
+  }
+
+  this._pushRuntimeEvent("lock_open", {
+    id: unlockedCell.id,
+    row: unlockedCell.row,
+    col: unlockedCell.col
   });
 };
 
@@ -1595,11 +1645,15 @@ GameManager.prototype.fireShot = function () {
     return this.getRuntimeSnapshot();
   }
 
-  var queueResult = this.systems.shooterController.advanceQueue();
+  var remainingShotsAfterFire = this.isTimedInfiniteShots ? 0 : this.remainingShots - 1;
+  var queueResult = this.systems.shooterController.advanceQueue(
+    remainingShotsAfterFire,
+    this.isTimedInfiniteShots
+  );
   this.systems.shooterController.resetAimDirection();
 
   if (!this.isTimedInfiniteShots) {
-    this.remainingShots -= 1;
+    this.remainingShots = remainingShotsAfterFire;
   }
   this.shotsFired += 1;
   this.lastFiredColor = queueResult.firedColor;
@@ -1719,6 +1773,19 @@ GameManager.prototype.grantPreparedAdRunPowerup = function (powerupType, count) 
   };
 };
 
+GameManager.prototype.activateRicochetGuide = function () {
+  if (this.ricochetGuideActive === true) {
+    throw new Error("Ricochet guide is already active for this attempt.");
+  }
+  this.ricochetGuideActive = true;
+  this._aimGuidePathCacheKey = "";
+  this._aimGuidePathCache = null;
+  return {
+    accepted: true,
+    snapshot: this.getRuntimeSnapshot()
+  };
+};
+
 GameManager.prototype._consumeAdRunPowerup = function (powerupType) {
   if (!this._isAdRunPowerupAllowed(powerupType)) {
     return {
@@ -1768,6 +1835,10 @@ GameManager.prototype.usePlusThreeBalls = function () {
   }
 
   this.remainingShots += PLUS_THREE_BALLS_AMOUNT;
+  var queueResult = this.systems.shooterController.syncFiniteShotQueue(this.remainingShots);
+  if (!queueResult || queueResult.accepted !== true) {
+    throw new Error("Plus three balls failed to sync shooter queue.");
+  }
   this._pushRuntimeEvent("ad_powerup_plus_three_balls", {
     amount: PLUS_THREE_BALLS_AMOUNT,
     remaining_shots: this.remainingShots
@@ -2125,6 +2196,152 @@ GameManager.prototype.useSwapBall = function () {
     accepted: true,
     remaining: swapResult.remaining,
     snapshot: this.getRuntimeSnapshot()
+  };
+};
+
+GameManager.prototype.previewSnowRemoval = function () {
+  if (this._isInstantAdPowerupBusy()) {
+    return {
+      accepted: false,
+      reason: "busy",
+      snapshot: this.getRuntimeSnapshot()
+    };
+  }
+
+  var shooterController = this.systems && this.systems.shooterController
+    ? this.systems.shooterController
+    : null;
+  if (!shooterController || !shooterController.skillInventory) {
+    throw new Error("Snow removal requires ShooterController skillInventory.");
+  }
+  if (!Object.prototype.hasOwnProperty.call(shooterController.skillInventory, "snow_removal")) {
+    throw new Error("Snow removal inventory count is missing.");
+  }
+  var inventoryCount = Math.floor(assertFiniteNumber(shooterController.skillInventory.snow_removal, "snow_removal inventory"));
+  if (inventoryCount < 0) {
+    throw new Error("snow_removal inventory cannot be negative.");
+  }
+  if (inventoryCount <= 0) {
+    return {
+      accepted: false,
+      reason: "inventory_empty",
+      snapshot: this.getRuntimeSnapshot()
+    };
+  }
+
+  var grid = this.systems.bubbleGrid;
+  var snowCells = grid.getCells().filter(function (cell) {
+    return isIceBall(cell);
+  }).sort(compareSnowRemovalTargetsFromBoardBottom);
+  if (!snowCells.length) {
+    return {
+      accepted: false,
+      reason: "no_target",
+      snapshot: this.getRuntimeSnapshot()
+    };
+  }
+
+  var targets = snowCells.slice(0, SNOW_REMOVAL_CLEAR_COUNT).map(function (cell) {
+    requireSnowRemovalTargetCoordinates(cell, "Snow removal preview target");
+    return {
+      row: cell.row,
+      col: cell.col
+    };
+  });
+
+  return {
+    accepted: true,
+    targets: targets,
+    clearCount: targets.length,
+    snapshot: this.getRuntimeSnapshot()
+  };
+};
+
+GameManager.prototype.useSnowRemoval = function (expectedTargets) {
+  if (this._isInstantAdPowerupBusy()) {
+    return {
+      accepted: false,
+      reason: "busy",
+      snapshot: this.getRuntimeSnapshot()
+    };
+  }
+
+  var preview = this.previewSnowRemoval();
+  if (!preview.accepted) {
+    return preview;
+  }
+  if (Array.isArray(expectedTargets)) {
+    var expectedKey = buildSnowRemovalTargetKey(expectedTargets);
+    var actualKey = buildSnowRemovalTargetKey(preview.targets);
+    if (expectedKey !== actualKey) {
+      throw new Error("Snow removal targets changed before resolution.");
+    }
+  }
+
+  var consumeResult = this.systems.shooterController.consumeSnowRemoval();
+  if (!consumeResult || !consumeResult.accepted) {
+    return {
+      accepted: false,
+      reason: consumeResult && consumeResult.reason ? consumeResult.reason : "inventory_empty",
+      snapshot: this.getRuntimeSnapshot()
+    };
+  }
+
+  var grid = this.systems.bubbleGrid;
+  var targetCells = preview.targets.map(function (target) {
+    requireSnowRemovalTargetCoordinates(target, "Snow removal use target");
+    var cell = grid.getCell(target.row, target.col);
+    if (!isIceBall(cell)) {
+      throw new Error("Snow removal target is no longer a snow block: " + target.row + "," + target.col);
+    }
+    return cell;
+  });
+  var removedSnowCells = grid.removeCells(targetCells);
+  if (removedSnowCells.length !== targetCells.length) {
+    throw new Error("Snow removal removed count mismatch.");
+  }
+
+  this._pushBubbleBreakEvent(removedSnowCells);
+  var resolution = createEmptyResolution();
+  resolution.matched = removedSnowCells;
+  if (removedSnowCells.length) {
+    resolution.impact = this._createImpactEventFromCell(removedSnowCells[0]);
+  }
+  this.lastResolution = resolution;
+  resolution.iceCollected = this._registerIceCollection(removedSnowCells);
+
+  var floatingCells = this.systems.supportSystem.findFloatingCells(grid);
+  var removedFloating = grid.removeCells(floatingCells);
+  this._registerResolutionDrops(removedFloating, grid, resolution, undefined, {
+    matchedCellsForDelay: removedSnowCells
+  });
+  this.systems.jarCollectorSystem.collect([]);
+
+  resolution.floating = removedFloating;
+  resolution.collected = removedFloating;
+  resolution.boardCleared = grid.getCells().length === 0;
+  this._applyPostImpactBoardShiftPolicy(this.lastResolution);
+  this.pendingShotPlan = null;
+  this.isAiming = false;
+
+  if (resolution.boardCleared) {
+    this._resolveBoardClearedOutcome();
+  }
+
+  this._pushRuntimeEvent("powerup_snow_removal", {
+    targets: preview.targets.slice(),
+    removed: removedSnowCells.length,
+    floating: removedFloating.length,
+    ice_collected: resolution.iceCollected
+  });
+
+  return {
+    accepted: true,
+    targets: preview.targets,
+    removed: removedSnowCells.length,
+    floating: removedFloating.length,
+    remaining: consumeResult.remaining,
+    snapshot: this.getRuntimeSnapshot(this._drainRuntimeEvents())
   };
 };
 
@@ -2858,6 +3075,7 @@ GameManager.prototype.getRuntimeSnapshot = function (runtimeEvents, renderOption
 
   var shooterController = this.systems.shooterController;
   var shooterSnapshot = shooterController.getShooterStateForRender();
+  shooterSnapshot.ricochetGuideActive = this.ricochetGuideActive === true;
   var topAttachY = this.systems.bubbleGrid && typeof this.systems.bubbleGrid.getTopAttachY === "function"
     ? this.systems.bubbleGrid.getTopAttachY()
     : (BoardLayout.boardStartY + BoardLayout.bubbleRadius);

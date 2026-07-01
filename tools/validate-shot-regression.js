@@ -7,6 +7,7 @@ var BoardLayout = require("../assets/scripts/config/BoardLayout");
 var AimTuningProfiles = require("../assets/scripts/config/AimTuningProfiles");
 var BubbleGrid = require("../assets/scripts/systems/BubbleGrid");
 var GameManager = require("../assets/scripts/core/GameManager");
+var EliminationSequenceBuilder = require("../assets/scripts/core/EliminationSequenceBuilder");
 var LevelPackCompactCodec = require("../assets/scripts/config/LevelPackCompactCodec");
 var LevelPackManifest = require("../assets/scripts/config/LevelPackManifest");
 var SpecialAnimationTiming = require("../assets/scripts/config/SpecialAnimationTiming");
@@ -1352,6 +1353,121 @@ function runBoardMidGameViewportSettleCase() {
   }
 }
 
+function runSplitterSpawnViewportSettleCase() {
+  var BoardViewportSystem = require("../assets/scripts/systems/BoardViewportSystem");
+
+  syncHudBottomLineYForValidation();
+
+  function cloneCells(cells) {
+    return cells.map(function (cell) {
+      return {
+        row: cell.row,
+        col: cell.col
+      };
+    });
+  }
+
+  var manager = new GameManager();
+  var viewport = new BoardViewportSystem();
+  var cells = [
+    { row: 0, col: 0 },
+    { row: 0, col: 1 },
+    { row: 0, col: 2 },
+    { row: 0, col: 3 },
+    { row: 1, col: 0 },
+    { row: 2, col: 0 },
+    { row: 3, col: 0 },
+    { row: 4, col: 0 },
+    { row: 5, col: 0 },
+    { row: 6, col: 0 },
+    { row: 7, col: 0 },
+    { row: 8, col: 0 },
+    { row: 9, col: 0 }
+  ];
+  var intro = viewport.planIntroPosition(cells);
+  if (intro.needsScroll) {
+    throw new Error("Splitter spawn viewport setup must start from a settled 10-row board.");
+  }
+  viewport.offsetY = intro.targetOffsetY;
+  viewport.targetOffsetY = intro.targetOffsetY;
+  viewport.introActive = false;
+  viewport.phase = "idle";
+
+  manager.state = "running";
+  manager.remainingShots = 1;
+  manager.lastResolution = {
+    spawnedBySplitters: [],
+    reactiveTriggered: [],
+    matched: [],
+    floating: [],
+    collected: [],
+    collectedKeys: [],
+    unlockedLockedBalls: [],
+    boardViewportAdjusted: false
+  };
+  manager.pendingSplitterSpawns = [{
+    id: "splitter_5_0",
+    row: 5,
+    col: 0,
+    splitColor: "G",
+    remainingDelay: 0
+  }];
+  manager.systems.boardViewportSystem = viewport;
+  manager.systems.bubbleGrid = {
+    maxColumns: 9,
+    version: 1,
+    getCells: function () {
+      return cloneCells(cells);
+    },
+    snapshot: function () {
+      return {
+        cells: cloneCells(cells),
+        viewportOffsetY: viewport.offsetY
+      };
+    },
+    findSplitterSpawnCell: function () {
+      return { row: 10, col: 0 };
+    },
+    addBubble: function (cell, color) {
+      if (color !== "G") {
+        throw new Error("Splitter spawn regression expected splitColor G.");
+      }
+      cells.push({ row: cell.row, col: cell.col });
+      this.version += 1;
+      return {
+        id: "spawned_10_0",
+        row: cell.row,
+        col: cell.col,
+        color: color
+      };
+    },
+    assertNoVisualOverlap: function () {
+      return true;
+    }
+  };
+  manager.systems.fallingMarbleSystem = {
+    hasActiveDrops: function () {
+      return false;
+    }
+  };
+
+  if (!manager._updatePendingSplitterSpawns(0.01)) {
+    throw new Error("Splitter spawn viewport regression expected a spawned cell.");
+  }
+  if (manager.lastResolution.spawnedBySplitters.length !== 1) {
+    throw new Error("Splitter spawn viewport regression must record spawned splitter cells.");
+  }
+  if (manager.lastResolution.boardViewportAdjusted !== true) {
+    throw new Error("Splitter spawn must mark boardViewportAdjusted when it expands the board past 10 rows.");
+  }
+  if (!viewport.isMoving()) {
+    throw new Error("Splitter spawn on the 11th row must start board viewport settling.");
+  }
+  if (Math.abs(viewport.targetOffsetY - viewport.offsetY - BoardLayout.rowHeight) > 0.5) {
+    throw new Error("Splitter spawn viewport settle must move upward exactly one row.");
+  }
+}
+
 function runBoardViewportFireLockCase() {
   var manager = new GameManager();
   manager.state = "running";
@@ -1483,6 +1599,92 @@ function runStoneBallJarScoreZeroCase() {
   }
 }
 
+function runComboMatchedBallScoreDisplayCase() {
+  var manager = new GameManager();
+  var hadCc = Object.prototype.hasOwnProperty.call(global, "cc");
+  var previousCc = global.cc;
+  global.cc = {
+    log: function () {},
+    warn: function () {},
+    error: function () {}
+  };
+
+  try {
+    manager.score = 0;
+    manager.comboStreak = 1;
+    manager.maxComboStreak = 1;
+    manager.scoreRules = {
+      matchedDrop: 90,
+      floatingDrop: 80
+    };
+    var runtimeEvents = [];
+    manager._pushRuntimeEvent = function (type, payload) {
+      runtimeEvents.push({
+        type: type,
+        payload: payload
+      });
+    };
+
+    var attachedCell = { id: "attached", row: 0, col: 0 };
+    var matchedCells = [
+      { id: "m1", row: 0, col: 0 },
+      { id: "m2", row: 0, col: 1 },
+      { id: "m3", row: 1, col: 0 }
+    ];
+    var grid = {
+      getCellPosition: function (row, col) {
+        return { x: col * 10, y: row * 10 };
+      }
+    };
+
+    var secondComboScorePerBall = manager._getMatchedDropScorePerBallForNextCombo("matchedDrop");
+    if (secondComboScorePerBall !== 190) {
+      throw new Error("Second combo matched ball score should be 190.");
+    }
+    var secondElimination = EliminationSequenceBuilder.buildEliminationSequence(
+      attachedCell,
+      matchedCells,
+      grid,
+      secondComboScorePerBall
+    );
+    secondElimination.scoreEvents.forEach(function (scoreEvent) {
+      if (scoreEvent.points !== 190) {
+        throw new Error("Second combo floating score display should use 190 per shattered ball.");
+      }
+    });
+
+    var resolution = {
+      attachedCell: attachedCell,
+      matched: matchedCells,
+      floating: [],
+      scoreDelta: 0,
+      eliminationSequence: secondElimination.eliminationSequence,
+      scoreEvents: secondElimination.scoreEvents
+    };
+    manager._applyResolutionDropScore(resolution, "matchedDrop", {
+      matchedScorePerBall: secondComboScorePerBall
+    });
+    manager._registerComboElimination(resolution);
+    if (manager.score !== 570 || resolution.scoreDelta !== 570) {
+      throw new Error("Second combo score should be fully carried by matched shattered balls.");
+    }
+    if (runtimeEvents.length !== 2 || runtimeEvents[1].payload.combo_display !== 1 || runtimeEvents[1].payload.bonus_gained !== 300) {
+      throw new Error("Second combo event should report the matched-ball combo bonus without adding a separate fixed score.");
+    }
+
+    var thirdComboScorePerBall = manager._getMatchedDropScorePerBallForNextCombo("matchedDrop");
+    if (thirdComboScorePerBall !== 290) {
+      throw new Error("Third combo matched ball score should be higher than second combo.");
+    }
+  } finally {
+    if (hadCc) {
+      global.cc = previousCc;
+    } else {
+      delete global.cc;
+    }
+  }
+}
+
 function main() {
   var cases = buildRegressionCases();
   var results = cases.map(runCase);
@@ -1535,8 +1737,11 @@ function main() {
   console.log("[OK]", "revive_danger_space_keeps_locked_ball", "shifted board up without removing unsupported locked ball");
   runStoneBallJarScoreZeroCase();
   console.log("[OK]", "stone_ball_jar_score_zero", "stone ball in jar scores 0 and keeps total score");
+  runComboMatchedBallScoreDisplayCase();
+  console.log("[OK]", "combo_matched_ball_score_display", "combo raises shattered-ball score and floating score display");
   runBoardIntroViewportCase();
   runBoardMidGameViewportSettleCase();
+  runSplitterSpawnViewportSettleCase();
   runBoardViewportFireLockCase();
   runBoardViewportRenderRefreshCase();
   runBoardViewportSnapshotCacheCase();

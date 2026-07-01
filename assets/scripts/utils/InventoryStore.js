@@ -4,7 +4,9 @@ var StrictStorage = require("./StrictStorage");
 
 var STORAGE_KEY = "bubble_player_inventory_v1";
 var NAMESPACE = "InventoryStore";
-var SUPPORTED_ITEM_IDS = ["swap_ball", "rainbow_ball", "blast_ball", "barrier_hammer"];
+var STORAGE_VERSION = 2;
+var LEGACY_VERSION_1_ITEM_IDS = ["swap_ball", "rainbow_ball", "blast_ball", "barrier_hammer"];
+var SUPPORTED_ITEM_IDS = ["swap_ball", "rainbow_ball", "blast_ball", "barrier_hammer", "snow_removal"];
 
 function clone(data) {
   return JSON.parse(JSON.stringify(data));
@@ -46,38 +48,57 @@ function createDefaultItems() {
     swap_ball: 0,
     rainbow_ball: 0,
     blast_ball: 0,
-    barrier_hammer: 0
+    barrier_hammer: 0,
+    snow_removal: 0
   };
 }
 
 function createInitialInventory() {
   return {
-    version: 1,
+    version: STORAGE_VERSION,
     items: createDefaultItems()
+  };
+}
+
+function normalizeInventoryItems(rawItems, itemIds, description) {
+  assertObject(rawItems, description + " items are required.");
+  Object.keys(rawItems).forEach(function (itemId) {
+    if (itemIds.indexOf(itemId) < 0) {
+      throw new Error(description + " contains unsupported item count: " + itemId);
+    }
+  });
+
+  var items = {};
+  itemIds.forEach(function (itemId) {
+    if (!Object.prototype.hasOwnProperty.call(rawItems, itemId)) {
+      throw new Error(description + " missing item count: " + itemId);
+    }
+    items[itemId] = requireNonNegativeInteger(rawItems[itemId], description + " item count `" + itemId + "`");
+  });
+  return items;
+}
+
+function migrateVersion1Inventory(raw) {
+  var legacyItems = normalizeInventoryItems(raw.items, LEGACY_VERSION_1_ITEM_IDS, "Inventory v1");
+  legacyItems.snow_removal = 0;
+  return {
+    version: STORAGE_VERSION,
+    items: legacyItems
   };
 }
 
 function normalizeInventory(raw) {
   assertObject(raw, "Inventory must be an object.");
-  if (raw.version !== 1) {
-    throw new Error("Inventory version must be 1.");
+  if (raw.version === 1) {
+    return migrateVersion1Inventory(raw);
   }
-  assertObject(raw.items, "Inventory items are required.");
-
-  Object.keys(raw.items).forEach(function (itemId) {
-    requireSupportedItem(itemId);
-  });
-
-  var items = {};
-  SUPPORTED_ITEM_IDS.forEach(function (itemId) {
-    if (!Object.prototype.hasOwnProperty.call(raw.items, itemId)) {
-      throw new Error("Inventory missing item count: " + itemId);
-    }
-    items[itemId] = requireNonNegativeInteger(raw.items[itemId], "Inventory item count `" + itemId + "`");
-  });
+  if (raw.version !== STORAGE_VERSION) {
+    throw new Error("Inventory version must be " + STORAGE_VERSION + ".");
+  }
+  var items = normalizeInventoryItems(raw.items, SUPPORTED_ITEM_IDS, "Inventory");
 
   return {
-    version: 1,
+    version: STORAGE_VERSION,
     items: items
   };
 }
@@ -86,7 +107,11 @@ function InventoryStore() {}
 
 InventoryStore.prototype.load = function () {
   var inventory = StrictStorage.readJsonOrCreate(STORAGE_KEY, NAMESPACE, createInitialInventory);
-  return clone(normalizeInventory(inventory));
+  var normalized = normalizeInventory(inventory);
+  if (inventory.version !== normalized.version) {
+    StrictStorage.writeJson(STORAGE_KEY, NAMESPACE, normalized);
+  }
+  return clone(normalized);
 };
 
 InventoryStore.prototype.save = function (inventory) {

@@ -35,8 +35,11 @@ function attachLevelRendererSceneShooterMethods(LevelRenderer, deps) {
   var SHOOTER_HANDOFF_DURATION = 0.34;
   var SHOOTER_HANDOFF_ARC_HEIGHT = 52;
   var SHOOTER_AIM_RECENTER_DURATION = 0.28;
+  var SHOOTER_HERO_NODE_NAME = "handler_milu";
+  var SHOOTER_HERO_IDLE_CLIP_NAME = "genius_hero_idle";
+  var SHOOTER_HERO_FIRE_CLIP_NAME = "genius_hero_pao";
   var SHOOTER_PREFAB_LAYOUT_NODE_NAMES = [
-    "handler_milu",
+    SHOOTER_HERO_NODE_NAME,
     "CurrentBallAnchor",
     "ChangeBtn",
     "Shooter",
@@ -105,6 +108,75 @@ function attachLevelRendererSceneShooterMethods(LevelRenderer, deps) {
     });
 
     return layoutNodes;
+  }
+
+  function requireShooterHeroAnimation(heroNode) {
+    if (!heroNode || !heroNode.isValid) {
+      throw new Error("Shooter hero animation requires " + SHOOTER_HERO_NODE_NAME + " node.");
+    }
+    var animation = heroNode.getComponent(cc.Animation);
+    if (!animation) {
+      throw new Error("Shooter hero animation requires cc.Animation on " + SHOOTER_HERO_NODE_NAME + ".");
+    }
+    if (typeof animation.getClips !== "function") {
+      throw new Error("Shooter hero animation requires getClips API.");
+    }
+    return animation;
+  }
+
+  function requireShooterHeroClip(animation, clipName) {
+    var clips = animation.getClips();
+    if (!Array.isArray(clips) || clips.length <= 0) {
+      throw new Error("Shooter hero animation requires clips.");
+    }
+    for (var i = 0; i < clips.length; i += 1) {
+      if (clips[i] && clips[i].name === clipName) {
+        return clips[i];
+      }
+    }
+    throw new Error("Shooter hero animation clip is missing: " + clipName + ".");
+  }
+
+  function playShooterHeroClip(heroNode, clipName, onFinished) {
+    var animation = requireShooterHeroAnimation(heroNode);
+    var clip = requireShooterHeroClip(animation, clipName);
+    if (!onFinished && heroNode.__shooterHeroPlayingClip === clipName) {
+      return clip;
+    }
+
+    var previousToken = typeof heroNode.__shooterHeroAnimationToken === "number"
+      ? heroNode.__shooterHeroAnimationToken
+      : 0;
+    heroNode.__shooterHeroAnimationToken = previousToken + 1;
+    var token = heroNode.__shooterHeroAnimationToken;
+    heroNode.__shooterHeroPlayingClip = clipName;
+
+    if (onFinished) {
+      if (typeof animation.once !== "function") {
+        throw new Error("Shooter hero animation requires once API.");
+      }
+      animation.once("finished", function () {
+        if (heroNode.__shooterHeroAnimationToken === token) {
+          onFinished();
+        }
+      });
+    }
+    animation.play(clip.name);
+    return clip;
+  }
+
+  function playShooterHeroIdle(heroNode) {
+    return playShooterHeroClip(heroNode, SHOOTER_HERO_IDLE_CLIP_NAME, null);
+  }
+
+  function resolveFiniteRemainingShots(remainingShots, shooterSnapshot, description) {
+    if (shooterSnapshot && shooterSnapshot.infiniteShots) {
+      return null;
+    }
+    if (!Number.isInteger(remainingShots) || remainingShots < 0) {
+      throw new Error(description + " requires a non-negative integer remainingShots.");
+    }
+    return remainingShots;
   }
   var RAINBOW_COLOR_SELECTOR_BUTTON_SIZE = 72;
   var RAINBOW_COLOR_SELECTOR_RADIUS = 142;
@@ -201,12 +273,24 @@ LevelRenderer.prototype._renderShooter = function (shooterSnapshot, activeProjec
     ? shooterSnapshot.aim
     : { origin: BoardLayout.shooterOrigin, direction: { x: 0, y: 1 } };
   var layoutNodes = syncShooterPrefabLayout(shooterPanel, aim.origin);
+  var finiteRemainingShots = resolveFiniteRemainingShots(
+    remainingShots,
+    shooterSnapshot,
+    "Shooter render"
+  );
   this._syncShooterAimRecenter(
     shooterPanel,
     layoutNodes.Shooter,
     shooterSnapshot,
     activeProjectile,
     computeShooterAngle(aim.direction)
+  );
+  this._syncShooterHeroAnimation(
+    shooterPanel,
+    layoutNodes[SHOOTER_HERO_NODE_NAME],
+    shooterSnapshot,
+    activeProjectile,
+    finiteRemainingShots
   );
 
   var trajectory = shooterSnapshot.trajectory;
@@ -256,7 +340,8 @@ LevelRenderer.prototype._renderShooter = function (shooterSnapshot, activeProjec
     shooterSnapshot,
     activeProjectile,
     currentBallLike,
-    nextBallLike
+    nextBallLike,
+    finiteRemainingShots
   );
 
   var shotsValue = Math.max(0, Math.floor(Number(remainingShots) || 0));
@@ -309,7 +394,8 @@ LevelRenderer.prototype._syncShooterBallHandoff = function (
   shooterSnapshot,
   activeProjectile,
   currentBallLike,
-  nextBallLike
+  nextBallLike,
+  finiteRemainingShots
 ) {
   var revision = shooterSnapshot.queueAdvanceRevision;
   if (!Number.isInteger(revision) || revision < 0) {
@@ -328,11 +414,21 @@ LevelRenderer.prototype._syncShooterBallHandoff = function (
     if (revision !== shooterPanel.__lastQueueAdvanceRevision + 1) {
       throw new Error("Shooter queueAdvanceRevision must advance one step at a time.");
     }
+    if (finiteRemainingShots === 0) {
+      shooterPanel.__lastQueueAdvanceRevision = revision;
+      layoutNodes.CurrentBallAnchor.active = false;
+      layoutNodes.NextBallAnchor.active = false;
+      return;
+    }
     if (!activeProjectile) {
       throw new Error("Shooter handoff animation requires an active projectile.");
     }
     if (!currentBallLike) {
-      throw new Error("Shooter handoff animation requires the promoted current ball.");
+      if (nextBallLike) {
+        throw new Error("Shooter handoff cannot keep next ball without promoted current ball.");
+      }
+      shooterPanel.__lastQueueAdvanceRevision = revision;
+      return;
     }
     if (shooterPanel.__shooterHandoffInProgress) {
       throw new Error("Shooter handoff animation cannot overlap.");
@@ -353,6 +449,55 @@ LevelRenderer.prototype._syncShooterBallHandoff = function (
     layoutNodes.CurrentBallAnchor.active = false;
     layoutNodes.NextBallAnchor.active = false;
   }
+};
+
+LevelRenderer.prototype._syncShooterHeroAnimation = function (
+  shooterPanel,
+  heroNode,
+  shooterSnapshot,
+  activeProjectile,
+  finiteRemainingShots
+) {
+  var revision = shooterSnapshot.queueAdvanceRevision;
+  if (!Number.isInteger(revision) || revision < 0) {
+    throw new Error("Shooter hero animation requires a non-negative queueAdvanceRevision.");
+  }
+
+  if (typeof shooterPanel.__lastShooterHeroFireRevision !== "number") {
+    shooterPanel.__lastShooterHeroFireRevision = revision;
+    playShooterHeroIdle(heroNode);
+    return;
+  }
+  if (revision < shooterPanel.__lastShooterHeroFireRevision) {
+    throw new Error("Shooter hero animation queueAdvanceRevision cannot move backwards.");
+  }
+
+  if (revision > shooterPanel.__lastShooterHeroFireRevision) {
+    if (revision !== shooterPanel.__lastShooterHeroFireRevision + 1) {
+      throw new Error("Shooter hero animation queueAdvanceRevision must advance one step at a time.");
+    }
+    if (finiteRemainingShots === 0) {
+      shooterPanel.__lastShooterHeroFireRevision = revision;
+      playShooterHeroIdle(heroNode);
+      return;
+    }
+    if (!activeProjectile) {
+      throw new Error("Shooter hero fire animation requires an active projectile.");
+    }
+    shooterPanel.__lastShooterHeroFireRevision = revision;
+    this._playShooterHeroFireAnimation(heroNode);
+    return;
+  }
+
+  if (!heroNode.__shooterHeroPlayingClip) {
+    playShooterHeroIdle(heroNode);
+  }
+};
+
+LevelRenderer.prototype._playShooterHeroFireAnimation = function (heroNode) {
+  playShooterHeroClip(heroNode, SHOOTER_HERO_FIRE_CLIP_NAME, function () {
+    playShooterHeroIdle(heroNode);
+  });
 };
 
 LevelRenderer.prototype._syncShooterAimRecenter = function (

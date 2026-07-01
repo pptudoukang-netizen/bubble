@@ -74,17 +74,20 @@ var BASELINE_DANGER_OFFSET_FROM_BOTTOM = 460;
 var INVENTORY_VIEW_PREFAB_PATH = "prefabs/ui/BackpackView";
 var START_GAME_VIEW_PREFAB_PATH = "prefabs/ui/StartGameView";
 var POWER_TIPS_VIEW_PREFAB_PATH = "prefabs/ui/PowerTipsView";
+var PROP_DESCRIPTION_VIEW_PREFAB_PATH = "prefabs/ui/PropDescriptionView";
 var POWERUP_TYPE_BY_ITEM_ID = {
   swap_ball: "swap",
   rainbow_ball: "rainbow",
   blast_ball: "blast",
-  barrier_hammer: "barrier_hammer"
+  barrier_hammer: "barrier_hammer",
+  snow_removal: "snow_removal"
 };
 var ITEM_ID_BY_POWERUP_TYPE = {
   swap: "swap_ball",
   rainbow: "rainbow_ball",
   blast: "blast_ball",
-  barrier_hammer: "barrier_hammer"
+  barrier_hammer: "barrier_hammer",
+  snow_removal: "snow_removal"
 };
 var MAX_SELECTED_POWERUPS = 4;
 var MAX_SELECTED_POWERUP_TOTAL_COUNT = 4;
@@ -199,6 +202,7 @@ module.exports = {
   INVENTORY_VIEW_PREFAB_PATH: INVENTORY_VIEW_PREFAB_PATH,
   START_GAME_VIEW_PREFAB_PATH: START_GAME_VIEW_PREFAB_PATH,
   POWER_TIPS_VIEW_PREFAB_PATH: POWER_TIPS_VIEW_PREFAB_PATH,
+  PROP_DESCRIPTION_VIEW_PREFAB_PATH: PROP_DESCRIPTION_VIEW_PREFAB_PATH,
   POWERUP_TYPE_BY_ITEM_ID: POWERUP_TYPE_BY_ITEM_ID,
   ITEM_ID_BY_POWERUP_TYPE: ITEM_ID_BY_POWERUP_TYPE,
   MAX_SELECTED_POWERUPS: MAX_SELECTED_POWERUPS,
