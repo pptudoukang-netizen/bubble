@@ -1,0 +1,1 @@
+module.exports = [1,["1deafc839"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"vido_icon","rect":[3,855,49,35],"offset":[0.5,0],"originalSize":[50,35],"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

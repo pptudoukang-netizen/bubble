@@ -32,7 +32,7 @@
 - `tools/`：校验、同步、构建修复、调试辅助脚本。
 - `tools/first-100-level-design.js`：前 100 关权威设计规则，统一定义 10 种棋盘轮廓、颜色数量、特殊球投放、目标、发射数和每 10 关难度波形，并严格校验实际棋盘与规则一致。
 - `tools/rebuild-first-100-level-configs.js`：前 100 关定向重建入口；先同步 `LEVEL_CONFIG_TABLE_1_1000.csv` 前 100 行，再只重建本地 1-10、远程包 11-100 和对应 manifest 条目，不改写 101-1000 关远程包。运行命令为 `npm run generate:levels-first100`。
-- `tools/clustered-level-layout.js`、`tools/redesign-first-100-clustered-levels.js`：前 100 关颜色聚类规则与已有配置重排入口；所有前 100 关强制校验同色块覆盖率、孤球率和目标色连通块。
+- `tools/clustered-level-layout.js`、`tools/redesign-first-100-clustered-levels.js`、`tools/redesign-levels-100-500-aesthetic.js`：1-500 关颜色聚类与爽感校验规则；前 100 关保留既有轮廓规则，100-500 关可通过 `npm run redesign:levels100-500` 重建远程包布局、对称轮廓、色彩流动和 manifest 摘要。
 - `settings/`：Cocos Creator 项目设置。
 - `package.json`：校验脚本入口。
 
@@ -53,6 +53,7 @@
 - `GameBootstrapLevelSelectFlowMethods.js`：选关页面、关卡进度、胜利记录、星级，并预加载 `map` 分包浮岛地图资源。
 - `GameBootstrapRouteEditorFlowMethods.js`：加载关卡与路线编辑器流程。
 - `GameBootstrapPowerupInventoryMethods.js`：背包、开局道具、局内技能球和广告补给。
+- `GameBootstrapSpecialIntroduceFlowMethods.js`：局内首次说明弹窗编排（`IntroduceView` 特殊球说明、`GeniusTipsView` 固定精灵说明、`SartTipsView` 顶部空槽说明）；使用 `SpecialIntroduceStore` 持久化已读状态，展示期间暂停限时关计时。
 - `GameBootstrapStatusResourceFlowMethods.js`：顶部资源、体力恢复、新手礼、状态文本。
 - `GameBootstrapRankingShopChestFlowMethods.js`：排行榜、商店、购买、星星宝箱。
 - `GameBootstrapDailyTaskFlowMethods.js`：每日任务和好友体力赠送。
@@ -95,7 +96,7 @@
 玩法底层系统：
 
 - `BubbleGrid.js`：棋盘格与格子状态；几何坐标通过附着的 `BoardViewportSystem.offsetY` 计算，不再使用整数 `dropOffsetRows`。
-- `BoardViewportSystem.js`：棋盘不超过 10 行时顶部贴 HUD 下沿；超过 10 行时开场和局内吸附结算后都匀速上移到 HUD 下方保留 10 行，移动期间锁定发射；逻辑第 0 行空槽 ≥6 或只剩顶部一行时，结算后立即触发全盘崩塌判定。
+- `BoardViewportSystem.js`：棋盘不超过 10 行时顶部贴 HUD 下沿；超过 10 行时开场和局内吸附结算后都匀速上移到 HUD 下方保留 10 行，移动期间锁定发射；逻辑第 0 行空槽 ≥6 时，结算后立即触发全盘崩塌判定。
 - `MatchSystem.js`：同色匹配消除。
 - `SupportSystem.js`：连通/悬空判断。
 - `FairyAssistSystem.js`：管理 `GameView/geniuses` 六个固定协助精灵槽位；只要本次发射产生消除，就按匹配消除数量生成红/黄/绿精灵，未消除时移除最早两只；碰撞中心由 `LevelRenderer.syncFairyAssistCollisionCenters` 从槽位节点转换到棋盘坐标后再参与判定，并维护每精灵最多 7 次碰撞计数与光效层数 snapshot。
@@ -190,6 +191,9 @@
 - `BuyViewController.js`
 - `RankingViewController.js`
 - `GameCircleWelfareViewController.js`
+- `GeniusTipsViewController.js`：固定精灵协助首次说明弹窗。
+- `SartTipsViewController.js`：顶部空槽首次说明弹窗；克隆 `star` 节点到棋盘空槽位置并播放透明度呼吸动画，点击任意位置关闭。
+- `IntroduceViewController.js`：特殊球/目标首次说明弹窗。
 - `TipsPresenter.js`
 - `NetworkLoadingOverlay.js`
 - `PopupPanelAnimator.js`

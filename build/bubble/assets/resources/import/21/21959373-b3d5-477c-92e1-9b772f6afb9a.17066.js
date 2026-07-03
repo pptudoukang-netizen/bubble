@@ -1,0 +1,1 @@
+module.exports = [1,["1c838c701"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"energy_progress","rect":[731,391,199,199],"offset":[-0.5,-0.5],"originalSize":[200,200],"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

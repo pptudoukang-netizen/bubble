@@ -1,0 +1,1 @@
+module.exports = [1,["14ebd8b8d"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"btn_green","rect":[658,153,167,68],"offset":[2,2],"originalSize":[173,72],"capInsets":[55,0,46,0]}],[0],0,[0],[0],[0]];

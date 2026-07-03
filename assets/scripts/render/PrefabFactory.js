@@ -64,4 +64,9 @@ PrefabFactory.prototype.instantiate = function (path, parent, name) {
   return node;
 };
 
+PrefabFactory.prototype.resetLoadedCache = function () {
+  this._prefabCache = {};
+  this._resolvedCache = {};
+};
+
 module.exports = PrefabFactory;

@@ -93,14 +93,14 @@
             }
         ],
         "layout": [
-            "BBGGRRYYYY",
+            "BBGGRRRYYY",
             ".B.....Y.",
             ".B......Y.",
-            "BBGRRRYGY",
-            "BBGRRRYGG.",
-            ".G.....G.",
-            "..........",
-            "........."
+            "BBGGRRRYY",
+            "BBGGRR..Y.",
+            ".G.....Y.",
+            ".G........",
+            ".G......."
         ],
         "designNotes": "Generated from LEVEL_CONFIG_TABLE_1_1000.csv. Chapter `cluster_fundamentals` uses color_cluster, support_drop with a side_gate board silhouette.",
         "difficultyScore": 38,

@@ -1,0 +1,1 @@
+module.exports = [1,["13ea681fc"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"xiaoxiong","rect":[210,858,150,154],"offset":[0,0],"originalSize":[150,154],"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

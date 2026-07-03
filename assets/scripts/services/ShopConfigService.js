@@ -1,6 +1,6 @@
 "use strict";
 
-var SUPPORTED_ITEM_IDS = ["stamina", "swap_ball", "rainbow_ball", "blast_ball", "barrier_hammer", "snow_removal"];
+var SUPPORTED_ITEM_IDS = ["stamina", "precise_aim", "swap_ball", "rainbow_ball", "blast_ball", "barrier_hammer", "snow_removal"];
 var SUPPORTED_TAGS = ["recommended", "hot"];
 
 function clone(data) {

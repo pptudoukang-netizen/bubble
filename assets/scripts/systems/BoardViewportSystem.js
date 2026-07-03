@@ -360,10 +360,6 @@ BoardViewportSystem.shouldTriggerTopAnchorCollapse = function (cells, maxColumns
   if (!Number.isInteger(maxColumns) || maxColumns <= 0) {
     throw new Error("BoardViewportSystem.shouldTriggerTopAnchorCollapse requires positive integer maxColumns.");
   }
-  var occupiedRowSpan = BoardViewportSystem.countOccupiedRowSpan(cells);
-  if (occupiedRowSpan <= 1) {
-    return true;
-  }
   return BoardViewportSystem.countTopRowEmptySlots(cells, maxColumns) >= BoardViewportConfig.topCollapseMinEmptySlots;
 };
 

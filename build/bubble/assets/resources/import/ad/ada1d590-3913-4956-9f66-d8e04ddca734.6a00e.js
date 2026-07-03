@@ -1,0 +1,1 @@
+module.exports = [1,["14064cbfb"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"fire_box","rect":[208,3,198,198],"offset":[1,-1],"originalSize":[200,200],"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

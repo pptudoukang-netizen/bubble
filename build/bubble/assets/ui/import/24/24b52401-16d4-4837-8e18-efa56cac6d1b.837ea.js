@@ -1,0 +1,1 @@
+module.exports = [1,["13ea681fc"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"card_transparent","rect":[3,177,300,254],"offset":[0,0],"originalSize":[300,254],"capInsets":[79,73.5,77,81.5]}],[0],0,[0],[0],[0]];

@@ -15,10 +15,13 @@ var UI_COMMENT_ANIMATION_LEGACY_PREFIX = "ui/animation/comments/";
 var UI_COMMENT_ANIMATION_BUNDLE_PREFIX = "animation/comments/";
 var UI_BUNDLE_PREFABS = {
   AwardView: true,
+  AddBallTipsView: true,
   BackpackView: true,
   BuyView: true,
   DailyTaskView: true,
   GamingCircleView: true,
+  GeniusTipsView: true,
+  SartTipsView: true,
   IntroduceView: true,
   LoseView: true,
   PauseView: true,

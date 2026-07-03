@@ -1,0 +1,1 @@
+module.exports = [1,["a5HxNhPchIk6XJJ8F1HNk3"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"gameing_circle_bg","rect":[0,0,657,826],"offset":[0,0],"originalSize":[657,826],"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

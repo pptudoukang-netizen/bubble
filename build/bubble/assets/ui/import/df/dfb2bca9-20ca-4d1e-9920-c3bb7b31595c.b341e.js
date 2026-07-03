@@ -1,0 +1,1 @@
+module.exports = [1,["14ebd8b8d"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"paopao","rect":[762,657,105,93],"offset":[1,2],"originalSize":[111,99],"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

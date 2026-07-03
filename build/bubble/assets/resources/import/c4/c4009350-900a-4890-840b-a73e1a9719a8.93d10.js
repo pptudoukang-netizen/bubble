@@ -1,0 +1,1 @@
+module.exports = [1,["158a356b4"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"icon_star_box","rect":[513,3,91,95],"offset":[1.5,-0.5],"originalSize":[100,102],"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

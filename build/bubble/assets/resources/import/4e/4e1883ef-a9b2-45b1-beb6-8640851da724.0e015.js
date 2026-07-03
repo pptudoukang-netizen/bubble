@@ -1,0 +1,1 @@
+module.exports = [1,["1c838c701"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"halo","rect":[149,57,117,114],"offset":[0.5,0],"originalSize":[120,114],"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

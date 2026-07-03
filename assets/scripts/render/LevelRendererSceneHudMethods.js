@@ -36,12 +36,41 @@ function attachLevelRendererSceneHudMethods(LevelRenderer, deps) {
   var BOTTOM_PANEL_POWERUP_SLOTS = [
     { nodeName: "plus_ball_btn", iconKey: "plus_three_balls" },
     { nodeName: "eliminate_three_line_btn", iconKey: "three_line_elimination" },
+    { nodeName: "precise_aim_btn", iconKey: "precise_aim" },
     { nodeName: "rainbow_btn", iconKey: "rainbow" },
     { nodeName: "change_btn", iconKey: "swap" },
     { nodeName: "destroy_btn", iconKey: "barrier_hammer" },
     { nodeName: "snow_removal_btn", iconKey: "snow_removal" },
     { nodeName: "bomb_btn", iconKey: "blast" }
   ];
+
+  function resolveBottomPanelBoardTargets(runtimeSnapshot) {
+    if (!runtimeSnapshot.board || typeof runtimeSnapshot.board !== "object") {
+      throw new Error("Bottom panel requires board snapshot.");
+    }
+    if (!Array.isArray(runtimeSnapshot.board.cells)) {
+      throw new Error("Bottom panel requires board cells.");
+    }
+
+    var hasIce = false;
+    var hasStone = false;
+    runtimeSnapshot.board.cells.forEach(function (cell, index) {
+      if (!cell || typeof cell !== "object") {
+        throw new Error("Bottom panel board.cells[" + index + "] must be an object.");
+      }
+      if (cell.entityCategory === "obstacle_ball" && cell.entityType === "ice") {
+        hasIce = true;
+      }
+      if (cell.entityCategory === "obstacle_ball" && cell.entityType === "stone") {
+        hasStone = true;
+      }
+    });
+
+    return {
+      hasIce: hasIce,
+      hasStone: hasStone
+    };
+  }
 
 LevelRenderer.prototype._ensureHudStarAnimationState = function () {
   var lastMissing = typeof this.lastHudStarRating === "undefined";
@@ -123,6 +152,7 @@ var COMBO_BATTER_SETTLE_DURATION = 0.1;
 var COMBO_BATTER_HOLD_DURATION = 0.85;
 var COMBO_BATTER_FADE_DURATION = 0.25;
 var COMBO_BATTER_POP_SCALE = 1.2;
+var COMBO_BATTER_OFFSET_Y = -30;
 
 var JAR_FRACTION_MOUTH_OFFSET_RATIO = 0.24;
 var JAR_FRACTION_START_Y_OFFSET = 20;
@@ -136,11 +166,21 @@ var BALL_SCORE_FADE_IN_DURATION = 0.2;
 var BALL_SCORE_HOLD_DURATION = 0.5;
 var BALL_SCORE_FADE_OUT_RISE_DURATION = 0.2;
 var BALL_SCORE_RISE_DISTANCE = 20;
+var MATCHED_TARGET_COLLECT_FLY_DURATION = 0.46;
+var MATCHED_TARGET_COLLECT_BEZIER_ARC = 90;
+var MATCHED_TARGET_COLLECT_PARTICLE_SIZE = 34;
+var MATCHED_TARGET_COLLECT_Z_INDEX = 1250;
+var MATCHED_TARGET_COLLECT_PUNCH_SCALE = 1.16;
+var MATCHED_TARGET_COLLECT_PUNCH_UP_DURATION = 0.08;
+var MATCHED_TARGET_COLLECT_PUNCH_DOWN_DURATION = 0.1;
   var BALL_SCORE_Z_INDEX = 1200;
   var SCHEDULE_ONCE_REPEAT = 0;
   var SNOW_REMOVAL_FX_SIZE = 96;
   var SNOW_REMOVAL_FX_Z_INDEX = 1300;
   var SNOW_REMOVAL_FX_SWEEP_DISTANCE = 96;
+  var SNOW_REMOVAL_FX_SWEEP_TO_LEFT_DURATION = 0.28;
+  var SNOW_REMOVAL_FX_SWEEP_TO_RIGHT_DURATION = 0.48;
+  var SNOW_REMOVAL_FX_SWEEP_RETURN_DURATION = 0.28;
 
 function requireDirectorScheduler(description) {
   if (!cc || !cc.director || typeof cc.director.getScheduler !== "function") {
@@ -189,6 +229,16 @@ LevelRenderer.prototype._resolveComboBatterPositionInGameView = function (comboE
     throw new Error("Combo batter position requires runtimeSnapshot.board.");
   }
 
+  function offsetComboBatterPosition(position) {
+    if (!position || typeof position.x !== "number" || !isFinite(position.x) || typeof position.y !== "number" || !isFinite(position.y)) {
+      throw new Error("Combo batter position requires finite x and y.");
+    }
+    return {
+      x: position.x,
+      y: position.y + COMBO_BATTER_OFFSET_Y
+    };
+  }
+
   var boardSnapshot = runtimeSnapshot.board;
   if (Number.isInteger(comboEvent.attach_row) && Number.isInteger(comboEvent.attach_col)) {
     if (!Number.isInteger(boardSnapshot.maxColumns)) {
@@ -203,7 +253,7 @@ LevelRenderer.prototype._resolveComboBatterPositionInGameView = function (comboE
       boardSnapshot.maxColumns,
       boardSnapshot.viewportOffsetY
     );
-    return this._convertBoardPointToGameView(boardPos.x, boardPos.y);
+    return offsetComboBatterPosition(this._convertBoardPointToGameView(boardPos.x, boardPos.y));
   }
 
   if (
@@ -212,7 +262,7 @@ LevelRenderer.prototype._resolveComboBatterPositionInGameView = function (comboE
     typeof comboEvent.attach_y === "number" &&
     isFinite(comboEvent.attach_y)
   ) {
-    return this._convertBoardPointToGameView(comboEvent.attach_x, comboEvent.attach_y);
+    return offsetComboBatterPosition(this._convertBoardPointToGameView(comboEvent.attach_x, comboEvent.attach_y));
   }
 
   throw new Error("combo_bonus_awarded requires attach_row/attach_col or attach_x/attach_y.");
@@ -1233,6 +1283,7 @@ LevelRenderer.prototype._ensureBottomPanelPowerupButtons = function (propsConten
 
   return {
     rainbowButtonNode: resolveButtonNode("rainbow_btn"),
+    preciseAimButtonNode: resolveButtonNode("precise_aim_btn"),
     changeButtonNode: resolveButtonNode("change_btn"),
     destroyButtonNode: resolveButtonNode("destroy_btn"),
     snowRemovalButtonNode: resolveButtonNode("snow_removal_btn"),
@@ -1314,6 +1365,7 @@ LevelRenderer.prototype._renderBottomPanel = function (runtimeSnapshot) {
   var propsContentNode = requireChildNode(propsViewNode, "content", "BttomPanel/props_scroll/view");
   var powerupButtonNodes = this._ensureBottomPanelPowerupButtons(propsContentNode);
   var rainbowButtonNode = powerupButtonNodes.rainbowButtonNode;
+  var preciseAimButtonNode = powerupButtonNodes.preciseAimButtonNode;
   var changeButtonNode = powerupButtonNodes.changeButtonNode;
   var destroyButtonNode = powerupButtonNodes.destroyButtonNode;
   var snowRemovalButtonNode = powerupButtonNodes.snowRemovalButtonNode;
@@ -1323,6 +1375,7 @@ LevelRenderer.prototype._renderBottomPanel = function (runtimeSnapshot) {
   var directionsButtonNode = requireChildNode(panel, "directions_btn", "BttomPanel");
 
   this._bindBottomPanelButton(rainbowButtonNode, "use_rainbow");
+  this._bindBottomPanelButton(preciseAimButtonNode, "use_precise_aim");
   this._bindBottomPanelButton(changeButtonNode, "use_swap");
   this._bindBottomPanelButton(destroyButtonNode, "use_barrier_hammer");
   this._bindBottomPanelButton(snowRemovalButtonNode, "use_snow_removal");
@@ -1337,6 +1390,13 @@ LevelRenderer.prototype._renderBottomPanel = function (runtimeSnapshot) {
   var skillInventory = runtimeSnapshot && runtimeSnapshot.shooter && runtimeSnapshot.shooter.skillInventory
     ? runtimeSnapshot.shooter.skillInventory
     : {};
+  if (!Object.prototype.hasOwnProperty.call(skillInventory, "precise_aim")) {
+    throw new Error("Bottom panel requires precise_aim inventory count.");
+  }
+  var preciseAimCount = Number(skillInventory.precise_aim);
+  if (!Number.isInteger(preciseAimCount) || preciseAimCount < 0) {
+    throw new Error("Bottom panel precise_aim count must be a non-negative integer.");
+  }
   var rainbowCount = Math.max(0, Math.floor(Number(skillInventory.rainbow) || 0));
   var blastCount = Math.max(0, Math.floor(Number(skillInventory.blast) || 0));
   var swapCount = Math.max(0, Math.floor(Number(skillInventory.swap) || 0));
@@ -1371,19 +1431,36 @@ LevelRenderer.prototype._renderBottomPanel = function (runtimeSnapshot) {
   var shooterSnapshot = runtimeSnapshot && runtimeSnapshot.shooter ? runtimeSnapshot.shooter : {};
   var pendingBarrierHammer = !!shooterSnapshot.pendingBarrierHammer;
   var pendingRainbowColorSelection = !!shooterSnapshot.pendingRainbowColorSelection;
+  var preciseAimActive = shooterSnapshot.ricochetGuideActive === true;
+  if (!this.bottomPanelInitialBoardTargets) {
+    this.bottomPanelInitialBoardTargets = resolveBottomPanelBoardTargets(runtimeSnapshot);
+  }
+  var boardTargets = this.bottomPanelInitialBoardTargets;
+  var showBarrierHammer = boardTargets.hasStone || pendingBarrierHammer;
+  var showSnowRemoval = boardTargets.hasIce;
   var canUsePowerup = !!shooterSnapshot.canUsePowerups;
   var canUseRainbow = canUsePowerup && !pendingBarrierHammer && rainbowCount > 0;
+  var canUsePreciseAim = canUsePowerup && !pendingBarrierHammer && !preciseAimActive && preciseAimCount > 0;
   var canUseSwap = canUsePowerup && !pendingBarrierHammer && swapCount > 0;
-  var canUseBarrierHammer = pendingBarrierHammer || (canUsePowerup && destroyCount > 0);
-  var canUseSnowRemoval = canUsePowerup && !pendingBarrierHammer && snowRemovalCount > 0;
+  var canUseBarrierHammer = showBarrierHammer && (pendingBarrierHammer || (canUsePowerup && destroyCount > 0));
+  var canUseSnowRemoval = showSnowRemoval && canUsePowerup && !pendingBarrierHammer && snowRemovalCount > 0;
   var canUseBlast = canUsePowerup && !pendingBarrierHammer && blastCount > 0;
   var canUseThreeLine = canUsePowerup && !pendingBarrierHammer && threeLineCount > 0;
   var canUsePlusBall = canUsePowerup && !pendingBarrierHammer && !runtimeSnapshot.infiniteShots && plusBallCount > 0;
 
   this._setBottomPanelInventoryPresentation(rainbowButtonNode, rainbowCount, "recover_inventory:rainbow");
+  this._setBottomPanelInventoryPresentation(preciseAimButtonNode, preciseAimCount, "recover_inventory:precise_aim");
   this._setBottomPanelInventoryPresentation(changeButtonNode, swapCount, "recover_inventory:swap");
-  this._setBottomPanelInventoryPresentation(destroyButtonNode, destroyCount, "recover_inventory:barrier_hammer");
-  this._setBottomPanelInventoryPresentation(snowRemovalButtonNode, snowRemovalCount, "recover_inventory:snow_removal");
+  if (showBarrierHammer) {
+    this._setBottomPanelInventoryPresentation(destroyButtonNode, destroyCount, "recover_inventory:barrier_hammer");
+  } else {
+    destroyButtonNode.active = false;
+  }
+  if (showSnowRemoval) {
+    this._setBottomPanelInventoryPresentation(snowRemovalButtonNode, snowRemovalCount, "recover_inventory:snow_removal");
+  } else {
+    snowRemovalButtonNode.active = false;
+  }
   this._setBottomPanelInventoryPresentation(bombButtonNode, blastCount, "recover_inventory:blast");
   if (adRunPowerupAllowed.three_line_elimination === true) {
     this._setBottomPanelInventoryPresentation(threeLineButtonNode, threeLineCount, "recover_ad_powerup:three_line_elimination");
@@ -1398,15 +1475,22 @@ LevelRenderer.prototype._renderBottomPanel = function (runtimeSnapshot) {
   this._setBottomPanelButtonEnabled(rainbowButtonNode, rainbowCount > 0 ? canUseRainbow : !pendingRainbowColorSelection, {
     dimWhenDisabled: false
   });
+  this._setBottomPanelButtonEnabled(preciseAimButtonNode, preciseAimCount > 0 ? canUsePreciseAim : (!pendingRainbowColorSelection && !preciseAimActive), {
+    dimWhenDisabled: false
+  });
   this._setBottomPanelButtonEnabled(changeButtonNode, swapCount > 0 ? canUseSwap : !pendingRainbowColorSelection, {
     dimWhenDisabled: false
   });
-  this._setBottomPanelButtonEnabled(destroyButtonNode, destroyCount > 0 ? canUseBarrierHammer : !pendingRainbowColorSelection, {
-    dimWhenDisabled: false
-  });
-  this._setBottomPanelButtonEnabled(snowRemovalButtonNode, snowRemovalCount > 0 ? canUseSnowRemoval : !pendingRainbowColorSelection, {
-    dimWhenDisabled: false
-  });
+  if (showBarrierHammer) {
+    this._setBottomPanelButtonEnabled(destroyButtonNode, destroyCount > 0 ? canUseBarrierHammer : !pendingRainbowColorSelection, {
+      dimWhenDisabled: false
+    });
+  }
+  if (showSnowRemoval) {
+    this._setBottomPanelButtonEnabled(snowRemovalButtonNode, snowRemovalCount > 0 ? canUseSnowRemoval : !pendingRainbowColorSelection, {
+      dimWhenDisabled: false
+    });
+  }
   this._setBottomPanelButtonEnabled(bombButtonNode, blastCount > 0 ? canUseBlast : !pendingRainbowColorSelection, {
     dimWhenDisabled: false
   });
@@ -1416,6 +1500,11 @@ LevelRenderer.prototype._renderBottomPanel = function (runtimeSnapshot) {
   this._setBottomPanelButtonEnabled(plusBallButtonNode, plusBallCount > 0 ? canUsePlusBall : !pendingRainbowColorSelection, {
     dimWhenDisabled: false
   });
+
+  var layout = propsContentNode.getComponent(cc.Layout);
+  if (layout && typeof layout.updateLayout === "function") {
+    layout.updateLayout();
+  }
 };
 
 LevelRenderer.prototype.playSnowRemovalAnimation = function () {
@@ -1466,13 +1555,13 @@ LevelRenderer.prototype.playSnowRemovalAnimation = function () {
       .call(function () {
         fxNode.angle = 45;
       })
-      .to(0.16, {
+      .to(SNOW_REMOVAL_FX_SWEEP_TO_LEFT_DURATION, {
         x: -SNOW_REMOVAL_FX_SWEEP_DISTANCE
       })
-      .to(0.28, {
+      .to(SNOW_REMOVAL_FX_SWEEP_TO_RIGHT_DURATION, {
         x: SNOW_REMOVAL_FX_SWEEP_DISTANCE
       })
-      .to(0.16, {
+      .to(SNOW_REMOVAL_FX_SWEEP_RETURN_DURATION, {
         x: 0
       })
       .to(0.12, {
@@ -1645,6 +1734,212 @@ LevelRenderer.prototype._getHudTargetIceBallPositionInGameView = function () {
   }
 
   return this._convertNodePositionToGameView(ballNode);
+};
+
+LevelRenderer.prototype._getHudTargetBallNode = function () {
+  var panel = this._getMountedHudPanel();
+  var targetLayout = panel ? panel.getChildByName("target_layout") : null;
+  var ballCardNode = targetLayout ? targetLayout.getChildByName("item_ball") : null;
+  var ballNode = ballCardNode ? ballCardNode.getChildByName("ball") : null;
+  if (!ballCardNode || !ballCardNode.active || !ballNode || !ballNode.active || !ballNode.parent) {
+    return null;
+  }
+  return ballNode;
+};
+
+LevelRenderer.prototype._getHudTargetBallPositionInGameView = function () {
+  var ballNode = this._getHudTargetBallNode();
+  if (!ballNode) {
+    return null;
+  }
+  return this._convertNodePositionToGameView(ballNode);
+};
+
+LevelRenderer.prototype._resolveMatchedObjectiveCollectStartPositionInGameView = function (entry, boardSnapshot) {
+  if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+    throw new Error("Matched objective collect entry is required.");
+  }
+  if (typeof entry.color !== "string" || !entry.color) {
+    throw new Error("Matched objective collect entry requires color.");
+  }
+
+  var worldPosition = entry.worldPosition;
+  if (
+    worldPosition &&
+    typeof worldPosition === "object" &&
+    !Array.isArray(worldPosition) &&
+    typeof worldPosition.x === "number" &&
+    typeof worldPosition.y === "number" &&
+    isFinite(worldPosition.x) &&
+    isFinite(worldPosition.y)
+  ) {
+    return this._convertBoardPointToGameView(worldPosition.x, worldPosition.y);
+  }
+
+  if (
+    !boardSnapshot ||
+    !Number.isInteger(boardSnapshot.maxColumns) ||
+    typeof boardSnapshot.viewportOffsetY !== "number" ||
+    !isFinite(boardSnapshot.viewportOffsetY)
+  ) {
+    throw new Error("Matched objective collect entry position requires board snapshot.");
+  }
+  if (!Number.isInteger(entry.row) || !Number.isInteger(entry.col)) {
+    throw new Error("Matched objective collect entry requires row and col when worldPosition is missing.");
+  }
+
+  var boardPos = BoardLayout.getCellPosition(
+    entry.row,
+    entry.col,
+    boardSnapshot.maxColumns,
+    boardSnapshot.viewportOffsetY
+  );
+  return this._convertBoardPointToGameView(boardPos.x, boardPos.y);
+};
+
+LevelRenderer.prototype._buildMatchedObjectiveCollectBezierPoints = function (startPosition, endPosition) {
+  if (!startPosition || !endPosition) {
+    throw new Error("Matched objective collect bezier requires start and end positions.");
+  }
+  var deltaX = endPosition.x - startPosition.x;
+  var deltaY = endPosition.y - startPosition.y;
+  var arc = Math.max(MATCHED_TARGET_COLLECT_BEZIER_ARC, Math.abs(deltaY) * 0.18);
+  return [
+    cc.v2(startPosition.x + deltaX * 0.25, startPosition.y + arc),
+    cc.v2(startPosition.x + deltaX * 0.72, endPosition.y + arc * 0.55),
+    cc.v2(endPosition.x, endPosition.y)
+  ];
+};
+
+LevelRenderer.prototype._playMatchedObjectiveTargetPunch = function () {
+  var targetNode = this._getHudTargetBallNode();
+  if (!targetNode || !targetNode.isValid) {
+    throw new Error("Matched objective collect target punch requires HUD target ball node.");
+  }
+  if (typeof cc.tween !== "function") {
+    throw new Error("Matched objective collect target punch requires cc.tween.");
+  }
+
+  targetNode.stopAllActions();
+  targetNode.scale = 1;
+  cc.tween(targetNode)
+    .to(MATCHED_TARGET_COLLECT_PUNCH_UP_DURATION, { scale: MATCHED_TARGET_COLLECT_PUNCH_SCALE })
+    .to(MATCHED_TARGET_COLLECT_PUNCH_DOWN_DURATION, { scale: 1 })
+    .start();
+};
+
+LevelRenderer.prototype._spawnMatchedObjectiveCollectParticle = function (entry, startPosition, endPosition) {
+  if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+    throw new Error("Matched objective collect particle requires entry.");
+  }
+  if (typeof entry.color !== "string" || !entry.color) {
+    throw new Error("Matched objective collect particle requires color.");
+  }
+  if (!startPosition || typeof startPosition.x !== "number" || typeof startPosition.y !== "number" || !isFinite(startPosition.x) || !isFinite(startPosition.y)) {
+    throw new Error("Matched objective collect particle requires finite start position.");
+  }
+  if (!endPosition || typeof endPosition.x !== "number" || typeof endPosition.y !== "number" || !isFinite(endPosition.x) || !isFinite(endPosition.y)) {
+    throw new Error("Matched objective collect particle requires finite end position.");
+  }
+
+  var gameViewNode = this._getGameViewNode();
+  if (!gameViewNode || !gameViewNode.isValid) {
+    throw new Error("GameView node is required for matched objective collect particle.");
+  }
+  if (typeof cc.tween !== "function") {
+    throw new Error("Matched objective collect particle requires cc.tween.");
+  }
+  if (typeof cc.Node !== "function") {
+    throw new Error("Matched objective collect particle requires cc.Node.");
+  }
+
+  var spritePath = BALL_RESOURCES[entry.color];
+  if (!spritePath) {
+    throw new Error("Matched objective collect particle unsupported color: " + entry.color);
+  }
+  var spriteFrame = this.spriteFrameCache[spritePath];
+  if (!spriteFrame) {
+    throw new Error("Matched objective collect particle sprite frame is missing: " + spritePath);
+  }
+
+  var particleNode = new cc.Node("matched_objective_collect_" + String(entry.id));
+  particleNode.parent = gameViewNode;
+  particleNode.zIndex = MATCHED_TARGET_COLLECT_Z_INDEX;
+  particleNode.opacity = 0;
+  particleNode.scale = 0.72;
+  particleNode.setPosition(startPosition.x, startPosition.y);
+  particleNode.setContentSize(MATCHED_TARGET_COLLECT_PARTICLE_SIZE, MATCHED_TARGET_COLLECT_PARTICLE_SIZE);
+  ensureSprite(particleNode, spriteFrame);
+
+  var delayMs = Number(entry.delayMs);
+  if (!Number.isFinite(delayMs) || delayMs < 0) {
+    throw new Error("Matched objective collect particle delayMs must be non-negative.");
+  }
+  var bezierPoints = this._buildMatchedObjectiveCollectBezierPoints(startPosition, endPosition);
+  var renderer = this;
+  cc.tween(particleNode)
+    .delay(delayMs / 1000)
+    .call(function () {
+      particleNode.opacity = 255;
+    })
+    .parallel(
+      cc.tween().bezierTo(
+        MATCHED_TARGET_COLLECT_FLY_DURATION,
+        bezierPoints[0],
+        bezierPoints[1],
+        bezierPoints[2]
+      ),
+      cc.tween().to(MATCHED_TARGET_COLLECT_FLY_DURATION, {
+        scale: 0.5,
+        opacity: 210
+      }, {
+        easing: "quadIn"
+      })
+    )
+    .call(function () {
+      renderer._playMatchedObjectiveTargetPunch();
+      particleNode.destroy();
+    })
+    .start();
+};
+
+LevelRenderer.prototype._playMatchedObjectiveCollectFly = function (runtimeSnapshot) {
+  if (!runtimeSnapshot || !Array.isArray(runtimeSnapshot.runtimeEvents)) {
+    return;
+  }
+  if (!runtimeSnapshot.board) {
+    throw new Error("Matched objective collect fly requires runtimeSnapshot.board.");
+  }
+
+  var targetPosition = null;
+  for (var eventIndex = 0; eventIndex < runtimeSnapshot.runtimeEvents.length; eventIndex += 1) {
+    var event = runtimeSnapshot.runtimeEvents[eventIndex];
+    if (!event || event.type !== "matched_objective_collect") {
+      continue;
+    }
+    if (typeof event.id !== "number" || !isFinite(event.id)) {
+      throw new Error("matched_objective_collect event requires numeric id.");
+    }
+    if (event.id <= this.lastMatchedObjectiveCollectEventId) {
+      continue;
+    }
+    if (!Array.isArray(event.entries) || !event.entries.length) {
+      throw new Error("matched_objective_collect event requires entries.");
+    }
+
+    if (!targetPosition) {
+      targetPosition = this._getHudTargetBallPositionInGameView();
+      if (!targetPosition) {
+        throw new Error("matched_objective_collect event requires active HUD ball target.");
+      }
+    }
+
+    event.entries.forEach(function (entry) {
+      var startPosition = this._resolveMatchedObjectiveCollectStartPositionInGameView(entry, runtimeSnapshot.board);
+      this._spawnMatchedObjectiveCollectParticle(entry, startPosition, targetPosition);
+    }, this);
+    this.lastMatchedObjectiveCollectEventId = event.id;
+  }
 };
 
 LevelRenderer.prototype._convertBoardPointToGameView = function (x, y) {

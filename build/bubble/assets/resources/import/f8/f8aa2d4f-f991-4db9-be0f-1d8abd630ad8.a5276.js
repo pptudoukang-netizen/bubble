@@ -1,0 +1,1 @@
+module.exports = [1,["15684f836"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"light_ball","rect":[3,3,240,240],"offset":[0,0],"originalSize":[240,240],"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

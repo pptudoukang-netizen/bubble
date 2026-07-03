@@ -1,0 +1,1 @@
+module.exports = [1,["15684f836"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"split_blue_ball","rect":[3,454,199,199],"offset":[0.5,0.5],"originalSize":[200,200],"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

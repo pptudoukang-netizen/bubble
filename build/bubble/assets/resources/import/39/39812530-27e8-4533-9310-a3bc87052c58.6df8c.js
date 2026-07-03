@@ -1,0 +1,1 @@
+module.exports = [1,["158a356b4"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"icon_bag","rect":[323,267,112,105],"offset":[0,0.5],"originalSize":[114,108],"rotated":1,"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

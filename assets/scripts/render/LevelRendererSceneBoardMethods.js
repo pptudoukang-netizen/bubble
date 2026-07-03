@@ -22,7 +22,6 @@ function attachLevelRendererSceneBoardMethods(LevelRenderer, deps) {
     width: 86,
     height: 86
   };
-  var TOP_SLOT_STAR_OFFSET_Y = 30;
   var TOP_SLOT_STAR_Z_INDEX = -1;
   var TOP_SLOT_STAR_DIM_OPACITY = 150;
   var TOP_SLOT_STAR_BRIGHT_OPACITY = 255;
@@ -444,7 +443,7 @@ LevelRenderer.prototype._renderTopSlotStars = function (boardSnapshot) {
     var slotPosition = BoardLayout.getCellPosition(0, col, boardSnapshot.maxColumns, boardSnapshot.viewportOffsetY);
     var starNode = this._acquireTopSlotStarNode(slotId, starFrame);
     starNode.__topSlotStarTick = currentTick;
-    starNode.setPosition(slotPosition.x, boardSnapshot.topAttachY + TOP_SLOT_STAR_OFFSET_Y);
+    starNode.setPosition(slotPosition.x, slotPosition.y);
     applyTopSlotStarVisual(starNode, starFrame);
   }
 

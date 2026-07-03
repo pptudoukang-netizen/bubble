@@ -1,0 +1,1 @@
+module.exports = [1,["14ebd8b8d"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"sign_bg","rect":[3,3,641,824],"offset":[-0.5,0],"originalSize":[642,824],"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

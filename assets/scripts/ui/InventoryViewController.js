@@ -2,6 +2,11 @@
 
 var ITEM_DEFINITIONS = [
   {
+    itemId: "precise_aim",
+    cardName: "PreciseAimCard",
+    displayName: "瞄准"
+  },
+  {
     itemId: "swap_ball",
     cardName: "SwapBallCard",
     displayName: "换球"

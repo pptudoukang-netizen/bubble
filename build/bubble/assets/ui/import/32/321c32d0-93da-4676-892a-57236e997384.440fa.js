@@ -1,0 +1,1 @@
+module.exports = [1,["195168902"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"jump","rect":[3,3,376,73],"offset":[0,0],"originalSize":[376,73],"rotated":1,"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

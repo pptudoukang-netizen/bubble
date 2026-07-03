@@ -1,0 +1,1 @@
+module.exports = [1,["148a7aa2e"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"reduce_btn","rect":[684,500,50,51],"offset":[0,0],"originalSize":[50,51],"rotated":1,"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

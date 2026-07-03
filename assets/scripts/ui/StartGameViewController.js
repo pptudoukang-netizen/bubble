@@ -6,7 +6,7 @@ var SpriteProxyLayerHelper = require("../utils/SpriteProxyLayerHelper");
 var POWERUP_DEFINITIONS = [
   { itemId: "plus_three_balls", unlockLevel: 1, iconPath: "image/props/plus_ball", temporary: true },
   { itemId: "three_line_elimination", unlockLevel: 1, iconPath: "image/props/three_line_elimination", temporary: true },
-  { itemId: "precise_aim", unlockLevel: 1, iconPath: "image/props/aim", temporary: true },
+  { itemId: "precise_aim", unlockLevel: 1, iconPath: "image/props/aim" },
   { itemId: "swap_ball", unlockLevel: 5, iconPath: "image/props/change_ball" },
   { itemId: "rainbow_ball", unlockLevel: 10, iconPath: "image/props/rainbow_ball" },
   { itemId: "blast_ball", unlockLevel: 15, iconPath: "image/props/blast_ball" },
@@ -98,6 +98,34 @@ function requireNonNegativeInteger(value, description) {
     throw new Error(description + " must be a non-negative integer.");
   }
   return value;
+}
+
+function getOrderedPowerupDefinitionsForLevel(levelId) {
+  requirePositiveInteger(levelId, "StartGameView powerup order levelId");
+  var unlockedEntries = [];
+  var lockedEntries = [];
+  POWERUP_DEFINITIONS.forEach(function (definition, index) {
+    requirePositiveInteger(definition.unlockLevel, "StartGameView powerup unlockLevel `" + definition.itemId + "`");
+    var entry = {
+      definition: definition,
+      originalIndex: index
+    };
+    if (levelId >= definition.unlockLevel) {
+      unlockedEntries.push(entry);
+    } else {
+      lockedEntries.push(entry);
+    }
+  });
+  lockedEntries.sort(function (left, right) {
+    var unlockLevelDelta = left.definition.unlockLevel - right.definition.unlockLevel;
+    if (unlockLevelDelta !== 0) {
+      return unlockLevelDelta;
+    }
+    return left.originalIndex - right.originalIndex;
+  });
+  return unlockedEntries.concat(lockedEntries).map(function (entry) {
+    return entry.definition;
+  });
 }
 
 function getLabel(node, description) {
@@ -628,6 +656,28 @@ StartGameViewController.prototype._layoutPropNodes = function () {
   }, this);
 };
 
+StartGameViewController.prototype._syncPropNodeOrderForLevel = function (levelId) {
+  var orderedDefinitions = getOrderedPowerupDefinitionsForLevel(levelId);
+  var entriesByItemId = {};
+  this._propNodes.forEach(function (entry) {
+    var itemId = entry.definition.itemId;
+    if (entriesByItemId[itemId]) {
+      throw new Error("StartGameView prop node duplicated for item: " + itemId);
+    }
+    entriesByItemId[itemId] = entry;
+  });
+
+  this._propNodes = orderedDefinitions.map(function (definition, index) {
+    var entry = entriesByItemId[definition.itemId];
+    if (!entry) {
+      throw new Error("StartGameView prop node missing for item: " + definition.itemId);
+    }
+    entry.node.setSiblingIndex(index);
+    return entry;
+  });
+  this._layoutPropNodes();
+};
+
 StartGameViewController.prototype._resetPropListScrollPosition = function () {
   var scrollView = this._nodes.propScrollView;
   var contentNode = requireValidNode(this._nodes.propContentNode, "Panel/prop_listview/view/content");
@@ -774,7 +824,7 @@ StartGameViewController.prototype._onPropTap = function (itemId) {
 
   var count = getOwnedPowerupCount(this._renderState, itemId);
   if (this._selectedItems.length >= MAX_SELECTED_POWERUPS) {
-    this.onUnavailable("关卡中最多携带" + MAX_SELECTED_POWERUPS + "个道具");
+    this.onUnavailable("关卡中最多携带" + MAX_SELECTED_POWERUPS + "种道具");
     return;
   }
   if (count <= 0) {
@@ -970,6 +1020,7 @@ StartGameViewController.prototype._renderContent = function (options) {
   );
   this._updateTargetLayout();
 
+  this._syncPropNodeOrderForLevel(levelId);
   this._renderPropItems();
   this._renderPropSelectionState();
   this._rebuildRenderProxies();

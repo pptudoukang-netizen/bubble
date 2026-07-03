@@ -1,1 +1,0 @@
-module.exports = [1,["73rNd3bs1PCYVuidgxY9Cc"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"icon_shop","rect":[0,0,97,111],"offset":[0,0],"originalSize":[97,111],"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

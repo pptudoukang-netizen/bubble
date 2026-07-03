@@ -1,0 +1,1 @@
+module.exports = [1,["1b30f853c"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"blue_jar_mask","rect":[474,479,232,227],"offset":[0,-11],"originalSize":[232,249],"rotated":1,"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

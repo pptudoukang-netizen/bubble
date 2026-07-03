@@ -1,1 +1,0 @@
-module.exports = [1,["c4JVRm6C5K0Z1WXuvJ0YRB"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"music_icon","rect":[0,0,47,48],"offset":[0,0],"originalSize":[47,48],"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

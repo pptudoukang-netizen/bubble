@@ -14,6 +14,8 @@ var SpecialAnimationTiming = require("../assets/scripts/config/SpecialAnimationT
 var StarRatingPolicy = require("../assets/scripts/core/StarRatingPolicy");
 var TrajectoryPredictor = require("../assets/scripts/systems/TrajectoryPredictor");
 var BoardViewportSystem = require("../assets/scripts/systems/BoardViewportSystem");
+var BubbleBreakSfxPolicy = require("../assets/scripts/audio/BubbleBreakSfxPolicy");
+var AudioManager = require("../assets/scripts/audio/AudioManager");
 
 function syncHudBottomLineYForValidation() {
   if (typeof BoardLayout.boardStartY !== "number" || !isFinite(BoardLayout.boardStartY)) {
@@ -474,6 +476,12 @@ function runKeyUnlockSingleTargetCase() {
   if (resolution.unlockedLockedBalls[0].__sourceKeyId !== "key_1") {
     throw new Error("Unlocked locked ball must record source key id.");
   }
+  if (manager.pendingRuntimeEvents.length !== 1 || manager.pendingRuntimeEvents[0].type !== "lock_open") {
+    throw new Error("Key unlock must push one lock_open runtime event.");
+  }
+  if (manager.pendingRuntimeEvents[0].row !== 1 || manager.pendingRuntimeEvents[0].col !== 2) {
+    throw new Error("Key unlock lock_open event must identify the unlocked cell.");
+  }
 
   var remainingLockedCount = grid.getCells().filter(function (cell) {
     return cell && cell.entityCategory === "locked_ball";
@@ -631,6 +639,8 @@ function runKeyUnlockUnsupportedFallsCase() {
       initialDropSpaceRows: 8,
       colors: ["R", "G", "B"],
       jarColors: ["R", "G", "B"],
+      winConditions: [],
+      bonusObjectives: [],
       layout: [
         ".........",
         ".........",
@@ -656,6 +666,7 @@ function runKeyUnlockUnsupportedFallsCase() {
   var jarCollectorSystem = new jars();
 
   var grid = createGridWithViewport(levelConfig);
+  manager.currentLevel = levelConfig;
   supportSystem.configureLevel(levelConfig);
   matchSystem.configureLevel(levelConfig);
   fairyAssistSystem.configureLevel(levelConfig);
@@ -810,12 +821,28 @@ function runMolotovEliminationSequencePositionCase() {
   var resolution = {
     matched: [],
     collected: [],
+    floating: [],
     reactiveTriggered: [],
-    eliminationSequence: []
+    eliminationSequence: [],
+    matchedObjectiveCollected: []
+  };
+  manager.currentLevel = {
+    level: {
+      bonusObjectives: [],
+      winConditions: []
+    }
   };
 
   manager.systems = {
-    bubbleGrid: grid
+    bubbleGrid: grid,
+    supportSystem: {
+      findFloatingCells: function () {
+        return [];
+      }
+    },
+    jarCollectorSystem: {
+      collect: function () {}
+    }
   };
   manager.molotovPendingResolutionContext = {
     allRemoved: []
@@ -848,6 +875,231 @@ function runMolotovEliminationSequencePositionCase() {
   }
   if (!entry.worldPosition || entry.worldPosition.x !== 70 || entry.worldPosition.y !== 10) {
     throw new Error("Molotov blast elimination sequence must preserve pre-removal worldPosition.");
+  }
+}
+
+function runMolotovBlastPhaseDropsUnsupportedSourceSupportCase() {
+  var manager = new GameManager();
+  var sourceMolotov = {
+    id: "molotov_source_support",
+    row: 1,
+    col: 1,
+    entityCategory: "reactive_ball",
+    entityType: "molotov",
+    blastRadius: 2
+  };
+  var floatingCell = {
+    id: "unsupported_after_source",
+    row: 2,
+    col: 1,
+    color: "R",
+    entityCategory: "normal_ball",
+    entityType: null
+  };
+  var sourceRemoved = false;
+  var registeredDrops = [];
+  var grid = {
+    getCoordinatesWithinRadius: function (row, col, radius) {
+      if (row !== 1 || col !== 1 || radius !== 2) {
+        throw new Error("Molotov source-support regression queried unexpected radius.");
+      }
+      return [
+        { row: 1, col: 1, distance: 0 }
+      ];
+    },
+    getCell: function (row, col) {
+      if (row === 1 && col === 1 && !sourceRemoved) {
+        return sourceMolotov;
+      }
+      return null;
+    },
+    removeCells: function (cells) {
+      return cells.map(function (cell) {
+        if (cell.id === "molotov_source_support") {
+          sourceRemoved = true;
+        }
+        return cell;
+      });
+    },
+    getCellPosition: function (row, col) {
+      return {
+        x: col * 10,
+        y: row * 10
+      };
+    }
+  };
+  var resolution = {
+    matched: [],
+    collected: [],
+    floating: [],
+    reactiveTriggered: [],
+    eliminationSequence: [],
+    matchedObjectiveCollected: [],
+    collectedKeys: [],
+    unlockedLockedBalls: [],
+    spawnedBySplitters: [{
+      id: "unsupported_after_source",
+      row: 2,
+      col: 1,
+      color: "R",
+      sourceSplitterId: "splitter_source",
+      sourceSplitterRow: 2,
+      sourceSplitterCol: 0
+    }],
+    thawed: [],
+    iceCollected: 0
+  };
+
+  manager.currentLevel = {
+    level: {
+      bonusObjectives: [],
+      winConditions: []
+    }
+  };
+  manager.systems = {
+    bubbleGrid: grid,
+    supportSystem: {
+      findFloatingCells: function () {
+        if (!sourceRemoved) {
+          throw new Error("Molotov floating scan must run after source molotov is removed.");
+        }
+        return [floatingCell];
+      }
+    },
+    fallingMarbleSystem: {
+      registerDrops: function (cells) {
+        registeredDrops = registeredDrops.concat(cells);
+      }
+    },
+    jarCollectorSystem: {
+      collect: function () {}
+    }
+  };
+  manager.molotovPendingResolutionContext = {
+    allRemoved: []
+  };
+  manager.molotovBlastTriggeredIds = {};
+  manager._triggerAdjacentKeys = function () {
+    return [];
+  };
+  manager._triggerAdjacentSplitters = function () {};
+  manager._collectAdjacentMolotovs = function () {
+    return [];
+  };
+  manager._queueMolotovBlasts = function () {};
+  manager._cancelPendingSplitterSpawnsForDroppedCells = function () {};
+
+  manager._executeMolotovBlastPhase({
+    id: "molotov_source_support",
+    row: 1,
+    col: 1,
+    blastRadius: 2
+  }, grid, resolution);
+
+  if (!sourceRemoved) {
+    throw new Error("Molotov source cell must be removed during blast phase.");
+  }
+  if (resolution.floating.length !== 1 || resolution.floating[0].id !== "unsupported_after_source") {
+    throw new Error("Molotov blast phase must resolve unsupported cells caused by source removal.");
+  }
+  if (registeredDrops.length !== 1 || registeredDrops[0].id !== "unsupported_after_source") {
+    throw new Error("Molotov blast phase must register unsupported drops immediately.");
+  }
+  if (resolution.spawnedBySplitters.length !== 0) {
+    throw new Error("Molotov floating resolution must remove spawned splitter animation entries for dropped targets.");
+  }
+}
+
+function runMolotovPendingResolutionFinalizeCase() {
+  var manager = new GameManager();
+  var floatingCell = {
+    id: "floating_after_molotov",
+    row: 3,
+    col: 2,
+    color: "R",
+    entityCategory: "normal_ball",
+    entityType: null
+  };
+  var registeredDrops = [];
+  var grid = {
+    removeCells: function (cells) {
+      return cells.slice();
+    },
+    getCells: function () {
+      return [
+        { id: "anchored_survivor", row: 0, col: 0, color: "B", entityCategory: "normal_ball", entityType: null }
+      ];
+    },
+    assertNoVisualOverlap: function () {}
+  };
+
+  manager.systems = {
+    bubbleGrid: grid,
+    supportSystem: {
+      findFloatingCells: function (targetGrid) {
+        if (targetGrid !== grid) {
+          throw new Error("Molotov pending finalize must inspect the live grid.");
+        }
+        return [floatingCell];
+      }
+    },
+    fallingMarbleSystem: {
+      hasActiveDrops: function () {
+        return false;
+      },
+      registerDrops: function (cells) {
+        registeredDrops = cells.slice();
+      }
+    },
+    jarCollectorSystem: {
+      collect: function () {}
+    }
+  };
+  manager.lastResolution = {
+    matched: [],
+    collected: [],
+    floating: [],
+    spawnedBySplitters: [],
+    collectedKeys: [],
+    unlockedLockedBalls: [],
+    fairyAssistEvents: []
+  };
+  manager.molotovResolutionPending = true;
+  manager.molotovPendingResolutionContext = {
+    dropScoreRuleKey: "matchedDrop",
+    allRemoved: [
+      { id: "molotov_removed_support", row: 2, col: 2, color: "G", entityCategory: "normal_ball", entityType: null }
+    ]
+  };
+  manager.pendingMolotovBlastQueue = [];
+  manager.activeMolotovBlast = null;
+  manager._resolveCollectedKeyUnlocks = function () {};
+  manager._cancelPendingSplitterSpawnsForDroppedCells = function () {};
+  manager._applyResolutionDropScore = function () {};
+  manager._registerComboElimination = function () {};
+  manager._resolveFairyAssistsAfterResolution = function () {};
+  manager._tryTopAnchorCollapse = function () {
+    return false;
+  };
+  manager._applyPostImpactBoardShiftPolicy = function () {
+    return false;
+  };
+  manager._scheduleBoardAdvanceAfterImpact = function () {
+    return false;
+  };
+
+  var updated = manager._updatePendingMolotovBlasts(0);
+  if (!updated) {
+    throw new Error("Molotov pending resolution must update when only finalize work remains.");
+  }
+  if (manager.molotovResolutionPending) {
+    throw new Error("Molotov pending resolution must clear after finalize.");
+  }
+  if (manager.lastResolution.floating.length !== 1 || manager.lastResolution.floating[0].id !== "floating_after_molotov") {
+    throw new Error("Molotov pending finalize must resolve unsupported floating cells immediately.");
+  }
+  if (registeredDrops.length !== 1 || registeredDrops[0].id !== "floating_after_molotov") {
+    throw new Error("Molotov pending finalize must register floating drops immediately.");
   }
 }
 
@@ -892,6 +1144,84 @@ function runAdjacentIceThawSnowballCollectionCase() {
   var duplicateGain = manager._registerIceSnowballCollection([iceCell]);
   if (duplicateGain !== 0 || manager.iceCollectedTotal !== 2) {
     throw new Error("Collected ice drop must not double count snowball.");
+  }
+}
+
+function runSnowRemovalKeepsInnerNormalBallCase() {
+  var manager = new GameManager();
+  var hadCc = Object.prototype.hasOwnProperty.call(global, "cc");
+  var previousCc = global.cc;
+  global.cc = {
+    log: function () {},
+    warn: function () {},
+    error: function () {}
+  };
+  var levelConfig = createLevelConfig(1);
+  levelConfig.level.levelId = 16;
+  levelConfig.level.code = "L016_SNOW_REMOVAL_REGRESSION";
+  levelConfig.level.colors = ["R", "B"];
+  levelConfig.level.colorCount = 2;
+  levelConfig.level.shotLimit = 8;
+  levelConfig.level.targetScore = 100;
+  levelConfig.level.jarCount = 2;
+  levelConfig.level.jarColors = ["R", "B"];
+  levelConfig.level.winConditions = [
+    { type: "collect_any", value: 1 }
+  ];
+  levelConfig.level.bonusObjectives = [
+    { type: "collect_ice_snowball", value: 1 }
+  ];
+  levelConfig.level.layout = [
+    "R........",
+    "R........",
+    "........."
+  ];
+  levelConfig.level.specialEntities = [
+    { id: "ice_snow_1", entityCategory: "obstacle_ball", entityType: "ice", innerColor: "B", row: 2, col: 0 }
+  ];
+  levelConfig.level.adPowerupRules = {
+    allowed: ["snow_removal"]
+  };
+
+  try {
+    manager.startLevel(levelConfig);
+    manager.systems.shooterController.skillInventory.snow_removal = 1;
+    var beforeCells = manager.systems.bubbleGrid.getCells();
+    if (beforeCells.length !== 3) {
+      throw new Error("Snow removal regression setup must start with two normal balls and one snow block.");
+    }
+
+    var result = manager.useSnowRemoval();
+    if (!result || result.accepted !== true) {
+      throw new Error("Snow removal regression expected accepted use.");
+    }
+    if (result.removed !== 1 || result.thawed !== 1 || result.floating !== 0) {
+      throw new Error("Snow removal must thaw exactly one snow block without dropping supported balls.");
+    }
+    if (manager.iceCollectedTotal !== 1 || manager.lastResolution.iceCollected !== 1) {
+      throw new Error("Snow removal must collect exactly one snow block objective.");
+    }
+    if (manager.lastResolution.matched.length !== 0 || manager.lastResolution.thawed.length !== 1) {
+      throw new Error("Snow removal must record thawed snow blocks instead of matched removed balls.");
+    }
+
+    var afterCells = manager.systems.bubbleGrid.getCells();
+    if (afterCells.length !== beforeCells.length) {
+      throw new Error("Snow removal must keep the inner normal ball on the board.");
+    }
+    var thawedCell = manager.systems.bubbleGrid.getCell(2, 0);
+    if (!thawedCell || thawedCell.entityCategory !== "normal_ball" || thawedCell.color !== "B") {
+      throw new Error("Snow removal must replace the snow block with its inner normal ball.");
+    }
+    if (manager.systems.shooterController.skillInventory.snow_removal !== 0) {
+      throw new Error("Snow removal must consume exactly one inventory item.");
+    }
+  } finally {
+    if (hadCc) {
+      global.cc = previousCc;
+    } else {
+      delete global.cc;
+    }
   }
 }
 
@@ -1046,6 +1376,253 @@ function runCollectionRewardDoesNotClearRemainingBoardCase() {
   }
   if (boardCells.length !== 2) {
     throw new Error("Completed collection reward must leave remaining board cells unchanged.");
+  }
+}
+
+function createAddBallPromptRegressionManager() {
+  var manager = new GameManager();
+  var boardCells = [
+    {
+      id: "remaining_1",
+      row: 0,
+      col: 0,
+      color: "R",
+      entityCategory: "normal_ball"
+    }
+  ];
+  manager.currentLevel = {
+    level: {
+      code: "TEST_ADD_BALL_PROMPT",
+      adPowerupRules: {
+        allowed: ["plus_three_balls"]
+      },
+      bonusObjectives: [
+        { type: "collect_any", value: 1 }
+      ],
+      winConditions: []
+    }
+  };
+  manager.remainingShots = 0;
+  manager.state = "running";
+  manager.systems = {
+    bubbleGrid: {
+      version: 1,
+      getCells: function () {
+        return boardCells.slice();
+      },
+      getViewportOffsetY: function () {
+        return 0;
+      },
+      snapshot: function () {
+        return {
+          cells: boardCells.slice(),
+          version: 1
+        };
+      },
+      getTopAttachY: function () {
+        return BoardLayout.boardStartY + BoardLayout.bubbleRadius;
+      }
+    },
+    shooterController: {
+      origin: { x: 0, y: 0 },
+      aimDirection: { x: 0, y: 1 },
+      getShooterStateForRender: function () {
+        return {
+          aim: {
+            origin: { x: 0, y: 0 },
+            direction: { x: 0, y: 1 }
+          },
+          skillInventory: {},
+          adRunPowerupInventory: {},
+          queueAdvanceRevision: 0
+        };
+      },
+      syncFiniteShotQueue: function (remainingShots) {
+        if (remainingShots !== 10) {
+          throw new Error("Add-ball prompt expected plus ten shooter sync.");
+        }
+        return {
+          accepted: true
+        };
+      }
+    },
+    trajectoryPredictor: {
+      maxBounces: 0
+    },
+    boardViewportSystem: {
+      isMoving: function () {
+        return false;
+      },
+      snapshot: function () {
+        return {
+          offsetY: 0,
+          targetOffsetY: 0,
+          moving: false,
+          introActive: false
+        };
+      },
+      introActive: false
+    },
+    fallingMarbleSystem: {
+      hasActiveDrops: function () {
+        return false;
+      },
+      snapshotForRender: function () {
+        return {
+          activeDrops: [],
+          activeDropCount: 0
+        };
+      }
+    },
+    fairyAssistSystem: {
+      snapshotForRender: function () {
+        return {
+          slots: []
+        };
+      }
+    },
+    jarCollectorSystem: {
+      jarColors: ["R"],
+      collectedByColor: { R: 0 },
+      collectedTotal: 0,
+      objectiveTarget: 1,
+      lastCollected: [],
+      snapshot: function () {
+        return {
+          collectedTotal: 0,
+          collectedByColor: { R: 0 }
+        };
+      }
+    }
+  };
+  return manager;
+}
+
+function runOutOfShotsAddBallPromptCase() {
+  var manager = createAddBallPromptRegressionManager();
+  manager._showOutOfShotsAddBallPrompt();
+  if (manager.state !== "out_of_shots_add_ball_prompt") {
+    throw new Error("Final shot exhaustion should enter add-ball prompt before lose settlement.");
+  }
+
+  var closeSnapshot = manager.confirmOutOfShotsAddBallPromptClosed();
+  if (!closeSnapshot || closeSnapshot.state !== "out_of_shots") {
+    throw new Error("Closing AddBallTipsView should continue out_of_shots settlement.");
+  }
+}
+
+function runAddBallPromptPlusTenCase() {
+  var manager = createAddBallPromptRegressionManager();
+  manager._showOutOfShotsAddBallPrompt();
+  manager.adRunPowerupInventory.plus_three_balls = 1;
+
+  var useResult = manager.usePlusThreeBalls();
+  if (!useResult || useResult.accepted !== true) {
+    throw new Error("Add-ball prompt should allow using plus ten balls.");
+  }
+  if (manager.state !== "running") {
+    throw new Error("Using plus ten balls from AddBallTipsView should resume running state.");
+  }
+  if (manager.remainingShots !== 10) {
+    throw new Error("Using plus ten balls from AddBallTipsView should grant 10 shots.");
+  }
+}
+
+function runPreciseAimInventoryActivatesGuideCase() {
+  var manager = new GameManager();
+  var hadCc = Object.prototype.hasOwnProperty.call(global, "cc");
+  var previousCc = global.cc;
+  var levelConfig = createLevelConfig(1);
+  global.cc = {
+    log: function () {},
+    warn: function () {},
+    error: function () {}
+  };
+
+  try {
+    manager.startLevel(levelConfig);
+
+    var grantResult = manager.grantPowerupInventory("precise_aim", 1);
+    if (!grantResult || grantResult.accepted !== true) {
+      throw new Error("Precise aim inventory grant should be accepted.");
+    }
+    if (manager.systems.shooterController.skillInventory.precise_aim !== 1) {
+      throw new Error("Precise aim inventory grant should add one runtime item.");
+    }
+
+    var useResult = manager.usePreciseAim();
+    if (!useResult || useResult.accepted !== true) {
+      throw new Error("Precise aim use should be accepted when runtime inventory exists.");
+    }
+    if (manager.ricochetGuideActive !== true) {
+      throw new Error("Precise aim use should activate ricochet guide.");
+    }
+    if (manager.systems.shooterController.skillInventory.precise_aim !== 0) {
+      throw new Error("Precise aim use should consume one runtime item.");
+    }
+    if (!useResult.snapshot || !useResult.snapshot.shooter || useResult.snapshot.shooter.ricochetGuideActive !== true) {
+      throw new Error("Precise aim use snapshot should expose active ricochet guide.");
+    }
+  } finally {
+    if (hadCc) {
+      global.cc = previousCc;
+    } else {
+      delete global.cc;
+    }
+  }
+}
+
+function runCollectedSkillPowerupsEmitInventoryEventsCase() {
+  var manager = new GameManager();
+  manager.lastResolution = {
+    injectedSkills: []
+  };
+
+  var injectedCount = manager._injectCollectedSkillBalls([
+    {
+      id: "rainbow_drop_1",
+      entityCategory: "skill_ball",
+      entityType: "rainbow",
+      jarIndex: 0
+    },
+    {
+      id: "blast_drop_1",
+      entityCategory: "skill_ball",
+      entityType: "blast",
+      jarIndex: 1
+    }
+  ]);
+
+  if (injectedCount !== 2) {
+    throw new Error("Collected rainbow and blast balls should both inject runtime inventory.");
+  }
+  if (manager.systems.shooterController.skillInventory.rainbow !== 1) {
+    throw new Error("Collected rainbow ball should increase runtime rainbow inventory.");
+  }
+  if (manager.systems.shooterController.skillInventory.blast !== 1) {
+    throw new Error("Collected blast ball should increase runtime blast inventory.");
+  }
+  if (manager.lastResolution.injectedSkills.length !== 2) {
+    throw new Error("Collected skill balls should be recorded in resolution injectedSkills.");
+  }
+  if (manager.pendingRuntimeEvents.length !== 2) {
+    throw new Error("Collected skill balls should emit one runtime event per collected powerup.");
+  }
+  if (
+    manager.pendingRuntimeEvents[0].type !== "skill_powerup_collected" ||
+    manager.pendingRuntimeEvents[0].entityType !== "rainbow" ||
+    manager.pendingRuntimeEvents[0].sourceId !== "rainbow_drop_1" ||
+    manager.pendingRuntimeEvents[0].total !== 1
+  ) {
+    throw new Error("Collected rainbow event should carry inventory sync payload.");
+  }
+  if (
+    manager.pendingRuntimeEvents[1].type !== "skill_powerup_collected" ||
+    manager.pendingRuntimeEvents[1].entityType !== "blast" ||
+    manager.pendingRuntimeEvents[1].sourceId !== "blast_drop_1" ||
+    manager.pendingRuntimeEvents[1].total !== 1
+  ) {
+    throw new Error("Collected blast event should carry inventory sync payload.");
   }
 }
 
@@ -1353,6 +1930,32 @@ function runBoardMidGameViewportSettleCase() {
   }
 }
 
+function runTopAnchorCollapseTriggerCase() {
+  var maxColumns = 11;
+  var singleRowFiveEmptySlots = [
+    { row: 0, col: 0 },
+    { row: 0, col: 1 },
+    { row: 0, col: 2 },
+    { row: 0, col: 3 },
+    { row: 0, col: 4 },
+    { row: 0, col: 5 }
+  ];
+  if (BoardViewportSystem.shouldTriggerTopAnchorCollapse(singleRowFiveEmptySlots, maxColumns)) {
+    throw new Error("Single remaining row must not trigger top anchor collapse when top empty slots are not greater than 5.");
+  }
+
+  var singleRowSixEmptySlots = [
+    { row: 0, col: 0 },
+    { row: 0, col: 1 },
+    { row: 0, col: 2 },
+    { row: 0, col: 3 },
+    { row: 0, col: 4 }
+  ];
+  if (!BoardViewportSystem.shouldTriggerTopAnchorCollapse(singleRowSixEmptySlots, maxColumns)) {
+    throw new Error("Top anchor collapse must trigger when top empty slots are greater than 5.");
+  }
+}
+
 function runSplitterSpawnViewportSettleCase() {
   var BoardViewportSystem = require("../assets/scripts/systems/BoardViewportSystem");
 
@@ -1516,6 +2119,37 @@ function runBoardViewportRenderRefreshCase() {
   }
 }
 
+function runShooterHandoffInputLockCase() {
+  var shooterMethodsSource = fs.readFileSync(
+    path.resolve(__dirname, "../assets/scripts/render/LevelRendererSceneShooterMethods.js"),
+    "utf8"
+  );
+  var gameplayInputSource = fs.readFileSync(
+    path.resolve(__dirname, "../assets/scripts/bootstrap/GameBootstrapGameplayInputMethods.js"),
+    "utf8"
+  );
+  var gameBootstrapSource = fs.readFileSync(
+    path.resolve(__dirname, "../assets/scripts/bootstrap/GameBootstrap.js"),
+    "utf8"
+  );
+  if (shooterMethodsSource.indexOf("isShooterHandoffInProgress") < 0) {
+    throw new Error("LevelRenderer must expose shooter handoff busy state for input locking.");
+  }
+  if (gameplayInputSource.indexOf("_isShooterHandoffInputLocked") < 0) {
+    throw new Error("GameBootstrap gameplay input must check shooter handoff lock.");
+  }
+  if (gameplayInputSource.indexOf("GameBootstrap shot input requires LevelRenderer.isShooterHandoffInProgress.") < 0) {
+    throw new Error("Shooter handoff input lock must fail fast when renderer contract is missing.");
+  }
+  var handoffLockCheckCount = (gameplayInputSource.match(/this\._isShooterHandoffInputLocked\(\)\)/g) || []).length;
+  if (handoffLockCheckCount < 3) {
+    throw new Error("Aim and fire input must not advance shooter queue while handoff is still animating.");
+  }
+  if (gameBootstrapSource.indexOf("_isShooterHandoffInputLocked: GameBootstrapGameplayInputMethods._isShooterHandoffInputLocked") < 0) {
+    throw new Error("GameBootstrap must attach shooter handoff input lock helper to the component.");
+  }
+}
+
 function runBoardViewportSnapshotCacheCase() {
   var manager = new GameManager();
   var viewportOffsetY = 0;
@@ -1614,7 +2248,7 @@ function runComboMatchedBallScoreDisplayCase() {
     manager.comboStreak = 1;
     manager.maxComboStreak = 1;
     manager.scoreRules = {
-      matchedDrop: 90,
+      matchedDrop: 10,
       floatingDrop: 80
     };
     var runtimeEvents = [];
@@ -1637,9 +2271,15 @@ function runComboMatchedBallScoreDisplayCase() {
       }
     };
 
+    manager.comboStreak = 0;
+    var baseScorePerBall = manager._getMatchedDropScorePerBallForNextCombo("matchedDrop");
+    if (baseScorePerBall !== 10) {
+      throw new Error("Base matched ball score should be 10.");
+    }
+    manager.comboStreak = 1;
     var secondComboScorePerBall = manager._getMatchedDropScorePerBallForNextCombo("matchedDrop");
-    if (secondComboScorePerBall !== 190) {
-      throw new Error("Second combo matched ball score should be 190.");
+    if (secondComboScorePerBall !== 15) {
+      throw new Error("Second combo matched ball score should be 15.");
     }
     var secondElimination = EliminationSequenceBuilder.buildEliminationSequence(
       attachedCell,
@@ -1648,8 +2288,8 @@ function runComboMatchedBallScoreDisplayCase() {
       secondComboScorePerBall
     );
     secondElimination.scoreEvents.forEach(function (scoreEvent) {
-      if (scoreEvent.points !== 190) {
-        throw new Error("Second combo floating score display should use 190 per shattered ball.");
+      if (scoreEvent.points !== 15) {
+        throw new Error("Second combo floating score display should use 15 per shattered ball.");
       }
     });
 
@@ -1665,16 +2305,313 @@ function runComboMatchedBallScoreDisplayCase() {
       matchedScorePerBall: secondComboScorePerBall
     });
     manager._registerComboElimination(resolution);
-    if (manager.score !== 570 || resolution.scoreDelta !== 570) {
+    if (manager.score !== 45 || resolution.scoreDelta !== 45) {
       throw new Error("Second combo score should be fully carried by matched shattered balls.");
     }
-    if (runtimeEvents.length !== 2 || runtimeEvents[1].payload.combo_display !== 1 || runtimeEvents[1].payload.bonus_gained !== 300) {
+    if (runtimeEvents.length !== 2 || runtimeEvents[1].payload.combo_display !== 1 || runtimeEvents[1].payload.bonus_gained !== 15) {
       throw new Error("Second combo event should report the matched-ball combo bonus without adding a separate fixed score.");
     }
 
     var thirdComboScorePerBall = manager._getMatchedDropScorePerBallForNextCombo("matchedDrop");
-    if (thirdComboScorePerBall !== 290) {
-      throw new Error("Third combo matched ball score should be higher than second combo.");
+    if (thirdComboScorePerBall !== 20) {
+      throw new Error("Third combo matched ball score should be 20.");
+    }
+  } finally {
+    if (hadCc) {
+      global.cc = previousCc;
+    } else {
+      delete global.cc;
+    }
+  }
+}
+
+function runMatchedObjectiveCollectionCase() {
+  var JarCollectorSystem = require("../assets/scripts/systems/JarCollectorSystem");
+  var manager = new GameManager();
+  manager.currentLevel = {
+    level: {
+      jarCount: 1,
+      jarColors: ["R"],
+      bonusObjectives: [
+        { type: "collect_color", color: "R", value: 3 }
+      ],
+      winConditions: []
+    }
+  };
+  manager.systems = {
+    jarCollectorSystem: new JarCollectorSystem()
+  };
+  manager.systems.jarCollectorSystem.configureLevel(manager.currentLevel);
+  var runtimeEvents = [];
+  manager._pushRuntimeEvent = function (type, payload) {
+    runtimeEvents.push({
+      type: type,
+      payload: payload
+    });
+  };
+
+  var matchedCells = [
+    { id: "target_1", row: 0, col: 0, color: "R", entityCategory: "normal_ball", entityType: null },
+    { id: "other_1", row: 0, col: 1, color: "B", entityCategory: "normal_ball", entityType: null },
+    { id: "target_2", row: 1, col: 0, color: "R", entityCategory: "normal_ball", entityType: null }
+  ];
+  var eliminationSequence = [
+    { cellId: "target_1", row: 0, col: 0, worldPosition: { x: 10, y: 20 }, delayMs: 0 },
+    { cellId: "other_1", row: 0, col: 1, worldPosition: { x: 30, y: 20 }, delayMs: 30 },
+    { cellId: "target_2", row: 1, col: 0, worldPosition: { x: 10, y: 40 }, delayMs: 60 }
+  ];
+  var resolution = {
+    matchedObjectiveCollected: []
+  };
+
+  var collected = manager._registerMatchedObjectiveCollection(matchedCells, eliminationSequence, resolution);
+  if (collected.length !== 2) {
+    throw new Error("Matched target-color eliminations should count only target balls.");
+  }
+  if (manager.systems.jarCollectorSystem.collectedByColor.R !== 2) {
+    throw new Error("Matched target-color eliminations should increment collectedByColor.");
+  }
+  if (manager.systems.jarCollectorSystem.collectedTotal !== 2) {
+    throw new Error("Matched target-color eliminations should increment collectedTotal.");
+  }
+  if (manager.systems.jarCollectorSystem.lastCollected.length !== 0) {
+    throw new Error("Matched target-color eliminations must not masquerade as jar bottom collections.");
+  }
+  if (resolution.matchedObjectiveCollected.length !== 2) {
+    throw new Error("Matched target-color eliminations should be recorded in resolution payload.");
+  }
+  if (
+    runtimeEvents.length !== 1 ||
+    runtimeEvents[0].type !== "matched_objective_collect" ||
+    runtimeEvents[0].payload.count !== 2 ||
+    runtimeEvents[0].payload.entries[1].worldPosition.y !== 40 ||
+    runtimeEvents[0].payload.entries[1].delayMs !== 60
+  ) {
+    throw new Error("Matched target-color collection event should carry fly-to-HUD payload.");
+  }
+
+  var managerWithoutSequence = new GameManager();
+  managerWithoutSequence.currentLevel = manager.currentLevel;
+  managerWithoutSequence.systems = {
+    jarCollectorSystem: new JarCollectorSystem()
+  };
+  managerWithoutSequence.systems.jarCollectorSystem.configureLevel(manager.currentLevel);
+  var noSequenceEvents = [];
+  managerWithoutSequence._pushRuntimeEvent = function (type, payload) {
+    noSequenceEvents.push({
+      type: type,
+      payload: payload
+    });
+  };
+  var noSequenceResolution = {
+    matchedObjectiveCollected: []
+  };
+  var noSequenceGrid = {
+    getCellPosition: function (row, col) {
+      return {
+        x: col * 100 + 7,
+        y: row * 100 + 9
+      };
+    }
+  };
+  managerWithoutSequence._registerMatchedObjectiveCollection(
+    [
+      { id: "target_no_sequence", row: 2, col: 3, color: "R", entityCategory: "normal_ball", entityType: null }
+    ],
+    [],
+    noSequenceResolution,
+    noSequenceGrid
+  );
+  if (
+    noSequenceEvents.length !== 1 ||
+    noSequenceEvents[0].payload.entries[0].worldPosition.x !== 307 ||
+    noSequenceEvents[0].payload.entries[0].worldPosition.y !== 209
+  ) {
+    throw new Error("Matched target collection without eliminationSequence should use grid positions for HUD fly payload.");
+  }
+}
+
+function runBlastComboAttachAnchorCase() {
+  var manager = new GameManager();
+  var hadCc = Object.prototype.hasOwnProperty.call(global, "cc");
+  var previousCc = global.cc;
+  global.cc = {
+    log: function () {},
+    warn: function () {},
+    error: function () {}
+  };
+
+  try {
+    manager.score = 0;
+    manager.comboStreak = 1;
+    manager.maxComboStreak = 1;
+    manager.scoreRules = {
+      blastDrop: 100,
+      floatingDrop: 80
+    };
+    var runtimeEvents = [];
+    manager._pushRuntimeEvent = function (type, payload) {
+      runtimeEvents.push({
+        type: type,
+        payload: payload
+      });
+    };
+
+    var resolution = {
+      matched: [
+        { id: "blast_removed", row: 2, col: 3 }
+      ],
+      floating: [],
+      scoreDelta: 0,
+      blastExplosions: [
+        {
+          id: "blast_shot_1",
+          entityType: "blast",
+          row: 2,
+          col: 3
+        }
+      ]
+    };
+
+    manager._applyResolutionDropScore(resolution, "blastDrop");
+    manager._registerComboElimination(resolution);
+
+    if (runtimeEvents.length !== 2 || runtimeEvents[1].type !== "combo_bonus_awarded") {
+      throw new Error("Blast combo anchor regression expected combo_bonus_awarded event.");
+    }
+    if (runtimeEvents[1].payload.attach_row !== 2 || runtimeEvents[1].payload.attach_col !== 3) {
+      throw new Error("Blast combo event must use blast explosion coordinates as attach anchor.");
+    }
+  } finally {
+    if (hadCc) {
+      global.cc = previousCc;
+    } else {
+      delete global.cc;
+    }
+  }
+}
+
+function runBubbleBreakSfxCountCase() {
+  var threeBallSfxCount = BubbleBreakSfxPolicy.resolveBubbleBreakSfxCount(3);
+  if (threeBallSfxCount !== 3) {
+    throw new Error("bubble_break should play one break sfx per shattered ball.");
+  }
+  var threeBallSfxSchedule = BubbleBreakSfxPolicy.resolveBubbleBreakSfxSchedule(3, [0, 30, 60]);
+  if (
+    threeBallSfxSchedule.length !== 3 ||
+    threeBallSfxSchedule[0].delayMs !== 0 ||
+    threeBallSfxSchedule[1].delayMs !== 30 ||
+    threeBallSfxSchedule[2].delayMs !== 60
+  ) {
+    throw new Error("bubble_break should preserve per-ball shatter sfx timing.");
+  }
+
+  var cappedSfxCount = BubbleBreakSfxPolicy.resolveBubbleBreakSfxCount(8);
+  if (cappedSfxCount !== BubbleBreakSfxPolicy.MAX_BUBBLE_BREAK_SFX_PER_EVENT) {
+    throw new Error("bubble_break should cap break sfx playback at five per event.");
+  }
+  var cappedSfxSchedule = BubbleBreakSfxPolicy.resolveBubbleBreakSfxSchedule(8, [0, 30, 60, 90, 120, 150, 180, 210]);
+  if (
+    cappedSfxSchedule.length !== BubbleBreakSfxPolicy.MAX_BUBBLE_BREAK_SFX_PER_EVENT ||
+    cappedSfxSchedule[cappedSfxSchedule.length - 1].delayMs !== 120
+  ) {
+    throw new Error("bubble_break should cap scheduled break sfx playback at the first five shattered balls.");
+  }
+
+  var rejectedInvalidCount = false;
+  try {
+    BubbleBreakSfxPolicy.resolveBubbleBreakSfxCount(0);
+  } catch (error) {
+    rejectedInvalidCount = /positive integer count/.test(error.message);
+  }
+  if (!rejectedInvalidCount) {
+    throw new Error("bubble_break should fail fast when count is not a positive integer.");
+  }
+
+  var runtimeEvents = [];
+  var manager = new GameManager();
+  manager._pushRuntimeEvent = function (type, payload) {
+    runtimeEvents.push({
+      type: type,
+      payload: payload
+    });
+  };
+  manager._pushBubbleBreakEvent(
+    [
+      { id: "cell_1" },
+      { id: "cell_2" },
+      { id: "cell_3" }
+    ],
+    [
+      { cellId: "cell_1", delayMs: 0 },
+      { cellId: "cell_2", delayMs: 30 },
+      { cellId: "cell_3", delayMs: 60 }
+    ]
+  );
+  if (
+    runtimeEvents.length !== 1 ||
+    runtimeEvents[0].type !== "bubble_break" ||
+    runtimeEvents[0].payload.count !== 3 ||
+    runtimeEvents[0].payload.shatterDelaysMs.join(",") !== "0,30,60"
+  ) {
+    throw new Error("bubble_break runtime event should carry per-cell shatter delays.");
+  }
+
+  var hadCc = Object.prototype.hasOwnProperty.call(global, "cc");
+  var previousCc = global.cc;
+  var playedEffects = [];
+  var volumeSetCount = 0;
+  global.cc = {
+    audioEngine: {
+      setEffectsVolume: function (volume) {
+        if (volume !== 0.7) {
+          throw new Error("AudioManager.playSfxInstances should apply the configured sfx volume.");
+        }
+        volumeSetCount += 1;
+      },
+      playEffect: function (clip, loop) {
+        if (clip !== "break_clip" || loop !== false) {
+          throw new Error("AudioManager.playSfxInstances should play the resolved clip without looping.");
+        }
+        var id = playedEffects.length + 1;
+        playedEffects.push(id);
+        return id;
+      }
+    }
+  };
+
+  try {
+    var audioManager = Object.create(AudioManager.prototype);
+    audioManager.settings = {
+      sfxEnabled: true,
+      sfxVolume: 0.7
+    };
+    audioManager.sfxMap = {
+      break: "sound/break"
+    };
+    audioManager._tryUnlockWebAudio = function () {};
+    audioManager._loadClip = function (resourcePath) {
+      if (resourcePath !== "sound/break") {
+        throw new Error("AudioManager.playSfxInstances should resolve break sfx resource path.");
+      }
+      return {
+        then: function (callback) {
+          var result = callback("break_clip");
+          return {
+            catch: function () {
+              return result;
+            }
+          };
+        }
+      };
+    };
+
+    var audioIds = audioManager.playSfxInstances("break", threeBallSfxCount);
+    if (audioIds.length !== 3 || playedEffects.length !== 3) {
+      throw new Error("AudioManager.playSfxInstances should create one playEffect instance per requested sfx.");
+    }
+    if (volumeSetCount !== 1) {
+      throw new Error("AudioManager.playSfxInstances should set effects volume once per concurrent batch.");
     }
   } finally {
     if (hadCc) {
@@ -1723,12 +2660,26 @@ function main() {
   console.log("[OK]", "molotov_chain_queue", "adjacent molotov queued after neighbor removal");
   runMolotovEliminationSequencePositionCase();
   console.log("[OK]", "molotov_elimination_sequence_position", "blasted normal balls keep pre-removal positions");
+  runMolotovBlastPhaseDropsUnsupportedSourceSupportCase();
+  console.log("[OK]", "molotov_blast_phase_drops_source_support", "source molotov removal drops unsupported cells immediately");
+  runMolotovPendingResolutionFinalizeCase();
+  console.log("[OK]", "molotov_pending_resolution_finalize", "unsupported cells drop when molotov finalize is the only pending work");
   runAdjacentIceThawSnowballCollectionCase();
   console.log("[OK]", "adjacent_ice_thaw_snowball_collection", "neighbor thaw and direct ice removal count snowballs once");
+  runSnowRemovalKeepsInnerNormalBallCase();
+  console.log("[OK]", "snow_removal_keeps_inner_normal_ball", "snow removal clears snow and keeps the inner normal ball");
   runFloatingIceDropThawBeforeFallCase();
   console.log("[OK]", "floating_ice_drop_thaw_before_fall", "floating ice thaws, flies, then drops inner ball");
   runCollectionRewardDoesNotClearRemainingBoardCase();
   console.log("[OK]", "collection_reward_does_not_clear_board", "keeps remaining board cells and does not pass");
+  runOutOfShotsAddBallPromptCase();
+  console.log("[OK]", "out_of_shots_add_ball_prompt", "final shot prompts before lose settlement and close continues settlement");
+  runAddBallPromptPlusTenCase();
+  console.log("[OK]", "add_ball_prompt_plus_ten", "plus ten balls resumes running from add-ball prompt");
+  runPreciseAimInventoryActivatesGuideCase();
+  console.log("[OK]", "precise_aim_inventory_activates_guide", "precise aim inventory activates ricochet guide and consumes one item");
+  runCollectedSkillPowerupsEmitInventoryEventsCase();
+  console.log("[OK]", "collected_skill_powerups_emit_inventory_events", "collected rainbow and blast emit inventory sync events");
   runClearWinRequiresStarAndEmptyBoardCase();
   console.log("[OK]", "clear_win_requires_star_and_empty_board", "ignores collection targets for pass and requires an empty board");
   runOneStarTargetScoreCase();
@@ -1739,14 +2690,22 @@ function main() {
   console.log("[OK]", "stone_ball_jar_score_zero", "stone ball in jar scores 0 and keeps total score");
   runComboMatchedBallScoreDisplayCase();
   console.log("[OK]", "combo_matched_ball_score_display", "combo raises shattered-ball score and floating score display");
+  runMatchedObjectiveCollectionCase();
+  console.log("[OK]", "matched_objective_collection", "matched target balls count into collection target and emit HUD fly payload");
+  runBlastComboAttachAnchorCase();
+  console.log("[OK]", "blast_combo_attach_anchor", "blast combo display uses explosion coordinates without impact");
+  runBubbleBreakSfxCountCase();
+  console.log("[OK]", "bubble_break_sfx_count", "break sfx plays per shattered ball up to five times");
   runBoardIntroViewportCase();
   runBoardMidGameViewportSettleCase();
+  runTopAnchorCollapseTriggerCase();
   runSplitterSpawnViewportSettleCase();
   runBoardViewportFireLockCase();
   runBoardViewportRenderRefreshCase();
+  runShooterHandoffInputLockCase();
   runBoardViewportSnapshotCacheCase();
   runBoardViewportEntryUpdateCase();
-  console.log("[OK]", "board_viewport", "10-row intro/runtime alignment, final-row settle, render refresh, snapshot cache, entry update, linear movement, and fire lock passed");
+  console.log("[OK]", "board_viewport", "10-row intro/runtime alignment, top-anchor collapse trigger, render refresh, shooter handoff input lock, snapshot cache, entry update, linear movement, and fire lock passed");
 
   if (failed) {
     console.log("\nShot regression validation failed.");

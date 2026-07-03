@@ -1,0 +1,1 @@
+module.exports = [1,["148a7aa2e"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"shock","rect":[684,322,56,48],"offset":[0,-0.5],"originalSize":[62,55],"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

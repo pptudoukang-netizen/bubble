@@ -93,14 +93,14 @@
             }
         ],
         "layout": [
-            "RRGBBGGRGG",
-            ".RG...GR.",
-            ".RG....RG.",
-            ".RG...BR.",
-            "..B....B..",
-            "..B...B..",
-            "..B....B..",
-            "........."
+            "GGGGGGGGGG",
+            ".BB...BB.",
+            ".BB....BB.",
+            ".RR...B..",
+            "..R....R..",
+            "..R...R..",
+            "..R....R..",
+            "..R......"
         ],
         "designNotes": "Generated from LEVEL_CONFIG_TABLE_1_1000.csv. Chapter `cluster_fundamentals` uses color_cluster, support_drop with a twin_wings board silhouette.",
         "difficultyScore": 26,

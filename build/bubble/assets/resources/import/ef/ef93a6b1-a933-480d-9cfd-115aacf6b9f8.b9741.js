@@ -1,0 +1,1 @@
+module.exports = [1,["15684f836"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"blockade_line","rect":[485,3,800,51],"offset":[0,2.5],"originalSize":[800,60],"rotated":1,"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

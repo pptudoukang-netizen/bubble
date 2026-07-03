@@ -1,0 +1,1 @@
+module.exports = [1,["15684f836"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"bomb_ball","rect":[821,769,72,72],"offset":[0,0],"originalSize":[72,72],"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

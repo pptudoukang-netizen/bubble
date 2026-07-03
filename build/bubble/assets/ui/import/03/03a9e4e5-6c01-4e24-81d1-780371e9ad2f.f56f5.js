@@ -1,1 +1,0 @@
-module.exports = [1,["56kbvKTfNKZ757F+SiXxIY"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"rechage","rect":[0,0,385,124],"offset":[0,0],"originalSize":[385,124],"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

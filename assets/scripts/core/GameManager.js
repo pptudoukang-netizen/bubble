@@ -29,6 +29,7 @@ var AD_REVIVE_ALLOWED_STATES = {
   out_of_shots: true,
   lost_danger: true
 };
+var ADD_BALL_PROMPT_STATE = "out_of_shots_add_ball_prompt";
 var COLLECTION_OBJECTIVE_TYPES = {
   collect_any: true,
   collect_color: true,
@@ -42,6 +43,7 @@ var PLUS_THREE_BALLS_AMOUNT = 10;
 var SNOW_REMOVAL_CLEAR_COUNT = 10;
 var SPLITTER_SPAWN_DELAY_SEC = 0.2;
 var TIMED_LEVEL_RENDER_BUCKET_MS = 250;
+var BUBBLE_BREAK_SOUND_INTERVAL_MS = 30;
 
 function assertFiniteNumber(value, fieldName) {
   var numberValue = Number(value);
@@ -89,6 +91,7 @@ function createEmptyResolution() {
     collected: [],
     thawed: [],
     iceCollected: 0,
+    matchedObjectiveCollected: [],
     injectedSkills: [],
     reactiveTriggered: [],
     blastExplosions: [],
@@ -139,12 +142,12 @@ var RAINBOW_TIE_BREAK_ORDER = {
   P: 1
 };
 
-// 玩法改为“匹配即掉落”后，分数更多来自掉落结算，避免总分膨胀。
+// 普通匹配消除按固定每球基础分计分；连击增量在结算链路中叠加。
 var BASE_SCORE_RULES = {
   shotBase: 120,
   attachBase: 30,
   blastBase: 30,
-  matchedDrop: 90,
+  matchedDrop: 10,
   floatingDrop: 80,
   blastDrop: 100,
   jarCollectBase: 60,
@@ -216,8 +219,8 @@ var KEY_UNLOCK_BOARD_ADVANCE_BLOCK_DELAY = SpecialAnimationTiming.keyUnlock.tota
 var WIN_SETTLEMENT_DELAY_SEC = 1;
 var DEFAULT_JAR_SCORE_BOOST_MULTIPLIER = 2;
 var DEFAULT_JAR_SCORE_BOOST_DURATION_MS = 5000;
-// 第二次连消起，每个匹配碎裂球按连击层数额外加分；UI 显示为连击+1、+2…
-var COMBO_BONUS_PER_HIT = 100;
+// 第二次连消起，每个匹配碎裂球每增加一层连击额外加 5 分；UI 显示为连击+1、+2…
+var COMBO_BONUS_PER_HIT = 5;
 function resolveBallDisplayCode(ball) {
   if (!ball) {
     return null;
@@ -316,6 +319,45 @@ function resolveIceInnerColor(cellOrBall) {
   }
 
   return null;
+}
+
+function buildBubbleBreakShatterDelaysMs(removedCells, eliminationSequence) {
+  if (!Array.isArray(removedCells) || !removedCells.length) {
+    return [];
+  }
+
+  if (typeof eliminationSequence !== "undefined") {
+    if (!Array.isArray(eliminationSequence)) {
+      throw new Error("Bubble break event eliminationSequence must be an array when provided.");
+    }
+    var removedCellIds = {};
+    removedCells.forEach(function (cell) {
+      if (!cell || (typeof cell.id !== "string" && typeof cell.id !== "number")) {
+        throw new Error("Bubble break event removed cell requires id.");
+      }
+      removedCellIds[String(cell.id)] = true;
+    });
+
+    return eliminationSequence.filter(function (entry) {
+      if (!entry || (typeof entry.cellId !== "string" && typeof entry.cellId !== "number")) {
+        throw new Error("Bubble break event elimination sequence entry requires cellId.");
+      }
+      return removedCellIds[String(entry.cellId)] === true;
+    }).map(function (entry) {
+      var delayMs = Number(entry.delayMs);
+      if (!Number.isFinite(delayMs) || delayMs < 0) {
+        throw new Error("Bubble break event elimination sequence delayMs must be non-negative.");
+      }
+      return delayMs;
+    });
+  }
+
+  return removedCells.map(function (cell, index) {
+    if (!cell || (typeof cell.id !== "string" && typeof cell.id !== "number")) {
+      throw new Error("Bubble break event removed cell requires id.");
+    }
+    return index * BUBBLE_BREAK_SOUND_INTERVAL_MS;
+  });
 }
 
 function requireSnowRemovalTargetCoordinates(cell, description) {
@@ -522,6 +564,9 @@ function buildScoreRulesForLevel(levelConfig) {
 
   var rules = cloneScoreRules(BASE_SCORE_RULES);
   Object.keys(rules).forEach(function (key) {
+    if (key === "matchedDrop") {
+      return;
+    }
     rules[key] = Math.max(1, Math.round(rules[key] * multiplier));
   });
 
@@ -963,7 +1008,10 @@ GameManager.prototype._hasPendingMolotovBlasts = function () {
   if (!Array.isArray(this.pendingMolotovBlastQueue)) {
     throw new Error("GameManager pendingMolotovBlastQueue must be an array.");
   }
-  return this.activeMolotovBlast !== null || this.pendingMolotovBlastQueue.length > 0;
+  if (typeof this.molotovResolutionPending !== "boolean") {
+    throw new Error("GameManager molotovResolutionPending must be a boolean.");
+  }
+  return this.molotovResolutionPending || this.activeMolotovBlast !== null || this.pendingMolotovBlastQueue.length > 0;
 };
 
 GameManager.prototype._queuePendingSplitterSpawn = function (splitterCell, resolution) {
@@ -1087,7 +1135,7 @@ GameManager.prototype._updatePendingSplitterSpawns = function (dt) {
   }
   this._ensureMinimumVisibleBoardRows(this.lastResolution);
   if (this.state === "out_of_shots_pending" && !this.systems.fallingMarbleSystem.hasActiveDrops() && !this._hasPendingSplitterSpawns() && !this._hasPendingMolotovBlasts() && !this._isBoardAdvanceBusy()) {
-    this._resolveOutOfShotsOutcome();
+    this._showOutOfShotsAddBallPrompt();
   }
   if (grid && typeof grid.assertNoVisualOverlap === "function") {
     grid.assertNoVisualOverlap("pending splitter spawn");
@@ -1236,13 +1284,37 @@ GameManager.prototype._resolveOutOfShotsOutcome = function () {
   this.state = "out_of_shots";
 };
 
-GameManager.prototype._pushBubbleBreakEvent = function (removedCells) {
+GameManager.prototype._showOutOfShotsAddBallPrompt = function () {
+  if (this.systems.bubbleGrid.getCells().length === 0) {
+    this._resolveBoardClearedOutcome();
+    return;
+  }
+
+  this.state = ADD_BALL_PROMPT_STATE;
+};
+
+GameManager.prototype.confirmOutOfShotsAddBallPromptClosed = function () {
+  if (this.state !== ADD_BALL_PROMPT_STATE) {
+    throw new Error("Add ball prompt can only be closed from state: " + ADD_BALL_PROMPT_STATE);
+  }
+
+  this._resolveOutOfShotsOutcome();
+  return this.getRuntimeSnapshot();
+};
+
+GameManager.prototype._pushBubbleBreakEvent = function (removedCells, eliminationSequence) {
   if (!Array.isArray(removedCells) || !removedCells.length) {
     return;
   }
 
+  var shatterDelaysMs = buildBubbleBreakShatterDelaysMs(removedCells, eliminationSequence);
+  if (!shatterDelaysMs.length) {
+    return;
+  }
+
   this._pushRuntimeEvent("bubble_break", {
-    count: removedCells.length
+    count: shatterDelaysMs.length,
+    shatterDelaysMs: shatterDelaysMs
   });
 };
 
@@ -1457,6 +1529,27 @@ GameManager.prototype._registerIceSnowballCollection = function (cells) {
   return gained;
 };
 
+GameManager.prototype._thawIceCellAtCurrentPosition = function (grid, targetCell) {
+  if (!grid || typeof grid.addBubble !== "function") {
+    throw new Error("Ice thaw requires BubbleGrid.addBubble.");
+  }
+  if (!isIceBall(targetCell)) {
+    throw new Error("Ice thaw target must be an ice obstacle.");
+  }
+  var innerColor = resolveIceInnerColor(targetCell);
+  if (!innerColor) {
+    throw new Error("Ice thaw target requires innerColor.");
+  }
+  var thawedCell = grid.addBubble({
+    row: targetCell.row,
+    col: targetCell.col
+  }, innerColor);
+  if (!thawedCell || thawedCell.entityCategory !== "normal_ball" || thawedCell.color !== innerColor) {
+    throw new Error("Ice thaw must replace obstacle with inner normal ball.");
+  }
+  return thawedCell;
+};
+
 GameManager.prototype._getPrimaryObjectiveProgressValue = function (objective, jarsSnapshot) {
   if (!objective || typeof objective.type !== "string") {
     return 0;
@@ -1630,7 +1723,7 @@ GameManager.prototype.fireShot = function () {
   }
 
   if (!this.isTimedInfiniteShots && this.remainingShots <= 0) {
-    this.state = "out_of_shots";
+    this._showOutOfShotsAddBallPrompt();
     return this.getRuntimeSnapshot();
   }
 
@@ -1702,8 +1795,9 @@ GameManager.prototype.grantPowerupInventory = function (powerupType, count) {
 };
 
 GameManager.prototype._isInstantAdPowerupBusy = function () {
+  var canUseInstantPowerup = this.state === "running" || this.state === ADD_BALL_PROMPT_STATE;
   return !!(
-    this.state !== "running" ||
+    !canUseInstantPowerup ||
     this.activeProjectile ||
     this._isBoardAdvanceBusy() ||
     this._hasPendingSplitterSpawns() ||
@@ -1786,6 +1880,55 @@ GameManager.prototype.activateRicochetGuide = function () {
   };
 };
 
+GameManager.prototype.usePreciseAim = function () {
+  if (this._isInstantAdPowerupBusy()) {
+    return {
+      accepted: false,
+      reason: "busy",
+      snapshot: this.getRuntimeSnapshot()
+    };
+  }
+  if (this.ricochetGuideActive === true) {
+    return {
+      accepted: false,
+      reason: "already_active",
+      snapshot: this.getRuntimeSnapshot()
+    };
+  }
+
+  var shooterController = this.systems && this.systems.shooterController
+    ? this.systems.shooterController
+    : null;
+  if (!shooterController || typeof shooterController.consumePreciseAim !== "function") {
+    throw new Error("Precise aim requires ShooterController.consumePreciseAim.");
+  }
+
+  var consumeResult = shooterController.consumePreciseAim();
+  if (!consumeResult || typeof consumeResult !== "object") {
+    throw new Error("Precise aim consume result must be an object.");
+  }
+  if (consumeResult.accepted !== true) {
+    if (typeof consumeResult.reason !== "string" || !consumeResult.reason) {
+      throw new Error("Precise aim consume failure requires reason.");
+    }
+    return {
+      accepted: false,
+      reason: consumeResult.reason,
+      snapshot: this.getRuntimeSnapshot()
+    };
+  }
+
+  this.activateRicochetGuide();
+  this._pushRuntimeEvent("powerup_precise_aim", {
+    remaining: consumeResult.remaining
+  });
+  return {
+    accepted: true,
+    remaining: consumeResult.remaining,
+    snapshot: this.getRuntimeSnapshot()
+  };
+};
+
 GameManager.prototype._consumeAdRunPowerup = function (powerupType) {
   if (!this._isAdRunPowerupAllowed(powerupType)) {
     return {
@@ -1839,6 +1982,7 @@ GameManager.prototype.usePlusThreeBalls = function () {
   if (!queueResult || queueResult.accepted !== true) {
     throw new Error("Plus three balls failed to sync shooter queue.");
   }
+  this.state = "running";
   this._pushRuntimeEvent("ad_powerup_plus_three_balls", {
     amount: PLUS_THREE_BALLS_AMOUNT,
     remaining_shots: this.remainingShots
@@ -1964,6 +2108,7 @@ GameManager.prototype.useThreeLineElimination = function (expectedRows) {
   this._pushBubbleBreakEvent(removedLineCells);
   var resolution = createEmptyResolution();
   resolution.matched = removedLineCells;
+  this._registerMatchedObjectiveCollection(removedLineCells, resolution.eliminationSequence, resolution, grid);
   if (removedLineCells.length) {
     resolution.impact = this._createImpactEventFromCell(removedLineCells[0]);
   }
@@ -2296,24 +2441,25 @@ GameManager.prototype.useSnowRemoval = function (expectedTargets) {
     }
     return cell;
   });
-  var removedSnowCells = grid.removeCells(targetCells);
-  if (removedSnowCells.length !== targetCells.length) {
-    throw new Error("Snow removal removed count mismatch.");
+  var thawedSnowCells = targetCells.map(function (cell) {
+    return this._thawIceCellAtCurrentPosition(grid, cell);
+  }, this);
+  if (thawedSnowCells.length !== targetCells.length) {
+    throw new Error("Snow removal thawed count mismatch.");
   }
 
-  this._pushBubbleBreakEvent(removedSnowCells);
   var resolution = createEmptyResolution();
-  resolution.matched = removedSnowCells;
-  if (removedSnowCells.length) {
-    resolution.impact = this._createImpactEventFromCell(removedSnowCells[0]);
+  resolution.thawed = thawedSnowCells;
+  if (thawedSnowCells.length) {
+    resolution.impact = this._createImpactEventFromCell(thawedSnowCells[0]);
   }
   this.lastResolution = resolution;
-  resolution.iceCollected = this._registerIceCollection(removedSnowCells);
+  resolution.iceCollected = this._registerIceCollection(thawedSnowCells);
 
   var floatingCells = this.systems.supportSystem.findFloatingCells(grid);
   var removedFloating = grid.removeCells(floatingCells);
   this._registerResolutionDrops(removedFloating, grid, resolution, undefined, {
-    matchedCellsForDelay: removedSnowCells
+    matchedCellsForDelay: thawedSnowCells
   });
   this.systems.jarCollectorSystem.collect([]);
 
@@ -2330,7 +2476,7 @@ GameManager.prototype.useSnowRemoval = function (expectedTargets) {
 
   this._pushRuntimeEvent("powerup_snow_removal", {
     targets: preview.targets.slice(),
-    removed: removedSnowCells.length,
+    removed: thawedSnowCells.length,
     floating: removedFloating.length,
     ice_collected: resolution.iceCollected
   });
@@ -2338,7 +2484,8 @@ GameManager.prototype.useSnowRemoval = function (expectedTargets) {
   return {
     accepted: true,
     targets: preview.targets,
-    removed: removedSnowCells.length,
+    removed: thawedSnowCells.length,
+    thawed: thawedSnowCells.length,
     floating: removedFloating.length,
     remaining: consumeResult.remaining,
     snapshot: this.getRuntimeSnapshot(this._drainRuntimeEvents())
@@ -2516,16 +2663,12 @@ GameManager.prototype.useBarrierHammerAt = function (point) {
     };
   }
 
-  var innerColor = null;
-  if (isIceBall(targetCell)) {
-    innerColor = resolveIceInnerColor(targetCell);
-    if (!innerColor) {
-      return {
-        accepted: false,
-        reason: "target_invalid",
-        snapshot: this.getRuntimeSnapshot()
-      };
-    }
+  if (isIceBall(targetCell) && !resolveIceInnerColor(targetCell)) {
+    return {
+      accepted: false,
+      reason: "target_invalid",
+      snapshot: this.getRuntimeSnapshot()
+    };
   }
 
   var consumeResult = this.systems.shooterController.consumeBarrierHammer();
@@ -2557,10 +2700,7 @@ GameManager.prototype.useBarrierHammerAt = function (point) {
     resolution.collected = removedFloating;
     resolution.boardCleared = grid.getCells().length === 0;
   } else {
-    var thawedCell = grid.addBubble({
-      row: targetCell.row,
-      col: targetCell.col
-    }, innerColor);
+    var thawedCell = this._thawIceCellAtCurrentPosition(grid, targetCell);
     resolution.thawed = thawedCell ? [thawedCell] : [];
     if (typeof this._registerIceCollection === "function") {
       resolution.iceCollected = this._registerIceCollection(resolution.thawed);
@@ -2805,7 +2945,7 @@ GameManager.prototype.update = function (dt) {
     !hasPendingMolotovBlasts &&
     !this._isBoardAdvanceBusy()
   ) {
-    this._resolveOutOfShotsOutcome();
+    this._showOutOfShotsAddBallPrompt();
   }
 
   if (
@@ -2818,12 +2958,16 @@ GameManager.prototype.update = function (dt) {
     !hasPendingMolotovBlasts &&
     !this._isBoardAdvanceBusy()
   ) {
-    this._resolveOutOfShotsOutcome();
+    this._showOutOfShotsAddBallPrompt();
   }
 
   if (boardAdvancedThisFrame && (this.state === "running" || this.state === "out_of_shots_pending")) {
     if (this.state === "running" && !this.isTimedInfiniteShots && this.remainingShots <= 0) {
-      this.state = hasFallingDrops ? "out_of_shots_pending" : "out_of_shots";
+      if (hasFallingDrops) {
+        this.state = "out_of_shots_pending";
+      } else {
+        this._showOutOfShotsAddBallPrompt();
+      }
     }
   }
 
@@ -2853,7 +2997,7 @@ GameManager.prototype.update = function (dt) {
   }
 
   if (this.state === "out_of_shots_pending" && !hasProjectile && !hasFallingDrops && !hasPendingSplitterSpawns && !hasPendingMolotovBlasts && !this._isBoardAdvanceBusy()) {
-    this._resolveOutOfShotsOutcome();
+    this._showOutOfShotsAddBallPrompt();
     return this.getRuntimeSnapshot(runtimeEvents);
   }
 
@@ -2957,7 +3101,8 @@ Object.assign(GameManager.prototype, createGameManagerShotResolutionMethods({
   resolveIceInnerColor: resolveIceInnerColor,
   createEmptyResolution: createEmptyResolution,
   COMBO_BONUS_PER_HIT: COMBO_BONUS_PER_HIT,
-  findPrimaryCollectionObjective: findPrimaryCollectionObjective
+  findPrimaryCollectionObjective: findPrimaryCollectionObjective,
+  listCollectionRewardObjectives: listCollectionRewardObjectives
 }));
 
 GameManager.prototype.debugDropBottomRow = function () {
@@ -3110,10 +3255,14 @@ GameManager.prototype.getRuntimeSnapshot = function (runtimeEvents, renderOption
     if (typeof fallingMarbleSystem.isSurplusVolleyActive !== "function") {
       throw new Error("Surplus shot render requires FallingMarbleSystem.isSurplusVolleyActive.");
     }
+    if (typeof fallingMarbleSystem.getPendingSurplusShotCount !== "function") {
+      throw new Error("Surplus shot render requires FallingMarbleSystem.getPendingSurplusShotCount.");
+    }
     var surplusAimOrigin = shooterSnapshot.aim && shooterSnapshot.aim.origin
       ? shooterSnapshot.aim.origin
       : BoardLayout.shooterOrigin;
     var surplusAimDirection = fallingMarbleSystem.getSurplusTurretAimDirection();
+    shooterSnapshot.surplusRemainingShots = fallingMarbleSystem.getPendingSurplusShotCount();
     if (fallingMarbleSystem.isSurplusVolleyActive()) {
       shooterSnapshot.aim = {
         origin: surplusAimOrigin,

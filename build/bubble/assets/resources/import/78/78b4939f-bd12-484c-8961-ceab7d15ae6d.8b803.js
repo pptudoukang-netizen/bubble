@@ -1,0 +1,1 @@
+module.exports = [1,["1c838c701"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"jianbian","rect":[3,546,200,200],"offset":[0,0],"originalSize":[200,200],"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

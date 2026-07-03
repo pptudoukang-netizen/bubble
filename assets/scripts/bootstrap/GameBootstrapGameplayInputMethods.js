@@ -38,7 +38,10 @@ module.exports = {
 
     this._handleRuntimeStateTransition(snapshot);
     this.levelRenderer.refreshRuntime(this.currentLevelConfig, snapshot);
+    this._syncSkillPowerupGuideForRuntimeSnapshot(snapshot);
     this._syncSpecialIntroduceForRuntimeSnapshot(snapshot);
+    this._syncGeniusTipsForRuntimeSnapshot(snapshot);
+    this._syncSartTipsForRuntimeSnapshot(snapshot);
     this._playRuntimeAudioEvents(snapshot);
     if (!snapshot.activeProjectile) {
       this._setStatus(this._formatStatus(this.currentLevelConfig, snapshot));
@@ -101,6 +104,13 @@ module.exports = {
     return localPoint.y > shooterOrigin.y;
   },
 
+  _isShooterHandoffInputLocked: function () {
+    if (!this.levelRenderer || typeof this.levelRenderer.isShooterHandoffInProgress !== "function") {
+      throw new Error("GameBootstrap shot input requires LevelRenderer.isShooterHandoffInProgress.");
+    }
+    return this.levelRenderer.isShooterHandoffInProgress();
+  },
+
   _onAimStart: function (event) {
     if (!this.currentLevelConfig || this.isRestarting || this.isSelectingLevel || this.isGameplayPaused) {
       return;
@@ -116,6 +126,9 @@ module.exports = {
       return;
     }
     if (this._isBarrierHammerTargeting()) {
+      return;
+    }
+    if (this._isShooterHandoffInputLocked()) {
       return;
     }
     if (!this._isShotTouchPointValid(localPoint)) {
@@ -154,6 +167,9 @@ module.exports = {
       return;
     }
     if (this._isBarrierHammerTargeting()) {
+      return;
+    }
+    if (this._isShooterHandoffInputLocked()) {
       return;
     }
     if (!this._isShotTouchPointValid(localPoint)) {
@@ -224,6 +240,9 @@ module.exports = {
       this._handleBarrierHammerTargetTouch(localPoint);
       return;
     }
+    if (this._isShooterHandoffInputLocked()) {
+      return;
+    }
     if (!this._isShotTouchPointValid(localPoint)) {
       return;
     }
@@ -250,6 +269,7 @@ module.exports = {
     }
     this._handleRuntimeStateTransition(snapshot);
     this.levelRenderer.refreshRuntime(this.currentLevelConfig, snapshot);
+    this._syncSkillPowerupGuideForRuntimeSnapshot(snapshot);
     this._playRuntimeAudioEvents(snapshot);
     this._setStatus(this._formatStatus(this.currentLevelConfig, snapshot));
   },

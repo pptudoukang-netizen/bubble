@@ -1,1 +1,0 @@
-module.exports = [1,["b6YqMjIPBCTLRM21kU/LFC"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"add_btn","rect":[0,0,49,50],"offset":[0,0],"originalSize":[49,50],"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

@@ -1,0 +1,1 @@
+module.exports = [1,["1625fc67b"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"card_green","rect":[3,3,176,200],"offset":[0,0],"originalSize":[176,200],"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

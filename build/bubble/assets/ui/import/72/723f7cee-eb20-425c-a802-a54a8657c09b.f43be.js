@@ -1,0 +1,1 @@
+module.exports = [1,["14ebd8b8d"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"check_box","rect":[884,107,35,29],"offset":[1.5,-2.5],"originalSize":[42,38],"rotated":1,"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

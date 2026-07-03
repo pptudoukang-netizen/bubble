@@ -1,0 +1,1 @@
+module.exports = [1,["1e8496fee"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"dizuo","rect":[485,1115,75,35],"offset":[0,0],"originalSize":[75,35],"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

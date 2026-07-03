@@ -763,6 +763,13 @@ FallingMarbleSystem.prototype.isSurplusVolleyActive = function () {
   return this.pendingSurplusShotBalls.length > 0 || this.pendingSurplusShotOrigin !== null;
 };
 
+FallingMarbleSystem.prototype.getPendingSurplusShotCount = function () {
+  if (this.pendingSurplusShotBalls.length > 0 && !this.pendingSurplusShotOrigin) {
+    throw new Error("FallingMarbleSystem pending surplus shots require origin.");
+  }
+  return this.pendingSurplusShotBalls.length;
+};
+
 FallingMarbleSystem.prototype._createSurplusShotDrop = function (ball, spawnIndex, origin) {
   if (!ball || typeof ball !== "object") {
     throw new Error("Surplus shot ball must be object at index " + spawnIndex + ".");

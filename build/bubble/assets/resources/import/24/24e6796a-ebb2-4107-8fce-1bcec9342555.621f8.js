@@ -1,0 +1,1 @@
+module.exports = [1,["1c838c701"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"copper_lock","rect":[3,57,100,140],"offset":[0,0],"originalSize":[100,140],"rotated":1,"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

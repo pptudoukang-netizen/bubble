@@ -4,9 +4,10 @@ var StrictStorage = require("./StrictStorage");
 
 var STORAGE_KEY = "bubble_player_inventory_v1";
 var NAMESPACE = "InventoryStore";
-var STORAGE_VERSION = 2;
+var STORAGE_VERSION = 3;
 var LEGACY_VERSION_1_ITEM_IDS = ["swap_ball", "rainbow_ball", "blast_ball", "barrier_hammer"];
-var SUPPORTED_ITEM_IDS = ["swap_ball", "rainbow_ball", "blast_ball", "barrier_hammer", "snow_removal"];
+var VERSION_2_ITEM_IDS = ["swap_ball", "rainbow_ball", "blast_ball", "barrier_hammer", "snow_removal"];
+var SUPPORTED_ITEM_IDS = ["precise_aim", "swap_ball", "rainbow_ball", "blast_ball", "barrier_hammer", "snow_removal"];
 
 function clone(data) {
   return JSON.parse(JSON.stringify(data));
@@ -45,6 +46,7 @@ function assertObject(value, message) {
 
 function createDefaultItems() {
   return {
+    precise_aim: 0,
     swap_ball: 0,
     rainbow_ball: 0,
     blast_ball: 0,
@@ -80,6 +82,7 @@ function normalizeInventoryItems(rawItems, itemIds, description) {
 
 function migrateVersion1Inventory(raw) {
   var legacyItems = normalizeInventoryItems(raw.items, LEGACY_VERSION_1_ITEM_IDS, "Inventory v1");
+  legacyItems.precise_aim = 0;
   legacyItems.snow_removal = 0;
   return {
     version: STORAGE_VERSION,
@@ -87,10 +90,22 @@ function migrateVersion1Inventory(raw) {
   };
 }
 
+function migrateVersion2Inventory(raw) {
+  var version2Items = normalizeInventoryItems(raw.items, VERSION_2_ITEM_IDS, "Inventory v2");
+  version2Items.precise_aim = 0;
+  return {
+    version: STORAGE_VERSION,
+    items: version2Items
+  };
+}
+
 function normalizeInventory(raw) {
   assertObject(raw, "Inventory must be an object.");
   if (raw.version === 1) {
     return migrateVersion1Inventory(raw);
+  }
+  if (raw.version === 2) {
+    return migrateVersion2Inventory(raw);
   }
   if (raw.version !== STORAGE_VERSION) {
     throw new Error("Inventory version must be " + STORAGE_VERSION + ".");

@@ -11,6 +11,8 @@ var UiModalReleaseHelper = require("../utils/UiModalReleaseHelper");
 
 var DAILY_TASK_VIEW_PREFAB_PATH = "prefabs/ui/DailyTaskView";
 var FRIEND_STAMINA_GIFT_COST = 1;
+var DAILY_CHALLENGE_ATTEMPT_TASK_ID = "challenge_attempt_10";
+var EMPTY_DAILY_CHALLENGE_ATTEMPT_COUNT = 0;
 
 function requireNonEmptyString(value, fieldName) {
   if (typeof value !== "string") {
@@ -26,6 +28,13 @@ function requireNonEmptyString(value, fieldName) {
 function requirePositiveInteger(value, fieldName) {
   if (!Number.isInteger(value) || value <= 0) {
     throw new Error(fieldName + " must be a positive integer.");
+  }
+  return value;
+}
+
+function requireNonNegativeInteger(value, fieldName) {
+  if (!Number.isInteger(value) || value < 0) {
+    throw new Error(fieldName + " must be a non-negative integer.");
   }
   return value;
 }
@@ -67,13 +76,35 @@ function resolveDailyTaskGoStatus(task) {
   if (task.taskId === "gift_friend_stamina_3") {
     return "正在打开好友体力赠送";
   }
+  if (isChallengeDailyTask(task.taskId)) {
+    return "正在打开每日挑战";
+  }
   throw new Error("Unknown daily task go action: " + task.taskId);
+}
+
+function isChallengeDailyTask(taskId) {
+  return taskId === "challenge_attempt_10" ||
+    taskId === "challenge_clear_3" ||
+    taskId === "challenge_clear_5" ||
+    taskId === "challenge_clear_10";
 }
 
 module.exports = {
   _refreshDailyTaskState: function () {
     this.dailyTaskState = requireDailyTaskStore(this).load(new Date());
     return this.dailyTaskState;
+  },
+
+  _getDailyChallengeAttemptCount: function () {
+    var state = requireDailyTaskStore(this).load(new Date());
+    if (!state.tasks || typeof state.tasks !== "object" || Array.isArray(state.tasks)) {
+      throw new Error("Daily task state tasks are required for daily challenge count.");
+    }
+    var taskState = state.tasks[DAILY_CHALLENGE_ATTEMPT_TASK_ID];
+    if (!taskState) {
+      return EMPTY_DAILY_CHALLENGE_ATTEMPT_COUNT;
+    }
+    return requireNonNegativeInteger(taskState.progress, "Daily challenge attempt progress");
   },
 
   _recordDailyTaskEvent: function (eventType, payload) {
@@ -237,6 +268,12 @@ module.exports = {
     }
     this._hideDailyTaskView();
     showStatusAndTip(this, resolveDailyTaskGoStatus(task));
+    if (isChallengeDailyTask(task.taskId)) {
+      if (typeof this._startRandomChallengeRun !== "function") {
+        throw new Error("Daily challenge task go action requires _startRandomChallengeRun.");
+      }
+      return this._startRandomChallengeRun({});
+    }
     return Promise.resolve(false);
   },
 

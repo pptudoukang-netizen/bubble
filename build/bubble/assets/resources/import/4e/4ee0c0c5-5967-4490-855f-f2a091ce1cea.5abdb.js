@@ -1,0 +1,1 @@
+module.exports = [1,["1e401de2a"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"hero_0015","rect":[3,639,152,195],"offset":[-5,1.5],"originalSize":[200,200],"rotated":1,"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

@@ -1,0 +1,1 @@
+module.exports = [1,["14064cbfb"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"rainbow_ball","rect":[411,230,89,97],"offset":[0,0],"originalSize":[89,97],"rotated":1,"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

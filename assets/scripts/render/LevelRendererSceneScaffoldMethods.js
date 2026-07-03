@@ -1,5 +1,6 @@
 "use strict";
 
+var BundleLoader = require("../utils/BundleLoader");
 var SceneShared = require("./LevelRendererSceneShared");
 
 function attachLevelRendererSceneScaffoldMethods(LevelRenderer, deps) {
@@ -11,6 +12,26 @@ function attachLevelRendererSceneScaffoldMethods(LevelRenderer, deps) {
   var GAME_ENTRY_GO_HOLD_DURATION = 0.2;
   var GAME_ENTRY_GO_START_SCALE = 0.2;
   var GAME_ENTRY_GO_END_SCALE = 1.2;
+  var GAME_ENTRY_COUNTDOWN_MASK_NAME = "GameEntryCountdownMask";
+  var GAME_ENTRY_COUNTDOWN_MASK_OPACITY = 80;
+  var GAME_ENTRY_COUNTDOWN_MASK_Z_INDEX = 900;
+  var GAME_ENTRY_COUNTDOWN_TIMER_Z_INDEX = 901;
+  var GAME_ENTRY_COUNTDOWN_GO_Z_INDEX = 902;
+  var GAME_ENTRY_COUNTDOWN_LAYER_STATE_KEY = "__gameEntryCountdownLayerState";
+
+function requirePositiveContentSize(size, description) {
+  if (
+    !size ||
+    typeof size.width !== "number" ||
+    typeof size.height !== "number" ||
+    !isFinite(size.width) ||
+    !isFinite(size.height) ||
+    size.width <= 0 ||
+    size.height <= 0
+  ) {
+    throw new Error(description + " requires positive content size.");
+  }
+}
 
 LevelRenderer.prototype._ensureGameViewPrefabReady = function () {
   return this.prefabFactory.load(PREFAB_PATHS.gameView);
@@ -38,6 +59,156 @@ LevelRenderer.prototype._mountGameViewScaffold = function () {
     mountedDangerLineNode,
     mountedBottomPanelNode
   ]);
+};
+
+LevelRenderer.prototype.prepareForLevelSelectReturn = function () {
+  this._ensureLayers();
+  if (typeof this._stopBoardClearFireworks === "function") {
+    this._stopBoardClearFireworks("level_select_return");
+  }
+  if (this.layers && this.layers.hud && this.layers.hud.isValid) {
+    var gameViewNode = this.layers.hud.getChildByName("GameView");
+    if (gameViewNode && gameViewNode.isValid) {
+      gameViewNode.stopAllActions();
+      gameViewNode.__gameEntryCountdownActive = false;
+      var countdownLayerState = gameViewNode[GAME_ENTRY_COUNTDOWN_LAYER_STATE_KEY];
+      var timerNode = countdownLayerState ? countdownLayerState.timerNode : gameViewNode.getChildByName("timer");
+      if (timerNode && timerNode.isValid) {
+        timerNode.stopAllActions();
+      }
+      var goNode = countdownLayerState ? countdownLayerState.goNode : gameViewNode.getChildByName("go");
+      if (goNode && goNode.isValid) {
+        goNode.stopAllActions();
+      }
+      this._destroyGameEntryCountdownMask(gameViewNode);
+      this._restoreGameEntryCountdownNodes(gameViewNode);
+    }
+  }
+};
+
+LevelRenderer.prototype._createGameEntryCountdownMask = function (gameViewNode, timerNode, goNode) {
+  if (!gameViewNode || !gameViewNode.isValid) {
+    throw new Error("Game entry countdown mask requires GameView.");
+  }
+  if (!timerNode || !timerNode.isValid) {
+    throw new Error("Game entry countdown mask requires timer node.");
+  }
+  if (!goNode || !goNode.isValid) {
+    throw new Error("Game entry countdown mask requires go node.");
+  }
+  if (!this.layers || !this.layers.hud || !this.layers.hud.isValid) {
+    throw new Error("Game entry countdown mask requires HUD layer.");
+  }
+  if (!this.rootNode || !this.rootNode.isValid || typeof this.rootNode.getContentSize !== "function") {
+    throw new Error("Game entry countdown mask requires root node content size.");
+  }
+  if (typeof cc.Graphics !== "function") {
+    throw new Error("Game entry countdown mask requires cc.Graphics.");
+  }
+  if (this.layers.hud.getChildByName(GAME_ENTRY_COUNTDOWN_MASK_NAME)) {
+    throw new Error("Game entry countdown mask is already mounted.");
+  }
+
+  var rootSize = this.rootNode.getContentSize();
+  requirePositiveContentSize(rootSize, "Game entry countdown mask");
+
+  var maskNode = new cc.Node(GAME_ENTRY_COUNTDOWN_MASK_NAME);
+  maskNode.parent = this.layers.hud;
+  maskNode.setContentSize(rootSize);
+  maskNode.setPosition(0, 0);
+  maskNode.opacity = GAME_ENTRY_COUNTDOWN_MASK_OPACITY;
+  maskNode.zIndex = GAME_ENTRY_COUNTDOWN_MASK_Z_INDEX;
+
+  var graphics = maskNode.addComponent(cc.Graphics);
+  graphics.fillColor = cc.color(0, 0, 0, GAME_ENTRY_COUNTDOWN_MASK_OPACITY);
+  graphics.rect(-rootSize.width * 0.5, -rootSize.height * 0.5, rootSize.width, rootSize.height);
+  graphics.fill();
+};
+
+LevelRenderer.prototype._promoteGameEntryCountdownNodes = function (gameViewNode, timerNode, goNode) {
+  if (!gameViewNode || !gameViewNode.isValid) {
+    throw new Error("Game entry countdown node promotion requires GameView.");
+  }
+  if (!timerNode || !timerNode.isValid) {
+    throw new Error("Game entry countdown node promotion requires timer node.");
+  }
+  if (!goNode || !goNode.isValid) {
+    throw new Error("Game entry countdown node promotion requires go node.");
+  }
+  if (!this.layers || !this.layers.hud || !this.layers.hud.isValid) {
+    throw new Error("Game entry countdown node promotion requires HUD layer.");
+  }
+  if (gameViewNode[GAME_ENTRY_COUNTDOWN_LAYER_STATE_KEY]) {
+    throw new Error("Game entry countdown nodes are already promoted.");
+  }
+
+  gameViewNode[GAME_ENTRY_COUNTDOWN_LAYER_STATE_KEY] = {
+    timerNode: timerNode,
+    timerParent: timerNode.parent,
+    timerX: timerNode.x,
+    timerY: timerNode.y,
+    timerZIndex: timerNode.zIndex,
+    goNode: goNode,
+    goParent: goNode.parent,
+    goX: goNode.x,
+    goY: goNode.y,
+    goZIndex: goNode.zIndex
+  };
+
+  var timerWorldPosition = timerNode.convertToWorldSpaceAR(cc.v2(0, 0));
+  var goWorldPosition = goNode.convertToWorldSpaceAR(cc.v2(0, 0));
+  timerNode.parent = this.layers.hud;
+  timerNode.setPosition(this.layers.hud.convertToNodeSpaceAR(timerWorldPosition));
+  timerNode.zIndex = GAME_ENTRY_COUNTDOWN_TIMER_Z_INDEX;
+  goNode.parent = this.layers.hud;
+  goNode.setPosition(this.layers.hud.convertToNodeSpaceAR(goWorldPosition));
+  goNode.zIndex = GAME_ENTRY_COUNTDOWN_GO_Z_INDEX;
+};
+
+LevelRenderer.prototype._restoreGameEntryCountdownNodes = function (gameViewNode) {
+  if (!gameViewNode || !gameViewNode.isValid) {
+    throw new Error("Game entry countdown node restore requires GameView.");
+  }
+
+  var state = gameViewNode[GAME_ENTRY_COUNTDOWN_LAYER_STATE_KEY];
+  if (state) {
+    if (!state.timerParent || !state.timerParent.isValid) {
+      throw new Error("Game entry countdown timer original parent is invalid.");
+    }
+    if (!state.goParent || !state.goParent.isValid) {
+      throw new Error("Game entry countdown go original parent is invalid.");
+    }
+    if (!state.timerNode || !state.timerNode.isValid) {
+      throw new Error("Game entry countdown timer node is invalid during restore.");
+    }
+    if (!state.goNode || !state.goNode.isValid) {
+      throw new Error("Game entry countdown go node is invalid during restore.");
+    }
+
+    state.timerNode.parent = state.timerParent;
+    state.timerNode.setPosition(state.timerX, state.timerY);
+    state.timerNode.zIndex = state.timerZIndex;
+    state.goNode.parent = state.goParent;
+    state.goNode.setPosition(state.goX, state.goY);
+    state.goNode.zIndex = state.goZIndex;
+    delete gameViewNode[GAME_ENTRY_COUNTDOWN_LAYER_STATE_KEY];
+  }
+};
+
+LevelRenderer.prototype._destroyGameEntryCountdownMask = function (gameViewNode) {
+  if (!gameViewNode || !gameViewNode.isValid) {
+    throw new Error("Game entry countdown mask cleanup requires GameView.");
+  }
+
+  if (!this.layers || !this.layers.hud || !this.layers.hud.isValid) {
+    throw new Error("Game entry countdown mask cleanup requires HUD layer.");
+  }
+
+  var maskNode = this.layers.hud.getChildByName(GAME_ENTRY_COUNTDOWN_MASK_NAME);
+  if (maskNode && maskNode.isValid) {
+    maskNode.removeFromParent(false);
+    maskNode.destroy();
+  }
 };
 
 LevelRenderer.prototype.playGameEntryCountdown = function () {
@@ -71,7 +242,10 @@ LevelRenderer.prototype.playGameEntryCountdown = function () {
 
   timerNode.stopAllActions();
   goNode.stopAllActions();
+  this._createGameEntryCountdownMask(gameViewNode, timerNode, goNode);
+  this._promoteGameEntryCountdownNodes(gameViewNode, timerNode, goNode);
   gameViewNode.__gameEntryCountdownActive = true;
+  var self = this;
   timerNode.active = true;
   timerNode.opacity = 255;
   timerLabel.string = "3";
@@ -103,6 +277,8 @@ LevelRenderer.prototype.playGameEntryCountdown = function () {
           cc.delayTime(GAME_ENTRY_GO_HOLD_DURATION),
           cc.callFunc(function () {
             goNode.active = false;
+            self._destroyGameEntryCountdownMask(gameViewNode);
+            self._restoreGameEntryCountdownNodes(gameViewNode);
             gameViewNode.__gameEntryCountdownActive = false;
             resolve();
           })
@@ -115,7 +291,9 @@ LevelRenderer.prototype.playGameEntryCountdown = function () {
 LevelRenderer.prototype.syncBoardLayoutHudBottomLineAsync = function () {
   var self = this;
   this._ensureLayers();
-  return this._ensureGameViewPrefabReady().then(function () {
+  return BundleLoader.ensureGameplayBundleLoaded().then(function () {
+    return self._ensureGameViewPrefabReady();
+  }).then(function () {
     self.syncBoardLayoutHudBottomLine();
   });
 };

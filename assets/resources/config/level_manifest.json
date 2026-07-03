@@ -12,8 +12,8 @@
             "from": 11,
             "to": 100,
             "fileID": "cloud://cloud1-d7gqettx3e9249ca1.636c-cloud1-d7gqettx3e9249ca1-1428064608/level-packs-compact/levels_pack_011_100.json",
-            "sha256": "6d9d0dc3d60a0067aa09501f9019158c35435b7f6318d9a0aabab98c0d34995f",
-            "bytes": 84828,
+            "sha256": "a6ffe6d34de94a90474b703255c71729fa3e706c4ee5f3ec00f1c637bbab81a5",
+            "bytes": 84827,
             "format": "compact-schema-v1"
         },
         {
@@ -21,8 +21,8 @@
             "from": 101,
             "to": 200,
             "fileID": "cloud://cloud1-d7gqettx3e9249ca1.636c-cloud1-d7gqettx3e9249ca1-1428064608/level-packs-compact/levels_pack_101_200.json",
-            "sha256": "6a3bd3125b0a024c65b934fadd6ca0e1b5069ab80040877c13f9fe4121dbbad0",
-            "bytes": 126109,
+            "sha256": "8c7a33e4d6bcdd3ee2d10422d4d239997717e9553f144cdd8ca27b81ba7ec05a",
+            "bytes": 126421,
             "format": "compact-schema-v1"
         },
         {
@@ -30,8 +30,8 @@
             "from": 201,
             "to": 300,
             "fileID": "cloud://cloud1-d7gqettx3e9249ca1.636c-cloud1-d7gqettx3e9249ca1-1428064608/level-packs-compact/levels_pack_201_300.json",
-            "sha256": "4cca09b7a59eb66b4eb5fee4bdb01cae95a1feaba8bb2dc5d3e4690fb5727c27",
-            "bytes": 138952,
+            "sha256": "1be4004eb25b5c53f56b2e7439a62c7ca7d11390a8f999700452cb5c57e01bf2",
+            "bytes": 139068,
             "format": "compact-schema-v1"
         },
         {
@@ -39,8 +39,8 @@
             "from": 301,
             "to": 400,
             "fileID": "cloud://cloud1-d7gqettx3e9249ca1.636c-cloud1-d7gqettx3e9249ca1-1428064608/level-packs-compact/levels_pack_301_400.json",
-            "sha256": "85b03a9d5df5ef67d67d9acd691cfc52673ca5c0d8aca891b19b49402aeb86ff",
-            "bytes": 158109,
+            "sha256": "6b3a88ba6aab970f9c75bdc9818daac8455ea70d61453ef928ab010b3e7b52e5",
+            "bytes": 158108,
             "format": "compact-schema-v1"
         },
         {
@@ -48,8 +48,8 @@
             "from": 401,
             "to": 500,
             "fileID": "cloud://cloud1-d7gqettx3e9249ca1.636c-cloud1-d7gqettx3e9249ca1-1428064608/level-packs-compact/levels_pack_401_500.json",
-            "sha256": "355f78b5bba7b3f756356a484e5213f06cbe0836118d2cd23182e913fd1f07fe",
-            "bytes": 178216,
+            "sha256": "4ee02e33474ae592347f726a424abc8e61f2d9a7e0465b6a3c3228a08bdbeceb",
+            "bytes": 178215,
             "format": "compact-schema-v1"
         },
         {

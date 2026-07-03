@@ -1,6 +1,7 @@
 "use strict";
 
 var BoardLayout = require("./BoardLayout");
+var LevelBoardSupportValidator = require("./LevelBoardSupportValidator");
 var RandomChallengeRules = require("./RandomChallengeRules");
 
 var COLOR_POOL = ["R", "G", "B", "Y", "P"];
@@ -114,6 +115,44 @@ function selectColors(random, colorCount) {
   return shuffleCopy(random, COLOR_POOL, "Random challenge colors").slice(0, safeColorCount);
 }
 
+function getUpperNeighborCoordinates(row, col) {
+  if (row <= 0) {
+    return [];
+  }
+  if (row % 2 === 1) {
+    return [
+      { row: row - 1, col: col },
+      { row: row - 1, col: col + 1 }
+    ];
+  }
+  return [
+    { row: row - 1, col: col - 1 },
+    { row: row - 1, col: col }
+  ];
+}
+
+function isOccupied(layout, row, col) {
+  if (row < 0 || row >= layout.length) {
+    return false;
+  }
+  var rowString = layout[row];
+  if (typeof rowString !== "string" || col < 0 || col >= rowString.length) {
+    return false;
+  }
+  return rowString.charAt(col) !== ".";
+}
+
+function hasUpperSupport(layout, row, col) {
+  var upperNeighbors = getUpperNeighborCoordinates(row, col);
+  for (var index = 0; index < upperNeighbors.length; index += 1) {
+    var neighbor = upperNeighbors[index];
+    if (isOccupied(layout, neighbor.row, neighbor.col)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function buildLayout(random, tier, colors) {
   var rowCount = requirePositiveInteger(tier.rowCount, "tier.rowCount");
   var fillRate = requireNumberInRange(tier.fillRate, "tier.fillRate", 0.5, 0.95);
@@ -128,9 +167,10 @@ function buildLayout(random, tier, colors) {
     var chars = [];
     for (var col = 0; col < columnCount; col += 1) {
       var mustFill = row < 2;
+      var supported = mustFill || hasUpperSupport(layout, row, col);
       var edgeColumn = col === 0 || col === columnCount - 1;
       var rowFillRate = edgeColumn ? Math.min(0.95, fillRate + 0.08) : fillRate;
-      if (mustFill || random() <= rowFillRate) {
+      if (supported && (mustFill || random() <= rowFillRate)) {
         var color = pickFrom(random, colors, "Random challenge layout color");
         chars.push(color);
         colorCounts[color] += 1;
@@ -326,6 +366,7 @@ function buildConfig(options) {
     config.layoutNotes.legend[color] = color;
   });
   config.layoutNotes.legend["."] = "empty";
+  LevelBoardSupportValidator.assertInitialBoardSupported(config.level, RandomChallengeRules.LEVEL_KEY);
 
   return config;
 }

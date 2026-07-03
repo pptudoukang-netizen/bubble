@@ -1,6 +1,7 @@
 "use strict";
 
 var POWERUP_DISPLAY_NAMES = {
+  precise_aim: "精确瞄准",
   rainbow: "彩虹球",
   blast: "炸弹球",
   swap: "换球",

@@ -16,6 +16,7 @@ var GameCircleWelfareStore = require("../utils/GameCircleWelfareStore");
 var SelectedPowerupsStore = require("../utils/SelectedPowerupsStore");
 var SignInStore = require("../utils/SignInStore");
 var NewUserGuideStore = require("../utils/NewUserGuideStore");
+var SkillPowerupGuideStore = require("../utils/SkillPowerupGuideStore");
 var NewGiftStore = require("../utils/NewGiftStore");
 var RouteConfigStore = require("../utils/RouteConfigStore");
 var SpecialIntroduceStore = require("../utils/SpecialIntroduceStore");
@@ -76,6 +77,7 @@ var START_GAME_VIEW_PREFAB_PATH = "prefabs/ui/StartGameView";
 var POWER_TIPS_VIEW_PREFAB_PATH = "prefabs/ui/PowerTipsView";
 var PROP_DESCRIPTION_VIEW_PREFAB_PATH = "prefabs/ui/PropDescriptionView";
 var POWERUP_TYPE_BY_ITEM_ID = {
+  precise_aim: "precise_aim",
   swap_ball: "swap",
   rainbow_ball: "rainbow",
   blast_ball: "blast",
@@ -83,6 +85,7 @@ var POWERUP_TYPE_BY_ITEM_ID = {
   snow_removal: "snow_removal"
 };
 var ITEM_ID_BY_POWERUP_TYPE = {
+  precise_aim: "precise_aim",
   swap: "swap_ball",
   rainbow: "rainbow_ball",
   blast: "blast_ball",
@@ -91,8 +94,9 @@ var ITEM_ID_BY_POWERUP_TYPE = {
 };
 var MAX_SELECTED_POWERUPS = 4;
 var MAX_SELECTED_POWERUP_TOTAL_COUNT = 4;
-var INVENTORY_TOTAL_LIMIT_TIP = "关卡中最多携带" + MAX_SELECTED_POWERUP_TOTAL_COUNT + "个道具";
+var INVENTORY_TOTAL_LIMIT_TIP = "关卡中最多携带" + MAX_SELECTED_POWERUP_TOTAL_COUNT + "种道具";
 var LOSE_COIN_REVIVE_COST = 500;
+var ADD_BALL_TIPS_COIN_COST = 500;
 var RELEASE_FALSE_SCENE_FIELDS = [
   "enableSpecialEntitiesTestMode",
   "showDebugOverlay",
@@ -145,6 +149,7 @@ module.exports = {
   SelectedPowerupsStore: SelectedPowerupsStore,
   SignInStore: SignInStore,
   NewUserGuideStore: NewUserGuideStore,
+  SkillPowerupGuideStore: SkillPowerupGuideStore,
   NewGiftStore: NewGiftStore,
   RouteConfigStore: RouteConfigStore,
   SpecialIntroduceStore: SpecialIntroduceStore,
@@ -209,6 +214,7 @@ module.exports = {
   MAX_SELECTED_POWERUP_TOTAL_COUNT: MAX_SELECTED_POWERUP_TOTAL_COUNT,
   INVENTORY_TOTAL_LIMIT_TIP: INVENTORY_TOTAL_LIMIT_TIP,
   LOSE_COIN_REVIVE_COST: LOSE_COIN_REVIVE_COST,
+  ADD_BALL_TIPS_COIN_COST: ADD_BALL_TIPS_COIN_COST,
   RELEASE_FALSE_SCENE_FIELDS: RELEASE_FALSE_SCENE_FIELDS,
   clone: clone,
   assertReleaseSceneFieldDisabled: assertReleaseSceneFieldDisabled,

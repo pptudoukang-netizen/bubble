@@ -17,6 +17,7 @@ var GameCircleWelfareStore = Shared.GameCircleWelfareStore;
 var SelectedPowerupsStore = Shared.SelectedPowerupsStore;
 var SignInStore = Shared.SignInStore;
 var NewUserGuideStore = Shared.NewUserGuideStore;
+var SkillPowerupGuideStore = Shared.SkillPowerupGuideStore;
 var NewGiftStore = Shared.NewGiftStore;
 var RouteConfigStore = Shared.RouteConfigStore;
 var SpecialIntroduceStore = Shared.SpecialIntroduceStore;
@@ -269,11 +270,16 @@ module.exports = {
     });
     this.newUserGuideState = this.newUserGuideStore.load();
     this.newUserGuideStore.save(this.newUserGuideState);
+    this.skillPowerupGuideStore = new SkillPowerupGuideStore();
+    this.skillPowerupGuideState = this.skillPowerupGuideStore.load();
+    this.skillPowerupGuideStore.save(this.skillPowerupGuideState);
     this._newUserGuideLayer = null;
     this._newUserGuideFingerNode = null;
     this._newUserGuideFingerSpriteFrame = null;
     this._newUserGuideFingerSpriteFramePromise = null;
     this._newUserGuideFingerSize = null;
+    this._pendingSkillPowerupGuideTypes = [];
+    this._activeSkillPowerupGuideType = "";
     this._inventoryViewPrefab = null;
     this._inventoryViewNode = null;
     this._inventoryViewController = null;
@@ -286,8 +292,7 @@ module.exports = {
     this._pendingStartGamePowerups = [];
     this._pendingStartGameTemporaryPowerups = {
       three_line_elimination: 0,
-      plus_three_balls: 0,
-      precise_aim: 0
+      plus_three_balls: 0
     };
     this._pendingStartGameTemporaryPowerupCosts = {};
     this._startGameTemporaryPowerupsCommitted = false;
@@ -312,6 +317,16 @@ module.exports = {
     this._specialIntroduceViewActive = false;
     this._specialIntroduceOpening = false;
     this._specialIntroducePausedTimer = false;
+    this._geniusTipsViewPrefab = null;
+    this._geniusTipsViewNode = null;
+    this._geniusTipsViewController = null;
+    this._geniusTipsViewActive = false;
+    this._geniusTipsViewOpening = false;
+    this._sartTipsViewPrefab = null;
+    this._sartTipsViewNode = null;
+    this._sartTipsViewController = null;
+    this._sartTipsViewActive = false;
+    this._sartTipsViewOpening = false;
     this._shopViewPrefab = null;
     this._shopViewNode = null;
     this._shopViewController = null;
@@ -482,7 +497,7 @@ module.exports = {
   _ensureGameplayKernel: function () {
     this._cancelGameplayBundleIdleRelease();
     if (this.gameManager && this.levelRenderer) {
-      return Promise.resolve();
+      return BundleLoader.ensureGameplayBundleLoaded();
     }
     if (this._gameplayKernelPromise) {
       return this._gameplayKernelPromise;
@@ -510,6 +525,10 @@ module.exports = {
         cost: Shared.LOSE_COIN_REVIVE_COST,
         getCoinCount: this._getCurrentCoins.bind(this)
       });
+      this.levelRenderer.setAddBallTipsCoinPresentation({
+        cost: Shared.ADD_BALL_TIPS_COIN_COST,
+        getCoinCount: this._getCurrentCoins.bind(this)
+      });
       this.levelRenderer.setWinActionHandlers({
         onNextLevel: this._onNextLevelTap.bind(this),
         onRetryLevel: this._restartCurrentLevel.bind(this)
@@ -519,6 +538,11 @@ module.exports = {
         onBackLevel: this._onBackToLevelTap.bind(this),
         onWatchAd: this._onLoseWatchAdTap.bind(this),
         onCoinRevive: this._onLoseCoinReviveTap.bind(this)
+      });
+      this.levelRenderer.setAddBallTipsActionHandlers({
+        onClose: this._onAddBallTipsCloseTap.bind(this),
+        onWatchAd: this._onAddBallTipsWatchAdTap.bind(this),
+        onCoinBuy: this._onAddBallTipsCoinBuyTap.bind(this)
       });
       this.levelRenderer.setPauseActionHandlers({
         onContinue: this._continuePausedLevel.bind(this),
@@ -550,6 +574,9 @@ module.exports = {
         }.bind(this),
         onUseSnowRemoval: function () {
           this._onUseSnowRemovalTap();
+        }.bind(this),
+        onUsePreciseAim: function () {
+          this._onUsePreciseAimTap();
         }.bind(this),
         onUseThreeLineElimination: function () {
           this._onUseThreeLineEliminationTap();

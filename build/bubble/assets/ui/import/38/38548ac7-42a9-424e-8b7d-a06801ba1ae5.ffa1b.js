@@ -1,0 +1,1 @@
+module.exports = [1,["14ebd8b8d"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"btn_cyan","rect":[482,833,170,68],"offset":[1,2],"originalSize":[174,72],"capInsets":[64,0,43,0]}],[0],0,[0],[0],[0]];

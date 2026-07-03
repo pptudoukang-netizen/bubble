@@ -1,0 +1,1 @@
+module.exports = [1,["14064cbfb"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"three_line_elimination","rect":[266,389,117,117],"offset":[0.5,0],"originalSize":[120,119],"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

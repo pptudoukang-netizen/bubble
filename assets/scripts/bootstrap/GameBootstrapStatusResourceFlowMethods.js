@@ -3,6 +3,7 @@
 var Shared = require("./GameBootstrapUiFlowShared");
 var DebugFlags = Shared.DebugFlags;
 var Logger = Shared.Logger;
+var LevelSelectView = Shared.LevelSelectView;
 var LevelSelectMemoryDiagnostics = require("../utils/LevelSelectMemoryDiagnostics");
 var NEW_GIFT_INVENTORY_ITEMS = ["swap_ball", "rainbow_ball", "blast_ball", "barrier_hammer"];
 var NEW_GIFT_STAMINA_COUNT = 5;
@@ -522,6 +523,38 @@ module.exports = {
     };
   },
 
+  _spendCoinsForAddBallTips: function (amount, reason) {
+    var cost = Math.floor(Number(amount));
+    if (!Number.isInteger(cost) || cost <= 0) {
+      throw new Error("AddBallTipsView coin spend amount must be a positive integer.");
+    }
+    if (reason !== "add_ball_tips_plus_three_balls") {
+      throw new Error("AddBallTipsView coin spend reason must be add_ball_tips_plus_three_balls.");
+    }
+    this._refreshPlayerResources();
+    var currentCoins = Math.floor(Number(this.playerResources.coins));
+    if (!Number.isInteger(currentCoins) || currentCoins < 0) {
+      throw new Error("Player coin balance is invalid.");
+    }
+    if (currentCoins < cost) {
+      return {
+        accepted: false,
+        reason: "ADD_BALL_TIPS_COIN_NOT_ENOUGH",
+        cost: cost,
+        coinBefore: currentCoins
+      };
+    }
+    this.playerResources.coins = currentCoins - cost;
+    this.playerResourceStore.save(this.playerResources);
+    this._updateLevelSelectTopStatus();
+    return {
+      accepted: true,
+      cost: cost,
+      coinBefore: currentCoins,
+      coinAfter: this.playerResources.coins
+    };
+  },
+
   _refundCoinsForRevive: function (amount, reason) {
     var refund = Math.floor(Number(amount));
     if (!Number.isInteger(refund) || refund <= 0) {
@@ -529,6 +562,30 @@ module.exports = {
     }
     if (reason !== "lose_coin_revive_rollback") {
       throw new Error("LoseView coin revive refund reason must be lose_coin_revive_rollback.");
+    }
+    this._refreshPlayerResources();
+    var currentCoins = Math.floor(Number(this.playerResources.coins));
+    if (!Number.isInteger(currentCoins) || currentCoins < 0) {
+      throw new Error("Player coin balance is invalid.");
+    }
+    this.playerResources.coins = currentCoins + refund;
+    this.playerResourceStore.save(this.playerResources);
+    this._updateLevelSelectTopStatus();
+    return {
+      accepted: true,
+      refund: refund,
+      coinBefore: currentCoins,
+      coinAfter: this.playerResources.coins
+    };
+  },
+
+  _refundCoinsForAddBallTips: function (amount, reason) {
+    var refund = Math.floor(Number(amount));
+    if (!Number.isInteger(refund) || refund <= 0) {
+      throw new Error("AddBallTipsView coin refund amount must be a positive integer.");
+    }
+    if (reason !== "add_ball_tips_plus_three_balls_rollback") {
+      throw new Error("AddBallTipsView coin refund reason must be add_ball_tips_plus_three_balls_rollback.");
     }
     this._refreshPlayerResources();
     var currentCoins = Math.floor(Number(this.playerResources.coins));
@@ -678,6 +735,7 @@ module.exports = {
     if (goldLabel) {
       setDynamicLabelString(goldLabel, this.playerResources.coins, "LevelView gold label");
     }
+    LevelSelectView.updateDailyChallengeAttemptCount(this._levelSelectNode, this._getDailyChallengeAttemptCount());
 
     if (!shouldUpdateLevelSelectEntryStates(options)) {
       return;

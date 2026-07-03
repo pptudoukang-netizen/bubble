@@ -1,0 +1,1 @@
+module.exports = [1,["148a7aa2e"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"music_icon","rect":[684,611,46,48],"offset":[-0.5,0],"originalSize":[47,48],"rotated":1,"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

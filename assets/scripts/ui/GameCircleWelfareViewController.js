@@ -6,6 +6,7 @@ var SpriteProxyLayerHelper = require("../utils/SpriteProxyLayerHelper");
 var REWARD_ICON_PATHS = {
   coin: "image/props/coin",
   stamina: "image/props/treasure_chest",
+  precise_aim: "image/props/aim",
   swap_ball: "image/props/change_ball",
   rainbow_ball: "image/props/rainbow_ball",
   blast_ball: "image/props/blast_ball",

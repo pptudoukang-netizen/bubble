@@ -1,0 +1,1 @@
+module.exports = [1,["1c838c701"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"back_btn","rect":[830,47,113,113],"offset":[-0.5,-1],"originalSize":[116,117],"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

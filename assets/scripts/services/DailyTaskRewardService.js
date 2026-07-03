@@ -5,7 +5,11 @@ var ALLOWED_REASONS = {
   daily_task_spend_stamina: true,
   daily_task_use_rainbow_ball: true,
   daily_task_use_barrier_hammer: true,
-  daily_task_gift_friend_stamina: true
+  daily_task_gift_friend_stamina: true,
+  daily_task_challenge_attempt: true,
+  daily_task_challenge_clear_3: true,
+  daily_task_challenge_clear_5: true,
+  daily_task_challenge_clear_10: true
 };
 
 function assertObject(value, message) {

@@ -982,14 +982,20 @@ module.exports = {
       return;
     }
 
-    this._showRewardedAdForEntry(rewardEntry, {
+    var adOptions = {
       entrySource: "inventory_empty",
       adUnitId: this.inventoryRewardedVideoAdUnitId,
       onRewardGrantedMessage: "道具补给成功",
       onAdUnavailable: function (payload) {
         this._showGameplayInventoryQuickBuyForPowerup(powerupType, payload ? payload.reason : "");
       }.bind(this)
-    });
+    };
+    if (powerupType === "precise_aim") {
+      adOptions.onRewardGranted = function () {
+        this._autoUsePreciseAimAfterInventoryGrant();
+      }.bind(this);
+    }
+    this._showRewardedAdForEntry(rewardEntry, adOptions);
   },
 
   _showGameplayInventoryQuickBuyForPowerup: function (powerupType, unavailableReason) {

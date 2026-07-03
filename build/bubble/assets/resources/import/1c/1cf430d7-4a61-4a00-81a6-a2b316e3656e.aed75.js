@@ -1,1 +1,0 @@
-module.exports = [1,["acMQtwMxtHn7styCn6TJxI"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"gift_pack","rect":[2,8,98,92],"offset":[1,-4],"originalSize":[100,100],"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

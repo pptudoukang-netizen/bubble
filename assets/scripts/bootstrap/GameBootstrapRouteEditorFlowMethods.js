@@ -74,6 +74,8 @@ module.exports = {
             this.isRestarting = false;
             this._setDropTestButtonVisible(true);
             this._syncSpecialIntroduceForRuntimeSnapshot(snapshot);
+            this._syncGeniusTipsForRuntimeSnapshot(snapshot);
+            this._syncSartTipsForRuntimeSnapshot(snapshot);
             return this._showNewUserGuideForGameplay();
           }.bind(this));
         }.bind(this));

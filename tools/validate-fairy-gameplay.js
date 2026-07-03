@@ -952,6 +952,22 @@ function testSurplusShotVelocityMatchesTurretAim() {
   }
 }
 
+function testSurplusShotPendingCountFollowsVolleyLaunch() {
+  var systems = createSystems(20);
+  var origin = { x: BoardLayout.shooterOrigin.x, y: BoardLayout.shooterOrigin.y };
+  systems.falling.registerSurplusShotsFromOrigin([
+    { color: "R", entityCategory: "normal_ball", entityType: null },
+    { color: "Y", entityCategory: "normal_ball", entityType: null },
+    { color: "B", entityCategory: "normal_ball", entityType: null }
+  ], origin, 2);
+
+  assert.strictEqual(systems.falling.getPendingSurplusShotCount(), 2);
+  systems.falling.update(0.21);
+  assert.strictEqual(systems.falling.getPendingSurplusShotCount(), 1);
+  systems.falling.update(0.21);
+  assert.strictEqual(systems.falling.getPendingSurplusShotCount(), 0);
+}
+
 function testCollectedMultiplierContract() {
   var systems = createSystems(20);
   systems.fairy.resolveAfterShot(buildResolution(1, 0), buildGrid());
@@ -1002,6 +1018,7 @@ testLeftmostJarOuterRimBounce();
 testRightmostJarOuterRimBounceStaysInsideScreen();
 testTopAnchorCollapseStartsSurplusVolley();
 testSurplusShotVelocityMatchesTurretAim();
+testSurplusShotPendingCountFollowsVolleyLaunch();
 testCollectedMultiplierContract();
 
 console.log("Fairy gameplay validation passed.");

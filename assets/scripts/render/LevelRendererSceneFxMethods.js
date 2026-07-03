@@ -28,6 +28,9 @@ function attachLevelRendererSceneFxMethods(LevelRenderer, deps) {
   var ICE_COLLECT_FLY_TWEEN_EASING = deps.ICE_COLLECT_FLY_TWEEN_EASING;
   var SPLITTER_SPAWN_FLY_DURATION = deps.SPLITTER_SPAWN_FLY_DURATION;
   var SPLITTER_SPAWN_BEZIER_ARC = deps.SPLITTER_SPAWN_BEZIER_ARC;
+  var FIREWORKS_PREFAB_PATH = deps.FIREWORKS_PREFAB_PATH;
+  var BOARD_CLEAR_FIREWORKS_BURST_COUNT = deps.BOARD_CLEAR_FIREWORKS_BURST_COUNT;
+  var BOARD_CLEAR_FIREWORKS_INTERVAL_SEC = deps.BOARD_CLEAR_FIREWORKS_INTERVAL_SEC;
   var ensureSprite = deps.ensureSprite;
   var getOrCreateChild = deps.getOrCreateChild;
   var resolveImpactBounceSpeed = deps.resolveImpactBounceSpeed;
@@ -93,6 +96,128 @@ function attachLevelRendererSceneFxMethods(LevelRenderer, deps) {
       throw new Error(ownerName + " position must be finite.");
     }
     return point;
+  }
+
+  function requirePositiveFiniteNumber(value, ownerName) {
+    if (typeof value !== "number" || !isFinite(value) || value <= 0) {
+      throw new Error(ownerName + " must be a positive finite number.");
+    }
+    return value;
+  }
+
+  function requireBoardClearFireworksPrefab(renderer) {
+    if (!renderer || !renderer.fireworksPrefab) {
+      throw new Error("Board clear fireworks requires preloaded prefab: animation/" + FIREWORKS_PREFAB_PATH);
+    }
+    return renderer.fireworksPrefab;
+  }
+
+  function requireBoardClearFireworksRootParent(renderer) {
+    if (!renderer || typeof renderer._getGameViewNode !== "function") {
+      throw new Error("Board clear fireworks requires _getGameViewNode.");
+    }
+    var gameViewNode = renderer._getGameViewNode();
+    if (!gameViewNode || !gameViewNode.isValid) {
+      throw new Error("Board clear fireworks requires GameView node.");
+    }
+    return gameViewNode;
+  }
+
+  function requireBoardClearFireworksSpawnArea(renderer) {
+    var gameViewNode = requireBoardClearFireworksRootParent(renderer);
+    if (typeof gameViewNode.getContentSize !== "function") {
+      throw new Error("Board clear fireworks requires GameView size.");
+    }
+    var rootSize = gameViewNode.getContentSize();
+    if (
+      !rootSize ||
+      typeof rootSize.width !== "number" ||
+      typeof rootSize.height !== "number" ||
+      !isFinite(rootSize.width) ||
+      !isFinite(rootSize.height) ||
+      rootSize.width <= 0 ||
+      rootSize.height <= 0
+    ) {
+      throw new Error("Board clear fireworks GameView size is invalid.");
+    }
+    return {
+      centerX: 0,
+      centerY: rootSize.height * 0.22,
+      halfWidth: rootSize.width * 0.2,
+      halfHeight: rootSize.height * 0.14
+    };
+  }
+
+  function createRandomPointInArea(area) {
+    if (!area || typeof area !== "object" || Array.isArray(area)) {
+      throw new Error("Board clear fireworks spawn area is required.");
+    }
+    requirePositiveFiniteNumber(area.halfWidth, "Board clear fireworks halfWidth");
+    requirePositiveFiniteNumber(area.halfHeight, "Board clear fireworks halfHeight");
+    return {
+      x: area.centerX + (Math.random() * 2 - 1) * area.halfWidth,
+      y: area.centerY + (Math.random() * 2 - 1) * area.halfHeight
+    };
+  }
+
+  function requireParticleSystem(node, ownerName) {
+    if (!node || !node.isValid) {
+      throw new Error(ownerName + " requires valid node.");
+    }
+    var particleSystem = node.getComponent(cc.ParticleSystem);
+    if (!particleSystem) {
+      throw new Error(ownerName + " requires cc.ParticleSystem.");
+    }
+    if (typeof particleSystem.resetSystem !== "function") {
+      throw new Error(ownerName + " ParticleSystem requires resetSystem.");
+    }
+    return particleSystem;
+  }
+
+  function stopParticleSystemIfPresent(node) {
+    if (!node || !node.isValid) {
+      return;
+    }
+    var particleSystem = node.getComponent(cc.ParticleSystem);
+    if (particleSystem && typeof particleSystem.stopSystem === "function") {
+      particleSystem.stopSystem();
+    }
+  }
+
+  function instantiateBoardClearFireworks(renderer, parent, position) {
+    var targetPosition = requireFinitePoint(position, "Board clear fireworks");
+    var prefab = requireBoardClearFireworksPrefab(renderer);
+    var node = cc.instantiate(prefab);
+    if (!node || !node.isValid) {
+      throw new Error("Board clear fireworks prefab instantiate failed: animation/" + FIREWORKS_PREFAB_PATH);
+    }
+    renderer.boardClearFireworksBurstSerial += 1;
+    node.name = "BoardClearFireworks_" + renderer.boardClearFireworksBurstSerial;
+    node.parent = parent;
+    node.zIndex = renderer.boardClearFireworksBurstSerial;
+    node.setPosition(targetPosition.x, targetPosition.y);
+    node.active = true;
+    var particleSystem = requireParticleSystem(node, "Board clear fireworks");
+    particleSystem.resetSystem();
+    return node;
+  }
+
+  function spawnBoardClearFireworksBurst(renderer) {
+    if (!renderer || renderer.boardClearFireworksActive !== true) {
+      return;
+    }
+    var root = renderer.boardClearFireworksRoot;
+    if (!root || !root.isValid) {
+      throw new Error("Board clear fireworks root became invalid while active.");
+    }
+    var burstCount = Math.floor(Number(BOARD_CLEAR_FIREWORKS_BURST_COUNT));
+    if (!Number.isInteger(burstCount) || burstCount <= 0) {
+      throw new Error("Board clear fireworks burst count must be positive integer.");
+    }
+    var area = requireBoardClearFireworksSpawnArea(renderer);
+    for (var index = 0; index < burstCount; index += 1) {
+      instantiateBoardClearFireworks(renderer, root, createRandomPointInArea(area));
+    }
   }
 
   function requireExplodeAnimationClip(renderer, ownerName) {
@@ -1315,6 +1440,76 @@ LevelRenderer.prototype._playShotNoDropScreenShake = function (runtimeSnapshot) 
       })
     ));
   }, this);
+};
+
+LevelRenderer.prototype._startBoardClearFireworks = function () {
+  if (this.boardClearFireworksActive === true) {
+    if (!this.boardClearFireworksRoot || !this.boardClearFireworksRoot.isValid) {
+      throw new Error("Board clear fireworks active state requires valid root.");
+    }
+    return;
+  }
+  if (
+    typeof cc.sequence !== "function" ||
+    typeof cc.callFunc !== "function" ||
+    typeof cc.delayTime !== "function" ||
+    typeof cc.repeatForever !== "function"
+  ) {
+    throw new Error("Board clear fireworks requires Cocos action APIs.");
+  }
+  requireBoardClearFireworksPrefab(this);
+  var rootParent = requireBoardClearFireworksRootParent(this);
+  var existingRoot = rootParent.getChildByName("BoardClearFireworksRoot");
+  if (existingRoot && existingRoot.isValid) {
+    throw new Error("Board clear fireworks root already exists.");
+  }
+
+  var intervalSec = Number(BOARD_CLEAR_FIREWORKS_INTERVAL_SEC);
+  requirePositiveFiniteNumber(intervalSec, "Board clear fireworks interval");
+  var root = new cc.Node("BoardClearFireworksRoot");
+  root.parent = rootParent;
+  root.setPosition(0, 0);
+  root.zIndex = 300;
+  root.active = true;
+  this.boardClearFireworksRoot = root;
+  this.boardClearFireworksActive = true;
+  spawnBoardClearFireworksBurst(this);
+  root.runAction(cc.repeatForever(cc.sequence(
+    cc.delayTime(intervalSec),
+    cc.callFunc(function () {
+      spawnBoardClearFireworksBurst(this);
+    }.bind(this))
+  )));
+};
+
+LevelRenderer.prototype._stopBoardClearFireworks = function () {
+  var root = this.boardClearFireworksRoot;
+  this.boardClearFireworksRoot = null;
+  this.boardClearFireworksActive = false;
+  if (!root || !root.isValid) {
+    return;
+  }
+  root.stopAllActions();
+  root.children.slice().forEach(function (child) {
+    stopParticleSystemIfPresent(child);
+  });
+  root.removeFromParent(false);
+  root.destroy();
+};
+
+LevelRenderer.prototype._syncBoardClearFireworks = function (runtimeSnapshot) {
+  if (!runtimeSnapshot || typeof runtimeSnapshot.state !== "string") {
+    throw new Error("Board clear fireworks requires runtime snapshot state.");
+  }
+  if (
+    runtimeSnapshot.state === "won_pending" ||
+    runtimeSnapshot.state === "won_surplus_shots_pending" ||
+    runtimeSnapshot.state === "won_settlement_pending"
+  ) {
+    this._startBoardClearFireworks();
+    return;
+  }
+  this._stopBoardClearFireworks();
 };
 
 LevelRenderer.prototype._playImpactBounce = function (runtimeSnapshot) {

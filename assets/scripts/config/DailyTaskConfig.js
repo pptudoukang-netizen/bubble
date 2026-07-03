@@ -70,6 +70,58 @@ module.exports = {
       rewardItems: [
         { id: "coin", count: 300 }
       ]
+    },
+    {
+      taskId: "challenge_attempt_10",
+      title: "完成每日挑战 10 次",
+      description: "每日挑战成功或失败累计10次",
+      type: "challenge_attempt",
+      target: 10,
+      sortOrder: 50,
+      enabled: true,
+      iconPath: "image/dailytask/challenge_icon",
+      rewardItems: [
+        { id: "coin", count: 500 }
+      ]
+    },
+    {
+      taskId: "challenge_clear_3",
+      title: "通过每日挑战 3 次",
+      description: "成功通过每日挑战3次",
+      type: "challenge_clear",
+      target: 3,
+      sortOrder: 60,
+      enabled: true,
+      iconPath: "image/dailytask/challenge_icon",
+      rewardItems: [
+        { id: "coin", count: 300 }
+      ]
+    },
+    {
+      taskId: "challenge_clear_5",
+      title: "通过每日挑战 5 次",
+      description: "成功通过每日挑战5次",
+      type: "challenge_clear",
+      target: 5,
+      sortOrder: 70,
+      enabled: true,
+      iconPath: "image/dailytask/challenge_icon",
+      rewardItems: [
+        { id: "coin", count: 500 }
+      ]
+    },
+    {
+      taskId: "challenge_clear_10",
+      title: "通过每日挑战 10 次",
+      description: "成功通过每日挑战10次",
+      type: "challenge_clear",
+      target: 10,
+      sortOrder: 80,
+      enabled: true,
+      iconPath: "image/dailytask/challenge_icon",
+      rewardItems: [
+        { id: "coin", count: 1000 }
+      ]
     }
   ],
   progressRules: {

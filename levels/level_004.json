@@ -93,14 +93,14 @@
             }
         ],
         "layout": [
-            "RRGGBBBBRR",
-            "RRGGGBBBR",
-            "....G.....",
+            "BBBBBGGGGG",
+            "..RRRRR..",
+            "....R.....",
             "....G....",
-            "RRGGGBBBRR",
-            ".........",
-            "..........",
-            "........."
+            "..GGGGRR..",
+            "....R....",
+            "..RRBBBB..",
+            "....B...."
         ],
         "designNotes": "Generated from LEVEL_CONFIG_TABLE_1_1000.csv. Chapter `cluster_fundamentals` uses color_cluster, support_drop with a support_bridge board silhouette.",
         "difficultyScore": 32,

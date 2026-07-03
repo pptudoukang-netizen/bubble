@@ -50,6 +50,7 @@ var AD_RUN_POWERUP_TYPES = {
 };
 var MIN_INITIAL_DROP_SPACE_ROWS = 8;
 var MIN_LAYOUT_ROWS = 8;
+var MIN_OCCUPIED_LAYOUT_ROWS = 8;
 var MAX_JAR_COUNT = 4;
 var MAX_SHOT_LIMIT = 40;
 var CLEAR_REWARD_START_LEVEL_ID = 1;
@@ -127,6 +128,32 @@ function validateTopRowFilled(layout, specialEntities, levelKey) {
         "Level layout top row must be filled at col " + colIndex + ": " + levelKey
       );
     }
+  }
+}
+
+function countOccupiedLayoutRows(layout, specialEntities) {
+  var occupiedRows = {};
+  layout.forEach(function (rowString, rowIndex) {
+    for (var colIndex = 0; colIndex < rowString.length; colIndex += 1) {
+      if (rowString.charAt(colIndex) !== ".") {
+        occupiedRows[rowIndex] = true;
+        break;
+      }
+    }
+  });
+  specialEntities.forEach(function (entity) {
+    occupiedRows[entity.row] = true;
+  });
+  return Object.keys(occupiedRows).length;
+}
+
+function validateOccupiedLayoutRows(layout, specialEntities, levelKey) {
+  var occupiedRowCount = countOccupiedLayoutRows(layout, specialEntities);
+  if (occupiedRowCount < MIN_OCCUPIED_LAYOUT_ROWS) {
+    throw new Error(
+      "Level layout must occupy at least " + MIN_OCCUPIED_LAYOUT_ROWS +
+      " rows, got " + occupiedRowCount + ": " + levelKey
+    );
   }
 }
 
@@ -616,6 +643,7 @@ function normalizeLevelConfig(rawConfig, levelKey) {
   config.level.winConditions = normalizeObjectiveList(config.level.winConditions, WIN_CONDITION_TYPES, "winConditions", config.level, levelKey);
   config.level.bonusObjectives = normalizeObjectiveList(config.level.bonusObjectives, BONUS_OBJECTIVE_TYPES, "bonusObjectives", config.level, levelKey);
   config.level.specialEntities = normalizeSpecialEntities(config.level, levelKey);
+  validateOccupiedLayoutRows(config.level.layout, config.level.specialEntities, levelKey);
   LevelBoardSupportValidator.assertInitialBoardSupported(config.level, levelKey);
   validateIceSnowballObjectives(config.level, levelKey);
   validateSplitterObjectives(config.level, levelKey);

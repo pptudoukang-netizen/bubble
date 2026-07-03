@@ -282,6 +282,7 @@ module.exports = {
     if (!this.shopPurchaseService || !this.shopConfigService || !this.shopStateService) {
       throw new Error("Shop services are not initialized.");
     }
+    this._playSfx("uiClick");
     if (this.telemetryService && typeof this.telemetryService.track === "function") {
       this.telemetryService.track("shop_item_click", {
         skuId: skuId
@@ -476,10 +477,6 @@ module.exports = {
     if (!entryNode || !entryNode.isValid) {
       throw new Error("LevelView bottom_layer requires shop_btn.");
     }
-
-    this._bindNodeTapOnce(entryNode, function () {
-      this._onLevelSelectShopTap();
-    }.bind(this));
   },
 
   _openStarChest: function () {

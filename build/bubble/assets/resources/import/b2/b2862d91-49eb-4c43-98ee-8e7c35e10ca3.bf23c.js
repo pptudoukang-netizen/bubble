@@ -1,1 +1,0 @@
-module.exports = [1,["dbax8nccpCDJCSD3XN312l"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"red_jar","rect":[0,0,233,230],"offset":[0,0],"originalSize":[233,230],"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

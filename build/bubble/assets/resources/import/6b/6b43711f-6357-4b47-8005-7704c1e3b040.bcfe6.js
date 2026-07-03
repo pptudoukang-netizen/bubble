@@ -1,1 +1,0 @@
-module.exports = [1,["43ORegGutInqNBLODN5yHq"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"icon_turntable","rect":[0,0,97,107],"offset":[0,0],"originalSize":[97,107],"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

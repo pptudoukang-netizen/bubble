@@ -75,6 +75,24 @@ function loadAudioClip(resourcePath) {
   });
 }
 
+function resolveSfxResourcePath(sfxMap, keyOrPath) {
+  var mappedPath = sfxMap && sfxMap[keyOrPath] ? sfxMap[keyOrPath] : keyOrPath;
+  if (Array.isArray(mappedPath)) {
+    var availablePaths = mappedPath.filter(function (path) {
+      return typeof path === "string" && path.trim();
+    }).map(function (path) {
+      return path.trim();
+    });
+    if (!availablePaths.length) {
+      return "";
+    }
+
+    mappedPath = availablePaths[Math.floor(Math.random() * availablePaths.length)];
+  }
+
+  return typeof mappedPath === "string" ? mappedPath.trim() : "";
+}
+
 function AudioManager(options) {
   options = options || {};
 
@@ -426,21 +444,7 @@ AudioManager.prototype.playSfx = function (keyOrPath, options) {
     return Promise.resolve(null);
   }
 
-  var mappedPath = this.sfxMap && this.sfxMap[keyOrPath] ? this.sfxMap[keyOrPath] : keyOrPath;
-  if (Array.isArray(mappedPath)) {
-    var availablePaths = mappedPath.filter(function (path) {
-      return typeof path === "string" && path.trim();
-    }).map(function (path) {
-      return path.trim();
-    });
-    if (!availablePaths.length) {
-      return Promise.resolve(null);
-    }
-
-    mappedPath = availablePaths[Math.floor(Math.random() * availablePaths.length)];
-  }
-
-  var resourcePath = typeof mappedPath === "string" ? mappedPath.trim() : "";
+  var resourcePath = resolveSfxResourcePath(this.sfxMap, keyOrPath);
   var loop = !!options.loop;
   if (!resourcePath) {
     return Promise.resolve(null);
@@ -456,6 +460,40 @@ AudioManager.prototype.playSfx = function (keyOrPath, options) {
   }.bind(this)).catch(function (error) {
     Logger.warn(error && error.message ? error.message : error);
     return null;
+  });
+};
+
+AudioManager.prototype.playSfxInstances = function (keyOrPath, count, options) {
+  if (!Number.isInteger(count) || count < 1) {
+    throw new Error("AudioManager.playSfxInstances requires positive integer count.");
+  }
+
+  options = options || {};
+  this._tryUnlockWebAudio();
+  if (!hasAudioEngine() || !this.settings.sfxEnabled) {
+    return Promise.resolve([]);
+  }
+
+  var resourcePath = resolveSfxResourcePath(this.sfxMap, keyOrPath);
+  var loop = !!options.loop;
+  if (!resourcePath) {
+    return Promise.resolve([]);
+  }
+
+  return this._loadClip(resourcePath).then(function (clip) {
+    if (!clip) {
+      return [];
+    }
+
+    cc.audioEngine.setEffectsVolume(this.settings.sfxVolume);
+    var audioIds = [];
+    for (var index = 0; index < count; index += 1) {
+      audioIds.push(cc.audioEngine.playEffect(clip, loop));
+    }
+    return audioIds;
+  }.bind(this)).catch(function (error) {
+    Logger.warn(error && error.message ? error.message : error);
+    return [];
   });
 };
 

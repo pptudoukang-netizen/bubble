@@ -4,6 +4,7 @@ var Shared = require("./GameBootstrapShared");
 var BundleLoader = Shared.BundleLoader;
 var BoardLayout = Shared.BoardLayout;
 var NewUserGuideStore = Shared.NewUserGuideStore;
+var SkillPowerupGuideStore = Shared.SkillPowerupGuideStore;
 
 var FINGER_SPRITE_PATH = "image/finger";
 var GUIDE_LAYER_NAME = "NewUserGuideLayer";
@@ -18,6 +19,11 @@ var MASK_OPACITY = 150;
 var BUTTON_HOLE_PADDING = 24;
 var GAMEPLAY_HOLE_PADDING = 96;
 var START_GAME_GUIDE_SHOW_DELAY_MS = 300;
+var SKILL_POWERUP_GUIDE_BUTTONS = {
+  rainbow: "rainbow_btn",
+  blast: "bomb_btn"
+};
+var SKILL_POWERUP_GUIDE_TYPES = SkillPowerupGuideStore.SUPPORTED_TYPES;
 
 function requireValidNode(node, description) {
   if (!node || !node.isValid) {
@@ -31,6 +37,20 @@ function requireGuideStore(host) {
     throw new Error("New user guide requires NewUserGuideStore.");
   }
   return host.newUserGuideStore;
+}
+
+function requireSkillPowerupGuideStore(host) {
+  if (!host.skillPowerupGuideStore || typeof host.skillPowerupGuideStore.load !== "function") {
+    throw new Error("Skill powerup guide requires SkillPowerupGuideStore.");
+  }
+  return host.skillPowerupGuideStore;
+}
+
+function requireSkillPowerupGuideType(entityType, description) {
+  if (SKILL_POWERUP_GUIDE_TYPES.indexOf(entityType) === -1) {
+    throw new Error(description + " must be rainbow or blast.");
+  }
+  return entityType;
 }
 
 function loadSpriteFrame(path) {
@@ -284,6 +304,186 @@ function hideMaskBlockNode(layerNode, name) {
   }
 }
 
+function requireChildNode(parent, childName, description) {
+  requireValidNode(parent, description);
+  var child = parent.getChildByName(childName);
+  if (!child || !child.isValid) {
+    throw new Error(description + " requires child node: " + childName);
+  }
+  return child;
+}
+
+function resolveSkillPowerupGuideButtonName(entityType) {
+  var safeType = requireSkillPowerupGuideType(entityType, "Skill powerup guide type");
+  if (!Object.prototype.hasOwnProperty.call(SKILL_POWERUP_GUIDE_BUTTONS, safeType)) {
+    throw new Error("Skill powerup guide button mapping missing: " + safeType);
+  }
+  return SKILL_POWERUP_GUIDE_BUTTONS[safeType];
+}
+
+function resolveBottomPanelPowerupGuideTarget(host, entityType) {
+  var buttonName = resolveSkillPowerupGuideButtonName(entityType);
+  if (!host.levelRenderer || !host.levelRenderer.layers || !host.levelRenderer.layers.hud) {
+    throw new Error("Skill powerup guide requires mounted HUD layer.");
+  }
+
+  var hudLayer = host.levelRenderer.layers.hud;
+  var panel = requireChildNode(hudLayer, "BttomPanel", "HUD layer");
+  var propsScrollNode = requireChildNode(panel, "props_scroll", "BttomPanel");
+  var propsViewNode = requireChildNode(propsScrollNode, "view", "BttomPanel/props_scroll");
+  var propsContentNode = requireChildNode(propsViewNode, "content", "BttomPanel/props_scroll/view");
+  var buttonNode = requireChildNode(
+    propsContentNode,
+    buttonName,
+    "BttomPanel/props_scroll/view/content"
+  );
+  return {
+    buttonNode: buttonNode,
+    viewNode: propsViewNode,
+    contentNode: propsContentNode
+  };
+}
+
+function stopGuideScrollAutoMovement(viewNode) {
+  var scrollNode = viewNode && viewNode.parent ? viewNode.parent : null;
+  var scrollView = scrollNode ? scrollNode.getComponent(cc.ScrollView) : null;
+  if (!scrollView) {
+    return;
+  }
+  if (typeof scrollView.stopAutoScroll !== "function") {
+    throw new Error("Skill powerup guide ScrollView requires stopAutoScroll.");
+  }
+  scrollView.stopAutoScroll();
+}
+
+function isRectInsideHorizontalView(targetRect, viewRect) {
+  return targetRect.left >= viewRect.left + BUTTON_HOLE_PADDING &&
+    targetRect.right <= viewRect.right - BUTTON_HOLE_PADDING;
+}
+
+function revealSkillPowerupGuideButton(host, target) {
+  requireValidNode(target.buttonNode, "Skill powerup guide button");
+  requireValidNode(target.viewNode, "Skill powerup guide scroll view");
+  requireValidNode(target.contentNode, "Skill powerup guide scroll content");
+
+  stopGuideScrollAutoMovement(target.viewNode);
+  var viewRect = resolveGuideTargetRectInRoot(target.viewNode, host.node);
+  var buttonRect = resolveGuideTargetRectInRoot(target.buttonNode, host.node);
+  if (isRectInsideHorizontalView(buttonRect, viewRect)) {
+    return buttonRect;
+  }
+
+  var deltaX = 0;
+  if (buttonRect.left < viewRect.left + BUTTON_HOLE_PADDING) {
+    deltaX = (viewRect.left + BUTTON_HOLE_PADDING) - buttonRect.left;
+  } else if (buttonRect.right > viewRect.right - BUTTON_HOLE_PADDING) {
+    deltaX = (viewRect.right - BUTTON_HOLE_PADDING) - buttonRect.right;
+  } else {
+    throw new Error("Skill powerup guide button visibility delta cannot be resolved.");
+  }
+
+  target.contentNode.setPosition(target.contentNode.x + deltaX, target.contentNode.y);
+  buttonRect = resolveGuideTargetRectInRoot(target.buttonNode, host.node);
+  viewRect = resolveGuideTargetRectInRoot(target.viewNode, host.node);
+  if (buttonRect.right <= viewRect.left || buttonRect.left >= viewRect.right) {
+    throw new Error("Skill powerup guide button failed to enter visible scroll area.");
+  }
+  return buttonRect;
+}
+
+function requireSkillPowerupGuideState(host) {
+  requireSkillPowerupGuideStore(host);
+  if (!host.skillPowerupGuideState) {
+    throw new Error("Skill powerup guide state must be loaded.");
+  }
+  return host.skillPowerupGuideState;
+}
+
+function ensureSkillPowerupGuideQueue(host) {
+  if (!Array.isArray(host._pendingSkillPowerupGuideTypes)) {
+    throw new Error("Pending skill powerup guide queue must be an array.");
+  }
+  return host._pendingSkillPowerupGuideTypes;
+}
+
+function isSkillPowerupGuideQueued(host, entityType) {
+  var queue = ensureSkillPowerupGuideQueue(host);
+  return queue.indexOf(entityType) >= 0;
+}
+
+function enqueueSkillPowerupGuide(host, entityType) {
+  var safeType = requireSkillPowerupGuideType(entityType, "Queued skill powerup guide type");
+  if (isSkillPowerupGuideQueued(host, safeType)) {
+    return;
+  }
+  ensureSkillPowerupGuideQueue(host).push(safeType);
+}
+
+function removeQueuedSkillPowerupGuide(host, entityType) {
+  var queue = ensureSkillPowerupGuideQueue(host);
+  var nextQueue = [];
+  queue.forEach(function (queuedType) {
+    if (queuedType !== entityType) {
+      nextQueue.push(queuedType);
+    }
+  });
+  host._pendingSkillPowerupGuideTypes = nextQueue;
+}
+
+function readRuntimeSkillInventoryCount(snapshot, entityType) {
+  var safeType = requireSkillPowerupGuideType(entityType, "Runtime skill powerup guide type");
+  if (!snapshot || !snapshot.shooter || !snapshot.shooter.skillInventory) {
+    throw new Error("Skill powerup guide requires shooter skillInventory snapshot.");
+  }
+  var skillInventory = snapshot.shooter.skillInventory;
+  if (!Object.prototype.hasOwnProperty.call(skillInventory, safeType)) {
+    throw new Error("Skill powerup guide inventory count missing: " + safeType);
+  }
+  var count = Number(skillInventory[safeType]);
+  if (!Number.isInteger(count) || count < 0) {
+    throw new Error("Skill powerup guide inventory count must be a non-negative integer: " + safeType);
+  }
+  return count;
+}
+
+function canShowSkillPowerupGuide(snapshot, entityType) {
+  var count = readRuntimeSkillInventoryCount(snapshot, entityType);
+  if (count <= 0) {
+    return false;
+  }
+  if (!snapshot.shooter || snapshot.shooter.canUsePowerups !== true) {
+    return false;
+  }
+  if (snapshot.shooter.pendingBarrierHammer) {
+    return false;
+  }
+  if (snapshot.shooter.pendingRainbowColorSelection) {
+    return false;
+  }
+  return true;
+}
+
+function collectSkillPowerupGuideTypesFromSnapshot(snapshot) {
+  if (!snapshot || !Array.isArray(snapshot.runtimeEvents) || snapshot.runtimeEvents.length === 0) {
+    return [];
+  }
+
+  var collectedTypes = [];
+  snapshot.runtimeEvents.forEach(function (event) {
+    if (!event || event.type !== "skill_powerup_collected") {
+      return;
+    }
+    var entityType = requireSkillPowerupGuideType(event.entityType, "Skill powerup collected event entityType");
+    if (!Number.isInteger(event.total) || event.total <= 0) {
+      throw new Error("Skill powerup collected event requires positive total.");
+    }
+    if (collectedTypes.indexOf(entityType) === -1) {
+      collectedTypes.push(entityType);
+    }
+  });
+  return collectedTypes;
+}
+
 module.exports = {
   _refreshNewUserGuideState: function () {
     this.newUserGuideState = requireGuideStore(this).load();
@@ -292,6 +492,15 @@ module.exports = {
 
   _saveNewUserGuideState: function () {
     requireGuideStore(this).save(this.newUserGuideState);
+  },
+
+  _refreshSkillPowerupGuideState: function () {
+    this.skillPowerupGuideState = requireSkillPowerupGuideStore(this).load();
+    return this.skillPowerupGuideState;
+  },
+
+  _saveSkillPowerupGuideState: function () {
+    requireSkillPowerupGuideStore(this).save(this.skillPowerupGuideState);
   },
 
   _isNewUserGuideActive: function () {
@@ -534,6 +743,52 @@ module.exports = {
     }.bind(this));
   },
 
+  _showSkillPowerupUseGuide: function (entityType, runtimeSnapshot) {
+    var safeType = requireSkillPowerupGuideType(entityType, "Skill powerup guide show type");
+    this._refreshSkillPowerupGuideState();
+    if (this.skillPowerupGuideStore.isCompleted(this.skillPowerupGuideState, safeType)) {
+      removeQueuedSkillPowerupGuide(this, safeType);
+      return;
+    }
+    if (!canShowSkillPowerupGuide(runtimeSnapshot, safeType)) {
+      return;
+    }
+
+    var target = resolveBottomPanelPowerupGuideTarget(this, safeType);
+    var buttonRect = revealSkillPowerupGuideButton(this, target);
+    this._applyNewUserGuideMask(expandRect(buttonRect, BUTTON_HOLE_PADDING));
+    this._activeSkillPowerupGuideType = safeType;
+    return this._showNewUserGuideFingerAtTip(resolveRectCenter(buttonRect));
+  },
+
+  _syncSkillPowerupGuideForRuntimeSnapshot: function (runtimeSnapshot) {
+    requireSkillPowerupGuideState(this);
+    var collectedTypes = collectSkillPowerupGuideTypesFromSnapshot(runtimeSnapshot);
+    collectedTypes.forEach(function (entityType) {
+      this._refreshSkillPowerupGuideState();
+      if (!this.skillPowerupGuideStore.isCompleted(this.skillPowerupGuideState, entityType)) {
+        enqueueSkillPowerupGuide(this, entityType);
+      }
+    }, this);
+
+    if (this._activeSkillPowerupGuideType) {
+      return;
+    }
+
+    var queue = ensureSkillPowerupGuideQueue(this);
+    for (var index = 0; index < queue.length; index += 1) {
+      var queuedType = requireSkillPowerupGuideType(queue[index], "Pending skill powerup guide type");
+      this._refreshSkillPowerupGuideState();
+      if (this.skillPowerupGuideStore.isCompleted(this.skillPowerupGuideState, queuedType)) {
+        removeQueuedSkillPowerupGuide(this, queuedType);
+        index -= 1;
+      } else if (canShowSkillPowerupGuide(runtimeSnapshot, queuedType)) {
+        this._showSkillPowerupUseGuide(queuedType, runtimeSnapshot);
+        return;
+      }
+    }
+  },
+
   _advanceNewUserGuideToStartGame: function () {
     if (!this._isNewUserGuideStep(STEP_QUICK_START)) {
       return;
@@ -571,6 +826,20 @@ module.exports = {
     var result = this.newUserGuideStore.markCompleted(this.newUserGuideState);
     this.newUserGuideState = result.state;
     this._saveNewUserGuideState();
+    this._hideNewUserGuide();
+  },
+
+  _completeSkillPowerupUseGuide: function (entityType) {
+    var safeType = requireSkillPowerupGuideType(entityType, "Skill powerup guide complete type");
+    if (this._activeSkillPowerupGuideType !== safeType) {
+      return;
+    }
+    this._refreshSkillPowerupGuideState();
+    var result = this.skillPowerupGuideStore.markCompleted(this.skillPowerupGuideState, safeType);
+    this.skillPowerupGuideState = result.state;
+    this._saveSkillPowerupGuideState();
+    removeQueuedSkillPowerupGuide(this, safeType);
+    this._activeSkillPowerupGuideType = "";
     this._hideNewUserGuide();
   }
 };

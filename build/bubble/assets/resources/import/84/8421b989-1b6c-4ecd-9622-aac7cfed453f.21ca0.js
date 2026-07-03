@@ -1,1 +1,0 @@
-module.exports = [1,["ebJPo3KfdC9J+3TcW83G0M"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"back_btn","rect":[0,0,116,117],"offset":[0,0],"originalSize":[116,117],"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

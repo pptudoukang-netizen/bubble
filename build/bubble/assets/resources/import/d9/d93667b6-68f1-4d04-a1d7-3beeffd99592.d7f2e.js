@@ -1,0 +1,1 @@
+module.exports = [1,["1c838c701"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"copper_chain","rect":[727,3,25,139],"offset":[0,0],"originalSize":[25,139],"rotated":1,"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

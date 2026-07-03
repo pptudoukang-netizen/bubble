@@ -1,0 +1,1 @@
+module.exports = [1,["1e8496fee"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"light_beam","rect":[414,1115,65,350],"offset":[0,0],"originalSize":[65,350],"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

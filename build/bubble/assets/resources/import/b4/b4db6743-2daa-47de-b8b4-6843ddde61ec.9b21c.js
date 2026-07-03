@@ -1,0 +1,1 @@
+module.exports = [1,["1c838c701"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"cordon","rect":[272,166,711,37],"offset":[-0.5,-0.5],"originalSize":[720,46],"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

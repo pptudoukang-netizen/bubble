@@ -74,6 +74,7 @@ function ShooterController() {
   this.availableColors = [];
   this.spawnWeights = {};
   this.skillInventory = {
+    precise_aim: 0,
     rainbow: 0,
     blast: 0,
     swap: 0,
@@ -100,6 +101,7 @@ ShooterController.prototype.configureLevel = function (levelConfig) {
   this.spawnWeights = Object.assign({}, levelConfig.level.spawnWeights || {});
   this.skillInventory.rainbow = 0;
   this.skillInventory.blast = 0;
+  this.skillInventory.precise_aim = 0;
   var initialPowerups = levelConfig && levelConfig.level && levelConfig.level.initialPowerups
     ? levelConfig.level.initialPowerups
     : {};
@@ -258,7 +260,7 @@ ShooterController.prototype.addSkillInventory = function (entityType, count) {
 };
 
 ShooterController.prototype.addInventory = function (entityType, count) {
-  var supportedTypes = ["rainbow", "blast", "swap", "barrier_hammer", "snow_removal"];
+  var supportedTypes = ["precise_aim", "rainbow", "blast", "swap", "barrier_hammer", "snow_removal"];
   if (supportedTypes.indexOf(entityType) === -1) {
     return {
       accepted: false,
@@ -273,6 +275,28 @@ ShooterController.prototype.addInventory = function (entityType, count) {
     entityType: entityType,
     gained: gained,
     total: this.skillInventory[entityType]
+  };
+};
+
+ShooterController.prototype.consumePreciseAim = function () {
+  if (!Object.prototype.hasOwnProperty.call(this.skillInventory, "precise_aim")) {
+    throw new Error("ShooterController precise_aim inventory is missing.");
+  }
+  var preciseAimCount = Number(this.skillInventory.precise_aim);
+  if (!Number.isInteger(preciseAimCount) || preciseAimCount < 0) {
+    throw new Error("ShooterController precise_aim inventory must be a non-negative integer.");
+  }
+  if (preciseAimCount <= 0) {
+    return {
+      accepted: false,
+      reason: "inventory_empty"
+    };
+  }
+
+  this.skillInventory.precise_aim = preciseAimCount - 1;
+  return {
+    accepted: true,
+    remaining: this.skillInventory.precise_aim
   };
 };
 

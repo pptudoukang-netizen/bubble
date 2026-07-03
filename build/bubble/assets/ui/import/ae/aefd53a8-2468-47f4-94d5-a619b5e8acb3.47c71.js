@@ -1,0 +1,1 @@
+module.exports = [1,["195168902"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"progress_bg","rect":[82,182,170,26],"offset":[0,0],"originalSize":[170,26],"rotated":1,"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

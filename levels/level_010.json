@@ -97,13 +97,13 @@
         ],
         "layout": [
             "BBGGGGYYBB",
-            ".BGRYGYY.",
+            ".BGGYGYY.",
             ".BGRYGYBB.",
             ".BGR.GRB.",
-            "..GRYRR...",
+            "...RYRR...",
             "...RYR...",
             "....YR....",
-            "........."
+            "....R...."
         ],
         "designNotes": "Generated from LEVEL_CONFIG_TABLE_1_1000.csv. Chapter `legacy_skill_intro` uses legacy_skill_ball with a crown_exam board silhouette.",
         "difficultyScore": 50,

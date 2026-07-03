@@ -536,8 +536,8 @@ DailyTaskViewController.prototype._renderTask = function (task, index, totalCoun
 
 DailyTaskViewController.prototype.render = function (summary) {
   assertObject(summary, "DailyTaskView render summary is required.");
-  if (!Array.isArray(summary.tasks) || summary.tasks.length !== 5) {
-    return Promise.reject(new Error("DailyTaskView requires exactly 5 tasks."));
+  if (!Array.isArray(summary.tasks) || summary.tasks.length === 0) {
+    return Promise.reject(new Error("DailyTaskView requires non-empty tasks."));
   }
 
   return this._ensureSpriteFrames(summary.tasks).then(function () {

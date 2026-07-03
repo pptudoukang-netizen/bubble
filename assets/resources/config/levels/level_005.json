@@ -95,8 +95,8 @@
             "..BBRRR..",
             "..BBRRRB..",
             "...GBB...",
-            "....GG....",
-            "........."
+            "....G.....",
+            "....G...."
         ],
         "designNotes": "Generated from LEVEL_CONFIG_TABLE_1_1000.csv. Chapter `cluster_fundamentals` uses color_cluster, support_drop with a diamond_core board silhouette.",
         "difficultyScore": 35,

@@ -1,1 +1,0 @@
-module.exports = [1,["1bUSpI2dxNlqGgeufWoAcP"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"retry_btn","rect":[0,0,271,90],"offset":[0,0],"originalSize":[271,90],"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

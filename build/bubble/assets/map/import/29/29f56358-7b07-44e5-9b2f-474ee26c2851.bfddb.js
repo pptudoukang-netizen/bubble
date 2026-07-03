@@ -1,0 +1,1 @@
+module.exports = [1,["1e8496fee"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"door","rect":[1063,259,97,104],"offset":[0,0],"originalSize":[97,104],"rotated":1,"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

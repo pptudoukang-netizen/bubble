@@ -1,0 +1,1 @@
+module.exports = [1,["14064cbfb"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"coin","rect":[99,515,69,73],"offset":[0,0],"originalSize":[69,73],"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

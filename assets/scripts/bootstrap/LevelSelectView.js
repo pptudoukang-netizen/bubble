@@ -46,6 +46,13 @@ function setDynamicLabelString(label, value, description) {
   }
 }
 
+function requireNonNegativeInteger(value, description) {
+  if (!Number.isInteger(value) || value < 0) {
+    throw new Error(description + " must be a non-negative integer.");
+  }
+  return value;
+}
+
 var LEVEL_BUTTON_SKIN_PATHS = {
   locked: "image/level_lock",
   unlocked: "image/level_lock1"
@@ -74,6 +81,7 @@ var TOP_RESOURCE_ICON_PATHS = {
   stamina: "image/props/love",
   coin: "image/props/coin"
 };
+var DAILY_CHALLENGE_ATTEMPT_TASK_ID = "challenge_attempt_10";
 
 var levelButtonSkinFrames = null;
 var levelButtonSkinLoadPromise = null;
@@ -1221,6 +1229,10 @@ function updateTopStatus(levelView, options) {
   options = options || {};
   var staminaValue = Math.max(0, Math.floor(Number(options.staminaValue) || 0));
   var coinValue = Math.max(0, Math.floor(Number(options.coinValue) || 0));
+  var dailyChallengeAttemptCount = requireNonNegativeInteger(
+    options.dailyChallengeAttemptCount,
+    "LevelView dailyChallengeAttemptCount"
+  );
   var onOpenSettings = typeof options.onOpenSettings === "function"
     ? options.onOpenSettings
     : function () {};
@@ -1300,6 +1312,7 @@ function updateTopStatus(levelView, options) {
     "__onOpenDailyTasks",
     onOpenDailyTasks
   );
+  updateDailyChallengeAttemptCount(levelView, dailyChallengeAttemptCount);
 }
 
 function requireBreathActionApi(description) {
@@ -1395,6 +1408,26 @@ function bindRandomChallengeButton(levelView, onRandomChallenge) {
   );
 }
 
+function updateDailyChallengeAttemptCount(levelView, attemptCount) {
+  if (!levelView || !levelView.isValid) {
+    throw new Error("LevelSelectView requires a valid level view node before updating daily challenge count.");
+  }
+  var safeAttemptCount = requireNonNegativeInteger(attemptCount, "LevelView " + DAILY_CHALLENGE_ATTEMPT_TASK_ID + " progress");
+  var randomChallengeButtonNode = findChildByNameRecursive(levelView, "break_through_btn");
+  if (!randomChallengeButtonNode || !randomChallengeButtonNode.isValid) {
+    throw new Error("LevelView requires break_through_btn before updating daily challenge count.");
+  }
+  var challengeCountNode = randomChallengeButtonNode.getChildByName("challenge_num");
+  if (!challengeCountNode || !challengeCountNode.isValid) {
+    throw new Error("LevelView break_through_btn requires challenge_num.");
+  }
+  var challengeCountLabel = challengeCountNode.getComponent(cc.Label);
+  if (!challengeCountLabel) {
+    throw new Error("LevelView challenge_num requires cc.Label.");
+  }
+  setDynamicLabelString(challengeCountLabel, safeAttemptCount, "LevelView challenge_num label");
+}
+
 function bindBackToCurrentLevelButton(levelView, onBackToCurrentLevel) {
   if (typeof onBackToCurrentLevel !== "function") {
     throw new Error("LevelSelectView requires onBackToCurrentLevel.");
@@ -1436,6 +1469,10 @@ function renderLevelSelectContent(options) {
     : function () {};
   var staminaValue = Math.max(0, Math.floor(Number(options.staminaValue) || 0));
   var coinValue = Math.max(0, Math.floor(Number(options.coinValue) || 0));
+  var dailyChallengeAttemptCount = requireNonNegativeInteger(
+    options.dailyChallengeAttemptCount,
+    "LevelView dailyChallengeAttemptCount"
+  );
   var onOpenSettings = typeof options.onOpenSettings === "function"
     ? options.onOpenSettings
     : function () {};
@@ -1503,6 +1540,7 @@ function renderLevelSelectContent(options) {
   updateTopStatus(levelView, {
     staminaValue: staminaValue,
     coinValue: coinValue,
+    dailyChallengeAttemptCount: dailyChallengeAttemptCount,
     onOpenSettings: onOpenSettings,
     onOpenRanking: onOpenRanking,
     onOpenInventory: onOpenInventory,
@@ -1571,6 +1609,7 @@ module.exports = {
   rebindTopResourceSprites: rebindTopResourceSprites,
   loadFloatingMapAssets: FloatingMap.loadAssets,
   renderLevelSelectContent: renderLevelSelectContent,
+  updateDailyChallengeAttemptCount: updateDailyChallengeAttemptCount,
   setTopWidgetTop: setTopWidgetTop,
   scrollFloatingMapToLevel: scrollFloatingMapToLevel
 };

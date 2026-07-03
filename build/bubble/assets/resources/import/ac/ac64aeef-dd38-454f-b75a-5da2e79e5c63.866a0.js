@@ -1,0 +1,1 @@
+module.exports = [1,["15684f836"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"turret_base","rect":[542,614,178,159],"offset":[-1,0.5],"originalSize":[180,160],"rotated":1,"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

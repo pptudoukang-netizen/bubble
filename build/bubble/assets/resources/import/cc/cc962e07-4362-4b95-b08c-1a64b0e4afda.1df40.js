@@ -1,0 +1,1 @@
+module.exports = [1,["c8VELo7I5GG5KHqLfl4ru5","6eukbpOFhBuIDNYNyO7B8E","a1xiVQeH9H17VsgBzMU1cm","f2AlYYzwxD/I95qjmG9fDF"],["handler_milu","red","green","yellow"],[["cc.SpriteAtlas",["_spriteFrames"],3,11]],[[0,0,1]],[[0,[{},"handler_milu",6,0,"red",6,1,"green",6,2,"yellow",6,3]]],0,0,[0,0,0,0],[0,1,2,3],[0,1,2,3]];

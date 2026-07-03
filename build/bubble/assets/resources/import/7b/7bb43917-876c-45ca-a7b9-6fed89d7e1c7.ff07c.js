@@ -1,1 +1,0 @@
-module.exports = [1,["b0rM7Qk1tDrJh1Dq+KhcSw"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"barrier_hammer","rect":[0,0,96,100],"offset":[-2,0],"originalSize":[100,100],"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

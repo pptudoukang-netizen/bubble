@@ -1,0 +1,1 @@
+module.exports = [1,["15684f836"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"fort","rect":[3,864,120,184],"offset":[0,0],"originalSize":[120,184],"rotated":1,"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

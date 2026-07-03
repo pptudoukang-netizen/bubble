@@ -1,6 +1,6 @@
 "use strict";
 
-var SUPPORTED_INVENTORY_ITEMS = ["swap_ball", "rainbow_ball", "blast_ball", "barrier_hammer", "snow_removal"];
+var SUPPORTED_INVENTORY_ITEMS = ["precise_aim", "swap_ball", "rainbow_ball", "blast_ball", "barrier_hammer", "snow_removal"];
 
 function clone(data) {
   return JSON.parse(JSON.stringify(data));

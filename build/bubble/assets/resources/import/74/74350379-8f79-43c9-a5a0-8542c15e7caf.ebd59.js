@@ -1,1 +1,0 @@
-module.exports = [1,["d1w+tP1zpPBZcjLQxJXxiW"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"gold_info","rect":[0,0,154,51],"offset":[0,0],"originalSize":[154,51],"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

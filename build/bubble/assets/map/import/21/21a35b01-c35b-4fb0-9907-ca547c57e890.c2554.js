@@ -1,0 +1,1 @@
+module.exports = [1,["1e8496fee"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"landmark3","rect":[556,3,501,356],"offset":[0,0],"originalSize":[501,356],"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

@@ -1,0 +1,1 @@
+module.exports = [1,["1790a8a0d"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"award_card_bg","rect":[668,3,158,216],"offset":[-1.5,-0.5],"originalSize":[165,223],"rotated":1,"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

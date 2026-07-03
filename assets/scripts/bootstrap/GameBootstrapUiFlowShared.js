@@ -43,6 +43,7 @@ var SIGN_IN_ITEM_ICON_PATHS = {
   coin: "image/props/coin",
   stamina: "image/props/treasure_chest",
   gift_pack: "image/props/gift_pack",
+  precise_aim: "image/props/aim",
   swap_ball: "image/props/gift_pack",
   rainbow_ball: "image/props/rainbow_ball",
   blast_ball: "image/props/blast_ball",
@@ -58,6 +59,7 @@ var SIGN_IN_ITEM_DISPLAY_NAMES = {
   coin: "金币",
   stamina: "体力",
   gift_pack: "大礼包",
+  precise_aim: "精确瞄准",
   swap_ball: "换球",
   rainbow_ball: "彩虹球",
   blast_ball: "炸裂球",
@@ -68,6 +70,7 @@ var AWARD_VIEW_PREFAB_PATH = "prefabs/ui/AwardView";
 var AWARD_ITEM_ICON_PATHS = {
   coin: "image/props/coin",
   stamina: "image/props/love",
+  precise_aim: "image/props/aim",
   swap_ball: "image/props/change_ball",
   rainbow_ball: "image/props/rainbow_ball",
   blast_ball: "image/props/blast_ball",
@@ -77,6 +80,7 @@ var AWARD_ITEM_ICON_PATHS = {
 var AWARD_ITEM_DISPLAY_NAMES = {
   coin: "金币",
   stamina: "体力",
+  precise_aim: "精确瞄准",
   swap_ball: "换球",
   rainbow_ball: "彩虹球",
   blast_ball: "炸裂球",

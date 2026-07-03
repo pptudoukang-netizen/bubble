@@ -39,7 +39,7 @@ var START_GAME_POWERUP_UNLOCK_LEVEL_BY_ITEM_ID = {
   plus_three_balls: 1,
   precise_aim: 1
 };
-var START_GAME_PERSISTENT_POWERUP_ITEM_IDS = ["swap_ball", "rainbow_ball", "blast_ball", "barrier_hammer", "snow_removal"];
+var START_GAME_PERSISTENT_POWERUP_ITEM_IDS = ["precise_aim", "swap_ball", "rainbow_ball", "blast_ball", "barrier_hammer", "snow_removal"];
 var START_GAME_TEMPORARY_POWERUP_CONFIG_BY_ITEM_ID = {
   three_line_elimination: {
     displayName: "消三行",
@@ -50,11 +50,6 @@ var START_GAME_TEMPORARY_POWERUP_CONFIG_BY_ITEM_ID = {
     displayName: "加十球",
     adRunPowerupType: "plus_three_balls",
     price: 300
-  },
-  precise_aim: {
-    displayName: "精确瞄准",
-    activateRicochetGuide: true,
-    price: 500
   }
 };
 var START_GAME_OBJECTIVE_ICON_PATHS = {
@@ -92,6 +87,54 @@ function loadPropDescriptionSpriteFrame(path) {
       resolve(spriteFrame);
     });
   });
+}
+
+function retainPropDescriptionSpriteFrame(spriteFrame, path) {
+  if (!spriteFrame) {
+    throw new Error("StartGameView prop description sprite frame is required: " + path);
+  }
+  if (typeof spriteFrame.addRef !== "function") {
+    throw new Error("StartGameView prop description sprite frame addRef is required: " + path);
+  }
+  spriteFrame.addRef();
+  return spriteFrame;
+}
+
+function releaseRetainedPropDescriptionSpriteFrame(spriteFrame, path) {
+  if (!spriteFrame) {
+    return;
+  }
+  if (typeof spriteFrame.decRef !== "function") {
+    throw new Error("StartGameView prop description sprite frame decRef is required: " + path);
+  }
+  spriteFrame.decRef();
+}
+
+function releaseStartGamePropDescriptionSpriteFrameCache(host) {
+  var cache = host._startGamePropDescriptionSpriteFrameCache;
+  if (!cache) {
+    host._startGamePropDescriptionSpriteFrameCache = {};
+    return;
+  }
+  if (typeof cache !== "object" || Array.isArray(cache)) {
+    throw new Error("StartGameView prop description sprite frame cache must be an object before release.");
+  }
+  Object.keys(cache).forEach(function (path) {
+    releaseRetainedPropDescriptionSpriteFrame(cache[path], path);
+    delete cache[path];
+  });
+  host._startGamePropDescriptionSpriteFrameCache = {};
+}
+
+function destroyStartGamePropDescriptionView(host) {
+  var viewNode = host._startGamePropDescriptionViewNode;
+  if (viewNode && viewNode.isValid) {
+    viewNode.removeFromParent(false);
+    viewNode.destroy();
+  }
+  host._startGamePropDescriptionViewNode = null;
+  host._startGamePropDescriptionViewController = null;
+  host._isStartGamePropDescriptionViewOpen = false;
 }
 
 function logStartGameNativeTemplateAd() {
@@ -591,10 +634,177 @@ module.exports = {
     if (!this.currentLevelConfig || this.isRestarting || this.isSelectingLevel) {
       return;
     }
-    if (this._isTerminalState()) {
+    var snapshot = this.gameManager.getRuntimeSnapshot();
+    if (this._isTerminalState() && snapshot.state !== "out_of_shots_add_ball_prompt") {
       return;
     }
     return this._applyPlusThreeBallsUseResult(this.gameManager.usePlusThreeBalls());
+  },
+
+  _applyPreciseAimUseResult: function (useResult, options) {
+    if (options !== undefined && (!options || typeof options !== "object" || Array.isArray(options))) {
+      throw new Error("Precise aim use options must be an object when provided.");
+    }
+    if (!useResult || typeof useResult !== "object") {
+      throw new Error("Precise aim use result must be an object.");
+    }
+    if (!useResult.snapshot) {
+      throw new Error("Precise aim use result requires snapshot.");
+    }
+    var snapshot = useResult.snapshot;
+
+    if (useResult.accepted === true) {
+      this._recordAttemptPowerupUsed("precise_aim");
+    }
+    this._handleRuntimeStateTransition(snapshot);
+    if (options === undefined || options.refreshRuntime !== false) {
+      this.levelRenderer.refreshRuntime(this.currentLevelConfig, snapshot);
+    }
+
+    if (useResult.accepted === true) {
+      if ((options === undefined || options.consumePersistent !== false) && this._consumePersistentInventoryItemForPowerup("precise_aim") !== true) {
+        throw new Error("Precise aim persistent inventory consume failed.");
+      }
+      this._setStatusWithTip("precise_aim_active", null, "精确瞄准已生效");
+      return useResult;
+    }
+
+    if (typeof useResult.reason !== "string" || !useResult.reason) {
+      throw new Error("Precise aim failure requires reason.");
+    }
+    var reason = useResult.reason;
+    if (reason === "inventory_empty") {
+      this._trackTelemetry("powerup_fail", {
+        powerup_type: "precise_aim",
+        reason: reason
+      });
+      this._setStatusWithTip("precise_aim_inventory_empty", null, "精确瞄准道具库存不足");
+      if (options === undefined || options.recoverByAd !== false) {
+        this._tryRecoverInventoryByAd("precise_aim");
+      }
+      return useResult;
+    }
+    if (reason === "already_active") {
+      this._trackTelemetry("powerup_fail", {
+        powerup_type: "precise_aim",
+        reason: reason
+      });
+      this._setStatusWithTip("precise_aim_already_active", null, "精确瞄准已生效");
+      return useResult;
+    }
+    if (reason === "busy") {
+      this._trackTelemetry("powerup_fail", {
+        powerup_type: "precise_aim",
+        reason: reason
+      });
+      this._setStatusWithTip("precise_aim_busy", null, "当前状态不可使用精确瞄准");
+      return useResult;
+    }
+    this._trackTelemetry("powerup_fail", {
+      powerup_type: "precise_aim",
+      reason: reason
+    });
+    this._setStatusWithTip("precise_aim_failed", null, "精确瞄准使用失败");
+    return useResult;
+  },
+
+  _autoUsePreciseAimAfterInventoryGrant: function () {
+    if (!this.currentLevelConfig || this.isRestarting || this.isSelectingLevel) {
+      return;
+    }
+    if (this._isTerminalState()) {
+      return;
+    }
+    if (!this.gameManager || typeof this.gameManager.usePreciseAim !== "function") {
+      throw new Error("Precise aim auto use requires GameManager.usePreciseAim.");
+    }
+    return this._applyPreciseAimUseResult(this.gameManager.usePreciseAim(), {
+      recoverByAd: false
+    });
+  },
+
+  _onAddBallTipsCloseTap: function () {
+    if (!this.currentLevelConfig || this.isRestarting || this.isSelectingLevel) {
+      return;
+    }
+    if (!this.gameManager || typeof this.gameManager.confirmOutOfShotsAddBallPromptClosed !== "function") {
+      throw new Error("AddBallTipsView close requires GameManager.confirmOutOfShotsAddBallPromptClosed.");
+    }
+
+    this._playSfx("uiClick");
+    var snapshot = this.gameManager.confirmOutOfShotsAddBallPromptClosed();
+    this._handleRuntimeStateTransition(snapshot);
+    this.levelRenderer.refreshRuntime(this.currentLevelConfig, snapshot);
+    this._setStatus(this._formatStatus(this.currentLevelConfig, snapshot));
+  },
+
+  _onAddBallTipsWatchAdTap: function () {
+    if (!this.currentLevelConfig || this.isRestarting || this.isSelectingLevel) {
+      return;
+    }
+    var snapshot = this.gameManager.getRuntimeSnapshot();
+    if (!snapshot || snapshot.state !== "out_of_shots_add_ball_prompt") {
+      throw new Error("AddBallTipsView ad action requires add-ball prompt state.");
+    }
+
+    this._playSfx("uiClick");
+    this._trackTelemetry("add_ball_tips_action", {
+      action: "watch_ad"
+    });
+    return this._tryRecoverAdRunPowerupByAd("plus_three_balls");
+  },
+
+  _onAddBallTipsCoinBuyTap: function () {
+    if (!this.currentLevelConfig || this.isRestarting || this.isSelectingLevel) {
+      return;
+    }
+    var snapshot = this.gameManager.getRuntimeSnapshot();
+    if (!snapshot || snapshot.state !== "out_of_shots_add_ball_prompt") {
+      throw new Error("AddBallTipsView coin action requires add-ball prompt state.");
+    }
+    if (typeof this._spendCoinsForAddBallTips !== "function") {
+      throw new Error("AddBallTipsView coin action requires _spendCoinsForAddBallTips.");
+    }
+    if (typeof this._refundCoinsForAddBallTips !== "function") {
+      throw new Error("AddBallTipsView coin action requires _refundCoinsForAddBallTips.");
+    }
+    if (!this.gameManager || typeof this.gameManager.grantPreparedAdRunPowerup !== "function") {
+      throw new Error("AddBallTipsView coin action requires GameManager.grantPreparedAdRunPowerup.");
+    }
+
+    this._playSfx("uiClick");
+    this._trackTelemetry("add_ball_tips_action", {
+      action: "coin"
+    });
+    var cost = Shared.ADD_BALL_TIPS_COIN_COST;
+    if (!Number.isInteger(cost) || cost <= 0) {
+      throw new Error("AddBallTipsView coin cost must be a positive integer.");
+    }
+    var spendResult = this._spendCoinsForAddBallTips(cost, "add_ball_tips_plus_three_balls");
+    if (!spendResult || spendResult.accepted !== true) {
+      this._setStatusWithTip("add_ball_tips_coin_not_enough", null, "金币不足");
+      return;
+    }
+
+    var useResult = null;
+    try {
+      var grantResult = this.gameManager.grantPreparedAdRunPowerup("plus_three_balls", 1);
+      if (!grantResult || grantResult.accepted !== true) {
+        throw new Error("AddBallTipsView coin grant failed.");
+      }
+      useResult = this.gameManager.usePlusThreeBalls();
+    } catch (error) {
+      this._refundCoinsForAddBallTips(cost, "add_ball_tips_plus_three_balls_rollback");
+      throw error;
+    }
+    if (!useResult || useResult.accepted !== true || !useResult.snapshot) {
+      this._refundCoinsForAddBallTips(cost, "add_ball_tips_plus_three_balls_rollback");
+      throw new Error("AddBallTipsView plus three balls use result is invalid.");
+    }
+
+    this._refreshPlayerResources();
+    this._setStatus("加十球购买成功");
+    return this._applyPlusThreeBallsUseResult(useResult);
   },
 
   _onUsePlusThreeBallsTap: function () {
@@ -702,6 +912,21 @@ module.exports = {
     }.bind(this));
   },
 
+  _onUsePreciseAimTap: function () {
+    if (!this.currentLevelConfig || this.isRestarting || this.isSelectingLevel) {
+      return;
+    }
+    if (this._isTerminalState()) {
+      return;
+    }
+
+    this._trackTelemetry("powerup_tap", {
+      powerup_type: "precise_aim"
+    });
+    this._playSfx("uiClick");
+    return this._applyPreciseAimUseResult(this.gameManager.usePreciseAim());
+  },
+
   _onUseSkillBallTap: function (entityType) {
     if (!this.currentLevelConfig || this.isRestarting || this.isSelectingLevel) {
       return;
@@ -728,6 +953,7 @@ module.exports = {
 
     if (useResult && useResult.accepted) {
       this._consumePersistentInventoryItemForPowerup(entityType);
+      this._completeSkillPowerupUseGuide(entityType);
       if (entityType === "rainbow" && typeof this._recordDailyTaskEvent === "function") {
         this._recordDailyTaskEvent("use_powerup", {
           itemId: "rainbow_ball",
@@ -1049,6 +1275,57 @@ module.exports = {
     return addResult;
   },
 
+  _syncCollectedSkillPowerupsToInventory: function (snapshot) {
+    if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) {
+      throw new Error("Collected skill powerup inventory sync requires runtime snapshot.");
+    }
+    if (!Array.isArray(snapshot.runtimeEvents) || snapshot.runtimeEvents.length === 0) {
+      return {
+        accepted: true,
+        added: 0
+      };
+    }
+    if (typeof this._addInventoryItem !== "function") {
+      throw new Error("Collected skill powerup inventory sync requires _addInventoryItem.");
+    }
+
+    var addedCount = 0;
+    snapshot.runtimeEvents.forEach(function (event) {
+      if (!event || typeof event !== "object" || Array.isArray(event)) {
+        throw new Error("Runtime event must be an object.");
+      }
+      if (event.type !== "skill_powerup_collected") {
+        return;
+      }
+
+      var entityType = requireNonEmptyString(event.entityType, "Collected skill powerup entityType");
+      if (entityType !== "rainbow" && entityType !== "blast") {
+        throw new Error("Collected skill powerup entityType is unsupported: " + entityType);
+      }
+      requireNonEmptyString(event.sourceId, "Collected skill powerup sourceId");
+      requirePositiveInteger(event.total, "Collected skill powerup runtime total");
+
+      var itemId = ITEM_ID_BY_POWERUP_TYPE[entityType];
+      if (!itemId) {
+        throw new Error("Collected skill powerup item mapping is missing: " + entityType);
+      }
+      var addResult = this._addInventoryItem(itemId, 1);
+      if (!addResult || addResult.accepted !== true) {
+        throw new Error("Collected skill powerup inventory add failed: " + itemId);
+      }
+      addedCount += addResult.gained;
+    }, this);
+
+    if (addedCount > 0) {
+      this._renderInventoryView();
+      this._updateInventoryEntryState();
+    }
+    return {
+      accepted: true,
+      added: addedCount
+    };
+  },
+
   _refreshSelectedPowerups: function () {
     if (!this.selectedPowerupsStore || typeof this.selectedPowerupsStore.load !== "function") {
       throw new Error("GameBootstrap requires SelectedPowerupsStore.load.");
@@ -1233,10 +1510,6 @@ module.exports = {
     if (!this.gameManager || typeof this.gameManager.grantPreparedAdRunPowerup !== "function") {
       throw new Error("StartGameView requires GameManager.grantPreparedAdRunPowerup.");
     }
-    if (!this.gameManager || typeof this.gameManager.activateRicochetGuide !== "function") {
-      throw new Error("StartGameView requires GameManager.activateRicochetGuide.");
-    }
-
     var levelId = normalizeStartGameLevelId(this._currentLevelId);
     var selectedItems = validateStartGameSelectedPowerups(this, levelId, this._pendingStartGamePowerups);
     var runtimeSnapshot = snapshot;
@@ -1254,6 +1527,19 @@ module.exports = {
         throw new Error("StartGameView grant runtime powerup result missing snapshot: " + itemId);
       }
       runtimeSnapshot = grantResult.snapshot;
+      if (itemId === "precise_aim") {
+        if (!this.gameManager || typeof this.gameManager.usePreciseAim !== "function") {
+          throw new Error("StartGameView precise aim requires GameManager.usePreciseAim.");
+        }
+        var preciseAimUseResult = this.gameManager.usePreciseAim();
+        if (!preciseAimUseResult || preciseAimUseResult.accepted !== true || !preciseAimUseResult.snapshot) {
+          throw new Error("StartGameView precise aim activation failed.");
+        }
+        if (this._consumePersistentInventoryItemForPowerup("precise_aim") !== true) {
+          throw new Error("StartGameView precise aim persistent inventory consume failed.");
+        }
+        runtimeSnapshot = preciseAimUseResult.snapshot;
+      }
     }, this);
     Object.keys(temporaryPowerups).forEach(function (itemId) {
       var count = temporaryPowerups[itemId];
@@ -1261,12 +1547,7 @@ module.exports = {
         return;
       }
       var config = START_GAME_TEMPORARY_POWERUP_CONFIG_BY_ITEM_ID[itemId];
-      var grantResult;
-      if (config.activateRicochetGuide === true) {
-        grantResult = this.gameManager.activateRicochetGuide();
-      } else {
-        grantResult = this.gameManager.grantPreparedAdRunPowerup(config.adRunPowerupType, count);
-      }
+      var grantResult = this.gameManager.grantPreparedAdRunPowerup(config.adRunPowerupType, count);
       if (!grantResult || grantResult.accepted !== true) {
         throw new Error("StartGameView grant temporary powerup failed: " + itemId);
       }
@@ -1792,6 +2073,8 @@ module.exports = {
       prefabKey: "_startGameViewPrefab",
       controllerKey: "_startGameViewController"
     });
+    destroyStartGamePropDescriptionView(this);
+    releaseStartGamePropDescriptionSpriteFrameCache(this);
   },
 
   _ensureStartGamePropDescriptionViewPrefab: function () {
@@ -1823,7 +2106,7 @@ module.exports = {
       return loadPropDescriptionSpriteFrame(path).then(function (spriteFrame) {
         return {
           path: path,
-          spriteFrame: spriteFrame
+          spriteFrame: retainPropDescriptionSpriteFrame(spriteFrame, path)
         };
       });
     })).then(function (results) {
@@ -1880,10 +2163,15 @@ module.exports = {
           this._startGamePropDescriptionWhiteMaskFrames
         );
         var popupContent = PopupPresentationHelper.ensurePopupContentContainer(viewNode);
-        this._startGamePropDescriptionViewController.render({
-          levelConfig: this._startGameLevelConfig,
-          spriteFrameCache: spriteFrameCache
-        });
+        try {
+          this._startGamePropDescriptionViewController.render({
+            levelConfig: this._startGameLevelConfig,
+            spriteFrameCache: spriteFrameCache
+          });
+        } catch (error) {
+          destroyStartGamePropDescriptionView(this);
+          throw error;
+        }
         PopupPresentationHelper.playPopupContentOpenAnimation(popupContent);
         this._isStartGamePropDescriptionViewOpen = true;
       }.bind(this));
@@ -1897,8 +2185,7 @@ module.exports = {
     if (!this._startGamePropDescriptionViewNode || !this._startGamePropDescriptionViewNode.isValid) {
       throw new Error("StartGameView prop description node is invalid.");
     }
-    this._startGamePropDescriptionViewNode.active = false;
-    this._isStartGamePropDescriptionViewOpen = false;
+    destroyStartGamePropDescriptionView(this);
   },
 
   _closeStartGamePropDescriptionView: function () {

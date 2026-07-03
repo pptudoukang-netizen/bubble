@@ -263,6 +263,17 @@ LevelRenderer.prototype._renderRainbowColorSelector = function (shooterPanel, sh
   });
 };
 
+LevelRenderer.prototype.isShooterHandoffInProgress = function () {
+  if (!this.layers || !this.layers.shooter) {
+    return false;
+  }
+  var shooterPanel = this.layers.shooter.getChildByName("ShooterPanel");
+  if (!shooterPanel) {
+    return false;
+  }
+  return shooterPanel.__shooterHandoffInProgress === true;
+};
+
 LevelRenderer.prototype._renderShooter = function (shooterSnapshot, activeProjectile, remainingShots) {
   var shooterPanel = this.layers.shooter.getChildByName("ShooterPanel");
   if (!shooterPanel) {
@@ -344,7 +355,19 @@ LevelRenderer.prototype._renderShooter = function (shooterSnapshot, activeProjec
     finiteRemainingShots
   );
 
-  var shotsValue = Math.max(0, Math.floor(Number(remainingShots) || 0));
+  var shotsValue = finiteRemainingShots === null ? 0 : finiteRemainingShots;
+  if (
+    shooterSnapshot &&
+    Object.prototype.hasOwnProperty.call(shooterSnapshot, "surplusRemainingShots")
+  ) {
+    if (shooterSnapshot.infiniteShots) {
+      throw new Error("Shooter render cannot show surplusRemainingShots in infinite-shot mode.");
+    }
+    if (!Number.isInteger(shooterSnapshot.surplusRemainingShots) || shooterSnapshot.surplusRemainingShots < 0) {
+      throw new Error("Shooter render requires non-negative integer surplusRemainingShots.");
+    }
+    shotsValue = shooterSnapshot.surplusRemainingShots;
+  }
   var surplusNode = layoutNodes.Surplus;
   var surplusLabel = surplusNode.getComponent(cc.Label);
   if (!surplusLabel) {

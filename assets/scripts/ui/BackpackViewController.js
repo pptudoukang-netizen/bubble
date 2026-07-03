@@ -5,6 +5,11 @@ var SpriteProxyLayerHelper = require("../utils/SpriteProxyLayerHelper");
 
 var ITEM_DEFINITIONS = [
   {
+    itemId: "precise_aim",
+    displayName: "精确瞄准",
+    iconPath: "image/props/aim"
+  },
+  {
     itemId: "swap_ball",
     displayName: "换球",
     iconPath: "image/props/change_ball"

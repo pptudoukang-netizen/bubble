@@ -1,11 +1,11 @@
 "use strict";
 
 var Shared = require("./GameBootstrapShared");
-var FairyAssistConfig = require("../config/FairyAssistConfig");
+var BubbleBreakSfxPolicy = require("../audio/BubbleBreakSfxPolicy");
 
 var JAR_BOUNCE_SFX_MIN_INTERVAL_MS = 80;
 var JAR_BOUNCE_SFX_MAX_PER_FRAME = 2;
-var JAR_BOUNCE_PIANO_SLOT_COUNT = FairyAssistConfig.maxGlowStacks;
+var JAR_BOUNCE_PIANO_SLOT_COUNT = 7;
 
 module.exports = {
   _buildAudioConfig: function () {
@@ -19,6 +19,7 @@ module.exports = {
         jarBounce: this._parseAudioResourceList(this.jarBounceSfxResources),
         jarCollectBottom: this.jarCollectBottomSfxResource,
         break: this.breakSfxResource,
+        noElimination: this.noEliminationSfxResource,
         fairyAssistHit: this.fairyAssistHitSfxResource,
         fairyAssistDepart: this.fairyAssistDepartSfxResource,
         gameEntryCountdown: this.gameEntryCountdownSfxResource,
@@ -116,17 +117,7 @@ module.exports = {
     return this.levelRenderer.playGameEntryCountdown();
   },
 
-  _resolveJarBouncePianoPath: function (pianoSlotIndex) {
-    if (
-      !Number.isInteger(pianoSlotIndex) ||
-      pianoSlotIndex < 1 ||
-      pianoSlotIndex > JAR_BOUNCE_PIANO_SLOT_COUNT
-    ) {
-      throw new Error(
-        "Jar bounce sfx requires piano slot index in [1, " + JAR_BOUNCE_PIANO_SLOT_COUNT + "]."
-      );
-    }
-
+  _resolveJarBouncePianoPath: function () {
     var pianoPaths = this._parseAudioResourceList(this.jarBounceSfxResources);
     if (pianoPaths.length < JAR_BOUNCE_PIANO_SLOT_COUNT) {
       throw new Error(
@@ -138,7 +129,7 @@ module.exports = {
       );
     }
 
-    return pianoPaths[pianoSlotIndex - 1];
+    return pianoPaths[Math.floor(Math.random() * JAR_BOUNCE_PIANO_SLOT_COUNT)];
   },
 
   _canPlayJarBounceSfx: function (now, playedThisFrame) {
@@ -221,8 +212,7 @@ module.exports = {
           return;
         }
         jarBouncePlayedThisFrame += 1;
-        var rimBouncePianoSlot = Math.min(JAR_BOUNCE_PIANO_SLOT_COUNT, event.bounceCount);
-        this._playSfx(this._resolveJarBouncePianoPath(rimBouncePianoSlot));
+        this._playSfx(this._resolveJarBouncePianoPath());
         return;
       }
 
@@ -242,7 +232,30 @@ module.exports = {
       }
 
       if (event.type === "bubble_break") {
-        this._playSfx("break");
+        var breakSfxSchedule = BubbleBreakSfxPolicy.resolveBubbleBreakSfxSchedule(event.count, event.shatterDelaysMs);
+        if (!this.audioManager) {
+          return;
+        }
+        if (typeof this.audioManager.playSfxInstances !== "function") {
+          throw new Error("bubble_break audio requires AudioManager.playSfxInstances.");
+        }
+        breakSfxSchedule.forEach(function (entry) {
+          if (!Number.isFinite(entry.delayMs) || entry.delayMs < 0 || !Number.isInteger(entry.count) || entry.count < 1) {
+            throw new Error("bubble_break audio schedule entry is invalid.");
+          }
+          if (entry.delayMs <= 0) {
+            this.audioManager.playSfxInstances("break", entry.count);
+            return;
+          }
+          if (typeof this.scheduleOnce !== "function") {
+            throw new Error("bubble_break delayed audio requires scheduleOnce.");
+          }
+          this.scheduleOnce(function () {
+            if (this.audioManager) {
+              this.audioManager.playSfxInstances("break", entry.count);
+            }
+          }.bind(this), entry.delayMs / 1000);
+        }, this);
         return;
       }
 
@@ -253,6 +266,11 @@ module.exports = {
 
       if (event.type === "lock_open") {
         this._playSfx("lockOpen");
+        return;
+      }
+
+      if (event.type === "shot_no_elimination") {
+        this._playSfx("noElimination");
         return;
       }
 

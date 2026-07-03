@@ -10,7 +10,11 @@ var TASK_REASONS = {
   spend_stamina_20: "daily_task_spend_stamina",
   use_rainbow_ball_2: "daily_task_use_rainbow_ball",
   use_barrier_hammer_1: "daily_task_use_barrier_hammer",
-  gift_friend_stamina_3: "daily_task_gift_friend_stamina"
+  gift_friend_stamina_3: "daily_task_gift_friend_stamina",
+  challenge_attempt_10: "daily_task_challenge_attempt",
+  challenge_clear_3: "daily_task_challenge_clear_3",
+  challenge_clear_5: "daily_task_challenge_clear_5",
+  challenge_clear_10: "daily_task_challenge_clear_10"
 };
 
 function clone(data) {
@@ -146,6 +150,21 @@ function findTask(tasks, taskId) {
   return null;
 }
 
+function validateChallengePayload(payload, eventType) {
+  requireString(payload.seed, "Daily task challenge seed");
+  requirePositiveInteger(payload.difficultyTier, "Daily task challenge difficultyTier");
+  requireString(payload.configHash, "Daily task challenge configHash");
+  var result = requireString(payload.result, "Daily task challenge result");
+  if (result !== "win" && result !== "lose") {
+    throw new Error("Daily task challenge result is invalid: " + result);
+  }
+  if (eventType === "challenge_clear" && result !== "win") {
+    throw new Error("Daily task challenge_clear requires win result.");
+  }
+  requireString(payload.state, "Daily task challenge state");
+  return 1;
+}
+
 function buildPayloadForTelemetry(task, taskState, dayKey) {
   return {
     task_id: task.taskId,
@@ -270,6 +289,9 @@ DailyTaskService.prototype._resolveEventAmount = function (task, eventType, payl
     requireString(payload.friendId, "Daily task friendId");
     requirePositiveInteger(payload.amount, "Daily task friend stamina amount");
     return 1;
+  }
+  if (eventType === "challenge_attempt" || eventType === "challenge_clear") {
+    return validateChallengePayload(payload, eventType);
   }
   throw new Error("Unsupported daily task event type: " + eventType);
 };

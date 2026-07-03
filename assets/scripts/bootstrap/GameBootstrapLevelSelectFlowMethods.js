@@ -227,6 +227,26 @@ function requireRandomChallengeContext(context) {
   return context;
 }
 
+function buildRandomChallengeDailyTaskPayload(context, snapshot, result) {
+  var safeContext = requireRandomChallengeContext(context);
+  if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) {
+    throw new Error("Random challenge daily task requires runtime snapshot.");
+  }
+  if (typeof snapshot.state !== "string" || snapshot.state.length === 0) {
+    throw new Error("Random challenge daily task requires snapshot state.");
+  }
+  if (result !== "win" && result !== "lose") {
+    throw new Error("Random challenge daily task result is invalid: " + result);
+  }
+  return {
+    seed: safeContext.seed,
+    difficultyTier: safeContext.difficultyTier,
+    configHash: safeContext.configHash,
+    result: result,
+    state: snapshot.state
+  };
+}
+
 module.exports = {
   _showLevelSelectView: function (options) {
     options = options || {};
@@ -235,9 +255,14 @@ module.exports = {
     }
     this._recordCurrentAttemptQuit("return_to_level_select");
     if (!this.isSelectingLevel && this.levelRenderer) {
+      if (typeof this.levelRenderer.prepareForLevelSelectReturn === "function") {
+        this.levelRenderer.prepareForLevelSelectReturn();
+      }
       this.levelRenderer.releaseLevelSpecificSpriteCache();
       this._scheduleGameplayBundleIdleRelease();
     }
+    this.isGameplayPaused = false;
+    this.isPropDescriptionViewOpen = false;
     if (DebugFlags.get("levelSelectMemory") === true) {
       LevelSelectMemoryDiagnostics.start(this.node);
     }
@@ -612,6 +637,7 @@ module.exports = {
       isLevelCompleted: this._isLevelCompleted.bind(this),
       staminaValue: this._getCurrentStamina(),
       coinValue: this._getCurrentCoins(),
+      dailyChallengeAttemptCount: this._getDailyChallengeAttemptCount(),
       onOpenSettings: this._onLevelSelectSettingTap.bind(this),
       onOpenRanking: this._onLevelSelectRankingTap.bind(this),
       onOpenInventory: this._showInventoryView.bind(this),
@@ -714,6 +740,10 @@ module.exports = {
     if (!snapshot) {
       return;
     }
+    if (typeof this._syncCollectedSkillPowerupsToInventory !== "function") {
+      throw new Error("Runtime state transition requires collected skill powerup inventory sync.");
+    }
+    this._syncCollectedSkillPowerupsToInventory(snapshot);
 
     var previousState = this._lastRuntimeState;
     var currentState = snapshot.state;
@@ -738,6 +768,9 @@ module.exports = {
       (currentState === "out_of_shots" || currentState === "lost_danger" || currentState === "lost_objective")
     ) {
       this._playSfx("lose");
+      if (isRandomChallengeContext(this._currentRunContext) && typeof this._recordDailyTaskEvent === "function") {
+        this._recordDailyTaskEvent("challenge_attempt", buildRandomChallengeDailyTaskPayload(this._currentRunContext, snapshot, "lose"));
+      }
     }
     if (currentState === "won") {
       this._applyCurrentLevelBestScoreFlag(snapshot);
@@ -891,6 +924,11 @@ module.exports = {
       configHash: context.configHash,
       score: score
     });
+    if (typeof this._recordDailyTaskEvent === "function") {
+      var payload = buildRandomChallengeDailyTaskPayload(context, snapshot, "win");
+      this._recordDailyTaskEvent("challenge_attempt", payload);
+      this._recordDailyTaskEvent("challenge_clear", payload);
+    }
   },
 
   _calculateStarRating: function (snapshot) {
@@ -1110,6 +1148,8 @@ module.exports = {
             this.isRestarting = false;
             this._setDropTestButtonVisible(true);
             this._syncSpecialIntroduceForRuntimeSnapshot(snapshot);
+            this._syncGeniusTipsForRuntimeSnapshot(snapshot);
+            this._syncSartTipsForRuntimeSnapshot(snapshot);
             return null;
           }.bind(this));
         }.bind(this));

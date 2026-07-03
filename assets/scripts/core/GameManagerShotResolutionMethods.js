@@ -23,6 +23,7 @@ function createGameManagerShotResolutionMethods(deps) {
   var resolveIceInnerColor = deps.resolveIceInnerColor;
   var createEmptyResolution = deps.createEmptyResolution;
   var findPrimaryCollectionObjective = deps.findPrimaryCollectionObjective;
+  var listCollectionRewardObjectives = deps.listCollectionRewardObjectives;
   var COMBO_BONUS_PER_HIT = deps.COMBO_BONUS_PER_HIT;
   var MOLOTOV_BLAST_ANIMATION_DURATION = SpecialAnimationTiming.molotovBlast.totalDuration;
   var MOLOTOV_BLAST_TRIGGER_DELAY = SpecialAnimationTiming.molotovBlast.blastTriggerDelay;
@@ -393,6 +394,22 @@ function createGameManagerShotResolutionMethods(deps) {
         return {
           x: impact.center.x,
           y: impact.center.y
+        };
+      }
+
+      var blastExplosions = resolution.blastExplosions;
+      if (Array.isArray(blastExplosions) && blastExplosions.length) {
+        var blastExplosion = blastExplosions[0];
+        if (
+          !blastExplosion ||
+          !Number.isInteger(blastExplosion.row) ||
+          !Number.isInteger(blastExplosion.col)
+        ) {
+          throw new Error("Combo blast attach anchor requires blast explosion row and col.");
+        }
+        return {
+          row: blastExplosion.row,
+          col: blastExplosion.col
         };
       }
 
@@ -1083,6 +1100,14 @@ function createGameManagerShotResolutionMethods(deps) {
             total: receiveResult.total,
             jarIndex: typeof cell.jarIndex === "number" ? cell.jarIndex : -1
           });
+          if (typeof this._pushRuntimeEvent === "function") {
+            this._pushRuntimeEvent("skill_powerup_collected", {
+              entityType: cell.entityType,
+              sourceId: cell.id,
+              total: receiveResult.total,
+              jarIndex: typeof cell.jarIndex === "number" ? cell.jarIndex : -1
+            });
+          }
           injectedCount += 1;
         }
       }, this);
@@ -1109,6 +1134,146 @@ function createGameManagerShotResolutionMethods(deps) {
         target.push(cell);
       });
       return target;
+    },
+
+    _findMatchedBallCollectionObjective: function () {
+      if (typeof listCollectionRewardObjectives !== "function") {
+        throw new Error("Matched objective collection requires listCollectionRewardObjectives.");
+      }
+      var objectives = listCollectionRewardObjectives(this.currentLevel);
+      for (var index = 0; index < objectives.length; index += 1) {
+        var objective = objectives[index];
+        if (objective && (objective.type === "collect_any" || objective.type === "collect_color")) {
+          return objective;
+        }
+      }
+      return null;
+    },
+
+    _buildMatchedObjectiveCollectionEntries: function (collectedCells, eliminationSequence, grid) {
+      if (!Array.isArray(collectedCells)) {
+        throw new Error("Matched objective collection entries require collected cells array.");
+      }
+      if (!Array.isArray(eliminationSequence)) {
+        throw new Error("Matched objective collection entries require eliminationSequence array.");
+      }
+      if (grid !== undefined && (!grid || typeof grid.getCellPosition !== "function")) {
+        throw new Error("Matched objective collection entries require grid.getCellPosition when grid is provided.");
+      }
+
+      var sequenceByCellId = {};
+      eliminationSequence.forEach(function (entry) {
+        if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+          throw new Error("Matched objective collection sequence entry must be an object.");
+        }
+        if (typeof entry.cellId !== "string" && typeof entry.cellId !== "number") {
+          throw new Error("Matched objective collection sequence entry requires cellId.");
+        }
+        sequenceByCellId[String(entry.cellId)] = entry;
+      });
+
+      return collectedCells.map(function (cell) {
+        if (!cell || (typeof cell.id !== "string" && typeof cell.id !== "number")) {
+          throw new Error("Matched objective collected cell requires id.");
+        }
+        var sequenceEntry = sequenceByCellId[String(cell.id)];
+        if (!sequenceEntry) {
+          if (!grid) {
+            throw new Error("Matched objective collected cell missing elimination sequence: " + cell.id);
+          }
+          var cellPosition = requireFinitePoint(
+            grid.getCellPosition(cell.row, cell.col),
+            "Matched objective collected cell"
+          );
+          return {
+            id: cell.id,
+            color: cell.color,
+            row: cell.row,
+            col: cell.col,
+            worldPosition: {
+              x: cellPosition.x,
+              y: cellPosition.y
+            },
+            delayMs: 0
+          };
+        }
+        if (
+          !sequenceEntry.worldPosition ||
+          typeof sequenceEntry.worldPosition.x !== "number" ||
+          typeof sequenceEntry.worldPosition.y !== "number" ||
+          !isFinite(sequenceEntry.worldPosition.x) ||
+          !isFinite(sequenceEntry.worldPosition.y)
+        ) {
+          throw new Error("Matched objective collection requires sequence worldPosition: " + cell.id);
+        }
+
+        return {
+          id: cell.id,
+          color: cell.color,
+          row: cell.row,
+          col: cell.col,
+          worldPosition: {
+            x: sequenceEntry.worldPosition.x,
+            y: sequenceEntry.worldPosition.y
+          },
+          delayMs: sequenceEntry.delayMs
+        };
+      });
+    },
+
+    _registerMatchedObjectiveCollection: function (matchedCells, eliminationSequence, resolution, grid) {
+      if (!resolution) {
+        throw new Error("Matched objective collection requires resolution.");
+      }
+      if (!Array.isArray(matchedCells)) {
+        throw new Error("Matched objective collection requires matched cells array.");
+      }
+      if (!Array.isArray(resolution.matchedObjectiveCollected)) {
+        throw new Error("Resolution requires matchedObjectiveCollected array.");
+      }
+
+      var objective = this._findMatchedBallCollectionObjective();
+      if (!objective) {
+        return [];
+      }
+      var jarCollectorSystem = this.systems.jarCollectorSystem;
+      if (!jarCollectorSystem || typeof jarCollectorSystem.collectEliminatedObjectiveCells !== "function") {
+        throw new Error("Matched objective collection requires JarCollectorSystem.collectEliminatedObjectiveCells.");
+      }
+
+      var alreadyCollected = {};
+      resolution.matchedObjectiveCollected.forEach(function (entry) {
+        if (!entry || (typeof entry.id !== "string" && typeof entry.id !== "number")) {
+          throw new Error("Resolution matchedObjectiveCollected entry requires id.");
+        }
+        alreadyCollected[String(entry.id)] = true;
+      });
+      var pendingCells = matchedCells.filter(function (cell) {
+        if (!cell || (typeof cell.id !== "string" && typeof cell.id !== "number")) {
+          throw new Error("Matched objective collection matched cell requires id.");
+        }
+        return alreadyCollected[String(cell.id)] !== true;
+      });
+      if (!pendingCells.length) {
+        return [];
+      }
+
+      var collectedCells = jarCollectorSystem.collectEliminatedObjectiveCells(pendingCells, objective);
+      if (!collectedCells.length) {
+        return [];
+      }
+
+      var eventEntries = this._buildMatchedObjectiveCollectionEntries(collectedCells, eliminationSequence, grid);
+      resolution.matchedObjectiveCollected = resolution.matchedObjectiveCollected.concat(eventEntries);
+      if (typeof this._pushRuntimeEvent === "function") {
+        this._pushRuntimeEvent("matched_objective_collect", {
+          objectiveType: objective.type,
+          objectiveColor: objective.type === "collect_color" ? objective.color : null,
+          count: eventEntries.length,
+          entries: eventEntries
+        });
+      }
+      return eventEntries;
     },
 
     _splitMolotovDropCandidates: function (cells) {
@@ -1469,8 +1634,8 @@ function createGameManagerShotResolutionMethods(deps) {
       });
 
       var removedByBlast = grid.removeCells(blastCells);
-      this._pushBubbleBreakEvent(removedByBlast);
       appendMolotovEliminationSequence(resolution, removedByBlast, grid);
+      this._pushBubbleBreakEvent(removedByBlast, resolution.eliminationSequence);
       removedByBlast.forEach(function (cell) {
         cell.__molotovBlastVelocity = buildMolotovBlastDropVelocity(active, cell, grid);
       });
@@ -1482,9 +1647,22 @@ function createGameManagerShotResolutionMethods(deps) {
       var chainMolotovs = this._collectAdjacentMolotovs(removedByBlast, grid, this.molotovBlastTriggeredIds);
       this._queueMolotovBlasts(chainMolotovs, resolution);
 
+      var removedSourceMolotov = [];
+      var liveSourceMolotov = grid.getCell(active.row, active.col);
+      if (liveSourceMolotov) {
+        if (!isMolotovBall(liveSourceMolotov)) {
+          throw new Error("Molotov blast source cell is not molotov.");
+        }
+        removedSourceMolotov = grid.removeCells([liveSourceMolotov]);
+        appendMolotovEliminationSequence(resolution, removedSourceMolotov, grid);
+        this._pushBubbleBreakEvent(removedSourceMolotov, resolution.eliminationSequence);
+        this._registerMatchedObjectiveCollection(removedSourceMolotov, resolution.eliminationSequence, resolution, grid);
+      }
+
       this._appendUniqueCells(this.molotovPendingResolutionContext.allRemoved, removedKeys);
       this._appendUniqueCells(this.molotovPendingResolutionContext.allRemoved, removedByBlast);
-      this._cancelPendingSplitterSpawnsForDroppedCells(removedByBlast.concat(removedKeys));
+      this._appendUniqueCells(this.molotovPendingResolutionContext.allRemoved, removedSourceMolotov);
+      this._cancelPendingSplitterSpawnsForDroppedCells(removedByBlast.concat(removedKeys).concat(removedSourceMolotov));
       this._registerResolutionDrops(
         removedByBlast.concat(removedKeys),
         grid,
@@ -1497,6 +1675,8 @@ function createGameManagerShotResolutionMethods(deps) {
 
       resolution.matched = this.molotovPendingResolutionContext.allRemoved.slice();
       resolution.collected = this.molotovPendingResolutionContext.allRemoved.slice();
+      this._registerMatchedObjectiveCollection(removedByBlast, resolution.eliminationSequence, resolution, grid);
+      this._resolveMolotovFloatingAfterBoardMutation(grid, resolution);
     },
 
     _completeMolotovBlast: function (active, grid, resolution) {
@@ -1519,11 +1699,13 @@ function createGameManagerShotResolutionMethods(deps) {
           throw new Error("Molotov blast completion cell is not molotov.");
         }
         var removedMolotov = grid.removeCells([liveMolotov]);
-        this._pushBubbleBreakEvent(removedMolotov);
         appendMolotovEliminationSequence(resolution, removedMolotov, grid);
+        this._pushBubbleBreakEvent(removedMolotov, resolution.eliminationSequence);
         this._appendUniqueCells(this.molotovPendingResolutionContext.allRemoved, removedMolotov);
         resolution.matched = this.molotovPendingResolutionContext.allRemoved.slice();
         resolution.collected = this.molotovPendingResolutionContext.allRemoved.slice();
+        this._registerMatchedObjectiveCollection(removedMolotov, resolution.eliminationSequence, resolution, grid);
+        this._resolveMolotovFloatingAfterBoardMutation(grid, resolution);
       }
     },
 
@@ -1548,6 +1730,10 @@ function createGameManagerShotResolutionMethods(deps) {
       var updated = false;
 
       if (!this.activeMolotovBlast) {
+        if (!this.pendingMolotovBlastQueue.length && this.molotovResolutionPending) {
+          this._finalizeMolotovPendingResolution();
+          return true;
+        }
         this._startNextMolotovBlastIfIdle(resolution);
         return !!this.activeMolotovBlast;
       }
@@ -1600,12 +1786,59 @@ function createGameManagerShotResolutionMethods(deps) {
       this._cancelPendingSplitterSpawnsForDroppedCells(syncRemoved);
       this.systems.jarCollectorSystem.collect([]);
 
-      this._pushBubbleBreakEvent(syncRemoved);
       appendMolotovEliminationSequence(resolution, syncRemoved, this.systems.bubbleGrid);
+      this._pushBubbleBreakEvent(syncRemoved, resolution.eliminationSequence);
       resolution.matched = syncRemoved.slice();
       resolution.collected = syncRemoved.slice();
+      this._registerMatchedObjectiveCollection(
+        syncRemoved,
+        resolution.eliminationSequence,
+        resolution,
+        this.systems.bubbleGrid
+      );
       resolution.boardCleared = false;
       this._executeMolotovBlastPhaseAtAnimationStart(resolution);
+    },
+
+    _resolveMolotovFloatingAfterBoardMutation: function (grid, resolution) {
+      if (!this.molotovPendingResolutionContext || !Array.isArray(this.molotovPendingResolutionContext.allRemoved)) {
+        throw new Error("Molotov floating resolution requires molotovPendingResolutionContext.allRemoved.");
+      }
+      if (!grid || typeof grid.removeCells !== "function") {
+        throw new Error("Molotov floating resolution requires bubble grid.");
+      }
+      if (!resolution || !Array.isArray(resolution.floating)) {
+        throw new Error("Molotov floating resolution requires resolution.floating array.");
+      }
+      if (!this.systems.supportSystem || typeof this.systems.supportSystem.findFloatingCells !== "function") {
+        throw new Error("Molotov floating resolution requires supportSystem.findFloatingCells.");
+      }
+
+      if (Array.isArray(resolution.collectedKeys) && resolution.collectedKeys.length) {
+        this._resolveCollectedKeyUnlocks(grid, resolution);
+      }
+
+      var floatingCells = this.systems.supportSystem.findFloatingCells(grid);
+      var removedFloating = grid.removeCells(floatingCells);
+      this._appendUniqueCells(resolution.floating, removedFloating);
+      if (!removedFloating.length) {
+        return [];
+      }
+
+      this._cancelPendingSplitterSpawnsForDroppedCells(removedFloating);
+      this._removeSpawnedSplitterEntriesForCells(removedFloating, resolution);
+      this._registerResolutionDrops(
+        removedFloating,
+        grid,
+        resolution,
+        undefined,
+        {
+          matchedCellsForDelay: this.molotovPendingResolutionContext.allRemoved
+        }
+      );
+      this.systems.jarCollectorSystem.collect([]);
+      resolution.collected = this.molotovPendingResolutionContext.allRemoved.concat(resolution.floating);
+      return removedFloating;
     },
 
     _finalizeMolotovPendingResolution: function () {
@@ -1625,22 +1858,7 @@ function createGameManagerShotResolutionMethods(deps) {
 
       var resolution = this.lastResolution;
       var grid = this.systems.bubbleGrid;
-      this._resolveCollectedKeyUnlocks(grid, resolution);
-      var floatingCells = this.systems.supportSystem.findFloatingCells(grid);
-      var removedFloating = grid.removeCells(floatingCells);
-      this._appendUniqueCells(resolution.floating, removedFloating);
-
-      this._cancelPendingSplitterSpawnsForDroppedCells(resolution.floating);
-      this._registerResolutionDrops(
-        resolution.floating,
-        grid,
-        resolution,
-        undefined,
-        {
-          matchedCellsForDelay: context.allRemoved
-        }
-      );
-      this.systems.jarCollectorSystem.collect([]);
+      this._resolveMolotovFloatingAfterBoardMutation(grid, resolution);
 
       resolution.matched = context.allRemoved.slice();
       resolution.collected = context.allRemoved.concat(resolution.floating);
@@ -1669,7 +1887,7 @@ function createGameManagerShotResolutionMethods(deps) {
         if (this.systems.fallingMarbleSystem.hasActiveDrops() || this._isBoardAdvanceBusy() || this._hasPendingSplitterSpawns() || this._hasPendingMolotovBlasts()) {
           this.state = "out_of_shots_pending";
         } else {
-          this._resolveOutOfShotsOutcome();
+          this._showOutOfShotsAddBallPrompt();
         }
       }
     },
@@ -1691,6 +1909,49 @@ function createGameManagerShotResolutionMethods(deps) {
           this._cancelPendingSplitterSpawn(cell);
         }
       }
+    },
+
+    _removeSpawnedSplitterEntriesForCells: function (cells, resolution) {
+      if (!Array.isArray(cells)) {
+        throw new Error("Remove spawned splitter entries requires cells array.");
+      }
+      if (!resolution || !Array.isArray(resolution.spawnedBySplitters)) {
+        throw new Error("Remove spawned splitter entries requires resolution.spawnedBySplitters array.");
+      }
+      if (!cells.length || !resolution.spawnedBySplitters.length) {
+        return 0;
+      }
+
+      var removedKeys = {};
+      cells.forEach(function (cell) {
+        if (!cell || !Number.isInteger(cell.row) || !Number.isInteger(cell.col)) {
+          throw new Error("Remove spawned splitter entries requires cell coordinates.");
+        }
+        removedKeys[cell.row + ":" + cell.col] = true;
+        if (typeof cell.id === "string" || typeof cell.id === "number") {
+          removedKeys[String(cell.id)] = true;
+        }
+      });
+
+      var kept = [];
+      var removedCount = 0;
+      resolution.spawnedBySplitters.forEach(function (spawnedCell) {
+        if (!spawnedCell || !Number.isInteger(spawnedCell.row) || !Number.isInteger(spawnedCell.col)) {
+          throw new Error("Spawned splitter entry requires coordinates.");
+        }
+        var coordinateKey = spawnedCell.row + ":" + spawnedCell.col;
+        var idKey = (typeof spawnedCell.id === "string" || typeof spawnedCell.id === "number")
+          ? String(spawnedCell.id)
+          : null;
+        if (removedKeys[coordinateKey] || (idKey && removedKeys[idKey])) {
+          removedCount += 1;
+          return;
+        }
+        kept.push(spawnedCell);
+      });
+
+      resolution.spawnedBySplitters = kept;
+      return removedCount;
     },
 
     _removeUnsupportedUnlockedCells: function (unlockedEntries, grid, resolution) {
@@ -1758,6 +2019,7 @@ function createGameManagerShotResolutionMethods(deps) {
         return [];
       }
 
+      var manager = this;
       var unlocked = [];
       pendingKeys.forEach(function (keyCell) {
         if (typeof keyCell.id !== "string" && typeof keyCell.id !== "number") {
@@ -1795,7 +2057,7 @@ function createGameManagerShotResolutionMethods(deps) {
           entityType: unlockedCell.entityType,
           __sourceKeyId: keyCell.id
         });
-        this._pushLockOpenEvent(unlockedCell);
+        manager._pushLockOpenEvent(unlockedCell);
       });
 
       this._appendUniqueCells(resolution.unlockedLockedBalls, unlocked);
@@ -2130,6 +2392,7 @@ function createGameManagerShotResolutionMethods(deps) {
 
       this._pushBubbleBreakEvent(matchedCells);
       resolution.matched = matchedCells;
+      this._registerMatchedObjectiveCollection(matchedCells, resolution.eliminationSequence, resolution, grid);
       resolution.collected = removedAll;
       resolution.impact = this._createImpactEventFromCell(centerCoordinate);
       resolution.boardCleared = grid.getCells().length === 0;
@@ -2240,7 +2503,7 @@ function createGameManagerShotResolutionMethods(deps) {
         if (this.systems.fallingMarbleSystem.hasActiveDrops() || this._isBoardAdvanceBusy() || this._hasPendingSplitterSpawns() || this._hasPendingMolotovBlasts()) {
           this.state = "out_of_shots_pending";
         } else {
-          this._resolveOutOfShotsOutcome();
+          this._showOutOfShotsAddBallPrompt();
         }
         return;
       }
@@ -2311,10 +2574,16 @@ function createGameManagerShotResolutionMethods(deps) {
       resolution.scoreEvents = eliminationData.scoreEvents;
 
       resolution.matched = matchedCellsForScore;
+      this._registerMatchedObjectiveCollection(
+        matchedCellsForScore,
+        resolution.eliminationSequence,
+        resolution,
+        grid
+      );
       this._registerResolutionDrops(resolution.floating, grid, resolution);
       this.systems.jarCollectorSystem.collect([]);
 
-      this._pushBubbleBreakEvent(matchedCellsForScore);
+      this._pushBubbleBreakEvent(matchedCellsForScore, resolution.eliminationSequence);
       resolution.collected = collectedCells;
       resolution.boardCleared = grid.getCells().length === 0;
       this._applyResolutionDropScore(resolution, "matchedDrop", {

@@ -20,6 +20,7 @@ var PATTERNS = [
 ];
 var PHASE_BALL_OFFSETS = [0, 2, 4, 5, 7, 8, 10, 11, 13, 15];
 var PHASE_PASS_RATES = [88, 82, 76, 69, 63, 57, 51, 44, 36, 29];
+var MIN_OCCUPIED_LAYOUT_ROWS = 8;
 var ADJACENCY_DISTANCE = BoardLayout.bubbleDiameter + 8;
 
 function assertFirstHundredLevelId(levelId) {
@@ -421,6 +422,13 @@ function buildShapeSlots(rows, patternName, requiredCount, levelId) {
   if (!Number.isInteger(requiredCount) || requiredCount < rows[0].length || requiredCount > allCells.length) {
     throw new Error("Invalid first-100 occupied cell count for level " + levelId + ": " + requiredCount);
   }
+  var requiredOccupiedRows = Math.min(MIN_OCCUPIED_LAYOUT_ROWS, rows.length);
+  if (requiredCount < rows[0].length + requiredOccupiedRows - 1) {
+    throw new Error(
+      "First-100 occupied cell count cannot cover " +
+      requiredOccupiedRows + " rows for level " + levelId + "."
+    );
+  }
 
   var selected = [];
   var selectedMap = {};
@@ -430,6 +438,26 @@ function buildShapeSlots(rows, patternName, requiredCount, levelId) {
     selected.push(cell);
     selectedMap[cell.row + ":" + cell.col] = true;
   });
+  for (var requiredRow = 1; requiredRow < requiredOccupiedRows; requiredRow += 1) {
+    var rowCandidates = allCells.filter(function (cell) {
+      var key = cell.row + ":" + cell.col;
+      if (cell.row !== requiredRow || selectedMap[key]) {
+        return false;
+      }
+      return selected.some(function (selectedCell) {
+        return areAdjacent(cell, selectedCell);
+      });
+    });
+    if (rowCandidates.length === 0) {
+      throw new Error("First-100 shape cannot reach required row " + requiredRow + " for level " + levelId + ".");
+    }
+    rowCandidates.sort(function (cellA, cellB) {
+      return scorePatternCell(patternName, cellA, rows, levelId) -
+        scorePatternCell(patternName, cellB, rows, levelId);
+    });
+    selected.push(rowCandidates[0]);
+    selectedMap[rowCandidates[0].row + ":" + rowCandidates[0].col] = true;
+  }
 
   while (selected.length < requiredCount) {
     var frontier = allCells.filter(function (cell) {

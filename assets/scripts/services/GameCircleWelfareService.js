@@ -1,6 +1,6 @@
 "use strict";
 
-var SUPPORTED_REWARD_IDS = ["coin", "stamina", "swap_ball", "rainbow_ball", "blast_ball", "barrier_hammer", "snow_removal"];
+var SUPPORTED_REWARD_IDS = ["coin", "stamina", "precise_aim", "swap_ball", "rainbow_ball", "blast_ball", "barrier_hammer", "snow_removal"];
 var SUPPORTED_METRIC_TYPES = ["join_time", "today_like_post_count", "today_publish_post_count"];
 
 function clone(data) {

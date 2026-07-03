@@ -1,1 +1,0 @@
-module.exports = [1,["25qFqTs1pFH6KjeEfwF0Fn"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"card_bg","rect":[2,3,159,217],"offset":[-1,0],"originalSize":[165,223],"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

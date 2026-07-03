@@ -15,6 +15,7 @@ function attachLevelRendererScenePopupMethods(LevelRenderer, deps) {
   var POPUP_CONTENT_CONTAINER_NAME = deps.POPUP_CONTENT_CONTAINER_NAME;
   var WIN_VIEW_PROXY_ROOT_NAME = "win_view_auto_proxy_root";
   var LOSE_VIEW_PROXY_ROOT_NAME = "lose_view_auto_proxy_root";
+  var ADD_BALL_TIPS_VIEW_PROXY_ROOT_NAME = "add_ball_tips_view_auto_proxy_root";
   var PAUSE_VIEW_PROXY_ROOT_NAME = "pause_view_auto_proxy_root";
   var POPUP_OPEN_ANIM_DURATION = deps.POPUP_OPEN_ANIM_DURATION;
   var POPUP_OPEN_ANIM_FROM_SCALE = deps.POPUP_OPEN_ANIM_FROM_SCALE;
@@ -30,14 +31,12 @@ function attachLevelRendererScenePopupMethods(LevelRenderer, deps) {
   var ensureLabel = deps.ensureLabel;
   var ensureOutline = deps.ensureOutline;
   var getOrCreateChild = deps.getOrCreateChild;
-  var buildLoseTargetEntries = deps.buildLoseTargetEntries;
   var buildWinTargetEntries = deps.buildWinTargetEntries;
   var buildWinCollectEntries = deps.buildWinCollectEntries;
   var buildResultTexts = deps.buildResultTexts;
   var resolveWinStarRating = deps.resolveWinStarRating;
   var buildAdRevivePlan = deps.buildAdRevivePlan;
   var resolveLoseRewardEntry = deps.resolveLoseRewardEntry;
-  var LOSE_NO_REVIVE_TARGET_LAYOUT_Y = -10;
   var LOSE_NO_REVIVE_ACTION_BUTTON_Y = -285;
   function ensureLoseOriginalY(node, description) {
     if (!node || !node.isValid) {
@@ -52,22 +51,18 @@ function attachLevelRendererScenePopupMethods(LevelRenderer, deps) {
   }
 
   function applyLoseReviveLayout(loseContent, canRevive) {
-    var targetLayoutNode = requireChildNode(loseContent, "target_layout", "LoseView");
     var retryButtonNode = requireChildNode(loseContent, "btn_retry", "LoseView");
     var backButtonNode = requireChildNode(loseContent, "btn_back", "LoseView");
 
-    ensureLoseOriginalY(targetLayoutNode, "LoseView/target_layout");
     ensureLoseOriginalY(retryButtonNode, "LoseView/btn_retry");
     ensureLoseOriginalY(backButtonNode, "LoseView/btn_back");
 
     if (canRevive) {
-      targetLayoutNode.setPosition(targetLayoutNode.x, targetLayoutNode._loseOriginalY);
       retryButtonNode.setPosition(retryButtonNode.x, retryButtonNode._loseOriginalY);
       backButtonNode.setPosition(backButtonNode.x, backButtonNode._loseOriginalY);
       return;
     }
 
-    targetLayoutNode.setPosition(targetLayoutNode.x, LOSE_NO_REVIVE_TARGET_LAYOUT_Y);
     retryButtonNode.setPosition(retryButtonNode.x, LOSE_NO_REVIVE_ACTION_BUTTON_Y);
     backButtonNode.setPosition(backButtonNode.x, LOSE_NO_REVIVE_ACTION_BUTTON_Y);
   }
@@ -97,76 +92,6 @@ function attachLevelRendererScenePopupMethods(LevelRenderer, deps) {
     } else {
       node.setPosition(node[propertyName], node.y);
     }
-  }
-
-  function resolveLoseTargetCardOffset(firstCardNode, secondCardNode) {
-    var firstHeight = firstCardNode && firstCardNode.isValid ? Number(firstCardNode.height) : 0;
-    var secondHeight = secondCardNode && secondCardNode.isValid ? Number(secondCardNode.height) : 0;
-    var cardHeight = Math.max(firstHeight, secondHeight);
-    if (!Number.isFinite(cardHeight) || cardHeight <= 0) {
-      throw new Error("LoseView target card height must be positive.");
-    }
-    return cardHeight / 2;
-  }
-
-  function renderLoseTargetCard(renderer, targetLayoutNode, cardName, entry) {
-    var cardNode = requireChildNode(targetLayoutNode, cardName, "LoseView/target_layout");
-    var iconNode = requireChildNode(cardNode, "target_ball", "LoseView/target_layout/" + cardName);
-    var numNode = requireChildNode(cardNode, "target_ball_num", "LoseView/target_layout/" + cardName);
-    var nameNode = requireChildNode(cardNode, "ball_name", "LoseView/target_layout/" + cardName);
-    var haichaNode = requireChildNode(cardNode, "haicha", "LoseView/target_layout/" + cardName);
-    var geNode = requireChildNode(cardNode, "ge", "LoseView/target_layout/" + cardName);
-
-    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
-      setNodeTreeActive(cardNode, false);
-      return cardNode;
-    }
-    if (typeof entry.iconCode !== "string" || !entry.iconCode) {
-      throw new Error("LoseView target entry requires iconCode.");
-    }
-    if (typeof entry.remainingText !== "string" || !entry.remainingText) {
-      throw new Error("LoseView target entry requires remainingText.");
-    }
-    if (typeof entry.displayName !== "string" || !entry.displayName) {
-      throw new Error("LoseView target entry requires displayName.");
-    }
-
-    var spritePath = BALL_RESOURCES[entry.iconCode];
-    if (!spritePath) {
-      throw new Error("LoseView unsupported target icon code: " + entry.iconCode);
-    }
-    var spriteFrame = renderer.spriteFrameCache[spritePath];
-    if (!spriteFrame) {
-      throw new Error("LoseView target sprite is not preloaded: " + spritePath);
-    }
-
-    cardNode.active = true;
-    iconNode.active = true;
-    numNode.active = true;
-    nameNode.active = true;
-    haichaNode.active = true;
-    geNode.active = true;
-    ensureSprite(iconNode, spriteFrame);
-    setRequiredLabelString(numNode, entry.remainingText, "LoseView/target_layout/" + cardName + "/target_ball_num");
-    setRequiredLabelString(nameNode, entry.displayName, "LoseView/target_layout/" + cardName + "/ball_name");
-    return cardNode;
-  }
-
-  function layoutLoseTargetCards(targetLayoutNode, entries) {
-    var target1Node = requireChildNode(targetLayoutNode, "target1", "LoseView/target_layout");
-    var target2Node = requireChildNode(targetLayoutNode, "target2", "LoseView/target_layout");
-    resetLoseOriginalPosition(target1Node, "_loseOriginalY");
-    resetLoseOriginalPosition(target2Node, "_loseOriginalY");
-
-    if (entries.length === 1) {
-      target1Node.setPosition(0, 0);
-      setNodeTreeActive(target2Node, false);
-      return;
-    }
-
-    var offsetY = resolveLoseTargetCardOffset(target1Node, target2Node);
-    target1Node.setPosition(0, offsetY);
-    target2Node.setPosition(0, -offsetY);
   }
 
   function getLoseTopInfoNode(topInfoNode, childName) {
@@ -199,17 +124,6 @@ function attachLevelRendererScenePopupMethods(LevelRenderer, deps) {
       throw new Error("LoseView top_info requires cc.Layout.updateLayout.");
     }
     layout.updateLayout();
-  }
-
-  function renderLoseTargets(renderer, loseContent, entries, runtimeSnapshot) {
-    if (!Array.isArray(entries) || entries.length <= 0 || entries.length > 2) {
-      throw new Error("LoseView target entries must contain one or two items.");
-    }
-    var targetLayoutNode = requireChildNode(loseContent, "target_layout", "LoseView");
-    renderLoseTargetCard(renderer, targetLayoutNode, "target1", entries[0]);
-    renderLoseTargetCard(renderer, targetLayoutNode, "target2", entries[1]);
-    layoutLoseTargetCards(targetLayoutNode, entries);
-    renderLoseTopInfo(requireChildNode(loseContent, "top_info", "LoseView"), runtimeSnapshot);
   }
 
   function renderLoseReviveGain(renderer, loseContent, levelConfig, runtimeSnapshot, canRevive) {
@@ -276,6 +190,28 @@ function attachLevelRendererScenePopupMethods(LevelRenderer, deps) {
     setRequiredLabelString(labelNode, String(cost) + "复活", "LoseView/btn_coin/label");
     setRequiredLabelString(numNode, String(coinCount), "LoseView/btn_coin/coin/num");
     renderer._bindLoseButton(coinButtonNode, "coin");
+  }
+
+  function renderAddBallTipsCoinButton(renderer, panel) {
+    var coinButtonNode = requireChildNode(panel, "coin_btn", "AddBallTipsView/Panel");
+    if (!renderer.addBallTipsCoinPresentation || typeof renderer.addBallTipsCoinPresentation !== "object") {
+      throw new Error("AddBallTipsView requires coin presentation.");
+    }
+    var cost = Math.floor(Number(renderer.addBallTipsCoinPresentation.cost));
+    if (!Number.isInteger(cost) || cost <= 0) {
+      throw new Error("AddBallTipsView coin cost must be a positive integer.");
+    }
+    if (typeof renderer.addBallTipsCoinPresentation.getCoinCount !== "function") {
+      throw new Error("AddBallTipsView coin presentation requires getCoinCount.");
+    }
+    var coinCount = Math.floor(Number(renderer.addBallTipsCoinPresentation.getCoinCount()));
+    if (!Number.isInteger(coinCount) || coinCount < 0) {
+      throw new Error("AddBallTipsView coin count must be a non-negative integer.");
+    }
+
+    var labelNode = requireChildNode(coinButtonNode, "lab", "AddBallTipsView/Panel/coin_btn");
+    setRequiredLabelString(labelNode, String(cost), "AddBallTipsView/Panel/coin_btn/lab");
+    renderer._bindAddBallTipsButton(coinButtonNode, "coin");
   }
 
 LevelRenderer.prototype._setWinValueText = function (valueNode, text) {
@@ -861,6 +797,29 @@ LevelRenderer.prototype._bindLoseButton = function (buttonNode, action) {
   }, this);
 };
 
+LevelRenderer.prototype._bindAddBallTipsButton = function (buttonNode, action) {
+  if (!buttonNode || !buttonNode.isValid) {
+    throw new Error("AddBallTipsView button is required for action: " + action);
+  }
+  if (!buttonNode.getComponent(cc.Button)) {
+    throw new Error("AddBallTipsView button requires cc.Button: " + buttonNode.name);
+  }
+  if (buttonNode.__addBallTipsBoundAction === action) {
+    return;
+  }
+  if (buttonNode.__addBallTipsBoundAction) {
+    throw new Error("AddBallTipsView button already has a different action: " + buttonNode.name);
+  }
+
+  buttonNode.__addBallTipsBoundAction = action;
+  buttonNode.on(cc.Node.EventType.TOUCH_END, function (event) {
+    if (event) {
+      event.stopPropagation();
+    }
+    this._invokeAddBallTipsAction(action);
+  }, this);
+};
+
 LevelRenderer.prototype._bindPauseButton = function (buttonNode, action) {
   if (!buttonNode || !buttonNode.isValid) {
     throw new Error("PauseView button is required for action: " + action);
@@ -934,11 +893,16 @@ LevelRenderer.prototype.showPropDescriptionView = function (levelConfig) {
     throw new Error("PropDescriptionView requires current levelConfig.");
   }
   var existing = this.layers.modal.getChildByName("PropDescriptionView");
-  if (existing && existing.active) {
+  if (existing && existing.isValid && existing.active) {
     throw new Error("PropDescriptionView is already active.");
   }
+  if (existing && existing.isValid) {
+    existing.removeFromParent(false);
+    existing.destroy();
+    this.propDescriptionViewController = null;
+  }
 
-  var viewNode = existing || this._instantiateOrCreate(
+  var viewNode = this._instantiateOrCreate(
     PREFAB_PATHS.propDescriptionView,
     this.layers.modal,
     "PropDescriptionView"
@@ -964,10 +928,17 @@ LevelRenderer.prototype.showPropDescriptionView = function (levelConfig) {
       }.bind(this)
     });
   }
-  this.propDescriptionViewController.render({
-    levelConfig: levelConfig,
-    spriteFrameCache: this.spriteFrameCache
-  });
+  try {
+    this.propDescriptionViewController.render({
+      levelConfig: levelConfig,
+      spriteFrameCache: this.spriteFrameCache
+    });
+  } catch (error) {
+    viewNode.removeFromParent(false);
+    viewNode.destroy();
+    this.propDescriptionViewController = null;
+    throw error;
+  }
   this._playPopupContentOpenAnimation(popupContent);
 };
 
@@ -979,7 +950,9 @@ LevelRenderer.prototype.hidePropDescriptionView = function () {
   if (!viewNode || !viewNode.isValid || !viewNode.active) {
     throw new Error("Cannot hide an inactive PropDescriptionView.");
   }
-  viewNode.active = false;
+  viewNode.removeFromParent(false);
+  viewNode.destroy();
+  this.propDescriptionViewController = null;
 };
 
 LevelRenderer.prototype._renderWinView = function (runtimeSnapshot) {
@@ -1065,6 +1038,62 @@ LevelRenderer.prototype._renderWinView = function (runtimeSnapshot) {
   }
 };
 
+LevelRenderer.prototype._renderAddBallTipsView = function (runtimeSnapshot) {
+  var existing = this.layers.modal.getChildByName("AddBallTipsView");
+  var wasActive = !!(existing && existing.active);
+  if (!runtimeSnapshot || runtimeSnapshot.state !== "out_of_shots_add_ball_prompt") {
+    if (existing) {
+      existing.active = false;
+    }
+    this.lastAddBallTipsViewRenderKey = "";
+    return;
+  }
+
+  var renderKey = [
+    runtimeSnapshot.state,
+    Math.max(0, Math.floor(Number(runtimeSnapshot.remainingShots))),
+    this.addBallTipsCoinPresentation ? Math.floor(Number(this.addBallTipsCoinPresentation.cost)) : 0
+  ].join("|");
+  if (
+    existing &&
+    existing.active &&
+    this.lastAddBallTipsViewRenderKey === renderKey &&
+    SpriteProxyLayerHelper.hasAutoProxyTree(existing, ADD_BALL_TIPS_VIEW_PROXY_ROOT_NAME)
+  ) {
+    return;
+  }
+
+  var tipsView = existing;
+  if (!tipsView) {
+    tipsView = this._instantiateOrCreate(PREFAB_PATHS.addBallTipsView, this.layers.modal, "AddBallTipsView");
+  }
+  if (!tipsView) {
+    throw new Error("AddBallTipsView prefab could not be instantiated.");
+  }
+
+  tipsView.active = true;
+  tipsView.setPosition(0, 0);
+  SpriteProxyLayerHelper.destroyProxyRoot(tipsView, ADD_BALL_TIPS_VIEW_PROXY_ROOT_NAME);
+  this._ensurePopupMaskVisible(tipsView, 200);
+  var content = this._ensurePopupContentContainer(tipsView);
+  var panel = requireChildNode(content, "Panel", "AddBallTipsView content");
+  if (!wasActive) {
+    this._playPopupContentOpenAnimation(content);
+  }
+
+  var adButtonNode = requireChildNode(panel, "ad_btn", "AddBallTipsView/Panel");
+  var adLabelNode = requireChildNode(adButtonNode, "lab", "AddBallTipsView/Panel/ad_btn");
+  setRequiredLabelString(adLabelNode, "10", "AddBallTipsView/Panel/ad_btn/lab");
+  this._bindAddBallTipsButton(requireChildNode(panel, "btn_close", "AddBallTipsView/Panel"), "close");
+  this._bindAddBallTipsButton(adButtonNode, "ad");
+  renderAddBallTipsCoinButton(this, panel);
+  SpriteProxyLayerHelper.rebuildAutoProxyTree({
+    rootNode: tipsView,
+    proxyRootName: ADD_BALL_TIPS_VIEW_PROXY_ROOT_NAME
+  });
+  this.lastAddBallTipsViewRenderKey = renderKey;
+};
+
 LevelRenderer.prototype._renderLoseView = function (runtimeSnapshot) {
   var isLoseState = !!(
     runtimeSnapshot &&
@@ -1100,11 +1129,7 @@ LevelRenderer.prototype._renderLoseView = function (runtimeSnapshot) {
     this._playPopupContentOpenAnimation(loseContent);
   }
 
-  if (typeof buildLoseTargetEntries !== "function") {
-    throw new Error("LoseView requires buildLoseTargetEntries.");
-  }
-  var targetEntries = buildLoseTargetEntries(this.currentLevelConfig, runtimeSnapshot);
-  renderLoseTargets(this, loseContent, targetEntries, runtimeSnapshot);
+  renderLoseTopInfo(requireChildNode(loseContent, "top_info", "LoseView"), runtimeSnapshot);
 
   var loseRewardEntry = typeof resolveLoseRewardEntry === "function"
     ? resolveLoseRewardEntry(runtimeSnapshot.state)

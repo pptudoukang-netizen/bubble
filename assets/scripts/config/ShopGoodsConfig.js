@@ -20,6 +20,22 @@ module.exports = {
       tags: ["recommended"]
     },
     {
+      skuId: "sku_precise_aim_01",
+      itemId: "precise_aim",
+      itemCount: 1,
+      displayName: "精确瞄准",
+      functionText: "瞄准时显示完整反弹路径",
+      iconPath: "image/props/aim",
+      price: {
+        currency: "coin",
+        amount: 500
+      },
+      dailyLimit: 0,
+      enabled: true,
+      sortOrder: 8,
+      tags: ["recommended"]
+    },
+    {
       skuId: "sku_swap_ball_01",
       itemId: "swap_ball",
       itemCount: 1,

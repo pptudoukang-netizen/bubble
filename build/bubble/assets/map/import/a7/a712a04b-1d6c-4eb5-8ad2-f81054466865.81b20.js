@@ -1,0 +1,1 @@
+module.exports = [1,["1e8496fee"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"guangzhu","rect":[1270,259,67,72],"offset":[-0.5,0],"originalSize":[72,72],"rotated":1,"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

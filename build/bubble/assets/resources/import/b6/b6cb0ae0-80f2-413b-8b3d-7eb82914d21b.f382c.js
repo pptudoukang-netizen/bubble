@@ -1,1 +1,0 @@
-module.exports = [1,0,0,[["cc.AudioClip",["_name","_native","duration"],0]],[[0,0,1,2,4]],[[0,"ding5",".mp3",1.392],-1],0,0,[],[],[]];

@@ -407,6 +407,24 @@ function collectAutoProxySprites(rootNode, options, output) {
   });
 }
 
+function isDescendantOfButtonControl(node) {
+  assertValidNode(node, "SpriteProxyLayerHelper button control ancestor node");
+  var cursor = node.parent;
+  while (cursor && cursor.isValid) {
+    var parentName = String(cursor.name || "").toLowerCase();
+    if (
+      getComponentIfAvailable(cursor, cc.Button) ||
+      parentName.indexOf("btn") >= 0 ||
+      parentName.indexOf("button") >= 0 ||
+      parentName.indexOf("toggle") >= 0
+    ) {
+      return true;
+    }
+    cursor = cursor.parent;
+  }
+  return false;
+}
+
 function classifyAutoProxyLayer(node) {
   assertValidNode(node, "SpriteProxyLayerHelper auto proxy layer node");
   var name = String(node.name || "").toLowerCase();
@@ -419,6 +437,9 @@ function classifyAutoProxyLayer(node) {
   if (getComponentIfAvailable(node, cc.Button) || name.indexOf("btn") >= 0 || name.indexOf("button") >= 0 || name.indexOf("toggle") >= 0) {
     return "control";
   }
+  if (isDescendantOfButtonControl(node)) {
+    return "control";
+  }
   if (
     name.indexOf("icon") >= 0 ||
     name.indexOf("star") >= 0 ||
@@ -426,6 +447,7 @@ function classifyAutoProxyLayer(node) {
     name.indexOf("award") >= 0 ||
     name.indexOf("paopao") >= 0 ||
     name.indexOf("gou") >= 0 ||
+    name === "coin" ||
     name === "select" ||
     name === "checkmark"
   ) {

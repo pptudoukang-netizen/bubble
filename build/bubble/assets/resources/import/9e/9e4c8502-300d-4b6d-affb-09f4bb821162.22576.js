@@ -1,1 +1,0 @@
-module.exports = [1,["a0Dnip9ntLl4mLB2zKg5Ly"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"yellow_jar","rect":[0,0,237,230],"offset":[0,0],"originalSize":[237,230],"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

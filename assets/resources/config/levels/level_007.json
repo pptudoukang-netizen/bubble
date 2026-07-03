@@ -93,14 +93,14 @@
             }
         ],
         "layout": [
-            "GGGGGRRRRR",
-            "....BBBB.",
-            "...YYYB...",
-            ".YYGG....",
-            ".BBGG.....",
-            ".BBYY....",
-            "...RRYY...",
-            ".....RR.."
+            "YYYGGGGYYY",
+            "....RGRY.",
+            "...GRGR...",
+            ".YBGR....",
+            ".YBGR.....",
+            "..BBR....",
+            "...BBBR...",
+            "....BBR.."
         ],
         "designNotes": "Generated from LEVEL_CONFIG_TABLE_1_1000.csv. Chapter `cluster_fundamentals` uses color_cluster, support_drop with a diagonal_wave board silhouette.",
         "difficultyScore": 41,

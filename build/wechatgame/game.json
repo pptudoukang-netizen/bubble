@@ -24,6 +24,10 @@
     },
     "subpackages": [
         {
+            "name": "animation",
+            "root": "subpackages/animation"
+        },
+        {
             "name": "game",
             "root": "subpackages/game"
         },

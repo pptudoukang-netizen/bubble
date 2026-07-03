@@ -1,0 +1,1 @@
+module.exports = [1,["1c838c701"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"kard","rect":[730,209,176,200],"offset":[0,0],"originalSize":[176,200],"rotated":1,"capInsets":[72,74,78,78]}],[0],0,[0],[0],[0]];

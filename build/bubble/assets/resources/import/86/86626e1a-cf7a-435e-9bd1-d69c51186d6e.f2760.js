@@ -1,0 +1,1 @@
+module.exports = [1,["7bsK6zfFtLWoSXWqR391kt"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"honeycomb","rect":[13,1,206,230],"offset":[0.5,-0.5],"originalSize":[231,231],"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

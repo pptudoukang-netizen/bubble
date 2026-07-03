@@ -28,7 +28,7 @@ module.exports = {
       resetMode: "once",
       sortOrder: 10,
       rewardItems: [
-        { id: "coin", count: 120 }
+        { id: "coin", count: 1000 }
       ]
     },
     {
@@ -40,7 +40,7 @@ module.exports = {
       resetMode: "daily",
       sortOrder: 20,
       rewardItems: [
-        { id: "coin", count: 100 }
+        { id: "coin", count: 500 }
       ]
     },
     {
@@ -52,7 +52,7 @@ module.exports = {
       resetMode: "daily",
       sortOrder: 30,
       rewardItems: [
-        { id: "swap_ball", count: 1 }
+        { id: "coin", count: 2000 }
       ]
     }
   ]

@@ -1,0 +1,1 @@
+module.exports = [1,["1f71afe72"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"tips_bg","rect":[3,3,580,79],"offset":[0,-1],"originalSize":[600,83],"rotated":1,"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

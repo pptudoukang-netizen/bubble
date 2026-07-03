@@ -1,0 +1,1 @@
+module.exports = [1,["b5UUafvaNEuJS+y1OqdzUY","5c+pnq6zJB/Lg8P4i/p397","6795jOR/5PxpqvWFAPEvF7","27QKNVsCBJUI0QnGFkGYql"],["unbelievable","excellent","great","good"],[["cc.SpriteAtlas",["_spriteFrames"],3,11]],[[0,0,1]],[[0,[{},"unbelievable",6,0,"excellent",6,1,"great",6,2,"good",6,3]]],0,0,[0,0,0,0],[0,1,2,3],[0,1,2,3]];

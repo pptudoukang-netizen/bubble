@@ -1,0 +1,1 @@
+module.exports = [1,["1e8496fee"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"island4","rect":[1022,681,437,375],"offset":[0,0],"originalSize":[437,375],"rotated":1,"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

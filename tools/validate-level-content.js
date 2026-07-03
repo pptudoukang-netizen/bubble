@@ -34,6 +34,8 @@ var ALLOWED_ENTITY_TYPES = {
 var ALLOWED_CLEAR_REWARD_ITEM_IDS = ["coin", "stamina"];
 var AD_RUN_POWERUP_TYPES = ["three_line_elimination", "plus_three_balls"];
 var MIN_INITIAL_DROP_SPACE_ROWS = 8;
+var MIN_LAYOUT_ROWS = 8;
+var MIN_OCCUPIED_LAYOUT_ROWS = 8;
 var MAX_SHOT_LIMIT = 40;
 var CLEAR_REWARD_START_LEVEL_ID = 1;
 var TOP_BOARD_ROW_INDEX = 0;
@@ -53,6 +55,29 @@ function getLevelNumber(fileName) {
 
 function getExpectedRowColumns(rowIndex) {
   return BoardLayout.getRowColumnCount(rowIndex, BoardLayout.defaultColumns);
+}
+
+function countOccupiedLayoutRows(layout, specialEntities) {
+  var occupiedRows = {};
+  layout.forEach(function (rowString, rowIndex) {
+    if (typeof rowString !== "string") {
+      return;
+    }
+    for (var colIndex = 0; colIndex < rowString.length; colIndex += 1) {
+      if (rowString.charAt(colIndex) !== ".") {
+        occupiedRows[rowIndex] = true;
+        break;
+      }
+    }
+  });
+  if (Array.isArray(specialEntities)) {
+    specialEntities.forEach(function (entity) {
+      if (entity && Number.isInteger(entity.row) && entity.row >= 0 && entity.row < layout.length) {
+        occupiedRows[entity.row] = true;
+      }
+    });
+  }
+  return Object.keys(occupiedRows).length;
 }
 
 function hasUniqueItems(items) {
@@ -538,8 +563,8 @@ function validateLevelData(data, expectedLevelId) {
   if (!Array.isArray(level.layout) || !level.layout.length) {
     issues.push("layout must be non-empty array");
   } else {
-    if (level.layout.length < 8) {
-      issues.push("layout must contain at least 8 rows");
+    if (level.layout.length < MIN_LAYOUT_ROWS) {
+      issues.push("layout must contain at least " + MIN_LAYOUT_ROWS + " rows");
     }
     var normalizedLayoutRows = [];
     level.layout.forEach(function (rowString, rowIndex) {
@@ -583,6 +608,13 @@ function validateLevelData(data, expectedLevelId) {
     }
 
     validateSpecialEntities(level, normalizedLayoutRows, issues);
+    var occupiedRowCount = countOccupiedLayoutRows(normalizedLayoutRows, level.specialEntities);
+    if (occupiedRowCount < MIN_OCCUPIED_LAYOUT_ROWS) {
+      issues.push(
+        "layout must occupy at least " + MIN_OCCUPIED_LAYOUT_ROWS +
+        " rows, got " + occupiedRowCount
+      );
+    }
     if (Array.isArray(level.specialEntities)) {
       try {
         LevelBoardSupportValidator.findUnsupportedInitialCells({
@@ -605,12 +637,12 @@ function validateLevelData(data, expectedLevelId) {
       var requiredGroupedRatio = expectedLevelId <= 40 ? 0.7 : 0.55;
       if (clusteredMetrics.groupedRatio < requiredGroupedRatio) {
         issues.push(
-          "first-100 grouped color coverage must be >= " +
+          "clustered color coverage must be >= " +
           Math.round(requiredGroupedRatio * 100) + "%"
         );
       }
       if (clusteredMetrics.isolatedRatio > 0.1) {
-        issues.push("first-100 isolated color ratio must be <= 10%");
+        issues.push("clustered isolated color ratio must be <= 10%");
       }
     } catch (error) {
       issues.push(error.message);
