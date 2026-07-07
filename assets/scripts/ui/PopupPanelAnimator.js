@@ -57,6 +57,11 @@ function play(panelOwnerNode, options) {
   return panelNode;
 }
 
+function getOpenDurationMilliseconds() {
+  return (OVERSHOOT_DURATION + SETTLE_DURATION) * 1000;
+}
+
 module.exports = {
+  getOpenDurationMilliseconds: getOpenDurationMilliseconds,
   play: play
 };

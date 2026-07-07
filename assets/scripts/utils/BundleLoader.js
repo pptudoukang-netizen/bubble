@@ -26,6 +26,7 @@ var UI_BUNDLE_PREFABS = {
   LoseView: true,
   PauseView: true,
   PropDescriptionView: true,
+  PropTipsView: true,
   PowerTipsView: true,
   RankingItem: true,
   RankingView: true,
@@ -41,6 +42,45 @@ var resourcesBundlePromise = null;
 var namedBundleCache = {};
 var namedBundlePromises = {};
 var namedSubpackagePromises = {};
+
+function normalizeLoadOptions(options, description) {
+  if (options === undefined) {
+    return {};
+  }
+  if (!options || typeof options !== "object" || Array.isArray(options)) {
+    throw new Error(description + " options must be an object.");
+  }
+  if (options.onProgress !== undefined && typeof options.onProgress !== "function") {
+    throw new Error(description + " onProgress must be a function.");
+  }
+  return options;
+}
+
+function reportProgress(options, bundleName, phase, progress) {
+  var safeOptions = normalizeLoadOptions(options, "Bundle load progress");
+  if (typeof safeOptions.onProgress === "function") {
+    var progressValue = Number(progress);
+    if (!Number.isFinite(progressValue) || progressValue < 0 || progressValue > 1) {
+      throw new Error("Bundle load progress must be in [0, 1]: " + bundleName + "/" + phase);
+    }
+    safeOptions.onProgress({
+      bundleName: bundleName,
+      phase: phase,
+      progress: progressValue
+    });
+  }
+}
+
+function normalizeSubpackageProgress(progressEvent, bundleName) {
+  if (!progressEvent || typeof progressEvent !== "object" || Array.isArray(progressEvent)) {
+    return null;
+  }
+  var percent = Number(progressEvent.progress);
+  if (!Number.isFinite(percent) || percent < 0) {
+    return null;
+  }
+  return Math.min(1, percent / 100);
+}
 
 function hasAssetManager() {
   return !!(cc && cc.assetManager && typeof cc.assetManager.loadBundle === "function");
@@ -135,9 +175,12 @@ function runBundleLoadDir(bundle, bundleName, path, type, callback) {
   bundle.loadDir(path, wrappedCallback);
 }
 
-function ensureResourcesBundleLoaded() {
+function ensureResourcesBundleLoaded(options) {
+  var loadOptions = normalizeLoadOptions(options, "resources bundle load");
   if (resourcesBundle) {
     LevelSelectMemoryDiagnostics.increment("bundle.cache:resources");
+    reportProgress(loadOptions, RESOURCES_BUNDLE_NAME, "subpackage", 1);
+    reportProgress(loadOptions, RESOURCES_BUNDLE_NAME, "bundle", 1);
     return Promise.resolve(resourcesBundle);
   }
 
@@ -151,6 +194,8 @@ function ensureResourcesBundleLoaded() {
   if (existingBundle && typeof existingBundle.load === "function") {
     resourcesBundle = existingBundle;
     LevelSelectMemoryDiagnostics.increment("bundle.existing:resources");
+    reportProgress(loadOptions, RESOURCES_BUNDLE_NAME, "subpackage", 1);
+    reportProgress(loadOptions, RESOURCES_BUNDLE_NAME, "bundle", 1);
     return Promise.resolve(resourcesBundle);
   }
 
@@ -160,18 +205,31 @@ function ensureResourcesBundleLoaded() {
   }
 
   LevelSelectMemoryDiagnostics.increment("bundle.loadBundle:resources");
-  resourcesBundlePromise = new Promise(function (resolve, reject) {
-    cc.assetManager.loadBundle(RESOURCES_BUNDLE_NAME, function (error, bundle) {
-      if (error) {
-        resourcesBundlePromise = null;
-        reject(toError(error, "Load resources bundle failed."));
-        return;
-      }
+  resourcesBundlePromise = ensureWeChatSubpackageLoaded(RESOURCES_BUNDLE_NAME, loadOptions).then(function () {
+    reportProgress(loadOptions, RESOURCES_BUNDLE_NAME, "bundle", 0);
+    return new Promise(function (resolve, reject) {
+      cc.assetManager.loadBundle(RESOURCES_BUNDLE_NAME, function (error, bundle) {
+        if (error) {
+          resourcesBundlePromise = null;
+          reject(toError(error, "Load resources bundle failed."));
+          return;
+        }
 
-      resourcesBundle = bundle || null;
-      resourcesBundlePromise = null;
-      resolve(resourcesBundle);
+        if (!bundle || typeof bundle.load !== "function") {
+          resourcesBundlePromise = null;
+          reject(new Error("Loaded resources bundle is invalid."));
+          return;
+        }
+
+        resourcesBundle = bundle;
+        resourcesBundlePromise = null;
+        reportProgress(loadOptions, RESOURCES_BUNDLE_NAME, "bundle", 1);
+        resolve(resourcesBundle);
+      });
     });
+  }).catch(function (error) {
+    resourcesBundlePromise = null;
+    throw error;
   });
 
   return resourcesBundlePromise;
@@ -185,8 +243,10 @@ function isWeChatGameRuntime() {
   );
 }
 
-function ensureWeChatSubpackageLoaded(bundleName) {
+function ensureWeChatSubpackageLoaded(bundleName, options) {
+  var loadOptions = normalizeLoadOptions(options, "WeChat subpackage load");
   if (!isWeChatGameRuntime()) {
+    reportProgress(loadOptions, bundleName, "subpackage", 1);
     return Promise.resolve();
   }
 
@@ -195,9 +255,11 @@ function ensureWeChatSubpackageLoaded(bundleName) {
   }
 
   namedSubpackagePromises[bundleName] = new Promise(function (resolve, reject) {
-    wx.loadSubpackage({
+    reportProgress(loadOptions, bundleName, "subpackage", 0);
+    var loadTask = wx.loadSubpackage({
       name: bundleName,
       success: function () {
+        reportProgress(loadOptions, bundleName, "subpackage", 1);
         resolve();
       },
       fail: function (error) {
@@ -205,22 +267,33 @@ function ensureWeChatSubpackageLoaded(bundleName) {
         reject(toError(error, "Load WeChat subpackage failed: " + bundleName));
       }
     });
+    if (loadTask && typeof loadTask.onProgressUpdate === "function") {
+      loadTask.onProgressUpdate(function (progressEvent) {
+        var normalizedProgress = normalizeSubpackageProgress(progressEvent, bundleName);
+        if (normalizedProgress !== null) {
+          reportProgress(loadOptions, bundleName, "subpackage", normalizedProgress);
+        }
+      });
+    }
   });
 
   return namedSubpackagePromises[bundleName];
 }
 
-function ensureNamedBundleLoaded(bundleName) {
+function ensureNamedBundleLoaded(bundleName, options) {
+  var loadOptions = normalizeLoadOptions(options, "named bundle load");
   if (!bundleName || typeof bundleName !== "string") {
     return Promise.reject(new Error("Invalid bundle name: " + bundleName));
   }
 
   if (bundleName === RESOURCES_BUNDLE_NAME) {
-    return ensureResourcesBundleLoaded();
+    return ensureResourcesBundleLoaded(loadOptions);
   }
 
   if (namedBundleCache[bundleName]) {
     LevelSelectMemoryDiagnostics.increment("bundle.cache:" + bundleName);
+    reportProgress(loadOptions, bundleName, "subpackage", 1);
+    reportProgress(loadOptions, bundleName, "bundle", 1);
     return Promise.resolve(namedBundleCache[bundleName]);
   }
 
@@ -234,7 +307,8 @@ function ensureNamedBundleLoaded(bundleName) {
   }
 
   LevelSelectMemoryDiagnostics.increment("bundle.loadBundle:" + bundleName);
-  namedBundlePromises[bundleName] = ensureWeChatSubpackageLoaded(bundleName).then(function () {
+  namedBundlePromises[bundleName] = ensureWeChatSubpackageLoaded(bundleName, loadOptions).then(function () {
+    reportProgress(loadOptions, bundleName, "bundle", 0);
     return new Promise(function (resolve, reject) {
       cc.assetManager.loadBundle(bundleName, function (error, bundle) {
         namedBundlePromises[bundleName] = null;
@@ -249,6 +323,7 @@ function ensureNamedBundleLoaded(bundleName) {
         }
 
         namedBundleCache[bundleName] = bundle;
+        reportProgress(loadOptions, bundleName, "bundle", 1);
         resolve(bundle);
       });
     });

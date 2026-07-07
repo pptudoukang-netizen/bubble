@@ -120,27 +120,29 @@ async function submitRecord(collection, openid, event) {
   });
   var now = Date.now();
   var recordId = buildLeaderboardRecordId(openid);
+  var record = {
+    openid: openid,
+    playerId: buildPlayerId(openid),
+    nickname: submission.profile.nickname,
+    avatarUrl: submission.profile.avatarUrl,
+    score: submission.score,
+    completedLevels: submission.completedLevels,
+    updatedAt: now
+  };
   var result = await collection.doc(recordId).set({
-    data: {
-      openid: openid,
-      playerId: buildPlayerId(openid),
-      nickname: submission.profile.nickname,
-      avatarUrl: submission.profile.avatarUrl,
-      score: submission.score,
-      completedLevels: submission.completedLevels,
-      updatedAt: now
-    }
+    data: record
   });
   if (!result || typeof result !== "object" || Array.isArray(result)) {
     throw new Error("Save world leaderboard record failed.");
   }
   return {
     updatedAt: now,
-    limit: submission.limit
+    limit: submission.limit,
+    record: record
   };
 }
 
-async function listRecords(collection, openid, limit) {
+async function listRecords(collection, openid, limit, submittedRecord) {
   var result = await collection
     .orderBy("score", "desc")
     .orderBy("completedLevels", "desc")
@@ -150,7 +152,18 @@ async function listRecords(collection, openid, limit) {
   if (!result || !Array.isArray(result.data)) {
     throw new Error("Get world leaderboard query result is invalid.");
   }
-  var sortedRecords = result.data.slice().sort(compareRecords);
+  var recordsByPlayerId = {};
+  result.data.forEach(function (record) {
+    var normalizedRecord = requireObject(record, "worldLeaderboard query record");
+    recordsByPlayerId[requireNonEmptyString(normalizedRecord.playerId, "worldLeaderboard query playerId")] = normalizedRecord;
+  });
+  if (submittedRecord) {
+    var safeSubmittedRecord = requireObject(submittedRecord, "worldLeaderboard submitted record");
+    recordsByPlayerId[requireNonEmptyString(safeSubmittedRecord.playerId, "worldLeaderboard submitted playerId")] = safeSubmittedRecord;
+  }
+  var sortedRecords = Object.keys(recordsByPlayerId).map(function (playerId) {
+    return recordsByPlayerId[playerId];
+  }).sort(compareRecords).slice(0, limit);
   return sortedRecords.map(function (record, index) {
     return normalizeRecord(record, openid, index + 1);
   });
@@ -174,7 +187,7 @@ exports.main = async function (event) {
 
   if (action === "submitAndList") {
     var submissionResult = await submitRecord(collection, openid, event);
-    var entries = await listRecords(collection, openid, submissionResult.limit);
+    var entries = await listRecords(collection, openid, submissionResult.limit, submissionResult.record);
     return {
       accepted: true,
       updatedAt: submissionResult.updatedAt,

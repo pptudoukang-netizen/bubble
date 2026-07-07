@@ -195,7 +195,8 @@ function isAnyIntroduceTipsViewActive(host) {
     host._geniusTipsViewActive === true ||
     host._geniusTipsViewOpening === true ||
     host._sartTipsViewActive === true ||
-    host._sartTipsViewOpening === true
+    host._sartTipsViewOpening === true ||
+    host._activeSkillPowerupGuideType
   );
 }
 
@@ -305,6 +306,9 @@ module.exports = {
     if (snapshot.state !== "running") {
       return false;
     }
+    if (!Array.isArray(this._specialIntroduceQueue)) {
+      throw new Error("Special introduce queue must be an array.");
+    }
     var store = requireStore(this);
     var keys = collectIntroduceKeys(snapshot);
     var appended = false;
@@ -319,7 +323,10 @@ module.exports = {
         appended = true;
       }
     }, this);
-    if (appended === true) {
+    if (
+      (appended === true || this._specialIntroduceQueue.length > 0) &&
+      isAnyIntroduceTipsViewActive(this) !== true
+    ) {
       this._showNextSpecialIntroduceView().catch(function (error) {
         Logger.error("Show IntroduceView failed", error && error.stack ? error.stack : String(error));
         throw error;

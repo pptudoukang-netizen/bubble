@@ -61,13 +61,21 @@ function assertNoDuplicateCellCoordinates(cells) {
 }
 
 function createSpecialEntityRecord(entity, row, col) {
+  var lockedColor = null;
+  if (entity.entityCategory === "locked_ball" && entity.entityType === "locked") {
+    if (typeof entity.lockedColor !== "string" || !entity.lockedColor) {
+      throw new Error("Locked special entity requires lockedColor.");
+    }
+    lockedColor = entity.lockedColor;
+  }
+
   return {
     id: entity.id || ("special_" + row + "_" + col),
     entityCategory: entity.entityCategory,
     entityType: entity.entityType,
     innerColor: entity.innerColor || null,
     splitColor: entity.splitColor || null,
-    lockedColor: entity.lockedColor || null,
+    lockedColor: lockedColor,
     blastRadius: Number.isInteger(entity.blastRadius) ? entity.blastRadius : null,
     row: row,
     col: col
@@ -186,6 +194,14 @@ BubbleGrid.prototype._createNormalCell = function (row, col, colorCode) {
 };
 
 BubbleGrid.prototype._createSpecialCell = function (entity, row, col) {
+  var lockedColor = null;
+  if (entity.entityCategory === "locked_ball" && entity.entityType === "locked") {
+    if (typeof entity.lockedColor !== "string" || !entity.lockedColor) {
+      throw new Error("Locked special cell requires lockedColor.");
+    }
+    lockedColor = entity.lockedColor;
+  }
+
   return {
     row: row,
     col: col,
@@ -195,7 +211,7 @@ BubbleGrid.prototype._createSpecialCell = function (entity, row, col) {
     entityType: entity.entityType,
     innerColor: entity.innerColor || null,
     splitColor: entity.splitColor || null,
-    lockedColor: entity.lockedColor || null,
+    lockedColor: lockedColor,
     blastRadius: Number.isInteger(entity.blastRadius) ? entity.blastRadius : null,
     isSpecial: true
   };

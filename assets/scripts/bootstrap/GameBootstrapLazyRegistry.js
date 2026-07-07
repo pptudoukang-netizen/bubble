@@ -214,6 +214,7 @@ module.exports = {
     "_getAvailableSelectedPowerupItems",
     "_getSelectedPowerupLoadouts",
     "_applySelectedPowerupsToRuntime",
+    "_applyPendingStartGamePreciseAimActivation",
     "_applyGameplayInventoryQuickBuy",
     "_consumePersistentInventoryItemForPowerup",
     "_ensureInventoryViewPrefab",

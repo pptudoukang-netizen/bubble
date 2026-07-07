@@ -341,6 +341,23 @@ function createGameManagerShotResolutionMethods(deps) {
     });
   }
 
+  function buildTriggeredSplitterIdsFromPendingSpawns(pendingSplitterSpawns) {
+    if (!Array.isArray(pendingSplitterSpawns)) {
+      throw new Error("Molotov splitter dedup requires pendingSplitterSpawns array.");
+    }
+    var triggeredSplitterIds = {};
+    pendingSplitterSpawns.forEach(function (pending) {
+      if (!pending || typeof pending !== "object" || Array.isArray(pending)) {
+        throw new Error("Molotov splitter dedup requires pending splitter entry.");
+      }
+      if (typeof pending.id !== "string" && typeof pending.id !== "number") {
+        throw new Error("Molotov splitter dedup requires pending splitter id.");
+      }
+      triggeredSplitterIds[pending.id] = true;
+    });
+    return triggeredSplitterIds;
+  }
+
   return {
     _resetComboStreak: function () {
       this.comboStreak = 0;
@@ -700,6 +717,7 @@ function createGameManagerShotResolutionMethods(deps) {
         });
       }
       var removedCells = grid.removeCells(cells);
+      this._cancelPendingSplitterSpawnsForDroppedCells(removedCells);
       if (this.lastResolution) {
         this.lastResolution.topAnchorCollapse = true;
         this._appendUniqueCells(this.lastResolution.floating, removedCells);
@@ -1286,7 +1304,7 @@ function createGameManagerShotResolutionMethods(deps) {
         if (!cell) {
           throw new Error("Molotov drop candidate cell is required.");
         }
-        if (isMolotovBall(cell) || isKeyBall(cell)) {
+        if (isKeyBall(cell)) {
           continue;
         }
         immediate.push(cell);
@@ -1640,8 +1658,11 @@ function createGameManagerShotResolutionMethods(deps) {
         cell.__molotovBlastVelocity = buildMolotovBlastDropVelocity(active, cell, grid);
       });
 
-      var removedKeys = this._triggerAdjacentKeys(removedByBlast, grid, resolution);
-      var triggeredSplitterIds = {};
+      var removedKeys = this._triggerKeysAndResolveUnlocks(removedByBlast, grid, resolution);
+      var triggeredSplitterIds = this.molotovPendingResolutionContext.triggeredSplitterIds;
+      if (!triggeredSplitterIds || typeof triggeredSplitterIds !== "object" || Array.isArray(triggeredSplitterIds)) {
+        throw new Error("Molotov blast phase requires context.triggeredSplitterIds.");
+      }
       this._triggerAdjacentSplitters(removedByBlast, grid, resolution, triggeredSplitterIds);
 
       var chainMolotovs = this._collectAdjacentMolotovs(removedByBlast, grid, this.molotovBlastTriggeredIds);
@@ -1780,10 +1801,12 @@ function createGameManagerShotResolutionMethods(deps) {
       this.molotovResolutionPending = true;
       this.molotovPendingResolutionContext = {
         dropScoreRuleKey: dropScoreRuleKey,
-        allRemoved: syncRemoved.slice()
+        allRemoved: syncRemoved.slice(),
+        triggeredSplitterIds: {}
       };
 
       this._cancelPendingSplitterSpawnsForDroppedCells(syncRemoved);
+      this.molotovPendingResolutionContext.triggeredSplitterIds = buildTriggeredSplitterIdsFromPendingSpawns(this.pendingSplitterSpawns);
       this.systems.jarCollectorSystem.collect([]);
 
       appendMolotovEliminationSequence(resolution, syncRemoved, this.systems.bubbleGrid);
@@ -1814,31 +1837,42 @@ function createGameManagerShotResolutionMethods(deps) {
         throw new Error("Molotov floating resolution requires supportSystem.findFloatingCells.");
       }
 
-      if (Array.isArray(resolution.collectedKeys) && resolution.collectedKeys.length) {
-        this._resolveCollectedKeyUnlocks(grid, resolution);
-      }
+      var removedAllFloating = [];
+      while (true) {
+        if (Array.isArray(resolution.collectedKeys) && resolution.collectedKeys.length) {
+          this._resolveCollectedKeyUnlocks(grid, resolution);
+        }
 
-      var floatingCells = this.systems.supportSystem.findFloatingCells(grid);
-      var removedFloating = grid.removeCells(floatingCells);
-      this._appendUniqueCells(resolution.floating, removedFloating);
-      if (!removedFloating.length) {
+        var floatingCells = this.systems.supportSystem.findFloatingCells(grid);
+        if (!floatingCells.length) {
+          break;
+        }
+        var removedFloating = grid.removeCells(floatingCells);
+        if (!removedFloating.length) {
+          throw new Error("Molotov floating resolution found cells that could not be removed.");
+        }
+
+        this._appendUniqueCells(removedAllFloating, removedFloating);
+        this._appendUniqueCells(resolution.floating, removedFloating);
+        this._collectRemovedKeysAndResolveUnlocks(removedFloating, grid, resolution);
+        this._cancelPendingSplitterSpawnsForDroppedCells(removedFloating);
+        this._removeSpawnedSplitterEntriesForCells(removedFloating, resolution);
+        this._registerResolutionDrops(
+          removedFloating,
+          grid,
+          resolution,
+          undefined,
+          {
+            matchedCellsForDelay: this.molotovPendingResolutionContext.allRemoved
+          }
+        );
+        this.systems.jarCollectorSystem.collect([]);
+      }
+      if (!removedAllFloating.length) {
         return [];
       }
-
-      this._cancelPendingSplitterSpawnsForDroppedCells(removedFloating);
-      this._removeSpawnedSplitterEntriesForCells(removedFloating, resolution);
-      this._registerResolutionDrops(
-        removedFloating,
-        grid,
-        resolution,
-        undefined,
-        {
-          matchedCellsForDelay: this.molotovPendingResolutionContext.allRemoved
-        }
-      );
-      this.systems.jarCollectorSystem.collect([]);
       resolution.collected = this.molotovPendingResolutionContext.allRemoved.concat(resolution.floating);
-      return removedFloating;
+      return removedAllFloating;
     },
 
     _finalizeMolotovPendingResolution: function () {
@@ -2065,6 +2099,32 @@ function createGameManagerShotResolutionMethods(deps) {
       return unlocked;
     },
 
+    _triggerKeysAndResolveUnlocks: function (removedCells, grid, resolution) {
+      if (!Array.isArray(removedCells)) {
+        throw new Error("Key removal trigger requires removedCells array.");
+      }
+      var removedKeys = this._triggerAdjacentKeys(removedCells, grid, resolution);
+      if (removedKeys.length) {
+        this._resolveCollectedKeyUnlocks(grid, resolution);
+      }
+      return removedKeys;
+    },
+
+    _collectRemovedKeysAndResolveUnlocks: function (removedCells, grid, resolution) {
+      if (!Array.isArray(removedCells)) {
+        throw new Error("Removed key collection requires removedCells array.");
+      }
+      var removedKeys = removedCells.filter(function (cell) {
+        return isKeyBall(cell);
+      });
+      if (!removedKeys.length) {
+        return [];
+      }
+      this._appendUniqueCells(resolution.collectedKeys, removedKeys);
+      this._resolveCollectedKeyUnlocks(grid, resolution);
+      return removedKeys;
+    },
+
     _triggerAdjacentKeys: function (removedCells, grid, resolution) {
       var touched = {};
       var keys = [];
@@ -2202,7 +2262,7 @@ function createGameManagerShotResolutionMethods(deps) {
       var queuedMolotovIds = {};
       var triggeredSplitterIds = {};
 
-      var removedKeys = this._triggerAdjacentKeys(removedCells, grid, resolution);
+      var removedKeys = this._triggerKeysAndResolveUnlocks(removedCells, grid, resolution);
       this._appendUniqueCells(collected, removedKeys);
       this._triggerAdjacentSplitters(removedCells, grid, resolution, triggeredSplitterIds);
 
@@ -2371,10 +2431,10 @@ function createGameManagerShotResolutionMethods(deps) {
         return resolution;
       }
 
-      this._resolveCollectedKeyUnlocks(grid, resolution);
       var floatingCells = this.systems.supportSystem.findFloatingCells(grid);
       var removedFloating = grid.removeCells(floatingCells);
       this._appendUniqueCells(resolution.floating, removedFloating);
+      this._collectRemovedKeysAndResolveUnlocks(removedFloating, grid, resolution);
       var removedAll = removedBlastCells.concat(removedReactive).concat(resolution.floating);
       this._cancelPendingSplitterSpawnsForDroppedCells(removedAll);
 
@@ -2555,10 +2615,10 @@ function createGameManagerShotResolutionMethods(deps) {
         return resolution;
       }
 
-      this._resolveCollectedKeyUnlocks(grid, resolution);
       var floatingCells = this.systems.supportSystem.findFloatingCells(grid);
       var removedFloating = grid.removeCells(floatingCells);
       this._appendUniqueCells(resolution.floating, removedFloating);
+      this._collectRemovedKeysAndResolveUnlocks(removedFloating, grid, resolution);
       var collectedCells = removedMatches.concat(removedReactiveMatches).concat(resolution.floating);
       this._cancelPendingSplitterSpawnsForDroppedCells(collectedCells);
 

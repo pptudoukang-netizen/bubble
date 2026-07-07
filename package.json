@@ -12,6 +12,7 @@
     "generate:levels-first100": "node tools/rebuild-first-100-level-configs.js",
     "redesign:first100-clusters": "node tools/redesign-first-100-clustered-levels.js",
     "redesign:levels100-500": "node tools/redesign-levels-100-500-aesthetic.js",
+    "redesign:levels501-1000": "node tools/redesign-levels-100-500-aesthetic.js --range 501 1000",
     "generate:floating-map": "node tools/generate-floating-map-config.js --target 1000",
     "clean:wechat-cloudfunctions": "node tools/clean-wechat-build-cloudfunctions.js",
     "validate": "npm run validate:stamina && npm run validate:levels && npm run validate:level-sync && npm run validate:random-challenge && npm run validate:aim && npm run validate:fairy-gameplay && npm run validate:shots && npm run validate:release",

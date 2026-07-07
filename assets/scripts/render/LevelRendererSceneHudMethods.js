@@ -15,6 +15,7 @@ function attachLevelRendererSceneHudMethods(LevelRenderer, deps) {
   var WIN_STAR_PUNCH_DOWN_SCALE = deps.WIN_STAR_PUNCH_DOWN_SCALE;
   var WIN_STAR_SHRINK_DURATION = deps.WIN_STAR_SHRINK_DURATION;
   var WIN_STAR_RECOVER_DURATION = deps.WIN_STAR_RECOVER_DURATION;
+  var BOARD_BUBBLE_SIZE = deps.BOARD_BUBBLE_SIZE;
   var ensureSprite = deps.ensureSprite;
   var ensureLabel = deps.ensureLabel;
   var ensureOutline = deps.ensureOutline;
@@ -43,6 +44,16 @@ function attachLevelRendererSceneHudMethods(LevelRenderer, deps) {
     { nodeName: "snow_removal_btn", iconKey: "snow_removal" },
     { nodeName: "bomb_btn", iconKey: "blast" }
   ];
+  var POWERUP_LOAD_ANIMATION_CONFIG = {
+    rainbow: {
+      buttonNodeName: "rainbow_btn",
+      spriteCode: "RAINBOW"
+    },
+    blast: {
+      buttonNodeName: "bomb_btn",
+      spriteCode: "BLAST"
+    }
+  };
 
   function resolveBottomPanelBoardTargets(runtimeSnapshot) {
     if (!runtimeSnapshot.board || typeof runtimeSnapshot.board !== "object") {
@@ -181,6 +192,11 @@ var MATCHED_TARGET_COLLECT_PUNCH_DOWN_DURATION = 0.1;
   var SNOW_REMOVAL_FX_SWEEP_TO_LEFT_DURATION = 0.28;
   var SNOW_REMOVAL_FX_SWEEP_TO_RIGHT_DURATION = 0.48;
   var SNOW_REMOVAL_FX_SWEEP_RETURN_DURATION = 0.28;
+  var POWERUP_LOAD_FX_Z_INDEX = 1340;
+  var POWERUP_LOAD_FLY_DURATION = 0.34;
+  var POWERUP_LOAD_BEZIER_ARC = 110;
+  var POWERUP_LOAD_START_SCALE = 0.62;
+  var POWERUP_LOAD_END_SCALE = 1.05;
 
 function requireDirectorScheduler(description) {
   if (!cc || !cc.director || typeof cc.director.getScheduler !== "function") {
@@ -1312,8 +1328,8 @@ LevelRenderer.prototype._rebindBottomPanelPowerupIcon = function (buttonNode, po
   if (!spriteFrame) {
     throw new Error("Missing preloaded bottom panel powerup icon: " + spritePath);
   }
-  if (typeof spriteFrame.getOriginalSize !== "function") {
-    throw new Error("Bottom panel powerup icon spriteFrame requires getOriginalSize: " + spritePath);
+  if (typeof spriteFrame.getRect !== "function") {
+    throw new Error("Bottom panel powerup icon spriteFrame requires getRect: " + spritePath);
   }
   if (!cc.Sprite.SizeMode || cc.Sprite.SizeMode.CUSTOM === undefined) {
     throw new Error("Bottom panel powerup icon requires cc.Sprite.SizeMode.CUSTOM.");
@@ -1324,18 +1340,18 @@ LevelRenderer.prototype._rebindBottomPanelPowerupIcon = function (buttonNode, po
       !Number.isFinite(bounds.height) || bounds.height <= 0) {
     throw new Error("Bottom panel powerup icon bounds must be positive: " + buttonNode.name);
   }
-  var originalSize = spriteFrame.getOriginalSize();
-  if (!originalSize || !Number.isFinite(originalSize.width) || !Number.isFinite(originalSize.height) ||
-      originalSize.width <= 0 || originalSize.height <= 0) {
-    throw new Error("Bottom panel powerup icon original size is invalid: " + spritePath);
+  var rect = spriteFrame.getRect();
+  if (!rect || !Number.isFinite(rect.width) || !Number.isFinite(rect.height) ||
+      rect.width <= 0 || rect.height <= 0) {
+    throw new Error("Bottom panel powerup icon rect size is invalid: " + spritePath);
   }
 
-  sprite.trim = false;
+  sprite.trim = true;
   sprite.sizeMode = cc.Sprite.SizeMode.CUSTOM;
   sprite.spriteFrame = spriteFrame;
 
-  var scale = Math.min(bounds.width / originalSize.width, bounds.height / originalSize.height);
-  iconNode.setContentSize(originalSize.width * scale, originalSize.height * scale);
+  var scale = Math.min(bounds.width / rect.width, bounds.height / rect.height);
+  iconNode.setContentSize(rect.width * scale, rect.height * scale);
 };
 
 LevelRenderer.prototype._renderBottomPanel = function (runtimeSnapshot) {
@@ -1505,6 +1521,111 @@ LevelRenderer.prototype._renderBottomPanel = function (runtimeSnapshot) {
   if (layout && typeof layout.updateLayout === "function") {
     layout.updateLayout();
   }
+};
+
+LevelRenderer.prototype.isPowerupLoadAnimationInProgress = function () {
+  return this.powerupLoadAnimationInProgress === true;
+};
+
+LevelRenderer.prototype.playPowerupLoadAnimation = function (entityType) {
+  if (typeof entityType !== "string" || !POWERUP_LOAD_ANIMATION_CONFIG[entityType]) {
+    throw new Error("Unsupported powerup load animation type: " + entityType);
+  }
+  if (this.powerupLoadAnimationInProgress === true) {
+    throw new Error("Powerup load animation cannot overlap.");
+  }
+  if (typeof cc.tween !== "function") {
+    throw new Error("Powerup load animation requires cc.tween.");
+  }
+  if (!BOARD_BUBBLE_SIZE || !Number.isFinite(BOARD_BUBBLE_SIZE.width) || !Number.isFinite(BOARD_BUBBLE_SIZE.height) ||
+      BOARD_BUBBLE_SIZE.width <= 0 || BOARD_BUBBLE_SIZE.height <= 0) {
+    throw new Error("Powerup load animation requires valid BOARD_BUBBLE_SIZE.");
+  }
+
+  var config = POWERUP_LOAD_ANIMATION_CONFIG[entityType];
+  var gameViewNode = this._getGameViewNode();
+  if (!gameViewNode || !gameViewNode.isValid) {
+    throw new Error("Powerup load animation requires GameView.");
+  }
+
+  var bottomPanelNode = this.layers && this.layers.hud
+    ? this.layers.hud.getChildByName("BttomPanel")
+    : null;
+  var propsScrollNode = requireChildNode(bottomPanelNode, "props_scroll", "BttomPanel");
+  var propsViewNode = requireChildNode(propsScrollNode, "view", "BttomPanel/props_scroll");
+  var propsContentNode = requireChildNode(propsViewNode, "content", "BttomPanel/props_scroll/view");
+  var buttonNode = requireChildNode(propsContentNode, config.buttonNodeName, "BttomPanel/props_scroll/view/content");
+  var iconNode = requireChildNode(buttonNode, "icon", "BttomPanel/props_scroll/view/content/" + config.buttonNodeName);
+  var startPosition = this._convertNodePositionToGameView(iconNode);
+
+  var shooterPanel = this.layers && this.layers.shooter
+    ? this.layers.shooter.getChildByName("ShooterPanel")
+    : null;
+  if (!shooterPanel || !shooterPanel.isValid) {
+    throw new Error("Powerup load animation requires ShooterPanel.");
+  }
+  var currentBallAnchor = requireChildNode(shooterPanel, "CurrentBallAnchor", "ShooterPanel");
+  var endPosition = this._convertNodePositionToGameView(currentBallAnchor);
+
+  var spritePath = BALL_RESOURCES[config.spriteCode];
+  if (!spritePath) {
+    throw new Error("Powerup load animation sprite path missing: " + config.spriteCode);
+  }
+  var spriteFrame = this.spriteFrameCache[spritePath];
+  if (!spriteFrame) {
+    throw new Error("Powerup load animation sprite frame is missing: " + spritePath);
+  }
+
+  var fxNode = new cc.Node("powerup_load_fx_" + entityType);
+  fxNode.parent = gameViewNode;
+  fxNode.zIndex = POWERUP_LOAD_FX_Z_INDEX;
+  fxNode.opacity = 255;
+  fxNode.scale = POWERUP_LOAD_START_SCALE;
+  fxNode.setPosition(startPosition);
+  fxNode.setContentSize(BOARD_BUBBLE_SIZE.width, BOARD_BUBBLE_SIZE.height);
+  ensureSprite(fxNode, spriteFrame);
+
+  var deltaX = endPosition.x - startPosition.x;
+  var deltaY = endPosition.y - startPosition.y;
+  var arc = Math.max(POWERUP_LOAD_BEZIER_ARC, Math.abs(deltaY) * 0.28);
+  var bezierPoints = [
+    cc.v2(startPosition.x + deltaX * 0.28, startPosition.y + deltaY * 0.2 + arc),
+    cc.v2(startPosition.x + deltaX * 0.72, startPosition.y + deltaY * 0.78 + arc),
+    cc.v2(endPosition.x, endPosition.y)
+  ];
+  var renderer = this;
+  this.powerupLoadAnimationInProgress = true;
+
+  return new Promise(function (resolve) {
+    cc.tween(fxNode)
+      .parallel(
+        cc.tween().bezierTo(
+          POWERUP_LOAD_FLY_DURATION,
+          bezierPoints[0],
+          bezierPoints[1],
+          bezierPoints[2]
+        ),
+        cc.tween().to(POWERUP_LOAD_FLY_DURATION, {
+          scale: POWERUP_LOAD_END_SCALE
+        }, {
+          easing: "quadOut"
+        })
+      )
+      .to(0.08, {
+        scale: 0.35,
+        opacity: 0
+      }, {
+        easing: "quadIn"
+      })
+      .call(function () {
+        if (fxNode && fxNode.isValid) {
+          fxNode.destroy();
+        }
+        renderer.powerupLoadAnimationInProgress = false;
+        resolve();
+      })
+      .start();
+  });
 };
 
 LevelRenderer.prototype.playSnowRemovalAnimation = function () {

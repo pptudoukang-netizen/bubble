@@ -1252,6 +1252,10 @@ function updateTopStatus(levelView, options) {
     throw new Error("LevelSelectView requires onOpenDailyTasks.");
   }
   var onOpenDailyTasks = options.onOpenDailyTasks;
+  if (typeof options.onHiddenUnlockAllLevels !== "function") {
+    throw new Error("LevelSelectView requires onHiddenUnlockAllLevels.");
+  }
+  var onHiddenUnlockAllLevels = options.onHiddenUnlockAllLevels;
 
   var topLayerNode = resolveTopLayerNode(levelView);
   rebindTopResourceSprites(levelView);
@@ -1281,6 +1285,12 @@ function updateTopStatus(levelView, options) {
     "__loveShopTapBound",
     "__onOpenShop",
     onOpenShop
+  );
+  bindNamedButtonTap(
+    goldNode,
+    "__goldHiddenUnlockTapBound",
+    "__onHiddenUnlockAllLevels",
+    onHiddenUnlockAllLevels
   );
   bindNamedButtonTap(
     bottomLayerNode ? bottomLayerNode.getChildByName("ranking_btn") : null,
@@ -1492,6 +1502,10 @@ function renderLevelSelectContent(options) {
     throw new Error("LevelSelectView requires onOpenDailyTasks.");
   }
   var onOpenDailyTasks = options.onOpenDailyTasks;
+  if (typeof options.onHiddenUnlockAllLevels !== "function") {
+    throw new Error("LevelSelectView requires onHiddenUnlockAllLevels.");
+  }
+  var onHiddenUnlockAllLevels = options.onHiddenUnlockAllLevels;
   if (typeof options.onQuickStart !== "function") {
     throw new Error("LevelSelectView requires onQuickStart.");
   }
@@ -1546,7 +1560,8 @@ function renderLevelSelectContent(options) {
     onOpenInventory: onOpenInventory,
     onOpenStarChest: onOpenStarChest,
     onOpenShop: onOpenShop,
-    onOpenDailyTasks: onOpenDailyTasks
+    onOpenDailyTasks: onOpenDailyTasks,
+    onHiddenUnlockAllLevels: onHiddenUnlockAllLevels
   });
   bindQuickStartButton(levelView, onQuickStart);
   bindRandomChallengeButton(levelView, onRandomChallenge);

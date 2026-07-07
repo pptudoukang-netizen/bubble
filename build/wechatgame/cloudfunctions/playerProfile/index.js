@@ -5,7 +5,7 @@ var cloud = require("wx-server-sdk");
 
 var COLLECTION_NAME = "player_profiles";
 var PROFILE_VERSION = 1;
-var DEPLOYMENT_MARKER = "playerProfile_v20260619_attempt_stats_v1";
+var DEPLOYMENT_MARKER = "playerProfile_v20260704_game_circle_welfare_v1";
 var LEVEL_ATTEMPT_STATS_STORAGE_KEY = "bubble_level_attempt_stats_v1";
 var SUPPORTED_STORAGE_KEYS = {
   bubble_level_progress_v1: "LevelProgressStore",
@@ -28,6 +28,33 @@ cloud.init({
 
 function clone(data) {
   return JSON.parse(JSON.stringify(data));
+}
+
+function measureJsonBytes(data) {
+  return Buffer.byteLength(JSON.stringify(data), "utf8");
+}
+
+function describeError(error) {
+  if (!error || typeof error !== "object") {
+    return String(error);
+  }
+  var parts = [];
+  if (error.message) {
+    parts.push(error.message);
+  }
+  if (error.errMsg) {
+    parts.push("errMsg=" + error.errMsg);
+  }
+  if (error.errCode !== undefined) {
+    parts.push("errCode=" + String(error.errCode));
+  }
+  if (error.code !== undefined) {
+    parts.push("code=" + String(error.code));
+  }
+  if (parts.length === 0) {
+    parts.push(String(error));
+  }
+  return parts.join(", ");
 }
 
 function requireObject(value, fieldName) {
@@ -148,16 +175,29 @@ async function getProfile(collection, openid) {
 
 async function saveProfile(collection, openid, event) {
   var profile = normalizeProfile(event.profile);
+  var reason = requireNonEmptyString(event.reason, "player profile save reason");
+  var profileBytes = measureJsonBytes(profile);
   var now = Date.now();
   var recordId = buildProfileRecordId(openid);
-  var result = await collection.doc(recordId).set({
-    data: {
-      openid: openid,
-      profile: profile,
-      updatedAt: now,
-      saveReason: requireNonEmptyString(event.reason, "player profile save reason")
-    }
-  });
+  var result = null;
+  try {
+    result = await collection.doc(recordId).set({
+      data: {
+        openid: openid,
+        profile: profile,
+        updatedAt: now,
+        saveReason: reason
+      }
+    });
+  } catch (error) {
+    throw new Error(
+      "Save player profile record failed. collection=" + COLLECTION_NAME +
+      ", recordId=" + recordId +
+      ", reason=" + reason +
+      ", profileBytes=" + profileBytes +
+      ", cause=" + describeError(error)
+    );
+  }
   if (!result || typeof result !== "object" || Array.isArray(result)) {
     throw new Error("Save player profile record failed.");
   }

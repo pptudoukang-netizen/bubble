@@ -310,7 +310,7 @@ LevelRenderer.prototype._renderWinAwardInfo = function (winContent, rewardItems)
     var numNode = requireWinChild(itemNode, "num", itemNode.name);
     var spritePath = resolveRewardItemSpritePath(itemId);
     var spriteFrame = this.spriteFrameCache[spritePath];
-    if (!spriteFrame) {
+    if (!spriteFrame || (cc && typeof cc.isValid === "function" && !cc.isValid(spriteFrame))) {
       throw new Error("WinView reward sprite is not preloaded: " + spritePath);
     }
 

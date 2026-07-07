@@ -1,0 +1,1 @@
+module.exports = [1,0,0,[["cc.AudioClip",["_name","_native","duration"],0]],[[0,0,1,2,4]],[[0,"pao_break",".mp3",0.182857],-1],0,0,[],[],[]];

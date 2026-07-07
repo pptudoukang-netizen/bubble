@@ -1,0 +1,1 @@
+module.exports = [1,["130050479"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"resurrection_coin","rect":[3,3,241,99],"offset":[0,0],"originalSize":[241,99],"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

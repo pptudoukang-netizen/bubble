@@ -1,0 +1,1 @@
+module.exports = [1,["67u3nt2tNHuKZWZvAmAHQl"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"genius_bg","rect":[0,0,654,667],"offset":[0,0],"originalSize":[654,667],"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

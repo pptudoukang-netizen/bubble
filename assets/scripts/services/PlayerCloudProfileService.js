@@ -4,7 +4,7 @@ var StrictStorage = require("../utils/StrictStorage");
 var LevelAttemptStatsStore = require("../utils/LevelAttemptStatsStore");
 
 var PROFILE_VERSION = 1;
-var EXPECTED_DEPLOYMENT_MARKER = "playerProfile_v20260619_attempt_stats_v1";
+var EXPECTED_DEPLOYMENT_MARKER = "playerProfile_v20260704_game_circle_welfare_v1";
 var SYNC_SOURCE_CLOUD = "cloud";
 var SYNC_SOURCE_LOCAL = "local";
 var LEVEL_ATTEMPT_STATS_STORAGE_KEY = LevelAttemptStatsStore.STORAGE_KEY;
@@ -25,6 +25,33 @@ var STORAGE_ENTRIES = [
 
 function clone(data) {
   return JSON.parse(JSON.stringify(data));
+}
+
+function measureJsonBytes(data) {
+  return unescape(encodeURIComponent(JSON.stringify(data))).length;
+}
+
+function describeError(error) {
+  if (!error || typeof error !== "object") {
+    return String(error);
+  }
+  var parts = [];
+  if (error.message) {
+    parts.push(error.message);
+  }
+  if (error.errMsg) {
+    parts.push("errMsg=" + error.errMsg);
+  }
+  if (error.errCode !== undefined) {
+    parts.push("errCode=" + String(error.errCode));
+  }
+  if (error.code !== undefined) {
+    parts.push("code=" + String(error.code));
+  }
+  if (parts.length === 0) {
+    parts.push(String(error));
+  }
+  return parts.join(", ");
 }
 
 function resolvePlatform(explicitPlatform) {
@@ -72,6 +99,24 @@ function requireNonNegativeInteger(value, fieldName) {
   return value;
 }
 
+function normalizeSyncOptions(options) {
+  if (options === undefined) {
+    return {
+      shouldApplyCloudProfile: null
+    };
+  }
+  assertObject(options, "Player cloud profile sync options");
+  if (
+    options.shouldApplyCloudProfile !== undefined &&
+    typeof options.shouldApplyCloudProfile !== "function"
+  ) {
+    throw new Error("Player cloud profile shouldApplyCloudProfile must be a function.");
+  }
+  return {
+    shouldApplyCloudProfile: options.shouldApplyCloudProfile || null
+  };
+}
+
 function buildEntryMap(entries) {
   if (!Array.isArray(entries) || entries.length === 0) {
     throw new Error("Player cloud profile storage entries must be a non-empty array.");
@@ -105,6 +150,13 @@ function parseStoredValue(rawText, storageKey) {
   } catch (error) {
     throw new Error("Player cloud profile local JSON is invalid for `" + storageKey + "`: " + error.message);
   }
+}
+
+function normalizeStorageValue(storageKey, value) {
+  if (storageKey === LEVEL_ATTEMPT_STATS_STORAGE_KEY) {
+    return LevelAttemptStatsStore.normalizeState(value);
+  }
+  return value;
 }
 
 function createMissingStorageEntry(storageKey, entryMap) {
@@ -215,6 +267,12 @@ PlayerCloudProfileService.prototype._callFunction = function (data) {
     data: data
   }).then(function (response) {
     return normalizeCloudFunctionResponse(response, this.functionName);
+  }.bind(this)).catch(function (error) {
+    var action = typeof data.action === "string" ? data.action : "unknown";
+    throw new Error(
+      "Player cloud profile cloud function `" + this.functionName +
+      "` action `" + action + "` failed: " + describeError(error)
+    );
   }.bind(this));
 };
 
@@ -228,7 +286,7 @@ PlayerCloudProfileService.prototype.collectLocalProfile = function () {
     }
     profileStorage[entry.storageKey] = {
       namespace: entry.namespace,
-      value: parseStoredValue(rawText, entry.storageKey)
+      value: normalizeStorageValue(entry.storageKey, parseStoredValue(rawText, entry.storageKey))
     };
   });
   return normalizeProfile({
@@ -248,23 +306,34 @@ PlayerCloudProfileService.prototype.applyCloudProfile = function (profile) {
   return normalized;
 };
 
-PlayerCloudProfileService.prototype.syncFromCloudOrUploadLocal = function () {
+PlayerCloudProfileService.prototype.syncFromCloudOrUploadLocal = function (options) {
+  var syncOptions = normalizeSyncOptions(options);
   var localProfile = this.collectLocalProfile();
   return this._callFunction({
     action: "get"
   }).then(function (result) {
     requireBoolean(result.exists, "playerProfile get exists");
     if (result.exists === true) {
-      this.applyCloudProfile(result.profile);
+      var shouldApplyCloudProfile = syncOptions.shouldApplyCloudProfile
+        ? syncOptions.shouldApplyCloudProfile()
+        : true;
+      if (typeof shouldApplyCloudProfile !== "boolean") {
+        throw new Error("Player cloud profile shouldApplyCloudProfile result must be boolean.");
+      }
+      if (shouldApplyCloudProfile === true) {
+        this.applyCloudProfile(result.profile);
+      }
       return {
         source: SYNC_SOURCE_CLOUD,
-        updatedAt: requireNonNegativeInteger(result.updatedAt, "playerProfile get updatedAt")
+        updatedAt: requireNonNegativeInteger(result.updatedAt, "playerProfile get updatedAt"),
+        applied: shouldApplyCloudProfile
       };
     }
     return this.uploadProfile(localProfile, "startup_initial_upload").then(function (uploadResult) {
       return {
         source: SYNC_SOURCE_LOCAL,
-        updatedAt: uploadResult.updatedAt
+        updatedAt: uploadResult.updatedAt,
+        applied: false
       };
     });
   }.bind(this));
@@ -272,9 +341,11 @@ PlayerCloudProfileService.prototype.syncFromCloudOrUploadLocal = function () {
 
 PlayerCloudProfileService.prototype.uploadProfile = function (profile, reason) {
   var normalized = normalizeProfile(profile, this.entryMap);
+  var uploadReason = requireNonEmptyString(reason, "Player cloud profile upload reason");
+  var profileBytes = measureJsonBytes(normalized);
   return this._callFunction({
     action: "save",
-    reason: requireNonEmptyString(reason, "Player cloud profile upload reason"),
+    reason: uploadReason,
     profile: normalized
   }).then(function (result) {
     requireBoolean(result.accepted, "playerProfile save accepted");
@@ -284,6 +355,13 @@ PlayerCloudProfileService.prototype.uploadProfile = function (profile, reason) {
     return {
       updatedAt: requireNonNegativeInteger(result.updatedAt, "playerProfile save updatedAt")
     };
+  }).catch(function (error) {
+    throw new Error(
+      "Player cloud profile save failed. reason=" + uploadReason +
+      ", profileBytes=" + profileBytes +
+      ", storageKeys=" + Object.keys(normalized.storage).join("|") +
+      ", cause=" + describeError(error)
+    );
   });
 };
 
@@ -321,7 +399,16 @@ PlayerCloudProfileService.prototype.queueUpload = function (reason) {
     this.flushUploadQueue(reason).catch(function (error) {
       this.lastUploadError = error;
       if (this.logger && typeof this.logger.error === "function") {
-        this.logger.error("Player cloud profile upload failed", error && error.stack ? error.stack : String(error));
+        this.logger.error(
+          "Player cloud profile upload failed",
+          {
+            reason: reason,
+            functionName: this.functionName,
+            cloudEnvId: this.cloudEnvId,
+            message: describeError(error)
+          },
+          error && error.stack ? error.stack : String(error)
+        );
       }
     }.bind(this));
   }.bind(this), this.syncDebounceMs);

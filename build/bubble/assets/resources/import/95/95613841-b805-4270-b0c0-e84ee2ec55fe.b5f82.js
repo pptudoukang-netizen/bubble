@@ -1,1 +1,0 @@
-module.exports = [1,["158a356b4"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"icon_gaming_circle","rect":[203,408,99,96],"offset":[0,2],"originalSize":[107,102],"rotated":1,"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

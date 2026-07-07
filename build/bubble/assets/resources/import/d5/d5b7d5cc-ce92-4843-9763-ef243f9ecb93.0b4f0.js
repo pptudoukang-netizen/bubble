@@ -1,0 +1,1 @@
+module.exports = [1,["1f5bfd500"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"love_bg","rect":[203,274,128,114],"offset":[0.5,-1.5],"originalSize":[131,129],"rotated":1,"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

@@ -19,8 +19,8 @@
 - `assets/animation/`：动画资源分包（微信 `subpackage`），当前包含局内固定精灵红/黄/绿三个动画 prefab；局内由 `LevelRenderer` 加载 `animation` bundle 后实例化。
 - `assets/image/`：主场景图片资源，按引用范围分子目录：`common/`（选关 `LevelView` 与局内 `GameView` 共用）、`level_view/`（仅选关）、`icon/`（选关入口图标）。局内专用图片已迁至 `assets/game/`。
 - `assets/resources/config/levels/`：本地内置关卡 JSON 配置，文件名形如 `level_001.json`；当前只内置 `level_001.json` 到 `level_010.json`。
-- `assets/resources/config/level_manifest.json`：11-1000 关远程包清单，包含云环境、包范围、云存储 fileID、sha256、字节数与远程包格式。
-- `remote-level-packs/`：待上传到微信云存储的远程关卡包，当前为 `levels_pack_011_100.json` 到 `levels_pack_901_1000.json`，采用 `compact-schema-v1` 压缩格式。
+- `assets/resources/config/level_manifest.json`：远程关卡 bootstrap manifest，只内置云环境、关卡边界和远程完整 manifest 的固定云存储 fileID。
+- `remote-level-packs/`：待上传到微信云存储的远程关卡包和完整远程 manifest；当前包含 `level_manifest.json` 以及 `levels_pack_011_100.json` 到 `levels_pack_901_1000.json`，关卡包采用 `compact-schema-v1` 压缩格式。
 - `docs/LEVEL_1000_DESIGN.md`：1000 关长线关卡设计、特殊球投放节奏、图案化棋盘策略和生成规则。
 - `cloudfunctions/`：微信云开发函数源码。
 - `build-templates/wechatgame/`：微信小游戏构建模板与云函数模板；构建后由 `tools/wechat-minigame-loading-patch.js` 接入微信官方封面图插件 `MinigameLoading`，封面图使用 `assets/loading/loading_bg.jpg`。
@@ -32,7 +32,7 @@
 - `tools/`：校验、同步、构建修复、调试辅助脚本。
 - `tools/first-100-level-design.js`：前 100 关权威设计规则，统一定义 10 种棋盘轮廓、颜色数量、特殊球投放、目标、发射数和每 10 关难度波形，并严格校验实际棋盘与规则一致。
 - `tools/rebuild-first-100-level-configs.js`：前 100 关定向重建入口；先同步 `LEVEL_CONFIG_TABLE_1_1000.csv` 前 100 行，再只重建本地 1-10、远程包 11-100 和对应 manifest 条目，不改写 101-1000 关远程包。运行命令为 `npm run generate:levels-first100`。
-- `tools/clustered-level-layout.js`、`tools/redesign-first-100-clustered-levels.js`、`tools/redesign-levels-100-500-aesthetic.js`：1-500 关颜色聚类与爽感校验规则；前 100 关保留既有轮廓规则，100-500 关可通过 `npm run redesign:levels100-500` 重建远程包布局、对称轮廓、色彩流动和 manifest 摘要。
+- `tools/clustered-level-layout.js`、`tools/redesign-first-100-clustered-levels.js`、`tools/redesign-levels-100-500-aesthetic.js`：1-1000 关颜色聚类与爽感校验规则；前 100 关保留既有轮廓规则，100-500 关可通过 `npm run redesign:levels100-500` 重建，501-1000 关可通过 `npm run redesign:levels501-1000` 重建远程包布局、对称轮廓、色彩流动和 manifest 摘要。
 - `settings/`：Cocos Creator 项目设置。
 - `package.json`：校验脚本入口。
 
@@ -45,7 +45,7 @@
 `GameBootstrap.js` 是 Cocos 组件声明文件，负责暴露 Inspector 属性，并把实际实现挂载到组件方法上。具体业务实现拆在多个 `GameBootstrap*Methods.js` 文件中：
 
 - `GameBootstrapCompositionMethods.js`：`onLoad` 初始化中枢，创建 Store、Service、Manager、Audio、Tips、NetworkLoading 等；`GameManager`/`LevelRenderer` 延迟到 `_ensureGameplayKernel()`（进入局内时加载 `game` 分包并初始化）。
-- `GameBootstrapStartupMethods.js`：启动加载流程；`onLoad` 末尾即调用 `_beginStartupBundlePrefetch()` 与 `start()` 并行预拉 `resources`/`map` 分包，再加载选关预制体并展示 LoadingView；选关页展示后立即后台预热 `ui` 分包，并继续后台执行好友体力领取与云档案同步。
+- `GameBootstrapStartupMethods.js`：启动加载流程；`start()` 先展示场景内 LoadingView，再由 `_beginStartupBundlePrefetch()` 下载并加载 `resources`/`map` 分包，分包下载和 bundle 加载进度都会写入 LoadingView 进度条；随后加载选关预制体。选关页展示后立即后台预热 `ui` 分包，并继续后台执行好友体力领取与云档案同步。
 - `GameBootstrapLazyModule.js` / `GameBootstrapLazyRegistry.js`：非首屏必需的 bootstrap 方法模块（签到/任务/商店/游戏圈/设置/广告/telemetry/背包等）通过 `GameBootstrapLazyModule` 在首次调用时再 `require` 对应模块；各 loader 必须使用 Cocos 可静态分析的字符串字面量路径，禁止运行时变量 `require(path)` 或对 UI Controller 做 getter 懒加载。
 - `GameBootstrapGameplayInputMethods.js`：局内触摸输入、瞄准、发射、update 驱动。
 - `GameBootstrapNewUserGuideMethods.js`：新账号首次进入的新手引导覆盖层，使用 `resources/image/finger.png` 指引快速开始、开局按钮和首次局内发射操作。
@@ -135,9 +135,9 @@
 
 - `LevelManager.js`：按关卡 ID 生成 key，1-10 调用本地 `LevelConfigLoader`，11-1000 调用 `RemoteLevelPackLoader`，并缓存关卡配置；`preloadRemotePackAfterLevel(levelId)` 用于开局弹窗前在 10、100、200、300 等分包边界预下载下一段远程关卡包。
 - `LevelConfigLoader.js`：本地关卡配置加载、校验、规范化，并向远程包 loader 暴露同一套规范化入口。这里大量使用 Fail-Fast 校验。
-- `LevelPackManifest.js`：远程关卡包 manifest 的严格校验与包定位，并要求远程包声明 `compact-schema-v1` 格式。
+- `LevelPackManifest.js`：远程关卡 bootstrap manifest、远程完整 manifest、包清单和包定位的严格校验，并要求远程包声明 `compact-schema-v1` 格式。
 - `LevelPackCompactCodec.js`：远程关卡包 `compact-schema-v1` 编解码器；生成器写入压缩格式，运行时和离线工具读取后先展开为完整关卡结构。
-- `RemoteLevelPackLoader.js`：读取 manifest，使用 `wx.cloud.getTempFileURL` 获取远程包临时地址，再用 `wx.downloadFile` 下载到本地用户文件缓存，按 manifest 校验 `compact-schema-v1` 格式并展开，最后按单关复用 `LevelConfigLoader` 的规范化校验；同时提供按当前关卡预下载下一远程包的能力。
+- `RemoteLevelPackLoader.js`：先读取本地 bootstrap manifest，再使用 `wx.cloud.getTempFileURL` 下载远程完整 manifest；随后按远程 manifest 获取关卡包临时地址、下载到本地用户文件缓存，按 manifest 校验 `compact-schema-v1` 格式并展开，最后按单关复用 `LevelConfigLoader` 的规范化校验；同时提供按当前关卡预下载下一远程包的能力。
 - `BoardLayout.js`：棋盘布局参数。
 - `BoardViewportConfig.js`：10 行视口与开场/局内匀速移动参数；HUD 下沿由 `BoardLayout.syncHudBottomLineYFromHudPanel()` 从 `HudPanel` 实测；炮管安全线由 `BoardLayout.getCannonTopLineY()` 推导。
 - `FairyAssistConfig.js`：固定精灵六槽节点、红黄绿消除区间与倍率、每精灵最多 7 次碰撞、碰撞反弹、绿色分裂和 animation prefab 路径的严格配置。
@@ -213,16 +213,16 @@
 
 1. Cocos 加载 `assets/scens/game.fire`。
 2. 场景挂载 `GameBootstrap`。
-3. `GameBootstrap.onLoad` 初始化中枢对象和业务状态，并立即启动 `_beginStartupBundlePrefetch()` 预拉 `resources`/`map` 分包。
-4. `GameBootstrap.start` 调用启动加载流程。
-5. 启动关键任务复用分包预拉结果并加载选关预制体；`game.json` 构建后写入 `preloadSubpackages`（`resources`、`map`）。微信构建后由 `tools/wechat-minigame-loading-patch.js` 接入官方封面图插件 `MinigameLoading`，在引擎初始化前展示 `images/loading_bg.jpg`，首场景加载或引擎启动后销毁封面。选关页展示后立即调用 `_scheduleDeferredUiBundleWarmup()` 后台加载 `ui` 分包，好友体力领取与云档案同步也在选关页展示后后台执行，失败时提示用户且不阻塞首屏。
+3. `GameBootstrap.onLoad` 初始化中枢对象和业务状态，不再提前预拉 `resources`/`map` 分包。
+4. `GameBootstrap.start` 调用启动加载流程，先展示场景内 LoadingView。
+5. 启动关键任务在 LoadingView 显示后调用 `_beginStartupBundlePrefetch()` 下载并加载 `resources`/`map` 分包，分包下载和 bundle 加载进度占启动进度条前段；`game.json` 构建后不再写入 `resources`、`map` 的 `preloadSubpackages`。微信构建后由 `tools/wechat-minigame-loading-patch.js` 接入官方封面图插件 `MinigameLoading`，在引擎初始化前展示 `images/loading_bg.jpg`，首场景加载或引擎启动后销毁封面。选关页展示后立即调用 `_scheduleDeferredUiBundleWarmup()` 后台加载 `ui` 分包，好友体力领取与云档案同步也在选关页展示后后台执行，失败时提示用户且不阻塞首屏。
 6. 关键任务完成后进入选关页；选关页渲染后按 `startupPreloadLevelCount`（默认 1）后台预热首批关卡 JSON 配置。
 7. 用户点击开局弹窗「开始」后，`_loadLevelById` → `_ensureGameplayKernel()` 才加载 `game` 分包并初始化 `GameManager`/`LevelRenderer`；`_hideLevelSelectView` 会释放浮岛 prefab、`map` 分包缓存，返回选关时再按需重新加载。
 
 ### 内存管理（P1）
 
 - `LevelSelectFloatingMap.js`：浮岛滚动后按视口 ±2 个节点保留 prefab，其余 `cc.assetManager.releaseAsset`；离开选关页时 `releaseAllCachedMapPrefabs` + `invalidateAssetCache`。
-- `RemoteLevelPackLoader.js`：远程 compact 包 JSON 只写入 `USER_DATA_PATH` 磁盘缓存，解析后展开为当前请求关卡所需的完整结构，并发下载仍通过 `_packTextPromises` 去重。
+- `RemoteLevelPackLoader.js`：远程完整 manifest 每次进程内首次加载时从云存储读取；远程 compact 包 JSON 只写入 `USER_DATA_PATH` 磁盘缓存，缓存路径包含远程 manifest `version` 和包 sha256，解析后展开为当前请求关卡所需的完整结构，并发下载仍通过 `_packTextPromises` 去重。
 - `LevelRenderer.js`：`releaseLevelSpecificSpriteCache()` 在返回选关时释放关卡专属 sprite，保留球/罐/HUD 共用图。
 - `BundleLoader.js`：`releaseNamedBundle(name)` 供离开选关时卸载 `map` 分包；选关页展示后会后台预热 `ui` 分包，弹窗 prefab 仍按需加载，关闭后节点隐藏（未 destroy）故不自动卸载 `ui` 分包。
 - `GameplayBundleReleaseScheduler.js`：离开局内返回选关后，超过 `gameplayBundleIdleReleaseMs`（默认 30000）未再进入局内则释放 `game` 分包。
@@ -235,7 +235,7 @@
 3. 进入开局道具/体力检查流程。
 4. `_showStartGameView` 调用 `levelManager.loadLevel(levelId)` 读取当前关卡预览信息，并调用 `levelManager.preloadRemotePackAfterLevel(levelId)` 在 10、100、200、300 等分包边界预下载下一段远程关卡包。
 5. `_loadLevelById` 调用 `levelManager.loadLevel(levelId)`。
-6. `LevelManager` 对 1-10 使用 `LevelConfigLoader` 加载本地 `levels/level_###.json`；对 11-1000 使用 `RemoteLevelPackLoader` 按 manifest 下载云存储关卡包，再复用同一套校验。
+6. `LevelManager` 对 1-10 使用 `LevelConfigLoader` 加载本地 `levels/level_###.json`；对 11-1000 使用 `RemoteLevelPackLoader` 先下载远程完整 manifest，再按 manifest 下载云存储关卡包并复用同一套校验。
 7. `gameManager.startLevel(levelConfig)` 生成运行时状态。
 8. `levelRenderer.renderLevel(levelConfig, snapshot)` 渲染局内场景。
 9. 隐藏选关页后保持 `isRestarting` 门控，`levelRenderer.playGameEntryCountdown()` 依次播放 3、2、1、GO；动画结束才恢复玩法 update、触摸和局内按钮，并继续特殊球介绍或新手引导。
@@ -263,7 +263,7 @@
 
 ## 关卡配置
 
-本地首 10 关文件位于 `assets/resources/config/levels/`，命名规则为 `level_###.json`。11-1000 关位于 `remote-level-packs/` 的 100 关分段包中，运行时由 `assets/resources/config/level_manifest.json` 定位微信云存储 fileID。远程包使用 `compact-schema-v1`：包头集中保存 `levelSchemaVersion`、`coordinateSystem`、`sharedDefaults`，单关移除说明字段并将 `level.specialEntities` 编码为短数组；`RemoteLevelPackLoader` 下载后必须先通过 `LevelPackCompactCodec` 展开为完整关卡结构，再交给 `LevelConfigLoader` 校验。`LevelConfigLoader` 会校验：
+本地首 10 关文件位于 `assets/resources/config/levels/`，命名规则为 `level_###.json`。11-1000 关位于 `remote-level-packs/` 的 100 关分段包中。本地客户端只内置 bootstrap manifest，运行时先从云存储固定路径拉取远程完整 manifest，再由远程 manifest 定位各关卡包 fileID、sha256、bytes 与格式。远程包使用 `compact-schema-v1`：包头集中保存 `levelSchemaVersion`、`coordinateSystem`、`sharedDefaults`，单关移除说明字段并将 `level.specialEntities` 编码为短数组；`RemoteLevelPackLoader` 下载后必须先通过 `LevelPackCompactCodec` 展开为完整关卡结构，再交给 `LevelConfigLoader` 校验。`LevelConfigLoader` 会校验：
 
 - `schemaVersion`
 - `coordinateSystem`
@@ -279,12 +279,13 @@
 
 远程包上传规则：
 
+- `remote-level-packs/level_manifest.json` 上传到云存储 `level-packs-compact/level_manifest.json`，这是新客户端运行时拉取的完整远程 manifest。
 - `remote-level-packs/levels_pack_011_100.json` 上传到云存储 `level-packs-compact/levels_pack_011_100.json`。
 - 其余 compact 包同名上传到 `level-packs-compact/`。
 - 当前 manifest 使用的云存储 File ID 前缀为 `cloud://cloud1-d7gqettx3e9249ca1.636c-cloud1-d7gqettx3e9249ca1-1428064608`。
 - `level-packs-compact/` 是新版本 compact 静态关卡配置目录，必须在云存储权限/安全规则中允许客户端读取；否则 `wx.cloud.getTempFileURL` 会返回 `STORAGE_EXCEED_AUTHORITY`。
-- 上传后云 fileID 必须与 `assets/resources/config/level_manifest.json` 中的 `packs[].fileID` 保持一致。
-- 如果重新生成包导致 sha256、bytes 或 format 改变，必须同步提交新的 manifest。
+- 上传后云 fileID 必须与 `remote-level-packs/level_manifest.json` 中的 `packs[].fileID` 保持一致；本地 `assets/resources/config/level_manifest.json` 只需要保持 `remoteManifest.fileID` 指向固定远程 manifest 路径。
+- 如果重新生成包导致 sha256、bytes 或 format 改变，必须同步更新并上传 `remote-level-packs/level_manifest.json`。在远程 manifest fileID 固定不变的前提下，云端关卡包和远程 manifest 可以版本化热更新，不需要仅因包 sha256/bytes 改变而重建客户端。
 
 ## 微信相关
 
@@ -316,7 +317,7 @@
 - `npm run validate`
 
 微信构建前如果 `build/wechatgame/cloudfunctions` 残留导致 Cocos 报 `ENOTEMPTY`，先运行 `npm run clean:wechat-cloudfunctions` 清理构建产物云函数目录。
-修改 1000 关生成策略后，运行 `npm run generate:levels1000` 重新生成本地首 10 关、根目录 `levels` 镜像、`remote-level-packs` 远程关卡包和 `assets/resources/config/level_manifest.json`。修改浮岛地图资源、容量表或 1000 关地图规划后，运行 `npm run generate:floating-map` 重新生成 `assets/map/config/floating_map.json`。修改关卡、瞄准、射击、发布配置或体力相关逻辑后，优先运行对应校验。
+修改 1000 关生成策略后，运行 `npm run generate:levels1000` 重新生成本地首 10 关、根目录 `levels` 镜像、`remote-level-packs` 远程关卡包、`remote-level-packs/level_manifest.json` 和本地 bootstrap manifest。修改浮岛地图资源、容量表或 1000 关地图规划后，运行 `npm run generate:floating-map` 重新生成 `assets/map/config/floating_map.json`。修改关卡、瞄准、射击、发布配置或体力相关逻辑后，优先运行对应校验。
 
 ## 修改建议
 

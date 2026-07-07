@@ -1,0 +1,1 @@
+module.exports = [1,["1f5bfd500"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"round_btn_bg","rect":[408,136,106,107],"offset":[0.5,1],"originalSize":[123,123],"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

@@ -18,12 +18,32 @@ var FINGER_BASE_SCALE = 0.82;
 var MASK_OPACITY = 150;
 var BUTTON_HOLE_PADDING = 24;
 var GAMEPLAY_HOLE_PADDING = 96;
-var START_GAME_GUIDE_SHOW_DELAY_MS = 300;
+var PROP_TIPS_VIEW_PREFAB_PATH = "prefabs/ui/PropTipsView";
+var PROP_TIPS_VIEW_NAME = "PropTipsView";
+var PROP_TIPS_VIEW_Z_INDEX = 12;
+var PROP_TIPS_LABEL_NAME = "tips";
+var PROP_TIPS_HUD_BOTTOM_MARGIN = 12;
+var SKILL_POWERUP_GUIDE_STEP_SELECT = "select_powerup";
+var SKILL_POWERUP_GUIDE_STEP_COLOR = "select_rainbow_color";
+var SKILL_POWERUP_GUIDE_STEP_FIRE = "fire_powerup";
+var SKILL_POWERUP_FIRE_HOLE_HALF_SIZE = 100;
+var RAINBOW_COLOR_SELECTOR_ANIMATION_WAIT_MS = 260;
 var SKILL_POWERUP_GUIDE_BUTTONS = {
   rainbow: "rainbow_btn",
   blast: "bomb_btn"
 };
 var SKILL_POWERUP_GUIDE_TYPES = SkillPowerupGuideStore.SUPPORTED_TYPES;
+var SKILL_POWERUP_GUIDE_TIPS = {
+  rainbow: {
+    select_powerup: "彩虹球可选择一种颜色，发射后消除同色泡泡。\n点击彩虹球道具装填彩虹球",
+    select_rainbow_color: "选择彩虹球要变成的颜色",
+    fire_powerup: "点击屏幕中间发射彩虹球"
+  },
+  blast: {
+    select_powerup: "炸弹球可炸掉命中点周围的泡泡。\n点击炸弹道具装填炸弹球",
+    fire_powerup: "点击屏幕中间发射炸弹球"
+  }
+};
 
 function requireValidNode(node, description) {
   if (!node || !node.isValid) {
@@ -313,6 +333,83 @@ function requireChildNode(parent, childName, description) {
   return child;
 }
 
+function requireNonEmptyString(value, description) {
+  if (typeof value !== "string" || value.length === 0) {
+    throw new Error(description + " must be a non-empty string.");
+  }
+  return value;
+}
+
+function resolveSkillPowerupGuideTipsText(entityType, step) {
+  var safeType = requireSkillPowerupGuideType(entityType, "Skill powerup guide tips type");
+  var typeTips = SKILL_POWERUP_GUIDE_TIPS[safeType];
+  if (!typeTips || typeof typeTips !== "object") {
+    throw new Error("Skill powerup guide tips config missing: " + safeType);
+  }
+  if (!Object.prototype.hasOwnProperty.call(typeTips, step)) {
+    throw new Error("Skill powerup guide tips step missing: " + safeType + "/" + step);
+  }
+  return requireNonEmptyString(typeTips[step], "Skill powerup guide tips text");
+}
+
+function resolvePropTipsLabel(viewNode) {
+  var tipsNode = requireChildNode(viewNode, PROP_TIPS_LABEL_NAME, "PropTipsView");
+  var label = tipsNode.getComponent(cc.Label);
+  if (!label) {
+    throw new Error("PropTipsView tips requires cc.Label.");
+  }
+  return label;
+}
+
+function resolveMountedHudPanel(host) {
+  if (!host.levelRenderer || !host.levelRenderer.layers || !host.levelRenderer.layers.hud) {
+    throw new Error("PropTipsView position requires mounted HUD layer.");
+  }
+  var hudLayer = host.levelRenderer.layers.hud;
+  var directPanel = hudLayer.getChildByName("HudPanel");
+  if (directPanel && directPanel.isValid) {
+    return directPanel;
+  }
+  var gameViewNode = hudLayer.getChildByName("GameView");
+  if (!gameViewNode || !gameViewNode.isValid) {
+    throw new Error("PropTipsView position requires GameView under HUD layer.");
+  }
+  var hudPanel = gameViewNode.getChildByName("HudPanel");
+  if (!hudPanel || !hudPanel.isValid) {
+    throw new Error("PropTipsView position requires HudPanel.");
+  }
+  return hudPanel;
+}
+
+function resolvePropTipsPositionBelowHud(host, viewNode) {
+  requireValidNode(viewNode, "PropTipsView");
+  if (typeof viewNode.getContentSize !== "function") {
+    throw new Error("PropTipsView requires content size.");
+  }
+  var size = viewNode.getContentSize();
+  if (!size || !Number.isFinite(size.width) || !Number.isFinite(size.height) || size.width <= 0 || size.height <= 0) {
+    throw new Error("PropTipsView size is invalid.");
+  }
+  var hudRect = resolveGuideTargetRectInRoot(resolveMountedHudPanel(host), host.node);
+  var anchorY = Number.isFinite(viewNode.anchorY) ? viewNode.anchorY : 0.5;
+  var topOffset = size.height * (1 - anchorY);
+  return cc.v2(0, hudRect.bottom - PROP_TIPS_HUD_BOTTOM_MARGIN - topOffset);
+}
+
+function syncPropTipsPositionBelowHud(host, viewNode) {
+  viewNode.setPosition(resolvePropTipsPositionBelowHud(host, viewNode));
+}
+
+function destroySkillPowerupPropTipsView(host) {
+  var viewNode = host._skillPowerupPropTipsViewNode;
+  if (viewNode && viewNode.isValid) {
+    viewNode.removeFromParent(false);
+    viewNode.destroy();
+  }
+  host._skillPowerupPropTipsViewNode = null;
+  host._skillPowerupPropTipsViewPromise = null;
+}
+
 function resolveSkillPowerupGuideButtonName(entityType) {
   var safeType = requireSkillPowerupGuideType(entityType, "Skill powerup guide type");
   if (!Object.prototype.hasOwnProperty.call(SKILL_POWERUP_GUIDE_BUTTONS, safeType)) {
@@ -389,6 +486,49 @@ function revealSkillPowerupGuideButton(host, target) {
     throw new Error("Skill powerup guide button failed to enter visible scroll area.");
   }
   return buttonRect;
+}
+
+function resolveGameplayFireGuideTipPoint() {
+  return cc.v2(0, 0);
+}
+
+function buildCenteredFireGuideRect(point) {
+  if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) {
+    throw new Error("Skill powerup fire guide point must be finite.");
+  }
+  return normalizeRect({
+    left: point.x - SKILL_POWERUP_FIRE_HOLE_HALF_SIZE,
+    right: point.x + SKILL_POWERUP_FIRE_HOLE_HALF_SIZE,
+    bottom: point.y - SKILL_POWERUP_FIRE_HOLE_HALF_SIZE,
+    top: point.y + SKILL_POWERUP_FIRE_HOLE_HALF_SIZE
+  }, "Skill powerup fire guide rect");
+}
+
+function resolveRainbowColorSelectorGuideRect(host) {
+  if (!host.levelRenderer || !host.levelRenderer.layers || !host.levelRenderer.layers.shooter) {
+    throw new Error("Rainbow color guide requires shooter layer.");
+  }
+  var shooterPanel = requireChildNode(host.levelRenderer.layers.shooter, "ShooterPanel", "Shooter layer");
+  var selectorNode = requireChildNode(shooterPanel, "RainbowColorSelector", "ShooterPanel");
+  if (selectorNode.active !== true) {
+    throw new Error("Rainbow color guide requires active RainbowColorSelector.");
+  }
+
+  var points = [];
+  selectorNode.children.forEach(function (childNode) {
+    if (!childNode || !childNode.isValid || childNode.active !== true || childNode.name.indexOf("RainbowColor_") !== 0) {
+      return;
+    }
+    var rect = resolveGuideTargetRectInRoot(childNode, host.node);
+    points.push(cc.v2(rect.left, rect.bottom));
+    points.push(cc.v2(rect.left, rect.top));
+    points.push(cc.v2(rect.right, rect.bottom));
+    points.push(cc.v2(rect.right, rect.top));
+  });
+  if (points.length === 0) {
+    throw new Error("Rainbow color guide requires visible color buttons.");
+  }
+  return buildRectFromPoints(points);
 }
 
 function requireSkillPowerupGuideState(host) {
@@ -484,6 +624,21 @@ function collectSkillPowerupGuideTypesFromSnapshot(snapshot) {
   return collectedTypes;
 }
 
+function isIntroduceTipsOverlayActive(host) {
+  if (!Array.isArray(host._specialIntroduceQueue)) {
+    throw new Error("Skill powerup guide requires special introduce queue.");
+  }
+  return !!(
+    host._specialIntroduceViewActive === true ||
+    host._specialIntroduceOpening === true ||
+    host._geniusTipsViewActive === true ||
+    host._geniusTipsViewOpening === true ||
+    host._sartTipsViewActive === true ||
+    host._sartTipsViewOpening === true ||
+    host._specialIntroduceQueue.length > 0
+  );
+}
+
 module.exports = {
   _refreshNewUserGuideState: function () {
     this.newUserGuideState = requireGuideStore(this).load();
@@ -567,6 +722,7 @@ module.exports = {
     sprite.spriteFrame = this._newUserGuideFingerSpriteFrame;
     sprite.sizeMode = cc.Sprite.SizeMode.RAW;
     fingerNode.setContentSize(this._newUserGuideFingerSize);
+    fingerNode.zIndex = 30;
     fingerNode.opacity = 255;
     fingerNode.active = true;
     this._newUserGuideFingerNode = fingerNode;
@@ -575,6 +731,7 @@ module.exports = {
 
   _hideNewUserGuide: function () {
     stopGuideNodeActions(this._newUserGuideFingerNode);
+    destroySkillPowerupPropTipsView(this);
     if (this._newUserGuideLayer && this._newUserGuideLayer.isValid) {
       this._newUserGuideLayer.active = false;
     }
@@ -604,6 +761,58 @@ module.exports = {
       this._runNewUserGuideFingerBreath(fingerNode);
       return fingerNode;
     }.bind(this));
+  },
+
+  _ensureSkillPowerupPropTipsView: function () {
+    if (this._skillPowerupPropTipsViewNode && this._skillPowerupPropTipsViewNode.isValid) {
+      return Promise.resolve(this._skillPowerupPropTipsViewNode);
+    }
+    if (this._skillPowerupPropTipsViewPromise) {
+      return this._skillPowerupPropTipsViewPromise;
+    }
+
+    this._skillPowerupPropTipsViewPromise = this._loadPrefab(PROP_TIPS_VIEW_PREFAB_PATH).then(function (prefab) {
+      if (!prefab) {
+        throw new Error("PropTipsView prefab is required.");
+      }
+      var layerNode = this._ensureNewUserGuideLayer();
+      var viewNode = cc.instantiate(prefab);
+      if (!viewNode || !viewNode.isValid) {
+        throw new Error("Instantiate PropTipsView prefab failed.");
+      }
+      if (viewNode.name !== PROP_TIPS_VIEW_NAME) {
+        throw new Error("PropTipsView root node name must be " + PROP_TIPS_VIEW_NAME + ".");
+      }
+      resolvePropTipsLabel(viewNode);
+      viewNode.parent = layerNode;
+      syncPropTipsPositionBelowHud(this, viewNode);
+      viewNode.zIndex = PROP_TIPS_VIEW_Z_INDEX;
+      viewNode.active = true;
+      this._skillPowerupPropTipsViewPrefab = prefab;
+      this._skillPowerupPropTipsViewNode = viewNode;
+      this._skillPowerupPropTipsViewPromise = null;
+      return viewNode;
+    }.bind(this)).catch(function (error) {
+      this._skillPowerupPropTipsViewPromise = null;
+      throw error;
+    }.bind(this));
+
+    return this._skillPowerupPropTipsViewPromise;
+  },
+
+  _showSkillPowerupPropTipsView: function (entityType, step) {
+    var text = resolveSkillPowerupGuideTipsText(entityType, step);
+    return this._ensureSkillPowerupPropTipsView().then(function (viewNode) {
+      viewNode.active = true;
+      syncPropTipsPositionBelowHud(this, viewNode);
+      viewNode.zIndex = PROP_TIPS_VIEW_Z_INDEX;
+      resolvePropTipsLabel(viewNode).string = text;
+      return viewNode;
+    }.bind(this));
+  },
+
+  _hideSkillPowerupPropTipsView: function () {
+    destroySkillPowerupPropTipsView(this);
   },
 
   _applyNewUserGuideMask: function (holeRect) {
@@ -667,21 +876,16 @@ module.exports = {
     if (!this._isNewUserGuideStep(STEP_START_GAME)) {
       return;
     }
-    return waitMilliseconds(START_GAME_GUIDE_SHOW_DELAY_MS).then(function () {
-      if (!this._isNewUserGuideStep(STEP_START_GAME)) {
-        return null;
-      }
-      if (!this._startGameViewNode || !this._startGameViewNode.isValid || !this._startGameViewNode.active) {
-        throw new Error("New user guide start game step requires active StartGameView.");
-      }
-      var playButtonNode = this._findNodeByNameRecursive(this._startGameViewNode, "play_btn");
-      if (!playButtonNode || !playButtonNode.isValid) {
-        throw new Error("New user guide requires StartGameView play_btn.");
-      }
-      var playButtonRect = resolveGuideTargetRectInRoot(playButtonNode, this.node);
-      this._applyNewUserGuideMask(expandRect(playButtonRect, BUTTON_HOLE_PADDING));
-      return this._showNewUserGuideFingerAtTip(resolveRectCenter(playButtonRect));
-    }.bind(this));
+    if (!this._startGameViewNode || !this._startGameViewNode.isValid || !this._startGameViewNode.active) {
+      throw new Error("New user guide start game step requires active StartGameView.");
+    }
+    if (!this._startGameViewController || typeof this._startGameViewController.getPlayButtonNode !== "function") {
+      throw new Error("New user guide start game step requires StartGameViewController.getPlayButtonNode.");
+    }
+    var playButtonNode = this._startGameViewController.getPlayButtonNode();
+    var playButtonRect = resolveGuideTargetRectInRoot(playButtonNode, this.node);
+    this._applyNewUserGuideMask(expandRect(playButtonRect, BUTTON_HOLE_PADDING));
+    return this._showNewUserGuideFingerAtTip(resolveRectCenter(playButtonRect));
   },
 
   _showNewUserGuideForGameplay: function () {
@@ -758,7 +962,12 @@ module.exports = {
     var buttonRect = revealSkillPowerupGuideButton(this, target);
     this._applyNewUserGuideMask(expandRect(buttonRect, BUTTON_HOLE_PADDING));
     this._activeSkillPowerupGuideType = safeType;
-    return this._showNewUserGuideFingerAtTip(resolveRectCenter(buttonRect));
+    this._activeSkillPowerupGuideStep = SKILL_POWERUP_GUIDE_STEP_SELECT;
+    return this._showNewUserGuideFingerAtTip(resolveRectCenter(buttonRect)).then(function (fingerNode) {
+      return this._showSkillPowerupPropTipsView(safeType, SKILL_POWERUP_GUIDE_STEP_SELECT).then(function () {
+        return fingerNode;
+      });
+    }.bind(this));
   },
 
   _syncSkillPowerupGuideForRuntimeSnapshot: function (runtimeSnapshot) {
@@ -774,6 +983,9 @@ module.exports = {
     if (this._activeSkillPowerupGuideType) {
       return;
     }
+    if (isIntroduceTipsOverlayActive(this) === true) {
+      return;
+    }
 
     var queue = ensureSkillPowerupGuideQueue(this);
     for (var index = 0; index < queue.length; index += 1) {
@@ -787,6 +999,78 @@ module.exports = {
         return;
       }
     }
+  },
+
+  _advanceSkillPowerupGuideAfterSkillSelected: function (entityType, runtimeSnapshot) {
+    var safeType = requireSkillPowerupGuideType(entityType, "Skill powerup selected guide type");
+    if (this._activeSkillPowerupGuideType !== safeType) {
+      return null;
+    }
+    if (this._activeSkillPowerupGuideStep !== SKILL_POWERUP_GUIDE_STEP_SELECT) {
+      return null;
+    }
+
+    if (safeType === "blast") {
+      this._activeSkillPowerupGuideStep = SKILL_POWERUP_GUIDE_STEP_FIRE;
+      var firePoint = resolveGameplayFireGuideTipPoint();
+      this._applyNewUserGuideMask(expandRect(buildCenteredFireGuideRect(firePoint), GAMEPLAY_HOLE_PADDING));
+      return this._showNewUserGuideFingerAtTip(firePoint).then(function (fingerNode) {
+        return this._showSkillPowerupPropTipsView(safeType, SKILL_POWERUP_GUIDE_STEP_FIRE).then(function () {
+          return fingerNode;
+        });
+      }.bind(this));
+    }
+
+    if (safeType !== "rainbow") {
+      throw new Error("Unsupported skill powerup selected guide type: " + safeType);
+    }
+    if (!runtimeSnapshot || !runtimeSnapshot.shooter || !runtimeSnapshot.shooter.pendingRainbowColorSelection) {
+      throw new Error("Rainbow skill guide requires pendingRainbowColorSelection after selection.");
+    }
+    this._activeSkillPowerupGuideStep = SKILL_POWERUP_GUIDE_STEP_COLOR;
+    return waitMilliseconds(RAINBOW_COLOR_SELECTOR_ANIMATION_WAIT_MS).then(function () {
+      if (this._activeSkillPowerupGuideType !== safeType || this._activeSkillPowerupGuideStep !== SKILL_POWERUP_GUIDE_STEP_COLOR) {
+        return null;
+      }
+      var selectorRect = resolveRainbowColorSelectorGuideRect(this);
+      this._applyNewUserGuideMask(expandRect(selectorRect, BUTTON_HOLE_PADDING));
+      return this._showNewUserGuideFingerAtTip(resolveRectCenter(selectorRect)).then(function (fingerNode) {
+        return this._showSkillPowerupPropTipsView(safeType, SKILL_POWERUP_GUIDE_STEP_COLOR).then(function () {
+          return fingerNode;
+        });
+      }.bind(this));
+    }.bind(this));
+  },
+
+  _advanceSkillPowerupGuideAfterRainbowColorSelected: function (runtimeSnapshot) {
+    if (this._activeSkillPowerupGuideType !== "rainbow") {
+      return null;
+    }
+    if (this._activeSkillPowerupGuideStep !== SKILL_POWERUP_GUIDE_STEP_COLOR) {
+      return null;
+    }
+    if (!runtimeSnapshot || !runtimeSnapshot.shooter || runtimeSnapshot.shooter.pendingRainbowColorSelection) {
+      throw new Error("Rainbow skill fire guide requires completed color selection.");
+    }
+
+    this._activeSkillPowerupGuideStep = SKILL_POWERUP_GUIDE_STEP_FIRE;
+    var firePoint = resolveGameplayFireGuideTipPoint();
+    this._applyNewUserGuideMask(expandRect(buildCenteredFireGuideRect(firePoint), GAMEPLAY_HOLE_PADDING));
+    return this._showNewUserGuideFingerAtTip(firePoint).then(function (fingerNode) {
+      return this._showSkillPowerupPropTipsView("rainbow", SKILL_POWERUP_GUIDE_STEP_FIRE).then(function () {
+        return fingerNode;
+      });
+    }.bind(this));
+  },
+
+  _completeActiveSkillPowerupFireGuide: function () {
+    if (!this._activeSkillPowerupGuideType) {
+      return;
+    }
+    if (this._activeSkillPowerupGuideStep !== SKILL_POWERUP_GUIDE_STEP_FIRE) {
+      return;
+    }
+    this._completeSkillPowerupUseGuide(this._activeSkillPowerupGuideType);
   },
 
   _advanceNewUserGuideToStartGame: function () {
@@ -840,6 +1124,7 @@ module.exports = {
     this._saveSkillPowerupGuideState();
     removeQueuedSkillPowerupGuide(this, safeType);
     this._activeSkillPowerupGuideType = "";
+    this._activeSkillPowerupGuideStep = "";
     this._hideNewUserGuide();
   }
 };

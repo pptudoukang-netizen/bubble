@@ -24,6 +24,36 @@ module.exports = {
     return this.networkLoadingOverlay.run(promiseFactory, options);
   },
 
+  _runLevelEntryWithLoading: function (promiseFactory) {
+    if (typeof promiseFactory !== "function") {
+      return Promise.reject(new Error("Level entry loading task must be a function."));
+    }
+    var token = null;
+    return this._showNetworkLoading({
+      timeoutMs: this.networkLoadingTimeoutMs
+    }).then(function (loadingToken) {
+      token = loadingToken;
+      var taskPromise = null;
+      try {
+        taskPromise = promiseFactory();
+      } catch (error) {
+        this._hideNetworkLoading(token);
+        return Promise.reject(error);
+      }
+      if (!taskPromise || typeof taskPromise.then !== "function") {
+        this._hideNetworkLoading(token);
+        return Promise.reject(new Error("Level entry loading task must return a Promise."));
+      }
+      return taskPromise.then(function (result) {
+        this._hideNetworkLoading(token);
+        return result;
+      }.bind(this), function (error) {
+        this._hideNetworkLoading(token);
+        throw error;
+      }.bind(this));
+    }.bind(this));
+  },
+
   _isNetworkLoadingTimeoutError: function (error) {
     return NetworkLoadingOverlay.isTimeoutError(error);
   }

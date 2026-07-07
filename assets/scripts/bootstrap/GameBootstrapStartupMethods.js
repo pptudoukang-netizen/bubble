@@ -6,6 +6,21 @@ var BundleLoader = Shared.BundleLoader;
 var LoadingViewController = Shared.LoadingViewController;
 var ShopStateService = Shared.ShopStateService;
 var StrictStorage = require("../utils/StrictStorage");
+var STARTUP_BUNDLE_PROGRESS_SPAN = 0.75;
+var STARTUP_PREFAB_PROGRESS_BASE = 0.75;
+var STARTUP_PREFAB_PROGRESS_SPAN = 0.25;
+var STARTUP_SUBPACKAGE_PHASE_WEIGHT = 0.9;
+var STARTUP_BUNDLE_PHASE_WEIGHT = 0.1;
+var STARTUP_BUNDLE_WEIGHTS = {
+  resources: 9,
+  map: 3
+};
+var STARTUP_BUNDLE_STAGE_LABELS = {
+  "resources:subpackage": "下载基础资源...",
+  "resources:bundle": "加载基础资源...",
+  "map:subpackage": "下载地图资源...",
+  "map:bundle": "加载地图资源..."
+};
 
 function isWechatGameRuntime() {
   return !!(
@@ -97,6 +112,70 @@ function runParallelStartupTasks(host, tasks, initialStage, progressRange) {
   })).then(function () {
     return null;
   });
+}
+
+function requireStartupBundleProgressEvent(event) {
+  if (!event || typeof event !== "object" || Array.isArray(event)) {
+    throw new Error("Startup bundle progress event must be an object.");
+  }
+  if (typeof event.bundleName !== "string" || event.bundleName.length === 0) {
+    throw new Error("Startup bundle progress event requires bundleName.");
+  }
+  if (event.phase !== "subpackage" && event.phase !== "bundle") {
+    throw new Error("Startup bundle progress event phase is invalid: " + event.phase);
+  }
+  if (typeof event.progress !== "number" || !Number.isFinite(event.progress) || event.progress < 0 || event.progress > 1) {
+    throw new Error("Startup bundle progress event progress must be in [0, 1].");
+  }
+  return event;
+}
+
+function createStartupBundleProgressReporter(host) {
+  var progressByBundle = {
+    resources: {
+      subpackage: 0,
+      bundle: 0
+    },
+    map: {
+      subpackage: 0,
+      bundle: 0
+    }
+  };
+  var bundleNames = Object.keys(STARTUP_BUNDLE_WEIGHTS);
+  var totalWeight = bundleNames.reduce(function (sum, bundleName) {
+    var weight = STARTUP_BUNDLE_WEIGHTS[bundleName];
+    if (typeof weight !== "number" || !Number.isFinite(weight) || weight <= 0) {
+      throw new Error("Startup bundle weight must be positive: " + bundleName);
+    }
+    return sum + weight;
+  }, 0);
+
+  return function (event) {
+    var progressEvent = requireStartupBundleProgressEvent(event);
+    if (!progressByBundle[progressEvent.bundleName]) {
+      throw new Error("Unsupported startup bundle progress: " + progressEvent.bundleName);
+    }
+
+    progressByBundle[progressEvent.bundleName][progressEvent.phase] = progressEvent.progress;
+    var weightedDone = bundleNames.reduce(function (sum, bundleName) {
+      var bundleProgress = progressByBundle[bundleName];
+      var phaseProgress =
+        bundleProgress.subpackage * STARTUP_SUBPACKAGE_PHASE_WEIGHT +
+        bundleProgress.bundle * STARTUP_BUNDLE_PHASE_WEIGHT;
+      return sum + phaseProgress * STARTUP_BUNDLE_WEIGHTS[bundleName];
+    }, 0);
+
+    var nextProgress = weightedDone / totalWeight * STARTUP_BUNDLE_PROGRESS_SPAN;
+    if (host._loadingViewController && host._loadingViewController.setProgress) {
+      host._loadingViewController.setProgress(nextProgress, false);
+    }
+
+    var stageKey = progressEvent.bundleName + ":" + progressEvent.phase;
+    var stageLabel = STARTUP_BUNDLE_STAGE_LABELS[stageKey];
+    if (stageLabel) {
+      setStartupStage(host, stageLabel);
+    }
+  };
 }
 
 module.exports = {
@@ -249,9 +328,11 @@ module.exports = {
       host._loadingViewController.setProgress(0, true);
     }
 
-    return host._beginStartupBundlePrefetch().then(function () {
+    return host._beginStartupBundlePrefetch({
+      onProgress: createStartupBundleProgressReporter(host)
+    }).then(function () {
       if (host._loadingViewController && host._loadingViewController.setProgress) {
-        host._loadingViewController.setProgress(0.55, false);
+        host._loadingViewController.setProgress(STARTUP_PREFAB_PROGRESS_BASE, false);
       }
 
       return runParallelStartupTasks(host, [
@@ -264,8 +345,8 @@ module.exports = {
           }
         }
       ], "加载选关界面...", {
-        base: 0.55,
-        span: 0.45
+        base: STARTUP_PREFAB_PROGRESS_BASE,
+        span: STARTUP_PREFAB_PROGRESS_SPAN
       });
     }).then(function () {
       if (host._loadingViewController && host._loadingViewController.setProgress) {
@@ -276,14 +357,14 @@ module.exports = {
     });
   },
 
-  _beginStartupBundlePrefetch: function () {
+  _beginStartupBundlePrefetch: function (options) {
     if (this._startupBundlePrefetchPromise) {
       return this._startupBundlePrefetchPromise;
     }
 
     this._startupBundlePrefetchPromise = Promise.all([
-      BundleLoader.ensureResourcesBundleLoaded(),
-      BundleLoader.ensureNamedBundleLoaded("map")
+      BundleLoader.ensureResourcesBundleLoaded(options),
+      BundleLoader.ensureNamedBundleLoaded("map", options)
     ]);
 
     return this._startupBundlePrefetchPromise;
@@ -338,7 +419,7 @@ module.exports = {
     }
 
     this._deferredPlayerCloudProfileSyncPromise = this._syncPlayerProfileFromCloud().then(function (result) {
-      if (result && result.source === "cloud") {
+      if (result && result.source === "cloud" && result.applied === true) {
         StrictStorage.suspendWriteObserver(function () {
           this._refreshLevelSelectAfterCloudProfileSync();
         }.bind(this));
@@ -403,12 +484,20 @@ module.exports = {
     if (!this.playerCloudProfileService || typeof this.playerCloudProfileService.syncFromCloudOrUploadLocal !== "function") {
       throw new Error("Player cloud profile sync requires PlayerCloudProfileService.");
     }
-    return this.playerCloudProfileService.syncFromCloudOrUploadLocal().then(function (result) {
+    return this.playerCloudProfileService.syncFromCloudOrUploadLocal({
+      shouldApplyCloudProfile: function () {
+        return this.isSelectingLevel === true;
+      }.bind(this)
+    }).then(function (result) {
       if (!result || typeof result !== "object") {
         throw new Error("Player cloud profile sync result is required.");
       }
       if (result.source === "cloud") {
-        this._reloadPlayerInfoFromStores();
+        if (result.applied === true) {
+          this._reloadPlayerInfoFromStores();
+        } else if (result.applied !== false) {
+          throw new Error("Player cloud profile cloud sync requires applied flag.");
+        }
       } else if (result.source !== "local") {
         throw new Error("Unsupported player cloud profile sync source: " + result.source);
       }

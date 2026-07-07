@@ -191,7 +191,7 @@ module.exports = {
     ].join("_");
     this._trackedResultAttemptId = "";
     this._grantedAttemptRewardKeys = {};
-    saveAttemptStats(this, requireAttemptStore(this).recordStart(this.levelAttemptStats, {
+    var nextAttemptStats = requireAttemptStore(this).recordStart(this.levelAttemptStats, {
       attemptId: this._currentAttemptId,
       levelId: levelData.levelId,
       levelCode: levelData.levelCode,
@@ -199,7 +199,17 @@ module.exports = {
       startedAt: Date.now(),
       startState: requireNonEmptyString(safeSnapshot.state, "Level attempt start state"),
       initialShots: requireNonNegativeInteger(safeSnapshot.remainingShots, "Level attempt initialShots")
-    }));
+    });
+    assertObject(nextAttemptStats.activeAttempt, "Level attempt started activeAttempt");
+    this._currentAttemptLevelId = requirePositiveInteger(
+      nextAttemptStats.activeAttempt.levelId,
+      "Current attempt levelId"
+    );
+    this._currentAttemptIndexForLevel = requirePositiveInteger(
+      nextAttemptStats.activeAttempt.attemptIndexForLevel,
+      "Current attempt indexForLevel"
+    );
+    saveAttemptStats(this, nextAttemptStats);
 
     this._trackTelemetry("level_start", {
       result_state: safeSnapshot.state

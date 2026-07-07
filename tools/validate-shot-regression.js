@@ -39,8 +39,8 @@ function createGridWithViewport(levelConfig) {
 }
 
 var LEVEL_DIR = path.resolve(__dirname, "../assets/resources/config/levels");
-var MANIFEST_PATH = path.resolve(__dirname, "../assets/resources/config/level_manifest.json");
 var REMOTE_PACK_DIR = path.resolve(__dirname, "../remote-level-packs");
+var MANIFEST_PATH = path.resolve(REMOTE_PACK_DIR, "level_manifest.json");
 
 function createKeyUnlockRegressionManager() {
   var SupportSystem = require("../assets/scripts/systems/SupportSystem");
@@ -527,6 +527,47 @@ function runKeyUnlockNearestTargetCase() {
   }
 }
 
+function runKeyUnlockRemovedByExplosionCase() {
+  var manager = createKeyUnlockRegressionManager();
+  var levelConfig = {
+    coordinateSystem: "odd-r-hex",
+    level: {
+      initialDropSpaceRows: 8,
+      layout: [
+        ".........",
+        ".........",
+        "........."
+      ],
+      specialEntities: [
+        { id: "key_blasted", entityCategory: "key_ball", entityType: "key", row: 0, col: 1 },
+        { id: "locked_blasted", entityCategory: "locked_ball", entityType: "locked", lockedColor: "R", row: 0, col: 2 }
+      ]
+    }
+  };
+  var resolution = createKeyUnlockResolution();
+  var grid = createGridWithViewport(levelConfig);
+  var keyCell = grid.getCell(0, 1);
+  if (!keyCell || keyCell.entityCategory !== "key_ball") {
+    throw new Error("Key explosion removal regression setup failed to create key cell.");
+  }
+
+  var removedKey = grid.removeCells([keyCell]);
+  var collected = manager._resolveReactiveEntitiesAfterRemoval(removedKey, grid, resolution);
+  if (collected.length !== 1 || collected[0].id !== "key_blasted") {
+    throw new Error("Explosion-removed key must be collected through reactive resolution.");
+  }
+  if (resolution.collectedKeys.length !== 1 || resolution.collectedKeys[0].id !== "key_blasted") {
+    throw new Error("Explosion-removed key must be recorded as collected key.");
+  }
+  if (resolution.unlockedLockedBalls.length !== 1) {
+    throw new Error("Explosion-removed key must immediately unlock one locked ball.");
+  }
+  var unlockedCell = grid.getCell(0, 2);
+  if (!unlockedCell || unlockedCell.entityCategory !== "normal_ball" || unlockedCell.color !== "R") {
+    throw new Error("Explosion-removed key must replace locked target with its lockedColor.");
+  }
+}
+
 function runKeyUnlockCompetitiveNearestCase() {
   var manager = createKeyUnlockRegressionManager();
   var levelConfig = {
@@ -571,6 +612,251 @@ function runKeyUnlockCompetitiveNearestCase() {
   }
   if (!rightUnlock || rightUnlock.row !== 2 || rightUnlock.col !== 4) {
     throw new Error("Right key must unlock nearest locked ball on its left.");
+  }
+}
+
+function runKeyUnlockMolotovFloatingRemovalCase() {
+  var manager = createKeyUnlockRegressionManager();
+  var levelConfig = {
+    coordinateSystem: "odd-r-hex",
+    level: {
+      initialDropSpaceRows: 8,
+      layout: [
+        ".........",
+        ".........",
+        ".........",
+        "........."
+      ],
+      specialEntities: [
+        { id: "key_floating", entityCategory: "key_ball", entityType: "key", row: 2, col: 1 },
+        { id: "locked_after_float", entityCategory: "locked_ball", entityType: "locked", lockedColor: "B", row: 2, col: 2 }
+      ]
+    }
+  };
+  var grid = createGridWithViewport(levelConfig);
+  var keyCell = grid.getCell(2, 1);
+  if (!keyCell || keyCell.entityCategory !== "key_ball") {
+    throw new Error("Molotov floating key regression setup failed to create key cell.");
+  }
+
+  var registeredDrops = [];
+  var scanCount = 0;
+  manager.systems.supportSystem = {
+    findFloatingCells: function () {
+      scanCount += 1;
+      return scanCount === 1 ? [keyCell] : [];
+    }
+  };
+  manager.systems.fallingMarbleSystem = {
+    registerDrops: function (drops) {
+      registeredDrops = registeredDrops.concat(drops);
+    }
+  };
+  manager.systems.jarCollectorSystem = {
+    collect: function () {}
+  };
+  manager.molotovPendingResolutionContext = {
+    allRemoved: [{
+      id: "molotov_removed_anchor",
+      row: 1,
+      col: 1,
+      color: "R",
+      entityCategory: "normal_ball",
+      entityType: null
+    }]
+  };
+
+  var resolution = {
+    floating: [],
+    collected: [],
+    collectedKeys: [],
+    unlockedLockedBalls: [],
+    spawnedBySplitters: [],
+    thawed: [],
+    iceCollected: 0
+  };
+  var removedFloating = manager._resolveMolotovFloatingAfterBoardMutation(grid, resolution);
+  if (removedFloating.length !== 1 || removedFloating[0].id !== "key_floating") {
+    throw new Error("Molotov floating resolution must remove the floating key.");
+  }
+  if (resolution.collectedKeys.length !== 1 || resolution.collectedKeys[0].id !== "key_floating") {
+    throw new Error("Floating key must be recorded as collected key.");
+  }
+  if (resolution.unlockedLockedBalls.length !== 1) {
+    throw new Error("Floating key must immediately unlock one locked ball.");
+  }
+  if (registeredDrops.length !== 0) {
+    throw new Error("Floating key must unlock instead of registering as a normal falling drop.");
+  }
+  var unlockedCell = grid.getCell(2, 2);
+  if (!unlockedCell || unlockedCell.entityCategory !== "normal_ball" || unlockedCell.color !== "B") {
+    throw new Error("Floating key must replace locked target with its lockedColor.");
+  }
+}
+
+function runMolotovFloatingMolotovRegistersDropCase() {
+  var manager = new GameManager();
+  var floatingMolotov = {
+    id: "floating_chain_molotov",
+    row: 3,
+    col: 2,
+    entityCategory: "reactive_ball",
+    entityType: "molotov",
+    blastRadius: 2
+  };
+  var registeredDrops = [];
+  var scanCount = 0;
+  var grid = {
+    removeCells: function (cells) {
+      return cells.slice();
+    }
+  };
+  var resolution = {
+    floating: [],
+    collected: [],
+    collectedKeys: [],
+    unlockedLockedBalls: [],
+    spawnedBySplitters: [],
+    thawed: [],
+    iceCollected: 0
+  };
+
+  manager.systems = {
+    bubbleGrid: grid,
+    supportSystem: {
+      findFloatingCells: function (targetGrid) {
+        if (targetGrid !== grid) {
+          throw new Error("Molotov floating molotov regression must inspect the live grid.");
+        }
+        scanCount += 1;
+        return scanCount === 1 ? [floatingMolotov] : [];
+      }
+    },
+    fallingMarbleSystem: {
+      registerDrops: function (drops) {
+        registeredDrops = registeredDrops.concat(drops);
+      }
+    },
+    jarCollectorSystem: {
+      collect: function () {}
+    }
+  };
+  manager.molotovPendingResolutionContext = {
+    allRemoved: [{
+      id: "molotov_removed_anchor",
+      row: 2,
+      col: 2,
+      color: "G",
+      entityCategory: "normal_ball",
+      entityType: null
+    }]
+  };
+  manager._resolveCollectedKeyUnlocks = function () {};
+  manager._collectRemovedKeysAndResolveUnlocks = function () {};
+  manager._cancelPendingSplitterSpawnsForDroppedCells = function () {};
+
+  var removedFloating = manager._resolveMolotovFloatingAfterBoardMutation(grid, resolution);
+  if (removedFloating.length !== 1 || removedFloating[0].id !== "floating_chain_molotov") {
+    throw new Error("Molotov floating resolution must remove unsupported chain molotov.");
+  }
+  if (registeredDrops.length !== 1 || registeredDrops[0].id !== "floating_chain_molotov") {
+    throw new Error("Unsupported chain molotov must register as a falling drop immediately.");
+  }
+}
+
+function runMolotovFloatingKeyUnlockCascadesUnsupportedDropCase() {
+  var manager = createKeyUnlockRegressionManager();
+  var levelConfig = {
+    coordinateSystem: "odd-r-hex",
+    level: {
+      initialDropSpaceRows: 8,
+      layout: [
+        ".........",
+        ".........",
+        ".........",
+        "........."
+      ],
+      specialEntities: [
+        { id: "key_floating_chain", entityCategory: "key_ball", entityType: "key", row: 2, col: 1 },
+        { id: "locked_chain_support", entityCategory: "locked_ball", entityType: "locked", lockedColor: "B", row: 2, col: 2 },
+        { id: "child_after_unlock", entityCategory: "normal_ball", entityType: null, color: "R", row: 3, col: 2 }
+      ]
+    }
+  };
+  var grid = createGridWithViewport(levelConfig);
+  var keyCell = grid.getCell(2, 1);
+  var registeredDrops = [];
+  var scanCount = 0;
+
+  manager.systems.supportSystem = {
+    findFloatingCells: function () {
+      scanCount += 1;
+      if (scanCount === 1) {
+        return [keyCell];
+      }
+      if (scanCount === 2) {
+        var unlocked = grid.getCell(2, 2);
+        if (!unlocked || unlocked.entityCategory !== "normal_ball") {
+          throw new Error("Molotov key cascade regression expected unlocked support cell.");
+        }
+        return [unlocked];
+      }
+      if (scanCount === 3) {
+        var child = grid.getCell(3, 2);
+        if (!child || child.id !== "child_after_unlock") {
+          throw new Error("Molotov key cascade regression expected child to remain until cascade scan.");
+        }
+        return [child];
+      }
+      return [];
+    }
+  };
+  manager.systems.fallingMarbleSystem = {
+    registerDrops: function (drops) {
+      registeredDrops = registeredDrops.concat(drops);
+    }
+  };
+  manager.systems.jarCollectorSystem = {
+    collect: function () {}
+  };
+  manager.molotovPendingResolutionContext = {
+    allRemoved: [{
+      id: "molotov_removed_anchor",
+      row: 1,
+      col: 1,
+      color: "R",
+      entityCategory: "normal_ball",
+      entityType: null
+    }]
+  };
+
+  var resolution = {
+    floating: [],
+    collected: [],
+    collectedKeys: [],
+    unlockedLockedBalls: [],
+    spawnedBySplitters: [],
+    thawed: [],
+    iceCollected: 0
+  };
+  var removedFloating = manager._resolveMolotovFloatingAfterBoardMutation(grid, resolution);
+  if (removedFloating.length !== 2) {
+    throw new Error("Molotov key cascade must remove the key and newly unsupported child through molotov floating resolution.");
+  }
+  if (resolution.floating.length !== 3) {
+    throw new Error("Molotov key cascade must include key, unlocked support, and child in floating resolution.");
+  }
+  var unlockedDrop = registeredDrops.find(function (drop) {
+    return drop.id === "2_2";
+  });
+  var childDrop = registeredDrops.find(function (drop) {
+    return drop.id === "child_after_unlock";
+  });
+  if (!unlockedDrop || !childDrop) {
+    throw new Error("Molotov key cascade must register unlocked support and child drops in the same resolution.");
+  }
+  if (grid.getCell(2, 2) || grid.getCell(3, 2)) {
+    throw new Error("Molotov key cascade must remove all unsupported descendants from the live grid.");
   }
 }
 
@@ -845,7 +1131,8 @@ function runMolotovEliminationSequencePositionCase() {
     }
   };
   manager.molotovPendingResolutionContext = {
-    allRemoved: []
+    allRemoved: [],
+    triggeredSplitterIds: {}
   };
   manager.molotovBlastTriggeredIds = {};
   manager._triggerAdjacentKeys = function () {
@@ -878,6 +1165,338 @@ function runMolotovEliminationSequencePositionCase() {
   }
 }
 
+function runMolotovChainSplitterDedupCase() {
+  var manager = new GameManager();
+  var splitter = {
+    id: "splitter_shared",
+    row: 1,
+    col: 3,
+    splitColor: "P",
+    entityCategory: "reactive_ball",
+    entityType: "splitter"
+  };
+  var normalFirst = {
+    id: "normal_first",
+    row: 1,
+    col: 2,
+    color: "R",
+    entityCategory: "normal_ball",
+    entityType: null
+  };
+  var normalSecond = {
+    id: "normal_second",
+    row: 2,
+    col: 2,
+    color: "G",
+    entityCategory: "normal_ball",
+    entityType: null
+  };
+  var molotovFirst = {
+    id: "molotov_first",
+    row: 1,
+    col: 1,
+    entityCategory: "reactive_ball",
+    entityType: "molotov",
+    blastRadius: 2
+  };
+  var molotovSecond = {
+    id: "molotov_second",
+    row: 2,
+    col: 1,
+    entityCategory: "reactive_ball",
+    entityType: "molotov",
+    blastRadius: 2
+  };
+  var cellsById = {
+    normal_first: normalFirst,
+    normal_second: normalSecond,
+    molotov_first: molotovFirst,
+    molotov_second: molotovSecond,
+    splitter_shared: splitter
+  };
+  var queuedSplitterIds = [];
+  var grid = {
+    getCoordinatesWithinRadius: function (row, col, radius) {
+      if (radius !== 2) {
+        throw new Error("Molotov splitter dedup regression requires radius 2.");
+      }
+      if (row === 1 && col === 1) {
+        return [
+          { row: 1, col: 1, distance: 0 },
+          { row: 1, col: 2, distance: 1 }
+        ];
+      }
+      if (row === 2 && col === 1) {
+        return [
+          { row: 2, col: 1, distance: 0 },
+          { row: 2, col: 2, distance: 1 }
+        ];
+      }
+      throw new Error("Molotov splitter dedup regression queried unexpected blast center.");
+    },
+    getNeighborCoordinates: function (row, col) {
+      if (row === 1 && col === 2) {
+        return [{ row: 1, col: 3 }];
+      }
+      if (row === 2 && col === 2) {
+        return [{ row: 1, col: 3 }];
+      }
+      return [];
+    },
+    getCell: function (row, col) {
+      if (row === 1 && col === 2) {
+        return cellsById.normal_first || null;
+      }
+      if (row === 2 && col === 2) {
+        return cellsById.normal_second || null;
+      }
+      if (row === 1 && col === 1) {
+        return cellsById.molotov_first || null;
+      }
+      if (row === 2 && col === 1) {
+        return cellsById.molotov_second || null;
+      }
+      if (row === 1 && col === 3) {
+        return splitter;
+      }
+      return null;
+    },
+    removeCells: function (cells) {
+      cells.forEach(function (cell) {
+        if (!cell || (typeof cell.id !== "string" && typeof cell.id !== "number")) {
+          throw new Error("Molotov splitter dedup remove requires cell id.");
+        }
+        delete cellsById[cell.id];
+      });
+      return cells.slice();
+    },
+    getCellPosition: function (row, col) {
+      return {
+        x: col * 10,
+        y: row * 10
+      };
+    }
+  };
+  var resolution = {
+    matched: [],
+    collected: [],
+    floating: [],
+    reactiveTriggered: [],
+    spawnedBySplitters: [],
+    eliminationSequence: [],
+    matchedObjectiveCollected: [],
+    collectedKeys: [],
+    unlockedLockedBalls: []
+  };
+
+  manager.currentLevel = {
+    level: {
+      bonusObjectives: [],
+      winConditions: []
+    }
+  };
+  manager.systems = {
+    bubbleGrid: grid,
+    supportSystem: {
+      findFloatingCells: function () {
+        return [];
+      }
+    },
+    jarCollectorSystem: {
+      collect: function () {}
+    }
+  };
+  manager.pendingSplitterSpawns = [];
+  manager.molotovPendingResolutionContext = {
+    allRemoved: [],
+    triggeredSplitterIds: {}
+  };
+  manager.molotovBlastTriggeredIds = {};
+  manager._triggerAdjacentKeys = function () {
+    return [];
+  };
+  manager._queuePendingSplitterSpawn = function (splitterCell, targetResolution) {
+    GameManager.prototype._queuePendingSplitterSpawn.call(this, splitterCell, targetResolution);
+    queuedSplitterIds.push(splitterCell.id);
+  };
+  manager._collectAdjacentMolotovs = function () {
+    return [];
+  };
+  manager._queueMolotovBlasts = function () {};
+  manager._cancelPendingSplitterSpawnsForDroppedCells = function () {};
+  manager._registerResolutionDrops = function () {};
+
+  manager._executeMolotovBlastPhase({
+    id: "molotov_first",
+    row: 1,
+    col: 1,
+    blastRadius: 2
+  }, grid, resolution);
+  manager._executeMolotovBlastPhase({
+    id: "molotov_second",
+    row: 2,
+    col: 1,
+    blastRadius: 2
+  }, grid, resolution);
+
+  if (queuedSplitterIds.length !== 1 || queuedSplitterIds[0] !== "splitter_shared") {
+    throw new Error("Molotov chain must queue a shared adjacent splitter exactly once.");
+  }
+  if (manager.pendingSplitterSpawns.length !== 1 || manager.pendingSplitterSpawns[0].id !== "splitter_shared") {
+    throw new Error("Molotov chain must leave one pending splitter spawn.");
+  }
+  if (resolution.reactiveTriggered.length !== 1 || resolution.reactiveTriggered[0].id !== "splitter_shared") {
+    throw new Error("Molotov chain must emit one splitter reactive trigger event.");
+  }
+}
+
+function runMolotovPendingResolutionSeedsSplitterDedupCase() {
+  var manager = new GameManager();
+  var splitter = {
+    id: "splitter_already_pending",
+    row: 1,
+    col: 3,
+    splitColor: "P",
+    entityCategory: "reactive_ball",
+    entityType: "splitter"
+  };
+  var normal = {
+    id: "normal_before_molotov",
+    row: 1,
+    col: 2,
+    color: "R",
+    entityCategory: "normal_ball",
+    entityType: null
+  };
+  var molotov = {
+    id: "molotov_pending",
+    row: 1,
+    col: 1,
+    entityCategory: "reactive_ball",
+    entityType: "molotov",
+    blastRadius: 2
+  };
+  var cellsById = {
+    normal_before_molotov: normal,
+    molotov_pending: molotov,
+    splitter_already_pending: splitter
+  };
+  var grid = {
+    getCoordinatesWithinRadius: function (row, col, radius) {
+      if (row !== 1 || col !== 1 || radius !== 2) {
+        throw new Error("Molotov pending splitter seed regression queried unexpected blast center.");
+      }
+      return [
+        { row: 1, col: 1, distance: 0 },
+        { row: 1, col: 2, distance: 1 }
+      ];
+    },
+    getNeighborCoordinates: function (row, col) {
+      if (row === 1 && col === 2) {
+        return [{ row: 1, col: 3 }];
+      }
+      return [];
+    },
+    getCell: function (row, col) {
+      if (row === 1 && col === 2) {
+        return cellsById.normal_before_molotov || null;
+      }
+      if (row === 1 && col === 1) {
+        return cellsById.molotov_pending || null;
+      }
+      if (row === 1 && col === 3) {
+        return splitter;
+      }
+      return null;
+    },
+    removeCells: function (cells) {
+      cells.forEach(function (cell) {
+        if (!cell || (typeof cell.id !== "string" && typeof cell.id !== "number")) {
+          throw new Error("Molotov pending splitter seed remove requires cell id.");
+        }
+        delete cellsById[cell.id];
+      });
+      return cells.slice();
+    },
+    getCellPosition: function (row, col) {
+      return {
+        x: col * 10,
+        y: row * 10
+      };
+    }
+  };
+  var resolution = {
+    matched: [],
+    collected: [],
+    floating: [],
+    reactiveTriggered: [],
+    spawnedBySplitters: [],
+    eliminationSequence: [],
+    matchedObjectiveCollected: [],
+    collectedKeys: [],
+    unlockedLockedBalls: []
+  };
+
+  manager.currentLevel = {
+    level: {
+      bonusObjectives: [],
+      winConditions: []
+    }
+  };
+  manager.systems = {
+    bubbleGrid: grid,
+    supportSystem: {
+      findFloatingCells: function () {
+        return [];
+      }
+    },
+    jarCollectorSystem: {
+      collect: function () {}
+    }
+  };
+  manager.pendingSplitterSpawns = [{
+    id: "splitter_already_pending",
+    row: 1,
+    col: 3,
+    splitColor: "P",
+    remainingDelay: 0.2
+  }];
+  manager.activeMolotovBlast = {
+    id: "molotov_pending",
+    row: 1,
+    col: 1,
+    blastRadius: 2,
+    elapsed: 0,
+    blastExecuted: false,
+    completeExecuted: false
+  };
+  manager.molotovBlastTriggeredIds = {};
+  manager._triggerAdjacentKeys = function () {
+    return [];
+  };
+  manager._queuePendingSplitterSpawn = function () {
+    throw new Error("Molotov pending resolution must seed already pending splitters before blast scans.");
+  };
+  manager._collectAdjacentMolotovs = function () {
+    return [];
+  };
+  manager._queueMolotovBlasts = function () {};
+  manager._cancelPendingSplitterSpawnsForDroppedCells = GameManager.prototype._cancelPendingSplitterSpawnsForDroppedCells.bind(manager);
+  manager._registerResolutionDrops = function () {};
+
+  manager._beginMolotovPendingResolution(resolution, "matchedDrop", []);
+
+  if (manager.pendingSplitterSpawns.length !== 1 || manager.pendingSplitterSpawns[0].id !== "splitter_already_pending") {
+    throw new Error("Molotov pending splitter seed must keep the existing pending splitter spawn.");
+  }
+  if (resolution.reactiveTriggered.length !== 0) {
+    throw new Error("Molotov pending splitter seed must not emit a duplicate splitter trigger.");
+  }
+  if (!manager.molotovPendingResolutionContext.triggeredSplitterIds.splitter_already_pending) {
+    throw new Error("Molotov pending splitter seed must mark existing pending splitter id.");
+  }
+}
+
 function runMolotovBlastPhaseDropsUnsupportedSourceSupportCase() {
   var manager = new GameManager();
   var sourceMolotov = {
@@ -898,6 +1517,7 @@ function runMolotovBlastPhaseDropsUnsupportedSourceSupportCase() {
   };
   var sourceRemoved = false;
   var registeredDrops = [];
+  var scanCount = 0;
   var grid = {
     getCoordinatesWithinRadius: function (row, col, radius) {
       if (row !== 1 || col !== 1 || radius !== 2) {
@@ -963,7 +1583,8 @@ function runMolotovBlastPhaseDropsUnsupportedSourceSupportCase() {
         if (!sourceRemoved) {
           throw new Error("Molotov floating scan must run after source molotov is removed.");
         }
-        return [floatingCell];
+        scanCount += 1;
+        return scanCount === 1 ? [floatingCell] : [];
       }
     },
     fallingMarbleSystem: {
@@ -976,7 +1597,8 @@ function runMolotovBlastPhaseDropsUnsupportedSourceSupportCase() {
     }
   };
   manager.molotovPendingResolutionContext = {
-    allRemoved: []
+    allRemoved: [],
+    triggeredSplitterIds: {}
   };
   manager.molotovBlastTriggeredIds = {};
   manager._triggerAdjacentKeys = function () {
@@ -1021,6 +1643,7 @@ function runMolotovPendingResolutionFinalizeCase() {
     entityType: null
   };
   var registeredDrops = [];
+  var scanCount = 0;
   var grid = {
     removeCells: function (cells) {
       return cells.slice();
@@ -1040,7 +1663,8 @@ function runMolotovPendingResolutionFinalizeCase() {
         if (targetGrid !== grid) {
           throw new Error("Molotov pending finalize must inspect the live grid.");
         }
-        return [floatingCell];
+        scanCount += 1;
+        return scanCount === 1 ? [floatingCell] : [];
       }
     },
     fallingMarbleSystem: {
@@ -1069,7 +1693,8 @@ function runMolotovPendingResolutionFinalizeCase() {
     dropScoreRuleKey: "matchedDrop",
     allRemoved: [
       { id: "molotov_removed_support", row: 2, col: 2, color: "G", entityCategory: "normal_ball", entityType: null }
-    ]
+    ],
+    triggeredSplitterIds: {}
   };
   manager.pendingMolotovBlastQueue = [];
   manager.activeMolotovBlast = null;
@@ -1100,6 +1725,74 @@ function runMolotovPendingResolutionFinalizeCase() {
   }
   if (registeredDrops.length !== 1 || registeredDrops[0].id !== "floating_after_molotov") {
     throw new Error("Molotov pending finalize must register floating drops immediately.");
+  }
+}
+
+function runMolotovBlastUpdateForcesFullRefreshCase() {
+  var manager = new GameManager();
+  manager.state = "running";
+  manager.isTimedInfiniteShots = false;
+  manager.remainingShots = 1;
+  manager.activeProjectile = null;
+  manager.pendingProjectileFinalize = false;
+  manager.pendingRuntimeEvents = [];
+  manager.systems = {
+    fallingMarbleSystem: {
+      hasActiveDrops: function () {
+        return true;
+      },
+      update: function () {
+        return {
+          updated: false,
+          collected: [],
+          fairyHits: [],
+          splits: [],
+          bounceEvents: []
+        };
+      }
+    },
+    boardViewportSystem: {
+      isMoving: function () {
+        return false;
+      },
+      update: function () {
+        return false;
+      }
+    }
+  };
+  manager._updateJarScoreBoost = function () {
+    return false;
+  };
+  manager._updatePendingBoardAdvance = function () {
+    return false;
+  };
+  manager._hasBoardAdvancedThisFrame = function () {
+    return false;
+  };
+  manager._updatePendingSplitterSpawns = function () {
+    return false;
+  };
+  manager._updatePendingMolotovBlasts = function () {
+    return true;
+  };
+  manager._hasPendingSplitterSpawns = function () {
+    return false;
+  };
+  manager._hasPendingMolotovBlasts = function () {
+    return false;
+  };
+  manager.getRuntimeSnapshot = function (_runtimeEvents, renderOptions) {
+    return {
+      refreshScope: renderOptions && renderOptions.refreshScope
+    };
+  };
+
+  var snapshot = manager.update(0.016);
+  if (!snapshot) {
+    throw new Error("Molotov blast update must return a runtime snapshot.");
+  }
+  if (snapshot.refreshScope !== "full") {
+    throw new Error("Molotov blast update must force full refresh so board removals render immediately.");
   }
 }
 
@@ -1956,6 +2649,95 @@ function runTopAnchorCollapseTriggerCase() {
   }
 }
 
+function runTopAnchorCollapseCancelsPendingSplitterSpawnCase() {
+  var manager = new GameManager();
+  var cells = [
+    {
+      id: "splitter_top_0",
+      row: 0,
+      col: 0,
+      color: "G",
+      entityCategory: "reactive_ball",
+      entityType: "splitter",
+      splitColor: "G"
+    },
+    {
+      id: "normal_1_0",
+      row: 1,
+      col: 0,
+      color: "R",
+      entityCategory: "normal_ball",
+      entityType: null
+    }
+  ];
+  var registeredDrops = [];
+
+  manager.state = "running";
+  manager.lastResolution = {
+    spawnedBySplitters: [],
+    reactiveTriggered: [],
+    matched: [],
+    floating: [],
+    collected: [],
+    collectedKeys: [],
+    unlockedLockedBalls: [],
+    boardViewportAdjusted: false
+  };
+  manager.pendingSplitterSpawns = [{
+    id: "splitter_top_0",
+    row: 0,
+    col: 0,
+    splitColor: "G",
+    remainingDelay: 0
+  }];
+  manager.systems.bubbleGrid = {
+    maxColumns: 11,
+    getCells: function () {
+      return cells.slice();
+    },
+    removeCells: function (removeTargets) {
+      var removed = [];
+      removeTargets.forEach(function (target) {
+        var index = cells.findIndex(function (cell) {
+          return cell.row === target.row && cell.col === target.col;
+        });
+        if (index >= 0) {
+          removed.push(cells[index]);
+          cells.splice(index, 1);
+        }
+      });
+      return removed;
+    }
+  };
+  manager.systems.fallingMarbleSystem = {
+    registerDrops: function (drops) {
+      registeredDrops = registeredDrops.concat(drops);
+    }
+  };
+
+  if (!manager._tryTopAnchorCollapse()) {
+    throw new Error("Top anchor collapse pending splitter regression expected collapse.");
+  }
+  if (manager.pendingSplitterSpawns.length !== 0) {
+    throw new Error("Top anchor collapse must cancel pending splitter spawns from removed splitters.");
+  }
+  if (cells.length !== 0) {
+    throw new Error("Top anchor collapse must remove all live board cells.");
+  }
+  if (registeredDrops.length !== 2) {
+    throw new Error("Top anchor collapse must register all removed cells as drops.");
+  }
+  if (manager.state !== "won_pending") {
+    throw new Error("Top anchor collapse must enter won_pending while drops settle.");
+  }
+  if (manager.lastResolution.topAnchorCollapse !== true) {
+    throw new Error("Top anchor collapse must mark lastResolution.topAnchorCollapse.");
+  }
+  if (manager._updatePendingSplitterSpawns(0.01)) {
+    throw new Error("Canceled splitter spawn must not recreate a residual top bubble after collapse.");
+  }
+}
+
 function runSplitterSpawnViewportSettleCase() {
   var BoardViewportSystem = require("../assets/scripts/systems/BoardViewportSystem");
 
@@ -2622,6 +3404,145 @@ function runBubbleBreakSfxCountCase() {
   }
 }
 
+function runBubbleShatterRearmsAppendedMolotovSequenceCase() {
+  var hadCc = Object.prototype.hasOwnProperty.call(global, "cc");
+  var previousCc = global.cc;
+  var scheduledPresentationRelease = null;
+  var unscheduledCount = 0;
+  var shatterLayer = { isValid: true };
+  global.cc = {
+    Class: function (definition) {
+      function ComponentClass() {
+        if (definition && typeof definition.ctor === "function") {
+          definition.ctor.call(this);
+        }
+      }
+      Object.keys(definition).forEach(function (key) {
+        if (key !== "extends" && key !== "ctor") {
+          ComponentClass.prototype[key] = definition[key];
+        }
+      });
+      return ComponentClass;
+    },
+    Component: function () {},
+    Sprite: {
+      SizeMode: {
+        CUSTOM: "CUSTOM"
+      }
+    },
+    game: {
+      RENDER_TYPE_CANVAS: 0,
+      renderType: 1
+    },
+    v2: function (x, y) {
+      return { x: x, y: y };
+    },
+    v4: function () {
+      return {
+        set: function () {}
+      };
+    },
+    director: {
+      getScheduler: function () {
+        return {
+          schedule: function (callback, target, interval, repeat, delay) {
+            if (target !== shatterLayer) {
+              throw new Error("Bubble shatter appended sequence should schedule against shatter layer.");
+            }
+            if (interval !== 0 || repeat !== 0 || !(delay > 0)) {
+              throw new Error("Bubble shatter appended sequence should schedule one positive release delay.");
+            }
+            scheduledPresentationRelease = callback;
+          },
+          unschedule: function () {
+            unscheduledCount += 1;
+          }
+        };
+      }
+    }
+  };
+
+  var rendererPath = path.resolve(__dirname, "../assets/scripts/render/BubbleShatterRenderer.js");
+  delete require.cache[rendererPath];
+
+  try {
+    var BubbleShatterRenderer = require(rendererPath);
+    var releaseCount = 0;
+    var renderer = new BubbleShatterRenderer({
+      boardLayout: {
+        getCellPosition: function (row, col) {
+          return { x: col * 10, y: row * 10 };
+        }
+      },
+      ballResources: {
+        R: "ball/red"
+      },
+      resolveBallCode: function () {
+        return "R";
+      },
+      bubbleWidth: 64,
+      bubbleHeight: 64
+    });
+    renderer.layer = shatterLayer;
+    renderer.effectAsset = { isValid: true };
+    renderer.setPresentationCompleteHandler(function () {
+      releaseCount += 1;
+    });
+    renderer._scheduleCellShatter = function () {};
+
+    var resolution = {
+      matched: [
+        { id: "first", row: 1, col: 1, color: "R", entityCategory: "normal_ball" }
+      ],
+      eliminationSequence: [
+        { cellId: "first", delayMs: 0, worldPosition: { x: 10, y: 10 } }
+      ]
+    };
+    var boardSnapshot = { maxColumns: 10 };
+    var boardBubbleNodes = {};
+    var spriteFrameCache = {};
+
+    renderer.playResolution(resolution, boardSnapshot, boardBubbleNodes, spriteFrameCache);
+    if (releaseCount <= 0) {
+      throw new Error("Bubble shatter should release after the initial zero-delay sequence.");
+    }
+    var releaseCountAfterInitialSequence = releaseCount;
+
+    resolution.matched.push({
+      id: "second_outer_ring",
+      row: 2,
+      col: 2,
+      color: "R",
+      entityCategory: "normal_ball"
+    });
+    resolution.eliminationSequence.push({
+      cellId: "second_outer_ring",
+      delayMs: 900,
+      worldPosition: { x: 20, y: 20 }
+    });
+
+    renderer.playResolution(resolution, boardSnapshot, boardBubbleNodes, spriteFrameCache);
+    if (releaseCount !== releaseCountAfterInitialSequence || typeof scheduledPresentationRelease !== "function") {
+      throw new Error("Bubble shatter must re-arm release when molotov appends shatter entries to the same resolution.");
+    }
+    if (unscheduledCount !== 0) {
+      throw new Error("Bubble shatter should not unschedule a completed presentation release.");
+    }
+
+    scheduledPresentationRelease();
+    if (releaseCount !== releaseCountAfterInitialSequence + 1) {
+      throw new Error("Bubble shatter appended sequence release should notify after the new delay.");
+    }
+  } finally {
+    delete require.cache[rendererPath];
+    if (hadCc) {
+      global.cc = previousCc;
+    } else {
+      delete global.cc;
+    }
+  }
+}
+
 function main() {
   var cases = buildRegressionCases();
   var results = cases.map(runCase);
@@ -2650,8 +3571,16 @@ function main() {
   console.log("[OK]", "key_unlock_single_target", "one key unlocked one locked ball");
   runKeyUnlockNearestTargetCase();
   console.log("[OK]", "key_unlock_nearest_target", "key unlocked visually nearest locked ball");
+  runKeyUnlockRemovedByExplosionCase();
+  console.log("[OK]", "key_unlock_removed_by_explosion", "explosion-removed key unlocked a locked ball");
   runKeyUnlockCompetitiveNearestCase();
   console.log("[OK]", "key_unlock_competitive_nearest", "each key unlocked nearest lock in shared group");
+  runKeyUnlockMolotovFloatingRemovalCase();
+  console.log("[OK]", "key_unlock_molotov_floating_removal", "floating key unlocked instead of dropping");
+  runMolotovFloatingMolotovRegistersDropCase();
+  console.log("[OK]", "molotov_floating_molotov_registers_drop", "unsupported chain molotov drops immediately");
+  runMolotovFloatingKeyUnlockCascadesUnsupportedDropCase();
+  console.log("[OK]", "molotov_floating_key_unlock_cascade", "molotov key unlock cascades unsupported descendants immediately");
   runKeyUnlockSequentialWaveCase();
   console.log("[OK]", "key_unlock_sequential_wave", "deferred pairing kept nearest lock for later collected key");
   runKeyUnlockUnsupportedFallsCase();
@@ -2660,10 +3589,18 @@ function main() {
   console.log("[OK]", "molotov_chain_queue", "adjacent molotov queued after neighbor removal");
   runMolotovEliminationSequencePositionCase();
   console.log("[OK]", "molotov_elimination_sequence_position", "blasted normal balls keep pre-removal positions");
+  runMolotovChainSplitterDedupCase();
+  console.log("[OK]", "molotov_chain_splitter_dedup", "shared splitter queues once across chained molotov blasts");
+  runMolotovPendingResolutionSeedsSplitterDedupCase();
+  console.log("[OK]", "molotov_pending_splitter_seed", "already pending splitters seed molotov dedup");
   runMolotovBlastPhaseDropsUnsupportedSourceSupportCase();
   console.log("[OK]", "molotov_blast_phase_drops_source_support", "source molotov removal drops unsupported cells immediately");
   runMolotovPendingResolutionFinalizeCase();
   console.log("[OK]", "molotov_pending_resolution_finalize", "unsupported cells drop when molotov finalize is the only pending work");
+  runMolotovBlastUpdateForcesFullRefreshCase();
+  console.log("[OK]", "molotov_blast_update_forces_full_refresh", "molotov blast refreshes board and falling drops together");
+  runBubbleShatterRearmsAppendedMolotovSequenceCase();
+  console.log("[OK]", "bubble_shatter_rearms_appended_molotov_sequence", "appended molotov shatters re-arm delayed drop release");
   runAdjacentIceThawSnowballCollectionCase();
   console.log("[OK]", "adjacent_ice_thaw_snowball_collection", "neighbor thaw and direct ice removal count snowballs once");
   runSnowRemovalKeepsInnerNormalBallCase();
@@ -2699,6 +3636,7 @@ function main() {
   runBoardIntroViewportCase();
   runBoardMidGameViewportSettleCase();
   runTopAnchorCollapseTriggerCase();
+  runTopAnchorCollapseCancelsPendingSplitterSpawnCase();
   runSplitterSpawnViewportSettleCase();
   runBoardViewportFireLockCase();
   runBoardViewportRenderRefreshCase();

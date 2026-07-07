@@ -62,6 +62,24 @@ function hashStringToUnit(value) {
   return (hash >>> 0) / 4294967295;
 }
 
+function buildPlayPlanSignature(playPlan) {
+  if (!Array.isArray(playPlan)) {
+    throw new Error("Bubble shatter play plan signature requires playPlan array.");
+  }
+  return playPlan.map(function (entry) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      throw new Error("Bubble shatter play plan signature requires entry objects.");
+    }
+    if (!entry.cell || (typeof entry.cell.id !== "string" && typeof entry.cell.id !== "number")) {
+      throw new Error("Bubble shatter play plan signature requires cell id.");
+    }
+    if (!Number.isFinite(entry.delaySec) || entry.delaySec < 0) {
+      throw new Error("Bubble shatter play plan signature requires non-negative delaySec.");
+    }
+    return String(entry.cell.id) + "@" + entry.delaySec.toFixed(3);
+  }).join("|");
+}
+
 function buildUvBasis(spriteFrame) {
   if (!spriteFrame || !spriteFrame.isValid) {
     throw new Error("Bubble shatter requires valid SpriteFrame.");
@@ -231,6 +249,7 @@ function BubbleShatterRenderer(options) {
   this.pendingScheduleCallbacks = {};
   this.presentationCompleteHandler = null;
   this.presentationTrackedResolution = null;
+  this.presentationTrackedPlanSignature = "";
   this.presentationCompleteNotified = false;
   this.presentationReleaseCallback = null;
 }
@@ -300,6 +319,7 @@ BubbleShatterRenderer.prototype._resetPresentationTracking = function (notifyCom
     this._notifyPresentationComplete();
   }
   this.presentationTrackedResolution = null;
+  this.presentationTrackedPlanSignature = "";
   this.presentationCompleteNotified = false;
 };
 
@@ -648,8 +668,13 @@ BubbleShatterRenderer.prototype.playResolution = function (resolution, boardSnap
   }
 
   var playPlan = this._buildPlayPlan(resolution);
-  if (this.presentationTrackedResolution !== resolution) {
+  var playPlanSignature = buildPlayPlanSignature(playPlan);
+  if (
+    this.presentationTrackedResolution !== resolution ||
+    this.presentationTrackedPlanSignature !== playPlanSignature
+  ) {
     this._armPresentationRelease(resolution, playPlan);
+    this.presentationTrackedPlanSignature = playPlanSignature;
   }
   playPlan.forEach(function (entry) {
     this._scheduleCellShatter(entry, resolution, boardSnapshot, boardBubbleNodes, spriteFrameCache);

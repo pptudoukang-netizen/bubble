@@ -653,7 +653,7 @@ module.exports = {
     }
     var snapshot = useResult.snapshot;
 
-    if (useResult.accepted === true) {
+    if (useResult.accepted === true && (options === undefined || options.recordAttempt !== false)) {
       this._recordAttemptPowerupUsed("precise_aim");
     }
     this._handleRuntimeStateTransition(snapshot);
@@ -936,6 +936,11 @@ module.exports = {
       return;
     }
 
+    if (this._skillBallLoadAnimationInProgress === true) {
+      this._setStatusWithTip("skill_loading", null, "道具正在装填");
+      return;
+    }
+
     this._trackTelemetry("powerup_tap", {
       powerup_type: entityType
     });
@@ -947,21 +952,37 @@ module.exports = {
 
     if (useResult && useResult.accepted) {
       this._recordAttemptPowerupUsed(entityType);
+      if (!this.levelRenderer || typeof this.levelRenderer.playPowerupLoadAnimation !== "function") {
+        throw new Error("Skill ball loading requires LevelRenderer.playPowerupLoadAnimation.");
+      }
+      this._skillBallLoadAnimationInProgress = true;
+      var loadAnimationPromise = null;
+      try {
+        loadAnimationPromise = this.levelRenderer.playPowerupLoadAnimation(entityType);
+      } catch (error) {
+        this._skillBallLoadAnimationInProgress = false;
+        throw error;
+      }
+      return loadAnimationPromise.then(function () {
+        this._skillBallLoadAnimationInProgress = false;
+        this._handleRuntimeStateTransition(snapshot);
+        this.levelRenderer.refreshRuntime(this.currentLevelConfig, snapshot);
+        this._consumePersistentInventoryItemForPowerup(entityType);
+        if (entityType === "rainbow" && typeof this._recordDailyTaskEvent === "function") {
+          this._recordDailyTaskEvent("use_powerup", {
+            itemId: "rainbow_ball",
+            powerupType: entityType
+          });
+        }
+        return this._advanceSkillPowerupGuideAfterSkillSelected(entityType, snapshot);
+      }.bind(this), function (error) {
+        this._skillBallLoadAnimationInProgress = false;
+        throw error;
+      }.bind(this));
     }
+
     this._handleRuntimeStateTransition(snapshot);
     this.levelRenderer.refreshRuntime(this.currentLevelConfig, snapshot);
-
-    if (useResult && useResult.accepted) {
-      this._consumePersistentInventoryItemForPowerup(entityType);
-      this._completeSkillPowerupUseGuide(entityType);
-      if (entityType === "rainbow" && typeof this._recordDailyTaskEvent === "function") {
-        this._recordDailyTaskEvent("use_powerup", {
-          itemId: "rainbow_ball",
-          powerupType: entityType
-        });
-      }
-      return;
-    }
 
     var reason = useResult && typeof useResult.reason === "string" ? useResult.reason : "equip_failed";
     if (reason === "inventory_empty") {
@@ -1097,7 +1118,7 @@ module.exports = {
     this.levelRenderer.refreshRuntime(this.currentLevelConfig, snapshot);
 
     if (selectResult && selectResult.accepted) {
-      return;
+      return this._advanceSkillPowerupGuideAfterRainbowColorSelected(snapshot);
     }
 
     var reason = selectResult && typeof selectResult.reason === "string" ? selectResult.reason : "rainbow_color_select_failed";
@@ -1497,6 +1518,7 @@ module.exports = {
     if (!Array.isArray(this._pendingStartGamePowerups)) {
       throw new Error("StartGameView pending powerups must be an array.");
     }
+    this._pendingStartGamePreciseAimActivation = false;
     var temporaryPowerups = normalizeStartGameTemporaryPowerups(this._pendingStartGameTemporaryPowerups);
     var hasTemporaryPowerups = Object.keys(temporaryPowerups).some(function (itemId) {
       return temporaryPowerups[itemId] > 0;
@@ -1519,7 +1541,10 @@ module.exports = {
       }
       var powerupType = POWERUP_TYPE_BY_ITEM_ID[itemId];
       var inventoryCount = this.inventoryStore.getItemCount(this.playerInventory, itemId);
-      var grantResult = this.gameManager.grantPowerupInventory(powerupType, inventoryCount);
+      if (!Number.isInteger(inventoryCount) || inventoryCount <= 0) {
+        throw new Error("StartGameView selected powerup inventory is empty: " + itemId);
+      }
+      var grantResult = this.gameManager.grantPowerupInventory(powerupType, 1);
       if (!grantResult || grantResult.accepted !== true) {
         throw new Error("StartGameView grant runtime powerup failed: " + itemId);
       }
@@ -1528,17 +1553,7 @@ module.exports = {
       }
       runtimeSnapshot = grantResult.snapshot;
       if (itemId === "precise_aim") {
-        if (!this.gameManager || typeof this.gameManager.usePreciseAim !== "function") {
-          throw new Error("StartGameView precise aim requires GameManager.usePreciseAim.");
-        }
-        var preciseAimUseResult = this.gameManager.usePreciseAim();
-        if (!preciseAimUseResult || preciseAimUseResult.accepted !== true || !preciseAimUseResult.snapshot) {
-          throw new Error("StartGameView precise aim activation failed.");
-        }
-        if (this._consumePersistentInventoryItemForPowerup("precise_aim") !== true) {
-          throw new Error("StartGameView precise aim persistent inventory consume failed.");
-        }
-        runtimeSnapshot = preciseAimUseResult.snapshot;
+        this._pendingStartGamePreciseAimActivation = true;
       }
     }, this);
     Object.keys(temporaryPowerups).forEach(function (itemId) {
@@ -1562,6 +1577,33 @@ module.exports = {
     this._pendingStartGameTemporaryPowerupCosts = {};
     this._startGameTemporaryPowerupsCommitted = false;
     return runtimeSnapshot;
+  },
+
+  _applyPendingStartGamePreciseAimActivation: function (snapshot) {
+    if (this._pendingStartGamePreciseAimActivation !== true) {
+      return snapshot;
+    }
+    if (!this.gameManager || typeof this.gameManager.usePreciseAim !== "function") {
+      throw new Error("StartGameView precise aim requires GameManager.usePreciseAim.");
+    }
+    if (typeof this._applyPreciseAimUseResult !== "function") {
+      throw new Error("StartGameView precise aim requires _applyPreciseAimUseResult.");
+    }
+    var preciseAimUseResult = this.gameManager.usePreciseAim();
+    if (!preciseAimUseResult || typeof preciseAimUseResult !== "object") {
+      throw new Error("StartGameView precise aim activation result must be an object.");
+    }
+    this._applyPreciseAimUseResult(preciseAimUseResult, {
+      recoverByAd: false
+    });
+    if (preciseAimUseResult.accepted !== true) {
+      var preciseAimReason = typeof preciseAimUseResult.reason === "string" && preciseAimUseResult.reason
+        ? preciseAimUseResult.reason
+        : "unknown";
+      throw new Error("StartGameView precise aim activation failed: " + preciseAimReason);
+    }
+    this._pendingStartGamePreciseAimActivation = false;
+    return preciseAimUseResult.snapshot;
   },
 
   _applyGameplayInventoryQuickBuy: function (purchaseResult, context) {
@@ -1760,8 +1802,10 @@ module.exports = {
       startGameViewNode.active = true;
       PopupPanelAnimator.play(startGameViewNode);
       return this._renderStartGameView().then(function () {
-        return this._showStartGameNativeTemplateAd().then(function () {
-          return this._showNewUserGuideForStartGame();
+        return waitMilliseconds(PopupPanelAnimator.getOpenDurationMilliseconds());
+      }).then(function () {
+        return Promise.resolve(this._showNewUserGuideForStartGame()).then(function () {
+          return this._showStartGameNativeTemplateAd();
         }.bind(this));
       }.bind(this));
     }.bind(this)).catch(function (error) {

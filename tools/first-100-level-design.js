@@ -22,6 +22,16 @@ var PHASE_BALL_OFFSETS = [0, 2, 4, 5, 7, 8, 10, 11, 13, 15];
 var PHASE_PASS_RATES = [88, 82, 76, 69, 63, 57, 51, 44, 36, 29];
 var MIN_OCCUPIED_LAYOUT_ROWS = 8;
 var ADJACENCY_DISTANCE = BoardLayout.bubbleDiameter + 8;
+var LEVEL_ONE_TUTORIAL_LAYOUT = [
+  "BBRRBBRRBB",
+  "B..B.....",
+  "..RR.BB...",
+  "..RR.BB..",
+  "...RRB....",
+  "....R....",
+  "....R.....",
+  "....R...."
+];
 
 function assertFirstHundredLevelId(levelId) {
   if (!Number.isInteger(levelId) || levelId < FIRST_LEVEL_ID || levelId > LAST_LEVEL_ID) {
@@ -429,6 +439,9 @@ function buildShapeSlots(rows, patternName, requiredCount, levelId) {
       requiredOccupiedRows + " rows for level " + levelId + "."
     );
   }
+  if (levelId === 1) {
+    return buildSlotsFromFixedLayout(rows, LEVEL_ONE_TUTORIAL_LAYOUT, requiredCount, levelId);
+  }
 
   var selected = [];
   var selectedMap = {};
@@ -487,6 +500,30 @@ function buildShapeSlots(rows, patternName, requiredCount, levelId) {
     return cellA.col - cellB.col;
   });
   return selected;
+}
+
+function buildSlotsFromFixedLayout(rows, fixedLayout, requiredCount, levelId) {
+  if (!Array.isArray(fixedLayout) || fixedLayout.length !== rows.length) {
+    throw new Error("Fixed first-100 layout row count mismatch for level " + levelId + ".");
+  }
+  var slots = [];
+  fixedLayout.forEach(function (rowString, rowIndex) {
+    if (typeof rowString !== "string" || rowString.length !== rows[rowIndex].length) {
+      throw new Error("Fixed first-100 layout row length mismatch for level " + levelId + " row " + rowIndex + ".");
+    }
+    rowString.split("").forEach(function (cellCode, colIndex) {
+      if (cellCode !== ".") {
+        slots.push({
+          row: rowIndex,
+          col: colIndex
+        });
+      }
+    });
+  });
+  if (slots.length !== requiredCount) {
+    throw new Error("Fixed first-100 layout occupied count mismatch for level " + levelId + ".");
+  }
+  return slots;
 }
 
 function scoreSpecialSlot(entity, cell, rows, levelId, entityIndex, placementVariant) {
@@ -767,6 +804,7 @@ module.exports = {
   LAST_LEVEL_ID: LAST_LEVEL_ID,
   COLORS: COLORS.slice(),
   PATTERNS: PATTERNS.slice(),
+  LEVEL_ONE_TUTORIAL_LAYOUT: LEVEL_ONE_TUTORIAL_LAYOUT.slice(),
   buildLevelSpec: buildLevelSpec,
   buildBoard: buildBoard,
   getDifficultyTuning: getDifficultyTuning,

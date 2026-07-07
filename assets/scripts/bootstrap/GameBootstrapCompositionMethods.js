@@ -121,6 +121,8 @@ module.exports = {
     this._pendingRouteEditorAutoEnable = false;
     this._levelConfigPreloadPromise = null;
     this._currentAttemptId = "";
+    this._currentAttemptLevelId = 0;
+    this._currentAttemptIndexForLevel = 0;
     this._attemptSequence = 0;
     this._trackedResultAttemptId = "";
     this._grantedAttemptRewardKeys = {};
@@ -280,6 +282,10 @@ module.exports = {
     this._newUserGuideFingerSize = null;
     this._pendingSkillPowerupGuideTypes = [];
     this._activeSkillPowerupGuideType = "";
+    this._activeSkillPowerupGuideStep = "";
+    this._skillPowerupPropTipsViewPrefab = null;
+    this._skillPowerupPropTipsViewNode = null;
+    this._skillPowerupPropTipsViewPromise = null;
     this._inventoryViewPrefab = null;
     this._inventoryViewNode = null;
     this._inventoryViewController = null;
@@ -290,6 +296,7 @@ module.exports = {
     this._startGameLevelId = 0;
     this._startGameLevelConfig = null;
     this._pendingStartGamePowerups = [];
+    this._pendingStartGamePreciseAimActivation = false;
     this._pendingStartGameTemporaryPowerups = {
       three_line_elimination: 0,
       plus_three_balls: 0
@@ -398,6 +405,7 @@ module.exports = {
     this._rankingViewController = null;
     this._worldLeaderboardUserProfile = null;
     this._lastWorldLeaderboardSubmitError = null;
+    this._worldLeaderboardSubmitPromise = null;
     this._gameCircleWelfareViewPrefab = null;
     this._gameCircleWelfareViewNode = null;
     this._gameCircleWelfareViewController = null;
@@ -465,8 +473,6 @@ module.exports = {
     this.gameManager = null;
     this.levelRenderer = null;
     this._bindInput();
-
-    this._beginStartupBundlePrefetch();
 
     if (RuntimeModeConfig.exposeDebugHandle === true && typeof window !== "undefined") {
       window["__bubbleDebug"] = {

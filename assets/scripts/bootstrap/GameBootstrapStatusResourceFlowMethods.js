@@ -42,6 +42,20 @@ function requireNonNegativeInteger(value, description) {
   return value;
 }
 
+function requirePositiveInteger(value, description) {
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(description + " must be a positive integer.");
+  }
+  return value;
+}
+
+function requireNonEmptyString(value, description) {
+  if (typeof value !== "string" || value.length === 0) {
+    throw new Error(description + " must be a non-empty string.");
+  }
+  return value;
+}
+
 function syncVisibleBuyViewCoinCount(host) {
   if (!host._buyViewNode || !cc.isValid(host._buyViewNode) || host._buyViewNode.active !== true) {
     return;
@@ -50,6 +64,33 @@ function syncVisibleBuyViewCoinCount(host) {
     throw new Error("Visible BuyView requires BuyViewController.updateCoinCount.");
   }
   host._buyViewController.updateCoinCount(requireNonNegativeInteger(host.playerResources.coins, "Player coins"));
+}
+
+function isFirstAttemptClearRewardEligible(host, isFirstCompletion) {
+  if (typeof isFirstCompletion !== "boolean") {
+    throw new Error("First-attempt stamina reward requires first-completion flag.");
+  }
+  if (isFirstCompletion !== true) {
+    return false;
+  }
+  if (host._currentLevelEnteredByTestUnlock === true) {
+    return false;
+  }
+
+  var currentLevelId = requirePositiveInteger(host._currentLevelId, "First-attempt stamina reward currentLevelId");
+  requireNonEmptyString(host._currentAttemptId, "First-attempt stamina reward currentAttemptId");
+  var attemptLevelId = requirePositiveInteger(
+    host._currentAttemptLevelId,
+    "First-attempt stamina reward currentAttemptLevelId"
+  );
+  if (attemptLevelId !== currentLevelId) {
+    throw new Error("First-attempt stamina reward level mismatch.");
+  }
+
+  return requirePositiveInteger(
+    host._currentAttemptIndexForLevel,
+    "First-attempt stamina reward currentAttemptIndexForLevel"
+  ) === 1;
 }
 
 function formatCountdownText(remainingMs) {
@@ -702,6 +743,24 @@ module.exports = {
     }
     this._updateLevelSelectTopStatus();
     return true;
+  },
+
+  _grantFirstAttemptClearStaminaReward: function (isFirstCompletion) {
+    if (!isFirstAttemptClearRewardEligible(this, isFirstCompletion)) {
+      return [];
+    }
+    if (!this.playerResourceStore || typeof this.playerResourceStore.save !== "function") {
+      throw new Error("First-attempt stamina reward requires PlayerResourceStore.save.");
+    }
+
+    this._refreshPlayerResources();
+    this.playerResources.stamina = requireNonNegativeInteger(this.playerResources.stamina, "Player stamina") + 1;
+    this.playerResourceStore.save(this.playerResources);
+    this._updateLevelSelectTopStatus();
+    return [{
+      id: "stamina",
+      count: 1
+    }];
   },
 
   _updateLevelSelectTopStatus: function (options) {

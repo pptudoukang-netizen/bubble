@@ -12,6 +12,7 @@ var STAMINA_RECOVERY_HIGH_GRANT = 2;
 var STAMINA_RECOVERY_LOW_GRANT_COUNT = 2;
 var INTERSTITIAL_UNLOCK_COMPLETED_LEVEL_ID = 10;
 var CONSECUTIVE_LOSE_INTERSTITIAL_THRESHOLD = 3;
+var LEVEL_WIN_INTERSTITIAL_AD_ENABLED = false;
 var RESULT_NATIVE_TEMPLATE_AD_REFRESH_INTERVAL = 40;
 var REWARDED_AD_UNAVAILABLE_MESSAGE = "目前没有合适的广告，请稍后再试";
 
@@ -282,6 +283,9 @@ module.exports = {
     }
     if (currentState === "won") {
       this._consecutiveLoseCountForInterstitial = 0;
+      if (!LEVEL_WIN_INTERSTITIAL_AD_ENABLED) {
+        return;
+      }
       if (this._canShowInterstitialAd()) {
         this._showInterstitialAd("level_win").catch(function (error) {
           Logger.warn("Level win interstitial ad failed", error && error.message ? error.message : error);

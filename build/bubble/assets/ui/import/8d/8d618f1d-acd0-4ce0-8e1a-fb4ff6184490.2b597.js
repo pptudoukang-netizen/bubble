@@ -1,0 +1,1 @@
+module.exports = [1,["130050479"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"resurrection_ad","rect":[3,210,240,99],"offset":[0,0],"originalSize":[240,99],"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

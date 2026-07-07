@@ -1,0 +1,1 @@
+module.exports = [1,["1154b4878"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"challenge_icon","rect":[293,379,136,137],"offset":[0,0.5],"originalSize":[140,140],"rotated":1,"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

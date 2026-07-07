@@ -4,6 +4,7 @@ var MANIFEST_RESOURCE_PATH = "config/level_manifest";
 var LOCAL_LEVEL_MAX = 10;
 var TOTAL_LEVEL_COUNT = 1000;
 var PACK_FORMAT_COMPACT_V1 = "compact-schema-v1";
+var MANIFEST_FORMAT_V1 = "level-pack-manifest-v1";
 
 function assertObject(value, fieldName) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -30,6 +31,21 @@ function normalizeCloudConfig(cloud) {
   assertObject(cloud, "level manifest cloud");
   return {
     envId: assertNonEmptyString(cloud.envId, "level manifest cloud.envId")
+  };
+}
+
+function normalizeRemoteManifest(remoteManifest) {
+  assertObject(remoteManifest, "level manifest remoteManifest");
+  var id = assertNonEmptyString(remoteManifest.id, "level manifest remoteManifest.id");
+  var fileID = assertNonEmptyString(remoteManifest.fileID, "level manifest remoteManifest.fileID");
+  var format = assertNonEmptyString(remoteManifest.format, "level manifest remoteManifest.format");
+  if (format !== MANIFEST_FORMAT_V1) {
+    throw new Error("level manifest remoteManifest.format unsupported: " + format);
+  }
+  return {
+    id: id,
+    fileID: fileID,
+    format: format
   };
 }
 
@@ -63,7 +79,8 @@ function normalizePack(pack, index) {
   };
 }
 
-function normalizeManifest(rawManifest) {
+function normalizeManifest(rawManifest, options) {
+  var opts = options ? options : {};
   assertObject(rawManifest, "level manifest");
   if (rawManifest.schemaVersion !== 1) {
     throw new Error("level manifest schemaVersion must be 1.");
@@ -76,26 +93,36 @@ function normalizeManifest(rawManifest) {
     throw new Error("level manifest localLevelMax must be less than totalLevelCount.");
   }
 
-  if (!Array.isArray(rawManifest.packs) || rawManifest.packs.length === 0) {
-    throw new Error("level manifest packs must be a non-empty array.");
+  var remoteManifest = null;
+  if (rawManifest.remoteManifest !== undefined) {
+    remoteManifest = normalizeRemoteManifest(rawManifest.remoteManifest);
   }
 
   var seenPackIds = {};
   var expectedFrom = localLevelMax + 1;
-  var packs = rawManifest.packs.map(function (pack, index) {
-    var normalized = normalizePack(pack, index);
-    if (seenPackIds[normalized.id]) {
-      throw new Error("duplicated level manifest pack id: " + normalized.id);
+  var packs = [];
+  if (rawManifest.packs !== undefined) {
+    if (!Array.isArray(rawManifest.packs) || rawManifest.packs.length === 0) {
+      throw new Error("level manifest packs must be a non-empty array.");
     }
-    seenPackIds[normalized.id] = true;
-    if (normalized.from !== expectedFrom) {
-      throw new Error("level manifest pack range must be continuous at " + normalized.id + ".");
-    }
-    expectedFrom = normalized.to + 1;
-    return normalized;
-  });
 
-  if (expectedFrom !== totalLevelCount + 1) {
+    packs = rawManifest.packs.map(function (pack, index) {
+      var normalized = normalizePack(pack, index);
+      if (seenPackIds[normalized.id]) {
+        throw new Error("duplicated level manifest pack id: " + normalized.id);
+      }
+      seenPackIds[normalized.id] = true;
+      if (normalized.from !== expectedFrom) {
+        throw new Error("level manifest pack range must be continuous at " + normalized.id + ".");
+      }
+      expectedFrom = normalized.to + 1;
+      return normalized;
+    });
+  } else if (!remoteManifest || opts.allowRemoteManifestOnly !== true) {
+    throw new Error("level manifest packs must be a non-empty array.");
+  }
+
+  if (packs.length > 0 && expectedFrom !== totalLevelCount + 1) {
     throw new Error("level manifest packs must cover all remote levels.");
   }
 
@@ -105,8 +132,31 @@ function normalizeManifest(rawManifest) {
     totalLevelCount: totalLevelCount,
     localLevelMax: localLevelMax,
     cloud: normalizeCloudConfig(rawManifest.cloud),
-    packs: packs
+    packs: packs,
+    remoteManifest: remoteManifest
   };
+}
+
+function assertRemoteManifestCompatible(bootstrapManifest, remoteManifest) {
+  if (!bootstrapManifest || !remoteManifest) {
+    throw new Error("bootstrap and remote level manifests are required.");
+  }
+  if (remoteManifest.remoteManifest) {
+    throw new Error("remote level manifest must not point to another remote manifest.");
+  }
+  if (!Array.isArray(remoteManifest.packs) || remoteManifest.packs.length === 0) {
+    throw new Error("remote level manifest must contain packs.");
+  }
+  if (remoteManifest.totalLevelCount !== bootstrapManifest.totalLevelCount) {
+    throw new Error("remote level manifest totalLevelCount mismatch.");
+  }
+  if (remoteManifest.localLevelMax !== bootstrapManifest.localLevelMax) {
+    throw new Error("remote level manifest localLevelMax mismatch.");
+  }
+  if (!remoteManifest.cloud || !bootstrapManifest.cloud || remoteManifest.cloud.envId !== bootstrapManifest.cloud.envId) {
+    throw new Error("remote level manifest cloud.envId mismatch.");
+  }
+  return true;
 }
 
 function findPackForLevelId(manifest, levelId) {
@@ -132,6 +182,8 @@ module.exports = {
   LOCAL_LEVEL_MAX: LOCAL_LEVEL_MAX,
   TOTAL_LEVEL_COUNT: TOTAL_LEVEL_COUNT,
   PACK_FORMAT_COMPACT_V1: PACK_FORMAT_COMPACT_V1,
+  MANIFEST_FORMAT_V1: MANIFEST_FORMAT_V1,
   normalizeManifest: normalizeManifest,
+  assertRemoteManifestCompatible: assertRemoteManifestCompatible,
   findPackForLevelId: findPackForLevelId
 };

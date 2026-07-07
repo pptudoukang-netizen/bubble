@@ -331,6 +331,16 @@ function releaseRetainedSpriteFrame(spriteFrame, path) {
   spriteFrame.decRef();
 }
 
+function hasValidSpriteFrame(spriteFrame) {
+  if (!spriteFrame) {
+    return false;
+  }
+  if (cc && typeof cc.isValid === "function") {
+    return cc.isValid(spriteFrame);
+  }
+  return true;
+}
+
 function buildObjectiveDisplayForObjective(objective, runtimeSnapshot) {
   var jars = runtimeSnapshot && runtimeSnapshot.jars ? runtimeSnapshot.jars : null;
   var objectiveSnapshot = runtimeSnapshot && runtimeSnapshot.objectives ? runtimeSnapshot.objectives : null;
@@ -2289,8 +2299,12 @@ LevelRenderer.prototype._preloadFireworksPrefab = function () {
 
 LevelRenderer.prototype._preloadSprites = function (paths) {
   return Promise.all(paths.map(function (path) {
-    if (this.spriteFrameCache[path]) {
-      return Promise.resolve(this.spriteFrameCache[path]);
+    var cachedSpriteFrame = this.spriteFrameCache[path];
+    if (cachedSpriteFrame) {
+      if (hasValidSpriteFrame(cachedSpriteFrame)) {
+        return Promise.resolve(cachedSpriteFrame);
+      }
+      delete this.spriteFrameCache[path];
     }
     if (this.spriteFrameLoadPromises[path]) {
       return this.spriteFrameLoadPromises[path];

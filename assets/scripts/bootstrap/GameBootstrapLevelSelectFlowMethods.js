@@ -11,6 +11,10 @@ var LevelSelectMemoryDiagnostics = require("../utils/LevelSelectMemoryDiagnostic
 var RandomChallengeRules = require("../config/RandomChallengeRules");
 var StarRatingPolicy = Shared.StarRatingPolicy;
 var hideGameCircleWelfareViewNode = Shared.hideGameCircleWelfareViewNode;
+var HIDDEN_UNLOCK_ALL_LEVELS_TAP_COUNT = 5;
+var HIDDEN_UNLOCK_ALL_LEVELS_WINDOW_MS = 2000;
+var HIDDEN_UNLOCK_ALL_LEVELS_STAMINA_VALUE = 100;
+var HIDDEN_UNLOCK_ALL_LEVELS_COIN_VALUE = 5000;
 
 function isWechatGameRuntime() {
   return !!(
@@ -45,6 +49,16 @@ function resolveMaxAvailableLevelId(levelIds) {
     }
     return Math.max(maxLevelId, levelId);
   }, 0);
+}
+
+function isAllLevelsTemporarilyUnlocked(host) {
+  return !!(
+    host &&
+    (
+      host.unlockAllLevelsForTest === true ||
+      host._levelSelectHiddenUnlockAllActive === true
+    )
+  );
 }
 
 function resolveWinSnapshotScore(snapshot) {
@@ -166,6 +180,36 @@ function resolveAwardedClearRewardItems(rewardItems, isFirstCompletion, collecti
   });
 }
 
+function mergeRewardItemsById(rewardItems, description) {
+  if (!Array.isArray(rewardItems)) {
+    throw new Error(description + " reward items must be an array.");
+  }
+
+  var itemIds = [];
+  var countsById = {};
+  rewardItems.forEach(function (item, index) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      throw new Error(description + " reward item must be object at index " + index + ".");
+    }
+    if (item.id !== "coin" && item.id !== "stamina") {
+      throw new Error(description + " unsupported reward item id: " + item.id);
+    }
+    var count = requirePositiveInteger(item.count, description + " reward item count: " + item.id);
+    if (!Object.prototype.hasOwnProperty.call(countsById, item.id)) {
+      countsById[item.id] = 0;
+      itemIds.push(item.id);
+    }
+    countsById[item.id] += count;
+  });
+
+  return itemIds.map(function (itemId) {
+    return {
+      id: itemId,
+      count: countsById[itemId]
+    };
+  });
+}
+
 function grantRewardItemsToPlayer(host, rewardItems, description) {
   if (!host || typeof host !== "object") {
     throw new Error(description + " requires GameBootstrap host.");
@@ -176,7 +220,8 @@ function grantRewardItemsToPlayer(host, rewardItems, description) {
   if (!host.playerResourceStore || typeof host.playerResourceStore.save !== "function") {
     throw new Error(description + " requires PlayerResourceStore.save.");
   }
-  if (rewardItems.length === 0) {
+  var mergedRewardItems = mergeRewardItemsById(rewardItems, description);
+  if (mergedRewardItems.length === 0) {
     return [];
   }
 
@@ -186,7 +231,7 @@ function grantRewardItemsToPlayer(host, rewardItems, description) {
     throw new Error(description + " requires player resources.");
   }
 
-  rewardItems.forEach(function (item, index) {
+  mergedRewardItems.forEach(function (item, index) {
     if (!item || typeof item !== "object" || Array.isArray(item)) {
       throw new Error(description + " rewardItems[" + index + "] must be object.");
     }
@@ -204,7 +249,7 @@ function grantRewardItemsToPlayer(host, rewardItems, description) {
   host.playerResources = resources;
   host.playerResourceStore.save(host.playerResources);
   host._updateLevelSelectTopStatus();
-  return clone(rewardItems);
+  return clone(mergedRewardItems);
 }
 
 function isRandomChallengeContext(context) {
@@ -253,6 +298,8 @@ module.exports = {
     if (this.isRestarting) {
       return;
     }
+    this._levelSelectHiddenUnlockTapCount = 0;
+    this._levelSelectHiddenUnlockFirstTapAt = 0;
     this._recordCurrentAttemptQuit("return_to_level_select");
     if (!this.isSelectingLevel && this.levelRenderer) {
       if (typeof this.levelRenderer.prepareForLevelSelectReturn === "function") {
@@ -620,7 +667,7 @@ module.exports = {
     this._refreshLevelProgress();
 
     var highestUnlocked = Math.max(1, Number(this.levelProgress.highestUnlockedLevel) || 1);
-    if (this.unlockAllLevelsForTest === true) {
+    if (isAllLevelsTemporarilyUnlocked(this)) {
       highestUnlocked = resolveMaxAvailableLevelId(levelIds);
     }
     var highlightedLevelId = this._resolveHighlightedLevelId(levelIds, highestUnlocked);
@@ -644,6 +691,7 @@ module.exports = {
       onOpenStarChest: this._openStarChest.bind(this),
       onOpenShop: this._onLevelSelectShopTap.bind(this),
       onOpenDailyTasks: this._onLevelSelectDailyTasksTap.bind(this),
+      onHiddenUnlockAllLevels: this._onLevelSelectHiddenUnlockTap.bind(this),
       onLevelSelectTap: this._onLevelSelectTap.bind(this),
       onQuickStart: this._onLevelSelectQuickStartTap.bind(this),
       onRandomChallenge: this._onLevelSelectRandomChallengeTap.bind(this),
@@ -727,7 +775,7 @@ module.exports = {
       throw new Error("highestUnlockedLevel must be a positive integer.");
     }
     this._currentLevelEnteredByTestUnlock = false;
-    if (this.unlockAllLevelsForTest === true && safeLevelId > highestUnlocked) {
+    if (isAllLevelsTemporarilyUnlocked(this) && safeLevelId > highestUnlocked) {
       this._currentLevelEnteredByTestUnlock = true;
       return;
     }
@@ -759,9 +807,13 @@ module.exports = {
       } else {
         var isFirstCompletion = !this._isLevelCompleted(this._currentLevelId);
         this._recordCurrentLevelWin(snapshot);
-        this._currentLevelAwardedClearRewardItems = this._currentLevelEnteredByTestUnlock === true
+        var clearRewardItems = this._currentLevelEnteredByTestUnlock === true
           ? []
           : this._grantCurrentLevelClearRewardItems(isFirstCompletion, collectionRewardCompleted);
+        this._currentLevelAwardedClearRewardItems = mergeRewardItemsById(
+          clearRewardItems.concat(this._grantFirstAttemptClearStaminaReward(isFirstCompletion)),
+          "Level clear awarded"
+        );
       }
     } else if (
       currentState !== previousState &&
@@ -895,7 +947,7 @@ module.exports = {
       throw new Error("World leaderboard level-clear submit requires WorldLeaderboardService.submit.");
     }
     var profile = this._worldLeaderboardUserProfile || this.worldLeaderboardService.createAnonymousUserProfile();
-    return this.worldLeaderboardService.submit(this.levelProgress, profile).then(function (result) {
+    var submitPromise = this.worldLeaderboardService.submit(this.levelProgress, profile).then(function (result) {
       this._lastWorldLeaderboardSubmitError = null;
       Logger.info("World leaderboard progress submitted after level clear", {
         levelId: this._currentLevelId,
@@ -907,6 +959,13 @@ module.exports = {
       Logger.error("World leaderboard progress submit after level clear failed", error && error.stack ? error.stack : String(error));
       this._setStatus("排行榜上报失败");
       return null;
+    }.bind(this));
+    this._worldLeaderboardSubmitPromise = submitPromise;
+    return submitPromise.then(function (result) {
+      if (this._worldLeaderboardSubmitPromise === submitPromise) {
+        this._worldLeaderboardSubmitPromise = null;
+      }
+      return result;
     }.bind(this));
   },
 
@@ -989,10 +1048,92 @@ module.exports = {
     if (!Number.isInteger(highestUnlocked) || highestUnlocked <= 0) {
       throw new Error("highestUnlockedLevel must be a positive integer.");
     }
-    if (this.unlockAllLevelsForTest === true) {
+    if (isAllLevelsTemporarilyUnlocked(this)) {
       return resolveMaxAvailableLevelId(levelIds);
     }
     return highestUnlocked;
+  },
+
+  _onLevelSelectHiddenUnlockTap: function () {
+    if (this.isRestarting || !this.isSelectingLevel) {
+      return;
+    }
+    if (this._levelSelectRouteEditorMode === true) {
+      return;
+    }
+
+    var nowMs = Date.now();
+    var firstTapAt = Number(this._levelSelectHiddenUnlockFirstTapAt) || 0;
+    if (firstTapAt <= 0 || nowMs - firstTapAt > HIDDEN_UNLOCK_ALL_LEVELS_WINDOW_MS) {
+      this._levelSelectHiddenUnlockFirstTapAt = nowMs;
+      this._levelSelectHiddenUnlockTapCount = 1;
+      return;
+    }
+
+    this._levelSelectHiddenUnlockTapCount = Math.floor(Number(this._levelSelectHiddenUnlockTapCount) || 0) + 1;
+    if (this._levelSelectHiddenUnlockTapCount < HIDDEN_UNLOCK_ALL_LEVELS_TAP_COUNT) {
+      return;
+    }
+
+    this._levelSelectHiddenUnlockFirstTapAt = 0;
+    this._levelSelectHiddenUnlockTapCount = 0;
+    this._unlockAllLevelsForCurrentLevelSelectSession();
+  },
+
+  _unlockAllLevelsForCurrentLevelSelectSession: function () {
+    if (!this.isSelectingLevel) {
+      throw new Error("Hidden unlock requires active level select view.");
+    }
+    if (!this._levelSelectViewPrefab) {
+      throw new Error("Hidden unlock requires LevelView prefab.");
+    }
+    if (!this._floatingMapAssets || typeof this._floatingMapAssets !== "object") {
+      throw new Error("Hidden unlock requires floating map assets.");
+    }
+
+    this._levelSelectHiddenUnlockAllActive = true;
+    this._playSfx("uiClick");
+    this._grantHiddenUnlockAllLevelsStaminaReward();
+    this._loadAvailableLevelIds().then(function (levelIds) {
+      if (!this.isSelectingLevel || this._levelSelectHiddenUnlockAllActive !== true) {
+        return;
+      }
+      var maxLevelId = resolveMaxAvailableLevelId(levelIds);
+      this._renderLevelSelectContent(this._levelSelectViewPrefab, this._floatingMapAssets, levelIds);
+      if (typeof this._setStatusWithTip !== "function") {
+        throw new Error("Hidden unlock completion requires _setStatusWithTip.");
+      }
+      this._setStatusWithTip("hidden_unlock_all_levels_complete", null, "解锁完成");
+      Logger.info("Hidden level select unlock activated for current session", {
+        maxLevelId: maxLevelId,
+        staminaValue: HIDDEN_UNLOCK_ALL_LEVELS_STAMINA_VALUE,
+        coinValue: HIDDEN_UNLOCK_ALL_LEVELS_COIN_VALUE
+      });
+    }.bind(this)).catch(function (error) {
+      Logger.error("Hidden level select unlock failed", error && error.stack ? error.stack : String(error));
+      throw error;
+    });
+  },
+
+  _grantHiddenUnlockAllLevelsStaminaReward: function () {
+    if (!this.playerResourceStore || typeof this.playerResourceStore.save !== "function") {
+      throw new Error("Hidden unlock stamina reward requires PlayerResourceStore.save.");
+    }
+    this._refreshPlayerResources();
+    var currentStamina = Math.floor(Number(this.playerResources.stamina));
+    if (!Number.isInteger(currentStamina) || currentStamina < 0) {
+      throw new Error("Player stamina value is invalid before hidden unlock reward.");
+    }
+    var currentCoins = Math.floor(Number(this.playerResources.coins));
+    if (!Number.isInteger(currentCoins) || currentCoins < 0) {
+      throw new Error("Player coin value is invalid before hidden unlock reward.");
+    }
+    this.playerResources.stamina = HIDDEN_UNLOCK_ALL_LEVELS_STAMINA_VALUE;
+    this.playerResources.coins = HIDDEN_UNLOCK_ALL_LEVELS_COIN_VALUE;
+    this.playerResourceStore.save(this.playerResources);
+    this._updateLevelSelectTopStatus({
+      updateEntryStates: false
+    });
   },
 
   _resolveLatestAccessibleLevelId: function () {
@@ -1099,60 +1240,71 @@ module.exports = {
     this._lastRuntimeState = null;
     this._setStatus("正在生成随机挑战...");
 
-    return this._ensureGameplayKernel().then(function () {
-      return this.levelManager.createRandomChallengeRun(runOptions);
-    }.bind(this)).then(function (run) {
-      if (!run || typeof run !== "object" || Array.isArray(run)) {
-        throw new Error("Random challenge run must be an object.");
-      }
-      var levelConfig = run.levelConfig;
-      if (!levelConfig || !levelConfig.level) {
-        throw new Error("Random challenge run requires levelConfig.");
-      }
-      this.currentLevelConfig = levelConfig;
-      this._currentLevelId = levelConfig.level.levelId;
-      this._currentRunContext = {
-        mode: RandomChallengeRules.MODE,
+    return this._runLevelEntryWithLoading(function () {
+      return this._ensureGameplayKernel().then(function () {
+        return this.levelManager.createRandomChallengeRun(runOptions);
+      }.bind(this)).then(function (run) {
+        if (!run || typeof run !== "object" || Array.isArray(run)) {
+          throw new Error("Random challenge run must be an object.");
+        }
+        var levelConfig = run.levelConfig;
+        if (!levelConfig || !levelConfig.level) {
+          throw new Error("Random challenge run requires levelConfig.");
+        }
+        this.currentLevelConfig = levelConfig;
+        this._currentLevelId = levelConfig.level.levelId;
+        this._currentRunContext = {
+          mode: RandomChallengeRules.MODE,
+          seed: run.seed,
+          generatorVersion: run.generatorVersion,
+          difficultyTier: run.difficultyTier,
+          configHash: run.configHash
+        };
+        this._prepareRouteEditorForLevel(levelConfig, this._currentLevelId);
+        return this.levelRenderer.syncBoardLayoutHudBottomLineAsync().then(function () {
+          this._applyBoardTuningFromProperties();
+          var snapshot = this.gameManager.startLevel(levelConfig);
+          if (typeof this._applyPendingNextRoundRewards === "function") {
+            snapshot = this._applyPendingNextRoundRewards(snapshot);
+          }
+          if (typeof this._beginLevelAttemptTracking === "function") {
+            this._beginLevelAttemptTracking(levelConfig, snapshot);
+          }
+          this._lastRuntimeState = snapshot ? snapshot.state : null;
+          return this.levelRenderer.renderLevel(levelConfig, snapshot).then(function () {
+            return {
+              levelConfig: levelConfig,
+              run: run,
+              snapshot: snapshot
+            };
+          });
+        }.bind(this));
+      }.bind(this));
+    }.bind(this)).then(function (entry) {
+      var levelConfig = entry.levelConfig;
+      var run = entry.run;
+      var snapshot = entry.snapshot;
+      this.isSelectingLevel = false;
+      this._hideLevelSelectView();
+      this._renderRouteEditor();
+      this._refreshRouteEditorButtons();
+      this._setStatus(this._formatStatus(levelConfig, snapshot));
+      this._playGameplayBackgroundMusic();
+      Logger.info("Random challenge started", {
         seed: run.seed,
-        generatorVersion: run.generatorVersion,
         difficultyTier: run.difficultyTier,
         configHash: run.configHash
-      };
-      this._prepareRouteEditorForLevel(levelConfig, this._currentLevelId);
-      return this.levelRenderer.syncBoardLayoutHudBottomLineAsync().then(function () {
-        this._applyBoardTuningFromProperties();
-        var snapshot = this.gameManager.startLevel(levelConfig);
-        if (typeof this._applyPendingNextRoundRewards === "function") {
-          snapshot = this._applyPendingNextRoundRewards(snapshot);
-        }
-        if (typeof this._beginLevelAttemptTracking === "function") {
-          this._beginLevelAttemptTracking(levelConfig, snapshot);
-        }
-        this._lastRuntimeState = snapshot ? snapshot.state : null;
-        return this.levelRenderer.renderLevel(levelConfig, snapshot).then(function () {
-          this.isSelectingLevel = false;
-          this._hideLevelSelectView();
-          this._renderRouteEditor();
-          this._refreshRouteEditorButtons();
-          this._setStatus(this._formatStatus(levelConfig, snapshot));
-          this._playGameplayBackgroundMusic();
-          Logger.info("Random challenge started", {
-            seed: run.seed,
-            difficultyTier: run.difficultyTier,
-            configHash: run.configHash
-          });
-          this._logAssetManagerStats("gameplay");
-          this.levelRenderer.setGameplayInteractionEnabled(false);
-          return this._runGameEntryCountdown().then(function () {
-            this.levelRenderer.setGameplayInteractionEnabled(true);
-            this.isRestarting = false;
-            this._setDropTestButtonVisible(true);
-            this._syncSpecialIntroduceForRuntimeSnapshot(snapshot);
-            this._syncGeniusTipsForRuntimeSnapshot(snapshot);
-            this._syncSartTipsForRuntimeSnapshot(snapshot);
-            return null;
-          }.bind(this));
-        }.bind(this));
+      });
+      this._logAssetManagerStats("gameplay");
+      this.levelRenderer.setGameplayInteractionEnabled(false);
+      return this._runGameEntryCountdown().then(function () {
+        this.levelRenderer.setGameplayInteractionEnabled(true);
+        this.isRestarting = false;
+        this._setDropTestButtonVisible(true);
+        this._syncSpecialIntroduceForRuntimeSnapshot(snapshot);
+        this._syncGeniusTipsForRuntimeSnapshot(snapshot);
+        this._syncSartTipsForRuntimeSnapshot(snapshot);
+        return null;
       }.bind(this));
     }.bind(this)).catch(function (error) {
       this.isRestarting = false;

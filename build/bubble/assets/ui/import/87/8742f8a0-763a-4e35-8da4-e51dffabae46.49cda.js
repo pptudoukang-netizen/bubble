@@ -1,0 +1,1 @@
+module.exports = [1,["1154b4878"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"go_btn","rect":[149,32,160,81],"offset":[-0.5,0],"originalSize":[161,81],"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

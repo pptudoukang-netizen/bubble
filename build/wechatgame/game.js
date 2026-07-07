@@ -43,11 +43,25 @@ function compareVersion(v1, v2) {
   return 0;
 }
 
+function requireGameGlobalFunction(functionName) {
+  var targetFunction = GameGlobal[functionName];
+  if (typeof targetFunction !== "function") {
+    throw new Error("GameGlobal." + functionName + " is required by MinigameLoading customEnv.");
+  }
+  return targetFunction.bind(GameGlobal);
+}
+
 if (compareVersion(wx.getSystemInfoSync().SDKVersion, "2.1.0") > -1) {
   GameGlobal.LoadingManager = requirePlugin("MinigameLoading", {
     customEnv: {
       wx: wx,
-      canvas: GameGlobal.canvas
+      canvas: GameGlobal.canvas,
+      setTimeout: requireGameGlobalFunction("setTimeout"),
+      clearTimeout: requireGameGlobalFunction("clearTimeout"),
+      setInterval: requireGameGlobalFunction("setInterval"),
+      clearInterval: requireGameGlobalFunction("clearInterval"),
+      requestAnimationFrame: requireGameGlobalFunction("requestAnimationFrame"),
+      cancelAnimationFrame: requireGameGlobalFunction("cancelAnimationFrame")
     }
   }).default;
   GameGlobal.LoadingManager.create({

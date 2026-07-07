@@ -2108,6 +2108,7 @@ GameManager.prototype.useThreeLineElimination = function (expectedRows) {
   this._pushBubbleBreakEvent(removedLineCells);
   var resolution = createEmptyResolution();
   resolution.matched = removedLineCells;
+  this._collectRemovedKeysAndResolveUnlocks(removedLineCells, grid, resolution);
   this._registerMatchedObjectiveCollection(removedLineCells, resolution.eliminationSequence, resolution, grid);
   if (removedLineCells.length) {
     resolution.impact = this._createImpactEventFromCell(removedLineCells[0]);
@@ -2115,13 +2116,14 @@ GameManager.prototype.useThreeLineElimination = function (expectedRows) {
 
   var floatingCells = this.systems.supportSystem.findFloatingCells(grid);
   var removedFloating = grid.removeCells(floatingCells);
-  var fallingCandidates = removedLineCells.concat(removedFloating);
+  this._appendUniqueCells(resolution.floating, removedFloating);
+  this._collectRemovedKeysAndResolveUnlocks(removedFloating, grid, resolution);
+  var fallingCandidates = removedLineCells.concat(resolution.floating);
   this._registerResolutionDrops(fallingCandidates, grid, resolution, undefined, {
     matchedCellsForDelay: removedLineCells
   });
   this.systems.jarCollectorSystem.collect([]);
 
-  resolution.floating = removedFloating;
   resolution.collected = fallingCandidates;
   resolution.boardCleared = grid.getCells().length === 0;
   this.lastResolution = resolution;
@@ -2689,15 +2691,17 @@ GameManager.prototype.useBarrierHammerAt = function (point) {
   if (isStoneBall(targetCell)) {
     var removedObstacle = grid.removeCells([targetCell]);
     this._pushBubbleBreakEvent(removedObstacle);
+    this._collectRemovedKeysAndResolveUnlocks(removedObstacle, grid, resolution);
     var floatingCells = this.systems.supportSystem.findFloatingCells(grid);
     var removedFloating = grid.removeCells(floatingCells);
+    this._appendUniqueCells(resolution.floating, removedFloating);
+    this._collectRemovedKeysAndResolveUnlocks(removedFloating, grid, resolution);
 
-    this.systems.fallingMarbleSystem.registerDrops(removedFloating, grid);
+    this._registerResolutionDrops(resolution.floating, grid, resolution);
     this.systems.jarCollectorSystem.collect([]);
 
     resolution.matched = removedObstacle;
-    resolution.floating = removedFloating;
-    resolution.collected = removedFloating;
+    resolution.collected = resolution.floating.slice();
     resolution.boardCleared = grid.getCells().length === 0;
   } else {
     var thawedCell = this._thawIceCellAtCurrentPosition(grid, targetCell);
@@ -3009,6 +3013,7 @@ GameManager.prototype.update = function (dt) {
     !collectedDrops.length &&
     !scoreBoostChanged &&
     !splitterSpawned &&
+    !molotovBlastUpdated &&
     !surplusUpdated &&
     !viewportUpdated &&
     !boardAdvancedThisFrame &&
@@ -3027,6 +3032,7 @@ GameManager.prototype.update = function (dt) {
     collectedDrops.length ||
     scoreBoostChanged ||
     splitterSpawned ||
+    molotovBlastUpdated ||
     surplusUpdated ||
     viewportUpdated ||
     boardAdvancedThisFrame ||
@@ -3041,6 +3047,7 @@ GameManager.prototype.update = function (dt) {
       collectedDrops.length === 0 &&
       !scoreBoostChanged &&
       !splitterSpawned &&
+      !molotovBlastUpdated &&
       !surplusUpdated &&
       !viewportUpdated &&
       !boardAdvancedThisFrame &&
@@ -3056,6 +3063,7 @@ GameManager.prototype.update = function (dt) {
       collectedDrops.length === 0 &&
       !scoreBoostChanged &&
       !splitterSpawned &&
+      !molotovBlastUpdated &&
       !surplusUpdated &&
       !viewportUpdated &&
       !boardAdvancedThisFrame &&
@@ -3068,6 +3076,7 @@ GameManager.prototype.update = function (dt) {
       collectedDrops.length === 0 &&
       !scoreBoostChanged &&
       !splitterSpawned &&
+      !molotovBlastUpdated &&
       !surplusUpdated &&
       !viewportUpdated &&
       !boardAdvancedThisFrame &&
@@ -3137,6 +3146,7 @@ GameManager.prototype.debugDropBottomRow = function () {
   if (removedBottom.length) {
     resolution.impact = this._createImpactEventFromCell(removedBottom[0]);
   }
+  this._collectRemovedKeysAndResolveUnlocks(removedBottom, grid, resolution);
 
   this._registerResolutionDrops(removedBottom, grid, resolution);
   this.systems.jarCollectorSystem.collect([]);

@@ -9,15 +9,20 @@ var ClusteredLevelLayout = require("./clustered-level-layout");
 
 var PROJECT_ROOT = path.resolve(__dirname, "..");
 var REMOTE_PACK_DIR = path.join(PROJECT_ROOT, "remote-level-packs");
-var MANIFEST_PATH = path.join(PROJECT_ROOT, "assets/resources/config/level_manifest.json");
-var START_LEVEL_ID = 100;
-var END_LEVEL_ID = 500;
+var MANIFEST_PATH = path.join(REMOTE_PACK_DIR, "level_manifest.json");
+var DEFAULT_START_LEVEL_ID = 100;
+var DEFAULT_END_LEVEL_ID = 500;
 var PACKS = [
   { id: "levels_pack_011_100", fileName: "levels_pack_011_100.json", from: 11, to: 100 },
   { id: "levels_pack_101_200", fileName: "levels_pack_101_200.json", from: 101, to: 200 },
   { id: "levels_pack_201_300", fileName: "levels_pack_201_300.json", from: 201, to: 300 },
   { id: "levels_pack_301_400", fileName: "levels_pack_301_400.json", from: 301, to: 400 },
-  { id: "levels_pack_401_500", fileName: "levels_pack_401_500.json", from: 401, to: 500 }
+  { id: "levels_pack_401_500", fileName: "levels_pack_401_500.json", from: 401, to: 500 },
+  { id: "levels_pack_501_600", fileName: "levels_pack_501_600.json", from: 501, to: 600 },
+  { id: "levels_pack_601_700", fileName: "levels_pack_601_700.json", from: 601, to: 700 },
+  { id: "levels_pack_701_800", fileName: "levels_pack_701_800.json", from: 701, to: 800 },
+  { id: "levels_pack_801_900", fileName: "levels_pack_801_900.json", from: 801, to: 900 },
+  { id: "levels_pack_901_1000", fileName: "levels_pack_901_1000.json", from: 901, to: 1000 }
 ];
 
 function stripBom(text) {
@@ -112,14 +117,20 @@ function requireLevelConfig(config, levelId) {
 
 function redesignLevel(config, levelId) {
   var level = requireLevelConfig(config, levelId);
-  var sourceRows = levelId === 100 ? level.layout.slice() : makeEmptyRowsLike(level.layout, levelId);
+  var colorCounts = collectColorCounts(level);
+  var normalCount = Object.keys(colorCounts).reduce(function (sum, color) {
+    return sum + colorCounts[color];
+  }, 0);
+  var preserveOccupiedSlots = Array.isArray(level.specialEntities) && level.specialEntities.length > normalCount;
+  var sourceRows = levelId === 100 || preserveOccupiedSlots ? level.layout.slice() : makeEmptyRowsLike(level.layout, levelId);
   var result = ClusteredLevelLayout.buildClusteredLayout({
     levelId: levelId,
     rows: sourceRows,
     colors: level.colors,
-    colorCounts: collectColorCounts(level),
+    colorCounts: colorCounts,
     targetColor: resolveTargetColor(level),
-    specialEntities: level.specialEntities
+    specialEntities: level.specialEntities,
+    preserveOccupiedSlots: preserveOccupiedSlots
   });
   level.layout = result.rows;
   return result;
@@ -137,6 +148,28 @@ function updateManifestPack(manifest, packId, packText) {
   }
   matches[0].sha256 = crypto.createHash("sha256").update(packText, "utf8").digest("hex");
   matches[0].bytes = Buffer.byteLength(packText, "utf8");
+}
+
+function parseRangeArgs() {
+  var args = process.argv.slice(2);
+  if (args.length === 0) {
+    return {
+      start: DEFAULT_START_LEVEL_ID,
+      end: DEFAULT_END_LEVEL_ID
+    };
+  }
+  if (args.length !== 3 || args[0] !== "--range") {
+    throw new Error("Usage: node tools/redesign-levels-100-500-aesthetic.js [--range <start> <end>]");
+  }
+  var start = Number(args[1]);
+  var end = Number(args[2]);
+  if (!Number.isInteger(start) || !Number.isInteger(end) || start < 100 || end > 1000 || start > end) {
+    throw new Error("Aesthetic redesign range must be integer levels within 100-1000.");
+  }
+  return {
+    start: start,
+    end: end
+  };
 }
 
 function summarize(results) {
@@ -165,12 +198,16 @@ function summarize(results) {
 }
 
 function main() {
+  var range = parseRangeArgs();
   var manifest = readJson(MANIFEST_PATH);
   var results = {};
   PACKS.forEach(function (packInfo) {
+    if (packInfo.to < range.start || packInfo.from > range.end) {
+      return;
+    }
     var packPath = path.join(REMOTE_PACK_DIR, packInfo.fileName);
     var expandedPack = LevelPackCompactCodec.expandPack(readJson(packPath));
-    for (var levelId = Math.max(START_LEVEL_ID, packInfo.from); levelId <= Math.min(END_LEVEL_ID, packInfo.to); levelId += 1) {
+    for (var levelId = Math.max(range.start, packInfo.from); levelId <= Math.min(range.end, packInfo.to); levelId += 1) {
       var levelKey = getLevelKey(levelId);
       if (!expandedPack.levels[levelKey]) {
         throw new Error("Remote pack missing level: " + levelKey);
@@ -182,6 +219,9 @@ function main() {
     fs.writeFileSync(packPath, packText, "utf8");
     updateManifestPack(manifest, packInfo.id, packText);
   });
+  if (Object.keys(results).length !== range.end - range.start + 1) {
+    throw new Error("Aesthetic redesign did not update every level in range " + range.start + "-" + range.end + ".");
+  }
   writeJson(MANIFEST_PATH, manifest);
   summarize(results);
 }

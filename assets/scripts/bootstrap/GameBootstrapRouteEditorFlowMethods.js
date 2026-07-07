@@ -31,54 +31,66 @@ module.exports = {
     this._currentLevelAwardedClearRewardItems = [];
     this._setDropTestButtonVisible(false);
     this._lastRuntimeState = null;
-    return this._ensureGameplayKernel().then(function () {
-      return this.levelManager.loadLevel(levelId);
-    }.bind(this)).then(function (levelConfig) {
-      this.currentLevelConfig = levelConfig;
-      this._currentLevelId = Math.max(1, Number(levelId) || 1);
-      this._currentRunContext = {
-        mode: "campaign",
-        levelId: this._currentLevelId
-      };
-      this._rememberSelectedLevel(this._currentLevelId);
-      this._prepareRouteEditorForLevel(levelConfig, this._currentLevelId);
-      return this.levelRenderer.syncBoardLayoutHudBottomLineAsync().then(function () {
-        this._applyBoardTuningFromProperties();
-        var snapshot = this.gameManager.startLevel(levelConfig);
-        if (typeof this._applySelectedPowerupsToRuntime === "function") {
-          snapshot = this._applySelectedPowerupsToRuntime(snapshot);
-        }
-        if (typeof this._applyPendingNextRoundRewards === "function") {
-          snapshot = this._applyPendingNextRoundRewards(snapshot);
-        }
-        if (typeof this._beginLevelAttemptTracking === "function") {
-          this._beginLevelAttemptTracking(levelConfig, snapshot);
-        }
-        this._lastRuntimeState = snapshot ? snapshot.state : null;
-        return this.levelRenderer.renderLevel(levelConfig, snapshot).then(function () {
-          if (this._pendingRouteEditorAutoEnable) {
-            this._routeEditorState.enabled = true;
-            this._pendingRouteEditorAutoEnable = false;
+    return this._runLevelEntryWithLoading(function () {
+      return this._ensureGameplayKernel().then(function () {
+        return this.levelManager.loadLevel(levelId);
+      }.bind(this)).then(function (levelConfig) {
+        this.currentLevelConfig = levelConfig;
+        this._currentLevelId = Math.max(1, Number(levelId) || 1);
+        this._currentRunContext = {
+          mode: "campaign",
+          levelId: this._currentLevelId
+        };
+        this._rememberSelectedLevel(this._currentLevelId);
+        this._prepareRouteEditorForLevel(levelConfig, this._currentLevelId);
+        return this.levelRenderer.syncBoardLayoutHudBottomLineAsync().then(function () {
+          this._applyBoardTuningFromProperties();
+          var snapshot = this.gameManager.startLevel(levelConfig);
+          if (typeof this._applySelectedPowerupsToRuntime === "function") {
+            snapshot = this._applySelectedPowerupsToRuntime(snapshot);
           }
-          this.isSelectingLevel = false;
-          this._hideLevelSelectView();
-          this._renderRouteEditor();
-          this._refreshRouteEditorButtons();
-          this._setStatus(this._formatStatus(levelConfig, snapshot));
-          this._playGameplayBackgroundMusic();
-          Logger.info(successLogPrefix || "Level started", levelConfig.level.code);
-          this._logAssetManagerStats("gameplay");
-          this.levelRenderer.setGameplayInteractionEnabled(false);
-          return this._runGameEntryCountdown().then(function () {
-            this.levelRenderer.setGameplayInteractionEnabled(true);
-            this.isRestarting = false;
-            this._setDropTestButtonVisible(true);
-            this._syncSpecialIntroduceForRuntimeSnapshot(snapshot);
-            this._syncGeniusTipsForRuntimeSnapshot(snapshot);
-            this._syncSartTipsForRuntimeSnapshot(snapshot);
-            return this._showNewUserGuideForGameplay();
-          }.bind(this));
+          if (typeof this._applyPendingNextRoundRewards === "function") {
+            snapshot = this._applyPendingNextRoundRewards(snapshot);
+          }
+          if (typeof this._beginLevelAttemptTracking === "function") {
+            this._beginLevelAttemptTracking(levelConfig, snapshot);
+          }
+          this._lastRuntimeState = snapshot ? snapshot.state : null;
+          return this.levelRenderer.renderLevel(levelConfig, snapshot).then(function () {
+            return {
+              levelConfig: levelConfig,
+              snapshot: snapshot
+            };
+          });
         }.bind(this));
+      }.bind(this));
+    }.bind(this)).then(function (entry) {
+      var levelConfig = entry.levelConfig;
+      var snapshot = entry.snapshot;
+      if (this._pendingRouteEditorAutoEnable) {
+        this._routeEditorState.enabled = true;
+        this._pendingRouteEditorAutoEnable = false;
+      }
+      this.isSelectingLevel = false;
+      this._hideLevelSelectView();
+      this._renderRouteEditor();
+      this._refreshRouteEditorButtons();
+      this._setStatus(this._formatStatus(levelConfig, snapshot));
+      this._playGameplayBackgroundMusic();
+      Logger.info(successLogPrefix || "Level started", levelConfig.level.code);
+      this._logAssetManagerStats("gameplay");
+      this.levelRenderer.setGameplayInteractionEnabled(false);
+      return this._runGameEntryCountdown().then(function () {
+        this.levelRenderer.setGameplayInteractionEnabled(true);
+        this.isRestarting = false;
+        if (typeof this._applyPendingStartGamePreciseAimActivation === "function") {
+          snapshot = this._applyPendingStartGamePreciseAimActivation(snapshot);
+        }
+        this._setDropTestButtonVisible(true);
+        this._syncSpecialIntroduceForRuntimeSnapshot(snapshot);
+        this._syncGeniusTipsForRuntimeSnapshot(snapshot);
+        this._syncSartTipsForRuntimeSnapshot(snapshot);
+        return this._showNewUserGuideForGameplay();
       }.bind(this));
     }.bind(this)).catch(function (error) {
       this.isRestarting = false;
@@ -86,6 +98,7 @@ module.exports = {
         this._refundPendingStartGameTemporaryPowerups();
       }
       this._pendingStartGamePowerups = [];
+      this._pendingStartGamePreciseAimActivation = false;
       this._pendingRouteEditorAutoEnable = false;
       this._setDropTestButtonVisible(!!this.currentLevelConfig && !this.isSelectingLevel);
       this._refreshRouteEditorButtons();

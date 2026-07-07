@@ -13,7 +13,10 @@ function releaseSpriteFrameAsset(spriteFrame, label) {
   if (!spriteFrame) {
     return;
   }
-  requireReleaseAsset()(spriteFrame);
+  if (typeof spriteFrame.decRef !== "function") {
+    throw new Error("UiModalReleaseHelper requires retained SpriteFrame.decRef: " + label);
+  }
+  spriteFrame.decRef();
   LevelSelectMemoryDiagnostics.increment("uiModal.releaseSprite:" + label);
 }
 

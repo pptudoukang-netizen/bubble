@@ -1,0 +1,1 @@
+module.exports = [1,["1154b4878"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"rainbow_icon","rect":[293,234,139,139],"offset":[0,0],"originalSize":[139,139],"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

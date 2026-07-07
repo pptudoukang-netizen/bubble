@@ -1,1 +1,0 @@
-module.exports = [1,["158a356b4"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"icon_newgift","rect":[511,108,97,79],"offset":[0,0],"originalSize":[97,79],"rotated":1,"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

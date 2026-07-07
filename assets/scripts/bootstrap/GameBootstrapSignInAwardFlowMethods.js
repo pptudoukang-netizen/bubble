@@ -884,7 +884,7 @@ module.exports = {
         rootNode: signInViewNode,
         proxyRootName: SIGN_IN_PROXY_ROOT_NAME
       });
-    }).catch(function (error) {
+    }.bind(this)).catch(function (error) {
       Logger.warn("Render sign-in icons failed", error && error.message ? error.message : error);
       throw error;
     });

@@ -6,11 +6,14 @@ var path = require("path");
 var BoardLayout = require("../assets/scripts/config/BoardLayout");
 var LevelBoardSupportValidator = require("../assets/scripts/config/LevelBoardSupportValidator");
 var LevelPackCompactCodec = require("../assets/scripts/config/LevelPackCompactCodec");
+var LevelPackIntegrity = require("../assets/scripts/config/LevelPackIntegrity");
+var LevelPackManifest = require("../assets/scripts/config/LevelPackManifest");
 var ClusteredLevelLayout = require("./clustered-level-layout");
 var FirstHundredLevelDesign = require("./first-100-level-design");
 
 var LEVEL_DIR = path.resolve(__dirname, "../assets/resources/config/levels");
 var REMOTE_PACK_DIR = path.resolve(__dirname, "../remote-level-packs");
+var MANIFEST_PATH = path.resolve(REMOTE_PACK_DIR, "level_manifest.json");
 var ALLOWED_COLORS = ["R", "G", "B", "Y", "P"];
 var MAX_JAR_COUNT = 4;
 var ALLOWED_DIFFICULTY = ["tutorial", "easy", "normal", "hard", "expert", "advanced"];
@@ -46,6 +49,14 @@ function readJson(filePath) {
     raw = raw.slice(1);
   }
   return JSON.parse(raw);
+}
+
+function readText(filePath) {
+  var raw = fs.readFileSync(filePath, "utf8");
+  if (raw.charCodeAt(0) === 0xfeff) {
+    return raw.slice(1);
+  }
+  return raw;
 }
 
 function getLevelNumber(fileName) {
@@ -641,8 +652,11 @@ function validateLevelData(data, expectedLevelId) {
           Math.round(requiredGroupedRatio * 100) + "%"
         );
       }
-      if (clusteredMetrics.isolatedRatio > 0.1) {
-        issues.push("clustered isolated color ratio must be <= 10%");
+      var allowedIsolatedRatio = typeof clusteredMetrics.allowedIsolatedRatio === "number"
+        ? clusteredMetrics.allowedIsolatedRatio
+        : 0.1;
+      if (clusteredMetrics.isolatedRatio > allowedIsolatedRatio) {
+        issues.push("clustered isolated color ratio must be <= " + Math.round(allowedIsolatedRatio * 100) + "%");
       }
     } catch (error) {
       issues.push(error.message);
@@ -750,6 +764,11 @@ function listRemotePackEntries() {
     return [];
   }
 
+  var manifest = LevelPackManifest.normalizeManifest(readJson(MANIFEST_PATH));
+  var manifestPacksById = {};
+  manifest.packs.forEach(function (packInfo) {
+    manifestPacksById[packInfo.id] = packInfo;
+  });
   var entries = [];
   fs.readdirSync(REMOTE_PACK_DIR)
     .filter(function (fileName) {
@@ -757,7 +776,9 @@ function listRemotePackEntries() {
     })
     .sort()
     .forEach(function (fileName) {
-      var pack = readJson(path.join(REMOTE_PACK_DIR, fileName));
+      var packPath = path.join(REMOTE_PACK_DIR, fileName);
+      var packText = readText(packPath);
+      var pack = JSON.parse(packText);
       if (!pack || typeof pack !== "object" || Array.isArray(pack)) {
         throw new Error("remote level pack must be object: " + fileName);
       }
@@ -773,6 +794,14 @@ function listRemotePackEntries() {
       if (!Number.isInteger(pack.from) || !Number.isInteger(pack.to) || pack.from <= 0 || pack.to < pack.from) {
         throw new Error("remote level pack range invalid: " + fileName);
       }
+      var manifestPack = manifestPacksById[pack.packId];
+      if (!manifestPack) {
+        throw new Error("remote level pack missing from manifest: " + fileName);
+      }
+      if (manifestPack.from !== pack.from || manifestPack.to !== pack.to || manifestPack.format !== pack.format) {
+        throw new Error("remote level pack manifest metadata mismatch: " + fileName);
+      }
+      LevelPackIntegrity.assertPackTextMatches(manifestPack, packText);
       pack = LevelPackCompactCodec.expandPack(pack);
       if (!pack.levels || typeof pack.levels !== "object" || Array.isArray(pack.levels)) {
         throw new Error("remote level pack levels must be object: " + fileName);

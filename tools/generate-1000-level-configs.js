@@ -16,6 +16,7 @@ var RESOURCE_CONFIG_DIR = path.join(PROJECT_ROOT, "assets/resources/config");
 var MIRROR_LEVEL_DIR = path.join(PROJECT_ROOT, "levels");
 var REMOTE_PACK_DIR = path.join(PROJECT_ROOT, "remote-level-packs");
 var MANIFEST_PATH = path.join(RESOURCE_CONFIG_DIR, "level_manifest.json");
+var REMOTE_MANIFEST_PATH = path.join(REMOTE_PACK_DIR, "level_manifest.json");
 var LEVEL_CONFIG_TABLE_PATH = path.join(PROJECT_ROOT, "LEVEL_CONFIG_TABLE_1_1000.csv");
 var TARGET_LEVEL_COUNT = 1000;
 var LOCAL_LEVEL_MAX = 10;
@@ -25,6 +26,8 @@ var CLOUD_ENV_ID = "cloud1-d7gqettx3e9249ca1";
 var CLOUD_FILE_ID_PREFIX = "cloud://cloud1-d7gqettx3e9249ca1.636c-cloud1-d7gqettx3e9249ca1-1428064608";
 var CLOUD_PACK_ROOT = "level-packs-compact";
 var MANIFEST_VERSION = "levels-1000-compact-v1";
+var BOOTSTRAP_MANIFEST_VERSION = "levels-1000-bootstrap-v1";
+var REMOTE_MANIFEST_FILE_NAME = "level_manifest.json";
 var COLORS = ["R", "G", "B", "Y", "P"];
 var COLOR_NAMES = {
   R: "red",
@@ -642,6 +645,55 @@ function placeTableSpecialEntities(rows, entities, levelId, placementVariant) {
   });
 }
 
+function countLayoutColors(rows, activeColors) {
+  var counts = {};
+  activeColors.forEach(function (color) {
+    counts[color] = 0;
+  });
+  rows.forEach(function (rowString) {
+    rowString.split("").forEach(function (cellCode) {
+      if (cellCode === ".") {
+        return;
+      }
+      if (!Object.prototype.hasOwnProperty.call(counts, cellCode)) {
+        throw new Error("Fixed level layout contains inactive color: " + cellCode);
+      }
+      counts[cellCode] += 1;
+    });
+  });
+  return counts;
+}
+
+function applyFirstLevelTutorialLayout(rows, entities, tableRow, activeColors) {
+  if (tableRow.levelId !== 1) {
+    throw new Error("First level tutorial layout can only be applied to level 1.");
+  }
+  if (entities.length !== 0) {
+    throw new Error("Level 1 tutorial layout must not contain special entities.");
+  }
+  var fixedLayout = FirstHundredLevelDesign.LEVEL_ONE_TUTORIAL_LAYOUT;
+  if (!Array.isArray(fixedLayout) || fixedLayout.length !== rows.length) {
+    throw new Error("Level 1 tutorial layout row count mismatch.");
+  }
+  fixedLayout.forEach(function (rowString, rowIndex) {
+    if (typeof rowString !== "string" || rowString.length !== rows[rowIndex].length) {
+      throw new Error("Level 1 tutorial layout row length mismatch at row " + rowIndex + ".");
+    }
+  });
+  var layoutCounts = countLayoutColors(fixedLayout, activeColors);
+  activeColors.forEach(function (color) {
+    if (layoutCounts[color] !== tableRow.colorCounts[color]) {
+      throw new Error(
+        "Level 1 tutorial layout color count mismatch for " + color +
+        ": expected " + tableRow.colorCounts[color] + ", got " + layoutCounts[color] + "."
+      );
+    }
+  });
+  fixedLayout.forEach(function (rowString, rowIndex) {
+    rows[rowIndex] = rowString;
+  });
+}
+
 function fillTableLayoutColors(rows, entities, tableRow, activeColors) {
   var specialCells = {};
   entities.forEach(function (entity) {
@@ -653,6 +705,10 @@ function fillTableLayoutColors(rows, entities, tableRow, activeColors) {
     remaining[color] = tableRow.colorCounts[color];
   });
   var remainingTotal = sumColorCounts(tableRow.colorCounts);
+  if (tableRow.levelId === 1) {
+    applyFirstLevelTutorialLayout(rows, entities, tableRow, activeColors);
+    return;
+  }
   if (ClusteredLevelLayout.shouldRedesign(tableRow.levelId)) {
     var clusteredResult = ClusteredLevelLayout.buildClusteredLayout({
       levelId: tableRow.levelId,
@@ -1435,7 +1491,7 @@ function buildRemotePacks() {
 }
 
 function writeManifest(packs) {
-  writeJson(MANIFEST_PATH, {
+  var remoteManifest = {
     schemaVersion: 1,
     version: MANIFEST_VERSION,
     totalLevelCount: TARGET_LEVEL_COUNT,
@@ -1444,12 +1500,27 @@ function writeManifest(packs) {
       envId: CLOUD_ENV_ID
     },
     packs: packs
+  };
+  writeJson(REMOTE_MANIFEST_PATH, remoteManifest);
+  writeJson(MANIFEST_PATH, {
+    schemaVersion: 1,
+    version: BOOTSTRAP_MANIFEST_VERSION,
+    totalLevelCount: TARGET_LEVEL_COUNT,
+    localLevelMax: LOCAL_LEVEL_MAX,
+    cloud: {
+      envId: CLOUD_ENV_ID
+    },
+    remoteManifest: {
+      id: "level_manifest_current",
+      fileID: CLOUD_FILE_ID_PREFIX + "/" + CLOUD_PACK_ROOT + "/" + REMOTE_MANIFEST_FILE_NAME,
+      format: "level-pack-manifest-v1"
+    }
   });
   writeManifestMeta();
 }
 
 function updateFirstHundredManifestPack(packEntry) {
-  var manifest = JSON.parse(stripBom(fs.readFileSync(MANIFEST_PATH, "utf8")));
+  var manifest = JSON.parse(stripBom(fs.readFileSync(REMOTE_MANIFEST_PATH, "utf8")));
   if (!Array.isArray(manifest.packs)) {
     throw new Error("Level manifest packs must be an array.");
   }
@@ -1464,7 +1535,7 @@ function updateFirstHundredManifestPack(packEntry) {
   if (matchCount !== 1) {
     throw new Error("Level manifest must contain exactly one " + packEntry.id + " entry.");
   }
-  writeJson(MANIFEST_PATH, manifest);
+  writeJson(REMOTE_MANIFEST_PATH, manifest);
   writeManifestMeta();
 }
 

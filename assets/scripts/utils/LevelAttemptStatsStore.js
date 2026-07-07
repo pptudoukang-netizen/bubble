@@ -4,7 +4,8 @@ var StrictStorage = require("./StrictStorage");
 
 var STORAGE_KEY = "bubble_level_attempt_stats_v1";
 var NAMESPACE = "LevelAttemptStatsStore";
-var MAX_RECENT_EVENTS = 200;
+var MAX_RECENT_EVENTS = 50;
+var MAX_LAST_ATTEMPT_BY_LEVEL = 50;
 var EVENT_LEVEL_START = "level_start";
 var EVENT_LEVEL_RESULT = "level_result";
 var EVENT_LEVEL_REVIVE = "level_revive";
@@ -148,10 +149,24 @@ function normalizeAttemptCountByLevel(rawCounts) {
 
 function normalizeLastAttemptByLevel(rawAttempts) {
   assertObject(rawAttempts, "Level attempt lastAttemptByLevel");
-  var attempts = {};
-  Object.keys(rawAttempts).forEach(function (levelKey) {
+  var entries = Object.keys(rawAttempts).map(function (levelKey) {
     requirePositiveInteger(Number(levelKey), "Level attempt lastAttemptByLevel key");
-    attempts[levelKey] = normalizeAttempt(rawAttempts[levelKey], "Level attempt lastAttemptByLevel." + levelKey);
+    return {
+      levelKey: levelKey,
+      attempt: normalizeAttempt(rawAttempts[levelKey], "Level attempt lastAttemptByLevel." + levelKey)
+    };
+  });
+  entries.sort(function (left, right) {
+    var rightTime = right.attempt ? Math.max(right.attempt.endedAt, right.attempt.startedAt) : 0;
+    var leftTime = left.attempt ? Math.max(left.attempt.endedAt, left.attempt.startedAt) : 0;
+    if (rightTime !== leftTime) {
+      return rightTime - leftTime;
+    }
+    return Number(right.levelKey) - Number(left.levelKey);
+  });
+  var attempts = {};
+  entries.slice(0, MAX_LAST_ATTEMPT_BY_LEVEL).forEach(function (entry) {
+    attempts[entry.levelKey] = entry.attempt;
   });
   return attempts;
 }
@@ -340,8 +355,10 @@ LevelAttemptStatsStore.prototype.recordReviveUsed = function (state, attemptId) 
 };
 
 LevelAttemptStatsStore.createInitialState = createInitialState;
+LevelAttemptStatsStore.normalizeState = normalizeState;
 LevelAttemptStatsStore.STORAGE_KEY = STORAGE_KEY;
 LevelAttemptStatsStore.NAMESPACE = NAMESPACE;
 LevelAttemptStatsStore.MAX_RECENT_EVENTS = MAX_RECENT_EVENTS;
+LevelAttemptStatsStore.MAX_LAST_ATTEMPT_BY_LEVEL = MAX_LAST_ATTEMPT_BY_LEVEL;
 
 module.exports = LevelAttemptStatsStore;

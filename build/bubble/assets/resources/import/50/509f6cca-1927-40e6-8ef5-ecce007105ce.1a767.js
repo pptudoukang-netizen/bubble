@@ -1,0 +1,1 @@
+module.exports = [1,["1f5bfd500"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"icon_daily_tasks","rect":[518,354,89,95],"offset":[2,1.5],"originalSize":[97,106],"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

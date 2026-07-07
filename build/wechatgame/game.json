@@ -44,12 +44,5 @@
             "root": "subpackages/ui"
         }
     ],
-    "preloadSubpackages": [
-        {
-            "name": "resources"
-        },
-        {
-            "name": "map"
-        }
-    ]
+    "preloadSubpackages": []
 }

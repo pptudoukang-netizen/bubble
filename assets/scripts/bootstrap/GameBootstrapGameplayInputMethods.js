@@ -16,6 +16,9 @@ module.exports = {
     if (!this.gameManager || !this.levelRenderer) {
       return;
     }
+    if (this._skillBallLoadAnimationInProgress === true) {
+      return;
+    }
     if (this.isRestarting) {
       if (typeof this.gameManager.updateBoardViewportIntro !== "function") {
         throw new Error("GameBootstrap requires GameManager.updateBoardViewportIntro during level entry.");
@@ -53,6 +56,9 @@ module.exports = {
       return;
     }
     if (!this.currentLevelConfig || !this.gameManager || !this.levelRenderer) {
+      return;
+    }
+    if (this._skillBallLoadAnimationInProgress === true) {
       return;
     }
     var fallingMarbleSystem = this.gameManager.systems.fallingMarbleSystem;
@@ -108,7 +114,13 @@ module.exports = {
     if (!this.levelRenderer || typeof this.levelRenderer.isShooterHandoffInProgress !== "function") {
       throw new Error("GameBootstrap shot input requires LevelRenderer.isShooterHandoffInProgress.");
     }
-    return this.levelRenderer.isShooterHandoffInProgress();
+    if (this.levelRenderer.isShooterHandoffInProgress()) {
+      return true;
+    }
+    if (typeof this.levelRenderer.isPowerupLoadAnimationInProgress !== "function") {
+      throw new Error("GameBootstrap shot input requires LevelRenderer.isPowerupLoadAnimationInProgress.");
+    }
+    return this.levelRenderer.isPowerupLoadAnimationInProgress();
   },
 
   _onAimStart: function (event) {
@@ -266,6 +278,7 @@ module.exports = {
     if (snapshot && Math.max(0, Number(snapshot.remainingShots) || 0) < shotsBeforeFire) {
       this._playSfx("shot");
       this._completeNewUserGuide();
+      this._completeActiveSkillPowerupFireGuide();
     }
     this._handleRuntimeStateTransition(snapshot);
     this.levelRenderer.refreshRuntime(this.currentLevelConfig, snapshot);

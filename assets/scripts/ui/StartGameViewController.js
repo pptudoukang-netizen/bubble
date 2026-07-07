@@ -448,6 +448,10 @@ StartGameViewController.prototype._resolveNodes = function () {
   };
 };
 
+StartGameViewController.prototype.getPlayButtonNode = function () {
+  return requireValidNode(this._nodes.playButton, "StartGameView play_btn");
+};
+
 StartGameViewController.prototype._renderStartGameTargetSlot = function (objective, iconNode, countLabelNode, description) {
   if (!objective) {
     iconNode.active = false;

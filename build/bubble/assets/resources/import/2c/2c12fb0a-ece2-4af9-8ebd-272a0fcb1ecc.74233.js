@@ -1,0 +1,1 @@
+module.exports = [1,["1f5bfd500"],["_textureSetter"],["cc.SpriteFrame"],0,[{"name":"vista_island","rect":[3,318,105,154],"offset":[0.5,0.5],"originalSize":[112,161],"capInsets":[0,0,0,0]}],[0],0,[0],[0],[0]];

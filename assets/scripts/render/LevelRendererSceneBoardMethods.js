@@ -170,6 +170,13 @@ function attachLevelRendererSceneBoardMethods(LevelRenderer, deps) {
     if (!boardSnapshot || typeof boardSnapshot !== "object") {
       throw new Error("Board cell render key requires board snapshot.");
     }
+    var lockedColorKey = "";
+    if (cell.entityType === "locked") {
+      if (typeof cell.lockedColor !== "string" || !cell.lockedColor) {
+        throw new Error("LockingBubbleItem render key requires lockedColor.");
+      }
+      lockedColorKey = cell.lockedColor;
+    }
     return [
       String(cell.id),
       cell.row,
@@ -177,7 +184,8 @@ function attachLevelRendererSceneBoardMethods(LevelRenderer, deps) {
       boardSnapshot.maxColumns,
       boardSnapshot.viewportOffsetY,
       resolveBoardBubblePrefabPath(cell),
-      resolveBallVisualKey(cell)
+      resolveBallVisualKey(cell),
+      lockedColorKey
     ].join("|");
   }
 

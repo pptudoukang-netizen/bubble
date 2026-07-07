@@ -2,6 +2,7 @@
 
 var fs = require("fs");
 var path = require("path");
+var crypto = require("crypto");
 
 var DEFAULT_OUTPUT_DIR = path.resolve(__dirname, "../build/wechatgame");
 var DEFAULT_PROJECT_DIR = path.resolve(__dirname, "..");
@@ -13,7 +14,8 @@ var DEFAULT_DESCRIPTION = "Project configuration file.";
 var CLOUD_FUNCTION_ROOT = "cloudfunctions/";
 var GAME_JSON_FILE = "game.json";
 var GAME_JS_FILE = "game.js";
-var STARTUP_PRELOAD_SUBPACKAGE_NAMES = ["resources", "map"];
+var STARTUP_PRELOAD_SUBPACKAGE_NAMES = [];
+var ASSET_CONFIG_FILE_PATTERN = /^config\.[a-f0-9]+\.json$/i;
 var wechatMinigameLoadingPatch = require("./wechat-minigame-loading-patch");
 
 function stripBom(text) {
@@ -55,6 +57,110 @@ function removeDirectoryIfExists(dirPath) {
     recursive: true,
     force: true
   });
+}
+
+function collectAssetConfigFiles(rootDir, output) {
+  if (!fs.existsSync(rootDir)) {
+    throw new Error("Missing asset config root: " + rootDir);
+  }
+  if (!fs.statSync(rootDir).isDirectory()) {
+    throw new Error("Asset config root exists but is not a directory: " + rootDir);
+  }
+
+  fs.readdirSync(rootDir, { withFileTypes: true }).forEach(function (entry) {
+    var entryPath = path.join(rootDir, entry.name);
+    if (entry.isDirectory()) {
+      collectAssetConfigFiles(entryPath, output);
+      return;
+    }
+    if (!entry.isFile()) {
+      throw new Error("Unsupported asset config entry: " + entryPath);
+    }
+    if (ASSET_CONFIG_FILE_PATTERN.test(entry.name)) {
+      output.push(entryPath);
+    }
+  });
+}
+
+function md5Prefix(filePath, length) {
+  var hash = crypto.createHash("md5").update(fs.readFileSync(filePath)).digest("hex");
+  return hash.slice(0, length);
+}
+
+function assertVersionedImportFileHash(filePath, expectedVersion) {
+  if (typeof expectedVersion !== "string" || expectedVersion.length === 0) {
+    throw new Error("Asset import version must be a non-empty string: " + filePath);
+  }
+  var actualPrefix = md5Prefix(filePath, expectedVersion.length);
+  if (actualPrefix !== expectedVersion.toLowerCase()) {
+    throw new Error("Asset import file hash mismatch: " + filePath + " expected=" + expectedVersion + " actual=" + actualPrefix);
+  }
+}
+
+function ensureVersionedStringImportPackFilesForConfig(configPath) {
+  var config = JSON.parse(readUtf8(configPath));
+  if (!config || typeof config !== "object" || Array.isArray(config)) {
+    throw new Error("Asset config must be an object: " + configPath);
+  }
+  if (!config.versions || typeof config.versions !== "object" || Array.isArray(config.versions)) {
+    throw new Error("Asset config requires versions object: " + configPath);
+  }
+  if (!Array.isArray(config.versions.import)) {
+    throw new Error("Asset config requires versions.import array: " + configPath);
+  }
+  if (typeof config.importBase !== "string" || config.importBase.length === 0) {
+    throw new Error("Asset config requires importBase: " + configPath);
+  }
+  if (config.versions.import.length % 2 !== 0) {
+    throw new Error("Asset config versions.import length must be even: " + configPath);
+  }
+
+  var configDir = path.dirname(configPath);
+  var fixedCount = 0;
+  for (var index = 0; index < config.versions.import.length; index += 2) {
+    var importId = config.versions.import[index];
+    var importVersion = config.versions.import[index + 1];
+    if (typeof importId !== "string") {
+      continue;
+    }
+    if (typeof importVersion !== "string" || importVersion.length === 0) {
+      throw new Error("Asset import version is invalid for `" + importId + "` in " + configPath);
+    }
+
+    var importDir = path.join(configDir, config.importBase, importId.slice(0, 2));
+    var expectedPath = path.join(importDir, importId + "." + importVersion + ".json");
+    var unversionedPath = path.join(importDir, importId + ".json");
+
+    if (fs.existsSync(expectedPath)) {
+      assertVersionedImportFileHash(expectedPath, importVersion);
+      continue;
+    }
+    if (!fs.existsSync(unversionedPath)) {
+      throw new Error("Versioned asset import file is missing: " + expectedPath);
+    }
+
+    assertVersionedImportFileHash(unversionedPath, importVersion);
+    fs.renameSync(unversionedPath, expectedPath);
+    fixedCount += 1;
+    console.log("[FIXED]", expectedPath);
+  }
+  return fixedCount;
+}
+
+function ensureVersionedStringImportPackFiles(outputDir) {
+  var configFiles = [];
+  collectAssetConfigFiles(path.join(outputDir, "assets"), configFiles);
+  collectAssetConfigFiles(path.join(outputDir, "subpackages"), configFiles);
+  if (configFiles.length === 0) {
+    throw new Error("No asset config files found in WeChat build output: " + outputDir);
+  }
+
+  var fixedCount = 0;
+  configFiles.forEach(function (configPath) {
+    fixedCount += ensureVersionedStringImportPackFilesForConfig(configPath);
+  });
+  console.log("[CHECKED] WeChat asset import pack file versions, fixed=" + fixedCount);
+  return fixedCount;
 }
 
 function copyDirectoryContents(sourceDir, targetDir) {
@@ -250,6 +356,7 @@ function fixWeChatProjectConfig(outputDir) {
   ensureCloudFunctionRoot(mainConfig);
   writeJson(mainConfigPath, mainConfig);
   console.log("[FIXED]", mainConfigPath);
+  ensureVersionedStringImportPackFiles(resolvedOutputDir);
   assertReleaseSeparateEngine(resolvedOutputDir);
   patchGameJsonStartupPreload(resolvedOutputDir);
   wechatMinigameLoadingPatch.patchWeChatMinigameLoading(resolvedOutputDir, DEFAULT_PROJECT_DIR);
@@ -292,5 +399,6 @@ if (require.main === module) {
 module.exports = {
   fixWeChatProjectConfig: fixWeChatProjectConfig,
   patchGameJsonStartupPreload: patchGameJsonStartupPreload,
-  ensurePreloadSubpackages: ensurePreloadSubpackages
+  ensurePreloadSubpackages: ensurePreloadSubpackages,
+  ensureVersionedStringImportPackFiles: ensureVersionedStringImportPackFiles
 };

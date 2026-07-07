@@ -20,6 +20,17 @@ function resolveWorldLeaderboardFailMessage(error) {
   return "世界排行榜加载失败";
 }
 
+function waitForPendingWorldLeaderboardSubmit(host) {
+  var pendingSubmit = host._worldLeaderboardSubmitPromise;
+  if (!pendingSubmit) {
+    return Promise.resolve(null);
+  }
+  if (typeof pendingSubmit.then !== "function") {
+    throw new Error("Pending world leaderboard submit must be a Promise.");
+  }
+  return pendingSubmit;
+}
+
 module.exports = {
   _resolveLeaderboardPlayerName: function () {
     if (!this._worldLeaderboardUserProfile) {
@@ -34,7 +45,10 @@ module.exports = {
     }
     var profile = this._worldLeaderboardUserProfile || this.worldLeaderboardService.createAnonymousUserProfile();
     this._refreshLevelProgress();
-    return this.worldLeaderboardService.submitAndList(this.levelProgress, profile)
+    return waitForPendingWorldLeaderboardSubmit(this).then(function () {
+      this._refreshLevelProgress();
+      return this.worldLeaderboardService.submitAndList(this.levelProgress, profile);
+    }.bind(this))
       .then(function (result) {
         return result.entries;
       });
@@ -133,6 +147,10 @@ module.exports = {
       }.bind(this));
 
     return resolveUserProfile.then(function (profile) {
+      return waitForPendingWorldLeaderboardSubmit(this).then(function () {
+        return profile;
+      });
+    }.bind(this)).then(function (profile) {
       this._refreshLevelProgress();
       return this.worldLeaderboardService.submitAndList(this.levelProgress, profile).then(function (result) {
         return result.entries;

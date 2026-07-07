@@ -5,6 +5,7 @@ var Logger = require("../utils/Logger");
 var LevelConfigLoader = require("./LevelConfigLoader");
 var LevelPackManifest = require("./LevelPackManifest");
 var LevelPackCompactCodec = require("./LevelPackCompactCodec");
+var LevelPackIntegrity = require("./LevelPackIntegrity");
 
 function resolvePlatform(platform) {
   if (platform) {
@@ -67,9 +68,10 @@ function assertObject(value, fieldName) {
 
 function buildTempURLFailureMessage(packInfo, item) {
   var errMsg = item && typeof item.errMsg === "string" ? item.errMsg : "";
-  var message = "Remote level pack temp URL failed: " + packInfo.id + " status=" + item.status + " errMsg=" + errMsg + " fileID=" + packInfo.fileID;
+  var kind = packInfo.kind === "manifest" ? "manifest" : "pack";
+  var message = "Remote level " + kind + " temp URL failed: " + packInfo.id + " status=" + item.status + " errMsg=" + errMsg + " fileID=" + packInfo.fileID;
   if (errMsg.indexOf("STORAGE_EXCEED_AUTHORITY") !== -1) {
-    message += " hint=Grant client read permission for the CloudBase storage path `level-packs/` or this file.";
+    message += " hint=Grant client read permission for the CloudBase storage path or this file.";
   }
   return message;
 }
@@ -90,8 +92,20 @@ function readJsonAsset(resourcePath) {
   });
 }
 
+function isWechatGameRuntime() {
+  return !!(
+    typeof cc !== "undefined" &&
+    cc &&
+    cc.sys &&
+    typeof cc.sys.platform !== "undefined" &&
+    typeof cc.sys.WECHAT_GAME !== "undefined" &&
+    cc.sys.platform === cc.sys.WECHAT_GAME
+  );
+}
+
 function RemoteLevelPackLoader(options) {
   var opts = options || {};
+  this._explicitPlatformProvided = !!opts.platform;
   this.platform = resolvePlatform(opts.platform);
   this.manifestResourcePath = opts.manifestResourcePath || LevelPackManifest.MANIFEST_RESOURCE_PATH;
   this.cacheRootName = opts.cacheRootName || "bubble_remote_level_packs";
@@ -106,13 +120,50 @@ RemoteLevelPackLoader.prototype.loadManifest = function () {
   }
 
   this._manifestPromise = readJsonAsset(this.manifestResourcePath).then(function (rawManifest) {
-    return LevelPackManifest.normalizeManifest(rawManifest);
-  }).catch(function (error) {
+    var bootstrapManifest = LevelPackManifest.normalizeManifest(rawManifest, {
+      allowRemoteManifestOnly: true
+    });
+    if (!bootstrapManifest.remoteManifest) {
+      return bootstrapManifest;
+    }
+    return this._loadRemoteManifest(bootstrapManifest);
+  }.bind(this)).catch(function (error) {
     this._manifestPromise = null;
     throw error;
   }.bind(this));
 
   return this._manifestPromise;
+};
+
+RemoteLevelPackLoader.prototype._loadBootstrapManifest = function () {
+  return readJsonAsset(this.manifestResourcePath).then(function (rawManifest) {
+    return LevelPackManifest.normalizeManifest(rawManifest, {
+      allowRemoteManifestOnly: true
+    });
+  });
+};
+
+RemoteLevelPackLoader.prototype._loadRemoteManifest = function (bootstrapManifest) {
+  var remoteManifestInfo = {
+    id: bootstrapManifest.remoteManifest.id,
+    fileID: bootstrapManifest.remoteManifest.fileID,
+    kind: "manifest"
+  };
+  return this._getPackTempFileURL(bootstrapManifest, remoteManifestInfo).then(function (tempFileURL) {
+    return this._downloadTempURL(remoteManifestInfo, tempFileURL);
+  }.bind(this)).then(function (tempFilePath) {
+    return this._readTextFile(tempFilePath);
+  }.bind(this)).then(function (text) {
+    var parsed = null;
+    try {
+      parsed = JSON.parse(text);
+    } catch (error) {
+      throw new Error("Remote level manifest JSON invalid: " + remoteManifestInfo.id + ": " + error.message);
+    }
+    var remoteManifest = LevelPackManifest.normalizeManifest(parsed);
+    LevelPackManifest.assertRemoteManifestCompatible(bootstrapManifest, remoteManifest);
+    return remoteManifest;
+  });
 };
 
 RemoteLevelPackLoader.prototype.loadAvailableLevelIds = function () {
@@ -300,6 +351,7 @@ RemoteLevelPackLoader.prototype._downloadPackText = function (manifest, packInfo
 };
 
 RemoteLevelPackLoader.prototype._parsePack = function (packInfo, text) {
+  LevelPackIntegrity.assertPackTextMatches(packInfo, text);
   var parsed = null;
   try {
     parsed = JSON.parse(text);
@@ -336,9 +388,13 @@ RemoteLevelPackLoader.prototype._fetchPackText = function (manifest, packInfo) {
   var cachePath = this._getCachePath(manifest, packInfo);
   this._packTextPromises[packInfo.id] = this._cacheFileExists(cachePath).then(function (exists) {
     if (exists) {
-      return this._readTextFile(cachePath);
+      return this._readTextFile(cachePath).then(function (text) {
+        LevelPackIntegrity.assertPackTextMatches(packInfo, text);
+        return text;
+      });
     }
     return this._downloadPackText(manifest, packInfo).then(function (text) {
+      LevelPackIntegrity.assertPackTextMatches(packInfo, text);
       return this._writeTextFile(cachePath, text).then(function () {
         return text;
       });
@@ -362,34 +418,51 @@ RemoteLevelPackLoader.prototype._loadPack = function (manifest, packInfo) {
   }.bind(this));
 };
 
+RemoteLevelPackLoader.prototype._shouldAttemptRemotePreload = function () {
+  if (this._explicitPlatformProvided === true) {
+    return true;
+  }
+  return isWechatGameRuntime();
+};
+
 RemoteLevelPackLoader.prototype.preloadPackAfterLevelId = function (levelId) {
   var safeLevelId = normalizePositiveLevelId(levelId, "remote pack preload levelId");
-  return this.loadManifest().then(function (manifest) {
+  return this._loadBootstrapManifest().then(function (bootstrapManifest) {
     var nextLevelId = safeLevelId + 1;
-    if (nextLevelId <= manifest.localLevelMax || nextLevelId > manifest.totalLevelCount) {
+    if (nextLevelId <= bootstrapManifest.localLevelMax || nextLevelId > bootstrapManifest.totalLevelCount) {
       return {
         preloaded: false,
         levelId: safeLevelId
       };
     }
 
-    var packInfo = LevelPackManifest.findPackForLevelId(manifest, nextLevelId);
-    if (safeLevelId !== packInfo.from - 1) {
+    if (this._shouldAttemptRemotePreload() !== true) {
       return {
         preloaded: false,
-        levelId: safeLevelId
-      };
-    }
-
-    return this._fetchPackText(manifest, packInfo).then(function () {
-      return {
-        preloaded: true,
         levelId: safeLevelId,
-        packId: packInfo.id,
-        from: packInfo.from,
-        to: packInfo.to
+        skippedReason: "remote_pack_preload_requires_wechat_game_runtime"
       };
-    });
+    }
+
+    return this.loadManifest().then(function (manifest) {
+      var packInfo = LevelPackManifest.findPackForLevelId(manifest, nextLevelId);
+      if (safeLevelId !== packInfo.from - 1) {
+        return {
+          preloaded: false,
+          levelId: safeLevelId
+        };
+      }
+
+      return this._fetchPackText(manifest, packInfo).then(function () {
+        return {
+          preloaded: true,
+          levelId: safeLevelId,
+          packId: packInfo.id,
+          from: packInfo.from,
+          to: packInfo.to
+        };
+      });
+    }.bind(this));
   }.bind(this));
 };
 
