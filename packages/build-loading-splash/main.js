@@ -205,6 +205,22 @@ function patchWeChatMinigameLoadingCover(buildDestPath) {
     Editor.log(`${PLUGIN_TAG} cover image: ${result.coverImagePath}`);
 }
 
+function buildWeChatGameplayCodeBundle(buildDestPath) {
+    const builderPath = path.join(Editor.Project.path, 'tools', 'build-wechat-gameplay-code.js');
+    assertExistingFile(builderPath);
+
+    const builderModule = require(builderPath);
+    if (!builderModule || typeof builderModule.buildWeChatGameplayCode !== 'function') {
+        throw new Error(`${PLUGIN_TAG} invalid WeChat gameplay code builder module: ${builderPath}`);
+    }
+
+    const result = builderModule.buildWeChatGameplayCode(buildDestPath, Editor.Project.path);
+    Editor.log(`${PLUGIN_TAG} built WeChat gameplay code bundle in ${result.outputPath}`);
+    Editor.log(`${PLUGIN_TAG} patched WeChat main lazy gameplay loader in ${result.mainJsPath}`);
+    Editor.log(`${PLUGIN_TAG} built runtime gameplay code resource in ${result.runtimeResourcePath}`);
+    Editor.log(`${PLUGIN_TAG} gameplay source modules: ${result.moduleCount}`);
+}
+
 function onBuildFinished(options, callback) {
     try {
         const resolvedImage = resolveBackgroundImageSource();
@@ -218,6 +234,7 @@ function onBuildFinished(options, callback) {
             patchWeChatProjectConfig(options.dest);
             patchWeChatWorldLeaderboard(options.dest);
             patchWeChatMinigameLoadingCover(options.dest);
+            buildWeChatGameplayCodeBundle(options.dest);
         }
     } catch (error) {
         Editor.error(`${PLUGIN_TAG} build patch failed: ${error && error.stack ? error.stack : error}`);

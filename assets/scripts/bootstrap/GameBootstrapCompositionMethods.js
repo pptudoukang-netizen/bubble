@@ -514,8 +514,8 @@ module.exports = {
         return null;
       }
 
-      var GameManager = require("../core/GameManager");
-      var LevelRenderer = require("../render/LevelRenderer");
+      var GameManager = BundleLoader.requireGameplayModule("GameManager");
+      var LevelRenderer = BundleLoader.requireGameplayModule("LevelRenderer");
 
       this.gameManager = new GameManager({
         poolManager: this.poolManager,

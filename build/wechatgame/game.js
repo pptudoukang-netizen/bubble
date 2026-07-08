@@ -2,6 +2,10 @@
 
 require('adapter-min.js');
 __globalAdapter.init();
+// [wechat-gameplay-code-bundle]
+if (typeof GameGlobal !== "undefined" && GameGlobal) {
+  GameGlobal.__BUBBLE_LAZY_GAMEPLAY_CODE_PREPARED__ = true;
+}
 function loadGame() {
 requirePlugin('cocos');
 __globalAdapter.adaptEngine();

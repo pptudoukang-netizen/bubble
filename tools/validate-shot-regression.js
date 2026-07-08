@@ -1,19 +1,19 @@
-﻿"use strict";
+"use strict";
 
 var fs = require("fs");
 var path = require("path");
 
 var BoardLayout = require("../assets/scripts/config/BoardLayout");
 var AimTuningProfiles = require("../assets/scripts/config/AimTuningProfiles");
-var BubbleGrid = require("../assets/scripts/systems/BubbleGrid");
-var GameManager = require("../assets/scripts/core/GameManager");
-var EliminationSequenceBuilder = require("../assets/scripts/core/EliminationSequenceBuilder");
+var BubbleGrid = require("../gameplay-src/systems/BubbleGrid");
+var GameManager = require("../gameplay-src/core/GameManager");
+var EliminationSequenceBuilder = require("../gameplay-src/core/EliminationSequenceBuilder");
 var LevelPackCompactCodec = require("../assets/scripts/config/LevelPackCompactCodec");
 var LevelPackManifest = require("../assets/scripts/config/LevelPackManifest");
-var SpecialAnimationTiming = require("../assets/scripts/config/SpecialAnimationTiming");
+var SpecialAnimationTiming = require("../gameplay-src/config/SpecialAnimationTiming");
 var StarRatingPolicy = require("../assets/scripts/core/StarRatingPolicy");
-var TrajectoryPredictor = require("../assets/scripts/systems/TrajectoryPredictor");
-var BoardViewportSystem = require("../assets/scripts/systems/BoardViewportSystem");
+var TrajectoryPredictor = require("../gameplay-src/systems/TrajectoryPredictor");
+var BoardViewportSystem = require("../gameplay-src/systems/BoardViewportSystem");
 var BubbleBreakSfxPolicy = require("../assets/scripts/audio/BubbleBreakSfxPolicy");
 var AudioManager = require("../assets/scripts/audio/AudioManager");
 
@@ -43,7 +43,7 @@ var REMOTE_PACK_DIR = path.resolve(__dirname, "../remote-level-packs");
 var MANIFEST_PATH = path.resolve(REMOTE_PACK_DIR, "level_manifest.json");
 
 function createKeyUnlockRegressionManager() {
-  var SupportSystem = require("../assets/scripts/systems/SupportSystem");
+  var SupportSystem = require("../gameplay-src/systems/SupportSystem");
   var manager = new GameManager();
   manager.systems = {
     supportSystem: new SupportSystem(),
@@ -913,9 +913,9 @@ function runKeyUnlockSequentialWaveCase() {
 
 function runKeyUnlockUnsupportedFallsCase() {
   var manager = new GameManager();
-  var support = require("../assets/scripts/systems/SupportSystem");
+  var support = require("../gameplay-src/systems/SupportSystem");
   var supportSystem = new support();
-  var falling = require("../assets/scripts/systems/FallingMarbleSystem");
+  var falling = require("../gameplay-src/systems/FallingMarbleSystem");
   var fallingMarbleSystem = new falling();
   var fairyAssistSystem = manager.systems.fairyAssistSystem;
   var levelConfig = {
@@ -946,9 +946,9 @@ function runKeyUnlockUnsupportedFallsCase() {
       }
     }
   };
-  var match = require("../assets/scripts/systems/MatchSystem");
+  var match = require("../gameplay-src/systems/MatchSystem");
   var matchSystem = new match();
-  var jars = require("../assets/scripts/systems/JarCollectorSystem");
+  var jars = require("../gameplay-src/systems/JarCollectorSystem");
   var jarCollectorSystem = new jars();
 
   var grid = createGridWithViewport(levelConfig);
@@ -2447,8 +2447,8 @@ function runReviveDangerSpaceKeepsLockedBallCase() {
 }
 
 function runBoardIntroViewportCase() {
-  var BoardViewportConfig = require("../assets/scripts/config/BoardViewportConfig");
-  var BoardViewportSystem = require("../assets/scripts/systems/BoardViewportSystem");
+  var BoardViewportConfig = require("../gameplay-src/config/BoardViewportConfig");
+  var BoardViewportSystem = require("../gameplay-src/systems/BoardViewportSystem");
 
   syncHudBottomLineYForValidation();
 
@@ -2543,8 +2543,8 @@ function runBoardIntroViewportCase() {
 }
 
 function runBoardMidGameViewportSettleCase() {
-  var BoardViewportConfig = require("../assets/scripts/config/BoardViewportConfig");
-  var BoardViewportSystem = require("../assets/scripts/systems/BoardViewportSystem");
+  var BoardViewportConfig = require("../gameplay-src/config/BoardViewportConfig");
+  var BoardViewportSystem = require("../gameplay-src/systems/BoardViewportSystem");
 
   syncHudBottomLineYForValidation();
 
@@ -2739,7 +2739,7 @@ function runTopAnchorCollapseCancelsPendingSplitterSpawnCase() {
 }
 
 function runSplitterSpawnViewportSettleCase() {
-  var BoardViewportSystem = require("../assets/scripts/systems/BoardViewportSystem");
+  var BoardViewportSystem = require("../gameplay-src/systems/BoardViewportSystem");
 
   syncHudBottomLineYForValidation();
 
@@ -2870,11 +2870,11 @@ function runBoardViewportFireLockCase() {
 
 function runBoardViewportRenderRefreshCase() {
   var levelRendererSource = fs.readFileSync(
-    path.resolve(__dirname, "../assets/scripts/render/LevelRenderer.js"),
+    path.resolve(__dirname, "../gameplay-src/render/LevelRenderer.js"),
     "utf8"
   );
   var levelRendererSceneBoardSource = fs.readFileSync(
-    path.resolve(__dirname, "../assets/scripts/render/LevelRendererSceneBoardMethods.js"),
+    path.resolve(__dirname, "../gameplay-src/render/LevelRendererSceneBoardMethods.js"),
     "utf8"
   );
   if (levelRendererSource.indexOf("lastBoardViewportOffsetY") < 0) {
@@ -2890,7 +2890,7 @@ function runBoardViewportRenderRefreshCase() {
     throw new Error("Board viewport render paths must accept fractional viewportOffsetY during linear movement.");
   }
   var gameManagerSource = fs.readFileSync(
-    path.resolve(__dirname, "../assets/scripts/core/GameManager.js"),
+    path.resolve(__dirname, "../gameplay-src/core/GameManager.js"),
     "utf8"
   );
   if (gameManagerSource.indexOf("var viewportWasMoving = this.systems.boardViewportSystem.isMoving()") < 0) {
@@ -2903,7 +2903,7 @@ function runBoardViewportRenderRefreshCase() {
 
 function runShooterHandoffInputLockCase() {
   var shooterMethodsSource = fs.readFileSync(
-    path.resolve(__dirname, "../assets/scripts/render/LevelRendererSceneShooterMethods.js"),
+    path.resolve(__dirname, "../gameplay-src/render/LevelRendererSceneShooterMethods.js"),
     "utf8"
   );
   var gameplayInputSource = fs.readFileSync(
@@ -2978,9 +2978,9 @@ function runBoardViewportEntryUpdateCase() {
 }
 
 function runStoneBallJarScoreZeroCase() {
-  var methods = require("../assets/scripts/core/GameManagerShotResolutionMethods");
-  var GameManagerCtor = require("../assets/scripts/core/GameManager");
-  var JarCollectorSystem = require("../assets/scripts/systems/JarCollectorSystem");
+  var methods = require("../gameplay-src/core/GameManagerShotResolutionMethods");
+  var GameManagerCtor = require("../gameplay-src/core/GameManager");
+  var JarCollectorSystem = require("../gameplay-src/systems/JarCollectorSystem");
   var manager = new GameManagerCtor();
   manager.score = 500;
   manager.lastResolution = { scoreDelta: 0 };
@@ -3108,7 +3108,7 @@ function runComboMatchedBallScoreDisplayCase() {
 }
 
 function runMatchedObjectiveCollectionCase() {
-  var JarCollectorSystem = require("../assets/scripts/systems/JarCollectorSystem");
+  var JarCollectorSystem = require("../gameplay-src/systems/JarCollectorSystem");
   var manager = new GameManager();
   manager.currentLevel = {
     level: {
@@ -3462,7 +3462,7 @@ function runBubbleShatterRearmsAppendedMolotovSequenceCase() {
     }
   };
 
-  var rendererPath = path.resolve(__dirname, "../assets/scripts/render/BubbleShatterRenderer.js");
+  var rendererPath = path.resolve(__dirname, "../gameplay-src/render/BubbleShatterRenderer.js");
   delete require.cache[rendererPath];
 
   try {

@@ -2,7 +2,7 @@
 
 var Shared = require("./GameBootstrapShared");
 var BoardLayout = Shared.BoardLayout;
-var RUNTIME_REFRESH_SCOPE = require("../render/LevelRenderer").RUNTIME_REFRESH_SCOPE;
+var RUNTIME_REFRESH_SCOPE = require("../config/RuntimeRefreshScope");
 
 module.exports = {
   update: function (dt) {

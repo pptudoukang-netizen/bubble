@@ -5,6 +5,7 @@ var LevelSelectMemoryDiagnostics = require("./LevelSelectMemoryDiagnostics");
 var RESOURCES_BUNDLE_NAME = "resources";
 var UI_BUNDLE_NAME = "ui";
 var GAME_BUNDLE_NAME = "game";
+var GAMEPLAY_CODE_RESOURCE_PATH = "generated/lazy-gameplay-code";
 var GAME_ASSET_PREFIX = "game/";
 var UI_PREFAB_LEGACY_PREFIX = "prefabs/ui/";
 var UI_PREFAB_BUNDLE_PREFIX = "prefabs/";
@@ -42,6 +43,39 @@ var resourcesBundlePromise = null;
 var namedBundleCache = {};
 var namedBundlePromises = {};
 var namedSubpackagePromises = {};
+var gameplayCodePromise = null;
+
+function getRuntimeGlobal() {
+  if (typeof GameGlobal !== "undefined" && GameGlobal) {
+    return GameGlobal;
+  }
+  if (typeof window !== "undefined" && window) {
+    return window;
+  }
+  if (typeof globalThis !== "undefined" && globalThis) {
+    return globalThis;
+  }
+  return null;
+}
+
+function getAllRuntimeGlobals() {
+  var globals = [];
+  function pushGlobal(candidate) {
+    if (candidate && globals.indexOf(candidate) < 0) {
+      globals.push(candidate);
+    }
+  }
+  if (typeof GameGlobal !== "undefined") {
+    pushGlobal(GameGlobal);
+  }
+  if (typeof window !== "undefined") {
+    pushGlobal(window);
+  }
+  if (typeof globalThis !== "undefined") {
+    pushGlobal(globalThis);
+  }
+  return globals;
+}
 
 function normalizeLoadOptions(options, description) {
   if (options === undefined) {
@@ -335,6 +369,165 @@ function ensureNamedBundleLoaded(bundleName, options) {
   return namedBundlePromises[bundleName];
 }
 
+function resolveGameplayCodePath() {
+  var runtimeGlobal = getRuntimeGlobal();
+  if (!runtimeGlobal) {
+    return "";
+  }
+  if (runtimeGlobal.__BUBBLE_LAZY_GAMEPLAY_CODE_PATH__ === undefined) {
+    return "";
+  }
+  if (typeof runtimeGlobal.__BUBBLE_LAZY_GAMEPLAY_CODE_PATH__ !== "string") {
+    throw new Error("Lazy gameplay code path must be a string.");
+  }
+  if (runtimeGlobal.__BUBBLE_LAZY_GAMEPLAY_CODE_PATH__.trim().length === 0) {
+    throw new Error("Lazy gameplay code path must not be empty.");
+  }
+  var codePath = runtimeGlobal.__BUBBLE_LAZY_GAMEPLAY_CODE_PATH__;
+  if (codePath.indexOf("src/") === 0) {
+    return "./" + codePath;
+  }
+  return codePath;
+}
+
+function ensureGameplayCodeLoaded() {
+  var runtimeGlobal = getRuntimeGlobal();
+  var codePath = resolveGameplayCodePath();
+  if (runtimeGlobal && runtimeGlobal.__BUBBLE_LAZY_GAMEPLAY_CODE_LOADED__ === true) {
+    return Promise.resolve();
+  }
+  if (gameplayCodePromise) {
+    return gameplayCodePromise;
+  }
+  if (codePath.length === 0) {
+    gameplayCodePromise = loadGameplayCodeFromResource().catch(function (error) {
+      gameplayCodePromise = null;
+      throw error;
+    });
+    return gameplayCodePromise;
+  }
+
+  if (!cc || !cc.assetManager || typeof cc.assetManager.loadScript !== "function") {
+    return Promise.reject(new Error("cc.assetManager.loadScript is required for lazy gameplay code."));
+  }
+  try {
+    rememberCocosRequire();
+  } catch (rememberError) {
+    return Promise.reject(rememberError);
+  }
+
+  gameplayCodePromise = new Promise(function (resolve, reject) {
+    cc.assetManager.loadScript([codePath], function (error) {
+      if (error) {
+        gameplayCodePromise = null;
+        reject(toError(error, "Load lazy gameplay code failed."));
+        return;
+      }
+      var loadedRuntimeGlobal = getRuntimeGlobal();
+      if (!loadedRuntimeGlobal || loadedRuntimeGlobal.__BUBBLE_LAZY_GAMEPLAY_CODE_LOADED__ !== true) {
+        gameplayCodePromise = null;
+        reject(new Error("Lazy gameplay code loaded without completion marker."));
+        return;
+      }
+      if (typeof loadedRuntimeGlobal.__BUBBLE_LAZY_GAMEPLAY_REQUIRE__ !== "function") {
+        gameplayCodePromise = null;
+        reject(new Error("Lazy gameplay code loaded without gameplay module loader."));
+        return;
+      }
+      resolve();
+    });
+  }).catch(function (error) {
+    gameplayCodePromise = null;
+    throw error;
+  });
+
+  return gameplayCodePromise;
+}
+
+function readGameplayCodeFromAsset(asset) {
+  if (!asset || typeof asset !== "object" || Array.isArray(asset)) {
+    throw new Error("Lazy gameplay code resource must be an asset object.");
+  }
+  if (asset.json && typeof asset.json === "object" && typeof asset.json.code === "string") {
+    return asset.json.code;
+  }
+  if (typeof asset.code === "string") {
+    return asset.code;
+  }
+  throw new Error("Lazy gameplay code resource must provide json.code.");
+}
+
+function rememberCocosRequire() {
+  var globals = getAllRuntimeGlobals();
+  if (globals.length === 0) {
+    throw new Error("Runtime global is required before loading lazy gameplay code.");
+  }
+  var cocosRequire = null;
+  globals.forEach(function (runtimeGlobal) {
+    if (!cocosRequire && runtimeGlobal && typeof runtimeGlobal.__BUBBLE_COCOS_REQUIRE__ === "function") {
+      cocosRequire = runtimeGlobal.__BUBBLE_COCOS_REQUIRE__;
+    }
+  });
+  if (!cocosRequire && typeof __require === "function") {
+    cocosRequire = __require;
+  }
+  globals.forEach(function (runtimeGlobal) {
+    if (!cocosRequire && runtimeGlobal && typeof runtimeGlobal.__require === "function") {
+      cocosRequire = runtimeGlobal.__require;
+    }
+  });
+  if (typeof cocosRequire !== "function") {
+    throw new Error("Cocos module loader must exist before loading lazy gameplay code.");
+  }
+  globals.forEach(function (runtimeGlobal) {
+    runtimeGlobal.__BUBBLE_COCOS_REQUIRE__ = cocosRequire;
+  });
+}
+
+function evaluateGameplayCode(codeText) {
+  if (typeof codeText !== "string" || codeText.length === 0) {
+    throw new Error("Lazy gameplay code text must be a non-empty string.");
+  }
+  rememberCocosRequire();
+  var globalEval = eval;
+  globalEval(codeText);
+  var runtimeGlobal = getRuntimeGlobal();
+  if (!runtimeGlobal || runtimeGlobal.__BUBBLE_LAZY_GAMEPLAY_CODE_LOADED__ !== true) {
+    throw new Error("Lazy gameplay code resource evaluated without completion marker.");
+  }
+  if (typeof runtimeGlobal.__BUBBLE_LAZY_GAMEPLAY_REQUIRE__ !== "function") {
+    throw new Error("Lazy gameplay code resource evaluated without gameplay module loader.");
+  }
+}
+
+function loadGameplayCodeFromResource() {
+  return new Promise(function (resolve, reject) {
+    loadRes(GAMEPLAY_CODE_RESOURCE_PATH, function (error, asset) {
+      if (error) {
+        reject(toError(error, "Load lazy gameplay code resource failed."));
+        return;
+      }
+      try {
+        evaluateGameplayCode(readGameplayCodeFromAsset(asset));
+        resolve();
+      } catch (evalError) {
+        reject(evalError);
+      }
+    });
+  });
+}
+
+function requireGameplayModule(moduleName) {
+  if (typeof moduleName !== "string" || moduleName.trim().length === 0) {
+    throw new Error("Gameplay module name must be a non-empty string.");
+  }
+  var runtimeGlobal = getRuntimeGlobal();
+  if (!runtimeGlobal || typeof runtimeGlobal.__BUBBLE_LAZY_GAMEPLAY_REQUIRE__ !== "function") {
+    throw new Error("Lazy gameplay module loader is required for: " + moduleName);
+  }
+  return runtimeGlobal.__BUBBLE_LAZY_GAMEPLAY_REQUIRE__(moduleName);
+}
+
 function releaseNamedBundle(bundleName) {
   if (!bundleName || typeof bundleName !== "string") {
     throw new Error("Invalid bundle name for release: " + bundleName);
@@ -462,8 +655,14 @@ module.exports = {
   ensureNamedBundleLoaded: ensureNamedBundleLoaded,
   releaseNamedBundle: releaseNamedBundle,
   ensureGameplayBundleLoaded: function () {
-    return ensureNamedBundleLoaded(GAME_BUNDLE_NAME);
+    return ensureNamedBundleLoaded(GAME_BUNDLE_NAME).then(function (bundle) {
+      return ensureGameplayCodeLoaded().then(function () {
+        return bundle;
+      });
+    });
   },
+  ensureGameplayCodeLoaded: ensureGameplayCodeLoaded,
+  requireGameplayModule: requireGameplayModule,
   loadRes: loadRes,
   loadResDir: loadResDir
 };

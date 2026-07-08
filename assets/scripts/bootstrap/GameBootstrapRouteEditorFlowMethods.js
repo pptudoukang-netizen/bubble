@@ -106,7 +106,8 @@ module.exports = {
       var errorMessage = error && error.stack
         ? error.stack
         : (error && error.message ? error.message : String(error));
-      Logger.error("Load level failed detail", errorMessage);
+      var errorSummary = error && error.message ? error.message : String(error);
+      Logger.error("Load level failed detail", errorSummary, errorMessage);
     }.bind(this));
   },
 

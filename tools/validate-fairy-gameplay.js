@@ -4,9 +4,9 @@ var assert = require("assert");
 var fs = require("fs");
 var path = require("path");
 var BoardLayout = require("../assets/scripts/config/BoardLayout");
-var FairyAssistConfig = require("../assets/scripts/config/FairyAssistConfig");
-var FairyAssistSystem = require("../assets/scripts/systems/FairyAssistSystem");
-var FallingMarbleSystem = require("../assets/scripts/systems/FallingMarbleSystem");
+var FairyAssistConfig = require("../gameplay-src/config/FairyAssistConfig");
+var FairyAssistSystem = require("../gameplay-src/systems/FairyAssistSystem");
+var FallingMarbleSystem = require("../gameplay-src/systems/FallingMarbleSystem");
 
 function buildLevelConfig(maxDynamicMarbles) {
   return {
@@ -900,7 +900,7 @@ function testRightmostJarOuterRimBounceStaysInsideScreen() {
 }
 
 function testTopAnchorCollapseStartsSurplusVolley() {
-  var GameManager = require("../assets/scripts/core/GameManager");
+  var GameManager = require("../gameplay-src/core/GameManager");
   var manager = new GameManager();
   manager.isTimedInfiniteShots = false;
   manager.remainingShots = 6;
