@@ -4,7 +4,6 @@ var StrictStorage = require("./StrictStorage");
 
 var STORAGE_KEY = "bubble_selected_powerups_v1";
 var NAMESPACE = "SelectedPowerupsStore";
-var MAX_SELECTED_POWERUPS = 4;
 var SUPPORTED_ITEM_IDS = ["precise_aim", "swap_ball", "rainbow_ball", "blast_ball", "barrier_hammer", "snow_removal"];
 
 function clone(data) {
@@ -46,9 +45,6 @@ function createInitialState() {
 function normalizeSelectedItems(rawItems) {
   if (!Array.isArray(rawItems)) {
     throw new Error("selectedItems must be an array.");
-  }
-  if (rawItems.length > MAX_SELECTED_POWERUPS) {
-    throw new Error("selectedItems exceeds max selected powerups.");
   }
 
   var seen = {};
@@ -181,14 +177,6 @@ SelectedPowerupsStore.prototype.toggleItem = function (state, itemId) {
     };
   }
 
-  if (selectedItems.length >= MAX_SELECTED_POWERUPS) {
-    return {
-      accepted: false,
-      reason: "selection_limit",
-      state: clone(normalized)
-    };
-  }
-
   selectedItems.push(itemId);
   selectedItemCounts[itemId] = 1;
   normalized.selectedItems = selectedItems;
@@ -221,7 +209,6 @@ SelectedPowerupsStore.prototype.setItemCount = function (state, itemId, count) {
   };
 };
 
-SelectedPowerupsStore.MAX_SELECTED_POWERUPS = MAX_SELECTED_POWERUPS;
 SelectedPowerupsStore.SUPPORTED_ITEM_IDS = SUPPORTED_ITEM_IDS.slice();
 
 module.exports = SelectedPowerupsStore;

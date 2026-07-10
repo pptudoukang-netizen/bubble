@@ -18,19 +18,19 @@ var PATTERNS = [
   "split_islands",
   "crown_exam"
 ];
-var PHASE_BALL_OFFSETS = [0, 2, 4, 5, 7, 8, 10, 11, 13, 15];
-var PHASE_PASS_RATES = [88, 82, 76, 69, 63, 57, 51, 44, 36, 29];
+var PHASE_BALL_OFFSETS = [0, 2, 4, 6, 8, 10, 12, 13, 15, 17];
+var PHASE_PASS_RATES = [92, 88, 84, 80, 76, 72, 68, 63, 58, 52];
 var MIN_OCCUPIED_LAYOUT_ROWS = 8;
 var ADJACENCY_DISTANCE = BoardLayout.bubbleDiameter + 8;
 var LEVEL_ONE_TUTORIAL_LAYOUT = [
   "BBRRBBRRBB",
-  "B..B.....",
-  "..RR.BB...",
-  "..RR.BB..",
-  "...RRB....",
-  "....R....",
-  "....R.....",
-  "....R...."
+  "RRBRRBB..",
+  ".BBRRRRR..",
+  ".BBRRBB..",
+  "..BBRRBR..",
+  "..RRRBB..",
+  "...RRBB...",
+  ".....B..."
 ];
 
 function assertFirstHundredLevelId(levelId) {
@@ -65,7 +65,7 @@ function getActiveColors(levelId) {
   var colorCount;
   if (levelId === 1) {
     colorCount = 2;
-  } else if (levelId <= 5) {
+  } else if (levelId <= 8) {
     colorCount = 3;
   } else if (levelId <= 74) {
     colorCount = 4;
@@ -85,10 +85,41 @@ function getTargetColor(levelId, activeColors) {
   return activeColors[(levelId - 1) % activeColors.length];
 }
 
-function getNormalBallCount(levelId) {
+function getBoardCapacity(rowCount) {
+  if (!Number.isInteger(rowCount) || rowCount <= 0) {
+    throw new Error("First-100 rowCount must be a positive integer.");
+  }
+  var total = 0;
+  for (var rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
+    total += BoardLayout.getRowColumnCount(rowIndex, BoardLayout.defaultColumns);
+  }
+  return total;
+}
+
+function getMinimumOccupiedCount(levelId, rowCount) {
+  assertFirstHundredLevelId(levelId);
+  var capacity = getBoardCapacity(rowCount);
+  if (levelId === 1) {
+    return Math.floor(capacity * 0.6) + 1;
+  }
+  return Math.ceil(capacity * 0.6);
+}
+
+function getBaseNormalBallCount(levelId) {
   var chapterIndex = getChapterIndex(levelId);
   var phase = getPhase(levelId);
-  return 26 + chapterIndex * 3 + PHASE_BALL_OFFSETS[phase - 1];
+  if (levelId === 1) {
+    return 46;
+  }
+  return 30 + chapterIndex * 4 + PHASE_BALL_OFFSETS[phase - 1];
+}
+
+function resolveNormalBallCount(levelId, rowCount, specialCount) {
+  if (!Number.isInteger(specialCount) || specialCount < 0) {
+    throw new Error("First-100 specialCount must be a non-negative integer.");
+  }
+  var minimumNormalCount = getMinimumOccupiedCount(levelId, rowCount) - specialCount;
+  return Math.max(getBaseNormalBallCount(levelId), minimumNormalCount);
 }
 
 function buildColorCounts(levelId, activeColors, targetColor, normalBallCount) {
@@ -96,6 +127,34 @@ function buildColorCounts(levelId, activeColors, targetColor, normalBallCount) {
   COLORS.forEach(function (color) {
     counts[color] = 0;
   });
+  if (levelId !== 1) {
+    var otherColors = activeColors.filter(function (color) {
+      return color !== targetColor;
+    });
+    if (!otherColors.length) {
+      throw new Error("First-100 color distribution requires non-target colors for level " + levelId + ".");
+    }
+    var targetCount = Math.max(8, Math.round(normalBallCount * (levelId <= 20 ? 0.38 : 0.34)));
+    var remaining = normalBallCount - targetCount;
+    var minimumOtherSupply = otherColors.length * 4;
+    if (remaining < minimumOtherSupply) {
+      targetCount -= minimumOtherSupply - remaining;
+      remaining = minimumOtherSupply;
+    }
+    if (targetCount < 3) {
+      throw new Error("Target color supply must be at least three for level " + levelId + ".");
+    }
+    counts[targetColor] = targetCount;
+    var otherBase = Math.floor(remaining / otherColors.length);
+    var otherRemainder = remaining % otherColors.length;
+    otherColors.forEach(function (color) {
+      counts[color] = otherBase;
+    });
+    for (var otherIndex = 0; otherIndex < otherRemainder; otherIndex += 1) {
+      counts[otherColors[(levelId + otherIndex) % otherColors.length]] += 1;
+    }
+    return counts;
+  }
   var base = Math.floor(normalBallCount / activeColors.length);
   var remainder = normalBallCount % activeColors.length;
   activeColors.forEach(function (color) {
@@ -262,17 +321,15 @@ function countSpecials(specialCounts) {
     countSplitters(specialCounts.splitters) + specialCounts.key + specialCounts.locked;
 }
 
-function resolveRowCount(totalOccupied) {
-  if (!Number.isInteger(totalOccupied) || totalOccupied <= 0) {
-    throw new Error("Occupied cell count must be a positive integer.");
-  }
-  if (totalOccupied <= 52) {
+function resolveRowCount(levelId) {
+  assertFirstHundredLevelId(levelId);
+  if (levelId === 1) {
     return 8;
   }
-  if (totalOccupied <= 70) {
-    return 9;
+  if (levelId < 20) {
+    return 10;
   }
-  return 10;
+  return 15;
 }
 
 function buildShotLimit(levelId, normalBallCount, specialCounts) {
@@ -281,17 +338,18 @@ function buildShotLimit(levelId, normalBallCount, specialCounts) {
   var complexity = specialCounts.stone + specialCounts.ice * 0.5 +
     specialCounts.blast + specialCounts.rainbow + reactiveCount * 2 + specialCounts.key * 2;
   var pressure = phase >= 9 ? 3 : (phase >= 7 ? 2 : (phase >= 4 ? 1 : 0));
-  var shotLimit = Math.ceil(normalBallCount / 2.15) + 4 + Math.ceil(complexity / 2) - pressure;
+  var shotLimit = Math.ceil(normalBallCount / 2.35) + 4 + Math.ceil(complexity / 4) - pressure;
   if (levelId === 1) {
-    return 14;
+    return 12;
   }
   if (levelId === 2) {
-    return 18;
+    return 14;
   }
   if (levelId === 3) {
-    return 20;
+    return 16;
   }
-  return Math.max(14, Math.min(38, shotLimit));
+  var shotCap = levelId >= 75 ? 32 : (levelId >= 20 ? 22 : 20);
+  return Math.max(14, Math.min(shotCap, shotLimit));
 }
 
 function getDifficultyTuning(levelId) {
@@ -320,11 +378,11 @@ function buildLevelSpec(levelId) {
   assertFirstHundredLevelId(levelId);
   var activeColors = getActiveColors(levelId);
   var targetColor = getTargetColor(levelId, activeColors);
-  var normalBallCount = getNormalBallCount(levelId);
-  var colorCounts = buildColorCounts(levelId, activeColors, targetColor, normalBallCount);
   var specialCounts = buildSpecialCounts(levelId, targetColor);
   var specialCount = countSpecials(specialCounts);
-  var rowCount = resolveRowCount(normalBallCount + specialCount);
+  var rowCount = resolveRowCount(levelId);
+  var normalBallCount = resolveNormalBallCount(levelId, rowCount, specialCount);
+  var colorCounts = buildColorCounts(levelId, activeColors, targetColor, normalBallCount);
   var splitterCount = specialCounts.splitters[targetColor];
   var target1 = {
     type: "collect_color",
@@ -432,7 +490,10 @@ function buildShapeSlots(rows, patternName, requiredCount, levelId) {
   if (!Number.isInteger(requiredCount) || requiredCount < rows[0].length || requiredCount > allCells.length) {
     throw new Error("Invalid first-100 occupied cell count for level " + levelId + ": " + requiredCount);
   }
-  var requiredOccupiedRows = Math.min(MIN_OCCUPIED_LAYOUT_ROWS, rows.length);
+  var requiredOccupiedRows = Math.min(
+    levelId === 1 ? MIN_OCCUPIED_LAYOUT_ROWS : rows.length,
+    rows.length
+  );
   if (requiredCount < rows[0].length + requiredOccupiedRows - 1) {
     throw new Error(
       "First-100 occupied cell count cannot cover " +
@@ -445,11 +506,28 @@ function buildShapeSlots(rows, patternName, requiredCount, levelId) {
 
   var selected = [];
   var selectedMap = {};
+  var selectedByRow = {};
+  function pushShapeSlot(cell) {
+    var key = cell.row + ":" + cell.col;
+    if (selectedMap[key]) {
+      return;
+    }
+    selected.push(cell);
+    selectedMap[key] = true;
+    selectedByRow[cell.row] = (selectedByRow[cell.row] || 0) + 1;
+  }
+  function scoreShapeCandidate(cell) {
+    var rowFill = selectedByRow[cell.row] || 0;
+    var targetRowFill = Math.ceil(requiredCount / rows.length);
+    return scorePatternCell(patternName, cell, rows, levelId) +
+      Math.max(0, rowFill - targetRowFill + 1) * 12 +
+      rowFill * 2.5 -
+      cell.row * 0.45;
+  }
   allCells.filter(function (cell) {
     return cell.row === 0;
   }).forEach(function (cell) {
-    selected.push(cell);
-    selectedMap[cell.row + ":" + cell.col] = true;
+    pushShapeSlot(cell);
   });
   for (var requiredRow = 1; requiredRow < requiredOccupiedRows; requiredRow += 1) {
     var rowCandidates = allCells.filter(function (cell) {
@@ -465,11 +543,9 @@ function buildShapeSlots(rows, patternName, requiredCount, levelId) {
       throw new Error("First-100 shape cannot reach required row " + requiredRow + " for level " + levelId + ".");
     }
     rowCandidates.sort(function (cellA, cellB) {
-      return scorePatternCell(patternName, cellA, rows, levelId) -
-        scorePatternCell(patternName, cellB, rows, levelId);
+      return scoreShapeCandidate(cellA) - scoreShapeCandidate(cellB);
     });
-    selected.push(rowCandidates[0]);
-    selectedMap[rowCandidates[0].row + ":" + rowCandidates[0].col] = true;
+    pushShapeSlot(rowCandidates[0]);
   }
 
   while (selected.length < requiredCount) {
@@ -486,12 +562,10 @@ function buildShapeSlots(rows, patternName, requiredCount, levelId) {
       throw new Error("First-100 shape frontier exhausted for level " + levelId + ".");
     }
     frontier.sort(function (cellA, cellB) {
-      return scorePatternCell(patternName, cellA, rows, levelId) -
-        scorePatternCell(patternName, cellB, rows, levelId);
+      return scoreShapeCandidate(cellA) - scoreShapeCandidate(cellB);
     });
     var nextCell = frontier[0];
-    selected.push(nextCell);
-    selectedMap[nextCell.row + ":" + nextCell.col] = true;
+    pushShapeSlot(nextCell);
   }
   selected.sort(function (cellA, cellB) {
     if (cellA.row !== cellB.row) {

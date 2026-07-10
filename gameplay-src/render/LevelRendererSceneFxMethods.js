@@ -224,10 +224,121 @@ function attachLevelRendererSceneFxMethods(LevelRenderer, deps) {
     if (!renderer || !renderer.explodeAnimationClip) {
       throw new Error(ownerName + " requires preloaded explode animation clip.");
     }
-    if (renderer.explodeAnimationClip.name !== "explode") {
-      throw new Error(ownerName + " explode animation clip name mismatch.");
+    if (typeof renderer.explodeAnimationClip.duration !== "number" || !isFinite(renderer.explodeAnimationClip.duration) || renderer.explodeAnimationClip.duration <= 0) {
+      throw new Error(ownerName + " explode animation clip duration is invalid.");
+    }
+    if (typeof renderer.explodeAnimationClip.speed !== "number" || !isFinite(renderer.explodeAnimationClip.speed) || renderer.explodeAnimationClip.speed <= 0) {
+      throw new Error(ownerName + " explode animation clip speed is invalid.");
     }
     return renderer.explodeAnimationClip;
+  }
+
+  function requireExplodeSpriteFrameSize(spriteFrame, ownerName) {
+    var size = null;
+    if (spriteFrame && typeof spriteFrame.getOriginalSize === "function") {
+      size = spriteFrame.getOriginalSize();
+    } else if (spriteFrame && typeof spriteFrame.getRect === "function") {
+      size = spriteFrame.getRect();
+    }
+    if (
+      !size ||
+      typeof size.width !== "number" ||
+      typeof size.height !== "number" ||
+      !isFinite(size.width) ||
+      !isFinite(size.height) ||
+      size.width <= 0 ||
+      size.height <= 0
+    ) {
+      throw new Error(ownerName + " explode animation spriteFrame size is invalid.");
+    }
+    return size;
+  }
+
+  function requireExplodeSpriteFrame(spriteFrame, ownerName, frameIndex) {
+    if (!spriteFrame || (typeof spriteFrame.getOriginalSize !== "function" && typeof spriteFrame.getRect !== "function")) {
+      throw new Error(ownerName + " explode animation spriteFrame keyframe " + frameIndex + " is invalid.");
+    }
+    requireExplodeSpriteFrameSize(spriteFrame, ownerName);
+    return spriteFrame;
+  }
+
+  function requireExplodeSpriteFrameKeyframes(clip, ownerName) {
+    if (!clip.curveData || typeof clip.curveData !== "object" || Array.isArray(clip.curveData)) {
+      throw new Error(ownerName + " explode animation clip curveData is invalid.");
+    }
+    if (!clip.curveData.comps || typeof clip.curveData.comps !== "object" || Array.isArray(clip.curveData.comps)) {
+      throw new Error(ownerName + " explode animation clip requires cc.Sprite curveData.");
+    }
+    var spriteCurve = clip.curveData.comps["cc.Sprite"];
+    if (!spriteCurve || typeof spriteCurve !== "object" || Array.isArray(spriteCurve)) {
+      throw new Error(ownerName + " explode animation clip requires cc.Sprite spriteFrame curve.");
+    }
+    var sourceFrames = spriteCurve.spriteFrame;
+    if (!Array.isArray(sourceFrames) || !sourceFrames.length) {
+      throw new Error(ownerName + " explode animation clip spriteFrame keyframes are required.");
+    }
+    var previousFrameTime = -1;
+    return sourceFrames.map(function (entry, index) {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+        throw new Error(ownerName + " explode animation keyframe " + index + " is invalid.");
+      }
+      if (typeof entry.frame !== "number" || !isFinite(entry.frame) || entry.frame < 0) {
+        throw new Error(ownerName + " explode animation keyframe " + index + " frame is invalid.");
+      }
+      if (entry.frame < previousFrameTime) {
+        throw new Error(ownerName + " explode animation keyframes must be ordered.");
+      }
+      previousFrameTime = entry.frame;
+      return {
+        time: entry.frame / clip.speed,
+        spriteFrame: requireExplodeSpriteFrame(entry.value, ownerName, index)
+      };
+    });
+  }
+
+  function playExplodeSpriteFrameSequence(fxNode, sprite, clip, ownerName, onFinished) {
+    if (typeof cc.tween !== "function") {
+      throw new Error(ownerName + " explode animation requires cc.tween.");
+    }
+    var keyframes = requireExplodeSpriteFrameKeyframes(clip, ownerName);
+    var totalDuration = clip.duration / clip.speed;
+    var firstSize = requireExplodeSpriteFrameSize(keyframes[0].spriteFrame, ownerName);
+    fxNode.setContentSize(firstSize.width, firstSize.height);
+    sprite.spriteFrame = keyframes[0].spriteFrame;
+
+    var tween = cc.tween(fxNode);
+    var currentTime = 0;
+    keyframes.slice(1).forEach(function (keyframe) {
+      if (keyframe.time < currentTime) {
+        throw new Error(ownerName + " explode animation keyframe time is invalid.");
+      }
+      var delay = keyframe.time - currentTime;
+      if (delay > 0) {
+        tween = tween.delay(delay);
+      }
+      tween = tween.call(function () {
+        if (fxNode && fxNode.isValid && sprite && sprite.node && sprite.node.isValid) {
+          sprite.spriteFrame = keyframe.spriteFrame;
+        }
+      });
+      currentTime = keyframe.time;
+    });
+    if (totalDuration < currentTime) {
+      throw new Error(ownerName + " explode animation duration is shorter than keyframes.");
+    }
+    if (totalDuration > currentTime) {
+      tween = tween.delay(totalDuration - currentTime);
+    }
+    tween
+      .call(function () {
+        if (typeof onFinished === "function") {
+          onFinished();
+        }
+        if (fxNode && fxNode.isValid) {
+          fxNode.removeFromParent(true);
+        }
+      })
+      .start();
   }
 
   function playExplosionAnimationAt(renderer, nodeName, position, ownerName, onFinished) {
@@ -250,24 +361,7 @@ function attachLevelRendererSceneFxMethods(LevelRenderer, deps) {
     if (!sprite) {
       throw new Error(ownerName + " requires cc.Sprite.");
     }
-    var animation = fxNode.addComponent(cc.Animation);
-    if (!animation) {
-      throw new Error(ownerName + " requires cc.Animation.");
-    }
-    if (typeof animation.addClip !== "function" || typeof animation.play !== "function" || typeof animation.once !== "function") {
-      throw new Error(ownerName + " requires cc.Animation addClip/play/once APIs.");
-    }
-    animation.addClip(clip);
-    animation.defaultClip = clip;
-    animation.once("finished", function () {
-      if (typeof onFinished === "function") {
-        onFinished();
-      }
-      if (fxNode && fxNode.isValid) {
-        fxNode.removeFromParent(true);
-      }
-    });
-    animation.play(clip.name);
+    playExplodeSpriteFrameSequence(fxNode, sprite, clip, ownerName, onFinished);
     return fxNode;
   }
 

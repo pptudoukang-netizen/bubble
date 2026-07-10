@@ -39,7 +39,7 @@ var AD_RUN_POWERUP_TYPES = ["three_line_elimination", "plus_three_balls"];
 var MIN_INITIAL_DROP_SPACE_ROWS = 8;
 var MIN_LAYOUT_ROWS = 8;
 var MIN_OCCUPIED_LAYOUT_ROWS = 8;
-var MAX_SHOT_LIMIT = 40;
+var MAX_SHOT_LIMIT = 54;
 var CLEAR_REWARD_START_LEVEL_ID = 1;
 var TOP_BOARD_ROW_INDEX = 0;
 

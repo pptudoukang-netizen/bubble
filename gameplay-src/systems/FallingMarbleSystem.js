@@ -151,8 +151,8 @@ function createEmptyUpdateResult() {
 var SURPLUS_SHOT_INTERVAL_SEC = 0.2;
 var SURPLUS_TURRET_ROTATE_INTERVAL_SEC = 0.2;
 var DEFERRED_DROP_STAGGER_SEC = 0.05;
-var SURPLUS_TURRET_ANGLE_MIN_DEG = 15;
-var SURPLUS_TURRET_ANGLE_MAX_DEG = 165;
+var SURPLUS_TURRET_ANGLE_MIN_DEG = 60;
+var SURPLUS_TURRET_ANGLE_MAX_DEG = 120;
 var SURPLUS_TURRET_ANGLE_STEP_DEG = 15;
 var SURPLUS_TURRET_ANGLE_LADDER = [];
 for (
@@ -175,7 +175,7 @@ function resolveLaunchDeviationFromTurretAngleDeg(turretAngleDeg) {
     turretAngleDeg % SURPLUS_TURRET_ANGLE_STEP_DEG !== 0 ||
     turretAngleDeg === DROP_LAUNCH_VERTICAL_ANGLE_DEG
   ) {
-    throw new Error("Surplus turret angle must be a non-vertical 15° step between 15° and 165°.");
+    throw new Error("Surplus turret angle must be a non-vertical 15° step between 60° and 120°.");
   }
   return 90 - turretAngleDeg;
 }
@@ -1124,6 +1124,10 @@ FallingMarbleSystem.prototype._createCollectedEvent = function (drop, zone) {
     iceSnowballAlreadyCollected: drop.iceSnowballAlreadyCollected === true,
     row: drop.row,
     col: drop.col,
+    position: {
+      x: drop.position.x,
+      y: drop.position.y
+    },
     jarIndex: zone ? zone.index : -1,
     jarColor: zone ? zone.color : null,
     sameColor: sameColor,
@@ -1389,12 +1393,17 @@ FallingMarbleSystem.prototype._processJarInteraction = function (drop) {
       var outerEdgeThreshold = zone.innerHalfWidth + zone.edgeThickness * 0.5;
       var edgeType = absDx >= outerEdgeThreshold ? "outer" : "inner";
       if ((drop.rimBounceCount || 0) >= this.maxRimBounces) {
+        drop.rimBounceCount = (drop.rimBounceCount || 0) + 1;
         drop.inJar = true;
         drop.jarIndex = zone.index;
         drop.jarColor = zone.color || null;
         drop.velocity.x *= 0.2;
         drop.velocity.y = Math.min(drop.velocity.y, -150);
         return {
+          bounced: true,
+          bounceCount: drop.rimBounceCount,
+          glowStacks: drop.glowStacks,
+          edgeType: edgeType,
           inJar: true
         };
       }

@@ -3550,8 +3550,8 @@ function createEmptyUpdateResult() {
 var SURPLUS_SHOT_INTERVAL_SEC = 0.2;
 var SURPLUS_TURRET_ROTATE_INTERVAL_SEC = 0.2;
 var DEFERRED_DROP_STAGGER_SEC = 0.05;
-var SURPLUS_TURRET_ANGLE_MIN_DEG = 15;
-var SURPLUS_TURRET_ANGLE_MAX_DEG = 165;
+var SURPLUS_TURRET_ANGLE_MIN_DEG = 60;
+var SURPLUS_TURRET_ANGLE_MAX_DEG = 120;
 var SURPLUS_TURRET_ANGLE_STEP_DEG = 15;
 var SURPLUS_TURRET_ANGLE_LADDER = [];
 for (
@@ -3574,7 +3574,7 @@ function resolveLaunchDeviationFromTurretAngleDeg(turretAngleDeg) {
     turretAngleDeg % SURPLUS_TURRET_ANGLE_STEP_DEG !== 0 ||
     turretAngleDeg === DROP_LAUNCH_VERTICAL_ANGLE_DEG
   ) {
-    throw new Error("Surplus turret angle must be a non-vertical 15° step between 15° and 165°.");
+    throw new Error("Surplus turret angle must be a non-vertical 15° step between 60° and 120°.");
   }
   return 90 - turretAngleDeg;
 }
@@ -4523,6 +4523,10 @@ FallingMarbleSystem.prototype._createCollectedEvent = function (drop, zone) {
     iceSnowballAlreadyCollected: drop.iceSnowballAlreadyCollected === true,
     row: drop.row,
     col: drop.col,
+    position: {
+      x: drop.position.x,
+      y: drop.position.y
+    },
     jarIndex: zone ? zone.index : -1,
     jarColor: zone ? zone.color : null,
     sameColor: sameColor,
@@ -4788,12 +4792,17 @@ FallingMarbleSystem.prototype._processJarInteraction = function (drop) {
       var outerEdgeThreshold = zone.innerHalfWidth + zone.edgeThickness * 0.5;
       var edgeType = absDx >= outerEdgeThreshold ? "outer" : "inner";
       if ((drop.rimBounceCount || 0) >= this.maxRimBounces) {
+        drop.rimBounceCount = (drop.rimBounceCount || 0) + 1;
         drop.inJar = true;
         drop.jarIndex = zone.index;
         drop.jarColor = zone.color || null;
         drop.velocity.x *= 0.2;
         drop.velocity.y = Math.min(drop.velocity.y, -150);
         return {
+          bounced: true,
+          bounceCount: drop.rimBounceCount,
+          glowStacks: drop.glowStacks,
+          edgeType: edgeType,
           inJar: true
         };
       }
@@ -5680,6 +5689,7 @@ function GameManager(options) {
   this.surplusShotAimRecentered = false;
   this.pendingBoardAdvanceSpecialAnimationDelay = 0;
   this.pendingBoardAdvanceDelay = 0;
+  this.pendingBoardAdvanceEliminationPresentation = false;
   this.pendingDeferredEnsureMinimumVisibleBoardRows = false;
   this.pendingDropIntervalBoardAdvance = false;
   this.boardAdvancedThisFrame = false;
@@ -5784,6 +5794,7 @@ GameManager.prototype.startLevel = function (levelConfig) {
   this.surplusShotAimRecentered = false;
   this.pendingBoardAdvanceSpecialAnimationDelay = 0;
   this.pendingBoardAdvanceDelay = 0;
+  this.pendingBoardAdvanceEliminationPresentation = false;
   this.pendingDeferredEnsureMinimumVisibleBoardRows = false;
   this.pendingDropIntervalBoardAdvance = false;
   this.boardAdvancedThisFrame = false;
@@ -5942,6 +5953,7 @@ GameManager.prototype._applyPostImpactBoardShiftPolicy = function (resolution) {
     BOARD_ADVANCE_AFTER_IMPACT_DELAY
   );
   this.pendingBoardAdvanceDelay = 0;
+  this.pendingBoardAdvanceEliminationPresentation = this._requiresBoardAdvanceEliminationPresentationWait(resolution);
   this.pendingBoardAdvanceScheduledUpdateSerial = Math.floor(assertFiniteNumber(
     this.boardAdvanceUpdateSerial,
     "GameManager boardAdvanceUpdateSerial"
@@ -5967,6 +5979,7 @@ GameManager.prototype._getScoreRule = function (key) {
 GameManager.prototype._isWaitingBoardAdvance = function () {
   return this.pendingBoardAdvanceSpecialAnimationDelay > 0 ||
     this.pendingBoardAdvanceDelay > 0 ||
+    this.pendingBoardAdvanceEliminationPresentation === true ||
     this.pendingDeferredEnsureMinimumVisibleBoardRows ||
     this.pendingDropIntervalBoardAdvance;
 };
@@ -6017,6 +6030,23 @@ GameManager.prototype._resolveBoardAdvanceSpecialAnimationDelay = function (reso
     return KEY_UNLOCK_BOARD_ADVANCE_BLOCK_DELAY;
   }
   return 0;
+};
+
+GameManager.prototype._requiresBoardAdvanceEliminationPresentationWait = function (resolution) {
+  if (!resolution || typeof resolution !== "object") {
+    throw new Error("Board advance elimination presentation wait requires resolution.");
+  }
+  if (!Array.isArray(resolution.matched)) {
+    throw new Error("Board advance elimination presentation wait requires resolution.matched array.");
+  }
+  return resolution.matched.length > 0;
+};
+
+GameManager.prototype.notifyBoardAdvanceEliminationPresentationComplete = function () {
+  if (typeof this.pendingBoardAdvanceEliminationPresentation !== "boolean") {
+    throw new Error("GameManager pendingBoardAdvanceEliminationPresentation must be boolean.");
+  }
+  this.pendingBoardAdvanceEliminationPresentation = false;
 };
 
 GameManager.prototype._hasPendingSplitterSpawns = function () {
@@ -6199,6 +6229,9 @@ GameManager.prototype._updatePendingBoardAdvance = function (dt) {
     this.pendingBoardAdvanceDelay = 0;
   }
   if (this.pendingBoardAdvanceDelay > 0) {
+    return false;
+  }
+  if (this.pendingBoardAdvanceEliminationPresentation === true) {
     return false;
   }
 
@@ -11453,10 +11486,9 @@ var WIN_TARGET_STATUS_RESOURCES = {
 };
 var FAIRY_ANIMATION_BUNDLE_NAME = "animation";
 var EXPLODE_ANIMATION_CLIP_PATH = "explode";
-var EXPLODE_ANIMATION_CLIP_NAME = "explode";
 var FIREWORKS_PREFAB_PATH = "prefabs/fireworks";
-var BOARD_CLEAR_FIREWORKS_BURST_COUNT = 2;
-var BOARD_CLEAR_FIREWORKS_INTERVAL_SEC = 0.95;
+var BOARD_CLEAR_FIREWORKS_BURST_COUNT = 1;
+var BOARD_CLEAR_FIREWORKS_INTERVAL_SEC = 1.1;
 
 var WIN_TARGET_COLOR_NAMES = {
   R: "红球",
@@ -11686,6 +11718,51 @@ function hasValidSpriteFrame(spriteFrame) {
     return cc.isValid(spriteFrame);
   }
   return true;
+}
+
+function pushUniqueSpritePath(paths, path, label) {
+  if (typeof path !== "string" || !path) {
+    throw new Error("Sprite path is required: " + label);
+  }
+  if (paths.indexOf(path) < 0) {
+    paths.push(path);
+  }
+}
+
+function pushBallSpritePath(paths, code, label) {
+  if (!code) {
+    return;
+  }
+  if (typeof code !== "string" || !BALL_RESOURCES[code]) {
+    throw new Error("Unsupported ball sprite code for " + label + ": " + code);
+  }
+  pushUniqueSpritePath(paths, BALL_RESOURCES[code], label);
+}
+
+function collectBallVisualSpritePaths(paths, ballLike, label) {
+  var code = resolveBallCode(ballLike);
+  pushBallSpritePath(paths, code, label);
+  if (isIceBallLike(ballLike)) {
+    pushUniqueSpritePath(paths, BALL_RESOURCES.ICE, label + "/ice_overlay");
+  }
+}
+
+function collectRuntimeBoardSpritePaths(paths, runtimeSnapshot) {
+  if (!runtimeSnapshot || runtimeSnapshot.board === undefined) {
+    return;
+  }
+  if (!runtimeSnapshot.board || typeof runtimeSnapshot.board !== "object" || Array.isArray(runtimeSnapshot.board)) {
+    throw new Error("Runtime board snapshot must be an object.");
+  }
+  if (!Array.isArray(runtimeSnapshot.board.cells)) {
+    throw new Error("Runtime board snapshot cells must be an array.");
+  }
+  runtimeSnapshot.board.cells.forEach(function (cell, index) {
+    if (!cell || typeof cell !== "object" || Array.isArray(cell)) {
+      throw new Error("Runtime board cell must be an object at index " + index + ".");
+    }
+    collectBallVisualSpritePaths(paths, cell, "runtime board cell " + index);
+  });
 }
 
 function buildObjectiveDisplayForObjective(objective, runtimeSnapshot) {
@@ -12486,6 +12563,7 @@ function LevelRenderer(rootNode) {
   this.fallingRenderTick = 1;
   this.jarFractionNodePool = [];
   this.ballScoreNodePool = [];
+  this.ballScoreDisplayGeneration = 0;
   this.currentBallScoreResolution = null;
   this.playedBallScoreCellIds = {};
   this.pendingBallScoreCellIds = {};
@@ -12704,15 +12782,27 @@ LevelRenderer.prototype.setGameplayActionHandlers = function (handlers) {
   };
 };
 
-LevelRenderer.prototype.setFallingMarbleSystem = function (fallingMarbleSystem) {
+LevelRenderer.prototype.setFallingMarbleSystem = function (fallingMarbleSystem, boardAdvancePresentationTarget) {
   if (
     !fallingMarbleSystem ||
     typeof fallingMarbleSystem.requestEliminationPresentationDropRelease !== "function"
   ) {
     throw new Error("LevelRenderer.setFallingMarbleSystem requires FallingMarbleSystem.");
   }
+  if (
+    boardAdvancePresentationTarget !== undefined &&
+    (
+      !boardAdvancePresentationTarget ||
+      typeof boardAdvancePresentationTarget.notifyBoardAdvanceEliminationPresentationComplete !== "function"
+    )
+  ) {
+    throw new Error("LevelRenderer.setFallingMarbleSystem requires board advance presentation target when provided.");
+  }
   this.bubbleShatterRenderer.setPresentationCompleteHandler(function () {
     fallingMarbleSystem.requestEliminationPresentationDropRelease();
+    if (boardAdvancePresentationTarget) {
+      boardAdvancePresentationTarget.notifyBoardAdvanceEliminationPresentationComplete();
+    }
   });
 };
 
@@ -13269,15 +13359,29 @@ LevelRenderer.prototype._getOrCreateLayer = function (name, zIndex) {
 LevelRenderer.prototype._collectSpritePaths = function (levelConfig, runtimeSnapshot) {
   var paths = this._collectCommonSpritePaths().slice();
 
-  (levelConfig.level.colors || []).forEach(function (colorCode) {
-    paths.push(BALL_RESOURCES[colorCode]);
+  if (!levelConfig || !levelConfig.level || typeof levelConfig.level !== "object") {
+    throw new Error("LevelRenderer sprite collection requires level config.");
+  }
+
+  var level = levelConfig.level;
+  if (!Array.isArray(level.colors)) {
+    throw new Error("LevelRenderer sprite collection requires level.colors.");
+  }
+  level.colors.forEach(function (colorCode, index) {
+    pushBallSpritePath(paths, colorCode, "level.colors[" + index + "]");
   });
 
-  (levelConfig.level.jarColors || []).forEach(function (colorCode) {
-    paths.push(JAR_RESOURCES[colorCode]);
-    paths.push(JAR_MASK_RESOURCES[colorCode]);
+  if (!Array.isArray(level.jarColors)) {
+    throw new Error("LevelRenderer sprite collection requires level.jarColors.");
+  }
+  level.jarColors.forEach(function (colorCode, index) {
+    if (typeof colorCode !== "string" || !JAR_RESOURCES[colorCode] || !JAR_MASK_RESOURCES[colorCode]) {
+      throw new Error("Unsupported jar color for level.jarColors[" + index + "]: " + colorCode);
+    }
+    pushUniqueSpritePath(paths, JAR_RESOURCES[colorCode], "level.jarColors[" + index + "]");
+    pushUniqueSpritePath(paths, JAR_MASK_RESOURCES[colorCode], "level.jarColors[" + index + "]/mask");
     if (WIN_BOTTLE_RESOURCES[colorCode]) {
-      paths.push(WIN_BOTTLE_RESOURCES[colorCode]);
+      pushUniqueSpritePath(paths, WIN_BOTTLE_RESOURCES[colorCode], "level.jarColors[" + index + "]/win_bottle");
     }
   });
 
@@ -13286,29 +13390,49 @@ LevelRenderer.prototype._collectSpritePaths = function (levelConfig, runtimeSnap
       throw new Error("Sprite preload objective entry must include type.");
     }
     if (objective.type === "collect_any") {
-      paths.push(BALL_RESOURCES.RAINBOW);
+      pushUniqueSpritePath(paths, BALL_RESOURCES.RAINBOW, "collect_any objective");
       return;
     }
     if (objective.type === "collect_color") {
-      paths.push(BALL_RESOURCES[objective.color]);
+      pushBallSpritePath(paths, objective.color, "collect_color objective");
       return;
     }
     if (objective.type === "collect_ice_snowball") {
-      paths.push(BALL_RESOURCES.ICE_SNOWBALL);
+      pushUniqueSpritePath(paths, BALL_RESOURCES.ICE_SNOWBALL, "collect_ice_snowball objective");
+      pushUniqueSpritePath(paths, BALL_RESOURCES.ICE, "collect_ice_snowball objective overlay");
     }
   });
 
-  (levelConfig.level.specialEntities || []).forEach(function (entity) {
-    paths.push(BALL_RESOURCES[resolveBallCode(entity)]);
-  });
+  if (level.specialEntities !== undefined) {
+    if (!Array.isArray(level.specialEntities)) {
+      throw new Error("LevelRenderer sprite collection requires level.specialEntities array when present.");
+    }
+    level.specialEntities.forEach(function (entity, index) {
+      collectBallVisualSpritePaths(paths, entity, "level.specialEntities[" + index + "]");
+    });
+  }
+
+  collectRuntimeBoardSpritePaths(paths, runtimeSnapshot);
 
   if (runtimeSnapshot && runtimeSnapshot.shooter) {
-    paths.push(BALL_RESOURCES[resolveBallCode(runtimeSnapshot.shooter.currentBall || runtimeSnapshot.shooter.currentColor)]);
-    paths.push(BALL_RESOURCES[resolveBallCode(runtimeSnapshot.shooter.nextBall || runtimeSnapshot.shooter.nextColor)]);
+    collectBallVisualSpritePaths(
+      paths,
+      runtimeSnapshot.shooter.currentBall !== undefined ? runtimeSnapshot.shooter.currentBall : runtimeSnapshot.shooter.currentColor,
+      "runtime shooter current ball"
+    );
+    collectBallVisualSpritePaths(
+      paths,
+      runtimeSnapshot.shooter.nextBall !== undefined ? runtimeSnapshot.shooter.nextBall : runtimeSnapshot.shooter.nextColor,
+      "runtime shooter next ball"
+    );
   }
 
   if (runtimeSnapshot && runtimeSnapshot.activeProjectile) {
-    paths.push(BALL_RESOURCES[resolveBallCode(runtimeSnapshot.activeProjectile.ball || runtimeSnapshot.activeProjectile.color)]);
+    collectBallVisualSpritePaths(
+      paths,
+      runtimeSnapshot.activeProjectile.ball !== undefined ? runtimeSnapshot.activeProjectile.ball : runtimeSnapshot.activeProjectile.color,
+      "runtime active projectile"
+    );
   }
   if (
     runtimeSnapshot &&
@@ -13317,32 +13441,36 @@ LevelRenderer.prototype._collectSpritePaths = function (levelConfig, runtimeSnap
     Array.isArray(runtimeSnapshot.shooter.pendingRainbowColorSelection.colors)
   ) {
     runtimeSnapshot.shooter.pendingRainbowColorSelection.colors.forEach(function (colorCode) {
-      paths.push(BALL_RESOURCES[colorCode]);
+      pushBallSpritePath(paths, colorCode, "pending rainbow color");
     });
   }
 
   var objectiveDisplay = buildObjectiveDisplayData(levelConfig, runtimeSnapshot);
   if (objectiveDisplay.iconCode) {
-    paths.push(BALL_RESOURCES[objectiveDisplay.iconCode]);
+    pushBallSpritePath(paths, objectiveDisplay.iconCode, "objective display");
   }
   var hudTargetDisplay = buildHudTargetDisplayData(levelConfig, runtimeSnapshot);
   if (hudTargetDisplay.ball && hudTargetDisplay.ball.iconCode) {
-    paths.push(BALL_RESOURCES[hudTargetDisplay.ball.iconCode]);
+    pushBallSpritePath(paths, hudTargetDisplay.ball.iconCode, "HUD target ball");
   }
   if (hudTargetDisplay.iceSnowball && hudTargetDisplay.iceSnowball.iconCode) {
-    paths.push(BALL_RESOURCES[hudTargetDisplay.iceSnowball.iconCode]);
+    pushBallSpritePath(paths, hudTargetDisplay.iceSnowball.iconCode, "HUD ice snowball target");
+    pushUniqueSpritePath(paths, BALL_RESOURCES.ICE, "HUD ice snowball overlay");
   }
 
-  if (levelConfig && levelConfig.level && Array.isArray(levelConfig.level.clearRewardItems)) {
-    levelConfig.level.clearRewardItems.forEach(function (rewardItem) {
+  if (level.clearRewardItems !== undefined) {
+    if (!Array.isArray(level.clearRewardItems)) {
+      throw new Error("LevelRenderer sprite collection requires level.clearRewardItems array when present.");
+    }
+    level.clearRewardItems.forEach(function (rewardItem) {
       if (!rewardItem || !REWARD_ITEM_RESOURCES[rewardItem.id]) {
         throw new Error("Unsupported level clear reward item id: " + (rewardItem && rewardItem.id));
       }
-      paths.push(REWARD_ITEM_RESOURCES[rewardItem.id]);
+      pushUniqueSpritePath(paths, REWARD_ITEM_RESOURCES[rewardItem.id], "level clear reward " + rewardItem.id);
     });
   }
 
-  return paths.filter(Boolean).filter(function (path, index, list) {
+  return paths.filter(function (path, index, list) {
     return list.indexOf(path) === index;
   });
 };
@@ -13380,9 +13508,13 @@ LevelRenderer.prototype.releaseAfterGameplayBundleUnload = function () {
   this.fairyPrefabLoadPromises = {};
   this.fireworksPrefab = null;
   this.fireworksPrefabLoadPromise = null;
+  this.explodeAnimationClip = null;
+  this.explodeAnimationClipPromise = null;
   this._sharedWarmupPromise = null;
-  if (this.prefabFactory && typeof this.prefabFactory.resetLoadedCache === "function") {
-    this.prefabFactory.resetLoadedCache();
+  if (this.prefabFactory && typeof this.prefabFactory.releaseLoadedCache === "function") {
+    this.prefabFactory.releaseLoadedCache();
+  } else {
+    throw new Error("LevelRenderer requires PrefabFactory.releaseLoadedCache.");
   }
   this.lastHudRenderKey = "";
   this.lastJarRenderKey = "";
@@ -13436,37 +13568,11 @@ LevelRenderer.prototype._setGuideDotsActiveCount = function (guideCanvas, count,
 LevelRenderer.prototype._collectCommonSpritePaths = function () {
   var paths = [
     GUIDE_DOT_SPRITE_PATH,
-    BALL_RESOURCES.R,
-    BALL_RESOURCES.G,
-    BALL_RESOURCES.B,
-    BALL_RESOURCES.Y,
-    BALL_RESOURCES.P,
     BALL_RESOURCES.RAINBOW,
     BALL_RESOURCES.BLAST,
-    BALL_RESOURCES.STONE,
-    BALL_RESOURCES.ICE,
-    BALL_RESOURCES.MOLOTOV,
-    BALL_RESOURCES.KEY,
-    BALL_RESOURCES.LOCKED,
-    BALL_RESOURCES.SPLIT_R,
-    BALL_RESOURCES.SPLIT_G,
-    BALL_RESOURCES.SPLIT_B,
-    BALL_RESOURCES.SPLIT_Y,
-    BALL_RESOURCES.SPLIT_P,
-    BALL_RESOURCES.ICE_SNOWBALL,
     BALL_RESOURCES.BLOCKADE_LINE,
     BALL_RESOURCES.LIGHT,
     BALL_RESOURCES.SNOW_REMOVAL_TOOLS,
-    JAR_RESOURCES.R,
-    JAR_RESOURCES.G,
-    JAR_RESOURCES.B,
-    JAR_RESOURCES.Y,
-    JAR_RESOURCES.P,
-    JAR_MASK_RESOURCES.R,
-    JAR_MASK_RESOURCES.G,
-    JAR_MASK_RESOURCES.B,
-    JAR_MASK_RESOURCES.Y,
-    JAR_MASK_RESOURCES.P,
     HUD_STAR_RESOURCES.lit,
     HUD_STAR_RESOURCES.unlit,
     TOP_SLOT_STAR_RESOURCE,
@@ -13591,8 +13697,8 @@ LevelRenderer.prototype._preloadExplodeAnimationClip = function () {
           reject(new Error("Load explode animation clip returned empty asset: " + FAIRY_ANIMATION_BUNDLE_NAME + "/" + EXPLODE_ANIMATION_CLIP_PATH));
           return;
         }
-        if (clip.name !== EXPLODE_ANIMATION_CLIP_NAME) {
-          reject(new Error("Explode animation clip name mismatch: " + clip.name));
+        if (typeof clip.duration !== "number" || !isFinite(clip.duration) || clip.duration <= 0) {
+          reject(new Error("Explode animation clip duration is invalid: " + clip.duration));
           return;
         }
         this.explodeAnimationClip = clip;
@@ -15493,10 +15599,121 @@ function attachLevelRendererSceneFxMethods(LevelRenderer, deps) {
     if (!renderer || !renderer.explodeAnimationClip) {
       throw new Error(ownerName + " requires preloaded explode animation clip.");
     }
-    if (renderer.explodeAnimationClip.name !== "explode") {
-      throw new Error(ownerName + " explode animation clip name mismatch.");
+    if (typeof renderer.explodeAnimationClip.duration !== "number" || !isFinite(renderer.explodeAnimationClip.duration) || renderer.explodeAnimationClip.duration <= 0) {
+      throw new Error(ownerName + " explode animation clip duration is invalid.");
+    }
+    if (typeof renderer.explodeAnimationClip.speed !== "number" || !isFinite(renderer.explodeAnimationClip.speed) || renderer.explodeAnimationClip.speed <= 0) {
+      throw new Error(ownerName + " explode animation clip speed is invalid.");
     }
     return renderer.explodeAnimationClip;
+  }
+
+  function requireExplodeSpriteFrameSize(spriteFrame, ownerName) {
+    var size = null;
+    if (spriteFrame && typeof spriteFrame.getOriginalSize === "function") {
+      size = spriteFrame.getOriginalSize();
+    } else if (spriteFrame && typeof spriteFrame.getRect === "function") {
+      size = spriteFrame.getRect();
+    }
+    if (
+      !size ||
+      typeof size.width !== "number" ||
+      typeof size.height !== "number" ||
+      !isFinite(size.width) ||
+      !isFinite(size.height) ||
+      size.width <= 0 ||
+      size.height <= 0
+    ) {
+      throw new Error(ownerName + " explode animation spriteFrame size is invalid.");
+    }
+    return size;
+  }
+
+  function requireExplodeSpriteFrame(spriteFrame, ownerName, frameIndex) {
+    if (!spriteFrame || (typeof spriteFrame.getOriginalSize !== "function" && typeof spriteFrame.getRect !== "function")) {
+      throw new Error(ownerName + " explode animation spriteFrame keyframe " + frameIndex + " is invalid.");
+    }
+    requireExplodeSpriteFrameSize(spriteFrame, ownerName);
+    return spriteFrame;
+  }
+
+  function requireExplodeSpriteFrameKeyframes(clip, ownerName) {
+    if (!clip.curveData || typeof clip.curveData !== "object" || Array.isArray(clip.curveData)) {
+      throw new Error(ownerName + " explode animation clip curveData is invalid.");
+    }
+    if (!clip.curveData.comps || typeof clip.curveData.comps !== "object" || Array.isArray(clip.curveData.comps)) {
+      throw new Error(ownerName + " explode animation clip requires cc.Sprite curveData.");
+    }
+    var spriteCurve = clip.curveData.comps["cc.Sprite"];
+    if (!spriteCurve || typeof spriteCurve !== "object" || Array.isArray(spriteCurve)) {
+      throw new Error(ownerName + " explode animation clip requires cc.Sprite spriteFrame curve.");
+    }
+    var sourceFrames = spriteCurve.spriteFrame;
+    if (!Array.isArray(sourceFrames) || !sourceFrames.length) {
+      throw new Error(ownerName + " explode animation clip spriteFrame keyframes are required.");
+    }
+    var previousFrameTime = -1;
+    return sourceFrames.map(function (entry, index) {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+        throw new Error(ownerName + " explode animation keyframe " + index + " is invalid.");
+      }
+      if (typeof entry.frame !== "number" || !isFinite(entry.frame) || entry.frame < 0) {
+        throw new Error(ownerName + " explode animation keyframe " + index + " frame is invalid.");
+      }
+      if (entry.frame < previousFrameTime) {
+        throw new Error(ownerName + " explode animation keyframes must be ordered.");
+      }
+      previousFrameTime = entry.frame;
+      return {
+        time: entry.frame / clip.speed,
+        spriteFrame: requireExplodeSpriteFrame(entry.value, ownerName, index)
+      };
+    });
+  }
+
+  function playExplodeSpriteFrameSequence(fxNode, sprite, clip, ownerName, onFinished) {
+    if (typeof cc.tween !== "function") {
+      throw new Error(ownerName + " explode animation requires cc.tween.");
+    }
+    var keyframes = requireExplodeSpriteFrameKeyframes(clip, ownerName);
+    var totalDuration = clip.duration / clip.speed;
+    var firstSize = requireExplodeSpriteFrameSize(keyframes[0].spriteFrame, ownerName);
+    fxNode.setContentSize(firstSize.width, firstSize.height);
+    sprite.spriteFrame = keyframes[0].spriteFrame;
+
+    var tween = cc.tween(fxNode);
+    var currentTime = 0;
+    keyframes.slice(1).forEach(function (keyframe) {
+      if (keyframe.time < currentTime) {
+        throw new Error(ownerName + " explode animation keyframe time is invalid.");
+      }
+      var delay = keyframe.time - currentTime;
+      if (delay > 0) {
+        tween = tween.delay(delay);
+      }
+      tween = tween.call(function () {
+        if (fxNode && fxNode.isValid && sprite && sprite.node && sprite.node.isValid) {
+          sprite.spriteFrame = keyframe.spriteFrame;
+        }
+      });
+      currentTime = keyframe.time;
+    });
+    if (totalDuration < currentTime) {
+      throw new Error(ownerName + " explode animation duration is shorter than keyframes.");
+    }
+    if (totalDuration > currentTime) {
+      tween = tween.delay(totalDuration - currentTime);
+    }
+    tween
+      .call(function () {
+        if (typeof onFinished === "function") {
+          onFinished();
+        }
+        if (fxNode && fxNode.isValid) {
+          fxNode.removeFromParent(true);
+        }
+      })
+      .start();
   }
 
   function playExplosionAnimationAt(renderer, nodeName, position, ownerName, onFinished) {
@@ -15519,24 +15736,7 @@ function attachLevelRendererSceneFxMethods(LevelRenderer, deps) {
     if (!sprite) {
       throw new Error(ownerName + " requires cc.Sprite.");
     }
-    var animation = fxNode.addComponent(cc.Animation);
-    if (!animation) {
-      throw new Error(ownerName + " requires cc.Animation.");
-    }
-    if (typeof animation.addClip !== "function" || typeof animation.play !== "function" || typeof animation.once !== "function") {
-      throw new Error(ownerName + " requires cc.Animation addClip/play/once APIs.");
-    }
-    animation.addClip(clip);
-    animation.defaultClip = clip;
-    animation.once("finished", function () {
-      if (typeof onFinished === "function") {
-        onFinished();
-      }
-      if (fxNode && fxNode.isValid) {
-        fxNode.removeFromParent(true);
-      }
-    });
-    animation.play(clip.name);
+    playExplodeSpriteFrameSequence(fxNode, sprite, clip, ownerName, onFinished);
     return fxNode;
   }
 
@@ -17426,13 +17626,27 @@ LevelRenderer.prototype._acquireBallScoreNode = function (gameViewNode, template
   return scoreNode;
 };
 
-LevelRenderer.prototype._findBallScoreSequenceEntry = function (resolution, cellId) {
+LevelRenderer.prototype._findBallScoreSequenceEntry = function (resolution, cellId, eventIndex) {
   if (!resolution || typeof resolution !== "object" || Array.isArray(resolution)) {
     throw new Error("Ball score sequence lookup requires resolution.");
   }
   if (!Array.isArray(resolution.eliminationSequence)) {
     throw new Error("Ball score display requires eliminationSequence array.");
   }
+  if (
+    Number.isInteger(eventIndex) &&
+    eventIndex >= 0 &&
+    eventIndex < resolution.eliminationSequence.length
+  ) {
+    var indexedEntry = resolution.eliminationSequence[eventIndex];
+    if (!indexedEntry || typeof indexedEntry !== "object" || Array.isArray(indexedEntry)) {
+      throw new Error("Ball score elimination sequence entry must be an object.");
+    }
+    if (String(indexedEntry.cellId) === cellId) {
+      return indexedEntry;
+    }
+  }
+
   for (var index = 0; index < resolution.eliminationSequence.length; index += 1) {
     var sequenceEntry = resolution.eliminationSequence[index];
     if (!sequenceEntry || typeof sequenceEntry !== "object" || Array.isArray(sequenceEntry)) {
@@ -17445,7 +17659,7 @@ LevelRenderer.prototype._findBallScoreSequenceEntry = function (resolution, cell
   return null;
 };
 
-LevelRenderer.prototype._resolveBallScorePositionInGameView = function (scoreEvent, resolution, boardSnapshot) {
+LevelRenderer.prototype._resolveBallScorePositionInGameView = function (scoreEvent, resolution, boardSnapshot, eventIndex) {
   if (!scoreEvent || typeof scoreEvent !== "object" || Array.isArray(scoreEvent)) {
     throw new Error("Ball score display requires score event.");
   }
@@ -17454,8 +17668,11 @@ LevelRenderer.prototype._resolveBallScorePositionInGameView = function (scoreEve
   }
 
   var cellId = String(scoreEvent.cellId);
-  var sequenceEntry = this._findBallScoreSequenceEntry(resolution, cellId);
-  var worldPosition = sequenceEntry ? sequenceEntry.worldPosition : null;
+  var worldPosition = scoreEvent.worldPosition || null;
+  if (!worldPosition) {
+    var sequenceEntry = this._findBallScoreSequenceEntry(resolution, cellId, eventIndex);
+    worldPosition = sequenceEntry ? sequenceEntry.worldPosition : null;
+  }
   if (
     worldPosition &&
     typeof worldPosition === "object" &&
@@ -17545,15 +17762,22 @@ LevelRenderer.prototype._spawnBallScoreDisplay = function (scoreEvent, position)
     .start();
 };
 
-LevelRenderer.prototype._scheduleBallScoreEvent = function (scoreEvent, resolution, boardSnapshot) {
+LevelRenderer.prototype._scheduleBallScoreEvent = function (scoreEvent, resolution, boardSnapshot, eventIndex, displayGeneration) {
   if (!scoreEvent || typeof scoreEvent !== "object" || Array.isArray(scoreEvent)) {
     throw new Error("Ball score schedule requires score event.");
   }
   if (typeof scoreEvent.cellId !== "string" && typeof scoreEvent.cellId !== "number") {
     throw new Error("Ball score schedule requires cellId.");
   }
+  if (!Number.isInteger(eventIndex) || eventIndex < 0) {
+    throw new Error("Ball score schedule requires non-negative event index.");
+  }
+  if (!Number.isInteger(displayGeneration) || displayGeneration < 0) {
+    throw new Error("Ball score schedule requires non-negative display generation.");
+  }
   var cellId = String(scoreEvent.cellId);
-  if (this.playedBallScoreCellIds[cellId] || this.pendingBallScoreCellIds[cellId]) {
+  var eventKey = String(displayGeneration) + ":" + String(eventIndex);
+  if (this.playedBallScoreCellIds[eventKey] || this.pendingBallScoreCellIds[eventKey]) {
     return;
   }
 
@@ -17566,12 +17790,15 @@ LevelRenderer.prototype._scheduleBallScoreEvent = function (scoreEvent, resoluti
     throw new Error("Ball score event delayMs must be a non-negative number: " + cellId);
   }
 
-  var position = this._resolveBallScorePositionInGameView(scoreEvent, resolution, boardSnapshot);
+  var position = this._resolveBallScorePositionInGameView(scoreEvent, resolution, boardSnapshot, eventIndex);
   var self = this;
   var callback = function () {
-    delete self.pendingBallScoreCellIds[cellId];
-    delete self.pendingBallScoreCallbacks[cellId];
-    self.playedBallScoreCellIds[cellId] = true;
+    if (self.currentBallScoreResolution !== resolution || self.ballScoreDisplayGeneration !== displayGeneration) {
+      return;
+    }
+    delete self.pendingBallScoreCellIds[eventKey];
+    delete self.pendingBallScoreCallbacks[eventKey];
+    self.playedBallScoreCellIds[eventKey] = true;
     self._spawnBallScoreDisplay(scoreEvent, position);
   };
 
@@ -17585,8 +17812,8 @@ LevelRenderer.prototype._scheduleBallScoreEvent = function (scoreEvent, resoluti
     throw new Error("GameView node is required to schedule ball score display.");
   }
 
-  this.pendingBallScoreCellIds[cellId] = true;
-  this.pendingBallScoreCallbacks[cellId] = callback;
+  this.pendingBallScoreCellIds[eventKey] = true;
+  this.pendingBallScoreCallbacks[eventKey] = callback;
   var scheduler = requireDirectorScheduler("Ball score delayed display");
   scheduler.schedule(callback, gameViewNode, 0, SCHEDULE_ONCE_REPEAT, delayMs / 1000, false);
 };
@@ -17606,6 +17833,7 @@ LevelRenderer.prototype._playBallScoreDisplay = function (runtimeSnapshot) {
   if (resolution !== this.currentBallScoreResolution) {
     this._cancelPendingBallScoreSchedules();
     this.currentBallScoreResolution = resolution;
+    this.ballScoreDisplayGeneration += 1;
     this.playedBallScoreCellIds = {};
     this.pendingBallScoreCellIds = {};
     this.pendingBallScoreCallbacks = {};
@@ -17615,7 +17843,13 @@ LevelRenderer.prototype._playBallScoreDisplay = function (runtimeSnapshot) {
   }
 
   for (var index = 0; index < resolution.scoreEvents.length; index += 1) {
-    this._scheduleBallScoreEvent(resolution.scoreEvents[index], resolution, runtimeSnapshot.board);
+    this._scheduleBallScoreEvent(
+      resolution.scoreEvents[index],
+      resolution,
+      runtimeSnapshot.board,
+      index,
+      this.ballScoreDisplayGeneration
+    );
   }
 };
 
@@ -22413,6 +22647,16 @@ function PrefabFactory() {
   this._resolvedCache = {};
 }
 
+function releasePrefabAsset(prefab, path) {
+  if (!prefab) {
+    return;
+  }
+  if (!cc || !cc.assetManager || typeof cc.assetManager.releaseAsset !== "function") {
+    throw new Error("PrefabFactory requires cc.assetManager.releaseAsset to release: " + path);
+  }
+  cc.assetManager.releaseAsset(prefab);
+}
+
 PrefabFactory.prototype.preload = function (paths) {
   return Promise.all(paths.map(function (path) {
     return this.load(path);
@@ -22454,6 +22698,25 @@ PrefabFactory.prototype.instantiate = function (path, parent, name) {
 PrefabFactory.prototype.resetLoadedCache = function () {
   this._prefabCache = {};
   this._resolvedCache = {};
+};
+
+PrefabFactory.prototype.releaseLoadedCache = function () {
+  var released = {};
+  Object.keys(this._prefabCache).forEach(function (path) {
+    var prefab = this._prefabCache[path];
+    if (prefab && released[path] !== true) {
+      releasePrefabAsset(prefab, path);
+      released[path] = true;
+    }
+  }, this);
+  Object.keys(this._resolvedCache).forEach(function (path) {
+    var prefab = this._resolvedCache[path];
+    if (prefab && released[path] !== true) {
+      releasePrefabAsset(prefab, path);
+      released[path] = true;
+    }
+  }, this);
+  this.resetLoadedCache();
 };
 
 module.exports = PrefabFactory;

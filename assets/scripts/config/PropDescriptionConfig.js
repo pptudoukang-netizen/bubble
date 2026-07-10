@@ -16,6 +16,7 @@ var SPECIAL_DEFINITIONS = {
     title: "雪块",
     description: "击碎冰冻球后掉落，收集到目标数量可完成雪球目标。",
     summary: "打碎冰冻球后会掉落雪块，收集到目标数量即可完成关卡目标。",
+    ruleTips: "雪块会从冰冻球中掉落，收集到目标数量即可完成关卡目标。",
     effectTitle: "收集目标",
     effectDescription: "雪块不会作为普通颜色球消除，主要通过融化冰冻球获得。",
     iconPath: "image/ball/snow_cube"

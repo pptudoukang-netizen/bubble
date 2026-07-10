@@ -34,7 +34,7 @@
 - `tools/`：校验、同步、构建修复、调试辅助脚本。
 - `tools/first-100-level-design.js`：前 100 关权威设计规则，统一定义 10 种棋盘轮廓、颜色数量、特殊球投放、目标、发射数和每 10 关难度波形，并严格校验实际棋盘与规则一致。
 - `tools/rebuild-first-100-level-configs.js`：前 100 关定向重建入口；先同步 `LEVEL_CONFIG_TABLE_1_1000.csv` 前 100 行，再只重建本地 1-10、远程包 11-100 和对应 manifest 条目，不改写 101-1000 关远程包。运行命令为 `npm run generate:levels-first100`。
-- `tools/clustered-level-layout.js`、`tools/redesign-first-100-clustered-levels.js`、`tools/redesign-levels-100-500-aesthetic.js`：1-1000 关颜色聚类与爽感校验规则；前 100 关保留既有轮廓规则，100-500 关可通过 `npm run redesign:levels100-500` 重建，501-1000 关可通过 `npm run redesign:levels501-1000` 重建远程包布局、对称轮廓、色彩流动和 manifest 摘要。
+- `tools/clustered-level-layout.js`、`tools/rebuild-relaxed-campaign-level-configs.js`、`tools/redesign-first-100-clustered-levels.js`、`tools/redesign-levels-100-500-aesthetic.js`：1-1000 关颜色聚类与爽感校验规则；休闲解压版全量重建通过 `npm run redesign:relaxed-campaign` 同步 CSV、本地 1-10、远程 11-1000 compact 包和 manifest；前 100 关保留既有轮廓规则，100-500 关可通过 `npm run redesign:levels100-500` 重建，501-1000 关可通过 `npm run redesign:levels501-1000` 重建远程包布局、对称轮廓、色彩流动和 manifest 摘要。
 - `settings/`：Cocos Creator 项目设置。
 - `package.json`：校验脚本入口。
 
@@ -137,6 +137,7 @@
 
 - `LevelManager.js`：按关卡 ID 生成 key，1-10 调用本地 `LevelConfigLoader`，11-1000 调用 `RemoteLevelPackLoader`，并缓存关卡配置；`preloadRemotePackAfterLevel(levelId)` 用于开局弹窗前在 10、100、200、300 等分包边界预下载下一段远程关卡包。
 - `LevelConfigLoader.js`：本地关卡配置加载、校验、规范化，并向远程包 loader 暴露同一套规范化入口。这里大量使用 Fail-Fast 校验。
+- `LevelColorPermutation.js`：普通关卡进入局内前对本次 `levelConfig` 拷贝执行颜色轮换；保持棋盘格局不变，同色球整体换成另一组颜色，不改写原始关卡缓存和收集目标字段。
 - `LevelPackManifest.js`：远程关卡 bootstrap manifest、远程完整 manifest、包清单和包定位的严格校验，并要求远程包声明 `compact-schema-v1` 格式。
 - `LevelPackCompactCodec.js`：远程关卡包 `compact-schema-v1` 编解码器；生成器写入压缩格式，运行时和离线工具读取后先展开为完整关卡结构。
 - `RemoteLevelPackLoader.js`：先读取本地 bootstrap manifest，再使用 `wx.cloud.getTempFileURL` 下载远程完整 manifest；随后按远程 manifest 获取关卡包临时地址、下载到本地用户文件缓存，按 manifest 校验 `compact-schema-v1` 格式并展开，最后按单关复用 `LevelConfigLoader` 的规范化校验；同时提供按当前关卡预下载下一远程包的能力。
@@ -222,9 +223,9 @@
 
 - `LevelSelectFloatingMap.js`：浮岛滚动后按视口 ±2 个节点保留 prefab，其余 `cc.assetManager.releaseAsset`；离开选关页时 `releaseAllCachedMapPrefabs` + `invalidateAssetCache`。
 - `RemoteLevelPackLoader.js`：远程完整 manifest 每次进程内首次加载时从云存储读取；远程 compact 包 JSON 只写入 `USER_DATA_PATH` 磁盘缓存，缓存路径包含远程 manifest `version` 和包 sha256，解析后展开为当前请求关卡所需的完整结构，并发下载仍通过 `_packTextPromises` 去重。
-- `LevelRenderer.js`：`releaseLevelSpecificSpriteCache()` 在返回选关时释放关卡专属 sprite，保留球/罐/HUD 共用图。
-- `BundleLoader.js`：`releaseNamedBundle(name)` 供离开选关时卸载 `map` 分包；选关页展示后会后台预热 `ui` 分包，弹窗 prefab 仍按需加载，关闭后节点隐藏（未 destroy）故不自动卸载 `ui` 分包。
-- `GameplayBundleReleaseScheduler.js`：离开局内返回选关后，超过 `gameplayBundleIdleReleaseMs`（默认 30000）未再进入局内则释放 `game` 分包。
+- `LevelRenderer.js`：`releaseLevelSpecificSpriteCache()` 在返回选关时释放关卡专属 sprite，只保留跨关必需的 HUD、底部道具、评论动画等小型共用图；关卡颜色球、罐子、特殊球、胜利瓶子按当前关卡和 runtime snapshot 精确预加载。
+- `BundleLoader.js`：`releaseNamedBundle(name)` 卸载分包前先调用 bundle `releaseAll()` 释放已加载资产；离开选关时卸载 `map` 分包；选关页展示后会后台预热 `ui` 分包，弹窗 prefab 仍按需加载，关闭后节点隐藏（未 destroy）故不自动卸载 `ui` 分包。
+- `GameplayBundleReleaseScheduler.js`：离开局内返回选关后，超过 `gameplayBundleIdleReleaseMs`（默认 10000）未再进入局内则释放 `game` 与局内动画 `animation` 分包，并清理 `LevelRenderer` 持有的 prefab / sprite / animation 引用。
 - `UiModalReleaseHelper.js`：除 `ShopView` 外，其余 UI 弹窗在 `_hide*` 时 destroy 节点并 `releaseAsset` prefab；`BuyView` 在关闭购买弹窗时释放。
 
 ### 选关到开局
@@ -313,13 +314,14 @@
 - `npm run validate:release`
 - `npm run generate:levels1000`
 - `npm run generate:levels-first100`
+- `npm run redesign:relaxed-campaign`
 - `npm run generate:floating-map`
 - `npm run clean:wechat-cloudfunctions`
 - `npm run build:wechat-gameplay-code`
 - `npm run validate`
 
 微信构建前如果 `build/wechatgame/cloudfunctions` 残留导致 Cocos 报 `ENOTEMPTY`，先运行 `npm run clean:wechat-cloudfunctions` 清理构建产物云函数目录。
-修改 1000 关生成策略后，运行 `npm run generate:levels1000` 重新生成本地首 10 关、根目录 `levels` 镜像、`remote-level-packs` 远程关卡包、`remote-level-packs/level_manifest.json` 和本地 bootstrap manifest。修改浮岛地图资源、容量表或 1000 关地图规划后，运行 `npm run generate:floating-map` 重新生成 `assets/map/config/floating_map.json`。修改关卡、瞄准、射击、发布配置或体力相关逻辑后，优先运行对应校验。
+修改休闲解压版 1000 关设计策略后，优先运行 `npm run redesign:relaxed-campaign` 重新同步 `LEVEL_CONFIG_TABLE_1_1000.csv`、本地首 10 关、根目录 `levels` 镜像、`remote-level-packs` 远程 compact 关卡包、`remote-level-packs/level_manifest.json` 和本地 bootstrap manifest；仅改底层生成器且不需要重写 CSV 时再运行 `npm run generate:levels1000`。修改浮岛地图资源、容量表或 1000 关地图规划后，运行 `npm run generate:floating-map` 重新生成 `assets/map/config/floating_map.json`。修改关卡、瞄准、射击、发布配置或体力相关逻辑后，优先运行对应校验。
 
 ## 修改建议
 

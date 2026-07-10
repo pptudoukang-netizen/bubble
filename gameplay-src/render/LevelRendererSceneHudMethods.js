@@ -554,13 +554,27 @@ LevelRenderer.prototype._acquireBallScoreNode = function (gameViewNode, template
   return scoreNode;
 };
 
-LevelRenderer.prototype._findBallScoreSequenceEntry = function (resolution, cellId) {
+LevelRenderer.prototype._findBallScoreSequenceEntry = function (resolution, cellId, eventIndex) {
   if (!resolution || typeof resolution !== "object" || Array.isArray(resolution)) {
     throw new Error("Ball score sequence lookup requires resolution.");
   }
   if (!Array.isArray(resolution.eliminationSequence)) {
     throw new Error("Ball score display requires eliminationSequence array.");
   }
+  if (
+    Number.isInteger(eventIndex) &&
+    eventIndex >= 0 &&
+    eventIndex < resolution.eliminationSequence.length
+  ) {
+    var indexedEntry = resolution.eliminationSequence[eventIndex];
+    if (!indexedEntry || typeof indexedEntry !== "object" || Array.isArray(indexedEntry)) {
+      throw new Error("Ball score elimination sequence entry must be an object.");
+    }
+    if (String(indexedEntry.cellId) === cellId) {
+      return indexedEntry;
+    }
+  }
+
   for (var index = 0; index < resolution.eliminationSequence.length; index += 1) {
     var sequenceEntry = resolution.eliminationSequence[index];
     if (!sequenceEntry || typeof sequenceEntry !== "object" || Array.isArray(sequenceEntry)) {
@@ -573,7 +587,7 @@ LevelRenderer.prototype._findBallScoreSequenceEntry = function (resolution, cell
   return null;
 };
 
-LevelRenderer.prototype._resolveBallScorePositionInGameView = function (scoreEvent, resolution, boardSnapshot) {
+LevelRenderer.prototype._resolveBallScorePositionInGameView = function (scoreEvent, resolution, boardSnapshot, eventIndex) {
   if (!scoreEvent || typeof scoreEvent !== "object" || Array.isArray(scoreEvent)) {
     throw new Error("Ball score display requires score event.");
   }
@@ -582,8 +596,11 @@ LevelRenderer.prototype._resolveBallScorePositionInGameView = function (scoreEve
   }
 
   var cellId = String(scoreEvent.cellId);
-  var sequenceEntry = this._findBallScoreSequenceEntry(resolution, cellId);
-  var worldPosition = sequenceEntry ? sequenceEntry.worldPosition : null;
+  var worldPosition = scoreEvent.worldPosition || null;
+  if (!worldPosition) {
+    var sequenceEntry = this._findBallScoreSequenceEntry(resolution, cellId, eventIndex);
+    worldPosition = sequenceEntry ? sequenceEntry.worldPosition : null;
+  }
   if (
     worldPosition &&
     typeof worldPosition === "object" &&
@@ -673,15 +690,22 @@ LevelRenderer.prototype._spawnBallScoreDisplay = function (scoreEvent, position)
     .start();
 };
 
-LevelRenderer.prototype._scheduleBallScoreEvent = function (scoreEvent, resolution, boardSnapshot) {
+LevelRenderer.prototype._scheduleBallScoreEvent = function (scoreEvent, resolution, boardSnapshot, eventIndex, displayGeneration) {
   if (!scoreEvent || typeof scoreEvent !== "object" || Array.isArray(scoreEvent)) {
     throw new Error("Ball score schedule requires score event.");
   }
   if (typeof scoreEvent.cellId !== "string" && typeof scoreEvent.cellId !== "number") {
     throw new Error("Ball score schedule requires cellId.");
   }
+  if (!Number.isInteger(eventIndex) || eventIndex < 0) {
+    throw new Error("Ball score schedule requires non-negative event index.");
+  }
+  if (!Number.isInteger(displayGeneration) || displayGeneration < 0) {
+    throw new Error("Ball score schedule requires non-negative display generation.");
+  }
   var cellId = String(scoreEvent.cellId);
-  if (this.playedBallScoreCellIds[cellId] || this.pendingBallScoreCellIds[cellId]) {
+  var eventKey = String(displayGeneration) + ":" + String(eventIndex);
+  if (this.playedBallScoreCellIds[eventKey] || this.pendingBallScoreCellIds[eventKey]) {
     return;
   }
 
@@ -694,12 +718,15 @@ LevelRenderer.prototype._scheduleBallScoreEvent = function (scoreEvent, resoluti
     throw new Error("Ball score event delayMs must be a non-negative number: " + cellId);
   }
 
-  var position = this._resolveBallScorePositionInGameView(scoreEvent, resolution, boardSnapshot);
+  var position = this._resolveBallScorePositionInGameView(scoreEvent, resolution, boardSnapshot, eventIndex);
   var self = this;
   var callback = function () {
-    delete self.pendingBallScoreCellIds[cellId];
-    delete self.pendingBallScoreCallbacks[cellId];
-    self.playedBallScoreCellIds[cellId] = true;
+    if (self.currentBallScoreResolution !== resolution || self.ballScoreDisplayGeneration !== displayGeneration) {
+      return;
+    }
+    delete self.pendingBallScoreCellIds[eventKey];
+    delete self.pendingBallScoreCallbacks[eventKey];
+    self.playedBallScoreCellIds[eventKey] = true;
     self._spawnBallScoreDisplay(scoreEvent, position);
   };
 
@@ -713,8 +740,8 @@ LevelRenderer.prototype._scheduleBallScoreEvent = function (scoreEvent, resoluti
     throw new Error("GameView node is required to schedule ball score display.");
   }
 
-  this.pendingBallScoreCellIds[cellId] = true;
-  this.pendingBallScoreCallbacks[cellId] = callback;
+  this.pendingBallScoreCellIds[eventKey] = true;
+  this.pendingBallScoreCallbacks[eventKey] = callback;
   var scheduler = requireDirectorScheduler("Ball score delayed display");
   scheduler.schedule(callback, gameViewNode, 0, SCHEDULE_ONCE_REPEAT, delayMs / 1000, false);
 };
@@ -734,6 +761,7 @@ LevelRenderer.prototype._playBallScoreDisplay = function (runtimeSnapshot) {
   if (resolution !== this.currentBallScoreResolution) {
     this._cancelPendingBallScoreSchedules();
     this.currentBallScoreResolution = resolution;
+    this.ballScoreDisplayGeneration += 1;
     this.playedBallScoreCellIds = {};
     this.pendingBallScoreCellIds = {};
     this.pendingBallScoreCallbacks = {};
@@ -743,7 +771,13 @@ LevelRenderer.prototype._playBallScoreDisplay = function (runtimeSnapshot) {
   }
 
   for (var index = 0; index < resolution.scoreEvents.length; index += 1) {
-    this._scheduleBallScoreEvent(resolution.scoreEvents[index], resolution, runtimeSnapshot.board);
+    this._scheduleBallScoreEvent(
+      resolution.scoreEvents[index],
+      resolution,
+      runtimeSnapshot.board,
+      index,
+      this.ballScoreDisplayGeneration
+    );
   }
 };
 

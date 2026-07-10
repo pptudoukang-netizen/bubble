@@ -14,7 +14,6 @@ var POWERUP_DEFINITIONS = [
   { itemId: "snow_removal", unlockLevel: 16, iconPath: "image/props/snow_removal" }
 ];
 var LOCK_ICON_PATH = "image/commone/lock";
-var MAX_SELECTED_POWERUPS = 4;
 var PROP_ITEM_HORIZONTAL_PADDING = 12;
 var PROP_ITEM_SPACING = 16;
 var PROP_ITEM_WIDTH = 90;
@@ -827,10 +826,6 @@ StartGameViewController.prototype._onPropTap = function (itemId) {
   }
 
   var count = getOwnedPowerupCount(this._renderState, itemId);
-  if (this._selectedItems.length >= MAX_SELECTED_POWERUPS) {
-    this.onUnavailable("关卡中最多携带" + MAX_SELECTED_POWERUPS + "种道具");
-    return;
-  }
   if (count <= 0) {
     this._purchasePowerupAndSelect(itemId);
     return;

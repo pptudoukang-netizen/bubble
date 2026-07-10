@@ -48,6 +48,25 @@ function shouldRedesign(levelId) {
   return REDESIGN_LEVEL_ID_MAP[levelId] === true;
 }
 
+function resolveCandidateProfile(options) {
+  if (options.candidateProfile === undefined || options.candidateProfile === "full") {
+    return "full";
+  }
+  if (options.candidateProfile === "relaxed_campaign") {
+    return "relaxed_campaign";
+  }
+  throw new Error("Unsupported clustered layout candidateProfile: " + options.candidateProfile);
+}
+
+function buildAestheticShapeModes(levelId, candidateProfile) {
+  if (candidateProfile === "full") {
+    return [0, 1, 2, 3, 4, 5, 6, 7];
+  }
+  var primary = levelId % 8;
+  var secondary = (primary + 3) % 8;
+  return [primary, secondary];
+}
+
 function getCellPosition(cell) {
   return BoardLayout.getCellPosition(cell.row, cell.col, BoardLayout.defaultColumns, 0);
 }
@@ -183,10 +202,29 @@ function buildAestheticSelectedSlots(rows, specialCells, normalCount, levelId, s
   var occupiedCount = normalCount + specialKeys.length;
   var selected = [];
   var selectedMap = {};
+  var selectedByRow = {};
+
+  function pushAestheticSlot(cell) {
+    var key = cell.row + ":" + cell.col;
+    if (selectedMap[key]) {
+      return;
+    }
+    pushSelectedCell(selected, selectedMap, cell);
+    selectedByRow[cell.row] = (selectedByRow[cell.row] || 0) + 1;
+  }
+
+  function scoreAestheticCandidate(cell) {
+    var rowFill = selectedByRow[cell.row] || 0;
+    var targetRowFill = Math.ceil(occupiedCount / rows.length);
+    return scoreAestheticCell(cell, rows, levelId, shapeMode) +
+      Math.max(0, rowFill - targetRowFill + 1) * 14 +
+      rowFill * 3 -
+      cell.row * 0.55;
+  }
 
   allCells.forEach(function (cell) {
     if (cell.row === 0 || specialCells[cell.row + ":" + cell.col]) {
-      pushSelectedCell(selected, selectedMap, cell);
+      pushAestheticSlot(cell);
     }
   });
   if (selected.length > occupiedCount) {
@@ -211,10 +249,9 @@ function buildAestheticSelectedSlots(rows, specialCells, normalCount, levelId, s
       throw new Error("Level " + levelId + " aesthetic shape cannot reach row " + requiredRow + ".");
     }
     rowCandidates.sort(function (cellA, cellB) {
-      return scoreAestheticCell(cellA, rows, levelId, shapeMode) -
-        scoreAestheticCell(cellB, rows, levelId, shapeMode);
+      return scoreAestheticCandidate(cellA) - scoreAestheticCandidate(cellB);
     });
-    pushSelectedCell(selected, selectedMap, rowCandidates[0]);
+    pushAestheticSlot(rowCandidates[0]);
   }
 
   while (selected.length < occupiedCount) {
@@ -231,10 +268,9 @@ function buildAestheticSelectedSlots(rows, specialCells, normalCount, levelId, s
       throw new Error("Level " + levelId + " aesthetic shape frontier exhausted.");
     }
     frontier.sort(function (cellA, cellB) {
-      return scoreAestheticCell(cellA, rows, levelId, shapeMode) -
-        scoreAestheticCell(cellB, rows, levelId, shapeMode);
+      return scoreAestheticCandidate(cellA) - scoreAestheticCandidate(cellB);
     });
-    pushSelectedCell(selected, selectedMap, frontier[0]);
+    pushAestheticSlot(frontier[0]);
   }
 
   return selected.filter(function (cell) {
@@ -409,6 +445,23 @@ function buildTargetFirstColorChunks(colors, colorCounts, targetColor, targetChu
     remainingCounts[targetColor] = 0;
   }
   return chunks.concat(buildColorChunks(colors, remainingCounts, targetChunkSize, rotation, reversed));
+}
+
+function buildTargetLastColorChunks(colors, colorCounts, targetColor, targetChunkSize, rotation, reversed) {
+  var remainingCounts = {};
+  colors.forEach(function (color) {
+    remainingCounts[color] = colorCounts[color];
+  });
+  var targetCount = remainingCounts[targetColor];
+  remainingCounts[targetColor] = 0;
+  var chunks = buildColorChunks(colors, remainingCounts, targetChunkSize, rotation, reversed);
+  if (targetCount > 0) {
+    chunks.push({
+      color: targetColor,
+      count: targetCount
+    });
+  }
+  return chunks;
 }
 
 function orderSlots(slots, mode, flip, rows) {
@@ -692,7 +745,17 @@ function calculateCandidateLimits(colorCounts, colors) {
   };
 }
 
-function scoreCandidate(metrics, limits, targetCount) {
+function scoreCandidate(metrics, limits, targetCount, candidateProfile) {
+  if (candidateProfile === "relaxed_campaign") {
+    var relaxedDesiredTargetComponents = targetCount >= 24 ? 4 : 3;
+    var relaxedLargestTargetFloor = Math.ceil(targetCount * 0.22);
+    var relaxedLargestTargetCeiling = Math.ceil(targetCount * 0.46);
+    return Math.abs(metrics.groupedRatio - Math.min(0.92, limits.maximumGroupedRatio)) * 35 +
+      metrics.isolatedRatio * 95 +
+      Math.abs(metrics.targetComponentCount - relaxedDesiredTargetComponents) * 18 +
+      Math.max(0, relaxedLargestTargetFloor - metrics.targetLargestComponent) * 6 +
+      Math.max(0, metrics.targetLargestComponent - relaxedLargestTargetCeiling) * 7;
+  }
   var desiredGroupedRatio = Math.min(0.85, limits.maximumGroupedRatio);
   var desiredTargetComponents = Math.max(1, Math.min(4, Math.round(targetCount / 5)));
   return Math.abs(metrics.groupedRatio - desiredGroupedRatio) * 40 +
@@ -707,6 +770,7 @@ function buildClusteredLayout(options) {
   if (!shouldRedesign(levelId)) {
     throw new Error("Level " + levelId + " is not registered for clustered redesign.");
   }
+  var candidateProfile = resolveCandidateProfile(options);
   var rows = normalizeRows(options.rows, levelId);
   if (levelId >= FIRST_AESTHETIC_LEVEL_ID && options.preserveOccupiedSlots !== true) {
     rows = ensureAestheticRows(rows, levelId);
@@ -725,14 +789,14 @@ function buildClusteredLayout(options) {
   var selectedSlotSets = [];
 
   if (levelId >= FIRST_AESTHETIC_LEVEL_ID && options.preserveOccupiedSlots !== true) {
-    for (var shapeMode = 0; shapeMode <= 7; shapeMode += 1) {
+    buildAestheticShapeModes(levelId, candidateProfile).forEach(function (shapeMode) {
       selectedSlotSets.push({
         slots: buildAestheticSelectedSlots(rows, specialCells, colorState.total, levelId, shapeMode),
         shapeMode: shapeMode,
         allowedIsolatedRatio: baseAllowedIsolatedRatio,
         allowedTargetSingletons: 0
       });
-    }
+    });
   } else {
     var preservedSlots = collectLayoutSlots(rows, colors, colorState.counts, specialCells, levelId);
     var preservedGeometricIsolatedCount = countGeometricIsolatedSlots(preservedSlots);
@@ -744,17 +808,26 @@ function buildClusteredLayout(options) {
     });
   }
 
+  var minChunkSize = candidateProfile === "relaxed_campaign" ? 5 : 4;
+  var maxChunkSize = candidateProfile === "relaxed_campaign" ? 7 : 8;
+  var maxOrderingMode = candidateProfile === "relaxed_campaign" ? 5 : 9;
   selectedSlotSets.forEach(function (slotSet) {
-    for (var chunkSize = 4; chunkSize <= 8; chunkSize += 1) {
-      for (var mode = 0; mode <= 9; mode += 1) {
+    for (var chunkSize = minChunkSize; chunkSize <= maxChunkSize; chunkSize += 1) {
+      for (var mode = 0; mode <= maxOrderingMode; mode += 1) {
         for (var flip = 0; flip <= 1; flip += 1) {
           for (var rotation = 0; rotation < colors.length; rotation += 1) {
             for (var reverseIndex = 0; reverseIndex <= 1; reverseIndex += 1) {
               var orderedSlots = orderSlots(slotSet.slots, mode, flip, rows);
-              for (var chunkPlan = 0; chunkPlan <= 1; chunkPlan += 1) {
-                var chunks = chunkPlan === 0
-                  ? buildColorChunks(colors, colorState.counts, chunkSize, rotation, reverseIndex === 1)
-                  : buildTargetFirstColorChunks(colors, colorState.counts, targetColor, chunkSize, rotation, reverseIndex === 1);
+              var maxChunkPlan = candidateProfile === "relaxed_campaign" ? 2 : 1;
+              for (var chunkPlan = 0; chunkPlan <= maxChunkPlan; chunkPlan += 1) {
+                var chunks;
+                if (chunkPlan === 0) {
+                  chunks = buildColorChunks(colors, colorState.counts, chunkSize, rotation, reverseIndex === 1);
+                } else if (chunkPlan === 1) {
+                  chunks = buildTargetFirstColorChunks(colors, colorState.counts, targetColor, chunkSize, rotation, reverseIndex === 1);
+                } else {
+                  chunks = buildTargetLastColorChunks(colors, colorState.counts, targetColor, chunkSize, rotation, reverseIndex === 1);
+                }
                 var candidateRows = assignChunksToRows(rows, orderedSlots, chunks, levelId);
                 var metrics = analyzeLayout(candidateRows, targetColor);
                 var unsupportedCells = LevelBoardSupportValidator.findUnsupportedInitialCells({
@@ -782,7 +855,7 @@ function buildClusteredLayout(options) {
                 candidates.push({
                   rows: candidateRows,
                   metrics: metrics,
-                  score: scoreCandidate(metrics, limits, colorState.counts[targetColor]),
+                  score: scoreCandidate(metrics, limits, colorState.counts[targetColor], candidateProfile),
                   variant: [slotSet.shapeMode, chunkSize, mode, flip, rotation, reverseIndex, chunkPlan]
                 });
               }

@@ -24,7 +24,7 @@ var BoardLayout = {
   jarHeight: 230,
   jarSideCollisionWidth: 40,
   jarSlotWidth: 237,
-  jarSpacingReduction: 20,
+  jarSpacingReduction: 30,
   jarSideYOffset: 20,
   jarLayoutWidth: 0,
   defaultColumns: 10,

@@ -549,14 +549,20 @@ function releaseNamedBundle(bundleName) {
     throw new Error("cc.assetManager.removeBundle is required to release bundle: " + bundleName);
   }
 
-  var loadedBundle = typeof cc.assetManager.getBundle === "function"
-    ? cc.assetManager.getBundle(bundleName)
-    : null;
-  if (loadedBundle) {
-    cc.assetManager.removeBundle(loadedBundle);
-  } else {
-    cc.assetManager.removeBundle(bundleName);
+  if (typeof cc.assetManager.getBundle !== "function") {
+    throw new Error("cc.assetManager.getBundle is required to release bundle: " + bundleName);
   }
+
+  var loadedBundle = cc.assetManager.getBundle(bundleName);
+  if (!loadedBundle) {
+    throw new Error("Loaded bundle missing before release: " + bundleName);
+  }
+  if (typeof loadedBundle.releaseAll !== "function") {
+    throw new Error("Asset bundle releaseAll is required before release: " + bundleName);
+  }
+
+  loadedBundle.releaseAll();
+  cc.assetManager.removeBundle(loadedBundle);
 
   LevelSelectMemoryDiagnostics.increment("bundle.release:" + bundleName);
 }

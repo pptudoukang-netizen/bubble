@@ -32,7 +32,6 @@ var ITEM_DEFINITIONS = [
     displayName: "除雪剂"
   }
 ];
-var MAX_SELECTED_POWERUPS = 4;
 
 function findNodeByNameRecursive(rootNode, name) {
   if (!rootNode || !rootNode.isValid) {
@@ -125,7 +124,7 @@ InventoryViewController.prototype.render = function (options) {
   var coinCount = Math.max(0, Math.floor(Number(options.coinCount) || 0));
 
   this._setLabelText("CoinCount", String(coinCount));
-  this._setLabelText("EquippedCountLabel", "出战道具 " + selectedItems.length + "/" + MAX_SELECTED_POWERUPS);
+  this._setLabelText("EquippedCountLabel", "出战道具 " + selectedItems.length);
 
   ITEM_DEFINITIONS.forEach(function (item) {
     this._renderItemCard(item, inventory, selectedItems);
@@ -183,6 +182,4 @@ InventoryViewController.prototype._setLabelText = function (nodeName, text) {
 };
 
 InventoryViewController.ITEM_DEFINITIONS = ITEM_DEFINITIONS.slice();
-InventoryViewController.MAX_SELECTED_POWERUPS = MAX_SELECTED_POWERUPS;
-
 module.exports = InventoryViewController;

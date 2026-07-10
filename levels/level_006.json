@@ -8,8 +8,7 @@
             ".": "empty",
             "R": "red",
             "G": "green",
-            "B": "blue",
-            "Y": "yellow"
+            "B": "blue"
         },
         "pattern": "side_gate"
     },
@@ -45,29 +44,30 @@
             "support_drop",
             "side_gate_pattern"
         ],
-        "colorCount": 4,
+        "colorCount": 3,
         "colors": [
             "R",
             "G",
-            "B",
-            "Y"
+            "B"
         ],
-        "shotLimit": 19,
-        "targetScore": 1680,
+        "shotLimit": 20,
+        "targetScore": 4230,
         "dropInterval": 8,
-        "jarCount": 4,
+        "jarCount": 3,
         "jarColors": [
             "R",
             "G",
-            "B",
-            "Y"
+            "B"
         ],
         "spawnWeights": {
             "R": 1,
-            "G": 1.15,
-            "B": 1.3,
-            "Y": 1
+            "G": 2.4,
+            "B": 1.24
         },
+        "initialShotBalls": [
+            "G",
+            "G"
+        ],
         "jarRules": {
             "rimBounce": 0.6811011011011011,
             "collectZoneScale": 1.0987487487487488,
@@ -76,8 +76,8 @@
         "winConditions": [
             {
                 "type": "collect_color",
-                "color": "R",
-                "value": 8
+                "color": "G",
+                "value": 22
             }
         ],
         "bonusObjectives": [
@@ -93,14 +93,16 @@
             }
         ],
         "layout": [
-            "BBGGRRRYYY",
-            ".B.....Y.",
-            ".B......Y.",
-            "BBGGRRRYY",
-            "BBGGRR..Y.",
-            ".G.....Y.",
-            ".G........",
-            ".G......."
+            "BBGGBBGGBB",
+            "BRG...GG.",
+            "BRR....GB.",
+            "BRRG...B.",
+            "GRRGGB....",
+            "GRRGGB...",
+            "GRRRG.....",
+            "GBRRG....",
+            "GBBRG.....",
+            "GBBRR...."
         ],
         "designNotes": "Generated from LEVEL_CONFIG_TABLE_1_1000.csv. Chapter `cluster_fundamentals` uses color_cluster, support_drop with a side_gate board silhouette.",
         "difficultyScore": 38,

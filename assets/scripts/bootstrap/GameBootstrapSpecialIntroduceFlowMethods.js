@@ -18,6 +18,8 @@ var GENIUS_TIPS_VIEW_Z_INDEX = 530;
 var SART_TIPS_VIEW_Z_INDEX = 535;
 var GENIUS_TIPS_INTRODUCE_KEY = "genius_tips";
 var SART_TIPS_INTRODUCE_KEY = "top_slot_star_tips";
+var SNOW_RULE_INTRODUCE_KEY = "ice_snowball";
+var PROP_TIPS_TITLE_MODE_RULE = "rule";
 var INTRODUCE_ORDER = PropDescriptionConfig.SPECIAL_ORDER;
 var INTRODUCE_DEFINITIONS = PropDescriptionConfig.SPECIAL_DEFINITIONS;
 var INTRODUCE_KEY_BY_ENTITY_TYPE = PropDescriptionConfig.SPECIAL_KEY_BY_ENTITY_TYPE;
@@ -31,6 +33,26 @@ function requireDefinition(key) {
     throw new Error("Special introduce definition missing: " + key);
   }
   return INTRODUCE_DEFINITIONS[key];
+}
+
+function requireSnowRuleTipsText(definition) {
+  if (!definition || typeof definition !== "object" || Array.isArray(definition)) {
+    throw new Error("Snow rule tips definition must be an object.");
+  }
+  if (typeof definition.ruleTips !== "string" || definition.ruleTips.length === 0) {
+    throw new Error("Snow rule tips text must be a non-empty string.");
+  }
+  return definition.ruleTips;
+}
+
+function requirePropTipsHost(host) {
+  if (typeof host._showPropTipsView !== "function") {
+    throw new Error("Snow rule tips requires _showPropTipsView.");
+  }
+  if (typeof host._hidePropTipsView !== "function") {
+    throw new Error("Snow rule tips requires _hidePropTipsView.");
+  }
+  return host;
 }
 
 function requireRuntimeSnapshot(snapshot) {
@@ -398,6 +420,9 @@ module.exports = {
 
   _showSpecialIntroduceView: function (key) {
     var definition = requireDefinition(key);
+    if (key === SNOW_RULE_INTRODUCE_KEY) {
+      return this._showSnowRuleTipsView(key, definition);
+    }
     this._specialIntroduceOpening = true;
     return this._ensureSpecialIntroduceViewPrefab().then(function (prefab) {
       var viewNode = this._specialIntroduceViewNode;
@@ -432,6 +457,38 @@ module.exports = {
     }.bind(this)).catch(function (error) {
       this._specialIntroduceOpening = false;
       this._specialIntroduceViewActive = false;
+      resumeTimedLevelTimerForIntroduce(this);
+      throw error;
+    }.bind(this));
+  },
+
+  _showSnowRuleTipsView: function (key, definition) {
+    if (key !== SNOW_RULE_INTRODUCE_KEY) {
+      throw new Error("Snow rule tips key must be " + SNOW_RULE_INTRODUCE_KEY + ".");
+    }
+    requirePropTipsHost(this);
+    var text = requireSnowRuleTipsText(definition);
+    this._specialIntroduceOpening = true;
+    this._specialIntroduceCurrentKey = key;
+    pauseTimedLevelTimerForIntroduce(this);
+    return this._showPropTipsView({
+      text: text,
+      titleMode: PROP_TIPS_TITLE_MODE_RULE,
+      onTap: function () {
+        this._playSfx("uiClick");
+        this._closeSpecialIntroduceView();
+      }.bind(this)
+    }).then(function () {
+      requireStore(this).markViewed(key);
+      this._specialIntroducePropTipsViewActive = true;
+      this._specialIntroduceViewActive = true;
+      this._specialIntroduceOpening = false;
+      return true;
+    }.bind(this)).catch(function (error) {
+      this._specialIntroduceOpening = false;
+      this._specialIntroduceViewActive = false;
+      this._specialIntroducePropTipsViewActive = false;
+      this._specialIntroduceCurrentKey = "";
       resumeTimedLevelTimerForIntroduce(this);
       throw error;
     }.bind(this));
@@ -528,6 +585,10 @@ module.exports = {
     this._specialIntroduceViewActive = false;
     this._specialIntroduceCurrentKey = "";
     resumeTimedLevelTimerForIntroduce(this);
+    if (this._specialIntroducePropTipsViewActive === true) {
+      requirePropTipsHost(this)._hidePropTipsView();
+      this._specialIntroducePropTipsViewActive = false;
+    }
     UiModalReleaseHelper.releaseCachedModal(this, {
       label: "IntroduceView",
       nodeKey: "_specialIntroduceViewNode",
@@ -579,6 +640,10 @@ module.exports = {
     }
     this._specialIntroduceQueuedKeys = {};
     resumeTimedLevelTimerForIntroduce(this);
+    if (this._specialIntroducePropTipsViewActive === true) {
+      requirePropTipsHost(this)._hidePropTipsView();
+      this._specialIntroducePropTipsViewActive = false;
+    }
     UiModalReleaseHelper.releaseCachedModal(this, {
       label: "IntroduceView",
       nodeKey: "_specialIntroduceViewNode",

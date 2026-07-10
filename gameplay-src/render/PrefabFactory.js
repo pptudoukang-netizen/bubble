@@ -26,6 +26,16 @@ function PrefabFactory() {
   this._resolvedCache = {};
 }
 
+function releasePrefabAsset(prefab, path) {
+  if (!prefab) {
+    return;
+  }
+  if (!cc || !cc.assetManager || typeof cc.assetManager.releaseAsset !== "function") {
+    throw new Error("PrefabFactory requires cc.assetManager.releaseAsset to release: " + path);
+  }
+  cc.assetManager.releaseAsset(prefab);
+}
+
 PrefabFactory.prototype.preload = function (paths) {
   return Promise.all(paths.map(function (path) {
     return this.load(path);
@@ -67,6 +77,25 @@ PrefabFactory.prototype.instantiate = function (path, parent, name) {
 PrefabFactory.prototype.resetLoadedCache = function () {
   this._prefabCache = {};
   this._resolvedCache = {};
+};
+
+PrefabFactory.prototype.releaseLoadedCache = function () {
+  var released = {};
+  Object.keys(this._prefabCache).forEach(function (path) {
+    var prefab = this._prefabCache[path];
+    if (prefab && released[path] !== true) {
+      releasePrefabAsset(prefab, path);
+      released[path] = true;
+    }
+  }, this);
+  Object.keys(this._resolvedCache).forEach(function (path) {
+    var prefab = this._resolvedCache[path];
+    if (prefab && released[path] !== true) {
+      releasePrefabAsset(prefab, path);
+      released[path] = true;
+    }
+  }, this);
+  this.resetLoadedCache();
 };
 
 module.exports = PrefabFactory;

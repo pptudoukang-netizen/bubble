@@ -10,6 +10,18 @@ var LIST_PADDING_BOTTOM = 10;
 var MASK_PROXY_ROOT_NAME = "prop_description_mask_proxy_root";
 var STATIC_PROXY_ROOT_NAME = "prop_description_static_proxy_root";
 var ITEM_PROXY_ROOT_NAME = "prop_description_item_proxy_root";
+var ITEM_PROXY_ROOT_Z_INDEX = 0;
+var ITEM_SOURCE_NODE_Z_INDEX = 1;
+
+var RetainedSpriteFrameReleaseHook = cc.Class({
+  extends: cc.Component,
+  onDestroy: function () {
+    if (this.controller) {
+      this.controller.releaseRetainedSpriteFrames();
+      this.controller = null;
+    }
+  }
+});
 
 function requireObject(value, description) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -130,6 +142,27 @@ function requireSpriteFrame(spriteFrameCache, path) {
   return spriteFrame;
 }
 
+function requireUsableSpriteFrame(spriteFrame, description) {
+  if (!spriteFrame) {
+    throw new Error("PropDescriptionView " + description + " spriteFrame is required.");
+  }
+  if (cc && typeof cc.isValid === "function" && !cc.isValid(spriteFrame)) {
+    throw new Error("PropDescriptionView " + description + " spriteFrame is invalid.");
+  }
+  if (typeof spriteFrame.addRef !== "function") {
+    throw new Error("PropDescriptionView " + description + " spriteFrame addRef is required.");
+  }
+  if (typeof spriteFrame.decRef !== "function") {
+    throw new Error("PropDescriptionView " + description + " spriteFrame decRef is required.");
+  }
+  return spriteFrame;
+}
+
+function requireSourceSpriteFrame(node, description) {
+  var sprite = requireSprite(node, description);
+  return requireUsableSpriteFrame(sprite.spriteFrame, description);
+}
+
 function PropDescriptionViewController(options) {
   requireObject(options, "PropDescriptionViewController options");
   this.node = requireValidNode(options.node, "root node");
@@ -144,9 +177,50 @@ function PropDescriptionViewController(options) {
   this._itemProxyRoot = null;
   this._itemProxyLayers = null;
   this._itemProxyRecords = [];
+  this._retainedSpriteFrames = [];
+  this._scrollProxySyncBound = false;
+  this._installRetainedSpriteFrameReleaseHook();
   this._initializeScrollList();
   this._bindActions();
 }
+
+PropDescriptionViewController.prototype._installRetainedSpriteFrameReleaseHook = function () {
+  var hook = this.node.getComponent(RetainedSpriteFrameReleaseHook);
+  if (!hook) {
+    hook = this.node.addComponent(RetainedSpriteFrameReleaseHook);
+  }
+  if (hook.controller && hook.controller !== this) {
+    throw new Error("PropDescriptionView retained SpriteFrame release hook already has a controller.");
+  }
+  hook.controller = this;
+};
+
+PropDescriptionViewController.prototype._retainSourceSpriteFrame = function (node, description) {
+  var spriteFrame = requireSourceSpriteFrame(node, description);
+  var alreadyRetained = false;
+  this._retainedSpriteFrames.forEach(function (entry) {
+    if (entry.spriteFrame === spriteFrame) {
+      alreadyRetained = true;
+    }
+  });
+  if (alreadyRetained !== true) {
+    spriteFrame.addRef();
+    this._retainedSpriteFrames.push({
+      spriteFrame: spriteFrame,
+      description: description
+    });
+  }
+};
+
+PropDescriptionViewController.prototype.releaseRetainedSpriteFrames = function () {
+  while (this._retainedSpriteFrames.length > 0) {
+    var entry = this._retainedSpriteFrames.pop();
+    if (!entry || !entry.spriteFrame || typeof entry.spriteFrame.decRef !== "function") {
+      throw new Error("PropDescriptionView retained SpriteFrame release entry is invalid.");
+    }
+    entry.spriteFrame.decRef();
+  }
+};
 
 PropDescriptionViewController.prototype._resolveNodes = function () {
   var maskNode = requireValidNode(findNodeByNameRecursive(this.node, "mask"), "mask");
@@ -240,6 +314,7 @@ PropDescriptionViewController.prototype._ensureStaticProxyLayers = function () {
     var maskLayers = SpriteProxyLayerHelper.createProxyLayers(this._maskProxyRoot, [
       { key: "mask", name: "prop_description_proxy_mask_layer", zIndex: 0 }
     ]);
+    this._retainSourceSpriteFrame(this._nodes.maskNode, "mask source");
     SpriteProxyLayerHelper.setSpriteRenderEnabled(this._nodes.maskNode, false, "PropDescriptionView mask source");
     this._maskProxyRecords.push(SpriteProxyLayerHelper.createRecord({
       layerNode: maskLayers.mask,
@@ -267,6 +342,7 @@ PropDescriptionViewController.prototype._ensureStaticProxyLayers = function () {
     { key: "chrome", node: this._nodes.closeButton, name: "prop_description_close_proxy" }
   ];
   sources.forEach(function (entry) {
+    this._retainSourceSpriteFrame(entry.node, entry.name);
     SpriteProxyLayerHelper.setSpriteRenderEnabled(entry.node, false, "PropDescriptionView " + entry.name);
     this._staticProxyRecords.push(SpriteProxyLayerHelper.createRecord({
       layerNode: this._staticProxyLayers[entry.key],
@@ -295,6 +371,32 @@ PropDescriptionViewController.prototype._clearItemProxies = function () {
   this._itemProxyLayers = null;
 };
 
+PropDescriptionViewController.prototype._bindScrollProxySync = function () {
+  if (this._scrollProxySyncBound !== true) {
+    if (!cc.ScrollView.EventType || !cc.ScrollView.EventType.SCROLLING || !cc.ScrollView.EventType.SCROLL_ENDED) {
+      throw new Error("PropDescriptionView requires cc.ScrollView.EventType scrolling events.");
+    }
+    if (!cc.Node.EventType || !cc.Node.EventType.POSITION_CHANGED) {
+      throw new Error("PropDescriptionView requires cc.Node.EventType.POSITION_CHANGED.");
+    }
+    this._nodes.scrollView.node.on(cc.ScrollView.EventType.SCROLLING, this._syncScrollingProxies, this);
+    this._nodes.scrollView.node.on(cc.ScrollView.EventType.SCROLL_ENDED, this._syncScrollingProxies, this);
+    this._nodes.contentNode.on(cc.Node.EventType.POSITION_CHANGED, this._syncScrollingProxies, this);
+    this._scrollProxySyncBound = true;
+  }
+};
+
+PropDescriptionViewController.prototype._syncScrollingProxies = function () {
+  if (!this._itemProxyRoot || !this._itemProxyRoot.isValid) {
+    throw new Error("PropDescriptionView item proxy root is required before scroll sync.");
+  }
+  if (!this._itemProxyLayers || typeof this._itemProxyLayers !== "object") {
+    throw new Error("PropDescriptionView item proxy layers are required before scroll sync.");
+  }
+  SpriteProxyLayerHelper.syncRecords(this._itemProxyRecords, this._itemProxyRoot);
+  this._syncStaticProxies();
+};
+
 PropDescriptionViewController.prototype._rebuildItems = function (definitions, spriteFrameCache) {
   if (!Array.isArray(definitions) || definitions.length === 0) {
     throw new Error("PropDescriptionView definitions must be a non-empty array.");
@@ -317,6 +419,7 @@ PropDescriptionViewController.prototype._rebuildItems = function (definitions, s
       itemNode.parent = this._nodes.contentNode;
     }
     itemNode.name = "item_" + definition.key;
+    itemNode.zIndex = ITEM_SOURCE_NODE_Z_INDEX;
     itemNode.active = true;
     var iconNode = requireChildNode(itemNode, "icon", itemNode.name);
     setLabelText(requireChildNode(itemNode, "name", itemNode.name), definition.title, itemNode.name + "/name");
@@ -339,7 +442,7 @@ PropDescriptionViewController.prototype._rebuildItems = function (definitions, s
 
   this._itemProxyRoot = SpriteProxyLayerHelper.createProxyRoot(this._nodes.contentNode, {
     name: ITEM_PROXY_ROOT_NAME,
-    zIndex: -1
+    zIndex: ITEM_PROXY_ROOT_Z_INDEX
   });
   this._itemProxyLayers = SpriteProxyLayerHelper.createProxyLayers(this._itemProxyRoot, [
     { key: "background", name: "prop_description_item_background_layer", zIndex: 0 },
@@ -347,6 +450,8 @@ PropDescriptionViewController.prototype._rebuildItems = function (definitions, s
   ]);
   this._itemNodes.forEach(function (itemNode, index) {
     var iconNode = requireChildNode(itemNode, "icon", itemNode.name);
+    this._retainSourceSpriteFrame(itemNode, "item background " + itemNode.name);
+    this._retainSourceSpriteFrame(iconNode, "item icon " + itemNode.name);
     SpriteProxyLayerHelper.setSpriteRenderEnabled(itemNode, false, "PropDescriptionView item background " + itemNode.name);
     SpriteProxyLayerHelper.setSpriteRenderEnabled(iconNode, false, "PropDescriptionView item icon " + itemNode.name);
     this._itemProxyRecords.push(SpriteProxyLayerHelper.createRecord({
@@ -365,8 +470,10 @@ PropDescriptionViewController.prototype._rebuildItems = function (definitions, s
     }));
   }, this);
 
+  this._bindScrollProxySync();
   this._nodes.scrollView.stopAutoScroll();
   this._nodes.scrollView.scrollToTop(0);
+  this._syncScrollingProxies();
 };
 
 PropDescriptionViewController.prototype.render = function (options) {

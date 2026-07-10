@@ -38,11 +38,12 @@ module.exports = {
       throw new Error("BundleLoader.releaseNamedBundle is required for gameplay bundle idle release.");
     }
 
-    BundleLoader.releaseNamedBundle("game");
-    this._gameplayKernelPromise = null;
     if (this.levelRenderer && typeof this.levelRenderer.releaseAfterGameplayBundleUnload === "function") {
       this.levelRenderer.releaseAfterGameplayBundleUnload();
     }
+    BundleLoader.releaseNamedBundle("game");
+    BundleLoader.releaseNamedBundle("animation");
+    this._gameplayKernelPromise = null;
 
     Logger.info("Released game bundle after idle timeout", {
       idleMs: Math.floor(Number(this.gameplayBundleIdleReleaseMs))

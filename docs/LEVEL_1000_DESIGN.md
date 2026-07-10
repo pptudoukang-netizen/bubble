@@ -6,7 +6,7 @@ The 1000-level campaign extends the current 40-level bubble shooter progression 
 
 ## Progression Structure
 
-Levels 1-100 use the deterministic first-100 design rules in `tools/first-100-level-design.js`. Levels 1-10 are bundled locally, levels 11-100 use the first remote pack, and levels 101-1000 remain grouped into remote 100-level packs for WeChat cloud storage.
+Levels 1-100 use the deterministic first-100 design rules in `tools/first-100-level-design.js`. Levels 101-1000 use the relaxed campaign rebuild rules in `tools/rebuild-relaxed-campaign-level-configs.js`. Levels 1-10 are bundled locally, levels 11-100 use the first remote pack, and levels 101-1000 remain grouped into remote 100-level packs for WeChat cloud storage.
 
 The new campaign uses these chapters:
 
@@ -126,24 +126,28 @@ Generated levels use symbolic board silhouettes to increase variety:
 - `crown`: milestone and exam levels.
 - `wave`: alternating path pressure.
 
-Special entities are placed on explicit `.` slots in `layout`; the layout remains authoritative for normal colored balls.
+For the relaxed campaign, board height and fill are explicit constraints. Level 1 uses 8 rows and must exceed 60% fill. Levels 2-19 use 10 rows and must be at least 60% filled. Levels 20-1000 use 15 rows and must be at least 60% filled. The generated campaign keeps controlled blocker density while using the larger board to create more clearing volume.
+
+Special entities are placed on explicit `.` slots in `layout`; the layout remains authoritative for normal colored balls. Generated campaign specials use deterministic upper/middle-board slot variation before clustered color assignment, so repeated neighboring levels do not share the same special-position signature.
 
 ## Generation Rules
 
-The generator is `tools/generate-1000-level-configs.js`.
+The base generator is `tools/generate-1000-level-configs.js`.
+
+For the relaxed 1000-level campaign rebuild, run `npm run redesign:relaxed-campaign`. This command rewrites `LEVEL_CONFIG_TABLE_1_1000.csv`, regenerates local levels 1-10, regenerates every remote compact pack from 11-1000, updates `remote-level-packs/level_manifest.json`, updates `assets/resources/config/level_manifest.json`, and syncs the root `levels/` mirror.
 
 For the staged first-100 rebuild, run `npm run generate:levels-first100`. This command rewrites only the first 100 CSV rows, local levels 1-10, `levels_pack_011_100.json`, and that pack's manifest hash/size entry. It intentionally leaves levels 101-1000 and their remote packs unchanged.
 
-It preserves existing levels 1-40, writes generated levels 41-100 locally, and groups levels 101-1000 into remote packs.
-
 Local outputs:
 
-- `assets/resources/config/levels/level_041.json` through `level_100.json`
-- `levels/level_041.json` through `level_100.json`
-- Cocos JSON `.meta` files for generated local resource levels
+- `assets/resources/config/levels/level_001.json` through `level_010.json`
+- `levels/level_001.json` through `level_010.json`
+- `assets/resources/config/level_manifest.json`
 
 Remote outputs:
 
+- `remote-level-packs/level_manifest.json`
+- `remote-level-packs/levels_pack_011_100.json`
 - `remote-level-packs/levels_pack_101_200.json`
 - `remote-level-packs/levels_pack_201_300.json`
 - `remote-level-packs/levels_pack_301_400.json`
@@ -153,24 +157,23 @@ Remote outputs:
 - `remote-level-packs/levels_pack_701_800.json`
 - `remote-level-packs/levels_pack_801_900.json`
 - `remote-level-packs/levels_pack_901_1000.json`
-- `assets/resources/config/level_manifest.json`
 
-Upload each remote pack to WeChat cloud storage under `level-packs/` with the same file name. The generated manifest uses fileIDs such as:
+Upload each remote pack to WeChat cloud storage under `level-packs-compact/` with the same file name. The generated manifest uses fileIDs such as:
 
 ```text
-cloud://cloud1-d7gqettx3e9249ca1.636c-cloud1-d7gqettx3e9249ca1-1428064608/level-packs/levels_pack_101_200.json
+cloud://cloud1-d7gqettx3e9249ca1.636c-cloud1-d7gqettx3e9249ca1-1428064608/level-packs-compact/levels_pack_101_200.json
 ```
 
 If the cloud environment or storage path changes, update the generator constants and rerun it so the manifest, hashes, and bytes stay aligned.
 
 Runtime loading resolves each fileID with `wx.cloud.getTempFileURL`, then downloads the returned URL with `wx.downloadFile`. The opening level dialog also preloads the next remote pack on pack boundaries: level 100 preloads 101-200, level 200 preloads 201-300, and so on. The CloudBase download domain must be allowed in the WeChat project network settings for release builds.
 
-The `level-packs/` storage path must allow client read access. If `wx.cloud.getTempFileURL` returns `STORAGE_EXCEED_AUTHORITY`, the files are uploaded correctly but the storage permission or security rule is blocking reads.
+The `level-packs-compact/` storage path must allow client read access. If `wx.cloud.getTempFileURL` returns `STORAGE_EXCEED_AUTHORITY`, the files are uploaded correctly but the storage permission or security rule is blocking reads.
 
 Run:
 
 ```bash
-npm run generate:levels1000
+npm run redesign:relaxed-campaign
 npm run generate:floating-map
 npm run validate:levels
 npm run validate:level-sync
@@ -179,8 +182,10 @@ npm run validate:aim
 
 ## Tuning Notes
 
-- Levels 41-74 use 4 colors; levels 75-1000 use 5 colors.
-- Shot limits grow gradually with campaign progress and special entity density.
+- Levels 1-8 stay at 2-3 colors for onboarding; levels 9-160 mostly use 4 colors; levels 161-1000 use 5 colors.
+- Shot limits target a relaxed clear rhythm: level 1 starts at 24 shots, levels 2-19 scale against the 10-row board, and levels 20-1000 cap at 40 shots for the 15-row board.
+- Target score is generated from total normal balls, primary collection value, snow/ice target value, non-ice special count, and row count. The score model is intentionally higher than the old target-only formula so 1-star clears are not automatic when players barely finish.
+- Current relaxed rebuild statistics: row histogram is 1 level at 8 rows, 18 levels at 10 rows, and 981 levels at 15 rows. Minimum fill is 60.00% on levels 2-19; level 1 is 60.53%; level 20 is 60.14%; level 448 is 15 rows, 97 occupied cells, and 40 shots.
 - Drop interval tightens gradually but does not go below 3.
 - Coin rewards scale from 80 to 300.
 - Stamina rewards appear every 10 levels.

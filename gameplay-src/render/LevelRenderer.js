@@ -98,10 +98,9 @@ var WIN_TARGET_STATUS_RESOURCES = {
 };
 var FAIRY_ANIMATION_BUNDLE_NAME = "animation";
 var EXPLODE_ANIMATION_CLIP_PATH = "explode";
-var EXPLODE_ANIMATION_CLIP_NAME = "explode";
 var FIREWORKS_PREFAB_PATH = "prefabs/fireworks";
-var BOARD_CLEAR_FIREWORKS_BURST_COUNT = 2;
-var BOARD_CLEAR_FIREWORKS_INTERVAL_SEC = 0.95;
+var BOARD_CLEAR_FIREWORKS_BURST_COUNT = 1;
+var BOARD_CLEAR_FIREWORKS_INTERVAL_SEC = 1.1;
 
 var WIN_TARGET_COLOR_NAMES = {
   R: "红球",
@@ -331,6 +330,51 @@ function hasValidSpriteFrame(spriteFrame) {
     return cc.isValid(spriteFrame);
   }
   return true;
+}
+
+function pushUniqueSpritePath(paths, path, label) {
+  if (typeof path !== "string" || !path) {
+    throw new Error("Sprite path is required: " + label);
+  }
+  if (paths.indexOf(path) < 0) {
+    paths.push(path);
+  }
+}
+
+function pushBallSpritePath(paths, code, label) {
+  if (!code) {
+    return;
+  }
+  if (typeof code !== "string" || !BALL_RESOURCES[code]) {
+    throw new Error("Unsupported ball sprite code for " + label + ": " + code);
+  }
+  pushUniqueSpritePath(paths, BALL_RESOURCES[code], label);
+}
+
+function collectBallVisualSpritePaths(paths, ballLike, label) {
+  var code = resolveBallCode(ballLike);
+  pushBallSpritePath(paths, code, label);
+  if (isIceBallLike(ballLike)) {
+    pushUniqueSpritePath(paths, BALL_RESOURCES.ICE, label + "/ice_overlay");
+  }
+}
+
+function collectRuntimeBoardSpritePaths(paths, runtimeSnapshot) {
+  if (!runtimeSnapshot || runtimeSnapshot.board === undefined) {
+    return;
+  }
+  if (!runtimeSnapshot.board || typeof runtimeSnapshot.board !== "object" || Array.isArray(runtimeSnapshot.board)) {
+    throw new Error("Runtime board snapshot must be an object.");
+  }
+  if (!Array.isArray(runtimeSnapshot.board.cells)) {
+    throw new Error("Runtime board snapshot cells must be an array.");
+  }
+  runtimeSnapshot.board.cells.forEach(function (cell, index) {
+    if (!cell || typeof cell !== "object" || Array.isArray(cell)) {
+      throw new Error("Runtime board cell must be an object at index " + index + ".");
+    }
+    collectBallVisualSpritePaths(paths, cell, "runtime board cell " + index);
+  });
 }
 
 function buildObjectiveDisplayForObjective(objective, runtimeSnapshot) {
@@ -1131,6 +1175,7 @@ function LevelRenderer(rootNode) {
   this.fallingRenderTick = 1;
   this.jarFractionNodePool = [];
   this.ballScoreNodePool = [];
+  this.ballScoreDisplayGeneration = 0;
   this.currentBallScoreResolution = null;
   this.playedBallScoreCellIds = {};
   this.pendingBallScoreCellIds = {};
@@ -1349,15 +1394,27 @@ LevelRenderer.prototype.setGameplayActionHandlers = function (handlers) {
   };
 };
 
-LevelRenderer.prototype.setFallingMarbleSystem = function (fallingMarbleSystem) {
+LevelRenderer.prototype.setFallingMarbleSystem = function (fallingMarbleSystem, boardAdvancePresentationTarget) {
   if (
     !fallingMarbleSystem ||
     typeof fallingMarbleSystem.requestEliminationPresentationDropRelease !== "function"
   ) {
     throw new Error("LevelRenderer.setFallingMarbleSystem requires FallingMarbleSystem.");
   }
+  if (
+    boardAdvancePresentationTarget !== undefined &&
+    (
+      !boardAdvancePresentationTarget ||
+      typeof boardAdvancePresentationTarget.notifyBoardAdvanceEliminationPresentationComplete !== "function"
+    )
+  ) {
+    throw new Error("LevelRenderer.setFallingMarbleSystem requires board advance presentation target when provided.");
+  }
   this.bubbleShatterRenderer.setPresentationCompleteHandler(function () {
     fallingMarbleSystem.requestEliminationPresentationDropRelease();
+    if (boardAdvancePresentationTarget) {
+      boardAdvancePresentationTarget.notifyBoardAdvanceEliminationPresentationComplete();
+    }
   });
 };
 
@@ -1914,15 +1971,29 @@ LevelRenderer.prototype._getOrCreateLayer = function (name, zIndex) {
 LevelRenderer.prototype._collectSpritePaths = function (levelConfig, runtimeSnapshot) {
   var paths = this._collectCommonSpritePaths().slice();
 
-  (levelConfig.level.colors || []).forEach(function (colorCode) {
-    paths.push(BALL_RESOURCES[colorCode]);
+  if (!levelConfig || !levelConfig.level || typeof levelConfig.level !== "object") {
+    throw new Error("LevelRenderer sprite collection requires level config.");
+  }
+
+  var level = levelConfig.level;
+  if (!Array.isArray(level.colors)) {
+    throw new Error("LevelRenderer sprite collection requires level.colors.");
+  }
+  level.colors.forEach(function (colorCode, index) {
+    pushBallSpritePath(paths, colorCode, "level.colors[" + index + "]");
   });
 
-  (levelConfig.level.jarColors || []).forEach(function (colorCode) {
-    paths.push(JAR_RESOURCES[colorCode]);
-    paths.push(JAR_MASK_RESOURCES[colorCode]);
+  if (!Array.isArray(level.jarColors)) {
+    throw new Error("LevelRenderer sprite collection requires level.jarColors.");
+  }
+  level.jarColors.forEach(function (colorCode, index) {
+    if (typeof colorCode !== "string" || !JAR_RESOURCES[colorCode] || !JAR_MASK_RESOURCES[colorCode]) {
+      throw new Error("Unsupported jar color for level.jarColors[" + index + "]: " + colorCode);
+    }
+    pushUniqueSpritePath(paths, JAR_RESOURCES[colorCode], "level.jarColors[" + index + "]");
+    pushUniqueSpritePath(paths, JAR_MASK_RESOURCES[colorCode], "level.jarColors[" + index + "]/mask");
     if (WIN_BOTTLE_RESOURCES[colorCode]) {
-      paths.push(WIN_BOTTLE_RESOURCES[colorCode]);
+      pushUniqueSpritePath(paths, WIN_BOTTLE_RESOURCES[colorCode], "level.jarColors[" + index + "]/win_bottle");
     }
   });
 
@@ -1931,29 +2002,49 @@ LevelRenderer.prototype._collectSpritePaths = function (levelConfig, runtimeSnap
       throw new Error("Sprite preload objective entry must include type.");
     }
     if (objective.type === "collect_any") {
-      paths.push(BALL_RESOURCES.RAINBOW);
+      pushUniqueSpritePath(paths, BALL_RESOURCES.RAINBOW, "collect_any objective");
       return;
     }
     if (objective.type === "collect_color") {
-      paths.push(BALL_RESOURCES[objective.color]);
+      pushBallSpritePath(paths, objective.color, "collect_color objective");
       return;
     }
     if (objective.type === "collect_ice_snowball") {
-      paths.push(BALL_RESOURCES.ICE_SNOWBALL);
+      pushUniqueSpritePath(paths, BALL_RESOURCES.ICE_SNOWBALL, "collect_ice_snowball objective");
+      pushUniqueSpritePath(paths, BALL_RESOURCES.ICE, "collect_ice_snowball objective overlay");
     }
   });
 
-  (levelConfig.level.specialEntities || []).forEach(function (entity) {
-    paths.push(BALL_RESOURCES[resolveBallCode(entity)]);
-  });
+  if (level.specialEntities !== undefined) {
+    if (!Array.isArray(level.specialEntities)) {
+      throw new Error("LevelRenderer sprite collection requires level.specialEntities array when present.");
+    }
+    level.specialEntities.forEach(function (entity, index) {
+      collectBallVisualSpritePaths(paths, entity, "level.specialEntities[" + index + "]");
+    });
+  }
+
+  collectRuntimeBoardSpritePaths(paths, runtimeSnapshot);
 
   if (runtimeSnapshot && runtimeSnapshot.shooter) {
-    paths.push(BALL_RESOURCES[resolveBallCode(runtimeSnapshot.shooter.currentBall || runtimeSnapshot.shooter.currentColor)]);
-    paths.push(BALL_RESOURCES[resolveBallCode(runtimeSnapshot.shooter.nextBall || runtimeSnapshot.shooter.nextColor)]);
+    collectBallVisualSpritePaths(
+      paths,
+      runtimeSnapshot.shooter.currentBall !== undefined ? runtimeSnapshot.shooter.currentBall : runtimeSnapshot.shooter.currentColor,
+      "runtime shooter current ball"
+    );
+    collectBallVisualSpritePaths(
+      paths,
+      runtimeSnapshot.shooter.nextBall !== undefined ? runtimeSnapshot.shooter.nextBall : runtimeSnapshot.shooter.nextColor,
+      "runtime shooter next ball"
+    );
   }
 
   if (runtimeSnapshot && runtimeSnapshot.activeProjectile) {
-    paths.push(BALL_RESOURCES[resolveBallCode(runtimeSnapshot.activeProjectile.ball || runtimeSnapshot.activeProjectile.color)]);
+    collectBallVisualSpritePaths(
+      paths,
+      runtimeSnapshot.activeProjectile.ball !== undefined ? runtimeSnapshot.activeProjectile.ball : runtimeSnapshot.activeProjectile.color,
+      "runtime active projectile"
+    );
   }
   if (
     runtimeSnapshot &&
@@ -1962,32 +2053,36 @@ LevelRenderer.prototype._collectSpritePaths = function (levelConfig, runtimeSnap
     Array.isArray(runtimeSnapshot.shooter.pendingRainbowColorSelection.colors)
   ) {
     runtimeSnapshot.shooter.pendingRainbowColorSelection.colors.forEach(function (colorCode) {
-      paths.push(BALL_RESOURCES[colorCode]);
+      pushBallSpritePath(paths, colorCode, "pending rainbow color");
     });
   }
 
   var objectiveDisplay = buildObjectiveDisplayData(levelConfig, runtimeSnapshot);
   if (objectiveDisplay.iconCode) {
-    paths.push(BALL_RESOURCES[objectiveDisplay.iconCode]);
+    pushBallSpritePath(paths, objectiveDisplay.iconCode, "objective display");
   }
   var hudTargetDisplay = buildHudTargetDisplayData(levelConfig, runtimeSnapshot);
   if (hudTargetDisplay.ball && hudTargetDisplay.ball.iconCode) {
-    paths.push(BALL_RESOURCES[hudTargetDisplay.ball.iconCode]);
+    pushBallSpritePath(paths, hudTargetDisplay.ball.iconCode, "HUD target ball");
   }
   if (hudTargetDisplay.iceSnowball && hudTargetDisplay.iceSnowball.iconCode) {
-    paths.push(BALL_RESOURCES[hudTargetDisplay.iceSnowball.iconCode]);
+    pushBallSpritePath(paths, hudTargetDisplay.iceSnowball.iconCode, "HUD ice snowball target");
+    pushUniqueSpritePath(paths, BALL_RESOURCES.ICE, "HUD ice snowball overlay");
   }
 
-  if (levelConfig && levelConfig.level && Array.isArray(levelConfig.level.clearRewardItems)) {
-    levelConfig.level.clearRewardItems.forEach(function (rewardItem) {
+  if (level.clearRewardItems !== undefined) {
+    if (!Array.isArray(level.clearRewardItems)) {
+      throw new Error("LevelRenderer sprite collection requires level.clearRewardItems array when present.");
+    }
+    level.clearRewardItems.forEach(function (rewardItem) {
       if (!rewardItem || !REWARD_ITEM_RESOURCES[rewardItem.id]) {
         throw new Error("Unsupported level clear reward item id: " + (rewardItem && rewardItem.id));
       }
-      paths.push(REWARD_ITEM_RESOURCES[rewardItem.id]);
+      pushUniqueSpritePath(paths, REWARD_ITEM_RESOURCES[rewardItem.id], "level clear reward " + rewardItem.id);
     });
   }
 
-  return paths.filter(Boolean).filter(function (path, index, list) {
+  return paths.filter(function (path, index, list) {
     return list.indexOf(path) === index;
   });
 };
@@ -2025,9 +2120,13 @@ LevelRenderer.prototype.releaseAfterGameplayBundleUnload = function () {
   this.fairyPrefabLoadPromises = {};
   this.fireworksPrefab = null;
   this.fireworksPrefabLoadPromise = null;
+  this.explodeAnimationClip = null;
+  this.explodeAnimationClipPromise = null;
   this._sharedWarmupPromise = null;
-  if (this.prefabFactory && typeof this.prefabFactory.resetLoadedCache === "function") {
-    this.prefabFactory.resetLoadedCache();
+  if (this.prefabFactory && typeof this.prefabFactory.releaseLoadedCache === "function") {
+    this.prefabFactory.releaseLoadedCache();
+  } else {
+    throw new Error("LevelRenderer requires PrefabFactory.releaseLoadedCache.");
   }
   this.lastHudRenderKey = "";
   this.lastJarRenderKey = "";
@@ -2081,37 +2180,11 @@ LevelRenderer.prototype._setGuideDotsActiveCount = function (guideCanvas, count,
 LevelRenderer.prototype._collectCommonSpritePaths = function () {
   var paths = [
     GUIDE_DOT_SPRITE_PATH,
-    BALL_RESOURCES.R,
-    BALL_RESOURCES.G,
-    BALL_RESOURCES.B,
-    BALL_RESOURCES.Y,
-    BALL_RESOURCES.P,
     BALL_RESOURCES.RAINBOW,
     BALL_RESOURCES.BLAST,
-    BALL_RESOURCES.STONE,
-    BALL_RESOURCES.ICE,
-    BALL_RESOURCES.MOLOTOV,
-    BALL_RESOURCES.KEY,
-    BALL_RESOURCES.LOCKED,
-    BALL_RESOURCES.SPLIT_R,
-    BALL_RESOURCES.SPLIT_G,
-    BALL_RESOURCES.SPLIT_B,
-    BALL_RESOURCES.SPLIT_Y,
-    BALL_RESOURCES.SPLIT_P,
-    BALL_RESOURCES.ICE_SNOWBALL,
     BALL_RESOURCES.BLOCKADE_LINE,
     BALL_RESOURCES.LIGHT,
     BALL_RESOURCES.SNOW_REMOVAL_TOOLS,
-    JAR_RESOURCES.R,
-    JAR_RESOURCES.G,
-    JAR_RESOURCES.B,
-    JAR_RESOURCES.Y,
-    JAR_RESOURCES.P,
-    JAR_MASK_RESOURCES.R,
-    JAR_MASK_RESOURCES.G,
-    JAR_MASK_RESOURCES.B,
-    JAR_MASK_RESOURCES.Y,
-    JAR_MASK_RESOURCES.P,
     HUD_STAR_RESOURCES.lit,
     HUD_STAR_RESOURCES.unlit,
     TOP_SLOT_STAR_RESOURCE,
@@ -2236,8 +2309,8 @@ LevelRenderer.prototype._preloadExplodeAnimationClip = function () {
           reject(new Error("Load explode animation clip returned empty asset: " + FAIRY_ANIMATION_BUNDLE_NAME + "/" + EXPLODE_ANIMATION_CLIP_PATH));
           return;
         }
-        if (clip.name !== EXPLODE_ANIMATION_CLIP_NAME) {
-          reject(new Error("Explode animation clip name mismatch: " + clip.name));
+        if (typeof clip.duration !== "number" || !isFinite(clip.duration) || clip.duration <= 0) {
+          reject(new Error("Explode animation clip duration is invalid: " + clip.duration));
           return;
         }
         this.explodeAnimationClip = clip;

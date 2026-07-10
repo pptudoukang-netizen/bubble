@@ -93,6 +93,23 @@ function resolveSfxResourcePath(sfxMap, keyOrPath) {
   return typeof mappedPath === "string" ? mappedPath.trim() : "";
 }
 
+function collectConfiguredAudioPaths(paths, value) {
+  if (typeof value === "string" && value.trim()) {
+    paths.push(value.trim());
+    return;
+  }
+
+  if (!Array.isArray(value)) {
+    return;
+  }
+
+  value.forEach(function (item) {
+    if (typeof item === "string" && item.trim()) {
+      paths.push(item.trim());
+    }
+  });
+}
+
 function AudioManager(options) {
   options = options || {};
 
@@ -134,15 +151,10 @@ AudioManager.prototype.snapshot = function () {
 
 AudioManager.prototype.preloadConfiguredAudio = function () {
   var paths = [];
-  if (this.bgmPath) {
-    paths.push(this.bgmPath);
-  }
+  collectConfiguredAudioPaths(paths, this.bgmPath);
 
   Object.keys(this.sfxMap || {}).forEach(function (key) {
-    var path = this.sfxMap[key];
-    if (typeof path === "string" && path) {
-      paths.push(path);
-    }
+    collectConfiguredAudioPaths(paths, this.sfxMap[key]);
   }, this);
 
   var uniquePaths = paths.filter(function (path, index, list) {

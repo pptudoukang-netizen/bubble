@@ -683,6 +683,42 @@ function testVictoryBoardDropRimBounces() {
   assert.ok(drop.velocity.y > 0, "victory board rim drop must bounce upward off jar rim.");
 }
 
+function testFinalJarRimContactEmitsBounceEvent() {
+  var systems = createSystemsWithJar(5);
+  var zone = systems.falling.jarZones[0];
+  assert(zone, "final rim contact test requires jar zone.");
+  var grid = {
+    getCellPosition: function () {
+      return {
+        x: zone.x + zone.innerHalfWidth + zone.edgeThickness * 0.5,
+        y: zone.mouthY + BoardLayout.bubbleRadius
+      };
+    }
+  };
+  var cell = {
+    id: "final_rim_contact",
+    row: 0,
+    col: 0,
+    color: "R",
+    entityCategory: "normal_ball",
+    entityType: null
+  };
+
+  systems.falling.registerDrops([cell], grid);
+  var drop = systems.falling.activeDrops[0];
+  drop.rimBounceCount = systems.falling.maxRimBounces;
+  drop.glowStacks = 2;
+  var update = systems.falling.update(0.01);
+
+  assert(drop, "final rim contact drop should remain active while sinking into jar.");
+  assert.strictEqual(drop.inJar, true);
+  assert.strictEqual(drop.jarIndex, zone.index);
+  assert.strictEqual(update.bounceEvents.length, 1);
+  assert.strictEqual(update.bounceEvents[0].bounceCount, systems.falling.maxRimBounces + 1);
+  assert.strictEqual(update.bounceEvents[0].glowStacks, 2);
+  assert.strictEqual(systems.falling.lastBounceCount, 1);
+}
+
 function testVictoryBoardDropSkipsWallBounce() {
   var systems = createSystems(5);
   var leftLimit = systems.falling._dropLeftLimit;
@@ -952,6 +988,28 @@ function testSurplusShotVelocityMatchesTurretAim() {
   }
 }
 
+function testSurplusShotTurretAngleStaysWithinThirtyDegrees() {
+  var systems = createSystems(20);
+  var origin = { x: BoardLayout.shooterOrigin.x, y: BoardLayout.shooterOrigin.y };
+  var minTurretAngle = 60;
+  var maxTurretAngle = 120;
+  systems.falling.registerSurplusShotsFromOrigin([
+    { color: "R", entityCategory: "normal_ball", entityType: null }
+  ], origin, 2);
+
+  for (var index = 0; index < 12; index += 1) {
+    var drop = systems.falling._createSurplusShotDrop(
+      { color: "Y", entityCategory: "normal_ball", entityType: null },
+      index + 1,
+      origin
+    );
+    assert.ok(drop.turretAngleDeg >= minTurretAngle, "surplus turret angle must not rotate more than 30 degrees left.");
+    assert.ok(drop.turretAngleDeg <= maxTurretAngle, "surplus turret angle must not rotate more than 30 degrees right.");
+    assert.ok(Math.abs(drop.launchAngleDeg) <= 30, "surplus shot launch deviation must stay within 30 degrees.");
+    systems.falling._advanceSurplusTurretAngle();
+  }
+}
+
 function testSurplusShotPendingCountFollowsVolleyLaunch() {
   var systems = createSystems(20);
   var origin = { x: BoardLayout.shooterOrigin.x, y: BoardLayout.shooterOrigin.y };
@@ -1012,12 +1070,14 @@ testVictoryBoardDropLaunchesDownward();
 testDeferredVictoryDropActivationKeepsHorizontalSpeed();
 testVictoryBoardDropIgnoresFairyBounce();
 testVictoryBoardDropRimBounces();
+testFinalJarRimContactEmitsBounceEvent();
 testVictoryBoardDropSkipsWallBounce();
 testSideWallBounceKeepsHorizontalEscapeVelocity();
 testLeftmostJarOuterRimBounce();
 testRightmostJarOuterRimBounceStaysInsideScreen();
 testTopAnchorCollapseStartsSurplusVolley();
 testSurplusShotVelocityMatchesTurretAim();
+testSurplusShotTurretAngleStaysWithinThirtyDegrees();
 testSurplusShotPendingCountFollowsVolleyLaunch();
 testCollectedMultiplierContract();
 

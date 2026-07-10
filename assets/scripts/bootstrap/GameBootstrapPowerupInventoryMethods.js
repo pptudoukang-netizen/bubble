@@ -12,6 +12,7 @@ var StarRatingPolicy = Shared.StarRatingPolicy;
 var SpriteProxyLayerHelper = require("../utils/SpriteProxyLayerHelper");
 var PopupPresentationHelper = require("../utils/PopupPresentationHelper");
 var PropDescriptionConfig = require("../config/PropDescriptionConfig");
+var LevelColorPermutation = require("../config/LevelColorPermutation");
 var PropDescriptionViewController = require("../ui/PropDescriptionViewController");
 var INVENTORY_VIEW_PREFAB_PATH = Shared.INVENTORY_VIEW_PREFAB_PATH;
 var START_GAME_VIEW_PREFAB_PATH = Shared.START_GAME_VIEW_PREFAB_PATH;
@@ -19,9 +20,6 @@ var POWER_TIPS_VIEW_PREFAB_PATH = Shared.POWER_TIPS_VIEW_PREFAB_PATH;
 var PROP_DESCRIPTION_VIEW_PREFAB_PATH = Shared.PROP_DESCRIPTION_VIEW_PREFAB_PATH;
 var POWERUP_TYPE_BY_ITEM_ID = Shared.POWERUP_TYPE_BY_ITEM_ID;
 var ITEM_ID_BY_POWERUP_TYPE = Shared.ITEM_ID_BY_POWERUP_TYPE;
-var MAX_SELECTED_POWERUPS = Shared.MAX_SELECTED_POWERUPS;
-var MAX_SELECTED_POWERUP_TOTAL_COUNT = Shared.MAX_SELECTED_POWERUP_TOTAL_COUNT;
-var INVENTORY_TOTAL_LIMIT_TIP = Shared.INVENTORY_TOTAL_LIMIT_TIP;
 var STAMINA_FLY_ICON_PATH = "image/props/love";
 var STAMINA_FLY_DURATION = 0.45;
 var POWER_TIPS_PROXY_ROOT_NAME = "power_tips_auto_proxy_root";
@@ -436,9 +434,6 @@ function validateStartGameSelectedPowerups(host, levelId, selectedItems) {
   if (!Array.isArray(selectedItems)) {
     throw new Error("StartGameView selected powerups must be an array.");
   }
-  if (selectedItems.length > MAX_SELECTED_POWERUPS) {
-    throw new Error("StartGameView selected powerups exceed max count.");
-  }
   if (!host.inventoryStore || typeof host.inventoryStore.getItemCount !== "function") {
     throw new Error("StartGameView requires InventoryStore.getItemCount.");
   }
@@ -494,9 +489,6 @@ function buildDefaultStartGameSelectedPowerups(host, levelId) {
   var safeLevelId = normalizeStartGameLevelId(levelId);
   var selectedItems = [];
   START_GAME_PERSISTENT_POWERUP_ITEM_IDS.forEach(function (itemId) {
-    if (selectedItems.length >= MAX_SELECTED_POWERUPS) {
-      return;
-    }
     var unlockLevel = START_GAME_POWERUP_UNLOCK_LEVEL_BY_ITEM_ID[itemId];
     if (!Number.isInteger(unlockLevel)) {
       throw new Error("StartGameView unlock level missing for item: " + itemId);
@@ -1363,9 +1355,6 @@ module.exports = {
     if (!selectedItemCounts || typeof selectedItemCounts !== "object" || Array.isArray(selectedItemCounts)) {
       throw new Error("Selected powerup item counts must be an object.");
     }
-    if (selectedItems.length > MAX_SELECTED_POWERUPS) {
-      throw new Error("Selected powerup item list exceeds max selected powerups.");
-    }
 
     var safeSelectedItems = selectedItems.slice();
     var sourceCounts = selectedItemCounts;
@@ -1402,35 +1391,18 @@ module.exports = {
   },
 
   _normalizeSelectedPowerupCountsByTotalLimit: function (selectedItems, selectedItemCounts) {
-    var normalizedItems = Array.isArray(selectedItems) ? selectedItems.slice(0, MAX_SELECTED_POWERUPS) : [];
-    if (normalizedItems.length > MAX_SELECTED_POWERUP_TOTAL_COUNT) {
-      normalizedItems = normalizedItems.slice(0, MAX_SELECTED_POWERUP_TOTAL_COUNT);
+    if (!Array.isArray(selectedItems)) {
+      throw new Error("Selected powerup items must be an array.");
     }
+    var normalizedItems = selectedItems.slice();
 
     var sourceCounts = selectedItemCounts && typeof selectedItemCounts === "object"
       ? selectedItemCounts
       : {};
     var normalizedCounts = {};
     normalizedItems.forEach(function (itemId) {
-      normalizedCounts[itemId] = 1;
-    });
-
-    var assignedTotal = normalizedItems.length;
-    normalizedItems.forEach(function (itemId) {
-      if (assignedTotal >= MAX_SELECTED_POWERUP_TOTAL_COUNT) {
-        return;
-      }
-
       var safeCount = Math.max(1, Math.floor(Number(sourceCounts[itemId]) || 1));
-      var extraRequested = Math.max(0, safeCount - 1);
-      if (extraRequested <= 0) {
-        return;
-      }
-
-      var remainingQuota = MAX_SELECTED_POWERUP_TOTAL_COUNT - assignedTotal;
-      var extraAccepted = Math.min(extraRequested, remainingQuota);
-      normalizedCounts[itemId] += extraAccepted;
-      assignedTotal += extraAccepted;
+      normalizedCounts[itemId] = safeCount;
     });
 
     return {
@@ -1454,7 +1426,7 @@ module.exports = {
         POWERUP_TYPE_BY_ITEM_ID[itemId] &&
         this.inventoryStore &&
         this.inventoryStore.getItemCount(this.playerInventory, itemId) > 0;
-    }, this).slice(0, MAX_SELECTED_POWERUPS);
+    }, this);
     var normalizedCounts = {};
     availableSelectedItems.forEach(function (itemId) {
       var inventoryCount = this.inventoryStore
@@ -1544,7 +1516,7 @@ module.exports = {
       if (!Number.isInteger(inventoryCount) || inventoryCount <= 0) {
         throw new Error("StartGameView selected powerup inventory is empty: " + itemId);
       }
-      var grantResult = this.gameManager.grantPowerupInventory(powerupType, 1);
+      var grantResult = this.gameManager.grantPowerupInventory(powerupType, inventoryCount);
       if (!grantResult || grantResult.accepted !== true) {
         throw new Error("StartGameView grant runtime powerup failed: " + itemId);
       }
@@ -1711,6 +1683,7 @@ module.exports = {
     this._startGameTemporaryPowerupsCommitted = false;
     this._startGameLevelId = safeLevelId;
     this._startGameLevelConfig = null;
+    this._pendingPreparedLevelConfig = null;
     this._hideAwardView();
     this._hideSettingView();
     this._hideRankingView();
@@ -1728,6 +1701,7 @@ module.exports = {
       var prefab = results[0];
       var levelConfig = results[1];
       var remotePackPreload = results[2];
+      LevelColorPermutation.apply(levelConfig);
       if (!remotePackPreload || typeof remotePackPreload !== "object" || Array.isArray(remotePackPreload)) {
         throw new Error("StartGameView remote pack preload result is invalid.");
       }
@@ -2261,6 +2235,13 @@ module.exports = {
 
     this._pendingStartGamePowerups = preparedItems.slice();
     this._startGameTemporaryPowerupsCommitted = true;
+    if (!this._startGameLevelConfig || !this._startGameLevelConfig.level || this._startGameLevelConfig.level.levelId !== safeLevelId) {
+      throw new Error("StartGameView prepared level config must match selected level.");
+    }
+    this._pendingPreparedLevelConfig = {
+      levelId: safeLevelId,
+      levelConfig: this._startGameLevelConfig
+    };
     this._hideStartGameView({
       refundTemporaryPowerups: false
     });
@@ -2630,28 +2611,9 @@ module.exports = {
       return;
     }
 
-    var selectedItems = this.selectedPowerupsState && Array.isArray(this.selectedPowerupsState.selectedItems)
-      ? this.selectedPowerupsState.selectedItems.slice()
-      : [];
-    var selectedCounts = this.selectedPowerupsState && this.selectedPowerupsState.selectedItemCounts
-      ? this.selectedPowerupsState.selectedItemCounts
-      : {};
-    var isSelected = selectedItems.indexOf(itemId) >= 0;
-    if (!isSelected) {
-      var selectedTotal = this._getSelectedPowerupTotalCount(selectedItems, selectedCounts);
-      if (selectedTotal >= MAX_SELECTED_POWERUP_TOTAL_COUNT) {
-        this._setStatusWithTip("inventory_count_limit", null, INVENTORY_TOTAL_LIMIT_TIP);
-        return;
-      }
-    }
-
     var toggleResult = this.selectedPowerupsStore.toggleItem(this.selectedPowerupsState, itemId);
     if (!toggleResult || !toggleResult.accepted) {
-      if (toggleResult && toggleResult.reason === "selection_limit") {
-        this._setStatusWithTip("inventory_count_limit", null, INVENTORY_TOTAL_LIMIT_TIP);
-      } else {
-        this._setStatusWithTip("inventory_selection_failed", null, "道具选择失败");
-      }
+      this._setStatusWithTip("inventory_selection_failed", null, "道具选择失败");
       return;
     }
 
@@ -2692,12 +2654,6 @@ module.exports = {
       this._setStatusWithTip("inventory_count_max", null, "已达到库存上限");
       return;
     }
-    var selectedTotal = this._getSelectedPowerupTotalCount(selectedItems, selectedCounts);
-    if (selectedTotal >= MAX_SELECTED_POWERUP_TOTAL_COUNT) {
-      this._setStatusWithTip("inventory_count_limit", null, INVENTORY_TOTAL_LIMIT_TIP);
-      return;
-    }
-
     var nextCounts = {};
     selectedItems.forEach(function (selectedItemId) {
       nextCounts[selectedItemId] = Math.max(1, Math.floor(Number(selectedCounts[selectedItemId]) || 1));

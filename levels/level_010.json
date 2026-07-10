@@ -51,8 +51,8 @@
             "B",
             "Y"
         ],
-        "shotLimit": 22,
-        "targetScore": 2080,
+        "shotLimit": 20,
+        "targetScore": 4260,
         "dropInterval": 6,
         "jarCount": 4,
         "jarColors": [
@@ -62,11 +62,15 @@
             "Y"
         ],
         "spawnWeights": {
-            "R": 1.15,
-            "G": 1.3,
+            "R": 2.4,
+            "G": 1.24,
             "B": 1,
-            "Y": 1.15
+            "Y": 1.12
         },
+        "initialShotBalls": [
+            "R",
+            "R"
+        ],
         "jarRules": {
             "rimBounce": 0.681981981981982,
             "collectZoneScale": 1.0977477477477477,
@@ -76,7 +80,7 @@
             {
                 "type": "collect_color",
                 "color": "R",
-                "value": 10
+                "value": 21
             }
         ],
         "bonusObjectives": [
@@ -96,14 +100,16 @@
             }
         ],
         "layout": [
-            "BBGGGGYYBB",
-            ".BGGYGYY.",
-            ".BGRYGYBB.",
-            ".BGR.GRB.",
-            "...RYRR...",
-            "...RYR...",
-            "....YR....",
-            "....R...."
+            "RRRRGGGGRR",
+            ".RR.R.GG.",
+            ".YR.YR.B..",
+            ".YYYY.BB.",
+            ".RR..R.BB.",
+            "..RRRRR..",
+            "..RRGGG...",
+            "..BBGGG..",
+            "..BBBBY...",
+            "..YYYYY.."
         ],
         "designNotes": "Generated from LEVEL_CONFIG_TABLE_1_1000.csv. Chapter `legacy_skill_intro` uses legacy_skill_ball with a crown_exam board silhouette.",
         "difficultyScore": 50,
@@ -112,7 +118,7 @@
                 "id": "stone_01",
                 "entityCategory": "obstacle_ball",
                 "entityType": "stone",
-                "row": 3,
+                "row": 4,
                 "col": 4
             }
         ],

@@ -19,6 +19,7 @@ var MANIFEST_PATH = path.join(RESOURCE_CONFIG_DIR, "level_manifest.json");
 var REMOTE_MANIFEST_PATH = path.join(REMOTE_PACK_DIR, "level_manifest.json");
 var LEVEL_CONFIG_TABLE_PATH = path.join(PROJECT_ROOT, "LEVEL_CONFIG_TABLE_1_1000.csv");
 var TARGET_LEVEL_COUNT = 1000;
+var MAX_SHOT_LIMIT = 54;
 var LOCAL_LEVEL_MAX = 10;
 var REMOTE_PACK_SIZE = 100;
 var START_GENERATED_LEVEL_ID = 41;
@@ -238,8 +239,8 @@ function normalizeTableRow(rawRow, levelId) {
     throw new Error("Level " + levelId + " table row count must be <= 20.");
   }
   var shotLimit = parsePositiveIntegerCell(rawRow, "发射球数量", levelId);
-  if (shotLimit > 40) {
-    throw new Error("Level " + levelId + " table shot count must be <= 40.");
+  if (shotLimit > MAX_SHOT_LIMIT) {
+    throw new Error("Level " + levelId + " table shot count must be <= " + MAX_SHOT_LIMIT + ".");
   }
 
   var target1 = parseCollectionTargetDisplay(rawRow["收集目标1"], levelId, "收集目标1");
@@ -627,6 +628,10 @@ function buildTableSpecialEntities(tableRow, activeColors) {
 }
 
 function placeTableSpecialEntities(rows, entities, levelId, placementVariant) {
+  if (levelId >= 101) {
+    placeRelaxedCampaignSpecialEntities(rows, entities, levelId, placementVariant);
+    return;
+  }
   var slots = buildSpecialSlotPool(rows);
   var usedSlotIndexes = {};
   var orderedEntities = entities.slice().sort(function (entityA, entityB) {
@@ -642,6 +647,123 @@ function placeTableSpecialEntities(rows, entities, levelId, placementVariant) {
     var slot = assignSpecialEntitySlot(rows, slots, usedSlotIndexes, entity, levelId, index, placementVariant);
     entity.row = slot.row;
     entity.col = slot.col;
+  });
+}
+
+function getRelaxedEntityRank(entity) {
+  if (isSplitterEntity(entity)) {
+    return 0;
+  }
+  if (entity.entityType === "key" || entity.entityType === "locked") {
+    return 1;
+  }
+  if (entity.entityType === "molotov" || entity.entityType === "blast" || entity.entityType === "rainbow") {
+    return 2;
+  }
+  if (entity.entityType === "stone") {
+    return 3;
+  }
+  if (entity.entityType === "ice") {
+    return 4;
+  }
+  return 5;
+}
+
+function buildRelaxedCampaignSpecialSlotPool(rows, levelId, placementVariant) {
+  if (!Array.isArray(rows) || rows.length <= 2) {
+    throw new Error("Relaxed special placement requires at least three rows.");
+  }
+  if (!Number.isInteger(placementVariant) || placementVariant < 0) {
+    throw new Error("Relaxed special placement variant must be a non-negative integer.");
+  }
+  var rowsByIndex = [];
+  for (var row = 1; row < rows.length - 1; row += 1) {
+    var rowSlots = [];
+    for (var col = 0; col < rows[row].length; col += 1) {
+      rowSlots.push({
+        row: row,
+        col: col
+      });
+    }
+    rowsByIndex.push(rowSlots);
+  }
+  var middleRowCount = rows.length - 2;
+  var slots = [];
+  var seen = {};
+  var rowOrder = [];
+  for (var rowOffset = 0; rowOffset < middleRowCount; rowOffset += 1) {
+    rowOrder.push((levelId + placementVariant * 3 + rowOffset * 5) % middleRowCount);
+  }
+  var maxColumns = rowsByIndex.reduce(function (max, rowSlots) {
+    return Math.max(max, rowSlots.length);
+  }, 0);
+
+  for (var wave = 0; wave < maxColumns; wave += 1) {
+    rowOrder.forEach(function (rowOrderIndex, orderIndex) {
+      var rowSlots = rowsByIndex[rowOrderIndex];
+      if (wave >= rowSlots.length) {
+        return;
+      }
+      var rowNumber = rowSlots[0].row;
+      var rowLength = rowSlots.length;
+      var center = Math.floor((rowLength - 1) / 2);
+      var direction = ((levelId + placementVariant + orderIndex + wave) % 2) === 0 ? 1 : -1;
+      var distance = Math.floor((wave + 1) / 2);
+      var preferredCol = center + direction * distance;
+      if (wave === 0) {
+        preferredCol = (center + ((levelId + orderIndex) % 3) - 1 + rowLength) % rowLength;
+      }
+      preferredCol = (preferredCol + rowLength) % rowLength;
+      var slot = {
+        row: rowNumber,
+        col: preferredCol
+      };
+      var key = slot.row + ":" + slot.col;
+      if (!seen[key]) {
+        seen[key] = true;
+        slots.push(slot);
+      }
+    });
+  }
+
+  rowsByIndex.forEach(function (rowSlots) {
+    rowSlots.forEach(function (slot) {
+      var key = slot.row + ":" + slot.col;
+      if (!seen[key]) {
+        seen[key] = true;
+        slots.push(slot);
+      }
+    });
+  });
+  if (slots.length === 0) {
+    throw new Error("Relaxed special placement slot pool is empty.");
+  }
+  return slots;
+}
+
+function placeRelaxedCampaignSpecialEntities(rows, entities, levelId, placementVariant) {
+  if (!Array.isArray(entities)) {
+    throw new Error("Relaxed special placement requires entity array.");
+  }
+  var slots = buildRelaxedCampaignSpecialSlotPool(rows, levelId, placementVariant);
+  if (slots.length < entities.length) {
+    throw new Error("Relaxed special placement has fewer slots than entities for level " + levelId + ".");
+  }
+  var orderedEntities = entities.slice().sort(function (entityA, entityB) {
+    var rankDelta = getRelaxedEntityRank(entityA) - getRelaxedEntityRank(entityB);
+    if (rankDelta !== 0) {
+      return rankDelta;
+    }
+    return String(entityA.id).localeCompare(String(entityB.id));
+  });
+  orderedEntities.forEach(function (entity, index) {
+    if (!entity || typeof entity !== "object") {
+      throw new Error("Relaxed special placement entity must be an object.");
+    }
+    var slot = slots[index];
+    entity.row = slot.row;
+    entity.col = slot.col;
+    setCell(rows, slot.row, slot.col, ".");
   });
 }
 
@@ -716,7 +838,10 @@ function fillTableLayoutColors(rows, entities, tableRow, activeColors) {
       colors: activeColors,
       colorCounts: tableRow.colorCounts,
       targetColor: tableRow.target1.color,
-      specialEntities: entities
+      specialEntities: entities,
+      candidateProfile: tableRow.levelId > FirstHundredLevelDesign.LAST_LEVEL_ID
+        ? "relaxed_campaign"
+        : "full"
     });
     clusteredResult.rows.forEach(function (clusteredRow, rowIndex) {
       rows[rowIndex] = clusteredRow;
@@ -778,6 +903,7 @@ function resolveJarColors(activeColors, target) {
 function buildTargetScoreFromTable(tableRow) {
   var primaryValue = Math.max(0, Math.floor(Number(tableRow.target1.value) || 0));
   var snowValue = tableRow.target2 ? Math.max(0, Math.floor(Number(tableRow.target2.value) || 0)) : 0;
+  var normalTotal = sumColorCounts(tableRow.colorCounts);
   var specialTotal = tableRow.specialCounts.stone +
     tableRow.specialCounts.ice +
     tableRow.specialCounts.blast +
@@ -786,7 +912,14 @@ function buildTargetScoreFromTable(tableRow) {
     countTableSplitters(tableRow.specialCounts.splitters) +
     tableRow.specialCounts.key +
     tableRow.specialCounts.locked;
-  return Math.max(100, Math.round(primaryValue * 180 + snowValue * 220 + specialTotal * 40 + tableRow.rowCount * 30));
+  var nonIceSpecialTotal = specialTotal - tableRow.specialCounts.ice;
+  return Math.max(100, Math.round(
+    normalTotal * 50 +
+    primaryValue * 40 +
+    snowValue * 70 +
+    nonIceSpecialTotal * 120 +
+    tableRow.rowCount * 50
+  ));
 }
 
 function buildRewardItemsFromTable(levelId) {
@@ -1073,7 +1206,9 @@ function makeLevel(levelId, placementVariant) {
 
   var spawnWeights = {};
   colors.forEach(function (color, index) {
-    spawnWeights[color] = 1 + ((levelId + index) % 3) * 0.15;
+    spawnWeights[color] = color === tableRow.target1.color
+      ? 2.4
+      : 1 + ((levelId + index) % 3) * 0.12;
   });
 
   var config = {
@@ -1122,6 +1257,7 @@ function makeLevel(levelId, placementVariant) {
       jarCount: jarColors.length,
       jarColors: jarColors,
       spawnWeights: spawnWeights,
+      initialShotBalls: [tableRow.target1.color, tableRow.target1.color],
       jarRules: {
         rimBounce: Math.min(0.92, 0.68 + progress * 0.22),
         collectZoneScale: Math.max(0.78, 1.1 - progress * 0.25),
@@ -1201,17 +1337,7 @@ function buildGeneratedSpecialPositionSignatures(level) {
   return signatures;
 }
 
-function findGeneratedSpecialPositionIssue(config) {
-  if (!config || !config.level || typeof config.level !== "object") {
-    throw new Error("Generated config missing level.");
-  }
-  var level = config.level;
-  var unsupportedCells = LevelBoardSupportValidator.findUnsupportedInitialCells(level, "level_" + padLevelId(level.levelId));
-  if (unsupportedCells.length > 0) {
-    return "level " + level.levelId + " initial board has unsupported cells: " + unsupportedCells.map(function (cell) {
-      return cell.row + ":" + cell.col;
-    }).join(", ");
-  }
+function findGeneratedSpecialPositionRepeatIssue(level) {
   var signatures = buildGeneratedSpecialPositionSignatures(level);
 
   if (generatedSpecialPositionState.previous) {
@@ -1241,6 +1367,20 @@ function findGeneratedSpecialPositionIssue(config) {
   return "";
 }
 
+function findGeneratedSpecialPositionIssue(config) {
+  if (!config || !config.level || typeof config.level !== "object") {
+    throw new Error("Generated config missing level.");
+  }
+  var level = config.level;
+  var unsupportedCells = LevelBoardSupportValidator.findUnsupportedInitialCells(level, "level_" + padLevelId(level.levelId));
+  if (unsupportedCells.length > 0) {
+    return "level " + level.levelId + " initial board has unsupported cells: " + unsupportedCells.map(function (cell) {
+      return cell.row + ":" + cell.col;
+    }).join(", ");
+  }
+  return findGeneratedSpecialPositionRepeatIssue(level);
+}
+
 function commitGeneratedSpecialPositionState(config) {
   if (!config || !config.level || typeof config.level !== "object") {
     throw new Error("Generated config missing level.");
@@ -1264,11 +1404,63 @@ function commitGeneratedSpecialPositionState(config) {
   };
 }
 
+function makeSpecialPositionProbe(levelId, placementVariant) {
+  if (!Number.isInteger(levelId) || levelId <= FirstHundredLevelDesign.LAST_LEVEL_ID) {
+    throw new Error("Special position probe is only for generated campaign levels above 100.");
+  }
+  if (!Number.isInteger(placementVariant) || placementVariant < 0) {
+    throw new Error("Special position probe variant must be a non-negative integer: " + levelId);
+  }
+  var tableRow = getTableRow(levelId);
+  validateTableTargets(tableRow);
+  var colors = getActiveColors(tableRow);
+  var rows = makeEmptyRows(tableRow.rowCount);
+  var specialEntities = buildTableSpecialEntities(tableRow, colors);
+  placeTableSpecialEntities(rows, specialEntities, levelId, placementVariant);
+  return {
+    levelId: levelId,
+    specialEntities: specialEntities
+  };
+}
+
+function buildSpecialPlacementVariantCandidates(levelId, maxPlacementVariants) {
+  var candidates = [];
+  var lastIssue = "";
+  for (var placementVariant = 0; placementVariant < maxPlacementVariants; placementVariant += 1) {
+    try {
+      var probe = makeSpecialPositionProbe(levelId, placementVariant);
+      var issue = findGeneratedSpecialPositionRepeatIssue(probe);
+      if (!issue) {
+        candidates.push(placementVariant);
+      } else {
+        lastIssue = issue;
+      }
+    } catch (error) {
+      lastIssue = error && error.message ? error.message : String(error);
+    }
+  }
+  if (candidates.length === 0) {
+    throw new Error("Unable to find special placement candidate for level " + levelId + ": " + lastIssue);
+  }
+  return candidates;
+}
+
 function makeValidatedLevel(levelId) {
   var maxPlacementVariants = 256;
   var lastIssue = "";
-  for (var placementVariant = 0; placementVariant < maxPlacementVariants; placementVariant += 1) {
-    var config = makeLevel(levelId, placementVariant);
+  var placementVariants = levelId > FirstHundredLevelDesign.LAST_LEVEL_ID
+    ? buildSpecialPlacementVariantCandidates(levelId, maxPlacementVariants)
+    : null;
+  var variantCount = placementVariants ? placementVariants.length : maxPlacementVariants;
+  for (var variantIndex = 0; variantIndex < variantCount; variantIndex += 1) {
+    var placementVariant = placementVariants ? placementVariants[variantIndex] : variantIndex;
+    var config;
+    try {
+      config = makeLevel(levelId, placementVariant);
+    } catch (error) {
+      lastIssue = error && error.message ? error.message : String(error);
+      continue;
+    }
     var issue = findGeneratedSpecialPositionIssue(config);
     if (!issue) {
       commitGeneratedSpecialPositionState(config);
@@ -1458,6 +1650,7 @@ function buildRemotePack(range) {
   var from = range.from;
   var to = range.to;
   var packId = getPackId(from, to);
+  console.log("Building " + packId + " (" + from + "-" + to + ")...");
   var pack = {
     schemaVersion: 1,
     packId: packId,
@@ -1466,12 +1659,16 @@ function buildRemotePack(range) {
     levels: {}
   };
   for (var levelId = from; levelId <= to; levelId += 1) {
+    if (levelId === from || levelId === to || levelId % 25 === 0) {
+      console.log("  generating level " + levelId + "...");
+    }
     pack.levels["level_" + padLevelId(levelId)] = loadLevelForPack(levelId, from, to);
   }
   var compactPack = LevelPackCompactCodec.compactPack(pack);
   var packText = toCompactJsonText(compactPack);
   var packFileName = getPackFileName(from, to);
   fs.writeFileSync(path.join(REMOTE_PACK_DIR, packFileName), packText, "utf8");
+  console.log("Built " + packId + ".");
   return {
     id: packId,
     from: from,

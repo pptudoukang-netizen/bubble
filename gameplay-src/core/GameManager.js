@@ -658,6 +658,7 @@ function GameManager(options) {
   this.surplusShotAimRecentered = false;
   this.pendingBoardAdvanceSpecialAnimationDelay = 0;
   this.pendingBoardAdvanceDelay = 0;
+  this.pendingBoardAdvanceEliminationPresentation = false;
   this.pendingDeferredEnsureMinimumVisibleBoardRows = false;
   this.pendingDropIntervalBoardAdvance = false;
   this.boardAdvancedThisFrame = false;
@@ -762,6 +763,7 @@ GameManager.prototype.startLevel = function (levelConfig) {
   this.surplusShotAimRecentered = false;
   this.pendingBoardAdvanceSpecialAnimationDelay = 0;
   this.pendingBoardAdvanceDelay = 0;
+  this.pendingBoardAdvanceEliminationPresentation = false;
   this.pendingDeferredEnsureMinimumVisibleBoardRows = false;
   this.pendingDropIntervalBoardAdvance = false;
   this.boardAdvancedThisFrame = false;
@@ -920,6 +922,7 @@ GameManager.prototype._applyPostImpactBoardShiftPolicy = function (resolution) {
     BOARD_ADVANCE_AFTER_IMPACT_DELAY
   );
   this.pendingBoardAdvanceDelay = 0;
+  this.pendingBoardAdvanceEliminationPresentation = this._requiresBoardAdvanceEliminationPresentationWait(resolution);
   this.pendingBoardAdvanceScheduledUpdateSerial = Math.floor(assertFiniteNumber(
     this.boardAdvanceUpdateSerial,
     "GameManager boardAdvanceUpdateSerial"
@@ -945,6 +948,7 @@ GameManager.prototype._getScoreRule = function (key) {
 GameManager.prototype._isWaitingBoardAdvance = function () {
   return this.pendingBoardAdvanceSpecialAnimationDelay > 0 ||
     this.pendingBoardAdvanceDelay > 0 ||
+    this.pendingBoardAdvanceEliminationPresentation === true ||
     this.pendingDeferredEnsureMinimumVisibleBoardRows ||
     this.pendingDropIntervalBoardAdvance;
 };
@@ -995,6 +999,23 @@ GameManager.prototype._resolveBoardAdvanceSpecialAnimationDelay = function (reso
     return KEY_UNLOCK_BOARD_ADVANCE_BLOCK_DELAY;
   }
   return 0;
+};
+
+GameManager.prototype._requiresBoardAdvanceEliminationPresentationWait = function (resolution) {
+  if (!resolution || typeof resolution !== "object") {
+    throw new Error("Board advance elimination presentation wait requires resolution.");
+  }
+  if (!Array.isArray(resolution.matched)) {
+    throw new Error("Board advance elimination presentation wait requires resolution.matched array.");
+  }
+  return resolution.matched.length > 0;
+};
+
+GameManager.prototype.notifyBoardAdvanceEliminationPresentationComplete = function () {
+  if (typeof this.pendingBoardAdvanceEliminationPresentation !== "boolean") {
+    throw new Error("GameManager pendingBoardAdvanceEliminationPresentation must be boolean.");
+  }
+  this.pendingBoardAdvanceEliminationPresentation = false;
 };
 
 GameManager.prototype._hasPendingSplitterSpawns = function () {
@@ -1177,6 +1198,9 @@ GameManager.prototype._updatePendingBoardAdvance = function (dt) {
     this.pendingBoardAdvanceDelay = 0;
   }
   if (this.pendingBoardAdvanceDelay > 0) {
+    return false;
+  }
+  if (this.pendingBoardAdvanceEliminationPresentation === true) {
     return false;
   }
 

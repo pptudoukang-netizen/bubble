@@ -1,0 +1,26 @@
+{
+    "name": "cocos2x-mcp-server",
+    "version": "1.0.4",
+    "description": "MCP Server for Cocos Creator 2.x",
+    "author": "LiDaxian",
+    "main": "dist/main.js",
+    "scene-script": "dist/scene-bridge/scene-script.js",
+    "panel": {
+        "main": "panel/index.js",
+        "type": "dockable",
+        "title": "MCP Server",
+        "width": 400,
+        "height": 500,
+        "min-width": 300,
+        "min-height": 400
+    },
+    "main-menu": {
+        "扩展/MCP Server": {
+            "message": "cocos2x-mcp-server:open"
+        }
+    },
+    "dependencies": {
+        "uuid": "^9.0.1",
+        "vue": "^3.3.0"
+    }
+}

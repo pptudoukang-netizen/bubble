@@ -22,6 +22,10 @@ var PROP_TIPS_VIEW_PREFAB_PATH = "prefabs/ui/PropTipsView";
 var PROP_TIPS_VIEW_NAME = "PropTipsView";
 var PROP_TIPS_VIEW_Z_INDEX = 12;
 var PROP_TIPS_LABEL_NAME = "tips";
+var PROP_TIPS_TITLE_PROP_NAME = "title_prop";
+var PROP_TIPS_TITLE_RULE_NAME = "title_rule";
+var PROP_TIPS_TITLE_MODE_PROP = "prop";
+var PROP_TIPS_TITLE_MODE_RULE = "rule";
 var PROP_TIPS_HUD_BOTTOM_MARGIN = 12;
 var SKILL_POWERUP_GUIDE_STEP_SELECT = "select_powerup";
 var SKILL_POWERUP_GUIDE_STEP_COLOR = "select_rainbow_color";
@@ -359,6 +363,74 @@ function resolvePropTipsLabel(viewNode) {
     throw new Error("PropTipsView tips requires cc.Label.");
   }
   return label;
+}
+
+function requireSpriteNode(node, description) {
+  requireValidNode(node, description);
+  if (!node.getComponent(cc.Sprite)) {
+    throw new Error(description + " requires cc.Sprite.");
+  }
+  return node;
+}
+
+function resolvePropTipsTitleNodes(viewNode) {
+  return {
+    prop: requireSpriteNode(requireChildNode(viewNode, PROP_TIPS_TITLE_PROP_NAME, "PropTipsView"), "PropTipsView/" + PROP_TIPS_TITLE_PROP_NAME),
+    rule: requireSpriteNode(requireChildNode(viewNode, PROP_TIPS_TITLE_RULE_NAME, "PropTipsView"), "PropTipsView/" + PROP_TIPS_TITLE_RULE_NAME)
+  };
+}
+
+function requirePropTipsTitleMode(titleMode) {
+  if (titleMode !== PROP_TIPS_TITLE_MODE_PROP && titleMode !== PROP_TIPS_TITLE_MODE_RULE) {
+    throw new Error("PropTipsView titleMode must be prop or rule.");
+  }
+  return titleMode;
+}
+
+function syncPropTipsTitleMode(viewNode, titleMode) {
+  var safeMode = requirePropTipsTitleMode(titleMode);
+  var titleNodes = resolvePropTipsTitleNodes(viewNode);
+  titleNodes.prop.active = safeMode === PROP_TIPS_TITLE_MODE_PROP;
+  titleNodes.rule.active = safeMode === PROP_TIPS_TITLE_MODE_RULE;
+}
+
+function bindPropTipsTap(viewNode, onTap) {
+  requireValidNode(viewNode, "PropTipsView");
+  if (onTap !== null && typeof onTap !== "function") {
+    throw new Error("PropTipsView onTap must be a function.");
+  }
+  viewNode.__propTipsTapHandler = onTap;
+  if (onTap === null) {
+    return;
+  }
+  if (viewNode.__propTipsTapBound === true) {
+    return;
+  }
+  viewNode.__propTipsTapBound = true;
+  viewNode.on(cc.Node.EventType.TOUCH_END, function (event) {
+    event.stopPropagation();
+    var handler = viewNode.__propTipsTapHandler;
+    if (handler === null) {
+      return;
+    }
+    if (typeof handler !== "function") {
+      throw new Error("PropTipsView tap handler is invalid.");
+    }
+    handler();
+  });
+}
+
+function renderPropTipsView(viewNode, options) {
+  requireValidNode(viewNode, "PropTipsView");
+  if (!options || typeof options !== "object" || Array.isArray(options)) {
+    throw new Error("PropTipsView render options must be an object.");
+  }
+  var text = requireNonEmptyString(options.text, "PropTipsView tips text");
+  var titleMode = requirePropTipsTitleMode(options.titleMode);
+  var onTap = Object.prototype.hasOwnProperty.call(options, "onTap") ? options.onTap : null;
+  syncPropTipsTitleMode(viewNode, titleMode);
+  resolvePropTipsLabel(viewNode).string = text;
+  bindPropTipsTap(viewNode, onTap);
 }
 
 function resolveMountedHudPanel(host) {
@@ -784,6 +856,7 @@ module.exports = {
         throw new Error("PropTipsView root node name must be " + PROP_TIPS_VIEW_NAME + ".");
       }
       resolvePropTipsLabel(viewNode);
+      resolvePropTipsTitleNodes(viewNode);
       viewNode.parent = layerNode;
       syncPropTipsPositionBelowHud(this, viewNode);
       viewNode.zIndex = PROP_TIPS_VIEW_Z_INDEX;
@@ -806,9 +879,39 @@ module.exports = {
       viewNode.active = true;
       syncPropTipsPositionBelowHud(this, viewNode);
       viewNode.zIndex = PROP_TIPS_VIEW_Z_INDEX;
-      resolvePropTipsLabel(viewNode).string = text;
+      renderPropTipsView(viewNode, {
+        text: text,
+        titleMode: PROP_TIPS_TITLE_MODE_PROP,
+        onTap: null
+      });
       return viewNode;
     }.bind(this));
+  },
+
+  _showPropTipsView: function (options) {
+    if (!options || typeof options !== "object" || Array.isArray(options)) {
+      throw new Error("PropTipsView show options must be an object.");
+    }
+    var text = requireNonEmptyString(options.text, "PropTipsView show text");
+    var titleMode = requirePropTipsTitleMode(options.titleMode);
+    var onTap = Object.prototype.hasOwnProperty.call(options, "onTap") ? options.onTap : null;
+    var layerNode = this._ensureNewUserGuideLayer();
+    layerNode.active = true;
+    return this._ensureSkillPowerupPropTipsView().then(function (viewNode) {
+      viewNode.active = true;
+      syncPropTipsPositionBelowHud(this, viewNode);
+      viewNode.zIndex = PROP_TIPS_VIEW_Z_INDEX;
+      renderPropTipsView(viewNode, {
+        text: text,
+        titleMode: titleMode,
+        onTap: onTap
+      });
+      return viewNode;
+    }.bind(this));
+  },
+
+  _hidePropTipsView: function () {
+    destroySkillPowerupPropTipsView(this);
   },
 
   _hideSkillPowerupPropTipsView: function () {

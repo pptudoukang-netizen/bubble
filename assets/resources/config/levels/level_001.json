@@ -48,8 +48,8 @@
             "R",
             "B"
         ],
-        "shotLimit": 14,
-        "targetScore": 2580,
+        "shotLimit": 12,
+        "targetScore": 3620,
         "dropInterval": 8,
         "jarCount": 3,
         "jarColors": [
@@ -58,9 +58,13 @@
             "B"
         ],
         "spawnWeights": {
-            "R": 1.15,
-            "B": 1.3
+            "R": 1.12,
+            "B": 2.4
         },
+        "initialShotBalls": [
+            "B",
+            "B"
+        ],
         "jarRules": {
             "rimBounce": 0.68,
             "collectZoneScale": 1.1,
@@ -70,7 +74,7 @@
             {
                 "type": "collect_color",
                 "color": "B",
-                "value": 13
+                "value": 23
             }
         ],
         "bonusObjectives": [
@@ -91,13 +95,13 @@
         ],
         "layout": [
             "BBRRBBRRBB",
-            "B..B.....",
-            "..RR.BB...",
-            "..RR.BB..",
-            "...RRB....",
-            "....R....",
-            "....R.....",
-            "....R...."
+            "RRBRRBB..",
+            ".BBRRRRR..",
+            ".BBRRBB..",
+            "..BBRRBR..",
+            "..RRRBB..",
+            "...RRBB...",
+            ".....B..."
         ],
         "designNotes": "Generated from LEVEL_CONFIG_TABLE_1_1000.csv. Chapter `cluster_fundamentals` uses color_cluster, support_drop with a roof_bands board silhouette.",
         "difficultyScore": 23,

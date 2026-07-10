@@ -154,7 +154,7 @@ cc.Class({
       tooltip: "选关页展示后后台预加载的关卡配置数量（从首关开始）。"
     },
     gameplayBundleIdleReleaseMs: {
-      default: 30000,
+      default: 10000,
       tooltip: "离开局内返回选关后，超过该毫秒未再次进入局内则释放 game 分包。"
     },
     projectileSpeed: {
@@ -402,6 +402,8 @@ cc.Class({
   _showNewUserGuideForGameplay: GameBootstrapNewUserGuideMethods._showNewUserGuideForGameplay,
   _ensureSkillPowerupPropTipsView: GameBootstrapNewUserGuideMethods._ensureSkillPowerupPropTipsView,
   _showSkillPowerupPropTipsView: GameBootstrapNewUserGuideMethods._showSkillPowerupPropTipsView,
+  _showPropTipsView: GameBootstrapNewUserGuideMethods._showPropTipsView,
+  _hidePropTipsView: GameBootstrapNewUserGuideMethods._hidePropTipsView,
   _hideSkillPowerupPropTipsView: GameBootstrapNewUserGuideMethods._hideSkillPowerupPropTipsView,
   _showSkillPowerupUseGuide: GameBootstrapNewUserGuideMethods._showSkillPowerupUseGuide,
   _syncSkillPowerupGuideForRuntimeSnapshot: GameBootstrapNewUserGuideMethods._syncSkillPowerupGuideForRuntimeSnapshot,
@@ -421,6 +423,7 @@ cc.Class({
   _syncSartTipsForRuntimeSnapshot: GameBootstrapSpecialIntroduceFlowMethods._syncSartTipsForRuntimeSnapshot,
   _showNextSpecialIntroduceView: GameBootstrapSpecialIntroduceFlowMethods._showNextSpecialIntroduceView,
   _showSpecialIntroduceView: GameBootstrapSpecialIntroduceFlowMethods._showSpecialIntroduceView,
+  _showSnowRuleTipsView: GameBootstrapSpecialIntroduceFlowMethods._showSnowRuleTipsView,
   _showGeniusTipsView: GameBootstrapSpecialIntroduceFlowMethods._showGeniusTipsView,
   _showSartTipsView: GameBootstrapSpecialIntroduceFlowMethods._showSartTipsView,
   _closeSpecialIntroduceView: GameBootstrapSpecialIntroduceFlowMethods._closeSpecialIntroduceView,

@@ -295,6 +295,7 @@ module.exports = {
     this._startGameViewController = null;
     this._startGameLevelId = 0;
     this._startGameLevelConfig = null;
+    this._pendingPreparedLevelConfig = null;
     this._pendingStartGamePowerups = [];
     this._pendingStartGamePreciseAimActivation = false;
     this._pendingStartGameTemporaryPowerups = {
@@ -324,6 +325,7 @@ module.exports = {
     this._specialIntroduceViewActive = false;
     this._specialIntroduceOpening = false;
     this._specialIntroducePausedTimer = false;
+    this._specialIntroducePropTipsViewActive = false;
     this._geniusTipsViewPrefab = null;
     this._geniusTipsViewNode = null;
     this._geniusTipsViewController = null;
@@ -523,7 +525,7 @@ module.exports = {
       });
       this.levelRenderer = new LevelRenderer(this.node);
       this.levelRenderer.setFairyAssistSystem(this.gameManager.systems.fairyAssistSystem);
-      this.levelRenderer.setFallingMarbleSystem(this.gameManager.systems.fallingMarbleSystem);
+      this.levelRenderer.setFallingMarbleSystem(this.gameManager.systems.fallingMarbleSystem, this.gameManager);
       this.levelRenderer.setLoseAdPresentation({
         showVideoIcon: this._hasRewardedVideoAdConfig()
       });

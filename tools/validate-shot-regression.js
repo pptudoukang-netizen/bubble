@@ -16,6 +16,7 @@ var TrajectoryPredictor = require("../gameplay-src/systems/TrajectoryPredictor")
 var BoardViewportSystem = require("../gameplay-src/systems/BoardViewportSystem");
 var BubbleBreakSfxPolicy = require("../assets/scripts/audio/BubbleBreakSfxPolicy");
 var AudioManager = require("../assets/scripts/audio/AudioManager");
+var attachLevelRendererSceneHudMethods = require("../gameplay-src/render/LevelRendererSceneHudMethods");
 
 function syncHudBottomLineYForValidation() {
   if (typeof BoardLayout.boardStartY !== "number" || !isFinite(BoardLayout.boardStartY)) {
@@ -244,6 +245,7 @@ function runKeyUnlockBoardAdvanceDelayCase() {
       return false;
     };
     manager.lastResolution = {
+      matched: [],
       impact: {
         seq: 1,
         center: { x: 0, y: 0 },
@@ -319,6 +321,7 @@ function runImpactBounceBoardAdvanceDelayCase() {
       return false;
     };
     manager.lastResolution = {
+      matched: [],
       collectedKeys: [],
       unlockedLockedBalls: [],
       impact: {
@@ -391,6 +394,7 @@ function runImpactBounceBoardAdvanceSameUpdateFrameCase() {
     };
     manager.boardAdvanceUpdateSerial = 3;
     manager.lastResolution = {
+      matched: [],
       collectedKeys: [],
       unlockedLockedBalls: [],
       impact: {
@@ -431,6 +435,85 @@ function runImpactBounceBoardAdvanceSameUpdateFrameCase() {
     }
     if (!settlePlanned || manager.lastResolution.boardViewportAdjusted !== true) {
       throw new Error("Impact same-frame viewport settle regression failed.");
+    }
+  } finally {
+    if (hadCc) {
+      global.cc = previousCc;
+    } else {
+      delete global.cc;
+    }
+  }
+}
+
+function runEliminationPresentationBoardAdvanceGateCase() {
+  var manager = new GameManager();
+  var settlePlanned = false;
+  var hadCc = Object.prototype.hasOwnProperty.call(global, "cc");
+  var previousCc = global.cc;
+
+  global.cc = {
+    log: function () {},
+    warn: function () {},
+    error: function () {}
+  };
+  try {
+    manager.shotsFired = 1;
+    manager.state = "running";
+    manager._tryTopAnchorCollapse = function () {
+      return false;
+    };
+    manager.lastResolution = {
+      matched: [
+        { id: "matched_1", row: 2, col: 2 }
+      ],
+      collectedKeys: [],
+      unlockedLockedBalls: [],
+      impact: {
+        seq: 1,
+        center: { x: 0, y: 0 },
+        neighbors: [{ id: "n1", row: 1, col: 1, x: 0, y: 0 }],
+        pushDistance: SpecialAnimationTiming.impactBounce.defaultPushDistance,
+        bounceSpeed: BoardLayout.impactBounceSpeed
+      },
+      boardViewportAdjusted: false
+    };
+    manager.systems.boardViewportSystem = {
+      introActive: false,
+      isMoving: function () {
+        return settlePlanned;
+      },
+      planSettle: function () {
+        settlePlanned = true;
+        return true;
+      }
+    };
+    manager.systems.bubbleGrid = {
+      snapshot: function () {
+        return { cells: [{ row: 1, col: 1 }] };
+      }
+    };
+
+    if (!manager._applyPostImpactBoardShiftPolicy(manager.lastResolution)) {
+      throw new Error("Elimination presentation regression expected deferred viewport settle.");
+    }
+    if (manager.pendingBoardAdvanceEliminationPresentation !== true) {
+      throw new Error("Elimination presentation regression expected board advance presentation wait.");
+    }
+
+    var impactDelay = manager.pendingBoardAdvanceSpecialAnimationDelay;
+    if (manager._updatePendingBoardAdvance(impactDelay)) {
+      throw new Error("Viewport settle started before elimination presentation completed.");
+    }
+    if (settlePlanned) {
+      throw new Error("Elimination presentation gate allowed early viewport settle.");
+    }
+
+    manager.notifyBoardAdvanceEliminationPresentationComplete();
+    if (!manager._updatePendingBoardAdvance(0)) {
+      throw new Error("Viewport settle did not start after elimination presentation completed.");
+    }
+    if (!settlePlanned || manager.lastResolution.boardViewportAdjusted !== true) {
+      throw new Error("Elimination presentation viewport settle regression failed.");
     }
   } finally {
     if (hadCc) {
@@ -2983,7 +3066,7 @@ function runStoneBallJarScoreZeroCase() {
   var JarCollectorSystem = require("../gameplay-src/systems/JarCollectorSystem");
   var manager = new GameManagerCtor();
   manager.score = 500;
-  manager.lastResolution = { scoreDelta: 0 };
+  manager.lastResolution = { scoreDelta: 0, scoreEvents: [] };
   manager.systems = {
     jarCollectorSystem: new JarCollectorSystem()
   };
@@ -3004,7 +3087,8 @@ function runStoneBallJarScoreZeroCase() {
       entityType: "stone",
       jarIndex: 0,
       bonusMultiplier: 1,
-      fairyMultiplier: 1
+      fairyMultiplier: 1,
+      position: { x: 0, y: -320 }
     }
   ]);
   if (gained !== 0) {
@@ -3012,6 +3096,145 @@ function runStoneBallJarScoreZeroCase() {
   }
   if (manager.score !== 500) {
     throw new Error("Stone ball jar collection must not change total score.");
+  }
+  if (manager.lastResolution.scoreEvents.length !== 0) {
+    throw new Error("Stone ball jar collection must not emit floating score events.");
+  }
+}
+
+function runJarCollectionFloatingScoreEventCase() {
+  var GameManagerCtor = require("../gameplay-src/core/GameManager");
+  var JarCollectorSystem = require("../gameplay-src/systems/JarCollectorSystem");
+  var manager = new GameManagerCtor();
+  var hadCc = Object.prototype.hasOwnProperty.call(global, "cc");
+  var previousCc = global.cc;
+  global.cc = {
+    log: function () {},
+    warn: function () {},
+    error: function () {}
+  };
+
+  try {
+    manager.score = 0;
+    manager.lastResolution = { scoreDelta: 0, scoreEvents: [] };
+    manager.systems = {
+      jarCollectorSystem: new JarCollectorSystem()
+    };
+    manager.systems.jarCollectorSystem.jarCount = 1;
+    manager.systems.jarCollectorSystem.jarColors = ["R"];
+    manager._getScoreRule = function () {
+      return 0;
+    };
+    var runtimeEvents = [];
+    manager._pushRuntimeEvent = function (type, payload) {
+      runtimeEvents.push({
+        type: type,
+        payload: payload
+      });
+    };
+
+    var gained = manager._applyJarCollectionScore([
+      {
+        id: "red_drop_1",
+        color: "R",
+        row: 4,
+        col: 2,
+        jarIndex: 0,
+        bonusMultiplier: 1,
+        fairyMultiplier: 1,
+        position: { x: 32, y: -729 }
+      }
+    ]);
+
+    if (gained <= 0 || manager.score !== gained || manager.lastResolution.scoreDelta !== gained) {
+      throw new Error("Jar collection should add scored drop points to score and resolution.");
+    }
+    if (manager.lastResolution.scoreEvents.length !== 0) {
+      throw new Error("Jar collection must not emit a second ball score event.");
+    }
+    if (runtimeEvents.length !== 1 || runtimeEvents[0].type !== "jar_collect_scored") {
+      throw new Error("Jar collection should emit the dedicated jar score display event.");
+    }
+  } finally {
+    if (hadCc) {
+      global.cc = previousCc;
+    } else {
+      delete global.cc;
+    }
+  }
+}
+
+function runColorPermutationJarScoreCase() {
+  var GameManagerCtor = require("../gameplay-src/core/GameManager");
+  var JarCollectorSystem = require("../gameplay-src/systems/JarCollectorSystem");
+  var LevelColorPermutation = require("../assets/scripts/config/LevelColorPermutation");
+  var sourceLevel = require("../assets/resources/config/levels/level_001.json");
+  var levelConfig = JSON.parse(JSON.stringify(sourceLevel));
+  levelConfig.meta = {
+    levelKey: "level_001"
+  };
+  var previousRandom = Math.random;
+  var hadCc = Object.prototype.hasOwnProperty.call(global, "cc");
+  var previousCc = global.cc;
+  global.cc = {
+    log: function () {},
+    warn: function () {},
+    error: function () {}
+  };
+
+  try {
+    Math.random = function () {
+      return 0;
+    };
+    LevelColorPermutation.apply(levelConfig);
+    var level = levelConfig.level;
+    if (JSON.stringify(level.colors) !== JSON.stringify(["G", "Y"])) {
+      throw new Error("Color permutation should map first-level colors from R/B to G/Y.");
+    }
+    if (JSON.stringify(level.jarColors) !== JSON.stringify(["G", "Y", "Y"])) {
+      throw new Error("Color permutation should map jarColors with runtime colors.");
+    }
+    if (!level.winConditions[0] || level.winConditions[0].color !== "Y") {
+      throw new Error("Color permutation should map collect_color objective.");
+    }
+
+    var manager = new GameManagerCtor();
+    manager.score = 0;
+    manager.lastResolution = { scoreDelta: 0, scoreEvents: [] };
+    manager.systems = {
+      jarCollectorSystem: new JarCollectorSystem()
+    };
+    manager.systems.jarCollectorSystem.configureLevel(levelConfig);
+    manager._pushRuntimeEvent = function () {};
+
+    var gained = manager._applyJarCollectionScore([
+      {
+        id: "permuted_green_into_yellow_jar",
+        color: "G",
+        row: 4,
+        col: 2,
+        jarIndex: 1,
+        jarColor: "Y",
+        sameColor: false,
+        bonusMultiplier: 1,
+        fairyMultiplier: 1,
+        position: { x: 12, y: -729 }
+      }
+    ]);
+
+    if (gained <= 0 || manager.score !== gained || manager.lastResolution.scoreDelta !== gained) {
+      throw new Error("Permuted non-same-color jar drop should score base jar points.");
+    }
+    if (manager.lastResolution.scoreEvents.length !== 0) {
+      throw new Error("Permuted non-same-color jar drop must not emit a second ball score event.");
+    }
+  } finally {
+    Math.random = previousRandom;
+    if (hadCc) {
+      global.cc = previousCc;
+    } else {
+      delete global.cc;
+    }
   }
 }
 
@@ -3097,6 +3320,106 @@ function runComboMatchedBallScoreDisplayCase() {
     var thirdComboScorePerBall = manager._getMatchedDropScorePerBallForNextCombo("matchedDrop");
     if (thirdComboScorePerBall !== 20) {
       throw new Error("Third combo matched ball score should be 20.");
+    }
+  } finally {
+    if (hadCc) {
+      global.cc = previousCc;
+    } else {
+      delete global.cc;
+    }
+  }
+}
+
+function runBallScoreDisplayGenerationCase() {
+  var hadCc = Object.prototype.hasOwnProperty.call(global, "cc");
+  var previousCc = global.cc;
+  var scheduledCallbacks = [];
+  var spawned = [];
+
+  global.cc = {
+    director: {
+      getScheduler: function () {
+        return {
+          schedule: function (callback) {
+            scheduledCallbacks.push(callback);
+          },
+          unschedule: function () {}
+        };
+      }
+    }
+  };
+
+  try {
+    function ValidationRenderer() {}
+    attachLevelRendererSceneHudMethods(ValidationRenderer, {
+      BoardLayout: BoardLayout
+    });
+
+    var renderer = Object.create(ValidationRenderer.prototype);
+    renderer.playedBallScoreCellIds = {};
+    renderer.pendingBallScoreCellIds = {};
+    renderer.pendingBallScoreCallbacks = {};
+    renderer.ballScoreDisplayGeneration = 1;
+    renderer.currentBallScoreResolution = null;
+    renderer._getGameViewNode = function () {
+      return { isValid: true };
+    };
+    renderer._convertBoardPointToGameView = function (x, y) {
+      return { x: x, y: y };
+    };
+    renderer._spawnBallScoreDisplay = function (scoreEvent, position) {
+      spawned.push({
+        cellId: scoreEvent.cellId,
+        position: position
+      });
+    };
+
+    var oldResolution = {
+      eliminationSequence: [
+        { cellId: "same", worldPosition: { x: 1, y: 2 } }
+      ]
+    };
+    var newResolution = {
+      eliminationSequence: [
+        { cellId: "same", worldPosition: { x: 3, y: 4 } }
+      ]
+    };
+
+    renderer.currentBallScoreResolution = oldResolution;
+    renderer._scheduleBallScoreEvent(
+      { cellId: "same", points: 10, delayMs: 30 },
+      oldResolution,
+      { maxColumns: 10, viewportOffsetY: 0 },
+      0,
+      1
+    );
+    renderer.currentBallScoreResolution = newResolution;
+    renderer.ballScoreDisplayGeneration = 2;
+    scheduledCallbacks[0]();
+    if (spawned.length !== 0) {
+      throw new Error("Stale ball score callback must not spawn into a newer resolution.");
+    }
+
+    renderer._scheduleBallScoreEvent(
+      { cellId: "same", points: 10, delayMs: 0, worldPosition: { x: 9, y: 8 } },
+      newResolution,
+      { maxColumns: 10, viewportOffsetY: 0 },
+      0,
+      2
+    );
+    renderer._scheduleBallScoreEvent(
+      { cellId: "same", points: 20, delayMs: 0, worldPosition: { x: 7, y: 6 } },
+      newResolution,
+      { maxColumns: 10, viewportOffsetY: 0 },
+      1,
+      2
+    );
+    if (
+      spawned.length !== 2 ||
+      spawned[0].position.x !== 9 ||
+      spawned[1].position.x !== 7
+    ) {
+      throw new Error("Ball score events with the same cellId must keep independent displays and positions.");
     }
   } finally {
     if (hadCc) {
@@ -3404,6 +3727,33 @@ function runBubbleBreakSfxCountCase() {
   }
 }
 
+function runConfiguredAudioPreloadsArraySfxCase() {
+  var audioManager = Object.create(AudioManager.prototype);
+  audioManager.bgmPath = "sound/game_bg1";
+  audioManager.sfxMap = {
+    jarBounce: ["sound/piano1", "sound/piano2", "sound/piano1"],
+    jarCollectBottom: "sound/score",
+    empty: []
+  };
+  var preloadedPaths = null;
+  audioManager.preloadPaths = function (paths) {
+    preloadedPaths = paths;
+    return Promise.resolve(paths);
+  };
+
+  audioManager.preloadConfiguredAudio();
+
+  var expected = [
+    "sound/game_bg1",
+    "sound/piano1",
+    "sound/piano2",
+    "sound/score"
+  ];
+  if (!preloadedPaths || preloadedPaths.join(",") !== expected.join(",")) {
+    throw new Error("AudioManager.preloadConfiguredAudio should preload unique string and array sfx paths.");
+  }
+}
+
 function runBubbleShatterRearmsAppendedMolotovSequenceCase() {
   var hadCc = Object.prototype.hasOwnProperty.call(global, "cc");
   var previousCc = global.cc;
@@ -3567,6 +3917,8 @@ function main() {
   console.log("[OK]", "impact_bounce_board_advance_delay", "waited for impact bounce before board advance");
   runImpactBounceBoardAdvanceSameUpdateFrameCase();
   console.log("[OK]", "impact_bounce_board_advance_same_update_frame", "did not consume delay in the scheduling update frame");
+  runEliminationPresentationBoardAdvanceGateCase();
+  console.log("[OK]", "elimination_presentation_board_advance_gate", "waited for elimination presentation before board advance");
   runKeyUnlockSingleTargetCase();
   console.log("[OK]", "key_unlock_single_target", "one key unlocked one locked ball");
   runKeyUnlockNearestTargetCase();
@@ -3625,14 +3977,22 @@ function main() {
   console.log("[OK]", "revive_danger_space_keeps_locked_ball", "shifted board up without removing unsupported locked ball");
   runStoneBallJarScoreZeroCase();
   console.log("[OK]", "stone_ball_jar_score_zero", "stone ball in jar scores 0 and keeps total score");
+  runJarCollectionFloatingScoreEventCase();
+  console.log("[OK]", "jar_collection_floating_score_event", "scored jar drops emit floating score events at jar mouth position");
+  runColorPermutationJarScoreCase();
+  console.log("[OK]", "color_permutation_jar_score", "permuted jar colors and collect_color targets keep non-same-color jar score");
   runComboMatchedBallScoreDisplayCase();
   console.log("[OK]", "combo_matched_ball_score_display", "combo raises shattered-ball score and floating score display");
+  runBallScoreDisplayGenerationCase();
+  console.log("[OK]", "ball_score_display_generation", "stale score callbacks are isolated and same-id events display independently");
   runMatchedObjectiveCollectionCase();
   console.log("[OK]", "matched_objective_collection", "matched target balls count into collection target and emit HUD fly payload");
   runBlastComboAttachAnchorCase();
   console.log("[OK]", "blast_combo_attach_anchor", "blast combo display uses explosion coordinates without impact");
   runBubbleBreakSfxCountCase();
   console.log("[OK]", "bubble_break_sfx_count", "break sfx plays per shattered ball up to five times");
+  runConfiguredAudioPreloadsArraySfxCase();
+  console.log("[OK]", "configured_audio_array_sfx_preload", "array sfx paths are preloaded for immediate playback");
   runBoardIntroViewportCase();
   runBoardMidGameViewportSettleCase();
   runTopAnchorCollapseTriggerCase();

@@ -1,0 +1,117 @@
+{
+  "configurations": [
+    {
+      "id": "70039e94-e7b5-4d9e-9dd3-25d9cc398de9",
+      "name": "默认配置",
+      "description": "自动创建的默认工具配置",
+      "tools": [
+        {
+          "category": "cocos",
+          "name": "scene",
+          "enabled": true,
+          "description": "Scene management — open/save/create scenes, get hierarchy, check readiness.\nActions: get_info, hierarchy, list, open, save, create, is_ready.\nExample: {action:\"hierarchy\"} or {action:\"create\", name:\"GamePlay\"}"
+        },
+        {
+          "category": "cocos",
+          "name": "node",
+          "enabled": true,
+          "description": "Node CRUD — create/find/modify/delete nodes, list all nodes, set transform.\nActions: find, info, list, tree, create, delete, modify, move, duplicate.\nUse \"info\" (NOT get_info). Node param accepts UUID, path, or name.\nExample: {action:\"list\"} or {action:\"info\", node:\"Canvas/Player\"}"
+        },
+        {
+          "category": "cocos",
+          "name": "component",
+          "enabled": true,
+          "description": "Component management — add/remove/configure components on nodes.\nActions: add, remove, list, info, set_property, click_event, batch_click_event.\nUse \"info\" to view component properties (NOT get_properties).\nbatch_click_event: bind click events on multiple buttons in one call.\nExample: {action:\"info\", node:\"Canvas/Btn\", componentType:\"cc.Button\"}"
+        },
+        {
+          "category": "cocos",
+          "name": "prefab",
+          "enabled": true,
+          "description": "Prefab management — create/list/delete/instantiate prefabs, edit prefab content, apply/revert instance changes.\nEdit workflow: edit_enter → (modify via cocos_node/cocos_component) → edit_save → edit_exit.\nActions: create, list, info, validate, instantiate, unlink, apply, revert, delete, edit_enter, edit_save, edit_exit, edit_test.\nExample: {action:\"edit_enter\", prefabPath:\"db://assets/prefabs/Enemy.prefab\"}"
+        },
+        {
+          "category": "cocos",
+          "name": "asset",
+          "enabled": true,
+          "description": "Asset operations — query/search/create/delete assets, path-UUID conversion, sprite border.\nCommon: query_uuid, find_by_name, search, create, delete, set_sprite_border.\nset_sprite_border: Set nine-patch border on a texture for SLICED mode.\nExample: {action:\"set_sprite_border\", url:\"db://assets/textures/btn.png\", top:10, bottom:10, left:15, right:15}"
+        },
+        {
+          "category": "cocos",
+          "name": "editor",
+          "enabled": true,
+          "description": "Editor utilities — project info, console logs, run/stop preview.\nActions: project_info, project_settings, run, stop, console_logs, console_clear, mcp_log_read, mcp_log_clear, editor_info.\nExample: {action:\"project_info\"} or {action:\"run\"}"
+        },
+        {
+          "category": "cocos",
+          "name": "view",
+          "enabled": true,
+          "description": "Viewport control — gizmo tools, camera focus.\nActions: gizmo_tool, gizmo_tool_query, camera_focus, camera_reset, status.\nExample: {action:\"camera_focus\", nodes:[\"Player\"]} or {action:\"gizmo_tool\", tool:\"position\"}"
+        },
+        {
+          "category": "cocos",
+          "name": "composite",
+          "enabled": true,
+          "description": "One-call UI creation (2.x) — create Button/Label/Image/Toggle/Slider/ProgressBar/EditBox/ScrollView/PageView/RichText/Layout/Mask/Graphics/Spine, Widget, batch.\nActions: create_button, create_label, create_image, create_toggle, create_slider, create_progressbar, create_editbox, create_scrollview, create_pageview, create_richtext, create_layout, create_mask, create_graphics, create_spine, setup_widget, batch, batch_create_button, batch_create_label, batch_create_image, batch_create_toggle, batch_create_slider, batch_create_progressbar, batch_create_editbox.\nExample: {action:\"create_button\", parent:\"Canvas\", name:\"StartBtn\", text:\"Start\", fontSize:28}\nBatch: {action:\"batch_create_button\", parent:\"Canvas/Panel\", items:[{name:\"Btn1\",text:\"OK\"},{name:\"Btn2\",text:\"Cancel\"}]}"
+        },
+        {
+          "category": "cocos",
+          "name": "knowledge",
+          "enabled": true,
+          "description": "Knowledge base — component properties, UI design rules, layout patterns, widget strategy.\nTopics: component_properties, ui_design_rules, layout_patterns, widget_strategy, node_structure, best_practices, tool_guide.\nExample: {action:\"component_properties\", query:\"cc.Sprite\"} or {action:\"tool_guide\", query:\"node\"}"
+        },
+        {
+          "category": "cocos",
+          "name": "validate",
+          "enabled": true,
+          "description": "Validation tools (2.x) — layout overlap/offscreen, reference consistency, hierarchy depth.\nActions: layout (size/font/touch issues), references (missing scripts), hierarchy (depth/naming).\nExample: {action:\"layout\"} or {action:\"references\"}"
+        },
+        {
+          "category": "cocos",
+          "name": "template",
+          "enabled": true,
+          "description": "UI templates (2.x) — apply pre-built structures (dialog, scroll_list, nav_bar, settings_page).\nActions: list, apply.\nExample: {action:\"list\"} or {action:\"apply\", template:\"dialog\", parent:\"Canvas\"}"
+        },
+        {
+          "category": "cocos",
+          "name": "capture",
+          "enabled": true,
+          "description": "Capture (2.x) — scene layout JSON + engine-rendered screenshot.\nActions: scene_snapshot (full scene JSON), node_snapshot (focused subtree JSON), screenshot.\nscreenshot mode:\"content\" (default) renders ONLY the Canvas content off-screen via the engine (cc.RenderTexture) at the design resolution, transparent background — no editor chrome — for pixel diffs. Pass scenePath to open that scene first; width/height/background optional. mode:\"window\" falls back to an Electron capture of the whole editor window (includes chrome).\nReturns pngBase64 + path; the PNG is also saved to disk and (by default) returned inline.\nExample: {action:\"screenshot\", scenePath:\"db://assets/Scene/Game.fire\"} or {action:\"screenshot\", mode:\"window\", region:\"scene\"}"
+        },
+        {
+          "category": "cocos",
+          "name": "builder",
+          "enabled": true,
+          "description": "Build node tree from JSON (2.x) — create complete hierarchies with components in one call.\nUse this for complex multi-level UI structures.\nAction: build.\nType shortcuts: type:\"label\" (auto-adds cc.Label, use text/fontSize), type:\"sprite\" (auto-adds cc.Sprite), type:\"button\" (auto-adds cc.Sprite+cc.Button+child Label, use text/fontSize), type:\"toggle\" (cc.Sprite+cc.Toggle+Checkmark child), type:\"slider\" (cc.Sprite+cc.Slider+Handle child), type:\"progressbar\" (cc.Sprite+cc.ProgressBar+BarFill child), type:\"editbox\" (cc.Sprite+cc.EditBox).\nExample: {action:\"build\", parent:\"Canvas\", tree:{name:\"Panel\", size:{width:400,height:300}, components:[\"cc.Sprite\"], children:[{name:\"Title\", type:\"label\", text:\"Hello\", fontSize:32}]}}"
+        },
+        {
+          "category": "cocos",
+          "name": "animation",
+          "enabled": true,
+          "description": "Animation editing (2.x) — clips, presets, batch file writing.\nPrimary method: batch_file (writes .anim directly, no edit mode needed).\nUse preset for common animations (fade, bounce, shake, slide, etc.).\nActions: query_clips, query_clip_info, query_state, play, pause, resume, stop, change_sample, change_speed, change_wrap_mode, create_clip, batch_file, preset_list, preset.\nExample: {action:\"preset\", clipUuid:\"...\", preset:\"sprite_fade_in\"}\nExample: {action:\"batch_file\", clipUuid:\"...\", data:{tracks:[{propKey:\"opacity\",keyframes:[{frame:0,value:0},{frame:30,value:255}]}]}}"
+        },
+        {
+          "category": "cocos",
+          "name": "spine",
+          "enabled": true,
+          "description": "Spine (sp.Skeleton) — query animations/skins, set animation/skin, change properties.\nActions: info, list_animations, list_skins, set_animation, set_skin, set_property.\nNote: \"node\" is the node path, UUID, or name with sp.Skeleton component.\nProperties for set_property: loop, timeScale, premultipliedAlpha, defaultCacheMode, useTint, debugSlots, debugBones.\nExample: {action:\"list_animations\", node:\"spineNode\"} or {action:\"set_animation\", node:\"spineNode\", animation:\"idle\"}"
+        },
+        {
+          "category": "cocos",
+          "name": "label",
+          "enabled": true,
+          "description": "Label & Text (2.x) — manage cc.Label, cc.RichText, cc.EditBox.\nActions: info, list, set_text, set_font, set_style, set_outline, set_shadow, batch_set_font, batch_set_style.\nExample: {action:\"set_text\", node:\"Title\", text:\"Hello\"}\n{action:\"set_style\", node:\"Title\", fontSize:32, isBold:true, color:{r:255,g:0,b:0}}\n{action:\"batch_set_font\", useSystemFont:true, fontFamily:\"Arial\"}"
+        },
+        {
+          "category": "cocos",
+          "name": "devtools",
+          "enabled": true,
+          "description": "[DEV-ONLY] Component exploration (2.x).\nActions: explore_component (create temp node + add component + dump properties), list_component_properties (dump properties of existing component on a node).\nExample: {action:\"explore_component\", componentType:\"cc.Button\"}\n{action:\"list_component_properties\", node:\"Canvas/Btn\", componentType:\"cc.Button\"}"
+        }
+      ],
+      "createdAt": "2026-07-08T02:55:54.845Z",
+      "updatedAt": "2026-07-08T02:55:54.845Z"
+    }
+  ],
+  "currentConfigId": "70039e94-e7b5-4d9e-9dd3-25d9cc398de9",
+  "maxConfigSlots": 5
+}

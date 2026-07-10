@@ -5,6 +5,7 @@ var Logger = Shared.Logger;
 var RouteEditorState = Shared.RouteEditorState;
 var BootstrapButtonFactory = Shared.BootstrapButtonFactory;
 var hideGameCircleWelfareViewNode = Shared.hideGameCircleWelfareViewNode;
+var LevelColorPermutation = require("../config/LevelColorPermutation");
 
 module.exports = {
   _loadLevelById: function (levelId, successLogPrefix, failStatusMessage) {
@@ -31,9 +32,26 @@ module.exports = {
     this._currentLevelAwardedClearRewardItems = [];
     this._setDropTestButtonVisible(false);
     this._lastRuntimeState = null;
+    var requestedLevelId = Math.max(1, Math.floor(Number(levelId) || 0));
+    var preparedLevelEntry = this._pendingPreparedLevelConfig || null;
+    if (preparedLevelEntry) {
+      if (!preparedLevelEntry.levelConfig || !preparedLevelEntry.levelConfig.level) {
+        throw new Error("Prepared level entry requires level config.");
+      }
+      if (preparedLevelEntry.levelId !== requestedLevelId || preparedLevelEntry.levelConfig.level.levelId !== requestedLevelId) {
+        throw new Error("Prepared level entry does not match requested level: " + levelId);
+      }
+      this._pendingPreparedLevelConfig = null;
+    }
     return this._runLevelEntryWithLoading(function () {
       return this._ensureGameplayKernel().then(function () {
-        return this.levelManager.loadLevel(levelId);
+        if (preparedLevelEntry) {
+          return preparedLevelEntry.levelConfig;
+        }
+        return this.levelManager.loadLevel(levelId).then(function (levelConfig) {
+          LevelColorPermutation.apply(levelConfig);
+          return levelConfig;
+        });
       }.bind(this)).then(function (levelConfig) {
         this.currentLevelConfig = levelConfig;
         this._currentLevelId = Math.max(1, Number(levelId) || 1);
