@@ -1769,8 +1769,12 @@ function runMolotovPendingResolutionFinalizeCase() {
     spawnedBySplitters: [],
     collectedKeys: [],
     unlockedLockedBalls: [],
-    fairyAssistEvents: []
+    fairyAssistEvents: [],
+    impact: {
+      center: { row: 0, col: 0 }
+    }
   };
+  manager.remainingShots = 1;
   manager.molotovResolutionPending = true;
   manager.molotovPendingResolutionContext = {
     dropScoreRuleKey: "matchedDrop",
@@ -1789,9 +1793,6 @@ function runMolotovPendingResolutionFinalizeCase() {
   manager._tryTopAnchorCollapse = function () {
     return false;
   };
-  manager._applyPostImpactBoardShiftPolicy = function () {
-    return false;
-  };
   manager._scheduleBoardAdvanceAfterImpact = function () {
     return false;
   };
@@ -1808,6 +1809,9 @@ function runMolotovPendingResolutionFinalizeCase() {
   }
   if (registeredDrops.length !== 1 || registeredDrops[0].id !== "floating_after_molotov") {
     throw new Error("Molotov pending finalize must register floating drops immediately.");
+  }
+  if (manager.pendingBoardAdvanceEliminationPresentation !== false) {
+    throw new Error("Molotov pending finalize must not re-arm a completed elimination presentation gate.");
   }
 }
 
@@ -2484,48 +2488,6 @@ function runOneStarTargetScoreCase() {
   });
   if (oneStarTargetScore !== 774) {
     throw new Error("One-star target score must use the runtime star threshold policy.");
-  }
-}
-
-function runReviveDangerSpaceKeepsLockedBallCase() {
-  var grid = createGridWithViewport({
-    coordinateSystem: "odd-r-hex",
-    level: {
-      initialDropSpaceRows: 8,
-      layout: [
-        "RRRRRRRRRR",
-        "RRRRRRRRRR",
-        "RRRRRRRRRR",
-        "RRRRRRRRRR",
-        "RRRRRRRRRR",
-        "RRRRRRRRRR",
-        "RRRRRRRRRR"
-      ],
-      specialEntities: []
-    }
-  });
-  var shiftRoomRows = 2;
-  var maxOffsetY = grid.boardViewport.getMaxOffsetY();
-  grid.boardViewport.offsetY = maxOffsetY - shiftRoomRows * BoardLayout.rowHeight;
-  grid.boardViewport.targetOffsetY = grid.boardViewport.offsetY;
-  var beforeOffsetY = grid.getViewportOffsetY();
-  grid.boardViewport.shiftOffsetYByRows(-shiftRoomRows);
-  if (grid.getViewportOffsetY() !== beforeOffsetY) {
-    throw new Error("Ad revive viewport shift must not directly set BubbleGrid cell coordinates.");
-  }
-  if (!grid.boardViewport.isMoving()) {
-    throw new Error("Ad revive viewport shift must start animated movement.");
-  }
-  if (Math.abs(grid.boardViewport.targetOffsetY - beforeOffsetY - 2 * BoardLayout.rowHeight) > 0.5) {
-    throw new Error("Ad revive viewport shift must target the requested row offset.");
-  }
-  grid.boardViewport.update(grid.boardViewport.moveDurationSec / 2);
-  if (Math.abs(grid.getViewportOffsetY() - (beforeOffsetY + BoardLayout.rowHeight)) > 0.5) {
-    throw new Error("Ad revive viewport shift must move linearly at half duration.");
-  }
-  grid.boardViewport.update(grid.boardViewport.moveDurationSec - grid.boardViewport.moveElapsedSec);
-  if (Math.abs(grid.getViewportOffsetY() - (beforeOffsetY + 2 * BoardLayout.rowHeight)) > 0.5) {
-    throw new Error("Ad revive viewport shift must reach the target through update.");
   }
 }
 
@@ -3973,8 +3935,6 @@ function main() {
   console.log("[OK]", "clear_win_requires_star_and_empty_board", "ignores collection targets for pass and requires an empty board");
   runOneStarTargetScoreCase();
   console.log("[OK]", "one_star_target_score", "uses the same one-star threshold policy as runtime scoring");
-  runReviveDangerSpaceKeepsLockedBallCase();
-  console.log("[OK]", "revive_danger_space_keeps_locked_ball", "shifted board up without removing unsupported locked ball");
   runStoneBallJarScoreZeroCase();
   console.log("[OK]", "stone_ball_jar_score_zero", "stone ball in jar scores 0 and keeps total score");
   runJarCollectionFloatingScoreEventCase();

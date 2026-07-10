@@ -6,8 +6,7 @@ function attachLevelRendererScenePopupMethods(LevelRenderer, deps) {
   var requireChildNode = SceneShared.requireChildNode;
   var setRequiredLabelString = SceneShared.setRequiredLabelString;
   var BALL_RESOURCES = deps.BALL_RESOURCES;
-  var WIN_BOTTLE_RESOURCES = deps.WIN_BOTTLE_RESOURCES;
-  var WIN_TARGET_STATUS_RESOURCES = deps.WIN_TARGET_STATUS_RESOURCES;
+  var LOSE_STATUS_RESOURCES = deps.LOSE_STATUS_RESOURCES;
   var REWARD_ITEM_RESOURCES = deps.REWARD_ITEM_RESOURCES;
   var PREFAB_PATHS = deps.PREFAB_PATHS;
   var SpriteProxyLayerHelper = deps.SpriteProxyLayerHelper;
@@ -31,8 +30,6 @@ function attachLevelRendererScenePopupMethods(LevelRenderer, deps) {
   var ensureLabel = deps.ensureLabel;
   var ensureOutline = deps.ensureOutline;
   var getOrCreateChild = deps.getOrCreateChild;
-  var buildWinTargetEntries = deps.buildWinTargetEntries;
-  var buildWinCollectEntries = deps.buildWinCollectEntries;
   var buildResultTexts = deps.buildResultTexts;
   var resolveWinStarRating = deps.resolveWinStarRating;
   var buildAdRevivePlan = deps.buildAdRevivePlan;
@@ -51,19 +48,15 @@ function attachLevelRendererScenePopupMethods(LevelRenderer, deps) {
   }
 
   function applyLoseReviveLayout(loseContent, canRevive) {
-    var retryButtonNode = requireChildNode(loseContent, "btn_retry", "LoseView");
     var backButtonNode = requireChildNode(loseContent, "btn_back", "LoseView");
 
-    ensureLoseOriginalY(retryButtonNode, "LoseView/btn_retry");
     ensureLoseOriginalY(backButtonNode, "LoseView/btn_back");
 
     if (canRevive) {
-      retryButtonNode.setPosition(retryButtonNode.x, retryButtonNode._loseOriginalY);
       backButtonNode.setPosition(backButtonNode.x, backButtonNode._loseOriginalY);
       return;
     }
 
-    retryButtonNode.setPosition(retryButtonNode.x, LOSE_NO_REVIVE_ACTION_BUTTON_Y);
     backButtonNode.setPosition(backButtonNode.x, LOSE_NO_REVIVE_ACTION_BUTTON_Y);
   }
 
@@ -80,50 +73,54 @@ function attachLevelRendererScenePopupMethods(LevelRenderer, deps) {
     });
   }
 
-  function resetLoseOriginalPosition(node, propertyName) {
-    if (!node || !node.isValid) {
-      throw new Error("LoseView layout node is required.");
-    }
-    if (typeof node[propertyName] !== "number") {
-      node[propertyName] = propertyName === "_loseOriginalY" ? node.y : node.x;
-    }
-    if (propertyName === "_loseOriginalY") {
-      node.setPosition(node.x, node[propertyName]);
-    } else {
-      node.setPosition(node[propertyName], node.y);
-    }
-  }
-
-  function getLoseTopInfoNode(topInfoNode, childName) {
-    return requireChildNode(topInfoNode, childName, "LoseView/top_info");
-  }
-
-  function resetLoseTopInfoNode(topInfoNode, childName) {
-    var node = getLoseTopInfoNode(topInfoNode, childName);
-    resetLoseOriginalPosition(node, "_loseOriginalX");
-    return node;
-  }
-
-  function renderLoseTopInfo(topInfoNode, runtimeSnapshot) {
+  function renderLoseFailureStatus(renderer, loseContent, runtimeSnapshot) {
     if (!runtimeSnapshot || typeof runtimeSnapshot !== "object") {
-      throw new Error("LoseView top_info requires runtimeSnapshot.");
+      throw new Error("LoseView failure status requires runtime snapshot.");
     }
-    var score = Number(runtimeSnapshot.score);
-    if (!Number.isFinite(score) || score < 0) {
-      throw new Error("LoseView top_info requires non-negative runtime score.");
+    if (!runtimeSnapshot.board || typeof runtimeSnapshot.board !== "object" || Array.isArray(runtimeSnapshot.board)) {
+      throw new Error("LoseView failure status requires runtimeSnapshot.board.");
     }
-    var earnedScore = Math.floor(score);
-    var text1Node = resetLoseTopInfoNode(topInfoNode, "text1");
-    var numNode = resetLoseTopInfoNode(topInfoNode, "target1_text_num");
-    text1Node.active = true;
-    numNode.active = true;
-    setRequiredLabelString(text1Node, "本局得分 ", "LoseView/top_info/text1");
-    setRequiredLabelString(numNode, String(earnedScore), "LoseView/top_info/target1_text_num");
-    var layout = topInfoNode.getComponent(cc.Layout);
-    if (!layout || typeof layout.updateLayout !== "function") {
-      throw new Error("LoseView top_info requires cc.Layout.updateLayout.");
+    if (!Array.isArray(runtimeSnapshot.board.cells)) {
+      throw new Error("LoseView failure status requires runtimeSnapshot.board.cells.");
     }
-    layout.updateLayout();
+    if (!runtimeSnapshot.winStats || typeof runtimeSnapshot.winStats !== "object" || Array.isArray(runtimeSnapshot.winStats)) {
+      throw new Error("LoseView failure status requires runtimeSnapshot.winStats.");
+    }
+
+    var starRating = Number(runtimeSnapshot.winStats.starRating);
+    if (!Number.isInteger(starRating) || starRating < 0) {
+      throw new Error("LoseView failure status requires non-negative integer winStats.starRating.");
+    }
+
+    var ballComplete = runtimeSnapshot.board.cells.length === 0;
+    var starComplete = starRating >= 1;
+    var failTips;
+    if (starComplete && !ballComplete) {
+      failTips = "分数已达标\n但是还有球球未清空";
+    } else if (ballComplete && !starComplete) {
+      failTips = "球球已清空\n但是分数未达标";
+    } else if (!ballComplete && !starComplete) {
+      failTips = "分数未达标\n且球球也未清空";
+    } else {
+      throw new Error("LoseView failure status cannot be shown for a completed board and score.");
+    }
+
+    var failTipsNode = requireChildNode(loseContent, "fail_tips", "LoseView");
+    var statusLayoutNode = requireChildNode(loseContent, "taget", "LoseView");
+    var ballStatusNode = requireChildNode(statusLayoutNode, "ball_complete", "LoseView/taget");
+    var starStatusNode = requireChildNode(statusLayoutNode, "star_complete", "LoseView/taget");
+    var completeSpriteFrame = renderer.spriteFrameCache[LOSE_STATUS_RESOURCES.complete];
+    var incompleteSpriteFrame = renderer.spriteFrameCache[LOSE_STATUS_RESOURCES.incomplete];
+    if (!completeSpriteFrame) {
+      throw new Error("LoseView complete status sprite is not preloaded: " + LOSE_STATUS_RESOURCES.complete);
+    }
+    if (!incompleteSpriteFrame) {
+      throw new Error("LoseView incomplete status sprite is not preloaded: " + LOSE_STATUS_RESOURCES.incomplete);
+    }
+
+    setRequiredLabelString(failTipsNode, failTips, "LoseView/fail_tips");
+    ensureSprite(ballStatusNode, ballComplete ? completeSpriteFrame : incompleteSpriteFrame);
+    ensureSprite(starStatusNode, starComplete ? completeSpriteFrame : incompleteSpriteFrame);
   }
 
   function renderLoseReviveGain(renderer, loseContent, levelConfig, runtimeSnapshot, canRevive) {
@@ -137,16 +134,11 @@ function attachLevelRendererScenePopupMethods(LevelRenderer, deps) {
       throw new Error("LoseView requires buildAdRevivePlan.");
     }
     var revivePlan = buildAdRevivePlan(levelConfig, runtimeSnapshot);
-    var upNode = requireChildNode(getNode, "up", "LoseView/get");
     var ballNode = requireChildNode(getNode, "handsel_ball", "LoseView/get");
     var desNode = requireChildNode(getNode, "handsel_des", "LoseView/get");
-    if (!Number.isInteger(revivePlan.dangerLineSpaceRows) || revivePlan.dangerLineSpaceRows <= 0) {
-      throw new Error("LoseView revive plan requires positive integer dangerLineSpaceRows.");
-    }
     if (!Number.isInteger(revivePlan.grantedShots) || revivePlan.grantedShots <= 0) {
       throw new Error("LoseView revive plan requires positive integer grantedShots.");
     }
-    setRequiredLabelString(upNode, "上移" + revivePlan.dangerLineSpaceRows + "行", "LoseView/get/up");
     setRequiredLabelString(desNode, "赠送" + revivePlan.grantedShots + "球", "LoseView/get/handsel_des");
 
     var iconCode = revivePlan.targetColor ? revivePlan.targetColor : "RAINBOW";
@@ -351,171 +343,6 @@ LevelRenderer.prototype._renderWinMaxScoreStamp = function (scoreBgNode, runtime
     throw new Error("WinView max_score requires boolean winStats.isPersonalBestScore.");
   }
   maxScoreNode.active = runtimeSnapshot.winStats.isPersonalBestScore;
-};
-
-LevelRenderer.prototype._renderWinMaxCombo = function (scoreBgNode, runtimeSnapshot) {
-  var batterValueNode = requireWinChild(scoreBgNode, "batter_value", "score_bg");
-  if (!runtimeSnapshot || runtimeSnapshot.state !== "won") {
-    batterValueNode.active = false;
-    return;
-  }
-  if (!runtimeSnapshot.winStats || typeof runtimeSnapshot.winStats !== "object") {
-    throw new Error("WinView batter_value requires runtimeSnapshot.winStats.");
-  }
-  if (typeof runtimeSnapshot.winStats.maxComboStreak !== "number") {
-    throw new Error("WinView batter_value requires winStats.maxComboStreak.");
-  }
-
-  var maxComboStreak = Math.floor(runtimeSnapshot.winStats.maxComboStreak);
-  if (!Number.isInteger(maxComboStreak) || maxComboStreak < 0) {
-    throw new Error("WinView batter_value maxComboStreak must be non-negative integer.");
-  }
-
-  batterValueNode.active = true;
-  var comboDisplay = maxComboStreak >= 2 ? maxComboStreak - 1 : 0;
-  this._setWinValueText(batterValueNode, String(comboDisplay));
-};
-
-LevelRenderer.prototype._renderWinCollectList = function (winContent, levelConfig, runtimeSnapshot, targetEntries) {
-  var collectBgNode = winContent ? winContent.getChildByName("collect_bg") : null;
-  if (!collectBgNode) {
-    throw new Error("WinView requires collect_bg.");
-  }
-  if (!Array.isArray(targetEntries)) {
-    throw new Error("WinView collect list requires target entries.");
-  }
-
-  var collectListNode = requireWinChild(collectBgNode, "collect_list", "collect_bg");
-  var templateNode = requireWinChild(collectListNode, "bottle", "collect_list");
-  var entries = buildWinCollectEntries(levelConfig, runtimeSnapshot);
-  var hasNoCompletedTargets = targetEntries.length > 0 && targetEntries.every(function (entry) {
-    if (!entry || typeof entry.completed !== "boolean") {
-      throw new Error("WinView target entry requires completed state.");
-    }
-    return !entry.completed;
-  });
-
-  if (entries.length === 0 && !hasNoCompletedTargets) {
-    collectBgNode.active = false;
-    return;
-  }
-
-  collectBgNode.active = true;
-  var activeNodes = [];
-
-  entries.forEach(function (entry, index) {
-    var bottleNode = null;
-    if (index === 0) {
-      bottleNode = templateNode;
-    } else {
-      bottleNode = collectListNode.getChildByName("bottle_" + index);
-      if (!bottleNode) {
-        if (typeof cc.instantiate !== "function") {
-          throw new Error("WinView multiple collect bottles require cc.instantiate.");
-        }
-        bottleNode = cc.instantiate(templateNode);
-        bottleNode.name = "bottle_" + index;
-        bottleNode.parent = collectListNode;
-      }
-    }
-
-    bottleNode.active = true;
-    activeNodes.push(bottleNode);
-
-    var spritePath = WIN_BOTTLE_RESOURCES[entry.colorCode];
-    var spriteFrame = this.spriteFrameCache[spritePath];
-    if (!spriteFrame) {
-      throw new Error("WinView collect bottle sprite is not preloaded: " + spritePath);
-    }
-
-    ensureSprite(bottleNode, spriteFrame);
-    var numNode = requireWinChild(bottleNode, "num", bottleNode.name);
-    this._setWinValueText(numNode, String(entry.count));
-  }, this);
-
-  collectListNode.children.forEach(function (child) {
-    if (activeNodes.indexOf(child) === -1) {
-      child.active = false;
-    }
-  });
-
-  var layout = collectListNode.getComponent(cc.Layout);
-  if (layout && typeof layout.updateLayout === "function") {
-    layout.updateLayout();
-  }
-};
-
-LevelRenderer.prototype._renderWinTargetList = function (winContent, levelConfig, runtimeSnapshot, entries) {
-  var targetBgNode = winContent ? winContent.getChildByName("target_bg") : null;
-  if (!targetBgNode) {
-    throw new Error("WinView requires target_bg.");
-  }
-  if (!Array.isArray(entries)) {
-    throw new Error("WinView target list requires target entries.");
-  }
-
-  var targetListNode = requireWinChild(targetBgNode, "target_list", "target_bg");
-  var templateNode = requireWinChild(targetListNode, "target", "target_list");
-
-  if (entries.length === 0) {
-    targetBgNode.active = false;
-    return;
-  }
-
-  targetBgNode.active = true;
-  var activeNodes = [];
-
-  entries.forEach(function (entry, index) {
-    var targetNode = null;
-    if (index === 0) {
-      targetNode = templateNode;
-    } else {
-      targetNode = targetListNode.getChildByName("target_" + index);
-      if (!targetNode) {
-        if (typeof cc.instantiate !== "function") {
-          throw new Error("WinView multiple targets require cc.instantiate.");
-        }
-        targetNode = cc.instantiate(templateNode);
-        targetNode.name = "target_" + index;
-        targetNode.parent = targetListNode;
-      }
-    }
-
-    targetNode.active = true;
-    activeNodes.push(targetNode);
-
-    var spritePath = BALL_RESOURCES[entry.iconCode];
-    if (!spritePath) {
-      throw new Error("WinView unsupported target icon code: " + entry.iconCode);
-    }
-    var spriteFrame = this.spriteFrameCache[spritePath];
-    if (!spriteFrame) {
-      throw new Error("WinView target sprite is not preloaded: " + spritePath);
-    }
-
-    ensureSprite(targetNode, spriteFrame);
-    var targetDesNode = requireWinChild(targetNode, "target_des", targetNode.name);
-    var gouNode = requireWinChild(targetNode, "gou", targetNode.name);
-    var statusPath = entry.completed ? WIN_TARGET_STATUS_RESOURCES.complete : WIN_TARGET_STATUS_RESOURCES.incomplete;
-    var statusSpriteFrame = this.spriteFrameCache[statusPath];
-    if (!statusSpriteFrame) {
-      throw new Error("WinView target status sprite is not preloaded: " + statusPath);
-    }
-    this._setWinValueText(targetDesNode, entry.description);
-    ensureSprite(gouNode, statusSpriteFrame);
-    gouNode.active = true;
-  }, this);
-
-  targetListNode.children.forEach(function (child) {
-    if (activeNodes.indexOf(child) === -1) {
-      child.active = false;
-    }
-  });
-
-  var layout = targetListNode.getComponent(cc.Layout);
-  if (layout && typeof layout.updateLayout === "function") {
-    layout.updateLayout();
-  }
 };
 
 LevelRenderer.prototype._ensurePopupMaskVisible = function (popupNode, opacity) {
@@ -762,10 +589,6 @@ LevelRenderer.prototype._playWinPopupOpenAnimation = function (winContent, starR
     if (typeof winStats.isPersonalBestScore !== "boolean") {
       throw new Error("WinView render key requires boolean isPersonalBestScore.");
     }
-    if (typeof winStats.maxComboStreak !== "number") {
-      throw new Error("WinView render key requires numeric maxComboStreak.");
-    }
-
     var starRating = resolveWinStarRating(levelConfig, runtimeSnapshot);
     if (!Number.isFinite(starRating)) {
       throw new Error("WinView render key requires finite star rating.");
@@ -775,10 +598,7 @@ LevelRenderer.prototype._playWinPopupOpenAnimation = function (winContent, starR
       levelId: levelId,
       totalScore: requireFiniteWinNumber(winStats.totalScore, "WinView render key totalScore"),
       personalBest: winStats.isPersonalBestScore,
-      maxComboStreak: Math.floor(winStats.maxComboStreak),
       rewardItems: getRuntimeWinClearRewardItems(runtimeSnapshot),
-      collectEntries: buildWinCollectEntries(levelConfig, runtimeSnapshot),
-      targetEntries: buildWinTargetEntries(levelConfig, runtimeSnapshot),
       starRating: Math.floor(starRating)
     });
   }
@@ -998,13 +818,9 @@ LevelRenderer.prototype._renderWinView = function (runtimeSnapshot) {
   var totalScore = requireFiniteWinNumber(winStats.totalScore, "WinView totalScore");
   var scoreBgNode = winContent ? winContent.getChildByName("score_bg") : null;
   var rewardItems = getRuntimeWinClearRewardItems(runtimeSnapshot);
-  var targetEntries = buildWinTargetEntries(this.currentLevelConfig, runtimeSnapshot);
   this._setWinValueText(requireWinChild(scoreBgNode, "score_value", "score_bg"), String(totalScore));
   this._renderWinAwardInfo(winContent, rewardItems);
   this._renderWinMaxScoreStamp(scoreBgNode, runtimeSnapshot);
-  this._renderWinMaxCombo(scoreBgNode, runtimeSnapshot);
-  this._renderWinCollectList(winContent, this.currentLevelConfig, runtimeSnapshot, targetEntries);
-  this._renderWinTargetList(winContent, this.currentLevelConfig, runtimeSnapshot, targetEntries);
 
   var starRating = resolveWinStarRating(this.currentLevelConfig, runtimeSnapshot);
   this._renderWinStars(winContent, starRating);
@@ -1129,7 +945,7 @@ LevelRenderer.prototype._renderLoseView = function (runtimeSnapshot) {
     this._playPopupContentOpenAnimation(loseContent);
   }
 
-  renderLoseTopInfo(requireChildNode(loseContent, "top_info", "LoseView"), runtimeSnapshot);
+  renderLoseFailureStatus(this, loseContent, runtimeSnapshot);
 
   var loseRewardEntry = typeof resolveLoseRewardEntry === "function"
     ? resolveLoseRewardEntry(runtimeSnapshot.state)
@@ -1166,14 +982,12 @@ LevelRenderer.prototype._renderLoseView = function (runtimeSnapshot) {
   }
 
   applyLoseReviveLayout(loseContent, canRevive);
-  var retryButtonNode = loseContent ? loseContent.getChildByName("btn_retry") : null;
 
   var loseCloseButtonNode = loseContent ? loseContent.getChildByName("btn_close") : null;
   if (!loseCloseButtonNode && loseView) {
     loseCloseButtonNode = loseView.getChildByName("btn_close");
   }
   this._bindLoseButton(loseCloseButtonNode, "back");
-  this._bindLoseButton(retryButtonNode, "retry");
   this._bindLoseButton(loseContent ? loseContent.getChildByName("btn_back") : null, "back");
   SpriteProxyLayerHelper.rebuildAutoProxyTree({
     rootNode: loseView,

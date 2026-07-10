@@ -1911,7 +1911,11 @@ function createGameManagerShotResolutionMethods(deps) {
       if (this._tryTopAnchorCollapse()) {
         return;
       }
+      var eliminationPresentationWasComplete = this.pendingBoardAdvanceEliminationPresentation === false;
       if (this._applyPostImpactBoardShiftPolicy(resolution)) {
+        if (eliminationPresentationWasComplete) {
+          this.notifyBoardAdvanceEliminationPresentationComplete();
+        }
         return;
       }
       if (this._scheduleBoardAdvanceAfterImpact()) {

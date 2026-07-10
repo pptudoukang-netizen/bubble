@@ -2,7 +2,7 @@
 
 ## 项目定位
 
-本项目是 Cocos Creator 2.4.9 微信小游戏项目，核心玩法是泡泡龙关卡制闯关。主工程代码在 `assets/scripts`，本地首 10 关配置在 `assets/resources/config/levels`，11-1000 关远程包在 `remote-level-packs` 并通过微信云存储加载，微信云函数在 `cloudfunctions`，历史开放数据域资源在 `open-data`。
+本项目是 Cocos Creator 2.4.12 微信小游戏项目，核心玩法是泡泡龙关卡制闯关。主工程代码在 `assets/scripts`，本地首 10 关配置在 `assets/resources/config/levels`，11-1000 关远程包在 `remote-level-packs` 并通过微信云存储加载，微信云函数在 `cloudfunctions`，历史开放数据域资源在 `open-data`。
 
 项目遵守 `AGENTS.md` 中的 Fail-Fast 严格模式：优先暴露错误，不通过默认值、静默返回、mock 或兜底分支掩盖问题。
 

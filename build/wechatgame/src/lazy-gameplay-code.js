@@ -74,7 +74,6 @@
 "AdRevivePolicy":[function(require,module,exports){
 "use strict";
 
-var AD_REVIVE_DANGER_LINE_SPACE_ROWS = 3;
 var AD_REVIVE_GRANTED_SHOTS = 10;
 var AD_REVIVE_TARGET_COLOR_BALLS = 2;
 
@@ -241,7 +240,6 @@ function buildRevivePlan(levelConfig, runtimeSnapshot) {
   var objectiveCompleted = isObjectiveCompleted(runtimeSnapshot);
   var targetColor = objectiveCompleted ? null : resolveReviveTargetColor(levelConfig, runtimeSnapshot);
   return {
-    dangerLineSpaceRows: AD_REVIVE_DANGER_LINE_SPACE_ROWS,
     grantedShots: AD_REVIVE_GRANTED_SHOTS,
     targetColor: targetColor,
     targetColorBallCount: objectiveCompleted ? 0 : AD_REVIVE_TARGET_COLOR_BALLS,
@@ -251,14 +249,14 @@ function buildRevivePlan(levelConfig, runtimeSnapshot) {
 }
 
 function buildRandomReviveDescription() {
-  return "上移" + AD_REVIVE_DANGER_LINE_SPACE_ROWS + "行、增加随机球x" + AD_REVIVE_GRANTED_SHOTS;
+  return "增加随机球x" + AD_REVIVE_GRANTED_SHOTS;
 }
 
 function buildReviveDescriptionFromColor(targetColor) {
   if (!COLOR_DISPLAY_NAMES[targetColor]) {
     throw new Error("Ad revive description target color is unsupported: " + targetColor);
   }
-  return "上移" + AD_REVIVE_DANGER_LINE_SPACE_ROWS + "行、增加" + COLOR_DISPLAY_NAMES[targetColor] + "x" + AD_REVIVE_GRANTED_SHOTS;
+  return "增加" + COLOR_DISPLAY_NAMES[targetColor] + "x" + AD_REVIVE_GRANTED_SHOTS;
 }
 
 function buildReviveDescription(levelConfig, runtimeSnapshot) {
@@ -266,7 +264,6 @@ function buildReviveDescription(levelConfig, runtimeSnapshot) {
 }
 
 module.exports = {
-  AD_REVIVE_DANGER_LINE_SPACE_ROWS: AD_REVIVE_DANGER_LINE_SPACE_ROWS,
   AD_REVIVE_GRANTED_SHOTS: AD_REVIVE_GRANTED_SHOTS,
   AD_REVIVE_TARGET_COLOR_BALLS: AD_REVIVE_TARGET_COLOR_BALLS,
   buildRevivePlan: buildRevivePlan,
@@ -1911,71 +1908,6 @@ BubbleGrid.prototype.removeCells = function (cells) {
   return removed;
 };
 
-BubbleGrid.prototype.ensureDangerLineSpaceRows = function (minimumRows) {
-  if (!Number.isInteger(minimumRows) || minimumRows <= 0) {
-    throw new Error("Minimum danger line space rows must be a positive integer.");
-  }
-  if (!this.cells.length) {
-    throw new Error("Cannot ensure danger line space without board cells.");
-  }
-  var self = this;
-  function getBubbleBottomYAtOffset(cell, viewportOffsetY) {
-    var cellPosition = BoardLayout.getCellPosition(cell.row, cell.col, self.maxColumns, viewportOffsetY);
-    return cellPosition.y - BoardLayout.bubbleRadius;
-  }
-  function computeLowestBubbleBottomYAtOffset(cells, viewportOffsetY) {
-    return cells.reduce(function (lowestBottomY, cell) {
-      return Math.min(lowestBottomY, getBubbleBottomYAtOffset(cell, viewportOffsetY));
-    }, Infinity);
-  }
-
-  var requiredSpacePixels = minimumRows * BoardLayout.rowHeight;
-  var requiredBubbleBottomY = BoardLayout.dangerLineY + requiredSpacePixels;
-  var currentOffsetY = this.getViewportOffsetY();
-  var lowestBubbleBottomY = computeLowestBubbleBottomYAtOffset(this.cells, currentOffsetY);
-  var currentSpacePixels = lowestBubbleBottomY - BoardLayout.dangerLineY;
-  var requestedShiftRows = currentSpacePixels < requiredSpacePixels
-    ? Math.ceil((requiredSpacePixels - currentSpacePixels) / BoardLayout.rowHeight)
-    : 0;
-  var maxUpwardShiftRows = Math.floor(
-    (this.boardViewport.getMaxOffsetY() - currentOffsetY) / BoardLayout.rowHeight
-  );
-  var shiftRows = Math.min(requestedShiftRows, Math.max(0, maxUpwardShiftRows));
-  var targetOffsetY = currentOffsetY + shiftRows * BoardLayout.rowHeight;
-
-  if (shiftRows > 0) {
-    targetOffsetY = this.boardViewport.shiftOffsetYByRows(-shiftRows);
-    lowestBubbleBottomY = computeLowestBubbleBottomYAtOffset(this.cells, targetOffsetY);
-    currentSpacePixels = lowestBubbleBottomY - BoardLayout.dangerLineY;
-  }
-
-  var removedCells = [];
-  if (currentSpacePixels < requiredSpacePixels) {
-    var cellsInDangerSpace = this.cells.filter(function (cell) {
-      return getBubbleBottomYAtOffset(cell, targetOffsetY) < requiredBubbleBottomY;
-    }, this);
-    removedCells = this.removeCells(cellsInDangerSpace);
-    if (!removedCells.length) {
-      throw new Error("Danger line space cannot be created after top limit is reached.");
-    }
-    if (!this.cells.length) {
-      throw new Error("Danger line space removal cleared the board.");
-    }
-    lowestBubbleBottomY = computeLowestBubbleBottomYAtOffset(this.cells, targetOffsetY);
-    currentSpacePixels = lowestBubbleBottomY - BoardLayout.dangerLineY;
-    if (currentSpacePixels < requiredSpacePixels) {
-      throw new Error("Danger line space remains below required rows after removal.");
-    }
-  }
-
-  return {
-    shiftRows: shiftRows,
-    removedCells: removedCells,
-    viewportOffsetY: targetOffsetY,
-    spaceRows: currentSpacePixels / BoardLayout.rowHeight
-  };
-};
-
 BubbleGrid.prototype.getTopAttachY = function () {
   return this.boardViewport.getTopAttachY();
 };
@@ -2036,6 +1968,7 @@ var ELIMINATION_DROP_RELEASE_EARLY_SEC = 0.5;
 var UV_EPSILON = 0.000001;
 var UV_CORNER_EPSILON = 0.0001;
 var SCHEDULE_ONCE_REPEAT = 0;
+var BATCH_PAYLOAD_MAX = 65535;
 
 function requireDirectorScheduler(description) {
   if (!cc || !cc.director || typeof cc.director.getScheduler !== "function") {
@@ -2089,7 +2022,9 @@ function buildPlayPlanSignature(playPlan) {
   if (!Array.isArray(playPlan)) {
     throw new Error("Bubble shatter play plan signature requires playPlan array.");
   }
-  return playPlan.map(function (entry) {
+  var signature = "";
+  for (var index = 0; index < playPlan.length; index += 1) {
+    var entry = playPlan[index];
     if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
       throw new Error("Bubble shatter play plan signature requires entry objects.");
     }
@@ -2099,8 +2034,12 @@ function buildPlayPlanSignature(playPlan) {
     if (!Number.isFinite(entry.delaySec) || entry.delaySec < 0) {
       throw new Error("Bubble shatter play plan signature requires non-negative delaySec.");
     }
-    return String(entry.cell.id) + "@" + entry.delaySec.toFixed(3);
-  }).join("|");
+    if (index > 0) {
+      signature += "|";
+    }
+    signature += String(entry.cell.id) + "@" + entry.delaySec.toFixed(3);
+  }
+  return signature;
 }
 
 function buildUvBasis(spriteFrame) {
@@ -2139,26 +2078,64 @@ function buildUvBasis(spriteFrame) {
   };
 }
 
+function assertUnitInterval(value, fieldName) {
+  var numberValue = assertFiniteNumber(value, fieldName);
+  if (numberValue < 0 || numberValue > 1) {
+    throw new Error(fieldName + " must be between 0 and 1.");
+  }
+  return numberValue;
+}
+
+function encodeUnitIntervalToUint16(value, fieldName) {
+  return Math.round(assertUnitInterval(value, fieldName) * BATCH_PAYLOAD_MAX);
+}
+
+function encodeUint16High(value) {
+  return Math.floor(value / 256);
+}
+
+function encodeUint16Low(value) {
+  return value % 256;
+}
+
+function applyBatchPayload(node, payloadColor, seed, normalizedAge) {
+  if (!node || !node.isValid) {
+    throw new Error("Bubble shatter batch payload requires valid node.");
+  }
+  if (!payloadColor || typeof payloadColor !== "object") {
+    throw new Error("Bubble shatter batch payload requires reusable color.");
+  }
+
+  var encodedSeed = encodeUnitIntervalToUint16(seed, "Bubble shatter seed");
+  var encodedAge = encodeUnitIntervalToUint16(normalizedAge, "Bubble shatter normalized age");
+  payloadColor.r = encodeUint16High(encodedSeed);
+  payloadColor.g = encodeUint16Low(encodedSeed);
+  payloadColor.b = encodeUint16High(encodedAge);
+  payloadColor.a = 255;
+  node.color = payloadColor;
+  node.opacity = encodeUint16Low(encodedAge);
+}
+
 var BubbleShatterSprite = cc.Class({
   extends: cc.Component,
 
   ctor: function () {
     this._sprite = null;
     this._material = null;
-    this._effectAsset = null;
+    this._payloadColor = null;
+    this._seed = 0;
     this._elapsed = 0;
     this._lifetime = SHATTER_LIFETIME;
     this._playing = false;
     this._releaseHandler = null;
-    this._shatterParams = cc.v4(0, SHATTER_LIFETIME, 0, EXPANDED_QUAD_SCALE);
   },
 
   initialize: function (options) {
     if (!options || typeof options !== "object" || Array.isArray(options)) {
       throw new Error("BubbleShatterSprite initialize options are required.");
     }
-    if (!options.effectAsset || !options.effectAsset.isValid) {
-      throw new Error("BubbleShatterSprite requires valid EffectAsset.");
+    if (!options.material || !options.material.isValid) {
+      throw new Error("BubbleShatterSprite requires valid shared material.");
     }
     if (!options.spriteFrame || !options.spriteFrame.isValid) {
       throw new Error("BubbleShatterSprite requires valid SpriteFrame.");
@@ -2170,7 +2147,6 @@ var BubbleShatterSprite = cc.Class({
     var baseWidth = assertPositiveNumber(options.width, "Bubble shatter width");
     var baseHeight = assertPositiveNumber(options.height, "Bubble shatter height");
     var seed = assertFiniteNumber(options.seed, "Bubble shatter seed");
-    var uvBasis = buildUvBasis(options.spriteFrame);
 
     this._sprite = this.node.getComponent(cc.Sprite);
     if (!this._sprite) {
@@ -2180,31 +2156,19 @@ var BubbleShatterSprite = cc.Class({
     this._sprite.trim = true;
     this._sprite.spriteFrame = options.spriteFrame;
     this.node.setContentSize(baseWidth * EXPANDED_QUAD_SCALE, baseHeight * EXPANDED_QUAD_SCALE);
-    this.node.opacity = 255;
-
-    if (!this._material || this._effectAsset !== options.effectAsset) {
-      var material = cc.Material.create(options.effectAsset);
-      if (!material) {
-        throw new Error("Bubble shatter material creation failed.");
-      }
-      this._material = this._sprite.setMaterial(0, material);
-      this._effectAsset = options.effectAsset;
-    }
+    this._material = this._sprite.setMaterial(0, options.material);
     if (!this._material) {
       throw new Error("BubbleShatterSprite material is missing.");
+    }
+    if (!this._payloadColor) {
+      this._payloadColor = new cc.Color(0, 0, 0, 255);
     }
 
     this._elapsed = FIRST_FRAME_BURST_TIME;
     this._lifetime = SHATTER_LIFETIME;
+    this._seed = seed;
     this._releaseHandler = options.releaseHandler;
-    this._shatterParams.set(this._elapsed, this._lifetime, seed, EXPANDED_QUAD_SCALE);
-    this._material.setProperty("uvOriginAxisX", uvBasis.originAxisX);
-    this._material.setProperty("uvAxisY", uvBasis.axisY);
-    this._material.setProperty(
-      "motionParams",
-      cc.v4(SHATTER_SPREAD, SHATTER_GRAVITY, SHATTER_ROTATION, SHATTER_FADE_START)
-    );
-    this._material.setProperty("shatterParams", this._shatterParams);
+    applyBatchPayload(this.node, this._payloadColor, this._seed, this._elapsed / this._lifetime);
     this._playing = true;
     this.enabled = true;
   },
@@ -2225,8 +2189,7 @@ var BubbleShatterSprite = cc.Class({
     }
 
     this._elapsed = Math.min(this._lifetime, this._elapsed + deltaTime);
-    this._shatterParams.x = this._elapsed;
-    this._material.setProperty("shatterParams", this._shatterParams);
+    applyBatchPayload(this.node, this._payloadColor, this._seed, this._elapsed / this._lifetime);
     if (this._elapsed < this._lifetime) {
       return;
     }
@@ -2266,6 +2229,7 @@ function BubbleShatterRenderer(options) {
   this.effectLoadPromise = null;
   this.activeComponents = [];
   this.nodePool = [];
+  this.sharedMaterials = {};
   this.currentResolution = null;
   this.playedCellIds = {};
   this.pendingCellIds = {};
@@ -2275,6 +2239,7 @@ function BubbleShatterRenderer(options) {
   this.presentationTrackedPlanSignature = "";
   this.presentationCompleteNotified = false;
   this.presentationReleaseCallback = null;
+  this.releaseComponentHandler = this._releaseComponent.bind(this);
 }
 
 BubbleShatterRenderer.prototype.setPresentationCompleteHandler = function (handler) {
@@ -2326,10 +2291,9 @@ BubbleShatterRenderer.prototype.preload = function () {
 };
 
 BubbleShatterRenderer.prototype.reset = function () {
-  var active = this.activeComponents.slice();
-  active.forEach(function (component) {
-    this._releaseComponent(component, true);
-  }, this);
+  while (this.activeComponents.length > 0) {
+    this._releaseComponent(this.activeComponents[this.activeComponents.length - 1], true);
+  }
   this._cancelPendingSchedules();
   this._resetPresentationTracking(true);
   this.currentResolution = null;
@@ -2435,15 +2399,50 @@ BubbleShatterRenderer.prototype._hideBoardBubbleNode = function (cellId, boardBu
   }
 };
 
+BubbleShatterRenderer.prototype._getSharedMaterial = function (spritePath, spriteFrame) {
+  if (typeof spritePath !== "string" || !spritePath) {
+    throw new Error("Bubble shatter shared material requires sprite path.");
+  }
+  if (!spriteFrame || !spriteFrame.isValid) {
+    throw new Error("Bubble shatter shared material requires valid SpriteFrame.");
+  }
+  var cachedMaterial = this.sharedMaterials[spritePath];
+  if (cachedMaterial) {
+    if (!cachedMaterial.isValid) {
+      throw new Error("Bubble shatter shared material is invalid: " + spritePath);
+    }
+    return cachedMaterial;
+  }
+  if (!this.effectAsset || !this.effectAsset.isValid) {
+    throw new Error("Bubble shatter shared material requires preloaded effect.");
+  }
+
+  var material = cc.Material.create(this.effectAsset);
+  if (!material) {
+    throw new Error("Bubble shatter shared material creation failed: " + spritePath);
+  }
+  var uvBasis = buildUvBasis(spriteFrame);
+  material.setProperty("uvOriginAxisX", uvBasis.originAxisX);
+  material.setProperty("uvAxisY", uvBasis.axisY);
+  material.setProperty(
+    "motionParams",
+    cc.v4(SHATTER_SPREAD, SHATTER_GRAVITY, SHATTER_ROTATION, SHATTER_FADE_START)
+  );
+  this.sharedMaterials[spritePath] = material;
+  return material;
+};
+
 BubbleShatterRenderer.prototype._buildPlayPlan = function (resolution) {
   var matchedById = {};
-  resolution.matched.forEach(function (cell) {
-    matchedById[String(cell.id)] = cell;
-  });
+  for (var matchedIndex = 0; matchedIndex < resolution.matched.length; matchedIndex += 1) {
+    var matchedCell = resolution.matched[matchedIndex];
+    matchedById[String(matchedCell.id)] = matchedCell;
+  }
 
   var entries = [];
   if (Array.isArray(resolution.eliminationSequence) && resolution.eliminationSequence.length > 0) {
-    resolution.eliminationSequence.forEach(function (sequenceEntry) {
+    for (var sequenceIndex = 0; sequenceIndex < resolution.eliminationSequence.length; sequenceIndex += 1) {
+      var sequenceEntry = resolution.eliminationSequence[sequenceIndex];
       if (!sequenceEntry || typeof sequenceEntry !== "object" || Array.isArray(sequenceEntry)) {
         throw new Error("Bubble shatter elimination sequence entry must be an object.");
       }
@@ -2453,7 +2452,7 @@ BubbleShatterRenderer.prototype._buildPlayPlan = function (resolution) {
         throw new Error("Bubble shatter elimination sequence cell is missing from matched: " + cellId);
       }
       if (!this._isEligibleCell(cell)) {
-        return;
+        continue;
       }
       if (!Number.isFinite(Number(sequenceEntry.delayMs)) || Number(sequenceEntry.delayMs) < 0) {
         throw new Error("Bubble shatter elimination sequence delayMs must be a non-negative number: " + cellId);
@@ -2463,14 +2462,15 @@ BubbleShatterRenderer.prototype._buildPlayPlan = function (resolution) {
         delaySec: Number(sequenceEntry.delayMs) / 1000,
         worldPosition: sequenceEntry.worldPosition
       });
-    }, this);
+    }
     return entries;
   }
 
   var eligibleIndex = 0;
-  resolution.matched.forEach(function (cell) {
+  for (var cellIndex = 0; cellIndex < resolution.matched.length; cellIndex += 1) {
+    var cell = resolution.matched[cellIndex];
     if (!this._isEligibleCell(cell)) {
-      return;
+      continue;
     }
     entries.push({
       cell: cell,
@@ -2478,7 +2478,7 @@ BubbleShatterRenderer.prototype._buildPlayPlan = function (resolution) {
       worldPosition: null
     });
     eligibleIndex += 1;
-  }, this);
+  }
   return entries;
 };
 
@@ -2552,6 +2552,7 @@ BubbleShatterRenderer.prototype._playCellShatter = function (
   if (!spriteFrame || !spriteFrame.isValid) {
     throw new Error("Bubble shatter SpriteFrame is not preloaded: " + spritePath);
   }
+  var sharedMaterial = this._getSharedMaterial(spritePath, spriteFrame);
 
   var position = this._resolveCellPosition(cell, resolution, boardSnapshot, boardBubbleNodes, presetPosition);
   var component = this._acquireComponent();
@@ -2560,12 +2561,12 @@ BubbleShatterRenderer.prototype._playCellShatter = function (
   component.node.setPosition(position.x, position.y);
   component.node.active = true;
   component.initialize({
-    effectAsset: this.effectAsset,
+    material: sharedMaterial,
     spriteFrame: spriteFrame,
     width: this.bubbleWidth,
     height: this.bubbleHeight,
     seed: hashStringToUnit(cellId),
-    releaseHandler: this._releaseComponent.bind(this)
+    releaseHandler: this.releaseComponentHandler
   });
   this.activeComponents.push(component);
   this.playedCellIds[cellId] = true;
@@ -2699,9 +2700,10 @@ BubbleShatterRenderer.prototype.playResolution = function (resolution, boardSnap
     this._armPresentationRelease(resolution, playPlan);
     this.presentationTrackedPlanSignature = playPlanSignature;
   }
-  playPlan.forEach(function (entry) {
+  for (var index = 0; index < playPlan.length; index += 1) {
+    var entry = playPlan[index];
     this._scheduleCellShatter(entry, resolution, boardSnapshot, boardBubbleNodes, spriteFrameCache);
-  }, this);
+  }
 };
 
 module.exports = BubbleShatterRenderer;
@@ -3604,6 +3606,7 @@ function FallingMarbleSystem() {
   this.jarZones = [];
   this.rimEdgeThickness = Math.max(1, Number(BoardLayout.jarSideCollisionWidth) || 40);
   this._dropSerial = 0;
+  this._spawnedDropsBuffer = [];
   this._renderSnapshotCache = null;
   this._renderSnapshotDirty = true;
   this._dropLeftLimit = BoardLayout.boardLeft;
@@ -3662,6 +3665,7 @@ FallingMarbleSystem.prototype.configureLevel = function (levelConfig) {
   this.maxDynamicMarbles = FallingRulesDefaults.maxDynamicMarbles;
   this.maxBounces = rules.maxBounces || 0;
   this.totalFallen = 0;
+  this._spawnedDropsBuffer.length = 0;
   this.lastDrops = [];
   this.activeDrops = [];
   this.lastCollectedDrops = [];
@@ -4844,10 +4848,14 @@ FallingMarbleSystem.prototype.update = function (dt) {
   }
 
   var drops = this.activeDrops;
-  var activeDropCount = drops.reduce(function (count, drop) {
-    return count + (drop.active ? 1 : 0);
-  }, 0);
-  var spawnedDrops = [];
+  var activeDropCount = 0;
+  for (var activeIndex = 0; activeIndex < drops.length; activeIndex += 1) {
+    if (drops[activeIndex].active) {
+      activeDropCount += 1;
+    }
+  }
+  var spawnedDrops = this._spawnedDropsBuffer;
+  spawnedDrops.length = 0;
   var writeIndex = 0;
   for (var readIndex = 0; readIndex < drops.length; readIndex += 1) {
     var drop = drops[readIndex];
@@ -7230,13 +7238,6 @@ GameManager.prototype.reviveFromAd = function () {
     },
     objectives: this._buildPrimaryObjectiveSnapshot(this._getCachedJarSnapshot())
   });
-  var gridSpaceResult = this.systems.bubbleGrid.ensureDangerLineSpaceRows(revivePlan.dangerLineSpaceRows);
-  if (gridSpaceResult.shiftRows > 0) {
-    this._markBoardAdvancedThisFrame();
-    this._pushRuntimeEvent("board_view_move_started", {
-      targetOffsetY: gridSpaceResult.viewportOffsetY
-    });
-  }
   var previousRemainingShots = this.remainingShots;
   this.remainingShots = previousRemainingShots + revivePlan.grantedShots;
   var queueResult = revivePlan.targetColorBallCount > 0
@@ -10329,7 +10330,11 @@ function createGameManagerShotResolutionMethods(deps) {
       if (this._tryTopAnchorCollapse()) {
         return;
       }
+      var eliminationPresentationWasComplete = this.pendingBoardAdvanceEliminationPresentation === false;
       if (this._applyPostImpactBoardShiftPolicy(resolution)) {
+        if (eliminationPresentationWasComplete) {
+          this.notifyBoardAdvanceEliminationPresentationComplete();
+        }
         return;
       }
       if (this._scheduleBoardAdvanceAfterImpact()) {
@@ -11461,6 +11466,11 @@ var REWARD_ITEM_RESOURCES = {
   stamina: "image/props/love"
 };
 
+var LOSE_STATUS_RESOURCES = {
+  complete: "image/lose/complete",
+  incomplete: "image/lose/un_complete"
+};
+
 var POWERUP_ICON_RESOURCES = {
   rainbow: "image/props/rainbow_ball",
   swap: "image/props/change_ball",
@@ -11472,31 +11482,11 @@ var POWERUP_ICON_RESOURCES = {
   plus_three_balls: "image/props/plus_ball"
 };
 
-var WIN_BOTTLE_RESOURCES = {
-  R: "image/win/bottle_red",
-  G: "image/win/bottle_green",
-  B: "image/win/bottle_blue",
-  Y: "image/win/bottle_yellow",
-  P: "image/win/bottle_purple"
-};
-
-var WIN_TARGET_STATUS_RESOURCES = {
-  complete: "image/commone/gou",
-  incomplete: "image/commone/x"
-};
 var FAIRY_ANIMATION_BUNDLE_NAME = "animation";
 var EXPLODE_ANIMATION_CLIP_PATH = "explode";
 var FIREWORKS_PREFAB_PATH = "prefabs/fireworks";
 var BOARD_CLEAR_FIREWORKS_BURST_COUNT = 1;
 var BOARD_CLEAR_FIREWORKS_INTERVAL_SEC = 1.1;
-
-var WIN_TARGET_COLOR_NAMES = {
-  R: "红球",
-  G: "绿球",
-  B: "蓝球",
-  Y: "黄球",
-  P: "紫球"
-};
 
 var HUD_STAR_RESOURCES = {
   lit: "image/ball/img101",
@@ -11852,112 +11842,6 @@ function buildObjectiveDisplayForObjective(objective, runtimeSnapshot) {
 
 function buildObjectiveDisplayData(levelConfig, runtimeSnapshot) {
   return buildObjectiveDisplayForObjective(findCollectionObjective(levelConfig), runtimeSnapshot);
-}
-
-function buildWinTargetDescription(objective, targetValue) {
-  if (!objective || typeof objective.type !== "string") {
-    throw new Error("Win target description requires objective type.");
-  }
-  if (!Number.isInteger(targetValue) || targetValue <= 0) {
-    throw new Error("Win target description requires positive integer target value.");
-  }
-
-  if (objective.type === "collect_color") {
-    var colorCode = objective.color;
-    if (typeof colorCode !== "string" || !WIN_TARGET_COLOR_NAMES[colorCode]) {
-      throw new Error("Win target collect_color requires supported color.");
-    }
-    return WIN_TARGET_COLOR_NAMES[colorCode] + " " + targetValue;
-  }
-
-  if (objective.type === "collect_any") {
-    return "任意球 " + targetValue;
-  }
-
-  if (objective.type === "collect_ice_snowball") {
-    return "冰雪球 " + targetValue;
-  }
-
-  throw new Error("Unsupported win target objective type: " + objective.type);
-}
-
-function buildWinCompletedTargetEntries(levelConfig, runtimeSnapshot) {
-  return buildWinTargetEntries(levelConfig, runtimeSnapshot).filter(function (entry) {
-    return entry.completed;
-  });
-}
-
-function buildWinTargetEntries(levelConfig, runtimeSnapshot) {
-  var objectives = getCollectionObjectiveList(levelConfig);
-  var entries = [];
-
-  objectives.forEach(function (objective) {
-    if (!objective || typeof objective.type !== "string") {
-      throw new Error("Win target objective entry must include type.");
-    }
-    if (
-      objective.type !== "collect_any" &&
-      objective.type !== "collect_color" &&
-      objective.type !== "collect_ice_snowball"
-    ) {
-      return;
-    }
-
-    var display = buildObjectiveDisplayForObjective(objective, runtimeSnapshot);
-    if (!Number.isInteger(display.target) || display.target <= 0) {
-      throw new Error("Win target objective requires positive integer target value.");
-    }
-    if (typeof display.iconCode !== "string" || !display.iconCode) {
-      throw new Error("Win target objective requires iconCode.");
-    }
-    if (!Number.isInteger(display.remaining) || display.remaining < 0) {
-      throw new Error("Win target objective requires non-negative integer remaining.");
-    }
-
-    entries.push({
-      iconCode: display.iconCode,
-      description: buildWinTargetDescription(objective, display.target),
-      completed: display.remaining <= 0
-    });
-  });
-
-  return entries;
-}
-
-function buildWinCollectEntries(levelConfig, runtimeSnapshot) {
-  if (!levelConfig || !levelConfig.level) {
-    throw new Error("Win collect list requires level config.");
-  }
-  if (!Array.isArray(levelConfig.level.jarColors)) {
-    throw new Error("Win collect list requires level.jarColors.");
-  }
-  if (!runtimeSnapshot || !runtimeSnapshot.jars || typeof runtimeSnapshot.jars.collectedByColor !== "object") {
-    throw new Error("Win collect list requires runtimeSnapshot.jars.collectedByColor.");
-  }
-
-  var collectedByColor = runtimeSnapshot.jars.collectedByColor;
-  var entries = [];
-
-  levelConfig.level.jarColors.forEach(function (colorCode) {
-    if (typeof colorCode !== "string" || !WIN_BOTTLE_RESOURCES[colorCode]) {
-      throw new Error("Win collect list unsupported jar color: " + colorCode);
-    }
-
-    var count = Math.floor(Number(collectedByColor[colorCode]));
-    if (!Number.isInteger(count) || count < 0) {
-      throw new Error("Win collect count must be non-negative integer: " + colorCode);
-    }
-    if (count <= 0) {
-      return;
-    }
-
-    entries.push({
-      colorCode: colorCode,
-      count: count
-    });
-  });
-
-  return entries;
 }
 
 function buildHudTargetDisplayData(levelConfig, runtimeSnapshot) {
@@ -13380,9 +13264,6 @@ LevelRenderer.prototype._collectSpritePaths = function (levelConfig, runtimeSnap
     }
     pushUniqueSpritePath(paths, JAR_RESOURCES[colorCode], "level.jarColors[" + index + "]");
     pushUniqueSpritePath(paths, JAR_MASK_RESOURCES[colorCode], "level.jarColors[" + index + "]/mask");
-    if (WIN_BOTTLE_RESOURCES[colorCode]) {
-      pushUniqueSpritePath(paths, WIN_BOTTLE_RESOURCES[colorCode], "level.jarColors[" + index + "]/win_bottle");
-    }
   });
 
   getCollectionObjectiveList(levelConfig).forEach(function (objective) {
@@ -13576,8 +13457,8 @@ LevelRenderer.prototype._collectCommonSpritePaths = function () {
     HUD_STAR_RESOURCES.lit,
     HUD_STAR_RESOURCES.unlit,
     TOP_SLOT_STAR_RESOURCE,
-    WIN_TARGET_STATUS_RESOURCES.complete,
-    WIN_TARGET_STATUS_RESOURCES.incomplete,
+    LOSE_STATUS_RESOURCES.complete,
+    LOSE_STATUS_RESOURCES.incomplete,
     REWARD_ITEM_RESOURCES.coin,
     REWARD_ITEM_RESOURCES.stamina,
     POWERUP_ICON_RESOURCES.rainbow,
@@ -13781,8 +13662,7 @@ var LEVEL_RENDERER_SCENE_DEPS = {
   BoardLayout: BoardLayout,
   SpecialAnimationTiming: SpecialAnimationTiming,
   BALL_RESOURCES: BALL_RESOURCES,
-  WIN_BOTTLE_RESOURCES: WIN_BOTTLE_RESOURCES,
-  WIN_TARGET_STATUS_RESOURCES: WIN_TARGET_STATUS_RESOURCES,
+  LOSE_STATUS_RESOURCES: LOSE_STATUS_RESOURCES,
   JAR_RESOURCES: JAR_RESOURCES,
   JAR_MASK_RESOURCES: JAR_MASK_RESOURCES,
   REWARD_ITEM_RESOURCES: REWARD_ITEM_RESOURCES,
@@ -13855,9 +13735,6 @@ var LEVEL_RENDERER_SCENE_DEPS = {
   SpriteProxyLayerHelper: SpriteProxyLayerHelper,
   PropDescriptionViewController: PropDescriptionViewController,
   buildObjectiveDisplayData: buildObjectiveDisplayData,
-  buildWinCompletedTargetEntries: buildWinCompletedTargetEntries,
-  buildWinTargetEntries: buildWinTargetEntries,
-  buildWinCollectEntries: buildWinCollectEntries,
   buildHudTargetDisplayData: buildHudTargetDisplayData,
   applyIceSnowballHudDisplayProgress: applyIceSnowballHudDisplayProgress,
   hasIceSnowballCollectionObjective: hasIceSnowballCollectionObjective,
@@ -15181,13 +15058,14 @@ LevelRenderer.prototype._renderFallingDrops = function (runtimeSnapshot) {
     return;
   }
 
-  drops.forEach(function (drop) {
+  for (var dropIndex = 0; dropIndex < drops.length; dropIndex += 1) {
+    var drop = drops[dropIndex];
     var dropId = String(drop.id);
     if (!dropId) {
-      return;
+      continue;
     }
     if (!drop.active) {
-      return;
+      continue;
     }
 
     var dropNode = this._acquireFallingDropNode(drop);
@@ -15197,7 +15075,7 @@ LevelRenderer.prototype._renderFallingDrops = function (runtimeSnapshot) {
     dropNode.opacity = 255;
     this._applyBoardBubbleVisualCached(dropNode, drop, BOARD_BUBBLE_SIZE);
     applyDropCollisionGlow(this, dropNode, drop);
-  }, this);
+  }
   this._recycleInactiveFallingDropNodes(currentTick);
   this.lastRenderedFallingCount = drops.length;
 };
@@ -19793,8 +19671,7 @@ function attachLevelRendererScenePopupMethods(LevelRenderer, deps) {
   var requireChildNode = SceneShared.requireChildNode;
   var setRequiredLabelString = SceneShared.setRequiredLabelString;
   var BALL_RESOURCES = deps.BALL_RESOURCES;
-  var WIN_BOTTLE_RESOURCES = deps.WIN_BOTTLE_RESOURCES;
-  var WIN_TARGET_STATUS_RESOURCES = deps.WIN_TARGET_STATUS_RESOURCES;
+  var LOSE_STATUS_RESOURCES = deps.LOSE_STATUS_RESOURCES;
   var REWARD_ITEM_RESOURCES = deps.REWARD_ITEM_RESOURCES;
   var PREFAB_PATHS = deps.PREFAB_PATHS;
   var SpriteProxyLayerHelper = deps.SpriteProxyLayerHelper;
@@ -19818,8 +19695,6 @@ function attachLevelRendererScenePopupMethods(LevelRenderer, deps) {
   var ensureLabel = deps.ensureLabel;
   var ensureOutline = deps.ensureOutline;
   var getOrCreateChild = deps.getOrCreateChild;
-  var buildWinTargetEntries = deps.buildWinTargetEntries;
-  var buildWinCollectEntries = deps.buildWinCollectEntries;
   var buildResultTexts = deps.buildResultTexts;
   var resolveWinStarRating = deps.resolveWinStarRating;
   var buildAdRevivePlan = deps.buildAdRevivePlan;
@@ -19838,19 +19713,15 @@ function attachLevelRendererScenePopupMethods(LevelRenderer, deps) {
   }
 
   function applyLoseReviveLayout(loseContent, canRevive) {
-    var retryButtonNode = requireChildNode(loseContent, "btn_retry", "LoseView");
     var backButtonNode = requireChildNode(loseContent, "btn_back", "LoseView");
 
-    ensureLoseOriginalY(retryButtonNode, "LoseView/btn_retry");
     ensureLoseOriginalY(backButtonNode, "LoseView/btn_back");
 
     if (canRevive) {
-      retryButtonNode.setPosition(retryButtonNode.x, retryButtonNode._loseOriginalY);
       backButtonNode.setPosition(backButtonNode.x, backButtonNode._loseOriginalY);
       return;
     }
 
-    retryButtonNode.setPosition(retryButtonNode.x, LOSE_NO_REVIVE_ACTION_BUTTON_Y);
     backButtonNode.setPosition(backButtonNode.x, LOSE_NO_REVIVE_ACTION_BUTTON_Y);
   }
 
@@ -19867,50 +19738,54 @@ function attachLevelRendererScenePopupMethods(LevelRenderer, deps) {
     });
   }
 
-  function resetLoseOriginalPosition(node, propertyName) {
-    if (!node || !node.isValid) {
-      throw new Error("LoseView layout node is required.");
-    }
-    if (typeof node[propertyName] !== "number") {
-      node[propertyName] = propertyName === "_loseOriginalY" ? node.y : node.x;
-    }
-    if (propertyName === "_loseOriginalY") {
-      node.setPosition(node.x, node[propertyName]);
-    } else {
-      node.setPosition(node[propertyName], node.y);
-    }
-  }
-
-  function getLoseTopInfoNode(topInfoNode, childName) {
-    return requireChildNode(topInfoNode, childName, "LoseView/top_info");
-  }
-
-  function resetLoseTopInfoNode(topInfoNode, childName) {
-    var node = getLoseTopInfoNode(topInfoNode, childName);
-    resetLoseOriginalPosition(node, "_loseOriginalX");
-    return node;
-  }
-
-  function renderLoseTopInfo(topInfoNode, runtimeSnapshot) {
+  function renderLoseFailureStatus(renderer, loseContent, runtimeSnapshot) {
     if (!runtimeSnapshot || typeof runtimeSnapshot !== "object") {
-      throw new Error("LoseView top_info requires runtimeSnapshot.");
+      throw new Error("LoseView failure status requires runtime snapshot.");
     }
-    var score = Number(runtimeSnapshot.score);
-    if (!Number.isFinite(score) || score < 0) {
-      throw new Error("LoseView top_info requires non-negative runtime score.");
+    if (!runtimeSnapshot.board || typeof runtimeSnapshot.board !== "object" || Array.isArray(runtimeSnapshot.board)) {
+      throw new Error("LoseView failure status requires runtimeSnapshot.board.");
     }
-    var earnedScore = Math.floor(score);
-    var text1Node = resetLoseTopInfoNode(topInfoNode, "text1");
-    var numNode = resetLoseTopInfoNode(topInfoNode, "target1_text_num");
-    text1Node.active = true;
-    numNode.active = true;
-    setRequiredLabelString(text1Node, "本局得分 ", "LoseView/top_info/text1");
-    setRequiredLabelString(numNode, String(earnedScore), "LoseView/top_info/target1_text_num");
-    var layout = topInfoNode.getComponent(cc.Layout);
-    if (!layout || typeof layout.updateLayout !== "function") {
-      throw new Error("LoseView top_info requires cc.Layout.updateLayout.");
+    if (!Array.isArray(runtimeSnapshot.board.cells)) {
+      throw new Error("LoseView failure status requires runtimeSnapshot.board.cells.");
     }
-    layout.updateLayout();
+    if (!runtimeSnapshot.winStats || typeof runtimeSnapshot.winStats !== "object" || Array.isArray(runtimeSnapshot.winStats)) {
+      throw new Error("LoseView failure status requires runtimeSnapshot.winStats.");
+    }
+
+    var starRating = Number(runtimeSnapshot.winStats.starRating);
+    if (!Number.isInteger(starRating) || starRating < 0) {
+      throw new Error("LoseView failure status requires non-negative integer winStats.starRating.");
+    }
+
+    var ballComplete = runtimeSnapshot.board.cells.length === 0;
+    var starComplete = starRating >= 1;
+    var failTips;
+    if (starComplete && !ballComplete) {
+      failTips = "分数已达标\n但是还有球球未清空";
+    } else if (ballComplete && !starComplete) {
+      failTips = "球球已清空\n但是分数未达标";
+    } else if (!ballComplete && !starComplete) {
+      failTips = "分数未达标\n且球球也未清空";
+    } else {
+      throw new Error("LoseView failure status cannot be shown for a completed board and score.");
+    }
+
+    var failTipsNode = requireChildNode(loseContent, "fail_tips", "LoseView");
+    var statusLayoutNode = requireChildNode(loseContent, "taget", "LoseView");
+    var ballStatusNode = requireChildNode(statusLayoutNode, "ball_complete", "LoseView/taget");
+    var starStatusNode = requireChildNode(statusLayoutNode, "star_complete", "LoseView/taget");
+    var completeSpriteFrame = renderer.spriteFrameCache[LOSE_STATUS_RESOURCES.complete];
+    var incompleteSpriteFrame = renderer.spriteFrameCache[LOSE_STATUS_RESOURCES.incomplete];
+    if (!completeSpriteFrame) {
+      throw new Error("LoseView complete status sprite is not preloaded: " + LOSE_STATUS_RESOURCES.complete);
+    }
+    if (!incompleteSpriteFrame) {
+      throw new Error("LoseView incomplete status sprite is not preloaded: " + LOSE_STATUS_RESOURCES.incomplete);
+    }
+
+    setRequiredLabelString(failTipsNode, failTips, "LoseView/fail_tips");
+    ensureSprite(ballStatusNode, ballComplete ? completeSpriteFrame : incompleteSpriteFrame);
+    ensureSprite(starStatusNode, starComplete ? completeSpriteFrame : incompleteSpriteFrame);
   }
 
   function renderLoseReviveGain(renderer, loseContent, levelConfig, runtimeSnapshot, canRevive) {
@@ -19924,16 +19799,11 @@ function attachLevelRendererScenePopupMethods(LevelRenderer, deps) {
       throw new Error("LoseView requires buildAdRevivePlan.");
     }
     var revivePlan = buildAdRevivePlan(levelConfig, runtimeSnapshot);
-    var upNode = requireChildNode(getNode, "up", "LoseView/get");
     var ballNode = requireChildNode(getNode, "handsel_ball", "LoseView/get");
     var desNode = requireChildNode(getNode, "handsel_des", "LoseView/get");
-    if (!Number.isInteger(revivePlan.dangerLineSpaceRows) || revivePlan.dangerLineSpaceRows <= 0) {
-      throw new Error("LoseView revive plan requires positive integer dangerLineSpaceRows.");
-    }
     if (!Number.isInteger(revivePlan.grantedShots) || revivePlan.grantedShots <= 0) {
       throw new Error("LoseView revive plan requires positive integer grantedShots.");
     }
-    setRequiredLabelString(upNode, "上移" + revivePlan.dangerLineSpaceRows + "行", "LoseView/get/up");
     setRequiredLabelString(desNode, "赠送" + revivePlan.grantedShots + "球", "LoseView/get/handsel_des");
 
     var iconCode = revivePlan.targetColor ? revivePlan.targetColor : "RAINBOW";
@@ -20138,171 +20008,6 @@ LevelRenderer.prototype._renderWinMaxScoreStamp = function (scoreBgNode, runtime
     throw new Error("WinView max_score requires boolean winStats.isPersonalBestScore.");
   }
   maxScoreNode.active = runtimeSnapshot.winStats.isPersonalBestScore;
-};
-
-LevelRenderer.prototype._renderWinMaxCombo = function (scoreBgNode, runtimeSnapshot) {
-  var batterValueNode = requireWinChild(scoreBgNode, "batter_value", "score_bg");
-  if (!runtimeSnapshot || runtimeSnapshot.state !== "won") {
-    batterValueNode.active = false;
-    return;
-  }
-  if (!runtimeSnapshot.winStats || typeof runtimeSnapshot.winStats !== "object") {
-    throw new Error("WinView batter_value requires runtimeSnapshot.winStats.");
-  }
-  if (typeof runtimeSnapshot.winStats.maxComboStreak !== "number") {
-    throw new Error("WinView batter_value requires winStats.maxComboStreak.");
-  }
-
-  var maxComboStreak = Math.floor(runtimeSnapshot.winStats.maxComboStreak);
-  if (!Number.isInteger(maxComboStreak) || maxComboStreak < 0) {
-    throw new Error("WinView batter_value maxComboStreak must be non-negative integer.");
-  }
-
-  batterValueNode.active = true;
-  var comboDisplay = maxComboStreak >= 2 ? maxComboStreak - 1 : 0;
-  this._setWinValueText(batterValueNode, String(comboDisplay));
-};
-
-LevelRenderer.prototype._renderWinCollectList = function (winContent, levelConfig, runtimeSnapshot, targetEntries) {
-  var collectBgNode = winContent ? winContent.getChildByName("collect_bg") : null;
-  if (!collectBgNode) {
-    throw new Error("WinView requires collect_bg.");
-  }
-  if (!Array.isArray(targetEntries)) {
-    throw new Error("WinView collect list requires target entries.");
-  }
-
-  var collectListNode = requireWinChild(collectBgNode, "collect_list", "collect_bg");
-  var templateNode = requireWinChild(collectListNode, "bottle", "collect_list");
-  var entries = buildWinCollectEntries(levelConfig, runtimeSnapshot);
-  var hasNoCompletedTargets = targetEntries.length > 0 && targetEntries.every(function (entry) {
-    if (!entry || typeof entry.completed !== "boolean") {
-      throw new Error("WinView target entry requires completed state.");
-    }
-    return !entry.completed;
-  });
-
-  if (entries.length === 0 && !hasNoCompletedTargets) {
-    collectBgNode.active = false;
-    return;
-  }
-
-  collectBgNode.active = true;
-  var activeNodes = [];
-
-  entries.forEach(function (entry, index) {
-    var bottleNode = null;
-    if (index === 0) {
-      bottleNode = templateNode;
-    } else {
-      bottleNode = collectListNode.getChildByName("bottle_" + index);
-      if (!bottleNode) {
-        if (typeof cc.instantiate !== "function") {
-          throw new Error("WinView multiple collect bottles require cc.instantiate.");
-        }
-        bottleNode = cc.instantiate(templateNode);
-        bottleNode.name = "bottle_" + index;
-        bottleNode.parent = collectListNode;
-      }
-    }
-
-    bottleNode.active = true;
-    activeNodes.push(bottleNode);
-
-    var spritePath = WIN_BOTTLE_RESOURCES[entry.colorCode];
-    var spriteFrame = this.spriteFrameCache[spritePath];
-    if (!spriteFrame) {
-      throw new Error("WinView collect bottle sprite is not preloaded: " + spritePath);
-    }
-
-    ensureSprite(bottleNode, spriteFrame);
-    var numNode = requireWinChild(bottleNode, "num", bottleNode.name);
-    this._setWinValueText(numNode, String(entry.count));
-  }, this);
-
-  collectListNode.children.forEach(function (child) {
-    if (activeNodes.indexOf(child) === -1) {
-      child.active = false;
-    }
-  });
-
-  var layout = collectListNode.getComponent(cc.Layout);
-  if (layout && typeof layout.updateLayout === "function") {
-    layout.updateLayout();
-  }
-};
-
-LevelRenderer.prototype._renderWinTargetList = function (winContent, levelConfig, runtimeSnapshot, entries) {
-  var targetBgNode = winContent ? winContent.getChildByName("target_bg") : null;
-  if (!targetBgNode) {
-    throw new Error("WinView requires target_bg.");
-  }
-  if (!Array.isArray(entries)) {
-    throw new Error("WinView target list requires target entries.");
-  }
-
-  var targetListNode = requireWinChild(targetBgNode, "target_list", "target_bg");
-  var templateNode = requireWinChild(targetListNode, "target", "target_list");
-
-  if (entries.length === 0) {
-    targetBgNode.active = false;
-    return;
-  }
-
-  targetBgNode.active = true;
-  var activeNodes = [];
-
-  entries.forEach(function (entry, index) {
-    var targetNode = null;
-    if (index === 0) {
-      targetNode = templateNode;
-    } else {
-      targetNode = targetListNode.getChildByName("target_" + index);
-      if (!targetNode) {
-        if (typeof cc.instantiate !== "function") {
-          throw new Error("WinView multiple targets require cc.instantiate.");
-        }
-        targetNode = cc.instantiate(templateNode);
-        targetNode.name = "target_" + index;
-        targetNode.parent = targetListNode;
-      }
-    }
-
-    targetNode.active = true;
-    activeNodes.push(targetNode);
-
-    var spritePath = BALL_RESOURCES[entry.iconCode];
-    if (!spritePath) {
-      throw new Error("WinView unsupported target icon code: " + entry.iconCode);
-    }
-    var spriteFrame = this.spriteFrameCache[spritePath];
-    if (!spriteFrame) {
-      throw new Error("WinView target sprite is not preloaded: " + spritePath);
-    }
-
-    ensureSprite(targetNode, spriteFrame);
-    var targetDesNode = requireWinChild(targetNode, "target_des", targetNode.name);
-    var gouNode = requireWinChild(targetNode, "gou", targetNode.name);
-    var statusPath = entry.completed ? WIN_TARGET_STATUS_RESOURCES.complete : WIN_TARGET_STATUS_RESOURCES.incomplete;
-    var statusSpriteFrame = this.spriteFrameCache[statusPath];
-    if (!statusSpriteFrame) {
-      throw new Error("WinView target status sprite is not preloaded: " + statusPath);
-    }
-    this._setWinValueText(targetDesNode, entry.description);
-    ensureSprite(gouNode, statusSpriteFrame);
-    gouNode.active = true;
-  }, this);
-
-  targetListNode.children.forEach(function (child) {
-    if (activeNodes.indexOf(child) === -1) {
-      child.active = false;
-    }
-  });
-
-  var layout = targetListNode.getComponent(cc.Layout);
-  if (layout && typeof layout.updateLayout === "function") {
-    layout.updateLayout();
-  }
 };
 
 LevelRenderer.prototype._ensurePopupMaskVisible = function (popupNode, opacity) {
@@ -20549,10 +20254,6 @@ LevelRenderer.prototype._playWinPopupOpenAnimation = function (winContent, starR
     if (typeof winStats.isPersonalBestScore !== "boolean") {
       throw new Error("WinView render key requires boolean isPersonalBestScore.");
     }
-    if (typeof winStats.maxComboStreak !== "number") {
-      throw new Error("WinView render key requires numeric maxComboStreak.");
-    }
-
     var starRating = resolveWinStarRating(levelConfig, runtimeSnapshot);
     if (!Number.isFinite(starRating)) {
       throw new Error("WinView render key requires finite star rating.");
@@ -20562,10 +20263,7 @@ LevelRenderer.prototype._playWinPopupOpenAnimation = function (winContent, starR
       levelId: levelId,
       totalScore: requireFiniteWinNumber(winStats.totalScore, "WinView render key totalScore"),
       personalBest: winStats.isPersonalBestScore,
-      maxComboStreak: Math.floor(winStats.maxComboStreak),
       rewardItems: getRuntimeWinClearRewardItems(runtimeSnapshot),
-      collectEntries: buildWinCollectEntries(levelConfig, runtimeSnapshot),
-      targetEntries: buildWinTargetEntries(levelConfig, runtimeSnapshot),
       starRating: Math.floor(starRating)
     });
   }
@@ -20785,13 +20483,9 @@ LevelRenderer.prototype._renderWinView = function (runtimeSnapshot) {
   var totalScore = requireFiniteWinNumber(winStats.totalScore, "WinView totalScore");
   var scoreBgNode = winContent ? winContent.getChildByName("score_bg") : null;
   var rewardItems = getRuntimeWinClearRewardItems(runtimeSnapshot);
-  var targetEntries = buildWinTargetEntries(this.currentLevelConfig, runtimeSnapshot);
   this._setWinValueText(requireWinChild(scoreBgNode, "score_value", "score_bg"), String(totalScore));
   this._renderWinAwardInfo(winContent, rewardItems);
   this._renderWinMaxScoreStamp(scoreBgNode, runtimeSnapshot);
-  this._renderWinMaxCombo(scoreBgNode, runtimeSnapshot);
-  this._renderWinCollectList(winContent, this.currentLevelConfig, runtimeSnapshot, targetEntries);
-  this._renderWinTargetList(winContent, this.currentLevelConfig, runtimeSnapshot, targetEntries);
 
   var starRating = resolveWinStarRating(this.currentLevelConfig, runtimeSnapshot);
   this._renderWinStars(winContent, starRating);
@@ -20916,7 +20610,7 @@ LevelRenderer.prototype._renderLoseView = function (runtimeSnapshot) {
     this._playPopupContentOpenAnimation(loseContent);
   }
 
-  renderLoseTopInfo(requireChildNode(loseContent, "top_info", "LoseView"), runtimeSnapshot);
+  renderLoseFailureStatus(this, loseContent, runtimeSnapshot);
 
   var loseRewardEntry = typeof resolveLoseRewardEntry === "function"
     ? resolveLoseRewardEntry(runtimeSnapshot.state)
@@ -20953,14 +20647,12 @@ LevelRenderer.prototype._renderLoseView = function (runtimeSnapshot) {
   }
 
   applyLoseReviveLayout(loseContent, canRevive);
-  var retryButtonNode = loseContent ? loseContent.getChildByName("btn_retry") : null;
 
   var loseCloseButtonNode = loseContent ? loseContent.getChildByName("btn_close") : null;
   if (!loseCloseButtonNode && loseView) {
     loseCloseButtonNode = loseView.getChildByName("btn_close");
   }
   this._bindLoseButton(loseCloseButtonNode, "back");
-  this._bindLoseButton(retryButtonNode, "retry");
   this._bindLoseButton(loseContent ? loseContent.getChildByName("btn_back") : null, "back");
   SpriteProxyLayerHelper.rebuildAutoProxyTree({
     rootNode: loseView,

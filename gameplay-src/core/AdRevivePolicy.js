@@ -1,6 +1,5 @@
 "use strict";
 
-var AD_REVIVE_DANGER_LINE_SPACE_ROWS = 3;
 var AD_REVIVE_GRANTED_SHOTS = 10;
 var AD_REVIVE_TARGET_COLOR_BALLS = 2;
 
@@ -167,7 +166,6 @@ function buildRevivePlan(levelConfig, runtimeSnapshot) {
   var objectiveCompleted = isObjectiveCompleted(runtimeSnapshot);
   var targetColor = objectiveCompleted ? null : resolveReviveTargetColor(levelConfig, runtimeSnapshot);
   return {
-    dangerLineSpaceRows: AD_REVIVE_DANGER_LINE_SPACE_ROWS,
     grantedShots: AD_REVIVE_GRANTED_SHOTS,
     targetColor: targetColor,
     targetColorBallCount: objectiveCompleted ? 0 : AD_REVIVE_TARGET_COLOR_BALLS,
@@ -177,14 +175,14 @@ function buildRevivePlan(levelConfig, runtimeSnapshot) {
 }
 
 function buildRandomReviveDescription() {
-  return "上移" + AD_REVIVE_DANGER_LINE_SPACE_ROWS + "行、增加随机球x" + AD_REVIVE_GRANTED_SHOTS;
+  return "增加随机球x" + AD_REVIVE_GRANTED_SHOTS;
 }
 
 function buildReviveDescriptionFromColor(targetColor) {
   if (!COLOR_DISPLAY_NAMES[targetColor]) {
     throw new Error("Ad revive description target color is unsupported: " + targetColor);
   }
-  return "上移" + AD_REVIVE_DANGER_LINE_SPACE_ROWS + "行、增加" + COLOR_DISPLAY_NAMES[targetColor] + "x" + AD_REVIVE_GRANTED_SHOTS;
+  return "增加" + COLOR_DISPLAY_NAMES[targetColor] + "x" + AD_REVIVE_GRANTED_SHOTS;
 }
 
 function buildReviveDescription(levelConfig, runtimeSnapshot) {
@@ -192,7 +190,6 @@ function buildReviveDescription(levelConfig, runtimeSnapshot) {
 }
 
 module.exports = {
-  AD_REVIVE_DANGER_LINE_SPACE_ROWS: AD_REVIVE_DANGER_LINE_SPACE_ROWS,
   AD_REVIVE_GRANTED_SHOTS: AD_REVIVE_GRANTED_SHOTS,
   AD_REVIVE_TARGET_COLOR_BALLS: AD_REVIVE_TARGET_COLOR_BALLS,
   buildRevivePlan: buildRevivePlan,

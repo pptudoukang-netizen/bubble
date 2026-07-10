@@ -13,6 +13,7 @@ var ELIMINATION_DROP_RELEASE_EARLY_SEC = 0.5;
 var UV_EPSILON = 0.000001;
 var UV_CORNER_EPSILON = 0.0001;
 var SCHEDULE_ONCE_REPEAT = 0;
+var BATCH_PAYLOAD_MAX = 65535;
 
 function requireDirectorScheduler(description) {
   if (!cc || !cc.director || typeof cc.director.getScheduler !== "function") {
@@ -66,7 +67,9 @@ function buildPlayPlanSignature(playPlan) {
   if (!Array.isArray(playPlan)) {
     throw new Error("Bubble shatter play plan signature requires playPlan array.");
   }
-  return playPlan.map(function (entry) {
+  var signature = "";
+  for (var index = 0; index < playPlan.length; index += 1) {
+    var entry = playPlan[index];
     if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
       throw new Error("Bubble shatter play plan signature requires entry objects.");
     }
@@ -76,8 +79,12 @@ function buildPlayPlanSignature(playPlan) {
     if (!Number.isFinite(entry.delaySec) || entry.delaySec < 0) {
       throw new Error("Bubble shatter play plan signature requires non-negative delaySec.");
     }
-    return String(entry.cell.id) + "@" + entry.delaySec.toFixed(3);
-  }).join("|");
+    if (index > 0) {
+      signature += "|";
+    }
+    signature += String(entry.cell.id) + "@" + entry.delaySec.toFixed(3);
+  }
+  return signature;
 }
 
 function buildUvBasis(spriteFrame) {
@@ -116,26 +123,64 @@ function buildUvBasis(spriteFrame) {
   };
 }
 
+function assertUnitInterval(value, fieldName) {
+  var numberValue = assertFiniteNumber(value, fieldName);
+  if (numberValue < 0 || numberValue > 1) {
+    throw new Error(fieldName + " must be between 0 and 1.");
+  }
+  return numberValue;
+}
+
+function encodeUnitIntervalToUint16(value, fieldName) {
+  return Math.round(assertUnitInterval(value, fieldName) * BATCH_PAYLOAD_MAX);
+}
+
+function encodeUint16High(value) {
+  return Math.floor(value / 256);
+}
+
+function encodeUint16Low(value) {
+  return value % 256;
+}
+
+function applyBatchPayload(node, payloadColor, seed, normalizedAge) {
+  if (!node || !node.isValid) {
+    throw new Error("Bubble shatter batch payload requires valid node.");
+  }
+  if (!payloadColor || typeof payloadColor !== "object") {
+    throw new Error("Bubble shatter batch payload requires reusable color.");
+  }
+
+  var encodedSeed = encodeUnitIntervalToUint16(seed, "Bubble shatter seed");
+  var encodedAge = encodeUnitIntervalToUint16(normalizedAge, "Bubble shatter normalized age");
+  payloadColor.r = encodeUint16High(encodedSeed);
+  payloadColor.g = encodeUint16Low(encodedSeed);
+  payloadColor.b = encodeUint16High(encodedAge);
+  payloadColor.a = 255;
+  node.color = payloadColor;
+  node.opacity = encodeUint16Low(encodedAge);
+}
+
 var BubbleShatterSprite = cc.Class({
   extends: cc.Component,
 
   ctor: function () {
     this._sprite = null;
     this._material = null;
-    this._effectAsset = null;
+    this._payloadColor = null;
+    this._seed = 0;
     this._elapsed = 0;
     this._lifetime = SHATTER_LIFETIME;
     this._playing = false;
     this._releaseHandler = null;
-    this._shatterParams = cc.v4(0, SHATTER_LIFETIME, 0, EXPANDED_QUAD_SCALE);
   },
 
   initialize: function (options) {
     if (!options || typeof options !== "object" || Array.isArray(options)) {
       throw new Error("BubbleShatterSprite initialize options are required.");
     }
-    if (!options.effectAsset || !options.effectAsset.isValid) {
-      throw new Error("BubbleShatterSprite requires valid EffectAsset.");
+    if (!options.material || !options.material.isValid) {
+      throw new Error("BubbleShatterSprite requires valid shared material.");
     }
     if (!options.spriteFrame || !options.spriteFrame.isValid) {
       throw new Error("BubbleShatterSprite requires valid SpriteFrame.");
@@ -147,7 +192,6 @@ var BubbleShatterSprite = cc.Class({
     var baseWidth = assertPositiveNumber(options.width, "Bubble shatter width");
     var baseHeight = assertPositiveNumber(options.height, "Bubble shatter height");
     var seed = assertFiniteNumber(options.seed, "Bubble shatter seed");
-    var uvBasis = buildUvBasis(options.spriteFrame);
 
     this._sprite = this.node.getComponent(cc.Sprite);
     if (!this._sprite) {
@@ -157,31 +201,19 @@ var BubbleShatterSprite = cc.Class({
     this._sprite.trim = true;
     this._sprite.spriteFrame = options.spriteFrame;
     this.node.setContentSize(baseWidth * EXPANDED_QUAD_SCALE, baseHeight * EXPANDED_QUAD_SCALE);
-    this.node.opacity = 255;
-
-    if (!this._material || this._effectAsset !== options.effectAsset) {
-      var material = cc.Material.create(options.effectAsset);
-      if (!material) {
-        throw new Error("Bubble shatter material creation failed.");
-      }
-      this._material = this._sprite.setMaterial(0, material);
-      this._effectAsset = options.effectAsset;
-    }
+    this._material = this._sprite.setMaterial(0, options.material);
     if (!this._material) {
       throw new Error("BubbleShatterSprite material is missing.");
+    }
+    if (!this._payloadColor) {
+      this._payloadColor = new cc.Color(0, 0, 0, 255);
     }
 
     this._elapsed = FIRST_FRAME_BURST_TIME;
     this._lifetime = SHATTER_LIFETIME;
+    this._seed = seed;
     this._releaseHandler = options.releaseHandler;
-    this._shatterParams.set(this._elapsed, this._lifetime, seed, EXPANDED_QUAD_SCALE);
-    this._material.setProperty("uvOriginAxisX", uvBasis.originAxisX);
-    this._material.setProperty("uvAxisY", uvBasis.axisY);
-    this._material.setProperty(
-      "motionParams",
-      cc.v4(SHATTER_SPREAD, SHATTER_GRAVITY, SHATTER_ROTATION, SHATTER_FADE_START)
-    );
-    this._material.setProperty("shatterParams", this._shatterParams);
+    applyBatchPayload(this.node, this._payloadColor, this._seed, this._elapsed / this._lifetime);
     this._playing = true;
     this.enabled = true;
   },
@@ -202,8 +234,7 @@ var BubbleShatterSprite = cc.Class({
     }
 
     this._elapsed = Math.min(this._lifetime, this._elapsed + deltaTime);
-    this._shatterParams.x = this._elapsed;
-    this._material.setProperty("shatterParams", this._shatterParams);
+    applyBatchPayload(this.node, this._payloadColor, this._seed, this._elapsed / this._lifetime);
     if (this._elapsed < this._lifetime) {
       return;
     }
@@ -243,6 +274,7 @@ function BubbleShatterRenderer(options) {
   this.effectLoadPromise = null;
   this.activeComponents = [];
   this.nodePool = [];
+  this.sharedMaterials = {};
   this.currentResolution = null;
   this.playedCellIds = {};
   this.pendingCellIds = {};
@@ -252,6 +284,7 @@ function BubbleShatterRenderer(options) {
   this.presentationTrackedPlanSignature = "";
   this.presentationCompleteNotified = false;
   this.presentationReleaseCallback = null;
+  this.releaseComponentHandler = this._releaseComponent.bind(this);
 }
 
 BubbleShatterRenderer.prototype.setPresentationCompleteHandler = function (handler) {
@@ -303,10 +336,9 @@ BubbleShatterRenderer.prototype.preload = function () {
 };
 
 BubbleShatterRenderer.prototype.reset = function () {
-  var active = this.activeComponents.slice();
-  active.forEach(function (component) {
-    this._releaseComponent(component, true);
-  }, this);
+  while (this.activeComponents.length > 0) {
+    this._releaseComponent(this.activeComponents[this.activeComponents.length - 1], true);
+  }
   this._cancelPendingSchedules();
   this._resetPresentationTracking(true);
   this.currentResolution = null;
@@ -412,15 +444,50 @@ BubbleShatterRenderer.prototype._hideBoardBubbleNode = function (cellId, boardBu
   }
 };
 
+BubbleShatterRenderer.prototype._getSharedMaterial = function (spritePath, spriteFrame) {
+  if (typeof spritePath !== "string" || !spritePath) {
+    throw new Error("Bubble shatter shared material requires sprite path.");
+  }
+  if (!spriteFrame || !spriteFrame.isValid) {
+    throw new Error("Bubble shatter shared material requires valid SpriteFrame.");
+  }
+  var cachedMaterial = this.sharedMaterials[spritePath];
+  if (cachedMaterial) {
+    if (!cachedMaterial.isValid) {
+      throw new Error("Bubble shatter shared material is invalid: " + spritePath);
+    }
+    return cachedMaterial;
+  }
+  if (!this.effectAsset || !this.effectAsset.isValid) {
+    throw new Error("Bubble shatter shared material requires preloaded effect.");
+  }
+
+  var material = cc.Material.create(this.effectAsset);
+  if (!material) {
+    throw new Error("Bubble shatter shared material creation failed: " + spritePath);
+  }
+  var uvBasis = buildUvBasis(spriteFrame);
+  material.setProperty("uvOriginAxisX", uvBasis.originAxisX);
+  material.setProperty("uvAxisY", uvBasis.axisY);
+  material.setProperty(
+    "motionParams",
+    cc.v4(SHATTER_SPREAD, SHATTER_GRAVITY, SHATTER_ROTATION, SHATTER_FADE_START)
+  );
+  this.sharedMaterials[spritePath] = material;
+  return material;
+};
+
 BubbleShatterRenderer.prototype._buildPlayPlan = function (resolution) {
   var matchedById = {};
-  resolution.matched.forEach(function (cell) {
-    matchedById[String(cell.id)] = cell;
-  });
+  for (var matchedIndex = 0; matchedIndex < resolution.matched.length; matchedIndex += 1) {
+    var matchedCell = resolution.matched[matchedIndex];
+    matchedById[String(matchedCell.id)] = matchedCell;
+  }
 
   var entries = [];
   if (Array.isArray(resolution.eliminationSequence) && resolution.eliminationSequence.length > 0) {
-    resolution.eliminationSequence.forEach(function (sequenceEntry) {
+    for (var sequenceIndex = 0; sequenceIndex < resolution.eliminationSequence.length; sequenceIndex += 1) {
+      var sequenceEntry = resolution.eliminationSequence[sequenceIndex];
       if (!sequenceEntry || typeof sequenceEntry !== "object" || Array.isArray(sequenceEntry)) {
         throw new Error("Bubble shatter elimination sequence entry must be an object.");
       }
@@ -430,7 +497,7 @@ BubbleShatterRenderer.prototype._buildPlayPlan = function (resolution) {
         throw new Error("Bubble shatter elimination sequence cell is missing from matched: " + cellId);
       }
       if (!this._isEligibleCell(cell)) {
-        return;
+        continue;
       }
       if (!Number.isFinite(Number(sequenceEntry.delayMs)) || Number(sequenceEntry.delayMs) < 0) {
         throw new Error("Bubble shatter elimination sequence delayMs must be a non-negative number: " + cellId);
@@ -440,14 +507,15 @@ BubbleShatterRenderer.prototype._buildPlayPlan = function (resolution) {
         delaySec: Number(sequenceEntry.delayMs) / 1000,
         worldPosition: sequenceEntry.worldPosition
       });
-    }, this);
+    }
     return entries;
   }
 
   var eligibleIndex = 0;
-  resolution.matched.forEach(function (cell) {
+  for (var cellIndex = 0; cellIndex < resolution.matched.length; cellIndex += 1) {
+    var cell = resolution.matched[cellIndex];
     if (!this._isEligibleCell(cell)) {
-      return;
+      continue;
     }
     entries.push({
       cell: cell,
@@ -455,7 +523,7 @@ BubbleShatterRenderer.prototype._buildPlayPlan = function (resolution) {
       worldPosition: null
     });
     eligibleIndex += 1;
-  }, this);
+  }
   return entries;
 };
 
@@ -529,6 +597,7 @@ BubbleShatterRenderer.prototype._playCellShatter = function (
   if (!spriteFrame || !spriteFrame.isValid) {
     throw new Error("Bubble shatter SpriteFrame is not preloaded: " + spritePath);
   }
+  var sharedMaterial = this._getSharedMaterial(spritePath, spriteFrame);
 
   var position = this._resolveCellPosition(cell, resolution, boardSnapshot, boardBubbleNodes, presetPosition);
   var component = this._acquireComponent();
@@ -537,12 +606,12 @@ BubbleShatterRenderer.prototype._playCellShatter = function (
   component.node.setPosition(position.x, position.y);
   component.node.active = true;
   component.initialize({
-    effectAsset: this.effectAsset,
+    material: sharedMaterial,
     spriteFrame: spriteFrame,
     width: this.bubbleWidth,
     height: this.bubbleHeight,
     seed: hashStringToUnit(cellId),
-    releaseHandler: this._releaseComponent.bind(this)
+    releaseHandler: this.releaseComponentHandler
   });
   this.activeComponents.push(component);
   this.playedCellIds[cellId] = true;
@@ -676,9 +745,10 @@ BubbleShatterRenderer.prototype.playResolution = function (resolution, boardSnap
     this._armPresentationRelease(resolution, playPlan);
     this.presentationTrackedPlanSignature = playPlanSignature;
   }
-  playPlan.forEach(function (entry) {
+  for (var index = 0; index < playPlan.length; index += 1) {
+    var entry = playPlan[index];
     this._scheduleCellShatter(entry, resolution, boardSnapshot, boardBubbleNodes, spriteFrameCache);
-  }, this);
+  }
 };
 
 module.exports = BubbleShatterRenderer;

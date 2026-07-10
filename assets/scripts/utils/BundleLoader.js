@@ -10,6 +10,7 @@ var GAME_ASSET_PREFIX = "game/";
 var UI_PREFAB_LEGACY_PREFIX = "prefabs/ui/";
 var UI_PREFAB_BUNDLE_PREFIX = "prefabs/";
 var UI_IMAGE_SIGN_PREFIX = "image/sign/";
+var UI_IMAGE_LOSE_PREFIX = "image/lose/";
 var UI_IMAGE_WIN_PREFIX = "image/win/";
 var UI_IMAGE_COMMONE_PREFIX = "image/commone/";
 var UI_COMMENT_ANIMATION_LEGACY_PREFIX = "ui/animation/comments/";
@@ -583,6 +584,13 @@ function resolveLoadRoute(path) {
   }
 
   if (path.indexOf(UI_IMAGE_SIGN_PREFIX) === 0) {
+    return {
+      bundleName: UI_BUNDLE_NAME,
+      path: path
+    };
+  }
+
+  if (path.indexOf(UI_IMAGE_LOSE_PREFIX) === 0) {
     return {
       bundleName: UI_BUNDLE_NAME,
       path: path

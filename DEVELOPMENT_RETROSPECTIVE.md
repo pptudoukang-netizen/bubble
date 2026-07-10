@@ -2,7 +2,7 @@
 
 更新时间：2026-04-22  
 项目路径：`E:/cocos_project/bubble`  
-引擎版本：Cocos Creator 2.4.9
+引擎版本：Cocos Creator 2.4.12
 
 ## 1. 复盘目的
 

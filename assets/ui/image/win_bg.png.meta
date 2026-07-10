@@ -8,8 +8,8 @@
   "premultiplyAlpha": false,
   "genMipmaps": false,
   "packable": true,
-  "width": 578,
-  "height": 754,
+  "width": 710,
+  "height": 897,
   "platformSettings": {
     "minigame": {
       "formats": [
@@ -33,10 +33,10 @@
       "offsetY": 0,
       "trimX": 0,
       "trimY": 0,
-      "width": 578,
-      "height": 754,
-      "rawWidth": 578,
-      "rawHeight": 754,
+      "width": 710,
+      "height": 897,
+      "rawWidth": 710,
+      "rawHeight": 897,
       "borderTop": 267,
       "borderBottom": 152,
       "borderLeft": 0,

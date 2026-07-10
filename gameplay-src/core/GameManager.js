@@ -2199,13 +2199,6 @@ GameManager.prototype.reviveFromAd = function () {
     },
     objectives: this._buildPrimaryObjectiveSnapshot(this._getCachedJarSnapshot())
   });
-  var gridSpaceResult = this.systems.bubbleGrid.ensureDangerLineSpaceRows(revivePlan.dangerLineSpaceRows);
-  if (gridSpaceResult.shiftRows > 0) {
-    this._markBoardAdvancedThisFrame();
-    this._pushRuntimeEvent("board_view_move_started", {
-      targetOffsetY: gridSpaceResult.viewportOffsetY
-    });
-  }
   var previousRemainingShots = this.remainingShots;
   this.remainingShots = previousRemainingShots + revivePlan.grantedShots;
   var queueResult = revivePlan.targetColorBallCount > 0

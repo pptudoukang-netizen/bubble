@@ -205,6 +205,7 @@ function FallingMarbleSystem() {
   this.jarZones = [];
   this.rimEdgeThickness = Math.max(1, Number(BoardLayout.jarSideCollisionWidth) || 40);
   this._dropSerial = 0;
+  this._spawnedDropsBuffer = [];
   this._renderSnapshotCache = null;
   this._renderSnapshotDirty = true;
   this._dropLeftLimit = BoardLayout.boardLeft;
@@ -263,6 +264,7 @@ FallingMarbleSystem.prototype.configureLevel = function (levelConfig) {
   this.maxDynamicMarbles = FallingRulesDefaults.maxDynamicMarbles;
   this.maxBounces = rules.maxBounces || 0;
   this.totalFallen = 0;
+  this._spawnedDropsBuffer.length = 0;
   this.lastDrops = [];
   this.activeDrops = [];
   this.lastCollectedDrops = [];
@@ -1445,10 +1447,14 @@ FallingMarbleSystem.prototype.update = function (dt) {
   }
 
   var drops = this.activeDrops;
-  var activeDropCount = drops.reduce(function (count, drop) {
-    return count + (drop.active ? 1 : 0);
-  }, 0);
-  var spawnedDrops = [];
+  var activeDropCount = 0;
+  for (var activeIndex = 0; activeIndex < drops.length; activeIndex += 1) {
+    if (drops[activeIndex].active) {
+      activeDropCount += 1;
+    }
+  }
+  var spawnedDrops = this._spawnedDropsBuffer;
+  spawnedDrops.length = 0;
   var writeIndex = 0;
   for (var readIndex = 0; readIndex < drops.length; readIndex += 1) {
     var drop = drops[readIndex];

@@ -637,13 +637,14 @@ LevelRenderer.prototype._renderFallingDrops = function (runtimeSnapshot) {
     return;
   }
 
-  drops.forEach(function (drop) {
+  for (var dropIndex = 0; dropIndex < drops.length; dropIndex += 1) {
+    var drop = drops[dropIndex];
     var dropId = String(drop.id);
     if (!dropId) {
-      return;
+      continue;
     }
     if (!drop.active) {
-      return;
+      continue;
     }
 
     var dropNode = this._acquireFallingDropNode(drop);
@@ -653,7 +654,7 @@ LevelRenderer.prototype._renderFallingDrops = function (runtimeSnapshot) {
     dropNode.opacity = 255;
     this._applyBoardBubbleVisualCached(dropNode, drop, BOARD_BUBBLE_SIZE);
     applyDropCollisionGlow(this, dropNode, drop);
-  }, this);
+  }
   this._recycleInactiveFallingDropNodes(currentTick);
   this.lastRenderedFallingCount = drops.length;
 };

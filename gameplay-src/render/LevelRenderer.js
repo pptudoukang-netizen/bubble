@@ -73,6 +73,11 @@ var REWARD_ITEM_RESOURCES = {
   stamina: "image/props/love"
 };
 
+var LOSE_STATUS_RESOURCES = {
+  complete: "image/lose/complete",
+  incomplete: "image/lose/un_complete"
+};
+
 var POWERUP_ICON_RESOURCES = {
   rainbow: "image/props/rainbow_ball",
   swap: "image/props/change_ball",
@@ -84,31 +89,11 @@ var POWERUP_ICON_RESOURCES = {
   plus_three_balls: "image/props/plus_ball"
 };
 
-var WIN_BOTTLE_RESOURCES = {
-  R: "image/win/bottle_red",
-  G: "image/win/bottle_green",
-  B: "image/win/bottle_blue",
-  Y: "image/win/bottle_yellow",
-  P: "image/win/bottle_purple"
-};
-
-var WIN_TARGET_STATUS_RESOURCES = {
-  complete: "image/commone/gou",
-  incomplete: "image/commone/x"
-};
 var FAIRY_ANIMATION_BUNDLE_NAME = "animation";
 var EXPLODE_ANIMATION_CLIP_PATH = "explode";
 var FIREWORKS_PREFAB_PATH = "prefabs/fireworks";
 var BOARD_CLEAR_FIREWORKS_BURST_COUNT = 1;
 var BOARD_CLEAR_FIREWORKS_INTERVAL_SEC = 1.1;
-
-var WIN_TARGET_COLOR_NAMES = {
-  R: "红球",
-  G: "绿球",
-  B: "蓝球",
-  Y: "黄球",
-  P: "紫球"
-};
 
 var HUD_STAR_RESOURCES = {
   lit: "image/ball/img101",
@@ -464,112 +449,6 @@ function buildObjectiveDisplayForObjective(objective, runtimeSnapshot) {
 
 function buildObjectiveDisplayData(levelConfig, runtimeSnapshot) {
   return buildObjectiveDisplayForObjective(findCollectionObjective(levelConfig), runtimeSnapshot);
-}
-
-function buildWinTargetDescription(objective, targetValue) {
-  if (!objective || typeof objective.type !== "string") {
-    throw new Error("Win target description requires objective type.");
-  }
-  if (!Number.isInteger(targetValue) || targetValue <= 0) {
-    throw new Error("Win target description requires positive integer target value.");
-  }
-
-  if (objective.type === "collect_color") {
-    var colorCode = objective.color;
-    if (typeof colorCode !== "string" || !WIN_TARGET_COLOR_NAMES[colorCode]) {
-      throw new Error("Win target collect_color requires supported color.");
-    }
-    return WIN_TARGET_COLOR_NAMES[colorCode] + " " + targetValue;
-  }
-
-  if (objective.type === "collect_any") {
-    return "任意球 " + targetValue;
-  }
-
-  if (objective.type === "collect_ice_snowball") {
-    return "冰雪球 " + targetValue;
-  }
-
-  throw new Error("Unsupported win target objective type: " + objective.type);
-}
-
-function buildWinCompletedTargetEntries(levelConfig, runtimeSnapshot) {
-  return buildWinTargetEntries(levelConfig, runtimeSnapshot).filter(function (entry) {
-    return entry.completed;
-  });
-}
-
-function buildWinTargetEntries(levelConfig, runtimeSnapshot) {
-  var objectives = getCollectionObjectiveList(levelConfig);
-  var entries = [];
-
-  objectives.forEach(function (objective) {
-    if (!objective || typeof objective.type !== "string") {
-      throw new Error("Win target objective entry must include type.");
-    }
-    if (
-      objective.type !== "collect_any" &&
-      objective.type !== "collect_color" &&
-      objective.type !== "collect_ice_snowball"
-    ) {
-      return;
-    }
-
-    var display = buildObjectiveDisplayForObjective(objective, runtimeSnapshot);
-    if (!Number.isInteger(display.target) || display.target <= 0) {
-      throw new Error("Win target objective requires positive integer target value.");
-    }
-    if (typeof display.iconCode !== "string" || !display.iconCode) {
-      throw new Error("Win target objective requires iconCode.");
-    }
-    if (!Number.isInteger(display.remaining) || display.remaining < 0) {
-      throw new Error("Win target objective requires non-negative integer remaining.");
-    }
-
-    entries.push({
-      iconCode: display.iconCode,
-      description: buildWinTargetDescription(objective, display.target),
-      completed: display.remaining <= 0
-    });
-  });
-
-  return entries;
-}
-
-function buildWinCollectEntries(levelConfig, runtimeSnapshot) {
-  if (!levelConfig || !levelConfig.level) {
-    throw new Error("Win collect list requires level config.");
-  }
-  if (!Array.isArray(levelConfig.level.jarColors)) {
-    throw new Error("Win collect list requires level.jarColors.");
-  }
-  if (!runtimeSnapshot || !runtimeSnapshot.jars || typeof runtimeSnapshot.jars.collectedByColor !== "object") {
-    throw new Error("Win collect list requires runtimeSnapshot.jars.collectedByColor.");
-  }
-
-  var collectedByColor = runtimeSnapshot.jars.collectedByColor;
-  var entries = [];
-
-  levelConfig.level.jarColors.forEach(function (colorCode) {
-    if (typeof colorCode !== "string" || !WIN_BOTTLE_RESOURCES[colorCode]) {
-      throw new Error("Win collect list unsupported jar color: " + colorCode);
-    }
-
-    var count = Math.floor(Number(collectedByColor[colorCode]));
-    if (!Number.isInteger(count) || count < 0) {
-      throw new Error("Win collect count must be non-negative integer: " + colorCode);
-    }
-    if (count <= 0) {
-      return;
-    }
-
-    entries.push({
-      colorCode: colorCode,
-      count: count
-    });
-  });
-
-  return entries;
 }
 
 function buildHudTargetDisplayData(levelConfig, runtimeSnapshot) {
@@ -1992,9 +1871,6 @@ LevelRenderer.prototype._collectSpritePaths = function (levelConfig, runtimeSnap
     }
     pushUniqueSpritePath(paths, JAR_RESOURCES[colorCode], "level.jarColors[" + index + "]");
     pushUniqueSpritePath(paths, JAR_MASK_RESOURCES[colorCode], "level.jarColors[" + index + "]/mask");
-    if (WIN_BOTTLE_RESOURCES[colorCode]) {
-      pushUniqueSpritePath(paths, WIN_BOTTLE_RESOURCES[colorCode], "level.jarColors[" + index + "]/win_bottle");
-    }
   });
 
   getCollectionObjectiveList(levelConfig).forEach(function (objective) {
@@ -2188,8 +2064,8 @@ LevelRenderer.prototype._collectCommonSpritePaths = function () {
     HUD_STAR_RESOURCES.lit,
     HUD_STAR_RESOURCES.unlit,
     TOP_SLOT_STAR_RESOURCE,
-    WIN_TARGET_STATUS_RESOURCES.complete,
-    WIN_TARGET_STATUS_RESOURCES.incomplete,
+    LOSE_STATUS_RESOURCES.complete,
+    LOSE_STATUS_RESOURCES.incomplete,
     REWARD_ITEM_RESOURCES.coin,
     REWARD_ITEM_RESOURCES.stamina,
     POWERUP_ICON_RESOURCES.rainbow,
@@ -2393,8 +2269,7 @@ var LEVEL_RENDERER_SCENE_DEPS = {
   BoardLayout: BoardLayout,
   SpecialAnimationTiming: SpecialAnimationTiming,
   BALL_RESOURCES: BALL_RESOURCES,
-  WIN_BOTTLE_RESOURCES: WIN_BOTTLE_RESOURCES,
-  WIN_TARGET_STATUS_RESOURCES: WIN_TARGET_STATUS_RESOURCES,
+  LOSE_STATUS_RESOURCES: LOSE_STATUS_RESOURCES,
   JAR_RESOURCES: JAR_RESOURCES,
   JAR_MASK_RESOURCES: JAR_MASK_RESOURCES,
   REWARD_ITEM_RESOURCES: REWARD_ITEM_RESOURCES,
@@ -2467,9 +2342,6 @@ var LEVEL_RENDERER_SCENE_DEPS = {
   SpriteProxyLayerHelper: SpriteProxyLayerHelper,
   PropDescriptionViewController: PropDescriptionViewController,
   buildObjectiveDisplayData: buildObjectiveDisplayData,
-  buildWinCompletedTargetEntries: buildWinCompletedTargetEntries,
-  buildWinTargetEntries: buildWinTargetEntries,
-  buildWinCollectEntries: buildWinCollectEntries,
   buildHudTargetDisplayData: buildHudTargetDisplayData,
   applyIceSnowballHudDisplayProgress: applyIceSnowballHudDisplayProgress,
   hasIceSnowballCollectionObjective: hasIceSnowballCollectionObjective,

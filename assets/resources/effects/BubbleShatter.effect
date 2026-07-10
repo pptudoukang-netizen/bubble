@@ -18,7 +18,6 @@ CCEffect %{
         texture: { value: white }
         uvOriginAxisX: { value: [0.0, 0.0, 1.0, 0.0] }
         uvAxisY: { value: [0.0, 1.0, 1.0, 1.0] }
-        shatterParams: { value: [0.0, 0.48, 0.0, 3.0] }
         motionParams: { value: [0.92, 0.5, 2.4, 0.62] }
 }%
 
@@ -32,7 +31,23 @@ CCProgram bubble-shatter-vs %{
   in vec4 a_color;
 
   out vec2 uv0;
-  out vec4 color;
+  out vec4 batchData;
+
+  uniform BubbleShatterUv {
+    vec4 uvOriginAxisX;
+    vec4 uvAxisY;
+  };
+
+  vec2 toLocalUv(vec2 atlasUv) {
+    vec2 origin = uvOriginAxisX.xy;
+    vec2 axisX = uvOriginAxisX.zw;
+    vec2 axisY = uvAxisY.xy;
+    vec2 delta = atlasUv - origin;
+    return vec2(
+      dot(delta, axisX) / uvAxisY.z,
+      dot(delta, axisY) / uvAxisY.w
+    );
+  }
 
   vec4 vert () {
     vec4 pos = vec4(a_position, 1.0);
@@ -41,8 +56,8 @@ CCProgram bubble-shatter-vs %{
     #else
       pos = cc_matViewProj * pos;
     #endif
-    uv0 = a_uv0;
-    color = a_color;
+    uv0 = toLocalUv(a_uv0);
+    batchData = a_color;
     return pos;
   }
 }%
@@ -52,7 +67,7 @@ CCProgram bubble-shatter-fs %{
   #include <texture>
 
   in vec2 uv0;
-  in vec4 color;
+  in vec4 batchData;
 
   uniform sampler2D texture;
   uniform BubbleShatterUv {
@@ -60,13 +75,19 @@ CCProgram bubble-shatter-fs %{
     vec4 uvAxisY;
   };
   uniform BubbleShatterMotion {
-    vec4 shatterParams;
     vec4 motionParams;
   };
 
   const float PI = 3.141592653589793;
   const float TWO_PI = 6.283185307179586;
   const float OUTER_SHARD_COUNT = 8.0;
+  const float UINT16_MAX_VALUE = 65535.0;
+
+  float decodeUnitIntervalFromUint16(float highByte, float lowByte) {
+    float high = floor(highByte * 255.0 + 0.5);
+    float low = floor(lowByte * 255.0 + 0.5);
+    return (high * 256.0 + low) / UINT16_MAX_VALUE;
+  }
 
   float hash11(float value) {
     return fract(sin(value) * 43758.5453123);
@@ -101,26 +122,18 @@ CCProgram bubble-shatter-fs %{
     return point.x >= 0.0 && point.x <= 1.0 && point.y >= 0.0 && point.y <= 1.0;
   }
 
-  vec2 toLocalUv(vec2 atlasUv) {
-    vec2 origin = uvOriginAxisX.xy;
-    vec2 axisX = uvOriginAxisX.zw;
-    vec2 axisY = uvAxisY.xy;
-    vec2 delta = atlasUv - origin;
-    return vec2(
-      dot(delta, axisX) / uvAxisY.z,
-      dot(delta, axisY) / uvAxisY.w
-    );
-  }
-
   vec2 toAtlasUv(vec2 localUv) {
     return uvOriginAxisX.xy + uvOriginAxisX.zw * localUv.x + uvAxisY.xy * localUv.y;
   }
 
   vec4 frag () {
-    float normalizedAge = clamp(shatterParams.x / shatterParams.y, 0.0, 1.0);
+    float seed = decodeUnitIntervalFromUint16(batchData.r, batchData.g);
+    float normalizedAge = decodeUnitIntervalFromUint16(batchData.b, batchData.a);
+    vec4 shatterParams = vec4(normalizedAge * 0.48, 0.48, seed, 3.0);
+    normalizedAge = clamp(shatterParams.x / shatterParams.y, 0.0, 1.0);
     float burstProgress = 1.0 - pow(1.0 - normalizedAge, 3.0);
     float seedAngle = shatterParams.z * TWO_PI;
-    vec2 localUv = toLocalUv(uv0);
+    vec2 localUv = uv0;
     vec2 outputPoint = (localUv - vec2(0.5)) * shatterParams.w + vec2(0.5);
     vec4 result = vec4(0.0);
     float claimed = 0.0;
@@ -161,7 +174,7 @@ CCProgram bubble-shatter-fs %{
         #if USE_BGRA
           sampledColor = sampledColor.bgra;
         #endif
-        result = sampledColor * color;
+        result = sampledColor;
         claimed = 1.0;
       }
     }

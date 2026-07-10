@@ -397,11 +397,12 @@ function stripExistingMainJsLazyLoader(text) {
   if (markerIndex < 0) {
     return text;
   }
-  var runIndex = text.indexOf("        if (GameGlobal.LoadingManager", markerIndex);
-  if (runIndex < 0) {
+  var insertionTarget = "        // [wechat-minigame-loading-patch] destroy shared canvas cover before engine run";
+  var insertionPoint = text.indexOf(insertionTarget, markerIndex);
+  if (insertionPoint < 0) {
     throw new Error("Cannot strip existing lazy gameplay loader block from main.js.");
   }
-  return text.slice(0, markerIndex) + text.slice(runIndex);
+  return text.slice(0, markerIndex) + text.slice(insertionPoint);
 }
 
 function patchMainJs(buildOutputDir) {
