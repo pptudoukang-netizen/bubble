@@ -32,7 +32,7 @@
 - `tools/build-wechat-gameplay-code.js`：局内玩法源码打包工具；编辑器构建完成会由 `packages/build-loading-splash` 自动调用，也可用 `npm run build:wechat-gameplay-code` 手动补跑；输出微信脚本懒包和模拟器资源懒包。
 - `open-data/`：历史微信开放数据域逻辑。当前世界排行榜由主域源码和云函数实现，不再依赖开放数据域读取好友云存储。
 - `tools/`：校验、同步、构建修复、调试辅助脚本。
-- `tools/first-100-level-design.js`：前 100 关权威设计规则，统一定义 10 种棋盘轮廓、颜色数量、特殊球投放、目标、发射数和每 10 关难度波形，并严格校验实际棋盘与规则一致。
+- `tools/first-100-level-design.js`：前 100 关权威设计规则；先按花形、水晶、雪花、星形、羽翼、皇冠六组 15～20 关主题生成整体轮廓，再校验视觉重心、左右重量、单一焦点和自然边缘，之后放置特殊球并填充聚类颜色；同时统一定义目标、发射数和每 10 关难度波形。
 - `tools/rebuild-first-100-level-configs.js`：前 100 关定向重建入口；先同步 `LEVEL_CONFIG_TABLE_1_1000.csv` 前 100 行，再只重建本地 1-10、远程包 11-100 和对应 manifest 条目，不改写 101-1000 关远程包。运行命令为 `npm run generate:levels-first100`。
 - `tools/clustered-level-layout.js`、`tools/rebuild-relaxed-campaign-level-configs.js`、`tools/redesign-first-100-clustered-levels.js`、`tools/redesign-levels-100-500-aesthetic.js`：1-1000 关颜色聚类与爽感校验规则；休闲解压版全量重建通过 `npm run redesign:relaxed-campaign` 同步 CSV、本地 1-10、远程 11-1000 compact 包和 manifest；前 100 关保留既有轮廓规则，100-500 关可通过 `npm run redesign:levels100-500` 重建，501-1000 关可通过 `npm run redesign:levels501-1000` 重建远程包布局、对称轮廓、色彩流动和 manifest 摘要。
 - `settings/`：Cocos Creator 项目设置。

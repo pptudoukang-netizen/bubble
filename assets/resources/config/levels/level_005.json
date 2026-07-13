@@ -10,7 +10,9 @@
             "G": "green",
             "B": "blue"
         },
-        "pattern": "diamond_core"
+        "pattern": "flower_twin",
+        "theme": "flower",
+        "focus": "twin_petal_bridge"
     },
     "sharedDefaults": {
         "collectMode": "any_with_same_color_bonus",
@@ -42,7 +44,9 @@
         "teaches": [
             "color_cluster",
             "support_drop",
-            "diamond_core_pattern"
+            "flower_theme",
+            "flower_twin_pattern",
+            "twin_petal_bridge_focus"
         ],
         "colorCount": 3,
         "colors": [
@@ -93,18 +97,18 @@
             }
         ],
         "layout": [
-            "RRRRBBBBBB",
-            "..GGGRR..",
-            "..RRRGG...",
-            "..GGRRR..",
-            "..BBBGGG..",
-            "..GGBBB..",
-            "..BBBBGG..",
-            "..RRRRB..",
-            "..RRRRR...",
-            "..GGGGR.."
+            "BBRRRRGGGG",
+            "..RBBB...",
+            "..BBBRRR..",
+            ".BGGGGB..",
+            "..GGGGBBB.",
+            ".GGGRRRR.",
+            "..BBRRRR..",
+            "..RRRBB..",
+            "...RGGG...",
+            "....RR..."
         ],
-        "designNotes": "Generated from LEVEL_CONFIG_TABLE_1_1000.csv. Chapter `cluster_fundamentals` uses color_cluster, support_drop with a diamond_core board silhouette.",
+        "designNotes": "Generated from LEVEL_CONFIG_TABLE_1_1000.csv. Theme `flower` uses the `flower_twin` silhouette with one `twin_petal_bridge` visual focus before color and mechanic placement.",
         "difficultyScore": 35,
         "specialEntities": [],
         "levelType": "normal",

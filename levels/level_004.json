@@ -10,7 +10,9 @@
             "G": "green",
             "B": "blue"
         },
-        "pattern": "support_bridge"
+        "pattern": "flower_bell",
+        "theme": "flower",
+        "focus": "bell_core"
     },
     "sharedDefaults": {
         "collectMode": "any_with_same_color_bonus",
@@ -42,7 +44,9 @@
         "teaches": [
             "color_cluster",
             "support_drop",
-            "support_bridge_pattern"
+            "flower_theme",
+            "flower_bell_pattern",
+            "bell_core_focus"
         ],
         "colorCount": 3,
         "colors": [
@@ -97,18 +101,18 @@
             }
         ],
         "layout": [
-            "RRRRRRGGGG",
-            ".GGBBBB..",
-            "..BBGGG...",
-            ".GGGBBB..",
-            "..BBBRRR..",
-            ".RRRBBB..",
-            "..BBRRRR..",
-            ".RRGGGG..",
-            "...GBBB...",
-            "...BB...."
+            "GGBBBBRRRR",
+            "..GGGBB..",
+            "..GGGGBB..",
+            "..RRRRGG.",
+            ".RR.RR.GG.",
+            ".BB.BB.R.",
+            "..B.BBR.R.",
+            ".BGGGG...",
+            "..RRBB.B..",
+            "...RBBB.."
         ],
-        "designNotes": "Generated from LEVEL_CONFIG_TABLE_1_1000.csv. Chapter `cluster_fundamentals` uses color_cluster, support_drop with a support_bridge board silhouette.",
+        "designNotes": "Generated from LEVEL_CONFIG_TABLE_1_1000.csv. Theme `flower` uses the `flower_bell` silhouette with one `bell_core` visual focus before color and mechanic placement.",
         "difficultyScore": 32,
         "specialEntities": [],
         "levelType": "normal",

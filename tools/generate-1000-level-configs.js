@@ -1221,7 +1221,9 @@ function makeLevel(levelId, placementVariant) {
         legend[color] = COLOR_NAMES[color];
         return legend;
       }, { ".": "empty" }),
-      pattern: patternName
+      pattern: patternName,
+      theme: firstHundredSpec ? firstHundredSpec.themeName : getChapter(levelId),
+      focus: firstHundredSpec ? firstHundredSpec.focusName : patternName
     },
     sharedDefaults: {
       collectMode: "any_with_same_color_bonus",
@@ -1246,7 +1248,11 @@ function makeLevel(levelId, placementVariant) {
       difficulty: firstHundredTuning
         ? firstHundredTuning.difficulty
         : (progress < 0.18 ? "advanced" : (progress < 0.55 ? "hard" : "expert")),
-      teaches: mechanics.concat([patternName + "_pattern"]),
+      teaches: mechanics.concat(
+        firstHundredSpec
+          ? [firstHundredSpec.themeName + "_theme", patternName + "_pattern", firstHundredSpec.focusName + "_focus"]
+          : [patternName + "_pattern"]
+      ),
       colorCount: colors.length,
       colors: colors,
       shotLimit: tableRow.shotLimit,
@@ -1271,7 +1277,12 @@ function makeLevel(levelId, placementVariant) {
       ],
       clearRewardItems: buildRewardItemsFromTable(levelId),
       layout: rows,
-      designNotes: "Generated from LEVEL_CONFIG_TABLE_1_1000.csv. Chapter `" + getChapter(levelId) + "` uses " + mechanics.join(", ") + " with a " + patternName + " board silhouette.",
+      designNotes: firstHundredSpec
+        ? "Generated from LEVEL_CONFIG_TABLE_1_1000.csv. Theme `" + firstHundredSpec.themeName +
+          "` uses the `" + patternName + "` silhouette with one `" + firstHundredSpec.focusName +
+          "` visual focus before color and mechanic placement."
+        : "Generated from LEVEL_CONFIG_TABLE_1_1000.csv. Chapter `" + getChapter(levelId) + "` uses " +
+          mechanics.join(", ") + " with a " + patternName + " board silhouette.",
       difficultyScore: firstHundredTuning
         ? firstHundredTuning.difficultyScore
         : Math.min(100, 34 + Math.floor(progress * 66)),

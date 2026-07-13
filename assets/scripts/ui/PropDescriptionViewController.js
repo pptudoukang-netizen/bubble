@@ -13,16 +13,6 @@ var ITEM_PROXY_ROOT_NAME = "prop_description_item_proxy_root";
 var ITEM_PROXY_ROOT_Z_INDEX = 0;
 var ITEM_SOURCE_NODE_Z_INDEX = 1;
 
-var RetainedSpriteFrameReleaseHook = cc.Class({
-  extends: cc.Component,
-  onDestroy: function () {
-    if (this.controller) {
-      this.controller.releaseRetainedSpriteFrames();
-      this.controller = null;
-    }
-  }
-});
-
 function requireObject(value, description) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new Error(description + " must be an object.");
@@ -142,27 +132,6 @@ function requireSpriteFrame(spriteFrameCache, path) {
   return spriteFrame;
 }
 
-function requireUsableSpriteFrame(spriteFrame, description) {
-  if (!spriteFrame) {
-    throw new Error("PropDescriptionView " + description + " spriteFrame is required.");
-  }
-  if (cc && typeof cc.isValid === "function" && !cc.isValid(spriteFrame)) {
-    throw new Error("PropDescriptionView " + description + " spriteFrame is invalid.");
-  }
-  if (typeof spriteFrame.addRef !== "function") {
-    throw new Error("PropDescriptionView " + description + " spriteFrame addRef is required.");
-  }
-  if (typeof spriteFrame.decRef !== "function") {
-    throw new Error("PropDescriptionView " + description + " spriteFrame decRef is required.");
-  }
-  return spriteFrame;
-}
-
-function requireSourceSpriteFrame(node, description) {
-  var sprite = requireSprite(node, description);
-  return requireUsableSpriteFrame(sprite.spriteFrame, description);
-}
-
 function PropDescriptionViewController(options) {
   requireObject(options, "PropDescriptionViewController options");
   this.node = requireValidNode(options.node, "root node");
@@ -177,50 +146,10 @@ function PropDescriptionViewController(options) {
   this._itemProxyRoot = null;
   this._itemProxyLayers = null;
   this._itemProxyRecords = [];
-  this._retainedSpriteFrames = [];
   this._scrollProxySyncBound = false;
-  this._installRetainedSpriteFrameReleaseHook();
   this._initializeScrollList();
   this._bindActions();
 }
-
-PropDescriptionViewController.prototype._installRetainedSpriteFrameReleaseHook = function () {
-  var hook = this.node.getComponent(RetainedSpriteFrameReleaseHook);
-  if (!hook) {
-    hook = this.node.addComponent(RetainedSpriteFrameReleaseHook);
-  }
-  if (hook.controller && hook.controller !== this) {
-    throw new Error("PropDescriptionView retained SpriteFrame release hook already has a controller.");
-  }
-  hook.controller = this;
-};
-
-PropDescriptionViewController.prototype._retainSourceSpriteFrame = function (node, description) {
-  var spriteFrame = requireSourceSpriteFrame(node, description);
-  var alreadyRetained = false;
-  this._retainedSpriteFrames.forEach(function (entry) {
-    if (entry.spriteFrame === spriteFrame) {
-      alreadyRetained = true;
-    }
-  });
-  if (alreadyRetained !== true) {
-    spriteFrame.addRef();
-    this._retainedSpriteFrames.push({
-      spriteFrame: spriteFrame,
-      description: description
-    });
-  }
-};
-
-PropDescriptionViewController.prototype.releaseRetainedSpriteFrames = function () {
-  while (this._retainedSpriteFrames.length > 0) {
-    var entry = this._retainedSpriteFrames.pop();
-    if (!entry || !entry.spriteFrame || typeof entry.spriteFrame.decRef !== "function") {
-      throw new Error("PropDescriptionView retained SpriteFrame release entry is invalid.");
-    }
-    entry.spriteFrame.decRef();
-  }
-};
 
 PropDescriptionViewController.prototype._resolveNodes = function () {
   var maskNode = requireValidNode(findNodeByNameRecursive(this.node, "mask"), "mask");
@@ -314,7 +243,6 @@ PropDescriptionViewController.prototype._ensureStaticProxyLayers = function () {
     var maskLayers = SpriteProxyLayerHelper.createProxyLayers(this._maskProxyRoot, [
       { key: "mask", name: "prop_description_proxy_mask_layer", zIndex: 0 }
     ]);
-    this._retainSourceSpriteFrame(this._nodes.maskNode, "mask source");
     SpriteProxyLayerHelper.setSpriteRenderEnabled(this._nodes.maskNode, false, "PropDescriptionView mask source");
     this._maskProxyRecords.push(SpriteProxyLayerHelper.createRecord({
       layerNode: maskLayers.mask,
@@ -342,7 +270,6 @@ PropDescriptionViewController.prototype._ensureStaticProxyLayers = function () {
     { key: "chrome", node: this._nodes.closeButton, name: "prop_description_close_proxy" }
   ];
   sources.forEach(function (entry) {
-    this._retainSourceSpriteFrame(entry.node, entry.name);
     SpriteProxyLayerHelper.setSpriteRenderEnabled(entry.node, false, "PropDescriptionView " + entry.name);
     this._staticProxyRecords.push(SpriteProxyLayerHelper.createRecord({
       layerNode: this._staticProxyLayers[entry.key],
@@ -450,8 +377,6 @@ PropDescriptionViewController.prototype._rebuildItems = function (definitions, s
   ]);
   this._itemNodes.forEach(function (itemNode, index) {
     var iconNode = requireChildNode(itemNode, "icon", itemNode.name);
-    this._retainSourceSpriteFrame(itemNode, "item background " + itemNode.name);
-    this._retainSourceSpriteFrame(iconNode, "item icon " + itemNode.name);
     SpriteProxyLayerHelper.setSpriteRenderEnabled(itemNode, false, "PropDescriptionView item background " + itemNode.name);
     SpriteProxyLayerHelper.setSpriteRenderEnabled(iconNode, false, "PropDescriptionView item icon " + itemNode.name);
     this._itemProxyRecords.push(SpriteProxyLayerHelper.createRecord({

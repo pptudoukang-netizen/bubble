@@ -9,7 +9,9 @@
             "R": "red",
             "B": "blue"
         },
-        "pattern": "roof_bands"
+        "pattern": "flower_bud",
+        "theme": "flower",
+        "focus": "bud_core"
     },
     "sharedDefaults": {
         "collectMode": "any_with_same_color_bonus",
@@ -41,7 +43,9 @@
         "teaches": [
             "color_cluster",
             "support_drop",
-            "roof_bands_pattern"
+            "flower_theme",
+            "flower_bud_pattern",
+            "bud_core_focus"
         ],
         "colorCount": 2,
         "colors": [
@@ -94,16 +98,16 @@
             }
         ],
         "layout": [
-            "BBRRBBRRBB",
-            "RRBRRBB..",
-            ".BBRRRRR..",
-            ".BBRRBB..",
-            "..BBRRBR..",
-            "..RRRBB..",
-            "...RRBB...",
-            ".....B..."
+            "BBBBRRRRBB",
+            ".BBBBRRR.",
+            ".BBBRRRRR.",
+            ".BBBRRRR.",
+            "..BBRRR...",
+            "...BBRR..",
+            "...BBR....",
+            "...BR...."
         ],
-        "designNotes": "Generated from LEVEL_CONFIG_TABLE_1_1000.csv. Chapter `cluster_fundamentals` uses color_cluster, support_drop with a roof_bands board silhouette.",
+        "designNotes": "Generated from LEVEL_CONFIG_TABLE_1_1000.csv. Theme `flower` uses the `flower_bud` silhouette with one `bud_core` visual focus before color and mechanic placement.",
         "difficultyScore": 23,
         "specialEntities": [],
         "levelType": "normal",

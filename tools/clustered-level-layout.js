@@ -11,6 +11,8 @@ var REDESIGN_LEVEL_ID_MAP = {};
 var ADJACENCY_DISTANCE = BoardLayout.bubbleDiameter + 8;
 var MIN_OCCUPIED_LAYOUT_ROWS = 8;
 var FIRST_AESTHETIC_LEVEL_ID = 101;
+var MAX_CONSECUTIVE_BOTH_EDGE_EMPTY_ROWS = 3;
+var MAX_TOP_ROW_SAME_COLOR_RUN = 4;
 
 REDESIGN_LEVEL_IDS.forEach(function (levelId) {
   REDESIGN_LEVEL_ID_MAP[levelId] = true;
@@ -196,6 +198,53 @@ function pushSelectedCell(selected, selectedMap, cell) {
   selected.push(cell);
 }
 
+function hasSelectedNeighbor(selected, cell) {
+  return selected.some(function (selectedCell) {
+    return areAdjacent(cell, selectedCell);
+  });
+}
+
+function buildEdgeCandidateColumns(rowLength, preferRight) {
+  var lastColumn = rowLength - 1;
+  if (rowLength <= 1) {
+    return [0];
+  }
+  if (rowLength === 2) {
+    return preferRight ? [lastColumn, 0] : [0, lastColumn];
+  }
+  return preferRight
+    ? [lastColumn, 0, lastColumn - 1, 1]
+    : [0, lastColumn, 1, lastColumn - 1];
+}
+
+function findReachableEdgeAnchorCell(rowIndex, rows, selected, selectedMap, preferRight) {
+  var columns = buildEdgeCandidateColumns(rows[rowIndex].length, preferRight);
+  for (var index = 0; index < columns.length; index += 1) {
+    var cell = {
+      row: rowIndex,
+      col: columns[index]
+    };
+    var key = cell.row + ":" + cell.col;
+    if (selectedMap[key]) {
+      continue;
+    }
+    if (hasSelectedNeighbor(selected, cell)) {
+      return cell;
+    }
+  }
+  return null;
+}
+
+function addPeriodicEdgeAnchors(rows, selected, selectedMap, occupiedCount, levelId) {
+  for (var rowIndex = 1; rowIndex < rows.length && selected.length < occupiedCount; rowIndex += 1) {
+    var preferRight = levelId % 2 === 0;
+    var anchorCell = findReachableEdgeAnchorCell(rowIndex, rows, selected, selectedMap, preferRight);
+    if (anchorCell) {
+      pushSelectedCell(selected, selectedMap, anchorCell);
+    }
+  }
+}
+
 function buildAestheticSelectedSlots(rows, specialCells, normalCount, levelId, shapeMode) {
   var allCells = collectAllCells(rows);
   var specialKeys = Object.keys(specialCells);
@@ -253,6 +302,8 @@ function buildAestheticSelectedSlots(rows, specialCells, normalCount, levelId, s
     });
     pushAestheticSlot(rowCandidates[0]);
   }
+
+  addPeriodicEdgeAnchors(rows, selected, selectedMap, occupiedCount, levelId);
 
   while (selected.length < occupiedCount) {
     var frontier = allCells.filter(function (cell) {
@@ -723,6 +774,138 @@ function analyzeLayout(rows, targetColor) {
   };
 }
 
+function buildSlotKeyMap(slots, levelId) {
+  var map = {};
+  slots.forEach(function (slot) {
+    var key = slot.row + ":" + slot.col;
+    if (map[key]) {
+      throw new Error("Level " + levelId + " has duplicated clustered slot: " + key);
+    }
+    map[key] = true;
+  });
+  return map;
+}
+
+function isGeometryCellOccupied(row, col, normalSlotMap, specialCells) {
+  var key = row + ":" + col;
+  if (normalSlotMap[key] === true) {
+    return true;
+  }
+  return specialCells[key] === true;
+}
+
+function analyzeOccupiedGeometry(rows, slots, specialCells, levelId) {
+  var normalSlotMap = buildSlotKeyMap(slots, levelId);
+  var stats = [];
+  var bothEdgeEmptyRows = 0;
+  var sideAnchorRows = 0;
+  var thinRows = 0;
+  var maxConsecutiveBothEdgeEmptyRows = 0;
+  var currentConsecutiveBothEdgeEmptyRows = 0;
+  var neckRows = 0;
+
+  rows.forEach(function (row, rowIndex) {
+    var occupiedCount = 0;
+    var minCol = row.length;
+    var maxCol = -1;
+    for (var colIndex = 0; colIndex < row.length; colIndex += 1) {
+      if (isGeometryCellOccupied(rowIndex, colIndex, normalSlotMap, specialCells)) {
+        occupiedCount += 1;
+        minCol = Math.min(minCol, colIndex);
+        maxCol = Math.max(maxCol, colIndex);
+      }
+    }
+
+    var leftEdgeOccupied = occupiedCount > 0 && minCol === 0;
+    var rightEdgeOccupied = occupiedCount > 0 && maxCol === row.length - 1;
+    var bothEdgesEmpty = occupiedCount > 0 && !leftEdgeOccupied && !rightEdgeOccupied;
+    if (rowIndex > 0 && bothEdgesEmpty) {
+      bothEdgeEmptyRows += 1;
+      currentConsecutiveBothEdgeEmptyRows += 1;
+      maxConsecutiveBothEdgeEmptyRows = Math.max(
+        maxConsecutiveBothEdgeEmptyRows,
+        currentConsecutiveBothEdgeEmptyRows
+      );
+    } else if (rowIndex > 0) {
+      currentConsecutiveBothEdgeEmptyRows = 0;
+    }
+    if (rowIndex > 0 && (leftEdgeOccupied || rightEdgeOccupied)) {
+      sideAnchorRows += 1;
+    }
+    if (rowIndex > 0 && occupiedCount > 0 && occupiedCount <= 3) {
+      thinRows += 1;
+    }
+    stats.push({
+      occupiedCount: occupiedCount
+    });
+  });
+
+  for (var index = 1; index < stats.length - 1; index += 1) {
+    if (stats[index].occupiedCount <= 3 &&
+        stats[index - 1].occupiedCount >= 5 &&
+        stats[index + 1].occupiedCount >= 5) {
+      neckRows += 1;
+    }
+  }
+
+  return {
+    bothEdgeEmptyRows: bothEdgeEmptyRows,
+    sideAnchorRows: sideAnchorRows,
+    thinRows: thinRows,
+    maxConsecutiveBothEdgeEmptyRows: maxConsecutiveBothEdgeEmptyRows,
+    neckRows: neckRows
+  };
+}
+
+function getMinimumSideAnchorRows(rowCount) {
+  if (rowCount >= 15) {
+    return 5;
+  }
+  if (rowCount >= 10) {
+    return 3;
+  }
+  return 2;
+}
+
+function getMaximumThinRows(rowCount) {
+  if (rowCount >= 15) {
+    return 2;
+  }
+  if (rowCount >= 10) {
+    return 1;
+  }
+  return 0;
+}
+
+function isGeometryStable(metrics, rowCount) {
+  return metrics.sideAnchorRows >= getMinimumSideAnchorRows(rowCount) &&
+    metrics.maxConsecutiveBothEdgeEmptyRows <= MAX_CONSECUTIVE_BOTH_EDGE_EMPTY_ROWS &&
+    metrics.thinRows <= getMaximumThinRows(rowCount) &&
+    metrics.neckRows === 0;
+}
+
+function getMaxSameColorRun(row) {
+  var maxRun = 0;
+  var currentColor = null;
+  var currentRun = 0;
+  for (var index = 0; index < row.length; index += 1) {
+    var cellValue = row.charAt(index);
+    if (cellValue === ".") {
+      currentColor = null;
+      currentRun = 0;
+      continue;
+    }
+    if (cellValue === currentColor) {
+      currentRun += 1;
+    } else {
+      currentColor = cellValue;
+      currentRun = 1;
+    }
+    maxRun = Math.max(maxRun, currentRun);
+  }
+  return maxRun;
+}
+
 function calculateCandidateLimits(colorCounts, colors) {
   var total = 0;
   var clusterable = 0;
@@ -808,10 +991,35 @@ function buildClusteredLayout(options) {
     });
   }
 
-  var minChunkSize = candidateProfile === "relaxed_campaign" ? 5 : 4;
+  var minChunkSize = 4;
   var maxChunkSize = candidateProfile === "relaxed_campaign" ? 7 : 8;
-  var maxOrderingMode = candidateProfile === "relaxed_campaign" ? 5 : 9;
+  var maxOrderingMode = candidateProfile === "relaxed_campaign" ? 7 : 9;
   selectedSlotSets.forEach(function (slotSet) {
+    if (levelId >= FIRST_AESTHETIC_LEVEL_ID) {
+      var occupiedGeometry = analyzeOccupiedGeometry(rows, slotSet.slots, specialCells, levelId);
+      if (!isGeometryStable(occupiedGeometry, rows.length)) {
+        if (!bestRejected) {
+          bestRejected = {
+            metrics: {
+              groupedRatio: 0,
+              isolatedRatio: 1,
+              targetSingletonCount: 0
+            },
+            unsupportedCount: 0,
+            variant: [
+              slotSet.shapeMode,
+              "geometry",
+              occupiedGeometry.sideAnchorRows,
+              occupiedGeometry.maxConsecutiveBothEdgeEmptyRows,
+              occupiedGeometry.thinRows,
+              occupiedGeometry.neckRows
+            ],
+            allowedIsolatedRatio: slotSet.allowedIsolatedRatio
+          };
+        }
+        return;
+      }
+    }
     for (var chunkSize = minChunkSize; chunkSize <= maxChunkSize; chunkSize += 1) {
       for (var mode = 0; mode <= maxOrderingMode; mode += 1) {
         for (var flip = 0; flip <= 1; flip += 1) {
@@ -829,6 +1037,7 @@ function buildClusteredLayout(options) {
                   chunks = buildTargetLastColorChunks(colors, colorState.counts, targetColor, chunkSize, rotation, reverseIndex === 1);
                 }
                 var candidateRows = assignChunksToRows(rows, orderedSlots, chunks, levelId);
+                var topRowSameColorRun = getMaxSameColorRun(candidateRows[0]);
                 var metrics = analyzeLayout(candidateRows, targetColor);
                 var unsupportedCells = LevelBoardSupportValidator.findUnsupportedInitialCells({
                   layout: candidateRows,
@@ -848,6 +1057,7 @@ function buildClusteredLayout(options) {
                     metrics.isolatedRatio > slotSet.allowedIsolatedRatio ||
                     metrics.targetSingletonCount > slotSet.allowedTargetSingletons ||
                     metrics.targetLargestComponent < 3 ||
+                    topRowSameColorRun > MAX_TOP_ROW_SAME_COLOR_RUN ||
                     countOccupiedRows(candidateRows, specialCells) < Math.min(getAestheticMinimumRows(levelId), rows.length) ||
                     unsupportedCells.length > 0) {
                   continue;
@@ -912,6 +1122,13 @@ function validateClusteredLevel(level) {
       requiredOccupiedRows + " rows."
     );
   }
+  var topRowSameColorRun = getMaxSameColorRun(rows[0]);
+  if (topRowSameColorRun > MAX_TOP_ROW_SAME_COLOR_RUN) {
+    throw new Error(
+      "Level " + levelId + " top row same color run must be <= " +
+      MAX_TOP_ROW_SAME_COLOR_RUN + ", got " + topRowSameColorRun + "."
+    );
+  }
   if (!Array.isArray(level.winConditions)) {
     throw new Error("Level " + levelId + " winConditions must be an array.");
   }
@@ -942,6 +1159,18 @@ function validateClusteredLevel(level) {
 
   var limits = calculateCandidateLimits(counts, colors);
   var selectedSlots = collectLayoutSlots(rows, colors, counts, specialCells, levelId);
+  if (levelId >= FIRST_AESTHETIC_LEVEL_ID) {
+    var geometryMetrics = analyzeOccupiedGeometry(rows, selectedSlots, specialCells, levelId);
+    if (!isGeometryStable(geometryMetrics, rows.length)) {
+      throw new Error(
+        "Level " + levelId + " layout has unstable side support." +
+        " sideAnchorRows=" + geometryMetrics.sideAnchorRows +
+        " bothEdgeEmptyRun=" + geometryMetrics.maxConsecutiveBothEdgeEmptyRows +
+        " thinRows=" + geometryMetrics.thinRows +
+        " neckRows=" + geometryMetrics.neckRows
+      );
+    }
+  }
   var geometricIsolatedCount = countGeometricIsolatedSlots(selectedSlots);
   var allowedIsolatedRatio = Math.max(
     Math.min(limits.allowedIsolatedRatio, 0.1),

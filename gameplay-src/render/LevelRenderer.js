@@ -1053,6 +1053,9 @@ function LevelRenderer(rootNode) {
   this.fallingDropNodePool = {};
   this.fallingRenderTick = 1;
   this.jarFractionNodePool = [];
+  this.jarFractionDisplayGeneration = 0;
+  this.jarFractionDisplaySerial = 0;
+  this.lastJarCollectScoredEvent = null;
   this.ballScoreNodePool = [];
   this.ballScoreDisplayGeneration = 0;
   this.currentBallScoreResolution = null;

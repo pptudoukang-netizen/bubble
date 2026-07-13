@@ -12446,6 +12446,9 @@ function LevelRenderer(rootNode) {
   this.fallingDropNodePool = {};
   this.fallingRenderTick = 1;
   this.jarFractionNodePool = [];
+  this.jarFractionDisplayGeneration = 0;
+  this.jarFractionDisplaySerial = 0;
+  this.lastJarCollectScoredEvent = null;
   this.ballScoreNodePool = [];
   this.ballScoreDisplayGeneration = 0;
   this.currentBallScoreResolution = null;
@@ -17340,7 +17343,8 @@ LevelRenderer.prototype._initializeFractionHud = function () {
   fractionNode.opacity = 255;
   fractionNode.setScale(1, 1);
   fractionLabel.string = "+0";
-  this.lastJarCollectScoredEventId = -1;
+  this.jarFractionDisplayGeneration += 1;
+  this.lastJarCollectScoredEvent = null;
   this._recycleJarFractionNodesBeforeHudClear();
 };
 
@@ -17747,6 +17751,9 @@ LevelRenderer.prototype._recycleJarFractionNode = function (fractionNode) {
   if (fractionNode.__isJarFractionClone !== true) {
     throw new Error("Jar fraction recycle requires pooled clone node.");
   }
+  if (fractionNode.__isJarFractionPooled === true) {
+    throw new Error("Jar fraction node cannot be recycled twice.");
+  }
   if (!Array.isArray(this.jarFractionNodePool)) {
     throw new Error("jarFractionNodePool must be an array.");
   }
@@ -17763,7 +17770,9 @@ LevelRenderer.prototype._recycleJarFractionNode = function (fractionNode) {
     throw new Error("Jar fraction recycle requires cc.Label.");
   }
   fractionLabel.string = "+0";
+  fractionNode.__jarFractionDisplayToken = null;
   fractionNode.removeFromParent(false);
+  fractionNode.__isJarFractionPooled = true;
   this.jarFractionNodePool.push(fractionNode);
 };
 
@@ -17809,6 +17818,7 @@ LevelRenderer.prototype._acquireJarFractionNode = function (gameViewNode, templa
   if (!fractionNode) {
     fractionNode = cc.instantiate(templateNode);
     fractionNode.__isJarFractionClone = true;
+    fractionNode.__isJarFractionPooled = true;
   }
   if (!fractionNode.isValid) {
     throw new Error("Jar fraction pooled node is invalid.");
@@ -17816,9 +17826,13 @@ LevelRenderer.prototype._acquireJarFractionNode = function (gameViewNode, templa
   if (fractionNode.__isJarFractionClone !== true) {
     throw new Error("Jar fraction pooled node must be marked as clone.");
   }
+  if (fractionNode.__isJarFractionPooled !== true) {
+    throw new Error("Jar fraction pooled node must be marked as pooled.");
+  }
 
   cc.Tween.stopAllByTarget(fractionNode);
   fractionNode.parent = gameViewNode;
+  fractionNode.__isJarFractionPooled = false;
   fractionNode.active = true;
   fractionNode.opacity = 255;
   fractionNode.setScale(JAR_FRACTION_START_SCALE, JAR_FRACTION_START_SCALE);
@@ -17884,7 +17898,10 @@ LevelRenderer.prototype._spawnJarFractionDisplay = function (entry) {
   }
 
   var renderer = this;
+  var displayGeneration = this.jarFractionDisplayGeneration;
   var fractionNode = this._acquireJarFractionNode(gameViewNode, templateNode);
+  var displayToken = String(displayGeneration) + ":" + String(++this.jarFractionDisplaySerial);
+  fractionNode.__jarFractionDisplayToken = displayToken;
   fractionNode.name = "fraction_" + String(jarIndex);
 
   var mouthPosition = this._resolveJarMouthPositionInGameView(jarIndex);
@@ -17915,6 +17932,12 @@ LevelRenderer.prototype._spawnJarFractionDisplay = function (entry) {
       })
     )
     .call(function () {
+      if (
+        renderer.jarFractionDisplayGeneration !== displayGeneration ||
+        fractionNode.__jarFractionDisplayToken !== displayToken
+      ) {
+        return;
+      }
       renderer._recycleJarFractionNode(fractionNode);
     })
     .start();
@@ -17939,7 +17962,7 @@ LevelRenderer.prototype._playJarFractionDisplay = function (runtimeSnapshot) {
   if (typeof scoreEvent.id !== "number" || !isFinite(scoreEvent.id)) {
     throw new Error("jar_collect_scored event requires a numeric id.");
   }
-  if (scoreEvent.id === this.lastJarCollectScoredEventId) {
+  if (scoreEvent === this.lastJarCollectScoredEvent) {
     return;
   }
   if (!Array.isArray(scoreEvent.entries)) {
@@ -17949,10 +17972,10 @@ LevelRenderer.prototype._playJarFractionDisplay = function (runtimeSnapshot) {
     return;
   }
 
-  this.lastJarCollectScoredEventId = scoreEvent.id;
   for (var entryIndex = 0; entryIndex < scoreEvent.entries.length; entryIndex += 1) {
     this._spawnJarFractionDisplay(scoreEvent.entries[entryIndex]);
   }
+  this.lastJarCollectScoredEvent = scoreEvent;
 };
 
 LevelRenderer.prototype._renderJarScoreBoostTimer = function (runtimeSnapshot) {

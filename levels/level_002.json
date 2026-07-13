@@ -10,7 +10,9 @@
             "G": "green",
             "B": "blue"
         },
-        "pattern": "twin_wings"
+        "pattern": "flower_bloom",
+        "theme": "flower",
+        "focus": "flower_heart"
     },
     "sharedDefaults": {
         "collectMode": "any_with_same_color_bonus",
@@ -42,7 +44,9 @@
         "teaches": [
             "color_cluster",
             "support_drop",
-            "twin_wings_pattern"
+            "flower_theme",
+            "flower_bloom_pattern",
+            "flower_heart_focus"
         ],
         "colorCount": 3,
         "colors": [
@@ -97,18 +101,18 @@
             }
         ],
         "layout": [
-            "BBBBBBRRRR",
-            ".GGG..RR.",
-            ".GGG...RR.",
-            ".GRR..RR.",
-            ".GGG...GG.",
-            ".BBB..BB.",
-            ".BGG..GGG.",
-            ".BBB..BB.",
-            ".BRR..RRR.",
-            ".RRR..RR."
+            "GGRRGGBBRR",
+            "..RRGGB..",
+            "..BBRBRR..",
+            ".GBBRBRR.",
+            "..BBRBRR..",
+            "..BBRBR..",
+            "..GRGGBR..",
+            "..GRGGB..",
+            "...RGGB...",
+            "...RGG..."
         ],
-        "designNotes": "Generated from LEVEL_CONFIG_TABLE_1_1000.csv. Chapter `cluster_fundamentals` uses color_cluster, support_drop with a twin_wings board silhouette.",
+        "designNotes": "Generated from LEVEL_CONFIG_TABLE_1_1000.csv. Theme `flower` uses the `flower_bloom` silhouette with one `flower_heart` visual focus before color and mechanic placement.",
         "difficultyScore": 26,
         "specialEntities": [],
         "levelType": "normal",

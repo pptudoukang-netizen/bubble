@@ -3392,6 +3392,39 @@ function runBallScoreDisplayGenerationCase() {
   }
 }
 
+function runJarFractionDisplayEventIdentityCase() {
+  function ValidationRenderer() {}
+  attachLevelRendererSceneHudMethods(ValidationRenderer, {
+    BoardLayout: BoardLayout
+  });
+
+  var renderer = Object.create(ValidationRenderer.prototype);
+  renderer.lastJarCollectScoredEvent = null;
+  var spawned = [];
+  renderer._spawnJarFractionDisplay = function (entry) {
+    spawned.push(entry.jarIndex);
+  };
+
+  var firstEvent = {
+    id: 1,
+    type: "jar_collect_scored",
+    entries: [{ jarIndex: 0, gained: 10 }]
+  };
+  renderer._playJarFractionDisplay({ runtimeEvents: [firstEvent] });
+  renderer._playJarFractionDisplay({ runtimeEvents: [firstEvent] });
+
+  var secondEvent = {
+    id: 1,
+    type: "jar_collect_scored",
+    entries: [{ jarIndex: 1, gained: 20 }]
+  };
+  renderer._playJarFractionDisplay({ runtimeEvents: [secondEvent] });
+
+  if (spawned.length !== 2 || spawned[0] !== 0 || spawned[1] !== 1) {
+    throw new Error("Jar score events with the same id must display once per event object.");
+  }
+}
+
 function runMatchedObjectiveCollectionCase() {
   var JarCollectorSystem = require("../gameplay-src/systems/JarCollectorSystem");
   var manager = new GameManager();
@@ -3945,6 +3978,8 @@ function main() {
   console.log("[OK]", "combo_matched_ball_score_display", "combo raises shattered-ball score and floating score display");
   runBallScoreDisplayGenerationCase();
   console.log("[OK]", "ball_score_display_generation", "stale score callbacks are isolated and same-id events display independently");
+  runJarFractionDisplayEventIdentityCase();
+  console.log("[OK]", "jar_fraction_display_event_identity", "same-id jar score events display independently without replaying the same event");
   runMatchedObjectiveCollectionCase();
   console.log("[OK]", "matched_objective_collection", "matched target balls count into collection target and emit HUD fly payload");
   runBlastComboAttachAnchorCase();

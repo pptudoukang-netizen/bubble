@@ -11,7 +11,9 @@
             "B": "blue",
             "Y": "yellow"
         },
-        "pattern": "crown_exam"
+        "pattern": "flower_twin",
+        "theme": "flower",
+        "focus": "twin_petal_bridge"
     },
     "sharedDefaults": {
         "collectMode": "any_with_same_color_bonus",
@@ -42,7 +44,9 @@
         "difficulty": "expert",
         "teaches": [
             "legacy_skill_ball",
-            "crown_exam_pattern"
+            "flower_theme",
+            "flower_twin_pattern",
+            "twin_petal_bridge_focus"
         ],
         "colorCount": 4,
         "colors": [
@@ -100,25 +104,25 @@
             }
         ],
         "layout": [
-            "RRRRGGGGRR",
-            ".RR.R.GG.",
-            ".YR.YR.B..",
-            ".YYYY.BB.",
-            ".RR..R.BB.",
-            "..RRRRR..",
-            "..RRGGG...",
-            "..BBGGG..",
-            "..BBBBY...",
-            "..YYYYY.."
+            "BBBBGGGGRR",
+            "..YGGG...",
+            "..YYYRRR..",
+            ".RRRRGR..",
+            "..YYYYBBB.",
+            ".YYB.RRB.",
+            "..YYRRRR..",
+            "..BBRRR..",
+            "...GGGG...",
+            "....RR..."
         ],
-        "designNotes": "Generated from LEVEL_CONFIG_TABLE_1_1000.csv. Chapter `legacy_skill_intro` uses legacy_skill_ball with a crown_exam board silhouette.",
+        "designNotes": "Generated from LEVEL_CONFIG_TABLE_1_1000.csv. Theme `flower` uses the `flower_twin` silhouette with one `twin_petal_bridge` visual focus before color and mechanic placement.",
         "difficultyScore": 50,
         "specialEntities": [
             {
                 "id": "stone_01",
                 "entityCategory": "obstacle_ball",
                 "entityType": "stone",
-                "row": 4,
+                "row": 5,
                 "col": 4
             }
         ],

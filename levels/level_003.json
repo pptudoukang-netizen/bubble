@@ -10,7 +10,9 @@
             "G": "green",
             "B": "blue"
         },
-        "pattern": "hollow_v"
+        "pattern": "flower_lotus",
+        "theme": "flower",
+        "focus": "lotus_center"
     },
     "sharedDefaults": {
         "collectMode": "any_with_same_color_bonus",
@@ -42,7 +44,9 @@
         "teaches": [
             "color_cluster",
             "support_drop",
-            "hollow_v_pattern"
+            "flower_theme",
+            "flower_lotus_pattern",
+            "lotus_center_focus"
         ],
         "colorCount": 3,
         "colors": [
@@ -97,18 +101,18 @@
             }
         ],
         "layout": [
-            "RRRRRRGGGG",
-            "..BBBGG..",
-            "..BBB.GG..",
-            ".BGG.GG..",
-            ".BBB..BB..",
-            ".RRR..RR.",
-            "RBB....BB.",
-            "RRR...RRB",
-            "RGG....GGG",
-            "GGG....GG"
+            "GGGGBBGGGG",
+            "..RRGRR..",
+            "..RR.GBB..",
+            ".BB.RGGB.",
+            ".RGGRRG.B.",
+            ".BGRRR.B.",
+            "..BGGG.BB.",
+            "..BGGGR..",
+            "...BB.BR..",
+            "...RRR..."
         ],
-        "designNotes": "Generated from LEVEL_CONFIG_TABLE_1_1000.csv. Chapter `cluster_fundamentals` uses color_cluster, support_drop with a hollow_v board silhouette.",
+        "designNotes": "Generated from LEVEL_CONFIG_TABLE_1_1000.csv. Theme `flower` uses the `flower_lotus` silhouette with one `lotus_center` visual focus before color and mechanic placement.",
         "difficultyScore": 29,
         "specialEntities": [],
         "levelType": "normal",

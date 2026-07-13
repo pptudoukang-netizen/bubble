@@ -181,7 +181,7 @@ function collectSpecialKeysForLevel(levelConfig) {
       throw new Error("Prop description winConditions[" + index + "].type is required.");
     }
     if (condition.type === "collect_ice_snowball") {
-      presentKeys.ice_snowball = true;
+      presentKeys.ice = true;
     }
   });
 

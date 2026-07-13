@@ -11,7 +11,9 @@
             "B": "blue",
             "Y": "yellow"
         },
-        "pattern": "split_islands"
+        "pattern": "flower_bell",
+        "theme": "flower",
+        "focus": "bell_core"
     },
     "sharedDefaults": {
         "collectMode": "any_with_same_color_bonus",
@@ -43,7 +45,9 @@
         "teaches": [
             "color_cluster",
             "support_drop",
-            "split_islands_pattern"
+            "flower_theme",
+            "flower_bell_pattern",
+            "bell_core_focus"
         ],
         "colorCount": 4,
         "colors": [
@@ -97,18 +101,18 @@
             }
         ],
         "layout": [
-            "YYYYYYYYYY",
-            ".YRR..RR.",
-            ".RRG..GG..",
-            ".GGG..BB.",
-            ".BBB..BB..",
-            ".BRR..RR.",
-            ".RRG..GG..",
-            ".GGG..BB.",
-            ".BBB..BBB.",
-            ".BBB.BBB."
+            "RRRRYYYYBB",
+            "..GGGBB..",
+            "..GYYYYB..",
+            ".GGGBBB..",
+            ".GR.GG.RR.",
+            ".R.BB.GG.",
+            ".R.RBB.R..",
+            "...YYYRB.",
+            "..B.BBBB..",
+            "..BBBB..."
         ],
-        "designNotes": "Generated from LEVEL_CONFIG_TABLE_1_1000.csv. Chapter `cluster_fundamentals` uses color_cluster, support_drop with a split_islands board silhouette.",
+        "designNotes": "Generated from LEVEL_CONFIG_TABLE_1_1000.csv. Theme `flower` uses the `flower_bell` silhouette with one `bell_core` visual focus before color and mechanic placement.",
         "difficultyScore": 47,
         "specialEntities": [],
         "levelType": "normal",

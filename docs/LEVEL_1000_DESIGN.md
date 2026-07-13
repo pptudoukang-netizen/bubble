@@ -21,7 +21,7 @@ The new campaign uses these chapters:
 - Levels 181-200: first full reactive mechanics exam.
 - Levels 201-1000: four 100-level cycle themes: blast chain routes, growth and keys, symbolic patterns, full system mastery.
 
-Levels 1-100 use one explicit `collect_color` primary target. Levels containing at least three ice balls add an exact `collect_ice_snowball` secondary target whose value equals the configured ice count.
+Levels 1-100 use one explicit `collect_color` primary target. Levels containing at least three ice balls add an exact `collect_ice_snowball` secondary target whose value equals the configured ice count. Their visual design is silhouette-first: the theme and outer contour are fixed before normal colors and special entities are placed.
 
 ## New Entity Rules
 
@@ -109,9 +109,18 @@ Rule:
 
 ## Board Pattern Strategy
 
-Levels 1-100 rotate through ten real occupancy silhouettes: `roof_bands`, `twin_wings`, `hollow_v`, `support_bridge`, `diamond_core`, `side_gate`, `diagonal_wave`, `heart_pocket`, `split_islands`, and `crown_exam`. The silhouette is generated before special placement and color assignment. Every board keeps a connected top anchor, colors are assigned in compact chunks, and special entities occupy cells inside the declared silhouette.
+Levels 1-100 switch silhouette themes every 15-20 levels so the campaign keeps a coherent visual language without repeating one outline for the entire mechanic chapter:
 
-The first-100 quality gates require every level to use the exact deterministic silhouette, keep special density at or below 30%, use at most four special entity types, and pass the clustered color checks. Difficulty follows a ten-level wave: the opening levels teach or reinforce, levels 8-9 raise pressure, and level 10 is the chapter exam before the next wave resets.
+- Levels 1-15: `flower`, using bud, bloom, lotus, bell, and twin-flower variants.
+- Levels 16-30: `crystal`, using spire, cluster, diamond, pendant, and twin-crystal variants.
+- Levels 31-45: `snowflake`, using core, branch, crown, hourglass, and wing variants.
+- Levels 46-60: `star`, using core, burst, crown, gate, and twin-star variants.
+- Levels 61-80: `wing`, using butterfly, feather, bridge, crown, and heart variants.
+- Levels 81-100: `crown`, using arch, gem, tower, keyhole, and exam variants.
+
+The silhouette is generated before special placement and color assignment. Exact mirroring is not required, but every board must keep a stable visual center, a left-right occupied-cell difference of at most 10%, no more than one row of left-right bottom-height difference, one declared visual focus, and naturally changing edges. The forced full top row is treated as the ceiling anchor and is excluded from contour-step scoring. Below it, adjacent contour widths must not jump by more than four cells, normalized edge movement must remain within `0.56`, and rigid rectangular edge runs may not exceed three rows.
+
+The first-100 quality gates also require every level to use its exact deterministic themed silhouette, keep special density at or below 30%, use at most four special entity types, keep the focal special near the declared focus, and pass the clustered color checks. Difficulty still follows a ten-level wave independently of the visual-theme boundaries: the opening levels teach or reinforce, levels 8-9 raise pressure, and level 10 is the chapter exam before the next wave resets.
 
 Generated levels use symbolic board silhouettes to increase variety:
 

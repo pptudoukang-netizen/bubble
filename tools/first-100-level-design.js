@@ -6,31 +6,98 @@ var FIRST_LEVEL_ID = 1;
 var LAST_LEVEL_ID = 100;
 var COLORS = ["R", "G", "B", "Y", "P"];
 var DISPLAY_COLOR_ORDER = ["B", "R", "G", "Y", "P"];
-var PATTERNS = [
-  "roof_bands",
-  "twin_wings",
-  "hollow_v",
-  "support_bridge",
-  "diamond_core",
-  "side_gate",
-  "diagonal_wave",
-  "heart_pocket",
-  "split_islands",
-  "crown_exam"
+var THEME_GROUPS = [
+  {
+    name: "flower",
+    startLevel: 1,
+    endLevel: 15,
+    silhouettes: [
+      { name: "flower_bud", focusName: "bud_core", focusX: 0, focusY: 0.46 },
+      { name: "flower_bloom", focusName: "flower_heart", focusX: 0, focusY: 0.42 },
+      { name: "flower_lotus", focusName: "lotus_center", focusX: 0.06, focusY: 0.5 },
+      { name: "flower_bell", focusName: "bell_core", focusX: -0.06, focusY: 0.48 },
+      { name: "flower_twin", focusName: "twin_petal_bridge", focusX: 0, focusY: 0.52 }
+    ]
+  },
+  {
+    name: "crystal",
+    startLevel: 16,
+    endLevel: 30,
+    silhouettes: [
+      { name: "crystal_spire", focusName: "spire_core", focusX: 0, focusY: 0.48 },
+      { name: "crystal_cluster", focusName: "cluster_gem", focusX: 0.06, focusY: 0.44 },
+      { name: "crystal_diamond", focusName: "diamond_core", focusX: 0, focusY: 0.52 },
+      { name: "crystal_pendant", focusName: "pendant_gem", focusX: -0.06, focusY: 0.58 },
+      { name: "crystal_twin", focusName: "twin_crystal_bridge", focusX: 0, focusY: 0.5 }
+    ]
+  },
+  {
+    name: "snowflake",
+    startLevel: 31,
+    endLevel: 45,
+    silhouettes: [
+      { name: "snowflake_core", focusName: "snow_core", focusX: 0, focusY: 0.5 },
+      { name: "snowflake_branch", focusName: "branch_crossing", focusX: 0.06, focusY: 0.48 },
+      { name: "snowflake_crown", focusName: "ice_crown", focusX: 0, focusY: 0.42 },
+      { name: "snowflake_hourglass", focusName: "frozen_waist", focusX: -0.06, focusY: 0.52 },
+      { name: "snowflake_wings", focusName: "wing_crystal", focusX: 0, focusY: 0.5 }
+    ]
+  },
+  {
+    name: "star",
+    startLevel: 46,
+    endLevel: 60,
+    silhouettes: [
+      { name: "star_core", focusName: "star_center", focusX: 0, focusY: 0.5 },
+      { name: "star_burst", focusName: "burst_center", focusX: 0.06, focusY: 0.48 },
+      { name: "star_crown", focusName: "crown_star", focusX: 0, focusY: 0.42 },
+      { name: "star_gate", focusName: "star_gate_core", focusX: -0.06, focusY: 0.52 },
+      { name: "star_twin", focusName: "twin_star_bridge", focusX: 0, focusY: 0.5 }
+    ]
+  },
+  {
+    name: "wing",
+    startLevel: 61,
+    endLevel: 80,
+    silhouettes: [
+      { name: "wing_butterfly", focusName: "butterfly_body", focusX: 0, focusY: 0.5 },
+      { name: "wing_feather", focusName: "feather_spine", focusX: 0.06, focusY: 0.48 },
+      { name: "wing_bridge", focusName: "wing_bridge_core", focusX: 0, focusY: 0.54 },
+      { name: "wing_crown", focusName: "wing_crown_gem", focusX: -0.06, focusY: 0.44 },
+      { name: "wing_heart", focusName: "wing_heart", focusX: 0, focusY: 0.52 }
+    ]
+  },
+  {
+    name: "crown",
+    startLevel: 81,
+    endLevel: 100,
+    silhouettes: [
+      { name: "crown_arch", focusName: "arch_gem", focusX: 0, focusY: 0.52 },
+      { name: "crown_gem", focusName: "royal_gem", focusX: 0.06, focusY: 0.46 },
+      { name: "crown_towers", focusName: "tower_bridge", focusX: 0, focusY: 0.5 },
+      { name: "crown_keyhole", focusName: "keyhole_core", focusX: -0.06, focusY: 0.54 },
+      { name: "crown_exam", focusName: "crown_center", focusX: 0, focusY: 0.48 }
+    ]
+  }
 ];
+var PATTERNS = THEME_GROUPS.reduce(function (patterns, theme) {
+  return patterns.concat(theme.silhouettes.map(function (silhouette) {
+    return silhouette.name;
+  }));
+}, []);
 var PHASE_BALL_OFFSETS = [0, 2, 4, 6, 8, 10, 12, 13, 15, 17];
 var PHASE_PASS_RATES = [92, 88, 84, 80, 76, 72, 68, 63, 58, 52];
 var MIN_OCCUPIED_LAYOUT_ROWS = 8;
 var ADJACENCY_DISTANCE = BoardLayout.bubbleDiameter + 8;
 var LEVEL_ONE_TUTORIAL_LAYOUT = [
-  "BBRRBBRRBB",
-  "RRBRRBB..",
-  ".BBRRRRR..",
-  ".BBRRBB..",
-  "..BBRRBR..",
-  "..RRRBB..",
-  "...RRBB...",
-  ".....B..."
+  "BBBBRRRRBB",
+  ".BBBBRRR.",
+  ".BBBRRRRR.",
+  ".BBBRRRR.",
+  "..BBRRR...",
+  "...BBRR..",
+  "...BBR....",
+  "...BR...."
 ];
 
 function assertFirstHundredLevelId(levelId) {
@@ -55,9 +122,25 @@ function getChapterIndex(levelId) {
   return Math.floor((levelId - 1) / 10);
 }
 
-function getPatternName(levelId) {
+function getThemeGroup(levelId) {
   assertFirstHundredLevelId(levelId);
-  return PATTERNS[(levelId - 1) % PATTERNS.length];
+  for (var index = 0; index < THEME_GROUPS.length; index += 1) {
+    var theme = THEME_GROUPS[index];
+    if (levelId >= theme.startLevel && levelId <= theme.endLevel) {
+      return theme;
+    }
+  }
+  throw new Error("First-100 theme group missing for level " + levelId + ".");
+}
+
+function getSilhouette(levelId) {
+  var theme = getThemeGroup(levelId);
+  var silhouetteIndex = (levelId - theme.startLevel) % theme.silhouettes.length;
+  return theme.silhouettes[silhouetteIndex];
+}
+
+function getPatternName(levelId) {
+  return getSilhouette(levelId).name;
 }
 
 function getActiveColors(levelId) {
@@ -376,6 +459,8 @@ function getDifficultyTuning(levelId) {
 
 function buildLevelSpec(levelId) {
   assertFirstHundredLevelId(levelId);
+  var theme = getThemeGroup(levelId);
+  var silhouette = getSilhouette(levelId);
   var activeColors = getActiveColors(levelId);
   var targetColor = getTargetColor(levelId, activeColors);
   var specialCounts = buildSpecialCounts(levelId, targetColor);
@@ -405,7 +490,11 @@ function buildLevelSpec(levelId) {
   }
   return {
     levelId: levelId,
-    patternName: getPatternName(levelId),
+    themeName: theme.name,
+    patternName: silhouette.name,
+    focusName: silhouette.focusName,
+    focusX: silhouette.focusX,
+    focusY: silhouette.focusY,
     activeColors: activeColors,
     targetColor: targetColor,
     normalBallCount: normalBallCount,
@@ -442,38 +531,216 @@ function getNormalizedCoordinates(cell, rows) {
   return { x: x, y: y };
 }
 
+function pointDistance(x, y, targetX, targetY, xScale, yScale) {
+  var dx = (x - targetX) * xScale;
+  var dy = (y - targetY) * yScale;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
 function scorePatternCell(patternName, cell, rows, levelId) {
   var coordinates = getNormalizedCoordinates(cell, rows);
-  var x = levelId % 2 === 0 ? -coordinates.x : coordinates.x;
+  var silhouette = getSilhouette(levelId);
+  if (silhouette.name !== patternName) {
+    throw new Error("First-100 pattern differs from theme silhouette for level " + levelId + ".");
+  }
+  var accentDirection = levelId % 2 === 0 ? -1 : 1;
+  var x = coordinates.x - silhouette.focusX * accentDirection;
   var y = coordinates.y;
   var score;
-  if (patternName === "roof_bands") {
-    score = y * 12 + Math.abs(x) * 1.5;
-  } else if (patternName === "twin_wings") {
-    score = y * 3 + Math.abs(Math.abs(x) - 0.58) * 10 + Math.max(0, 0.28 - Math.abs(x)) * 18;
-  } else if (patternName === "hollow_v") {
-    score = Math.abs(Math.abs(x) - (0.22 + y * 0.7)) * 11 + y * 2;
-  } else if (patternName === "support_bridge") {
-    score = Math.min(Math.abs(cell.row - 1), Math.abs(cell.row - 4), Math.abs(cell.row - 6)) * 6 + Math.abs(x);
-  } else if (patternName === "diamond_core") {
-    score = Math.abs(x) * 5 + Math.abs(y - 0.48) * 8 + y;
-  } else if (patternName === "side_gate") {
-    score = Math.min(Math.abs(Math.abs(x) - 0.72) * 9, Math.abs(y - 0.46) * 8) + y * 1.5;
-  } else if (patternName === "diagonal_wave") {
-    score = Math.abs(x - Math.sin((y * 1.8 + levelId * 0.07) * Math.PI) * 0.48) * 8 + y * 2;
-  } else if (patternName === "heart_pocket") {
-    score = y < 0.46
-      ? Math.abs(Math.abs(x) - 0.42) * 9 + y
-      : Math.abs(x) * 7 + Math.abs(y - 0.62) * 3;
-  } else if (patternName === "split_islands") {
-    score = Math.abs(Math.abs(x) - 0.55) * 9 + y * 2 + Math.max(0, 0.22 - Math.abs(x)) * 14;
+  var radius;
+  var angle;
+  var targetRadius;
+
+  if (patternName === "flower_bud") {
+    var budRing = Math.abs(pointDistance(x, y, 0, 0.4, 1, 1.45) - 0.44) * 9;
+    var budStem = Math.abs(x) * 7 + Math.abs(y - 0.72) * 1.5;
+    score = Math.min(budRing, budStem) + y * 0.8;
+  } else if (patternName === "flower_bloom") {
+    score = Math.min(
+      pointDistance(x, y, -0.36, 0.34, 1.15, 1.5),
+      pointDistance(x, y, 0.36, 0.34, 1.15, 1.5),
+      pointDistance(x, y, -0.3, 0.58, 1.2, 1.55),
+      pointDistance(x, y, 0.3, 0.58, 1.2, 1.55),
+      pointDistance(x, y, 0, 0.47, 1.4, 1.4) * 0.82
+    ) * 7 + y * 0.7;
+  } else if (patternName === "flower_lotus") {
+    var lotusWidth = 0.2 + Math.sin(Math.min(1, y) * Math.PI) * 0.5;
+    var lotusPetal = Math.abs(Math.abs(x) - lotusWidth) * 8 + Math.abs(y - 0.48) * 1.2;
+    var lotusCore = pointDistance(x, y, 0, 0.52, 1.5, 1.8) * 5;
+    score = Math.min(lotusPetal, lotusCore);
+  } else if (patternName === "flower_bell") {
+    var bellWidth = 0.18 + Math.sin(Math.min(1, y) * Math.PI * 0.86) * 0.5;
+    var bellEdge = Math.abs(Math.abs(x) - bellWidth) * 8 + y * 1.1;
+    var bellClapper = Math.abs(x) * 7 + Math.abs(y - 0.72) * 2;
+    score = Math.min(bellEdge, bellClapper);
+  } else if (patternName === "flower_twin") {
+    var leftFlower = pointDistance(x, y, -0.4, 0.46, 1.1, 1.45);
+    var rightFlower = pointDistance(x, y, 0.4, 0.46, 1.1, 1.45);
+    var flowerBridge = Math.abs(y - 0.53) * 7 + Math.abs(x) * 0.7;
+    score = Math.min(leftFlower * 6, rightFlower * 6, flowerBridge) + y * 0.5;
+  } else if (patternName === "crystal_spire") {
+    var spireEdge = Math.abs(Math.abs(x) + Math.abs(y - 0.5) * 0.82 - 0.68) * 9;
+    var spireAxis = Math.abs(x) * 6 + Math.abs(y - 0.55) * 1.2;
+    score = Math.min(spireEdge, spireAxis);
+  } else if (patternName === "crystal_cluster") {
+    var centerCrystal = Math.abs(Math.abs(x) + Math.abs(y - 0.48) * 0.8 - 0.58) * 8;
+    var leftCrystal = Math.abs(Math.abs(x + 0.45) + Math.abs(y - 0.58) * 0.9 - 0.42) * 8;
+    var rightCrystal = Math.abs(Math.abs(x - 0.45) + Math.abs(y - 0.54) * 0.9 - 0.42) * 8;
+    score = Math.min(centerCrystal, leftCrystal, rightCrystal) + y * 0.45;
+  } else if (patternName === "crystal_diamond") {
+    score = Math.abs(Math.abs(x) + Math.abs(y - 0.52) * 1.35 - 0.78) * 8 + Math.abs(x) * 0.35;
+  } else if (patternName === "crystal_pendant") {
+    var pendantGem = Math.abs(Math.abs(x) + Math.abs(y - 0.53) * 1.2 - 0.66) * 8;
+    var pendantChain = Math.abs(x) * 7 + Math.abs(y - 0.22) * 1.5;
+    var pendantTip = pointDistance(x, y, 0, 0.78, 1.4, 2) * 5;
+    score = Math.min(pendantGem, pendantChain, pendantTip);
+  } else if (patternName === "crystal_twin") {
+    var twinLeft = Math.abs(Math.abs(x + 0.38) + Math.abs(y - 0.52) - 0.48) * 8;
+    var twinRight = Math.abs(Math.abs(x - 0.38) + Math.abs(y - 0.52) - 0.48) * 8;
+    var twinBridge = Math.abs(y - 0.5) * 7 + Math.abs(x) * 0.8;
+    score = Math.min(twinLeft, twinRight, twinBridge);
+  } else if (patternName === "snowflake_core") {
+    var snowVertical = Math.abs(x) * 7;
+    var snowHorizontal = Math.abs(y - 0.5) * 8;
+    var snowDiagonalA = Math.abs(x - (y - 0.5) * 1.25) * 5.5;
+    var snowDiagonalB = Math.abs(x + (y - 0.5) * 1.25) * 5.5;
+    score = Math.min(snowVertical, snowHorizontal, snowDiagonalA, snowDiagonalB) + Math.abs(y - 0.5) * 0.7;
+  } else if (patternName === "snowflake_branch") {
+    var branchAxis = Math.abs(x) * 6;
+    var branchUpper = Math.min(Math.abs(x - (0.36 - y) * 1.35), Math.abs(x + (0.36 - y) * 1.35)) * 5;
+    var branchLower = Math.min(Math.abs(x - (y - 0.62) * 1.15), Math.abs(x + (y - 0.62) * 1.15)) * 5;
+    score = Math.min(branchAxis, branchUpper, branchLower) + y * 0.6;
+  } else if (patternName === "snowflake_crown") {
+    var icePeakDistance = Math.min(Math.abs(x + 0.58), Math.abs(x), Math.abs(x - 0.58));
+    var icePeaks = icePeakDistance * 6 + Math.abs(y - 0.32) * 2;
+    var iceBase = Math.abs(y - 0.58) * 7 + Math.abs(x) * 0.5;
+    score = Math.min(icePeaks, iceBase);
+  } else if (patternName === "snowflake_hourglass") {
+    score = Math.abs(Math.abs(x) - (0.16 + Math.abs(y - 0.52) * 1.05)) * 7 + Math.abs(y - 0.52) * 0.5;
+  } else if (patternName === "snowflake_wings") {
+    var snowWing = Math.abs(Math.abs(x) - (0.28 + Math.sin(y * Math.PI) * 0.36)) * 7;
+    var snowCore = Math.abs(x) * 6 + Math.abs(y - 0.5) * 1.3;
+    score = Math.min(snowWing, snowCore);
+  } else if (patternName === "star_core" || patternName === "star_burst") {
+    var centeredY = (y - 0.5) * 1.35;
+    radius = Math.sqrt(x * x + centeredY * centeredY);
+    angle = Math.atan2(centeredY, x);
+    var rayCount = patternName === "star_core" ? 5 : 8;
+    targetRadius = 0.44 + Math.cos(angle * rayCount) * (patternName === "star_core" ? 0.2 : 0.16);
+    score = Math.abs(radius - targetRadius) * 8 + radius * 0.3;
+  } else if (patternName === "star_crown") {
+    var starPeakDistance = Math.min(Math.abs(x + 0.62), Math.abs(x), Math.abs(x - 0.62));
+    var starPeaks = starPeakDistance * 6 + Math.abs(y - 0.34) * 2;
+    var starBody = Math.abs(Math.abs(x) + Math.abs(y - 0.58) - 0.7) * 7;
+    score = Math.min(starPeaks, starBody);
+  } else if (patternName === "star_gate") {
+    var starGateSides = Math.abs(Math.abs(x) - 0.58) * 7 + Math.abs(y - 0.5) * 0.5;
+    var starGateTop = Math.abs(y - 0.32) * 7 + Math.abs(x) * 0.8;
+    var starGateGem = pointDistance(x, y, 0, 0.54, 1.3, 1.7) * 5;
+    score = Math.min(starGateSides, starGateTop, starGateGem);
+  } else if (patternName === "star_twin") {
+    var leftStar = pointDistance(x, y, -0.4, 0.5, 1.1, 1.45);
+    var rightStar = pointDistance(x, y, 0.4, 0.5, 1.1, 1.45);
+    var starBridge = Math.abs(y - 0.5) * 7 + Math.abs(x) * 0.8;
+    score = Math.min(leftStar * 6, rightStar * 6, starBridge);
+  } else if (patternName === "wing_butterfly") {
+    var butterflyWing = Math.abs(Math.abs(x) - (0.26 + Math.sin(y * Math.PI) * 0.48)) * 7;
+    var butterflyBody = Math.abs(x) * 7 + Math.abs(y - 0.5) * 0.8;
+    score = Math.min(butterflyWing, butterflyBody);
+  } else if (patternName === "wing_feather") {
+    var featherSpine = Math.abs(x) * 7;
+    var featherBarbA = Math.abs(Math.abs(x) - (0.16 + y * 0.56)) * 6;
+    var featherBarbB = Math.abs(Math.abs(x) - (0.7 - y * 0.48)) * 6;
+    score = Math.min(featherSpine, featherBarbA, featherBarbB) + y * 0.35;
+  } else if (patternName === "wing_bridge") {
+    var wingSides = Math.abs(Math.abs(x) - 0.58) * 7 + Math.abs(y - 0.46) * 0.7;
+    var wingBridge = Math.abs(y - 0.56) * 7 + Math.abs(x) * 0.6;
+    score = Math.min(wingSides, wingBridge);
+  } else if (patternName === "wing_crown") {
+    var wingPeakDistance = Math.min(Math.abs(x + 0.58), Math.abs(x), Math.abs(x - 0.58));
+    var wingCrown = wingPeakDistance * 6 + Math.abs(y - 0.34) * 2;
+    var wingSweep = Math.abs(Math.abs(x) - (0.26 + y * 0.52)) * 6;
+    score = Math.min(wingCrown, wingSweep);
+  } else if (patternName === "wing_heart") {
+    var heartUpper = Math.abs(Math.abs(x) - 0.4) * 7 + Math.abs(y - 0.35) * 1.4;
+    var heartLower = Math.abs(Math.abs(x) - Math.max(0.08, 0.68 - y * 0.72)) * 7;
+    score = Math.min(heartUpper, heartLower);
+  } else if (patternName === "crown_arch") {
+    var archRadius = Math.abs(pointDistance(x, y, 0, 0.58, 1, 1.45) - 0.62) * 7;
+    var archBase = Math.abs(y - 0.62) * 7 + Math.abs(x) * 0.6;
+    score = Math.min(archRadius, archBase);
+  } else if (patternName === "crown_gem") {
+    var crownGem = Math.abs(Math.abs(x) + Math.abs(y - 0.5) * 1.2 - 0.68) * 7;
+    var crownBand = Math.abs(y - 0.3) * 7 + Math.abs(x) * 0.5;
+    score = Math.min(crownGem, crownBand);
+  } else if (patternName === "crown_towers") {
+    var towerSides = Math.abs(Math.abs(x) - 0.58) * 7;
+    var towerBridge = Math.abs(y - 0.54) * 7 + Math.abs(x) * 0.7;
+    var towerCore = Math.abs(x) * 7 + Math.abs(y - 0.46) * 1.1;
+    score = Math.min(towerSides, towerBridge, towerCore);
+  } else if (patternName === "crown_keyhole") {
+    var keyholeRing = Math.abs(pointDistance(x, y, 0, 0.42, 1.1, 1.5) - 0.38) * 8;
+    var keyholeStem = Math.abs(x) * 7 + Math.abs(y - 0.7) * 1.2;
+    score = Math.min(keyholeRing, keyholeStem);
   } else if (patternName === "crown_exam") {
-    var peakDistance = Math.min(Math.abs(x + 0.62), Math.abs(x), Math.abs(x - 0.62));
-    score = y < 0.48 ? peakDistance * 8 + y : Math.abs(x) * 2 + y * 3;
+    var crownPeakDistance = Math.min(Math.abs(x + 0.62), Math.abs(x), Math.abs(x - 0.62));
+    var crownPeaks = crownPeakDistance * 6 + Math.abs(y - 0.32) * 2;
+    var crownBody = Math.abs(Math.abs(x) + Math.abs(y - 0.56) - 0.72) * 6;
+    var crownCore = pointDistance(x, y, 0, 0.5, 1.4, 1.7) * 5;
+    score = Math.min(crownPeaks, crownBody, crownCore);
   } else {
     throw new Error("Unsupported first-100 pattern: " + patternName);
   }
   return score + cell.row * 0.0001 + cell.col * 0.00001;
+}
+
+function buildEdgeCandidateColumns(rowLength, preferRight) {
+  var lastColumn = rowLength - 1;
+  if (rowLength <= 1) {
+    return [0];
+  }
+  if (rowLength === 2) {
+    return preferRight ? [lastColumn, 0] : [0, lastColumn];
+  }
+  return preferRight
+    ? [lastColumn, 0, lastColumn - 1, 1]
+    : [0, lastColumn, 1, lastColumn - 1];
+}
+
+function buildCenterCandidateColumns(rowLength, preferRight) {
+  var leftCenter = Math.floor((rowLength - 1) / 2);
+  var rightCenter = Math.ceil((rowLength - 1) / 2);
+  if (leftCenter === rightCenter) {
+    return [leftCenter, leftCenter - 1, leftCenter + 1].filter(function (col) {
+      return col >= 0 && col < rowLength;
+    });
+  }
+  return preferRight
+    ? [rightCenter, leftCenter, rightCenter + 1, leftCenter - 1].filter(function (col) {
+      return col >= 0 && col < rowLength;
+    })
+    : [leftCenter, rightCenter, leftCenter - 1, rightCenter + 1].filter(function (col) {
+      return col >= 0 && col < rowLength;
+    });
+}
+
+function findReachableAnchorCell(rowIndex, rows, selected, selectedMap, columns) {
+  for (var index = 0; index < columns.length; index += 1) {
+    var cell = {
+      row: rowIndex,
+      col: columns[index]
+    };
+    var key = cell.row + ":" + cell.col;
+    if (selectedMap[key]) {
+      continue;
+    }
+    if (selected.some(function (selectedCell) {
+      return areAdjacent(cell, selectedCell);
+    })) {
+      return cell;
+    }
+  }
+  return null;
 }
 
 function buildShapeSlots(rows, patternName, requiredCount, levelId) {
@@ -507,6 +774,9 @@ function buildShapeSlots(rows, patternName, requiredCount, levelId) {
   var selected = [];
   var selectedMap = {};
   var selectedByRow = {};
+  var selectedMomentX = 0;
+  var selectedLeftCount = 0;
+  var selectedRightCount = 0;
   function pushShapeSlot(cell) {
     var key = cell.row + ":" + cell.col;
     if (selectedMap[key]) {
@@ -515,14 +785,89 @@ function buildShapeSlots(rows, patternName, requiredCount, levelId) {
     selected.push(cell);
     selectedMap[key] = true;
     selectedByRow[cell.row] = (selectedByRow[cell.row] || 0) + 1;
+    var normalizedX = getNormalizedCoordinates(cell, rows).x;
+    selectedMomentX += normalizedX;
+    if (normalizedX < -0.08) {
+      selectedLeftCount += 1;
+    } else if (normalizedX > 0.08) {
+      selectedRightCount += 1;
+    }
+  }
+  function pushReferenceAnchors() {
+    for (var edgeRow = 2; edgeRow < rows.length && selected.length < requiredCount; edgeRow += 3) {
+      var leftAnchor = findReachableAnchorCell(
+        edgeRow,
+        rows,
+        selected,
+        selectedMap,
+        buildEdgeCandidateColumns(rows[edgeRow].length, false)
+      );
+      if (leftAnchor) {
+        pushShapeSlot(leftAnchor);
+      }
+      var rightAnchor = findReachableAnchorCell(
+        edgeRow,
+        rows,
+        selected,
+        selectedMap,
+        buildEdgeCandidateColumns(rows[edgeRow].length, true)
+      );
+      if (rightAnchor && selected.length < requiredCount) {
+        pushShapeSlot(rightAnchor);
+      }
+    }
+    for (var centerRow = 1; centerRow < rows.length && selected.length < requiredCount; centerRow += 4) {
+      var preferRightCenter = (levelId + centerRow) % 2 === 0;
+      var centerAnchor = findReachableAnchorCell(
+        centerRow,
+        rows,
+        selected,
+        selectedMap,
+        buildCenterCandidateColumns(rows[centerRow].length, preferRightCenter)
+      );
+      if (centerAnchor) {
+        pushShapeSlot(centerAnchor);
+      }
+    }
   }
   function scoreShapeCandidate(cell) {
     var rowFill = selectedByRow[cell.row] || 0;
     var targetRowFill = Math.ceil(requiredCount / rows.length);
+    var normalizedX = getNormalizedCoordinates(cell, rows).x;
+    var nextLeftCount = selectedLeftCount + (normalizedX < -0.08 ? 1 : 0);
+    var nextRightCount = selectedRightCount + (normalizedX > 0.08 ? 1 : 0);
+    var balancePenalty = Math.abs(selectedMomentX + normalizedX) * 2.8 +
+      Math.abs(nextLeftCount - nextRightCount) * 0.9;
     return scorePatternCell(patternName, cell, rows, levelId) +
-      Math.max(0, rowFill - targetRowFill + 1) * 12 +
-      rowFill * 2.5 -
-      cell.row * 0.45;
+      Math.max(0, rowFill - targetRowFill - 1) * 4 +
+      rowFill * 0.4 +
+      cell.row * 0.08 +
+      balancePenalty;
+  }
+  function pushFocusAnchor() {
+    var silhouette = getSilhouette(levelId);
+    var accentDirection = levelId % 2 === 0 ? -1 : 1;
+    var focusX = silhouette.focusX * accentDirection;
+    var candidates = allCells.filter(function (cell) {
+      var key = cell.row + ":" + cell.col;
+      if (selectedMap[key]) {
+        return false;
+      }
+      return selected.some(function (selectedCell) {
+        return areAdjacent(cell, selectedCell);
+      });
+    });
+    candidates.sort(function (cellA, cellB) {
+      var coordinatesA = getNormalizedCoordinates(cellA, rows);
+      var coordinatesB = getNormalizedCoordinates(cellB, rows);
+      var distanceA = pointDistance(coordinatesA.x, coordinatesA.y, focusX, silhouette.focusY, 1, 1.25);
+      var distanceB = pointDistance(coordinatesB.x, coordinatesB.y, focusX, silhouette.focusY, 1, 1.25);
+      return distanceA - distanceB;
+    });
+    if (candidates.length === 0) {
+      throw new Error("First-100 silhouette focus is unreachable for level " + levelId + ".");
+    }
+    pushShapeSlot(candidates[0]);
   }
   allCells.filter(function (cell) {
     return cell.row === 0;
@@ -546,6 +891,11 @@ function buildShapeSlots(rows, patternName, requiredCount, levelId) {
       return scoreShapeCandidate(cellA) - scoreShapeCandidate(cellB);
     });
     pushShapeSlot(rowCandidates[0]);
+  }
+  pushFocusAnchor();
+  var themeName = getThemeGroup(levelId).name;
+  if (levelId !== 1 && (themeName === "snowflake" || themeName === "star" || themeName === "wing")) {
+    pushReferenceAnchors();
   }
 
   while (selected.length < requiredCount) {
@@ -600,7 +950,22 @@ function buildSlotsFromFixedLayout(rows, fixedLayout, requiredCount, levelId) {
   return slots;
 }
 
-function scoreSpecialSlot(entity, cell, rows, levelId, entityIndex, placementVariant) {
+function getFocalEntityRank(entity) {
+  if (entity.entityType === "rainbow" || entity.entityType === "blast" ||
+      entity.entityType === "molotov" || entity.entityType === "splitter" ||
+      entity.entityType === "key") {
+    return 0;
+  }
+  if (entity.entityType === "stone" || entity.entityType === "locked") {
+    return 1;
+  }
+  if (entity.entityType === "ice") {
+    return 2;
+  }
+  throw new Error("Unsupported first-100 focal entity type: " + entity.entityType);
+}
+
+function scoreSpecialSlot(entity, cell, rows, levelId, entityIndex, placementVariant, placedMomentX) {
   var coordinates = getNormalizedCoordinates(cell, rows);
   var x = coordinates.x;
   var y = coordinates.y;
@@ -622,6 +987,20 @@ function scoreSpecialSlot(entity, cell, rows, levelId, entityIndex, placementVar
   } else {
     throw new Error("Unsupported first-100 special entity type: " + entity.entityType);
   }
+  var silhouette = getSilhouette(levelId);
+  var accentDirection = levelId % 2 === 0 ? -1 : 1;
+  if (entityIndex === 0) {
+    score += pointDistance(
+      x,
+      y,
+      silhouette.focusX * accentDirection,
+      silhouette.focusY,
+      1,
+      1.25
+    ) * 40;
+  } else {
+    score += Math.abs(placedMomentX + x) * 4;
+  }
   var variantSalt = ((cell.row * 11 + cell.col * 7 + placementVariant * 13) % 17) * 0.015;
   return score + variantSalt + cell.row * 0.0001 + cell.col * 0.00001;
 }
@@ -634,7 +1013,15 @@ function placeSpecialEntities(rows, shapeSlots, entities, levelId, placementVari
     throw new Error("First-100 placement variant must be a non-negative integer.");
   }
   var used = {};
-  entities.forEach(function (entity, entityIndex) {
+  var placedMomentX = 0;
+  var orderedEntities = entities.slice().sort(function (entityA, entityB) {
+    var rankDelta = getFocalEntityRank(entityA) - getFocalEntityRank(entityB);
+    if (rankDelta !== 0) {
+      return rankDelta;
+    }
+    return String(entityA.id).localeCompare(String(entityB.id));
+  });
+  orderedEntities.forEach(function (entity, entityIndex) {
     assertObject(entity, "Special entity " + entityIndex);
     var candidates = shapeSlots.filter(function (cell) {
       var key = cell.row + ":" + cell.col;
@@ -643,19 +1030,38 @@ function placeSpecialEntities(rows, shapeSlots, entities, levelId, placementVari
       }
       return !(entity.entityType === "splitter" && cell.row === 0);
     });
+    if (entityIndex === 0) {
+      var silhouette = getSilhouette(levelId);
+      var accentDirection = levelId % 2 === 0 ? -1 : 1;
+      candidates = candidates.filter(function (cell) {
+        var coordinates = getNormalizedCoordinates(cell, rows);
+        return pointDistance(
+          coordinates.x,
+          coordinates.y,
+          silhouette.focusX * accentDirection,
+          silhouette.focusY,
+          1,
+          1.25
+        ) <= 0.58;
+      });
+    }
     if (candidates.length === 0) {
       throw new Error("No first-100 special slot available for level " + levelId + ".");
     }
     candidates.sort(function (cellA, cellB) {
-      return scoreSpecialSlot(entity, cellA, rows, levelId, entityIndex, placementVariant) -
-        scoreSpecialSlot(entity, cellB, rows, levelId, entityIndex, placementVariant);
+      return scoreSpecialSlot(entity, cellA, rows, levelId, entityIndex, placementVariant, placedMomentX) -
+        scoreSpecialSlot(entity, cellB, rows, levelId, entityIndex, placementVariant, placedMomentX);
     });
-    var variantCandidateCount = Math.min(12, candidates.length);
-    var candidateIndex = (placementVariant + entityIndex * 3) % variantCandidateCount;
+    var variantCandidateCount = Math.min(8, candidates.length);
+    var focalCandidateCount = Math.min(8, candidates.length);
+    var candidateIndex = entityIndex === 0
+      ? placementVariant % focalCandidateCount
+      : (placementVariant + entityIndex * 3) % variantCandidateCount;
     var slot = candidates[candidateIndex];
     used[slot.row + ":" + slot.col] = true;
     entity.row = slot.row;
     entity.col = slot.col;
+    placedMomentX += getNormalizedCoordinates(slot, rows).x;
   });
 }
 
@@ -770,6 +1176,154 @@ function countLevelColors(level) {
   return counts;
 }
 
+function collectOccupiedVisualCells(level) {
+  var cells = [];
+  level.layout.forEach(function (rowString, rowIndex) {
+    rowString.split("").forEach(function (cellValue, colIndex) {
+      if (cellValue !== ".") {
+        cells.push({ row: rowIndex, col: colIndex, special: false });
+      }
+    });
+  });
+  level.specialEntities.forEach(function (entity) {
+    cells.push({ row: entity.row, col: entity.col, special: true, entity: entity });
+  });
+  return cells;
+}
+
+function analyzeVisualComposition(level, spec) {
+  var cells = collectOccupiedVisualCells(level);
+  if (cells.length === 0) {
+    throw new Error("Level " + level.levelId + " visual composition has no occupied cells.");
+  }
+  var leftCount = 0;
+  var rightCount = 0;
+  var momentX = 0;
+  var leftBottomRow = -1;
+  var rightBottomRow = -1;
+  var rows = level.layout;
+  var rowBounds = [];
+  var focusNearCount = 0;
+  var accentDirection = level.levelId % 2 === 0 ? -1 : 1;
+  var focusX = spec.focusX * accentDirection;
+
+  cells.forEach(function (cell) {
+    var coordinates = getNormalizedCoordinates(cell, rows);
+    momentX += coordinates.x;
+    if (coordinates.x < -0.08) {
+      leftCount += 1;
+      leftBottomRow = Math.max(leftBottomRow, cell.row);
+    } else if (coordinates.x > 0.08) {
+      rightCount += 1;
+      rightBottomRow = Math.max(rightBottomRow, cell.row);
+    }
+    if (pointDistance(coordinates.x, coordinates.y, focusX, spec.focusY, 1, 1.25) <= 0.4) {
+      focusNearCount += 1;
+    }
+    if (!rowBounds[cell.row]) {
+      rowBounds[cell.row] = {
+        count: 0,
+        minX: coordinates.x,
+        maxX: coordinates.x
+      };
+    }
+    rowBounds[cell.row].count += 1;
+    rowBounds[cell.row].minX = Math.min(rowBounds[cell.row].minX, coordinates.x);
+    rowBounds[cell.row].maxX = Math.max(rowBounds[cell.row].maxX, coordinates.x);
+  });
+
+  var maxRowCountJump = 0;
+  var maxEdgeJump = 0;
+  var repeatedRectangleRun = 1;
+  var maxRepeatedRectangleRun = 1;
+  for (var rowIndex = 2; rowIndex < rowBounds.length; rowIndex += 1) {
+    var previous = rowBounds[rowIndex - 1];
+    var current = rowBounds[rowIndex];
+    if (!previous || !current) {
+      throw new Error("Level " + level.levelId + " silhouette contains an empty occupied row gap.");
+    }
+    maxRowCountJump = Math.max(maxRowCountJump, Math.abs(current.count - previous.count));
+    maxEdgeJump = Math.max(
+      maxEdgeJump,
+      Math.abs(current.minX - previous.minX),
+      Math.abs(current.maxX - previous.maxX)
+    );
+    if (Math.abs(current.minX - previous.minX) < 0.01 &&
+        Math.abs(current.maxX - previous.maxX) < 0.01 &&
+        current.count === previous.count) {
+      repeatedRectangleRun += 1;
+      maxRepeatedRectangleRun = Math.max(maxRepeatedRectangleRun, repeatedRectangleRun);
+    } else {
+      repeatedRectangleRun = 1;
+    }
+  }
+
+  var focalSpecialDistance = null;
+  if (level.specialEntities.length > 0) {
+    var focalEntity = level.specialEntities.slice().sort(function (entityA, entityB) {
+      var rankDelta = getFocalEntityRank(entityA) - getFocalEntityRank(entityB);
+      if (rankDelta !== 0) {
+        return rankDelta;
+      }
+      return String(entityA.id).localeCompare(String(entityB.id));
+    })[0];
+    var focalCoordinates = getNormalizedCoordinates(focalEntity, rows);
+    focalSpecialDistance = pointDistance(
+      focalCoordinates.x,
+      focalCoordinates.y,
+      focusX,
+      spec.focusY,
+      1,
+      1.25
+    );
+  }
+
+  return {
+    occupiedCount: cells.length,
+    centroidX: momentX / cells.length,
+    sideCountDifference: Math.abs(leftCount - rightCount),
+    allowedSideCountDifference: Math.max(1, Math.ceil(cells.length * 0.1)),
+    bottomRowDifference: Math.abs(leftBottomRow - rightBottomRow),
+    maxRowCountJump: maxRowCountJump,
+    maxEdgeJump: maxEdgeJump,
+    maxRepeatedRectangleRun: maxRepeatedRectangleRun,
+    focusNearCount: focusNearCount,
+    focalSpecialDistance: focalSpecialDistance
+  };
+}
+
+function validateVisualComposition(level, spec) {
+  var metrics = analyzeVisualComposition(level, spec);
+  if (Math.abs(metrics.centroidX) > 0.12) {
+    throw new Error("Level " + level.levelId + " visual centroid is unstable: " + metrics.centroidX.toFixed(3) + ".");
+  }
+  if (metrics.sideCountDifference > metrics.allowedSideCountDifference) {
+    throw new Error(
+      "Level " + level.levelId + " left-right visual weight differs by " +
+      metrics.sideCountDifference + " cells."
+    );
+  }
+  if (metrics.bottomRowDifference > 1) {
+    throw new Error("Level " + level.levelId + " left-right bottom extent differs by more than one row.");
+  }
+  if (metrics.maxRowCountJump > 4) {
+    throw new Error("Level " + level.levelId + " silhouette row width changes too abruptly.");
+  }
+  if (metrics.maxEdgeJump > 0.56) {
+    throw new Error("Level " + level.levelId + " silhouette edge has a hard step.");
+  }
+  if (metrics.maxRepeatedRectangleRun > 3) {
+    throw new Error("Level " + level.levelId + " silhouette contains a rigid rectangular edge run.");
+  }
+  if (metrics.focusNearCount < 3) {
+    throw new Error("Level " + level.levelId + " silhouette does not establish its visual focus.");
+  }
+  if (metrics.focalSpecialDistance !== null && metrics.focalSpecialDistance > 0.58) {
+    throw new Error("Level " + level.levelId + " focal special entity is too far from the visual focus.");
+  }
+  return metrics;
+}
+
 function validateGeneratedLevel(level) {
   assertObject(level, "First-100 generated level");
   var spec = buildLevelSpec(level.levelId);
@@ -867,9 +1421,13 @@ function validateGeneratedLevel(level) {
   if (Object.keys(specialTypes).length > 4) {
     throw new Error("Level " + level.levelId + " uses more than four special entity types.");
   }
+  var visualMetrics = validateVisualComposition(level, spec);
   return {
+    themeName: spec.themeName,
     patternName: spec.patternName,
-    specialDensity: specialDensity
+    focusName: spec.focusName,
+    specialDensity: specialDensity,
+    visualMetrics: visualMetrics
   };
 }
 
@@ -878,10 +1436,13 @@ module.exports = {
   LAST_LEVEL_ID: LAST_LEVEL_ID,
   COLORS: COLORS.slice(),
   PATTERNS: PATTERNS.slice(),
+  THEME_GROUPS: JSON.parse(JSON.stringify(THEME_GROUPS)),
   LEVEL_ONE_TUTORIAL_LAYOUT: LEVEL_ONE_TUTORIAL_LAYOUT.slice(),
   buildLevelSpec: buildLevelSpec,
   buildBoard: buildBoard,
   getDifficultyTuning: getDifficultyTuning,
   assertTableRowMatchesDesign: assertTableRowMatchesDesign,
+  analyzeVisualComposition: analyzeVisualComposition,
+  validateVisualComposition: validateVisualComposition,
   validateGeneratedLevel: validateGeneratedLevel
 };
