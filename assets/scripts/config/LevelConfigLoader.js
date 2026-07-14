@@ -73,12 +73,12 @@ function assertNumberInRange(value, fieldName, min, max, levelKey) {
   return value;
 }
 
-function validateRowString(rowIndex, rowString, levelColors, levelKey) {
+function validateRowString(rowIndex, rowString, levelColors, levelKey, maxColumns) {
   if (typeof rowString !== "string") {
     throw new Error("level.layout row must be a string at index " + rowIndex + ": " + levelKey);
   }
 
-  var expectedColumns = BoardLayout.getRowColumnCount(rowIndex, BoardLayout.defaultColumns);
+  var expectedColumns = BoardLayout.getRowColumnCount(rowIndex, maxColumns);
   if (rowString.length > expectedColumns) {
     throw new Error("level.layout row length invalid at index " + rowIndex + ": expected at most " + expectedColumns + ", got " + rowString.length + ": " + levelKey);
   }
@@ -104,30 +104,28 @@ function normalizeLayoutRows(layout, levelColors, levelKey) {
     throw new Error("Level layout must contain at least " + MIN_LAYOUT_ROWS + " rows: " + levelKey);
   }
 
+  var maxColumns = BoardLayout.defaultColumns;
+
   return layout.map(function (rowString, rowIndex) {
-    return validateRowString(rowIndex, rowString, levelColors, levelKey);
+    return validateRowString(rowIndex, rowString, levelColors, levelKey, maxColumns);
   });
 }
 
-function validateTopRowFilled(layout, specialEntities, levelKey) {
+function validateTopRowAnchored(layout, specialEntities, levelKey) {
   var topRow = layout[TOP_BOARD_ROW_INDEX];
   if (typeof topRow !== "string") {
     throw new Error("Level layout top row must be a string: " + levelKey);
   }
-  var expectedColumns = BoardLayout.getRowColumnCount(TOP_BOARD_ROW_INDEX, BoardLayout.defaultColumns);
-  var occupiedBySpecial = {};
+  var occupiedCount = topRow.split("").filter(function (cellCode) {
+    return cellCode !== ".";
+  }).length;
   (specialEntities || []).forEach(function (entity) {
     if (entity && entity.row === TOP_BOARD_ROW_INDEX && Number.isInteger(entity.col)) {
-      occupiedBySpecial[entity.col] = true;
+      occupiedCount += 1;
     }
   });
-  for (var colIndex = 0; colIndex < expectedColumns; colIndex += 1) {
-    var cellCode = topRow.charAt(colIndex);
-    if (cellCode === "." && !occupiedBySpecial[colIndex]) {
-      throw new Error(
-        "Level layout top row must be filled at col " + colIndex + ": " + levelKey
-      );
-    }
+  if (occupiedCount <= 0) {
+    throw new Error("Level layout top row must contain at least one anchor: " + levelKey);
   }
 }
 
@@ -474,6 +472,58 @@ function normalizeInitialShotBalls(levelConfig, levelKey) {
   });
 }
 
+function normalizeOpeningShotBalls(levelConfig, levelKey) {
+  if (levelConfig.openingShotBalls === undefined) {
+    return;
+  }
+  if (levelConfig.initialShotBalls !== undefined) {
+    throw new Error("level.openingShotBalls and level.initialShotBalls cannot both be configured: " + levelKey);
+  }
+  if (levelConfig.levelType !== "normal" || levelConfig.playMode !== "shot_limited") {
+    throw new Error("level.openingShotBalls is only supported by normal shot_limited levels: " + levelKey);
+  }
+  if (!Array.isArray(levelConfig.openingShotBalls) || levelConfig.openingShotBalls.length < 3 || levelConfig.openingShotBalls.length > 6) {
+    throw new Error("level.openingShotBalls must contain 3 to 6 colors: " + levelKey);
+  }
+  if (levelConfig.openingShotBalls.length > levelConfig.shotLimit) {
+    throw new Error("level.openingShotBalls length must not exceed level.shotLimit: " + levelKey);
+  }
+  levelConfig.openingShotBalls = levelConfig.openingShotBalls.map(function (colorCode, index) {
+    if (typeof colorCode !== "string" || levelConfig.colors.indexOf(colorCode) === -1) {
+      throw new Error("level.openingShotBalls[" + index + "] must exist in level.colors: " + levelKey);
+    }
+    return colorCode;
+  });
+}
+
+function normalizeStarThresholds(levelConfig, levelKey) {
+  if (levelConfig.starThresholds === undefined) {
+    return;
+  }
+  var thresholds = levelConfig.starThresholds;
+  if (!thresholds || typeof thresholds !== "object" || Array.isArray(thresholds)) {
+    throw new Error("level.starThresholds must be an object: " + levelKey);
+  }
+  var fields = Object.keys(thresholds);
+  if (fields.length !== 3 || fields.indexOf("star1") === -1 || fields.indexOf("star2") === -1 || fields.indexOf("star3") === -1) {
+    throw new Error("level.starThresholds must contain only star1, star2 and star3: " + levelKey);
+  }
+  var star1 = assertPositiveInteger(thresholds.star1, "level.starThresholds.star1", levelKey);
+  var star2 = assertPositiveInteger(thresholds.star2, "level.starThresholds.star2", levelKey);
+  var star3 = assertPositiveInteger(thresholds.star3, "level.starThresholds.star3", levelKey);
+  if (!(star1 < star2 && star2 < star3)) {
+    throw new Error("level.starThresholds must be strictly increasing: " + levelKey);
+  }
+  if (star3 > levelConfig.targetScore) {
+    throw new Error("level.starThresholds.star3 must not exceed level.targetScore: " + levelKey);
+  }
+  levelConfig.starThresholds = {
+    star1: star1,
+    star2: star2,
+    star3: star3
+  };
+}
+
 function normalizeLevelMode(levelConfig, levelKey) {
   if (typeof levelConfig.levelType !== "string") {
     throw new Error("level.levelType is required: " + levelKey);
@@ -581,7 +631,7 @@ function normalizeLevelConfig(rawConfig, levelKey) {
   });
 
   config.level.layout = normalizeLayoutRows(config.level.layout, config.level.colors, levelKey);
-  validateTopRowFilled(config.level.layout, config.level.specialEntities, levelKey);
+  validateTopRowAnchored(config.level.layout, config.level.specialEntities, levelKey);
 
   if (!Number.isInteger(config.level.colorCount) || config.level.colorCount !== config.level.colors.length) {
     throw new Error("level.colorCount must equal level.colors.length: " + levelKey);
@@ -596,6 +646,7 @@ function normalizeLevelConfig(rawConfig, levelKey) {
     config.level.shotLimit = resolveShotLimit(config.level, levelKey);
   }
   config.level.targetScore = assertPositiveInteger(config.level.targetScore, "level.targetScore", levelKey);
+  normalizeStarThresholds(config.level, levelKey);
   config.level.dropInterval = assertPositiveInteger(config.level.dropInterval, "level.dropInterval", levelKey);
   var clearRewardItems = normalizeClearRewardItems(config.level, expectedLevelId, levelKey);
   if (clearRewardItems !== undefined) {
@@ -632,6 +683,7 @@ function normalizeLevelConfig(rawConfig, levelKey) {
     }
   });
   normalizeInitialShotBalls(config.level, levelKey);
+  normalizeOpeningShotBalls(config.level, levelKey);
 
   if (!config.level.jarRules || typeof config.level.jarRules !== "object" || Array.isArray(config.level.jarRules)) {
     throw new Error("level.jarRules must be an object: " + levelKey);

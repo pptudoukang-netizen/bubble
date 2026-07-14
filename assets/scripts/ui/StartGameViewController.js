@@ -575,11 +575,8 @@ StartGameViewController.prototype._createPropSpriteProxyRecord = function (layer
 };
 
 StartGameViewController.prototype._hideStaticSourceSprites = function () {
-  var titleBgNode = requireChildNode(this._nodes.panel, "title_bg", "Panel");
   SpriteProxyLayerHelper.setSpriteRenderEnabled(this._nodes.panel, false, "StartGameView Panel background");
   SpriteProxyLayerHelper.setSpriteRenderEnabled(this._nodes.closeButton, false, "StartGameView close button");
-  SpriteProxyLayerHelper.setSpriteRenderEnabled(titleBgNode, false, "StartGameView title_bg");
-  SpriteProxyLayerHelper.setSpriteRenderEnabled(requireChildNode(titleBgNode, "paopao", "Panel/title_bg"), false, "StartGameView title_bg/paopao");
   SpriteProxyLayerHelper.setSpriteRenderEnabled(requireChildNode(this._nodes.panel, "line", "Panel"), false, "StartGameView line");
   SpriteProxyLayerHelper.setSpriteRenderEnabled(this._nodes.playButton, false, "StartGameView play_btn");
   SpriteProxyLayerHelper.setSpriteRenderEnabled(requireChildNode(this._nodes.playButton, "love", "Panel/play_btn"), false, "StartGameView play_btn/love");
@@ -602,11 +599,8 @@ StartGameViewController.prototype._rebuildRenderProxies = function () {
   this._clearRenderProxyRecords();
   this._hideStaticSourceSprites();
 
-  var titleBgNode = requireChildNode(this._nodes.panel, "title_bg", "Panel");
   this._createSpriteProxyRecord("panel", this._nodes.panel, "start_game_panel_bg_proxy", true);
   this._createSpriteProxyRecord("chrome", this._nodes.closeButton, "start_game_close_button_proxy", true);
-  this._createSpriteProxyRecord("chrome", titleBgNode, "start_game_title_bg_proxy", true);
-  this._createSpriteProxyRecord("chrome", requireChildNode(titleBgNode, "paopao", "Panel/title_bg"), "start_game_title_bubble_proxy", true);
   this._createSpriteProxyRecord("chrome", requireChildNode(this._nodes.panel, "line", "Panel"), "start_game_line_proxy", true);
   this._createSpriteProxyRecord("chrome", this._nodes.playButton, "start_game_play_button_proxy", true);
   this._createSpriteProxyRecord("chrome", requireChildNode(this._nodes.playButton, "love", "Panel/play_btn"), "start_game_play_love_proxy", true);

@@ -11,9 +11,11 @@
             "B": "blue",
             "Y": "yellow"
         },
-        "pattern": "flower_twin",
+        "pattern": "kxppm_layout_010",
         "theme": "flower",
-        "focus": "twin_petal_bridge"
+        "focus": "twin_petal_bridge",
+        "silhouetteVariant": "kxppm_layout_010",
+        "designBeat": "combine"
     },
     "sharedDefaults": {
         "collectMode": "any_with_same_color_bonus",
@@ -45,8 +47,10 @@
         "teaches": [
             "legacy_skill_ball",
             "flower_theme",
-            "flower_twin_pattern",
-            "twin_petal_bridge_focus"
+            "kxppm_layout_010_pattern",
+            "kxppm_layout_010_silhouette",
+            "twin_petal_bridge_focus",
+            "combine_design_beat"
         ],
         "colorCount": 4,
         "colors": [
@@ -55,8 +59,13 @@
             "B",
             "Y"
         ],
-        "shotLimit": 20,
-        "targetScore": 4260,
+        "shotLimit": 10,
+        "targetScore": 3970,
+        "starThresholds": {
+            "star1": 1429,
+            "star2": 2620,
+            "star3": 3573
+        },
         "dropInterval": 6,
         "jarCount": 4,
         "jarColors": [
@@ -71,8 +80,11 @@
             "B": 1,
             "Y": 1.12
         },
-        "initialShotBalls": [
+        "openingShotBalls": [
             "R",
+            "G",
+            "R",
+            "Y",
             "R"
         ],
         "jarRules": {
@@ -84,7 +96,7 @@
             {
                 "type": "collect_color",
                 "color": "R",
-                "value": 21
+                "value": 20
             }
         ],
         "bonusObjectives": [
@@ -104,25 +116,24 @@
             }
         ],
         "layout": [
-            "BBBBGGGGRR",
-            "..YGGG...",
-            "..YYYRRR..",
-            ".RRRRGR..",
-            "..YYYYBBB.",
-            ".YYB.RRB.",
-            "..YYRRRR..",
-            "..BBRRR..",
-            "...GGGG...",
-            "....RR..."
+            "GGGYYBBRRR",
+            "G..YYB..R",
+            ".GRRYBBRR.",
+            "GG..Y..RR",
+            "GGRR.BBRRR",
+            "GG..Y..RR",
+            "..RRYBBB..",
+            "...RYY...",
+            "....Y....."
         ],
-        "designNotes": "Generated from LEVEL_CONFIG_TABLE_1_1000.csv. Theme `flower` uses the `flower_twin` silhouette with one `twin_petal_bridge` visual focus before color and mechanic placement.",
+        "designNotes": "Gameplay is generated from the current LEVEL_CONFIG_TABLE_1_1000.csv rules; only the occupancy silhouette is projected from E:\\kxppm\\decrypted_config\\all_levels.json level 10 into the current 10/9-column board.",
         "difficultyScore": 50,
         "specialEntities": [
             {
                 "id": "stone_01",
                 "entityCategory": "obstacle_ball",
                 "entityType": "stone",
-                "row": 5,
+                "row": 4,
                 "col": 4
             }
         ],

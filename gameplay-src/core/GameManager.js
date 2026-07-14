@@ -600,7 +600,9 @@ function buildScoreHeatBand(levelConfig, scoreProfile) {
   }
 
   targetScore = Math.max(1, targetScore);
-  var starThresholds = StarRatingPolicy.buildStarThresholdsFromTargetScore(targetScore);
+  var starThresholds = level && level.starThresholds !== undefined
+    ? StarRatingPolicy.resolveStarThresholds(levelConfig)
+    : StarRatingPolicy.buildStarThresholdsFromTargetScore(targetScore);
 
   return {
     min: starThresholds.star1,
@@ -1603,7 +1605,7 @@ GameManager.prototype._getPrimaryObjectiveProgressValue = function (objective, j
 GameManager.prototype._areCollectionRewardObjectivesCompleted = function () {
   var objectives = listCollectionRewardObjectives(this.currentLevel);
   if (!objectives.length) {
-    throw new Error("Level must contain at least one collection reward objective.");
+    return false;
   }
 
   var jarsSnapshot = this._getCachedJarSnapshot();

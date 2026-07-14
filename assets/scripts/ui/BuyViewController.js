@@ -207,7 +207,6 @@ BuyViewController.prototype._createSpriteProxyRecord = function (layerKey, sourc
 BuyViewController.prototype._hideSourceSprites = function () {
   SpriteProxyLayerHelper.setSpriteRenderEnabled(this._nodes.bgNode, false, "BuyView bg");
   SpriteProxyLayerHelper.setSpriteRenderEnabled(requireChild(this._nodes.bgNode, "title"), false, "BuyView bg/title");
-  SpriteProxyLayerHelper.setSpriteRenderEnabled(requireChild(this._nodes.bgNode, "paopao"), false, "BuyView bg/title/paopao");
   SpriteProxyLayerHelper.setSpriteRenderEnabled(this._nodes.closeButton, false, "BuyView close button");
   SpriteProxyLayerHelper.setSpriteRenderEnabled(this._nodes.itemNode, false, "BuyView shop_item");
   SpriteProxyLayerHelper.setSpriteRenderEnabled(this._nodes.icon, false, "BuyView shop_item/icon");
@@ -232,7 +231,6 @@ BuyViewController.prototype._rebuildRenderProxies = function () {
   var titleNode = requireChild(this._nodes.bgNode, "title");
   this._createSpriteProxyRecord("background", this._nodes.bgNode, "buy_bg_proxy", true);
   this._createSpriteProxyRecord("background", titleNode, "buy_title_proxy", true);
-  this._createSpriteProxyRecord("background", requireChild(titleNode, "paopao"), "buy_title_bubble_proxy", true);
   this._createSpriteProxyRecord("control", this._nodes.closeButton, "buy_close_button_proxy", true);
   this._createSpriteProxyRecord("item", this._nodes.itemNode, "buy_shop_item_bg_proxy", true);
   this._createSpriteProxyRecord("item", this._nodes.icon, "buy_shop_item_icon_proxy", true);

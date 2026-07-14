@@ -26,11 +26,44 @@ function buildStarThresholdsFromTargetScore(targetScore) {
   };
 }
 
+function resolveStarThresholds(levelConfig) {
+  if (!levelConfig || typeof levelConfig !== "object" || !levelConfig.level || typeof levelConfig.level !== "object") {
+    throw new Error("Star thresholds require level config.");
+  }
+  var level = levelConfig.level;
+  if (level.starThresholds === undefined) {
+    return buildStarThresholdsFromTargetScore(level.targetScore);
+  }
+  var thresholds = level.starThresholds;
+  if (!thresholds || typeof thresholds !== "object" || Array.isArray(thresholds)) {
+    throw new Error("level.starThresholds must be an object.");
+  }
+  var thresholdFields = Object.keys(thresholds);
+  if (thresholdFields.length !== 3 || thresholdFields.indexOf("star1") === -1 || thresholdFields.indexOf("star2") === -1 || thresholdFields.indexOf("star3") === -1) {
+    throw new Error("level.starThresholds must contain only star1, star2 and star3.");
+  }
+  var star1 = requirePositiveInteger(thresholds.star1, "level.starThresholds.star1");
+  var star2 = requirePositiveInteger(thresholds.star2, "level.starThresholds.star2");
+  var star3 = requirePositiveInteger(thresholds.star3, "level.starThresholds.star3");
+  if (!(star1 < star2 && star2 < star3)) {
+    throw new Error("level.starThresholds must be strictly increasing.");
+  }
+  var targetScore = requirePositiveInteger(level.targetScore, "Star target score");
+  if (star3 > targetScore) {
+    throw new Error("level.starThresholds.star3 must not exceed level.targetScore.");
+  }
+  return {
+    star1: star1,
+    star2: star2,
+    star3: star3
+  };
+}
+
 function resolveOneStarTargetScore(levelConfig) {
   if (!levelConfig || typeof levelConfig !== "object" || !levelConfig.level || typeof levelConfig.level !== "object") {
     throw new Error("One-star target score requires level config.");
   }
-  return buildStarThresholdsFromTargetScore(levelConfig.level.targetScore).star1;
+  return resolveStarThresholds(levelConfig).star1;
 }
 
 function buildDefaultThresholds(scoreHeatBand) {
@@ -83,6 +116,7 @@ function calculateStarRatingFromSnapshot(snapshot) {
 
 module.exports = {
   buildStarThresholdsFromTargetScore: buildStarThresholdsFromTargetScore,
+  resolveStarThresholds: resolveStarThresholds,
   resolveOneStarTargetScore: resolveOneStarTargetScore,
   calculateStarRatingFromSnapshot: calculateStarRatingFromSnapshot
 };

@@ -6,6 +6,7 @@ function attachLevelRendererSceneJarMethods(LevelRenderer, deps) {
   var BoardLayout = deps.BoardLayout;
   var JAR_RESOURCES = deps.JAR_RESOURCES;
   var JAR_MASK_RESOURCES = deps.JAR_MASK_RESOURCES;
+  var resolveJarScoreSpritePath = deps.resolveJarScoreSpritePath;
   var JAR_RENDER_SIZE = deps.JAR_RENDER_SIZE;
   var ensureSprite = deps.ensureSprite;
   var ensureLabel = deps.ensureLabel;
@@ -163,7 +164,13 @@ LevelRenderer.prototype._renderBottomJars = function (levelConfig, runtimeSnapsh
       throw new Error("JarItem prefab requires score child node.");
     }
     var baseScore = JarScoreConfig.getBaseScoreForJarIndex(jarCount, index);
-    ensureLabel(scoreNode, String(baseScore), 40, 40);
+    var scoreSpritePath = resolveJarScoreSpritePath(colorCode, baseScore);
+    var scoreSpriteFrame = this.spriteFrameCache[scoreSpritePath];
+    if (!scoreSpriteFrame) {
+      throw new Error("Jar base score SpriteFrame is not loaded: " + scoreSpritePath);
+    }
+    ensureSprite(scoreNode, scoreSpriteFrame);
+    scoreNode.setContentSize(scoreSpriteFrame.getOriginalSize());
 
     var countNode = getOrCreateChild(jarNode, "CountLabel");
     countNode.setPosition(0, -118);

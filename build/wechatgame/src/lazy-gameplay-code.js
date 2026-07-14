@@ -5639,7 +5639,9 @@ function buildScoreHeatBand(levelConfig, scoreProfile) {
   }
 
   targetScore = Math.max(1, targetScore);
-  var starThresholds = StarRatingPolicy.buildStarThresholdsFromTargetScore(targetScore);
+  var starThresholds = level && level.starThresholds !== undefined
+    ? StarRatingPolicy.resolveStarThresholds(levelConfig)
+    : StarRatingPolicy.buildStarThresholdsFromTargetScore(targetScore);
 
   return {
     min: starThresholds.star1,
@@ -6642,7 +6644,7 @@ GameManager.prototype._getPrimaryObjectiveProgressValue = function (objective, j
 GameManager.prototype._areCollectionRewardObjectivesCompleted = function () {
   var objectives = listCollectionRewardObjectives(this.currentLevel);
   if (!objectives.length) {
-    throw new Error("Level must contain at least one collection reward objective.");
+    return false;
   }
 
   var jarsSnapshot = this._getCachedJarSnapshot();
@@ -10763,6 +10765,12 @@ function createGameManagerShotResolutionMethods(deps) {
         }
       });
 
+      if (thawed.length > 0) {
+        this._pushRuntimeEvent("ice_thawed", {
+          count: thawed.length
+        });
+      }
+
       return thawed;
     },
 
@@ -11460,6 +11468,33 @@ var JAR_MASK_RESOURCES = {
   Y: "image/jar/yellow_jar_mask",
   P: "image/jar/purple_jar_mask"
 };
+
+var JAR_SCORE_RESOURCE_COLOR_NAMES = {
+  R: "red",
+  G: "green",
+  B: "blue",
+  Y: "yellow",
+  P: "purple"
+};
+
+var JAR_SCORE_RESOURCE_VALUES = {
+  40: true,
+  60: true,
+  80: true,
+  90: true,
+  120: true
+};
+
+function resolveJarScoreSpritePath(colorCode, baseScore) {
+  var colorName = JAR_SCORE_RESOURCE_COLOR_NAMES[colorCode];
+  if (!colorName) {
+    throw new Error("Unsupported jar score color: " + colorCode);
+  }
+  if (!Number.isInteger(baseScore) || !JAR_SCORE_RESOURCE_VALUES[baseScore]) {
+    throw new Error("Unsupported jar base score sprite value: " + baseScore);
+  }
+  return "image/jar/" + colorName + "_" + baseScore;
+}
 
 var REWARD_ITEM_RESOURCES = {
   coin: "image/props/coin",
@@ -13265,8 +13300,14 @@ LevelRenderer.prototype._collectSpritePaths = function (levelConfig, runtimeSnap
     if (typeof colorCode !== "string" || !JAR_RESOURCES[colorCode] || !JAR_MASK_RESOURCES[colorCode]) {
       throw new Error("Unsupported jar color for level.jarColors[" + index + "]: " + colorCode);
     }
+    var baseScore = JarScoreConfig.getBaseScoreForJarIndex(level.jarColors.length, index);
     pushUniqueSpritePath(paths, JAR_RESOURCES[colorCode], "level.jarColors[" + index + "]");
     pushUniqueSpritePath(paths, JAR_MASK_RESOURCES[colorCode], "level.jarColors[" + index + "]/mask");
+    pushUniqueSpritePath(
+      paths,
+      resolveJarScoreSpritePath(colorCode, baseScore),
+      "level.jarColors[" + index + "]/base-score"
+    );
   });
 
   getCollectionObjectiveList(levelConfig).forEach(function (objective) {
@@ -13668,6 +13709,7 @@ var LEVEL_RENDERER_SCENE_DEPS = {
   LOSE_STATUS_RESOURCES: LOSE_STATUS_RESOURCES,
   JAR_RESOURCES: JAR_RESOURCES,
   JAR_MASK_RESOURCES: JAR_MASK_RESOURCES,
+  resolveJarScoreSpritePath: resolveJarScoreSpritePath,
   REWARD_ITEM_RESOURCES: REWARD_ITEM_RESOURCES,
   POWERUP_ICON_RESOURCES: POWERUP_ICON_RESOURCES,
   HUD_STAR_RESOURCES: HUD_STAR_RESOURCES,
@@ -19462,6 +19504,7 @@ function attachLevelRendererSceneJarMethods(LevelRenderer, deps) {
   var BoardLayout = deps.BoardLayout;
   var JAR_RESOURCES = deps.JAR_RESOURCES;
   var JAR_MASK_RESOURCES = deps.JAR_MASK_RESOURCES;
+  var resolveJarScoreSpritePath = deps.resolveJarScoreSpritePath;
   var JAR_RENDER_SIZE = deps.JAR_RENDER_SIZE;
   var ensureSprite = deps.ensureSprite;
   var ensureLabel = deps.ensureLabel;
@@ -19619,7 +19662,13 @@ LevelRenderer.prototype._renderBottomJars = function (levelConfig, runtimeSnapsh
       throw new Error("JarItem prefab requires score child node.");
     }
     var baseScore = JarScoreConfig.getBaseScoreForJarIndex(jarCount, index);
-    ensureLabel(scoreNode, String(baseScore), 40, 40);
+    var scoreSpritePath = resolveJarScoreSpritePath(colorCode, baseScore);
+    var scoreSpriteFrame = this.spriteFrameCache[scoreSpritePath];
+    if (!scoreSpriteFrame) {
+      throw new Error("Jar base score SpriteFrame is not loaded: " + scoreSpritePath);
+    }
+    ensureSprite(scoreNode, scoreSpriteFrame);
+    scoreNode.setContentSize(scoreSpriteFrame.getOriginalSize());
 
     var countNode = getOrCreateChild(jarNode, "CountLabel");
     countNode.setPosition(0, -118);
@@ -22755,6 +22804,7 @@ function ShooterController() {
   };
   this.currentBall = null;
   this.nextBall = null;
+  this.authoredOpeningQueue = [];
   this.currentColor = null;
   this.nextColor = null;
   this.queueAdvanceRevision = 0;
@@ -22782,6 +22832,13 @@ ShooterController.prototype.configureLevel = function (levelConfig) {
   this.skillInventory.snow_removal = 0;
   this.currentBall = null;
   this.nextBall = null;
+  this.authoredOpeningQueue = [];
+  if (levelConfig.level.openingShotBalls !== undefined && levelConfig.level.initialShotBalls !== undefined) {
+    throw new Error("ShooterController openingShotBalls and initialShotBalls cannot both be configured.");
+  }
+  if (levelConfig.level.openingShotBalls !== undefined) {
+    this._applyOpeningShotBalls(levelConfig.level.openingShotBalls);
+  }
   this._syncQueueForRemainingShots(
     levelConfig.level.playMode === "timed_infinite_shots" ? 2 : this.shotLimit
   );
@@ -22814,6 +22871,21 @@ ShooterController.prototype._applyInitialShotBalls = function (initialShotBalls)
   if (initialShotBalls.length >= 2) {
     this.nextBall = createNormalBall(initialShotBalls[1]);
   }
+};
+
+ShooterController.prototype._applyOpeningShotBalls = function (openingShotBalls) {
+  if (!Array.isArray(openingShotBalls) || openingShotBalls.length < 3 || openingShotBalls.length > 6) {
+    throw new Error("ShooterController openingShotBalls must contain 3 to 6 colors.");
+  }
+  if (openingShotBalls.length > this.shotLimit) {
+    throw new Error("ShooterController openingShotBalls length must not exceed shotLimit.");
+  }
+  openingShotBalls.forEach(function (colorCode, index) {
+    if (this.availableColors.indexOf(colorCode) === -1) {
+      throw new Error("ShooterController openingShotBalls[" + index + "] must exist in availableColors: " + colorCode);
+    }
+  }, this);
+  this.authoredOpeningQueue = openingShotBalls.slice();
 };
 
 ShooterController.prototype.resetAimDirection = function () {
@@ -22980,6 +23052,7 @@ ShooterController.prototype.setUpcomingNormalBalls = function (colorCode, count)
     throw new Error("ShooterController revive queue count must be 1 or 2.");
   }
 
+  this.authoredOpeningQueue = [];
   if (count >= 1) {
     this.currentBall = createNormalBall(colorCode);
   }
@@ -23003,6 +23076,7 @@ ShooterController.prototype.setUpcomingRandomNormalBalls = function (count) {
     throw new Error("ShooterController revive random queue count must be 1 or 2.");
   }
 
+  this.authoredOpeningQueue = [];
   if (count >= 1) {
     this.currentBall = this._pickNormalBall();
     if (!this.currentBall) {
@@ -23219,6 +23293,7 @@ ShooterController.prototype.getShooterState = function () {
     skillInventory: clone(this.skillInventory),
     currentColor: this.currentColor,
     nextColor: this.nextColor,
+    authoredOpeningQueue: this.authoredOpeningQueue.slice(),
     aim: this.getAimState(),
     shotLimit: this.shotLimit
   };
@@ -23248,7 +23323,9 @@ ShooterController.prototype._pickColor = function () {
 };
 
 ShooterController.prototype._pickNormalBall = function () {
-  var colorCode = this._pickColor();
+  var colorCode = this.authoredOpeningQueue.length > 0
+    ? this.authoredOpeningQueue.shift()
+    : this._pickColor();
   if (!colorCode) {
     return null;
   }
@@ -23269,6 +23346,7 @@ ShooterController.prototype.snapshot = function () {
   snapshot.skillInventory = clone(this.skillInventory);
   snapshot.currentColor = this.currentColor;
   snapshot.nextColor = this.nextColor;
+  snapshot.authoredOpeningQueue = this.authoredOpeningQueue.slice();
   snapshot.origin = clone(this.origin);
   snapshot.aimDirection = clone(this.aimDirection);
   snapshot.maxAimAngleDeg = this.maxAimAngleDeg;

@@ -102,6 +102,18 @@ function mapInitialShotBalls(initialShotBalls, colorMap) {
   });
 }
 
+function mapOpeningShotBalls(openingShotBalls, colorMap) {
+  if (openingShotBalls === undefined) {
+    return undefined;
+  }
+  if (!Array.isArray(openingShotBalls) || openingShotBalls.length < 3 || openingShotBalls.length > 6) {
+    throw new Error("Level color permutation openingShotBalls must contain 3 to 6 colors.");
+  }
+  return openingShotBalls.map(function (colorCode, index) {
+    return mapColor(colorCode, colorMap, "level.openingShotBalls[" + index + "]");
+  });
+}
+
 function mapJarColors(jarColors, colorMap) {
   if (!Array.isArray(jarColors) || jarColors.length <= 0) {
     throw new Error("Level color permutation requires non-empty level.jarColors.");
@@ -182,6 +194,11 @@ function apply(levelConfig) {
   var mappedInitialShotBalls = mapInitialShotBalls(level.initialShotBalls, colorMap);
   if (mappedInitialShotBalls !== undefined) {
     level.initialShotBalls = mappedInitialShotBalls;
+  }
+
+  var mappedOpeningShotBalls = mapOpeningShotBalls(level.openingShotBalls, colorMap);
+  if (mappedOpeningShotBalls !== undefined) {
+    level.openingShotBalls = mappedOpeningShotBalls;
   }
 
   var mappedBonusObjectives = mapObjectives(level.bonusObjectives, colorMap, "bonusObjectives");

@@ -265,7 +265,6 @@ BackpackViewController.prototype._hideSourceStaticSprites = function () {
   SpriteProxyLayerHelper.setSpriteRenderEnabled(this._nodes.panel, false, "BackpackView Panel background");
   SpriteProxyLayerHelper.setSpriteRenderEnabled(this._nodes.closeButton, false, "BackpackView close button");
   SpriteProxyLayerHelper.setSpriteRenderEnabled(titleBgNode, false, "BackpackView title_bg");
-  SpriteProxyLayerHelper.setSpriteRenderEnabled(requireChildNode(titleBgNode, "paopao", "Panel/title_bg"), false, "BackpackView title_bg/paopao");
 };
 
 BackpackViewController.prototype._hideSourceItemSprites = function (itemNode) {
@@ -283,7 +282,6 @@ BackpackViewController.prototype._rebuildRenderProxies = function () {
   this._createSpriteProxyRecord("panel", this._nodes.panel, "backpack_panel_bg_proxy", true);
   this._createSpriteProxyRecord("chrome", this._nodes.closeButton, "backpack_close_button_proxy", true);
   this._createSpriteProxyRecord("chrome", titleBgNode, "backpack_title_bg_proxy", true);
-  this._createSpriteProxyRecord("chrome", requireChildNode(titleBgNode, "paopao", "Panel/title_bg"), "backpack_title_bubble_proxy", true);
 
   ITEM_DEFINITIONS.forEach(function (definition, index) {
     var itemNode = requireValidNode(this._packItemNodesByItemId[definition.itemId], "pack item node for " + definition.itemId);

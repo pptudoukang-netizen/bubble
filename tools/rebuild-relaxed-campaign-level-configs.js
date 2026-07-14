@@ -6,6 +6,7 @@ var path = require("path");
 
 var BoardLayout = require("../assets/scripts/config/BoardLayout");
 var FirstHundredLevelDesign = require("./first-100-level-design");
+var ReferenceLevels101To300Design = require("./reference-levels-101-300-design");
 
 var PROJECT_ROOT = path.resolve(__dirname, "..");
 var TABLE_PATH = path.join(PROJECT_ROOT, "LEVEL_CONFIG_TABLE_1_1000.csv");
@@ -317,17 +318,23 @@ function buildRelaxedSpec(levelId) {
   }
   var colorCounts = distributeColorCounts(levelId, activeColors, targetColor, normalCount);
   var splitterCount = specialCounts.splitters[targetColor];
-  var shotLimit = Math.ceil(occupiedTarget * 0.25 + rowCount * 0.65 + nonIceSpecials * 0.5);
-  if (getPhase(levelId) >= 7) {
-    shotLimit += 1;
+  var shotLimit;
+  if (levelId >= ReferenceLevels101To300Design.FIRST_LEVEL_ID &&
+    levelId <= ReferenceLevels101To300Design.LAST_LEVEL_ID) {
+    shotLimit = ReferenceLevels101To300Design.getShotLimit(levelId);
+  } else {
+    shotLimit = Math.ceil(occupiedTarget * 0.25 + rowCount * 0.65 + nonIceSpecials * 0.5);
+    if (getPhase(levelId) >= 7) {
+      shotLimit += 1;
+    }
+    if (getPhase(levelId) >= 9) {
+      shotLimit += 1;
+    }
+    if (Object.prototype.hasOwnProperty.call(SHOT_LIMIT_ADJUSTMENTS, levelId)) {
+      shotLimit += SHOT_LIMIT_ADJUSTMENTS[levelId];
+    }
+    shotLimit = Math.max(28, Math.min(46, shotLimit));
   }
-  if (getPhase(levelId) >= 9) {
-    shotLimit += 1;
-  }
-  if (Object.prototype.hasOwnProperty.call(SHOT_LIMIT_ADJUSTMENTS, levelId)) {
-    shotLimit += SHOT_LIMIT_ADJUSTMENTS[levelId];
-  }
-  shotLimit = Math.max(28, Math.min(46, shotLimit));
   var passRate = Math.max(42, 78 - Math.floor((levelId - 101) / 100) * 4 - (getPhase(levelId) - 1) * 1.8);
 
   return {

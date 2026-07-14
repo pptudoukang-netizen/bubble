@@ -11,6 +11,7 @@ var REDESIGN_LEVEL_ID_MAP = {};
 var ADJACENCY_DISTANCE = BoardLayout.bubbleDiameter + 8;
 var MIN_OCCUPIED_LAYOUT_ROWS = 8;
 var FIRST_AESTHETIC_LEVEL_ID = 101;
+var REFERENCE_PROJECTED_LAST_LEVEL_ID = 300;
 var MAX_CONSECUTIVE_BOTH_EDGE_EMPTY_ROWS = 3;
 var MAX_TOP_ROW_SAME_COLOR_RUN = 4;
 
@@ -48,6 +49,10 @@ function requireNonEmptyString(value, fieldName) {
 
 function shouldRedesign(levelId) {
   return REDESIGN_LEVEL_ID_MAP[levelId] === true;
+}
+
+function usesReferenceProjectedGeometry(levelId) {
+  return levelId >= FIRST_AESTHETIC_LEVEL_ID && levelId <= REFERENCE_PROJECTED_LAST_LEVEL_ID;
 }
 
 function resolveCandidateProfile(options) {
@@ -774,6 +779,95 @@ function analyzeLayout(rows, targetColor) {
   };
 }
 
+function normalizeVisualFocus(rawFocus, targetColor, levelId) {
+  if (rawFocus === undefined) {
+    return null;
+  }
+  assertObject(rawFocus, "Level " + levelId + " visualFocus");
+  if (typeof rawFocus.x !== "number" || !Number.isFinite(rawFocus.x) || rawFocus.x < -1 || rawFocus.x > 1) {
+    throw new Error("Level " + levelId + " visualFocus.x must be within [-1, 1].");
+  }
+  if (typeof rawFocus.y !== "number" || !Number.isFinite(rawFocus.y) || rawFocus.y < 0 || rawFocus.y > 1) {
+    throw new Error("Level " + levelId + " visualFocus.y must be within [0, 1].");
+  }
+  if (rawFocus.targetColor !== targetColor) {
+    throw new Error("Level " + levelId + " visualFocus.targetColor must equal targetColor.");
+  }
+  return {
+    x: rawFocus.x,
+    y: rawFocus.y,
+    targetColor: rawFocus.targetColor
+  };
+}
+
+function analyzeColorComposition(rows, colors, visualFocus) {
+  if (visualFocus === null) {
+    return null;
+  }
+  var sideCounts = {};
+  colors.forEach(function (color) {
+    sideCounts[color] = { left: 0, right: 0, total: 0 };
+  });
+  var focusTargetCount = 0;
+  var mirroredPairCount = 0;
+  var mirroredColorEchoCount = 0;
+  rows.forEach(function (rowString, rowIndex) {
+    for (var colIndex = 0; colIndex < rowString.length; colIndex += 1) {
+      var color = rowString.charAt(colIndex);
+      if (color === ".") {
+        continue;
+      }
+      var coordinates = getNormalizedCoordinates({ row: rowIndex, col: colIndex }, rows);
+      var compositionY = rows.length === 1 ? 0 : rowIndex / (rows.length - 1);
+      sideCounts[color].total += 1;
+      if (coordinates.x < -0.08) {
+        sideCounts[color].left += 1;
+      } else if (coordinates.x > 0.08) {
+        sideCounts[color].right += 1;
+      }
+      var dx = coordinates.x - visualFocus.x;
+      var dy = (compositionY - visualFocus.y) * 1.25;
+      if (color === visualFocus.targetColor && Math.sqrt(dx * dx + dy * dy) <= 0.4) {
+        focusTargetCount += 1;
+      }
+    }
+    for (var pairIndex = 0; pairIndex < Math.floor(rowString.length / 2); pairIndex += 1) {
+      var mirrorIndex = rowString.length - 1 - pairIndex;
+      var leftColor = rowString.charAt(pairIndex);
+      var rightColor = rowString.charAt(mirrorIndex);
+      if (leftColor === "." || rightColor === ".") {
+        continue;
+      }
+      mirroredPairCount += 1;
+      if (leftColor === rightColor) {
+        mirroredColorEchoCount += 1;
+      }
+    }
+  });
+  var maxColorSideImbalanceRatio = 0;
+  colors.forEach(function (color) {
+    var counts = sideCounts[color];
+    maxColorSideImbalanceRatio = Math.max(
+      maxColorSideImbalanceRatio,
+      Math.abs(counts.left - counts.right) / counts.total
+    );
+  });
+  return {
+    focusTargetCount: focusTargetCount,
+    maxColorSideImbalanceRatio: maxColorSideImbalanceRatio,
+    mirroredColorEchoRatio: mirroredPairCount > 0 ? mirroredColorEchoCount / mirroredPairCount : 0
+  };
+}
+
+function scoreColorComposition(composition) {
+  if (composition === null) {
+    return 0;
+  }
+  return composition.maxColorSideImbalanceRatio * 42 +
+    Math.max(0, 3 - composition.focusTargetCount) * 24 +
+    Math.max(0, 0.35 - composition.mirroredColorEchoRatio) * 38;
+}
+
 function buildSlotKeyMap(slots, levelId) {
   var map = {};
   slots.forEach(function (slot) {
@@ -928,7 +1022,7 @@ function calculateCandidateLimits(colorCounts, colors) {
   };
 }
 
-function scoreCandidate(metrics, limits, targetCount, candidateProfile) {
+function scoreCandidate(metrics, limits, targetCount, candidateProfile, colorComposition) {
   if (candidateProfile === "relaxed_campaign") {
     var relaxedDesiredTargetComponents = targetCount >= 24 ? 4 : 3;
     var relaxedLargestTargetFloor = Math.ceil(targetCount * 0.22);
@@ -937,14 +1031,16 @@ function scoreCandidate(metrics, limits, targetCount, candidateProfile) {
       metrics.isolatedRatio * 95 +
       Math.abs(metrics.targetComponentCount - relaxedDesiredTargetComponents) * 18 +
       Math.max(0, relaxedLargestTargetFloor - metrics.targetLargestComponent) * 6 +
-      Math.max(0, metrics.targetLargestComponent - relaxedLargestTargetCeiling) * 7;
+      Math.max(0, metrics.targetLargestComponent - relaxedLargestTargetCeiling) * 7 +
+      scoreColorComposition(colorComposition);
   }
   var desiredGroupedRatio = Math.min(0.85, limits.maximumGroupedRatio);
   var desiredTargetComponents = Math.max(1, Math.min(4, Math.round(targetCount / 5)));
   return Math.abs(metrics.groupedRatio - desiredGroupedRatio) * 40 +
     metrics.isolatedRatio * 80 +
     Math.abs(metrics.targetComponentCount - desiredTargetComponents) * 6 +
-    Math.max(0, metrics.targetLargestComponent - 10) * 1.5;
+    Math.max(0, metrics.targetLargestComponent - 10) * 1.5 +
+    scoreColorComposition(colorComposition);
 }
 
 function buildClusteredLayout(options) {
@@ -964,8 +1060,12 @@ function buildClusteredLayout(options) {
   if (colors.indexOf(targetColor) < 0 || colorState.counts[targetColor] < 3) {
     throw new Error("Level " + levelId + " clustered targetColor must have at least three balls.");
   }
+  var visualFocus = normalizeVisualFocus(options.visualFocus, targetColor, levelId);
   var specialCells = buildSpecialCellMap(options.specialEntities, rows, levelId);
   var limits = calculateCandidateLimits(colorState.counts, colors);
+  if (candidateProfile === "full" && levelId <= 40) {
+    limits.requiredGroupedRatio = Math.min(0.7, limits.maximumGroupedRatio);
+  }
   var baseAllowedIsolatedRatio = Math.min(limits.allowedIsolatedRatio, 0.1);
   var candidates = [];
   var bestRejected = null;
@@ -995,7 +1095,7 @@ function buildClusteredLayout(options) {
   var maxChunkSize = candidateProfile === "relaxed_campaign" ? 7 : 8;
   var maxOrderingMode = candidateProfile === "relaxed_campaign" ? 7 : 9;
   selectedSlotSets.forEach(function (slotSet) {
-    if (levelId >= FIRST_AESTHETIC_LEVEL_ID) {
+    if (levelId >= FIRST_AESTHETIC_LEVEL_ID && !usesReferenceProjectedGeometry(levelId)) {
       var occupiedGeometry = analyzeOccupiedGeometry(rows, slotSet.slots, specialCells, levelId);
       if (!isGeometryStable(occupiedGeometry, rows.length)) {
         if (!bestRejected) {
@@ -1039,6 +1139,7 @@ function buildClusteredLayout(options) {
                 var candidateRows = assignChunksToRows(rows, orderedSlots, chunks, levelId);
                 var topRowSameColorRun = getMaxSameColorRun(candidateRows[0]);
                 var metrics = analyzeLayout(candidateRows, targetColor);
+                var colorComposition = analyzeColorComposition(candidateRows, colors, visualFocus);
                 var unsupportedCells = LevelBoardSupportValidator.findUnsupportedInitialCells({
                   layout: candidateRows,
                   specialEntities: options.specialEntities
@@ -1057,6 +1158,9 @@ function buildClusteredLayout(options) {
                     metrics.isolatedRatio > slotSet.allowedIsolatedRatio ||
                     metrics.targetSingletonCount > slotSet.allowedTargetSingletons ||
                     metrics.targetLargestComponent < 3 ||
+                    (colorComposition !== null && colorComposition.focusTargetCount < 2) ||
+                    (colorComposition !== null && colorComposition.maxColorSideImbalanceRatio > 0.75) ||
+                    (colorComposition !== null && colorComposition.mirroredColorEchoRatio < 0.12) ||
                     topRowSameColorRun > MAX_TOP_ROW_SAME_COLOR_RUN ||
                     countOccupiedRows(candidateRows, specialCells) < Math.min(getAestheticMinimumRows(levelId), rows.length) ||
                     unsupportedCells.length > 0) {
@@ -1065,7 +1169,8 @@ function buildClusteredLayout(options) {
                 candidates.push({
                   rows: candidateRows,
                   metrics: metrics,
-                  score: scoreCandidate(metrics, limits, colorState.counts[targetColor], candidateProfile),
+                  colorComposition: colorComposition,
+                  score: scoreCandidate(metrics, limits, colorState.counts[targetColor], candidateProfile, colorComposition),
                   variant: [slotSet.shapeMode, chunkSize, mode, flip, rotation, reverseIndex, chunkPlan]
                 });
               }
@@ -1099,6 +1204,7 @@ function buildClusteredLayout(options) {
   return {
     rows: candidates[0].rows,
     metrics: candidates[0].metrics,
+    colorComposition: candidates[0].colorComposition,
     variant: candidates[0].variant.slice()
   };
 }
@@ -1159,7 +1265,7 @@ function validateClusteredLevel(level) {
 
   var limits = calculateCandidateLimits(counts, colors);
   var selectedSlots = collectLayoutSlots(rows, colors, counts, specialCells, levelId);
-  if (levelId >= FIRST_AESTHETIC_LEVEL_ID) {
+  if (levelId >= FIRST_AESTHETIC_LEVEL_ID && !usesReferenceProjectedGeometry(levelId)) {
     var geometryMetrics = analyzeOccupiedGeometry(rows, selectedSlots, specialCells, levelId);
     if (!isGeometryStable(geometryMetrics, rows.length)) {
       throw new Error(

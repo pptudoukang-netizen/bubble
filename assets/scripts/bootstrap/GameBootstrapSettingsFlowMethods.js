@@ -32,14 +32,6 @@ function getSettingChannelVolume(settings, channel) {
   return channel === "music" ? settings.musicVolume : settings.sfxVolume;
 }
 
-function getSettingChannelEnabled(settings, channel) {
-  assertSettingAudioChannel(channel);
-  if (!settings || typeof settings !== "object") {
-    throw new Error("Audio settings snapshot is required for setting channel enabled state.");
-  }
-  return channel === "music" ? settings.musicEnabled !== false : settings.sfxEnabled !== false;
-}
-
 function setSettingChannelVolume(audioManager, channel, volume) {
   assertSettingAudioChannel(channel);
   if (!audioManager) {
@@ -328,8 +320,8 @@ module.exports = {
         controls.sfxProgress.progress = sfxVolume;
         this._syncSettingVolumeStarPosition(controls.sfxProgressNode, controls.sfxStarNode, sfxVolume);
       }
-      var musicVolumeOpen = musicEnabled && musicVolume > 0;
-      var sfxVolumeOpen = sfxEnabled && sfxVolume > 0;
+      var musicVolumeOpen = musicVolume > 0;
+      var sfxVolumeOpen = sfxVolume > 0;
       this._updateSettingVolumeIconView(controls.musicVolumeIconSprite, musicVolumeOpen);
       this._updateSettingVolumeIconView(controls.sfxVolumeIconSprite, sfxVolumeOpen);
     } finally {
@@ -581,7 +573,7 @@ module.exports = {
     if (!contentContainerNode || !contentContainerNode.isValid) {
       throw new Error("SettingView requires ContentContainer.");
     }
-    this._updateSettingVolumeIconView(iconSprite, getSettingChannelEnabled(this.audioManager.settings, channel) && volume > 0);
+    this._updateSettingVolumeIconView(iconSprite, volume > 0);
   },
 
   _restoreSettingVolumeSliderSprites: function (controls) {

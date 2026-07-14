@@ -24,7 +24,10 @@ module.exports = {
         fairyAssistDepart: this.fairyAssistDepartSfxResource,
         gameEntryCountdown: this.gameEntryCountdownSfxResource,
         bomb: this.bombSfxResource,
-        lockOpen: this.lockOpenSfxResource
+        lockOpen: this.lockOpenSfxResource,
+        fireworks: this.fireworksSfxResource,
+        iceBreak: this.iceBreakSfxResource,
+        useProps: this.usePropsSfxResource
       }
     };
   },
@@ -266,6 +269,19 @@ module.exports = {
 
       if (event.type === "lock_open") {
         this._playSfx("lockOpen");
+        return;
+      }
+
+      if (event.type === "top_anchor_collapse_started") {
+        this._playSfx("fireworks");
+        return;
+      }
+
+      if (event.type === "ice_thawed") {
+        if (!Number.isInteger(event.count) || event.count < 1) {
+          throw new Error("ice_thawed runtime event requires positive integer count.");
+        }
+        this._playSfx("iceBreak");
         return;
       }
 

@@ -54,6 +54,9 @@ function formatTarget(target) {
   if (target.type === "collect_ice_snowball") {
     return "雪球:" + target.value;
   }
+  if (target.type === "clear_all" && target.value === 1) {
+    return "清空棋盘";
+  }
   throw new Error("Unsupported first-100 target type: " + target.type);
 }
 

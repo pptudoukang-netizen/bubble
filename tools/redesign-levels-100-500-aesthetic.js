@@ -121,7 +121,9 @@ function redesignLevel(config, levelId) {
   var normalCount = Object.keys(colorCounts).reduce(function (sum, color) {
     return sum + colorCounts[color];
   }, 0);
-  var preserveOccupiedSlots = Array.isArray(level.specialEntities) && level.specialEntities.length > normalCount;
+  var preserveReferenceOccupiedSlots = levelId >= 101 && levelId <= 300;
+  var preserveOccupiedSlots = preserveReferenceOccupiedSlots ||
+    (Array.isArray(level.specialEntities) && level.specialEntities.length > normalCount);
   var sourceRows = levelId === 100 || preserveOccupiedSlots ? level.layout.slice() : makeEmptyRowsLike(level.layout, levelId);
   var result = ClusteredLevelLayout.buildClusteredLayout({
     levelId: levelId,

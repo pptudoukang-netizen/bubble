@@ -1,9 +1,38 @@
 "use strict";
 
+var fs = require("fs");
 var BoardLayout = require("../assets/scripts/config/BoardLayout");
 
 var FIRST_LEVEL_ID = 1;
 var LAST_LEVEL_ID = 100;
+var REFERENCE_DIRECT_LAST_LEVEL_ID = 200;
+var REFERENCE_TARGET_LAST_LEVEL_ID = 300;
+var REFERENCE_SOURCE_FILE = "E:\\kxppm\\decrypted_config\\all_levels.json";
+var REFERENCE_EMPTY_CELL = "x";
+var REFERENCE_CELL_CODES = {
+  "1": true,
+  "2": true,
+  "3": true,
+  "4": true,
+  "5": true,
+  "6": true,
+  "7": true,
+  "8": true,
+  a: true,
+  c: true,
+  d: true,
+  g: true,
+  h: true,
+  k: true,
+  l: true,
+  m: true,
+  n: true,
+  o: true,
+  r: true,
+  s: true,
+  y: true,
+  x: true
+};
 var COLORS = ["R", "G", "B", "Y", "P"];
 var DISPLAY_COLOR_ORDER = ["B", "R", "G", "Y", "P"];
 var THEME_GROUPS = [
@@ -87,18 +116,154 @@ var PATTERNS = THEME_GROUPS.reduce(function (patterns, theme) {
 }, []);
 var PHASE_BALL_OFFSETS = [0, 2, 4, 6, 8, 10, 12, 13, 15, 17];
 var PHASE_PASS_RATES = [92, 88, 84, 80, 76, 72, 68, 63, 58, 52];
+var CALIBRATED_SHOT_LIMITS = [
+  12, 10, 11, 10, 10, 14, 10, 22, 23, 10,
+  10, 12, 12, 10, 17, 21, 10, 24, 24, 23,
+  17, 12, 24, 16, 14, 13, 25, 23, 18, 17,
+  11, 11, 20, 20, 22, 23, 12, 25, 16, 25,
+  20, 20, 19, 13, 11, 13, 19, 12, 13, 15,
+  11, 15, 18, 20, 18, 19, 17, 13, 28, 25,
+  25, 14, 18, 20, 16, 17, 15, 25, 18, 26,
+  16, 19, 29, 18, 25, 24, 15, 28, 20, 26,
+  25, 20, 32, 20, 22, 19, 25, 33, 21, 26,
+  20, 35, 22, 22, 24, 36, 20, 20, 30, 24
+];
 var MIN_OCCUPIED_LAYOUT_ROWS = 8;
 var ADJACENCY_DISTANCE = BoardLayout.bubbleDiameter + 8;
 var LEVEL_ONE_TUTORIAL_LAYOUT = [
-  "BBBBRRRRBB",
-  ".BBBBRRR.",
-  ".BBBRRRRR.",
-  ".BBBRRRR.",
-  "..BBRRR...",
-  "...BBRR..",
-  "...BBR....",
-  "...BR...."
+  "BBRRBBRRBB",
+  "RBBRRRBBR",
+  ".RRBBBBRR.",
+  ".RRBRBRR.",
+  "..RBBBBR..",
+  "...BBB...",
+  "....RR....",
+  "....R...."
 ];
+var referenceLevelsById = null;
+
+function padLevelId(levelId) {
+  return String(levelId).padStart(3, "0");
+}
+
+function loadReferenceLevelsById() {
+  if (referenceLevelsById !== null) {
+    return referenceLevelsById;
+  }
+  if (!fs.existsSync(REFERENCE_SOURCE_FILE)) {
+    throw new Error("KXPPM reference level source is missing: " + REFERENCE_SOURCE_FILE);
+  }
+  var episodes = JSON.parse(fs.readFileSync(REFERENCE_SOURCE_FILE, "utf8"));
+  if (!Array.isArray(episodes)) {
+    throw new Error("KXPPM reference level source must contain an episode array.");
+  }
+  var levels = {};
+  episodes.forEach(function (episode, episodeIndex) {
+    if (!episode || typeof episode !== "object" || !Array.isArray(episode.levels)) {
+      throw new Error("KXPPM episode #" + episodeIndex + " must contain levels.");
+    }
+    episode.levels.forEach(function (level) {
+      if (!level || typeof level !== "object" || !Number.isInteger(level.levelId)) {
+        throw new Error("KXPPM reference level must define an integer levelId.");
+      }
+      if (level.levelId < FIRST_LEVEL_ID || level.levelId > REFERENCE_DIRECT_LAST_LEVEL_ID) {
+        return;
+      }
+      if (levels[level.levelId]) {
+        throw new Error("KXPPM reference level is duplicated: " + level.levelId);
+      }
+      if (typeof level.bubbles !== "string" || level.bubbles.length === 0) {
+        throw new Error("KXPPM reference level bubbles are missing: " + level.levelId);
+      }
+      var rows = level.bubbles.split(",");
+      if (rows.length < MIN_OCCUPIED_LAYOUT_ROWS) {
+        throw new Error("KXPPM reference level has fewer than eight rows: " + level.levelId);
+      }
+      rows.forEach(function (rowString, rowIndex) {
+        var expectedLength = rowIndex % 2 === 0 ? 11 : 10;
+        if (rowString.length !== expectedLength) {
+          throw new Error(
+            "KXPPM reference row width mismatch for level " + level.levelId +
+            " row " + rowIndex + ": expected " + expectedLength + ", got " + rowString.length + "."
+          );
+        }
+        rowString.split("").forEach(function (cellCode) {
+          if (!REFERENCE_CELL_CODES[cellCode]) {
+            throw new Error(
+              "KXPPM reference level " + level.levelId + " contains unsupported cell code: " + cellCode
+            );
+          }
+        });
+      });
+      levels[level.levelId] = {
+        levelId: level.levelId,
+        rows: rows
+      };
+    });
+  });
+  for (var levelId = FIRST_LEVEL_ID; levelId <= REFERENCE_DIRECT_LAST_LEVEL_ID; levelId += 1) {
+    if (!levels[levelId]) {
+      throw new Error("KXPPM reference level is missing: " + levelId);
+    }
+  }
+  referenceLevelsById = levels;
+  return referenceLevelsById;
+}
+
+function assertReferenceLayoutLevelId(levelId) {
+  if (!Number.isInteger(levelId) || levelId < FIRST_LEVEL_ID || levelId > REFERENCE_TARGET_LAST_LEVEL_ID) {
+    throw new Error("Reference layout level id must be an integer in [1, 300]: " + levelId);
+  }
+}
+
+function resolveReferenceSourceLevelId(levelId) {
+  assertReferenceLayoutLevelId(levelId);
+  return levelId <= REFERENCE_DIRECT_LAST_LEVEL_ID ? levelId : levelId - 100;
+}
+
+function buildReferenceLayoutDescriptor(levelId) {
+  assertReferenceLayoutLevelId(levelId);
+  var sourceLevelId = resolveReferenceSourceLevelId(levelId);
+  var mirrored = levelId > REFERENCE_DIRECT_LAST_LEVEL_ID;
+  var referenceLevel = loadReferenceLevelsById()[sourceLevelId];
+  var occupiedSamples = [];
+  var emptySamples = [];
+  var momentX = 0;
+  var momentY = 0;
+  referenceLevel.rows.forEach(function (rowString, rowIndex) {
+    rowString.split("").forEach(function (cellCode, colIndex) {
+      var normalizedX = rowString.length === 1 ? 0 : (colIndex / (rowString.length - 1)) * 2 - 1;
+      var sample = {
+        x: mirrored ? -normalizedX : normalizedX,
+        y: referenceLevel.rows.length === 1 ? 0 : rowIndex / (referenceLevel.rows.length - 1)
+      };
+      if (cellCode === REFERENCE_EMPTY_CELL) {
+        emptySamples.push(sample);
+        return;
+      }
+      occupiedSamples.push(sample);
+      momentX += sample.x;
+      momentY += sample.y;
+    });
+  });
+  if (occupiedSamples.length === 0) {
+    throw new Error("KXPPM reference layout must contain occupied cells: " + levelId);
+  }
+  return {
+    patternName: mirrored
+      ? "kxppm_layout_" + padLevelId(sourceLevelId) + "_mirror_for_" + padLevelId(levelId)
+      : "kxppm_layout_" + padLevelId(sourceLevelId),
+    focusName: "reference_layout_centroid",
+    focusX: momentX / occupiedSamples.length,
+    focusY: momentY / occupiedSamples.length,
+    sourceLevelId: sourceLevelId,
+    mirrored: mirrored,
+    sourceRowCount: referenceLevel.rows.length,
+    sourceOccupiedCount: occupiedSamples.length,
+    occupiedSamples: occupiedSamples,
+    emptySamples: emptySamples
+  };
+}
 
 function assertFirstHundredLevelId(levelId) {
   if (!Number.isInteger(levelId) || levelId < FIRST_LEVEL_ID || levelId > LAST_LEVEL_ID) {
@@ -137,6 +302,31 @@ function getSilhouette(levelId) {
   var theme = getThemeGroup(levelId);
   var silhouetteIndex = (levelId - theme.startLevel) % theme.silhouettes.length;
   return theme.silhouettes[silhouetteIndex];
+}
+
+function getSilhouetteVariant(levelId) {
+  var theme = getThemeGroup(levelId);
+  return Math.floor((levelId - theme.startLevel) / theme.silhouettes.length);
+}
+
+function getDesignBeat(levelId) {
+  var theme = getThemeGroup(levelId);
+  var localIndex = levelId - theme.startLevel + 1;
+  var levelCount = theme.endLevel - theme.startLevel + 1;
+  if (localIndex === 1) {
+    return "introduce";
+  }
+  if (localIndex === levelCount) {
+    return "exam";
+  }
+  var progress = localIndex / levelCount;
+  if (progress <= 0.36) {
+    return "practice";
+  }
+  if (progress <= 0.7) {
+    return "combine";
+  }
+  return "twist";
 }
 
 function getPatternName(levelId) {
@@ -183,9 +373,14 @@ function getMinimumOccupiedCount(levelId, rowCount) {
   assertFirstHundredLevelId(levelId);
   var capacity = getBoardCapacity(rowCount);
   if (levelId === 1) {
-    return Math.floor(capacity * 0.6) + 1;
+    return 46;
   }
-  return Math.ceil(capacity * 0.6);
+  var variant = getSilhouetteVariant(levelId);
+  var density = 0.6 + variant * 0.025 + ((levelId % 5) - 2) * 0.006;
+  if (getDesignBeat(levelId) === "exam") {
+    density += 0.02;
+  }
+  return Math.ceil(capacity * Math.min(0.72, density));
 }
 
 function getBaseNormalBallCount(levelId) {
@@ -274,6 +469,48 @@ function buildSpecialCounts(levelId, targetColor) {
     key: 0,
     locked: 0
   };
+
+  if (levelId === 15) {
+    counts.stone = 1;
+    counts.rainbow = 1;
+    counts.blast = 1;
+    return counts;
+  }
+  if (levelId === 30) {
+    counts.ice = 5;
+    counts.stone = 1;
+    counts.rainbow = 1;
+    counts.blast = 1;
+    return counts;
+  }
+  if (levelId === 45) {
+    counts.molotov = 2;
+    counts.stone = 1;
+    counts.rainbow = 1;
+    counts.blast = 1;
+    return counts;
+  }
+  if (levelId === 60) {
+    counts.molotov = 2;
+    counts.ice = 3;
+    counts.stone = 1;
+    counts.blast = 1;
+    return counts;
+  }
+  if (levelId === 80) {
+    counts.splitters[targetColor] = 1;
+    counts.molotov = 1;
+    counts.ice = 3;
+    counts.rainbow = 1;
+    return counts;
+  }
+  if (levelId === 100) {
+    counts.key = 2;
+    counts.locked = 2;
+    counts.splitters[targetColor] = 1;
+    counts.ice = 3;
+    return counts;
+  }
 
   if (levelId <= 9) {
     return counts;
@@ -409,30 +646,77 @@ function resolveRowCount(levelId) {
   if (levelId === 1) {
     return 8;
   }
-  if (levelId < 20) {
-    return 10;
-  }
-  return 15;
+  var theme = getThemeGroup(levelId);
+  var localIndex = levelId - theme.startLevel;
+  var rowWaves = {
+    flower: [9, 10, 11, 10, 9],
+    crystal: [10, 11, 12, 11, 13],
+    snowflake: [11, 12, 13, 12, 14],
+    star: [12, 13, 14, 13, 15],
+    wing: [12, 13, 14, 15, 14],
+    crown: [13, 14, 15, 14, 15]
+  };
+  return rowWaves[theme.name][localIndex % rowWaves[theme.name].length];
 }
 
-function buildShotLimit(levelId, normalBallCount, specialCounts) {
-  var phase = getPhase(levelId);
-  var reactiveCount = specialCounts.molotov + countSplitters(specialCounts.splitters);
-  var complexity = specialCounts.stone + specialCounts.ice * 0.5 +
-    specialCounts.blast + specialCounts.rainbow + reactiveCount * 2 + specialCounts.key * 2;
-  var pressure = phase >= 9 ? 3 : (phase >= 7 ? 2 : (phase >= 4 ? 1 : 0));
-  var shotLimit = Math.ceil(normalBallCount / 2.35) + 4 + Math.ceil(complexity / 4) - pressure;
-  if (levelId === 1) {
-    return 12;
+function buildShotLimit(levelId) {
+  assertFirstHundredLevelId(levelId);
+  if (CALIBRATED_SHOT_LIMITS.length !== LAST_LEVEL_ID - FIRST_LEVEL_ID + 1) {
+    throw new Error("First-100 calibrated shot limit table must contain exactly 100 entries.");
   }
-  if (levelId === 2) {
-    return 14;
+  var shotLimit = CALIBRATED_SHOT_LIMITS[levelId - FIRST_LEVEL_ID];
+  if (!Number.isInteger(shotLimit) || shotLimit <= 0) {
+    throw new Error("First-100 calibrated shot limit is invalid for level " + levelId + ".");
   }
-  if (levelId === 3) {
-    return 16;
+  return shotLimit;
+}
+
+function buildOpeningShotBalls(levelId, activeColors, targetColor, designBeat) {
+  var lengthByBeat = {
+    introduce: 3,
+    practice: 4,
+    combine: 5,
+    twist: 5,
+    exam: 6
+  };
+  var length = lengthByBeat[designBeat];
+  var otherColors = activeColors.filter(function (color) {
+    return color !== targetColor;
+  });
+  if (otherColors.length === 0) {
+    throw new Error("First-100 opening sequence requires a non-target color for level " + levelId + ".");
   }
-  var shotCap = levelId >= 75 ? 32 : (levelId >= 20 ? 22 : 20);
-  return Math.max(14, Math.min(shotCap, shotLimit));
+  var opening = [];
+  for (var index = 0; index < length; index += 1) {
+    if (index % 2 === 0) {
+      opening.push(targetColor);
+    } else {
+      opening.push(otherColors[(levelId + Math.floor(index / 2)) % otherColors.length]);
+    }
+  }
+  return opening;
+}
+
+function buildStarThresholds(targetScore, designBeat) {
+  if (!Number.isInteger(targetScore) || targetScore <= 0) {
+    throw new Error("First-100 targetScore must be a positive integer.");
+  }
+  var ratiosByBeat = {
+    introduce: [0.32, 0.6, 0.84],
+    practice: [0.34, 0.63, 0.87],
+    combine: [0.36, 0.66, 0.9],
+    twist: [0.38, 0.69, 0.93],
+    exam: [0.4, 0.72, 0.96]
+  };
+  var ratios = ratiosByBeat[designBeat];
+  if (!ratios) {
+    throw new Error("Unsupported first-100 design beat: " + designBeat);
+  }
+  return {
+    star1: Math.round(targetScore * ratios[0]),
+    star2: Math.round(targetScore * ratios[1]),
+    star3: Math.round(targetScore * ratios[2])
+  };
 }
 
 function getDifficultyTuning(levelId) {
@@ -461,6 +745,9 @@ function buildLevelSpec(levelId) {
   assertFirstHundredLevelId(levelId);
   var theme = getThemeGroup(levelId);
   var silhouette = getSilhouette(levelId);
+  var referenceLayout = buildReferenceLayoutDescriptor(levelId);
+  var silhouetteVariant = getSilhouetteVariant(levelId);
+  var designBeat = getDesignBeat(levelId);
   var activeColors = getActiveColors(levelId);
   var targetColor = getTargetColor(levelId, activeColors);
   var specialCounts = buildSpecialCounts(levelId, targetColor);
@@ -491,10 +778,15 @@ function buildLevelSpec(levelId) {
   return {
     levelId: levelId,
     themeName: theme.name,
-    patternName: silhouette.name,
+    patternName: referenceLayout.patternName,
+    silhouetteVariant: silhouetteVariant,
+    silhouetteVariantName: referenceLayout.patternName,
+    designBeat: designBeat,
     focusName: silhouette.focusName,
     focusX: silhouette.focusX,
     focusY: silhouette.focusY,
+    referenceSourceRowCount: referenceLayout.sourceRowCount,
+    referenceSourceOccupiedCount: referenceLayout.sourceOccupiedCount,
     activeColors: activeColors,
     targetColor: targetColor,
     normalBallCount: normalBallCount,
@@ -506,7 +798,8 @@ function buildLevelSpec(levelId) {
     target2: target2,
     jarCount: jarColors.length,
     jarColors: jarColors,
-    shotLimit: buildShotLimit(levelId, normalBallCount, specialCounts),
+    shotLimit: buildShotLimit(levelId),
+    openingShotBalls: buildOpeningShotBalls(levelId, activeColors, targetColor, designBeat),
     passRate: Math.max(24, PHASE_PASS_RATES[getPhase(levelId) - 1] - getChapterIndex(levelId) * 0.6),
     tuning: getDifficultyTuning(levelId)
   };
@@ -691,7 +984,13 @@ function scorePatternCell(patternName, cell, rows, levelId) {
   } else {
     throw new Error("Unsupported first-100 pattern: " + patternName);
   }
-  return score + cell.row * 0.0001 + cell.col * 0.00001;
+  var silhouetteVariant = getSilhouetteVariant(levelId);
+  var contourBand = 0.2 + silhouetteVariant * 0.11 + (levelId % 3) * 0.025;
+  var contourBias = Math.abs(Math.abs(x) - contourBand) * (0.16 + silhouetteVariant * 0.1);
+  var lobeBias = Math.cos(
+    (y * (silhouetteVariant + 2) + (levelId % 7) * 0.13) * Math.PI
+  ) * (0.09 + silhouetteVariant * 0.035) * (0.5 + Math.abs(x));
+  return score + contourBias + lobeBias + cell.row * 0.0001 + cell.col * 0.00001;
 }
 
 function buildEdgeCandidateColumns(rowLength, preferRight) {
@@ -743,7 +1042,7 @@ function findReachableAnchorCell(rowIndex, rows, selected, selectedMap, columns)
   return null;
 }
 
-function buildShapeSlots(rows, patternName, requiredCount, levelId) {
+function buildLegacyShapeSlots(rows, patternName, requiredCount, levelId) {
   assertFirstHundredLevelId(levelId);
   if (!Array.isArray(rows) || rows.length === 0) {
     throw new Error("Rows are required to build first-100 shape slots.");
@@ -794,7 +1093,7 @@ function buildShapeSlots(rows, patternName, requiredCount, levelId) {
     }
   }
   function pushReferenceAnchors() {
-    for (var edgeRow = 2; edgeRow < rows.length && selected.length < requiredCount; edgeRow += 3) {
+    for (var edgeRow = 5; edgeRow < rows.length && selected.length < requiredCount; edgeRow += 3) {
       var leftAnchor = findReachableAnchorCell(
         edgeRow,
         rows,
@@ -829,6 +1128,21 @@ function buildShapeSlots(rows, patternName, requiredCount, levelId) {
         pushShapeSlot(centerAnchor);
       }
     }
+  }
+  function pushSymmetricSideShoulders() {
+    if (rows.length < 3) {
+      throw new Error("First-100 symmetric side shoulders require at least three rows.");
+    }
+    [
+      { row: 1, inset: 0 },
+      { row: 2, inset: 1 }
+    ].forEach(function (shoulder) {
+      var rowLength = rows[shoulder.row].length;
+      var leftCell = { row: shoulder.row, col: shoulder.inset };
+      var rightCell = { row: shoulder.row, col: rowLength - 1 - shoulder.inset };
+      pushShapeSlot(leftCell);
+      pushShapeSlot(rightCell);
+    });
   }
   function scoreShapeCandidate(cell) {
     var rowFill = selectedByRow[cell.row] || 0;
@@ -874,6 +1188,7 @@ function buildShapeSlots(rows, patternName, requiredCount, levelId) {
   }).forEach(function (cell) {
     pushShapeSlot(cell);
   });
+  pushSymmetricSideShoulders();
   for (var requiredRow = 1; requiredRow < requiredOccupiedRows; requiredRow += 1) {
     var rowCandidates = allCells.filter(function (cell) {
       var key = cell.row + ":" + cell.col;
@@ -916,6 +1231,134 @@ function buildShapeSlots(rows, patternName, requiredCount, levelId) {
     });
     var nextCell = frontier[0];
     pushShapeSlot(nextCell);
+  }
+  selected.sort(function (cellA, cellB) {
+    if (cellA.row !== cellB.row) {
+      return cellA.row - cellB.row;
+    }
+    return cellA.col - cellB.col;
+  });
+  return selected;
+}
+
+function getNearestReferenceDistance(samples, x, y) {
+  if (!Array.isArray(samples) || samples.length === 0) {
+    throw new Error("Reference layout distance samples are required.");
+  }
+  var minimumSquaredDistance = Infinity;
+  samples.forEach(function (sample) {
+    var dx = x - sample.x;
+    var dy = (y - sample.y) * 1.25;
+    minimumSquaredDistance = Math.min(minimumSquaredDistance, dx * dx + dy * dy);
+  });
+  return Math.sqrt(minimumSquaredDistance);
+}
+
+function scoreReferenceLayoutCell(cell, rows, descriptor) {
+  var coordinates = getNormalizedCoordinates(cell, rows);
+  var occupiedDistance = getNearestReferenceDistance(
+    descriptor.occupiedSamples,
+    coordinates.x,
+    coordinates.y
+  );
+  if (descriptor.emptySamples.length === 0) {
+    return occupiedDistance + Math.abs(coordinates.x) * 0.05 +
+      cell.row * 0.0001 + cell.col * 0.00001;
+  }
+  var emptyDistance = getNearestReferenceDistance(descriptor.emptySamples, coordinates.x, coordinates.y);
+  return occupiedDistance - emptyDistance * 0.72 + cell.row * 0.0001 + cell.col * 0.00001;
+}
+
+function buildShapeSlots(rows, patternName, requiredCount, levelId) {
+  assertReferenceLayoutLevelId(levelId);
+  if (!Array.isArray(rows) || rows.length === 0) {
+    throw new Error("First-100 reference layout rows are required.");
+  }
+  var descriptor = buildReferenceLayoutDescriptor(levelId);
+  if (patternName !== descriptor.patternName) {
+    throw new Error("First-100 pattern differs from KXPPM reference layout for level " + levelId + ".");
+  }
+  var allCells = [];
+  rows.forEach(function (rowString, rowIndex) {
+    var expectedLength = BoardLayout.getRowColumnCount(rowIndex, BoardLayout.defaultColumns);
+    if (typeof rowString !== "string" || rowString.length !== expectedLength) {
+      throw new Error(
+        "First-100 target row width mismatch for level " + levelId +
+        " row " + rowIndex + ": expected " + expectedLength + "."
+      );
+    }
+    for (var colIndex = 0; colIndex < rowString.length; colIndex += 1) {
+      allCells.push({ row: rowIndex, col: colIndex });
+    }
+  });
+  if (!Number.isInteger(requiredCount) || requiredCount <= 0 || requiredCount > allCells.length) {
+    throw new Error("Invalid first-100 occupied cell count for level " + levelId + ": " + requiredCount);
+  }
+  var minimumConnectedCount = rows[0].length + rows.length - 1;
+  if (requiredCount < minimumConnectedCount) {
+    throw new Error("First-100 occupied cell count cannot connect every target row for level " + levelId + ".");
+  }
+
+  var selected = [];
+  var selectedMap = {};
+  var referenceScoreByCell = {};
+  function pushCell(cell) {
+    var key = cell.row + ":" + cell.col;
+    if (selectedMap[key]) {
+      throw new Error("First-100 reference layout selected a duplicate cell: " + key);
+    }
+    selectedMap[key] = true;
+    selected.push(cell);
+  }
+  function getReferenceScore(cell) {
+    var key = cell.row + ":" + cell.col;
+    if (referenceScoreByCell[key] === undefined) {
+      referenceScoreByCell[key] = scoreReferenceLayoutCell(cell, rows, descriptor);
+    }
+    return referenceScoreByCell[key];
+  }
+  function compareReferenceScore(cellA, cellB) {
+    return getReferenceScore(cellA) - getReferenceScore(cellB);
+  }
+
+  allCells.filter(function (cell) {
+    return cell.row === 0;
+  }).forEach(pushCell);
+
+  for (var requiredRow = 1; requiredRow < rows.length; requiredRow += 1) {
+    var rowCandidates = allCells.filter(function (cell) {
+      if (cell.row !== requiredRow) {
+        return false;
+      }
+      return selected.some(function (selectedCell) {
+        return areAdjacent(cell, selectedCell);
+      });
+    });
+    if (rowCandidates.length === 0) {
+      throw new Error(
+        "KXPPM reference projection cannot connect target row " + requiredRow +
+        " for level " + levelId + "."
+      );
+    }
+    rowCandidates.sort(compareReferenceScore);
+    pushCell(rowCandidates[0]);
+  }
+
+  while (selected.length < requiredCount) {
+    var frontier = allCells.filter(function (cell) {
+      var key = cell.row + ":" + cell.col;
+      if (selectedMap[key]) {
+        return false;
+      }
+      return selected.some(function (selectedCell) {
+        return areAdjacent(cell, selectedCell);
+      });
+    });
+    if (frontier.length === 0) {
+      throw new Error("KXPPM reference projection frontier exhausted for level " + levelId + ".");
+    }
+    frontier.sort(compareReferenceScore);
+    pushCell(frontier[0]);
   }
   selected.sort(function (cellA, cellB) {
     if (cellA.row !== cellB.row) {
@@ -1181,7 +1624,7 @@ function collectOccupiedVisualCells(level) {
   level.layout.forEach(function (rowString, rowIndex) {
     rowString.split("").forEach(function (cellValue, colIndex) {
       if (cellValue !== ".") {
-        cells.push({ row: rowIndex, col: colIndex, special: false });
+        cells.push({ row: rowIndex, col: colIndex, special: false, color: cellValue });
       }
     });
   });
@@ -1204,8 +1647,14 @@ function analyzeVisualComposition(level, spec) {
   var rows = level.layout;
   var rowBounds = [];
   var focusNearCount = 0;
+  var focusTargetColorCount = 0;
+  var colorSideCounts = {};
   var accentDirection = level.levelId % 2 === 0 ? -1 : 1;
   var focusX = spec.focusX * accentDirection;
+  var occupiedCellMap = {};
+  cells.forEach(function (cell) {
+    occupiedCellMap[cell.row + ":" + cell.col] = true;
+  });
 
   cells.forEach(function (cell) {
     var coordinates = getNormalizedCoordinates(cell, rows);
@@ -1219,6 +1668,20 @@ function analyzeVisualComposition(level, spec) {
     }
     if (pointDistance(coordinates.x, coordinates.y, focusX, spec.focusY, 1, 1.25) <= 0.4) {
       focusNearCount += 1;
+      if (!cell.special && cell.color === spec.targetColor) {
+        focusTargetColorCount += 1;
+      }
+    }
+    if (!cell.special) {
+      if (!colorSideCounts[cell.color]) {
+        colorSideCounts[cell.color] = { left: 0, right: 0, total: 0 };
+      }
+      colorSideCounts[cell.color].total += 1;
+      if (coordinates.x < -0.08) {
+        colorSideCounts[cell.color].left += 1;
+      } else if (coordinates.x > 0.08) {
+        colorSideCounts[cell.color].right += 1;
+      }
     }
     if (!rowBounds[cell.row]) {
       rowBounds[cell.row] = {
@@ -1278,48 +1741,92 @@ function analyzeVisualComposition(level, spec) {
     );
   }
 
+  var leftSideReachRowCount = 0;
+  var rightSideReachRowCount = 0;
+  var pairedSideReachRowCount = 0;
+  for (var sideRowIndex = 1; sideRowIndex < rows.length; sideRowIndex += 1) {
+    var sideRowLength = rows[sideRowIndex].length;
+    var reachesLeftSide = occupiedCellMap[sideRowIndex + ":0"] === true;
+    var reachesRightSide = occupiedCellMap[sideRowIndex + ":" + (sideRowLength - 1)] === true;
+    if (reachesLeftSide) {
+      leftSideReachRowCount += 1;
+    }
+    if (reachesRightSide) {
+      rightSideReachRowCount += 1;
+    }
+    if (reachesLeftSide && reachesRightSide) {
+      pairedSideReachRowCount += 1;
+    }
+  }
+
+  var maxColorSideImbalanceRatio = 0;
+  Object.keys(colorSideCounts).forEach(function (color) {
+    var sideCounts = colorSideCounts[color];
+    maxColorSideImbalanceRatio = Math.max(
+      maxColorSideImbalanceRatio,
+      Math.abs(sideCounts.left - sideCounts.right) / sideCounts.total
+    );
+  });
+  var mirroredPairCount = 0;
+  var mirroredColorEchoCount = 0;
+  level.layout.forEach(function (rowString) {
+    for (var colIndex = 0; colIndex < Math.floor(rowString.length / 2); colIndex += 1) {
+      var mirrorIndex = rowString.length - 1 - colIndex;
+      var leftColor = rowString.charAt(colIndex);
+      var rightColor = rowString.charAt(mirrorIndex);
+      if (leftColor === "." || rightColor === ".") {
+        continue;
+      }
+      mirroredPairCount += 1;
+      if (leftColor === rightColor) {
+        mirroredColorEchoCount += 1;
+      }
+    }
+  });
+
   return {
     occupiedCount: cells.length,
     centroidX: momentX / cells.length,
     sideCountDifference: Math.abs(leftCount - rightCount),
     allowedSideCountDifference: Math.max(1, Math.ceil(cells.length * 0.1)),
     bottomRowDifference: Math.abs(leftBottomRow - rightBottomRow),
+    leftSideReachRowCount: leftSideReachRowCount,
+    rightSideReachRowCount: rightSideReachRowCount,
+    pairedSideReachRowCount: pairedSideReachRowCount,
     maxRowCountJump: maxRowCountJump,
     maxEdgeJump: maxEdgeJump,
     maxRepeatedRectangleRun: maxRepeatedRectangleRun,
     focusNearCount: focusNearCount,
+    focusTargetColorCount: focusTargetColorCount,
+    maxColorSideImbalanceRatio: maxColorSideImbalanceRatio,
+    mirroredColorEchoRatio: mirroredPairCount > 0 ? mirroredColorEchoCount / mirroredPairCount : 0,
     focalSpecialDistance: focalSpecialDistance
   };
 }
 
 function validateVisualComposition(level, spec) {
   var metrics = analyzeVisualComposition(level, spec);
-  if (Math.abs(metrics.centroidX) > 0.12) {
-    throw new Error("Level " + level.levelId + " visual centroid is unstable: " + metrics.centroidX.toFixed(3) + ".");
+  compareNumber(
+    metrics.occupiedCount,
+    spec.normalBallCount + spec.specialCount,
+    "reference projected occupied count",
+    level.levelId
+  );
+  if (!Number.isFinite(metrics.centroidX)) {
+    throw new Error("Level " + level.levelId + " reference projected centroid must be finite.");
   }
-  if (metrics.sideCountDifference > metrics.allowedSideCountDifference) {
+  if (Math.abs(metrics.centroidX) > 0.25) {
     throw new Error(
-      "Level " + level.levelId + " left-right visual weight differs by " +
-      metrics.sideCountDifference + " cells."
+      "Level " + level.levelId + " reference projected centroid is unstable: " +
+      metrics.centroidX.toFixed(3) + "."
     );
   }
-  if (metrics.bottomRowDifference > 1) {
-    throw new Error("Level " + level.levelId + " left-right bottom extent differs by more than one row.");
-  }
-  if (metrics.maxRowCountJump > 4) {
-    throw new Error("Level " + level.levelId + " silhouette row width changes too abruptly.");
-  }
-  if (metrics.maxEdgeJump > 0.56) {
-    throw new Error("Level " + level.levelId + " silhouette edge has a hard step.");
-  }
-  if (metrics.maxRepeatedRectangleRun > 3) {
-    throw new Error("Level " + level.levelId + " silhouette contains a rigid rectangular edge run.");
-  }
-  if (metrics.focusNearCount < 3) {
-    throw new Error("Level " + level.levelId + " silhouette does not establish its visual focus.");
-  }
-  if (metrics.focalSpecialDistance !== null && metrics.focalSpecialDistance > 0.58) {
-    throw new Error("Level " + level.levelId + " focal special entity is too far from the visual focus.");
+  var referenceBalanceLimit = Math.ceil(metrics.occupiedCount * 0.3);
+  if (metrics.sideCountDifference > referenceBalanceLimit) {
+    throw new Error(
+      "Level " + level.levelId + " reference projected left-right weight differs by " +
+      metrics.sideCountDifference + " cells; limit is " + referenceBalanceLimit + "."
+    );
   }
   return metrics;
 }
@@ -1332,6 +1839,16 @@ function validateGeneratedLevel(level) {
   compareNumber(level.dropInterval, spec.tuning.dropInterval, "dropInterval", level.levelId);
   compareNumber(level.difficultyScore, spec.tuning.difficultyScore, "difficultyScore", level.levelId);
   compareNumber(level.jarCount, spec.jarCount, "jarCount", level.levelId);
+  if (level.initialShotBalls !== undefined) {
+    throw new Error("Level " + level.levelId + " must use openingShotBalls instead of initialShotBalls.");
+  }
+  if (JSON.stringify(level.openingShotBalls) !== JSON.stringify(spec.openingShotBalls)) {
+    throw new Error("Level " + level.levelId + " openingShotBalls differ from first-100 design.");
+  }
+  var expectedStarThresholds = buildStarThresholds(level.targetScore, spec.designBeat);
+  if (JSON.stringify(level.starThresholds) !== JSON.stringify(expectedStarThresholds)) {
+    throw new Error("Level " + level.levelId + " starThresholds differ from first-100 design.");
+  }
   if (JSON.stringify(level.jarColors) !== JSON.stringify(spec.jarColors)) {
     throw new Error("Level " + level.levelId + " jarColors differ from first-100 design.");
   }
@@ -1425,24 +1942,78 @@ function validateGeneratedLevel(level) {
   return {
     themeName: spec.themeName,
     patternName: spec.patternName,
+    silhouetteVariantName: spec.silhouetteVariantName,
+    designBeat: spec.designBeat,
     focusName: spec.focusName,
     specialDensity: specialDensity,
     visualMetrics: visualMetrics
   };
 }
 
+function buildSilhouetteSignature(level) {
+  assertObject(level, "First-100 silhouette level");
+  if (!Array.isArray(level.layout) || !Array.isArray(level.specialEntities)) {
+    throw new Error("First-100 silhouette signature requires layout and specialEntities.");
+  }
+  var rows = level.layout.map(function (rowString) {
+    return rowString.split("").map(function (cellValue) {
+      return cellValue === "." ? "." : "#";
+    });
+  });
+  level.specialEntities.forEach(function (entity) {
+    if (!rows[entity.row] || rows[entity.row][entity.col] === undefined) {
+      throw new Error("Level " + level.levelId + " special entity is outside silhouette rows.");
+    }
+    rows[entity.row][entity.col] = "#";
+  });
+  return rows.map(function (row) { return row.join(""); }).join("|");
+}
+
+function validateGeneratedLevelSet(levels) {
+  if (!Array.isArray(levels) || levels.length !== LAST_LEVEL_ID - FIRST_LEVEL_ID + 1) {
+    throw new Error("First-100 silhouette set must contain exactly 100 levels.");
+  }
+  var signatures = {};
+  levels.forEach(function (level, index) {
+    var expectedLevelId = index + FIRST_LEVEL_ID;
+    if (!level || level.levelId !== expectedLevelId) {
+      throw new Error("First-100 silhouette set level order mismatch at " + expectedLevelId + ".");
+    }
+    validateGeneratedLevel(level);
+    var signature = buildSilhouetteSignature(level);
+    if (signatures[signature] !== undefined) {
+      throw new Error(
+        "Levels " + signatures[signature] + " and " + level.levelId +
+        " share the same silhouette occupancy."
+      );
+    }
+    signatures[signature] = level.levelId;
+  });
+  return {
+    levelCount: levels.length,
+    uniqueSilhouetteCount: Object.keys(signatures).length
+  };
+}
+
 module.exports = {
   FIRST_LEVEL_ID: FIRST_LEVEL_ID,
   LAST_LEVEL_ID: LAST_LEVEL_ID,
+  REFERENCE_DIRECT_LAST_LEVEL_ID: REFERENCE_DIRECT_LAST_LEVEL_ID,
+  REFERENCE_TARGET_LAST_LEVEL_ID: REFERENCE_TARGET_LAST_LEVEL_ID,
+  REFERENCE_SOURCE_FILE: REFERENCE_SOURCE_FILE,
   COLORS: COLORS.slice(),
   PATTERNS: PATTERNS.slice(),
   THEME_GROUPS: JSON.parse(JSON.stringify(THEME_GROUPS)),
   LEVEL_ONE_TUTORIAL_LAYOUT: LEVEL_ONE_TUTORIAL_LAYOUT.slice(),
   buildLevelSpec: buildLevelSpec,
+  buildReferenceLayoutDescriptor: buildReferenceLayoutDescriptor,
+  buildReferenceShapeSlots: buildShapeSlots,
+  buildStarThresholds: buildStarThresholds,
   buildBoard: buildBoard,
   getDifficultyTuning: getDifficultyTuning,
   assertTableRowMatchesDesign: assertTableRowMatchesDesign,
   analyzeVisualComposition: analyzeVisualComposition,
   validateVisualComposition: validateVisualComposition,
-  validateGeneratedLevel: validateGeneratedLevel
+  validateGeneratedLevel: validateGeneratedLevel,
+  validateGeneratedLevelSet: validateGeneratedLevelSet
 };

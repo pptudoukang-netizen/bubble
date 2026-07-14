@@ -11,9 +11,11 @@
             "B": "blue",
             "Y": "yellow"
         },
-        "pattern": "flower_bell",
+        "pattern": "kxppm_layout_009",
         "theme": "flower",
-        "focus": "bell_core"
+        "focus": "bell_core",
+        "silhouetteVariant": "kxppm_layout_009",
+        "designBeat": "combine"
     },
     "sharedDefaults": {
         "collectMode": "any_with_same_color_bonus",
@@ -46,8 +48,10 @@
             "color_cluster",
             "support_drop",
             "flower_theme",
-            "flower_bell_pattern",
-            "bell_core_focus"
+            "kxppm_layout_009_pattern",
+            "kxppm_layout_009_silhouette",
+            "bell_core_focus",
+            "combine_design_beat"
         ],
         "colorCount": 4,
         "colors": [
@@ -56,8 +60,13 @@
             "B",
             "Y"
         ],
-        "shotLimit": 20,
-        "targetScore": 4230,
+        "shotLimit": 23,
+        "targetScore": 4470,
+        "starThresholds": {
+            "star1": 1609,
+            "star2": 2950,
+            "star3": 4023
+        },
         "dropInterval": 7,
         "jarCount": 4,
         "jarColors": [
@@ -72,8 +81,11 @@
             "B": 2.4,
             "Y": 1
         },
-        "initialShotBalls": [
+        "openingShotBalls": [
             "B",
+            "R",
+            "B",
+            "G",
             "B"
         ],
         "jarRules": {
@@ -85,7 +97,7 @@
             {
                 "type": "collect_color",
                 "color": "B",
-                "value": 22
+                "value": 23
             }
         ],
         "bonusObjectives": [
@@ -101,18 +113,18 @@
             }
         ],
         "layout": [
-            "RRRRYYYYBB",
-            "..GGGBB..",
-            "..GYYYYB..",
-            ".GGGBBB..",
-            ".GR.GG.RR.",
-            ".R.BB.GG.",
-            ".R.RBB.R..",
-            "...YYYRB.",
-            "..B.BBBB..",
-            "..BBBB..."
+            "BBGGGGBBBB",
+            ".YYYYY.B.",
+            ".YBBBBRBB.",
+            "BBB.BBGGG",
+            "....RRR.RG",
+            ".......R.",
+            "....GBBBBB",
+            "....G...R",
+            ".RRRYYYYR.",
+            "RR.GGG.YY"
         ],
-        "designNotes": "Generated from LEVEL_CONFIG_TABLE_1_1000.csv. Theme `flower` uses the `flower_bell` silhouette with one `bell_core` visual focus before color and mechanic placement.",
+        "designNotes": "Gameplay is generated from the current LEVEL_CONFIG_TABLE_1_1000.csv rules; only the occupancy silhouette is projected from E:\\kxppm\\decrypted_config\\all_levels.json level 9 into the current 10/9-column board.",
         "difficultyScore": 47,
         "specialEntities": [],
         "levelType": "normal",

@@ -68,6 +68,33 @@ var JAR_MASK_RESOURCES = {
   P: "image/jar/purple_jar_mask"
 };
 
+var JAR_SCORE_RESOURCE_COLOR_NAMES = {
+  R: "red",
+  G: "green",
+  B: "blue",
+  Y: "yellow",
+  P: "purple"
+};
+
+var JAR_SCORE_RESOURCE_VALUES = {
+  40: true,
+  60: true,
+  80: true,
+  90: true,
+  120: true
+};
+
+function resolveJarScoreSpritePath(colorCode, baseScore) {
+  var colorName = JAR_SCORE_RESOURCE_COLOR_NAMES[colorCode];
+  if (!colorName) {
+    throw new Error("Unsupported jar score color: " + colorCode);
+  }
+  if (!Number.isInteger(baseScore) || !JAR_SCORE_RESOURCE_VALUES[baseScore]) {
+    throw new Error("Unsupported jar base score sprite value: " + baseScore);
+  }
+  return "image/jar/" + colorName + "_" + baseScore;
+}
+
 var REWARD_ITEM_RESOURCES = {
   coin: "image/props/coin",
   stamina: "image/props/love"
@@ -1872,8 +1899,14 @@ LevelRenderer.prototype._collectSpritePaths = function (levelConfig, runtimeSnap
     if (typeof colorCode !== "string" || !JAR_RESOURCES[colorCode] || !JAR_MASK_RESOURCES[colorCode]) {
       throw new Error("Unsupported jar color for level.jarColors[" + index + "]: " + colorCode);
     }
+    var baseScore = JarScoreConfig.getBaseScoreForJarIndex(level.jarColors.length, index);
     pushUniqueSpritePath(paths, JAR_RESOURCES[colorCode], "level.jarColors[" + index + "]");
     pushUniqueSpritePath(paths, JAR_MASK_RESOURCES[colorCode], "level.jarColors[" + index + "]/mask");
+    pushUniqueSpritePath(
+      paths,
+      resolveJarScoreSpritePath(colorCode, baseScore),
+      "level.jarColors[" + index + "]/base-score"
+    );
   });
 
   getCollectionObjectiveList(levelConfig).forEach(function (objective) {
@@ -2275,6 +2308,7 @@ var LEVEL_RENDERER_SCENE_DEPS = {
   LOSE_STATUS_RESOURCES: LOSE_STATUS_RESOURCES,
   JAR_RESOURCES: JAR_RESOURCES,
   JAR_MASK_RESOURCES: JAR_MASK_RESOURCES,
+  resolveJarScoreSpritePath: resolveJarScoreSpritePath,
   REWARD_ITEM_RESOURCES: REWARD_ITEM_RESOURCES,
   POWERUP_ICON_RESOURCES: POWERUP_ICON_RESOURCES,
   HUD_STAR_RESOURCES: HUD_STAR_RESOURCES,

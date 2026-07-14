@@ -12,6 +12,7 @@ var LevelPackCompactCodec = require("../assets/scripts/config/LevelPackCompactCo
 var LevelPackManifest = require("../assets/scripts/config/LevelPackManifest");
 var SpecialAnimationTiming = require("../gameplay-src/config/SpecialAnimationTiming");
 var StarRatingPolicy = require("../assets/scripts/core/StarRatingPolicy");
+var ShooterController = require("../gameplay-src/systems/ShooterController");
 var TrajectoryPredictor = require("../gameplay-src/systems/TrajectoryPredictor");
 var BoardViewportSystem = require("../gameplay-src/systems/BoardViewportSystem");
 var BubbleBreakSfxPolicy = require("../assets/scripts/audio/BubbleBreakSfxPolicy");
@@ -1941,8 +1942,11 @@ function runSnowRemovalKeepsInnerNormalBallCase() {
   levelConfig.level.code = "L016_SNOW_REMOVAL_REGRESSION";
   levelConfig.level.colors = ["R", "B"];
   levelConfig.level.colorCount = 2;
+  delete levelConfig.level.initialShotBalls;
+  delete levelConfig.level.openingShotBalls;
   levelConfig.level.shotLimit = 8;
   levelConfig.level.targetScore = 100;
+  levelConfig.level.starThresholds = { star1: 30, star2: 60, star3: 85 };
   levelConfig.level.jarCount = 2;
   levelConfig.level.jarColors = ["R", "B"];
   levelConfig.level.winConditions = [
@@ -2478,6 +2482,14 @@ function runClearWinRequiresStarAndEmptyBoardCase() {
   if (!manager._areCollectionRewardObjectivesCompleted()) {
     throw new Error("Collection reward should complete after every collection target is complete.");
   }
+
+  manager.currentLevel.level.bonusObjectives = [];
+  manager.currentLevel.level.winConditions = [
+    { type: "clear_all", value: 1 }
+  ];
+  if (manager._areCollectionRewardObjectivesCompleted()) {
+    throw new Error("Clear-only level must not award the collection reward multiplier.");
+  }
 }
 
 function runOneStarTargetScoreCase() {
@@ -2488,6 +2500,61 @@ function runOneStarTargetScoreCase() {
   });
   if (oneStarTargetScore !== 774) {
     throw new Error("One-star target score must use the runtime star threshold policy.");
+  }
+  var authoredThresholds = StarRatingPolicy.resolveStarThresholds({
+    level: {
+      targetScore: 2580,
+      starThresholds: {
+        star1: 920,
+        star2: 1700,
+        star3: 2320
+      }
+    }
+  });
+  if (authoredThresholds.star1 !== 920 || authoredThresholds.star2 !== 1700 || authoredThresholds.star3 !== 2320) {
+    throw new Error("Runtime star policy must preserve authored star thresholds.");
+  }
+}
+
+function runAuthoredOpeningShotQueueCase() {
+  var opening = ["B", "R", "G", "B", "Y", "R"];
+  var shooter = new ShooterController();
+  shooter.initialize({});
+  shooter.configureLevel({
+    level: {
+      levelId: 50,
+      shotLimit: 8,
+      playMode: "shot_limited",
+      colors: ["B", "R", "G", "Y"],
+      spawnWeights: { B: 1, R: 1, G: 1, Y: 1 },
+      openingShotBalls: opening
+    }
+  });
+  opening.forEach(function (expectedColor, index) {
+    if (!shooter.currentBall || shooter.currentBall.color !== expectedColor) {
+      throw new Error("Authored opening shot order mismatch at index " + index + ".");
+    }
+    shooter.advanceQueue(7 - index, false);
+  });
+  if (shooter.getShooterState().authoredOpeningQueue.length !== 0) {
+    throw new Error("Authored opening shot queue must be exhausted after six shots.");
+  }
+
+  var revivedShooter = new ShooterController();
+  revivedShooter.initialize({});
+  revivedShooter.configureLevel({
+    level: {
+      levelId: 50,
+      shotLimit: 8,
+      playMode: "shot_limited",
+      colors: ["B", "R", "G", "Y"],
+      spawnWeights: { B: 1, R: 1, G: 1, Y: 1 },
+      openingShotBalls: opening
+    }
+  });
+  revivedShooter.setUpcomingRandomNormalBalls(2);
+  if (revivedShooter.getShooterState().authoredOpeningQueue.length !== 0) {
+    throw new Error("Revive queue replacement must clear the remaining authored opening shots.");
   }
 }
 
@@ -3132,6 +3199,22 @@ function runColorPermutationJarScoreCase() {
   var LevelColorPermutation = require("../assets/scripts/config/LevelColorPermutation");
   var sourceLevel = require("../assets/resources/config/levels/level_001.json");
   var levelConfig = JSON.parse(JSON.stringify(sourceLevel));
+  levelConfig.level.colors = ["R", "B"];
+  levelConfig.level.colorCount = 2;
+  levelConfig.level.layout = levelConfig.level.layout.map(function (rowString, rowIndex) {
+    return rowString.split("").map(function (cellCode, colIndex) {
+      return cellCode === "." ? "." : ((rowIndex + colIndex) % 2 === 0 ? "R" : "B");
+    }).join("");
+  });
+  levelConfig.level.jarColors = ["R", "B", "B"];
+  levelConfig.level.spawnWeights = { R: 1, B: 1 };
+  levelConfig.level.winConditions = [
+    { type: "collect_color", color: "B", value: 1 }
+  ];
+  levelConfig.level.bonusObjectives = [];
+  levelConfig.level.specialEntities = [];
+  delete levelConfig.level.initialShotBalls;
+  delete levelConfig.level.openingShotBalls;
   levelConfig.meta = {
     levelKey: "level_001"
   };
@@ -3749,6 +3832,44 @@ function runConfiguredAudioPreloadsArraySfxCase() {
   }
 }
 
+function runIceThawRuntimeEventCase() {
+  var iceCell = {
+    id: "ice_1",
+    row: 0,
+    col: 0,
+    entityCategory: "obstacle_ball",
+    entityType: "ice",
+    innerColor: "R"
+  };
+  var thawEvents = [];
+  var manager = new GameManager();
+  manager._pushRuntimeEvent = function (type, payload) {
+    thawEvents.push({ type: type, payload: payload });
+  };
+  var thawed = manager._thawIceCells([iceCell], {
+    getCell: function () {
+      return iceCell;
+    },
+    addBubble: function (coordinate, color) {
+      return {
+        id: "normal_1",
+        row: coordinate.row,
+        col: coordinate.col,
+        color: color,
+        entityCategory: "normal_ball"
+      };
+    }
+  });
+  if (
+    thawed.length !== 1 ||
+    thawEvents.length !== 1 ||
+    thawEvents[0].type !== "ice_thawed" ||
+    thawEvents[0].payload.count !== 1
+  ) {
+    throw new Error("Successful ice thaw must emit one ice_thawed runtime event with thawed count.");
+  }
+}
+
 function runBubbleShatterRearmsAppendedMolotovSequenceCase() {
   var hadCc = Object.prototype.hasOwnProperty.call(global, "cc");
   var previousCc = global.cc;
@@ -3968,6 +4089,8 @@ function main() {
   console.log("[OK]", "clear_win_requires_star_and_empty_board", "ignores collection targets for pass and requires an empty board");
   runOneStarTargetScoreCase();
   console.log("[OK]", "one_star_target_score", "uses the same one-star threshold policy as runtime scoring");
+  runAuthoredOpeningShotQueueCase();
+  console.log("[OK]", "authored_opening_shot_queue", "plays six authored colors in order and clears them on revive override");
   runStoneBallJarScoreZeroCase();
   console.log("[OK]", "stone_ball_jar_score_zero", "stone ball in jar scores 0 and keeps total score");
   runJarCollectionFloatingScoreEventCase();
@@ -3988,6 +4111,8 @@ function main() {
   console.log("[OK]", "bubble_break_sfx_count", "break sfx plays per shattered ball up to five times");
   runConfiguredAudioPreloadsArraySfxCase();
   console.log("[OK]", "configured_audio_array_sfx_preload", "array sfx paths are preloaded for immediate playback");
+  runIceThawRuntimeEventCase();
+  console.log("[OK]", "ice_thaw_runtime_event", "successful ice thaw emits one counted runtime event");
   runBoardIntroViewportCase();
   runBoardMidGameViewportSettleCase();
   runTopAnchorCollapseTriggerCase();

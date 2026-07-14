@@ -83,6 +83,7 @@ function ShooterController() {
   };
   this.currentBall = null;
   this.nextBall = null;
+  this.authoredOpeningQueue = [];
   this.currentColor = null;
   this.nextColor = null;
   this.queueAdvanceRevision = 0;
@@ -110,6 +111,13 @@ ShooterController.prototype.configureLevel = function (levelConfig) {
   this.skillInventory.snow_removal = 0;
   this.currentBall = null;
   this.nextBall = null;
+  this.authoredOpeningQueue = [];
+  if (levelConfig.level.openingShotBalls !== undefined && levelConfig.level.initialShotBalls !== undefined) {
+    throw new Error("ShooterController openingShotBalls and initialShotBalls cannot both be configured.");
+  }
+  if (levelConfig.level.openingShotBalls !== undefined) {
+    this._applyOpeningShotBalls(levelConfig.level.openingShotBalls);
+  }
   this._syncQueueForRemainingShots(
     levelConfig.level.playMode === "timed_infinite_shots" ? 2 : this.shotLimit
   );
@@ -142,6 +150,21 @@ ShooterController.prototype._applyInitialShotBalls = function (initialShotBalls)
   if (initialShotBalls.length >= 2) {
     this.nextBall = createNormalBall(initialShotBalls[1]);
   }
+};
+
+ShooterController.prototype._applyOpeningShotBalls = function (openingShotBalls) {
+  if (!Array.isArray(openingShotBalls) || openingShotBalls.length < 3 || openingShotBalls.length > 6) {
+    throw new Error("ShooterController openingShotBalls must contain 3 to 6 colors.");
+  }
+  if (openingShotBalls.length > this.shotLimit) {
+    throw new Error("ShooterController openingShotBalls length must not exceed shotLimit.");
+  }
+  openingShotBalls.forEach(function (colorCode, index) {
+    if (this.availableColors.indexOf(colorCode) === -1) {
+      throw new Error("ShooterController openingShotBalls[" + index + "] must exist in availableColors: " + colorCode);
+    }
+  }, this);
+  this.authoredOpeningQueue = openingShotBalls.slice();
 };
 
 ShooterController.prototype.resetAimDirection = function () {
@@ -308,6 +331,7 @@ ShooterController.prototype.setUpcomingNormalBalls = function (colorCode, count)
     throw new Error("ShooterController revive queue count must be 1 or 2.");
   }
 
+  this.authoredOpeningQueue = [];
   if (count >= 1) {
     this.currentBall = createNormalBall(colorCode);
   }
@@ -331,6 +355,7 @@ ShooterController.prototype.setUpcomingRandomNormalBalls = function (count) {
     throw new Error("ShooterController revive random queue count must be 1 or 2.");
   }
 
+  this.authoredOpeningQueue = [];
   if (count >= 1) {
     this.currentBall = this._pickNormalBall();
     if (!this.currentBall) {
@@ -547,6 +572,7 @@ ShooterController.prototype.getShooterState = function () {
     skillInventory: clone(this.skillInventory),
     currentColor: this.currentColor,
     nextColor: this.nextColor,
+    authoredOpeningQueue: this.authoredOpeningQueue.slice(),
     aim: this.getAimState(),
     shotLimit: this.shotLimit
   };
@@ -576,7 +602,9 @@ ShooterController.prototype._pickColor = function () {
 };
 
 ShooterController.prototype._pickNormalBall = function () {
-  var colorCode = this._pickColor();
+  var colorCode = this.authoredOpeningQueue.length > 0
+    ? this.authoredOpeningQueue.shift()
+    : this._pickColor();
   if (!colorCode) {
     return null;
   }
@@ -597,6 +625,7 @@ ShooterController.prototype.snapshot = function () {
   snapshot.skillInventory = clone(this.skillInventory);
   snapshot.currentColor = this.currentColor;
   snapshot.nextColor = this.nextColor;
+  snapshot.authoredOpeningQueue = this.authoredOpeningQueue.slice();
   snapshot.origin = clone(this.origin);
   snapshot.aimDirection = clone(this.aimDirection);
   snapshot.maxAimAngleDeg = this.maxAimAngleDeg;

@@ -361,11 +361,8 @@ DailyTaskViewController.prototype._createListProxyRecord = function (layerKey, s
 };
 
 DailyTaskViewController.prototype._hideStaticSourceSprites = function () {
-  var titleBgNode = requireChild(this._nodes.panelNode, "title_bg");
   SpriteProxyLayerHelper.setSpriteRenderEnabled(this._nodes.panelNode, false, "DailyTaskView Panel background");
   SpriteProxyLayerHelper.setSpriteRenderEnabled(this._nodes.closeButtonNode, false, "DailyTaskView close button");
-  SpriteProxyLayerHelper.setSpriteRenderEnabled(titleBgNode, false, "DailyTaskView title_bg");
-  SpriteProxyLayerHelper.setSpriteRenderEnabled(requireChild(titleBgNode, "paopao"), false, "DailyTaskView title_bg/paopao");
   SpriteProxyLayerHelper.setSpriteRenderEnabled(requireChild(this._nodes.panelNode, "tips"), false, "DailyTaskView tips");
 };
 
@@ -381,11 +378,8 @@ DailyTaskViewController.prototype._rebuildStaticRenderProxies = function () {
   this._ensureStaticProxyLayers();
   SpriteProxyLayerHelper.clearRecords(this._staticProxyRecords);
   this._hideStaticSourceSprites();
-  var titleBgNode = requireChild(this._nodes.panelNode, "title_bg");
   this._createStaticProxyRecord("panel", this._nodes.panelNode, "daily_task_panel_bg_proxy", true);
   this._createStaticProxyRecord("chrome", this._nodes.closeButtonNode, "daily_task_close_button_proxy", true);
-  this._createStaticProxyRecord("chrome", titleBgNode, "daily_task_title_bg_proxy", true);
-  this._createStaticProxyRecord("chrome", requireChild(titleBgNode, "paopao"), "daily_task_title_bubble_proxy", true);
   this._createStaticProxyRecord("chrome", requireChild(this._nodes.panelNode, "tips"), "daily_task_tips_proxy", true);
 };
 

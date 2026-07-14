@@ -947,6 +947,7 @@ module.exports = {
       if (!this.levelRenderer || typeof this.levelRenderer.playPowerupLoadAnimation !== "function") {
         throw new Error("Skill ball loading requires LevelRenderer.playPowerupLoadAnimation.");
       }
+      this._playSfx("useProps");
       this._skillBallLoadAnimationInProgress = true;
       var loadAnimationPromise = null;
       try {

@@ -11,6 +11,7 @@
     "validate:release": "node tools/validate-release-config.js",
     "generate:levels1000": "node tools/generate-1000-level-configs.js",
     "generate:levels-first100": "node tools/rebuild-first-100-level-configs.js",
+    "generate:levels101-300": "node tools/rebuild-reference-levels-101-300.js",
     "redesign:relaxed-campaign": "node tools/rebuild-relaxed-campaign-level-configs.js",
     "redesign:first100-clusters": "node tools/redesign-first-100-clustered-levels.js",
     "redesign:levels100-500": "node tools/redesign-levels-100-500-aesthetic.js",

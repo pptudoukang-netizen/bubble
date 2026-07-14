@@ -9,9 +9,11 @@
             "R": "red",
             "B": "blue"
         },
-        "pattern": "flower_bud",
+        "pattern": "kxppm_layout_001",
         "theme": "flower",
-        "focus": "bud_core"
+        "focus": "bud_core",
+        "silhouetteVariant": "kxppm_layout_001",
+        "designBeat": "introduce"
     },
     "sharedDefaults": {
         "collectMode": "any_with_same_color_bonus",
@@ -44,8 +46,10 @@
             "color_cluster",
             "support_drop",
             "flower_theme",
-            "flower_bud_pattern",
-            "bud_core_focus"
+            "kxppm_layout_001_pattern",
+            "kxppm_layout_001_silhouette",
+            "bud_core_focus",
+            "introduce_design_beat"
         ],
         "colorCount": 2,
         "colors": [
@@ -54,6 +58,11 @@
         ],
         "shotLimit": 12,
         "targetScore": 3620,
+        "starThresholds": {
+            "star1": 1158,
+            "star2": 2172,
+            "star3": 3041
+        },
         "dropInterval": 8,
         "jarCount": 3,
         "jarColors": [
@@ -65,8 +74,9 @@
             "R": 1.12,
             "B": 2.4
         },
-        "initialShotBalls": [
+        "openingShotBalls": [
             "B",
+            "R",
             "B"
         ],
         "jarRules": {
@@ -98,16 +108,16 @@
             }
         ],
         "layout": [
-            "BBBBRRRRBB",
-            ".BBBBRRR.",
-            ".BBBRRRRR.",
-            ".BBBRRRR.",
-            "..BBRRR...",
-            "...BBRR..",
-            "...BBR....",
-            "...BR...."
+            "RRBRBBRBRR",
+            ".BRBRBRBB",
+            ".RBRBBRBRB",
+            ".RB...BR.",
+            "..RBRRBR..",
+            ".RBRRBBR.",
+            ".B........",
+            ".B......."
         ],
-        "designNotes": "Generated from LEVEL_CONFIG_TABLE_1_1000.csv. Theme `flower` uses the `flower_bud` silhouette with one `bud_core` visual focus before color and mechanic placement.",
+        "designNotes": "Gameplay is generated from the current LEVEL_CONFIG_TABLE_1_1000.csv rules; only the occupancy silhouette is projected from E:\\kxppm\\decrypted_config\\all_levels.json level 1 into the current 10/9-column board.",
         "difficultyScore": 23,
         "specialEntities": [],
         "levelType": "normal",

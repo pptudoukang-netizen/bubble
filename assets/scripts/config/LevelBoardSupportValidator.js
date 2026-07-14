@@ -8,12 +8,28 @@ function keyFor(row, col) {
   return row + ":" + col;
 }
 
-function getColumnCountForRow(row) {
-  return BoardLayout.getRowColumnCount(row, BoardLayout.defaultColumns);
+function getLayoutMaxColumns(layout) {
+  if (!Array.isArray(layout) || layout.length === 0) {
+    throw new Error("layout is required to resolve board column count.");
+  }
+  layout.forEach(function (rowString, rowIndex) {
+    if (typeof rowString !== "string") {
+      throw new Error("layout row must be a string at index " + rowIndex + ".");
+    }
+    var expectedColumns = BoardLayout.getRowColumnCount(rowIndex, BoardLayout.defaultColumns);
+    if (rowString.length > expectedColumns) {
+      throw new Error("layout row exceeds current 10/9-column grid at index " + rowIndex + ".");
+    }
+  });
+  return BoardLayout.defaultColumns;
+}
+
+function getColumnCountForRow(layout, row) {
+  return BoardLayout.getRowColumnCount(row, getLayoutMaxColumns(layout));
 }
 
 function isValidCell(layout, row, col) {
-  return row >= 0 && row < layout.length && col >= 0 && col < getColumnCountForRow(row);
+  return row >= 0 && row < layout.length && col >= 0 && col < getColumnCountForRow(layout, row);
 }
 
 function getNeighborCoordinates(layout, row, col) {
@@ -75,7 +91,7 @@ function collectOccupiedCells(levelConfig, levelKey) {
     if (typeof rowString !== "string") {
       throw new Error("level.layout row must be a string for initial board support validation: " + levelKey);
     }
-    var expectedColumns = getColumnCountForRow(rowIndex);
+    var expectedColumns = getColumnCountForRow(levelConfig.layout, rowIndex);
     if (rowString.length !== expectedColumns) {
       throw new Error("level.layout row length must be normalized before initial board support validation: " + levelKey);
     }

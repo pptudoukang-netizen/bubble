@@ -55,7 +55,7 @@
     },
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 590,
+      "width": 600,
       "height": 143
     },
     "_anchorPoint": {
@@ -617,8 +617,8 @@
     },
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 72,
-      "height": 45.36
+      "width": 176,
+      "height": 48
     },
     "_anchorPoint": {
       "__type__": "cc.Vec2",
@@ -629,8 +629,8 @@
       "__type__": "TypedArray",
       "ctor": "Float64Array",
       "array": [
-        -87.519,
-        0,
+        -87.5,
+        -1.7,
         0,
         0,
         0,
@@ -669,10 +669,10 @@
     ],
     "_srcBlendFactor": 770,
     "_dstBlendFactor": 771,
-    "_string": "昵称",
-    "_N$string": "昵称",
-    "_fontSize": 36,
-    "_lineHeight": 36,
+    "_string": "昵称昵称昵称昵称昵称昵称昵称",
+    "_N$string": "昵称昵称昵称昵称昵称昵称昵称",
+    "_fontSize": 32,
+    "_lineHeight": 32,
     "_enableWrapText": true,
     "_N$file": null,
     "_isSystemFontUsed": true,
@@ -683,7 +683,7 @@
     "_N$horizontalAlign": 1,
     "_N$verticalAlign": 1,
     "_N$fontFamily": "Arial",
-    "_N$overflow": 0,
+    "_N$overflow": 2,
     "_N$cacheMode": 0,
     "_id": ""
   },
@@ -733,15 +733,15 @@
     },
     "_anchorPoint": {
       "__type__": "cc.Vec2",
-      "x": 1,
+      "x": 0.5,
       "y": 0.5
     },
     "_trs": {
       "__type__": "TypedArray",
       "ctor": "Float64Array",
       "array": [
-        194.669,
-        0,
+        192.848,
+        18.278,
         0,
         0,
         0,
@@ -854,20 +854,20 @@
     },
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 70.03,
-      "height": 37.8
+      "width": 66.69,
+      "height": 35.28
     },
     "_anchorPoint": {
       "__type__": "cc.Vec2",
-      "x": 1,
+      "x": 0.5,
       "y": 0.5
     },
     "_trs": {
       "__type__": "TypedArray",
       "ctor": "Float64Array",
       "array": [
-        280.898,
-        0,
+        193.476,
+        -21.612,
         0,
         0,
         0,
@@ -906,10 +906,10 @@
     ],
     "_srcBlendFactor": 770,
     "_dstBlendFactor": 771,
-    "_string": "(100)",
-    "_N$string": "(100)",
-    "_fontSize": 30,
-    "_lineHeight": 30,
+    "_string": "(100关)",
+    "_N$string": "(100关)",
+    "_fontSize": 20,
+    "_lineHeight": 28,
     "_enableWrapText": true,
     "_N$file": null,
     "_isSystemFontUsed": true,

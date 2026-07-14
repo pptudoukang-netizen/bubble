@@ -9,6 +9,7 @@ var LevelBoardSupportValidator = require("../assets/scripts/config/LevelBoardSup
 var LevelPackCompactCodec = require("../assets/scripts/config/LevelPackCompactCodec");
 var ClusteredLevelLayout = require("./clustered-level-layout");
 var FirstHundredLevelDesign = require("./first-100-level-design");
+var ReferenceLevels101To300Design = require("./reference-levels-101-300-design");
 
 var PROJECT_ROOT = path.resolve(__dirname, "..");
 var RESOURCE_LEVEL_DIR = path.join(PROJECT_ROOT, "assets/resources/config/levels");
@@ -20,6 +21,7 @@ var REMOTE_MANIFEST_PATH = path.join(REMOTE_PACK_DIR, "level_manifest.json");
 var LEVEL_CONFIG_TABLE_PATH = path.join(PROJECT_ROOT, "LEVEL_CONFIG_TABLE_1_1000.csv");
 var TARGET_LEVEL_COUNT = 1000;
 var MAX_SHOT_LIMIT = 54;
+var MAX_LAYOUT_ROW_COUNT = 100;
 var LOCAL_LEVEL_MAX = 10;
 var REMOTE_PACK_SIZE = 100;
 var START_GENERATED_LEVEL_ID = 41;
@@ -222,6 +224,12 @@ function parseCollectionTargetDisplay(display, levelId, fieldName) {
       value: parsePositiveIntegerCell({ value: display.slice(3) }, "value", levelId)
     };
   }
+  if (display === "清空棋盘") {
+    return {
+      type: "clear_all",
+      value: 1
+    };
+  }
   throw new Error("Level " + levelId + " table `" + fieldName + "` has invalid target display: " + display);
 }
 
@@ -235,8 +243,8 @@ function normalizeTableRow(rawRow, levelId) {
     splitterCounts[color] = parseNonNegativeIntegerCell(rawRow, SPLITTER_TABLE_COLUMNS[color], levelId);
   });
   var rowCount = parsePositiveIntegerCell(rawRow, "总行数", levelId);
-  if (rowCount > 20) {
-    throw new Error("Level " + levelId + " table row count must be <= 20.");
+  if (rowCount > MAX_LAYOUT_ROW_COUNT) {
+    throw new Error("Level " + levelId + " table row count must be <= " + MAX_LAYOUT_ROW_COUNT + ".");
   }
   var shotLimit = parsePositiveIntegerCell(rawRow, "发射球数量", levelId);
   if (shotLimit > MAX_SHOT_LIMIT) {
@@ -767,6 +775,82 @@ function placeRelaxedCampaignSpecialEntities(rows, entities, levelId, placementV
   });
 }
 
+function buildSlotKey(slot) {
+  if (!slot || !Number.isInteger(slot.row) || !Number.isInteger(slot.col)) {
+    throw new Error("Reference layout slot must define integer row and col.");
+  }
+  return slot.row + ":" + slot.col;
+}
+
+function placeReferenceLayoutSpecialEntities(rows, entities, occupiedSlots, levelId, placementVariant) {
+  if (!Array.isArray(occupiedSlots) || occupiedSlots.length === 0) {
+    throw new Error("Reference layout occupied slots are required for level " + levelId + ".");
+  }
+  var occupiedSlotMap = {};
+  occupiedSlots.forEach(function (slot) {
+    occupiedSlotMap[buildSlotKey(slot)] = true;
+  });
+  var slots = buildRelaxedCampaignSpecialSlotPool(rows, levelId, placementVariant).filter(function (slot) {
+    return occupiedSlotMap[buildSlotKey(slot)] === true;
+  });
+  if (slots.length < entities.length) {
+    throw new Error("Reference layout has fewer eligible special slots than entities for level " + levelId + ".");
+  }
+  var orderedEntities = entities.slice().sort(function (entityA, entityB) {
+    var rankDelta = getRelaxedEntityRank(entityA) - getRelaxedEntityRank(entityB);
+    if (rankDelta !== 0) {
+      return rankDelta;
+    }
+    return String(entityA.id).localeCompare(String(entityB.id));
+  });
+  orderedEntities.forEach(function (entity, index) {
+    var slot = slots[index];
+    entity.row = slot.row;
+    entity.col = slot.col;
+  });
+}
+
+function seedReferenceLayoutColors(rows, occupiedSlots, entities, tableRow, activeColors) {
+  var specialCellMap = {};
+  entities.forEach(function (entity) {
+    specialCellMap[entity.row + ":" + entity.col] = true;
+  });
+  var normalSlots = occupiedSlots.filter(function (slot) {
+    return specialCellMap[buildSlotKey(slot)] !== true;
+  });
+  var expectedNormalCount = sumColorCounts(tableRow.colorCounts);
+  if (normalSlots.length !== expectedNormalCount) {
+    throw new Error(
+      "Reference layout normal slot count mismatch for level " + tableRow.levelId +
+      ": expected " + expectedNormalCount + ", got " + normalSlots.length + "."
+    );
+  }
+  var remaining = {};
+  activeColors.forEach(function (color) {
+    remaining[color] = tableRow.colorCounts[color];
+  });
+  normalSlots.forEach(function (slot, slotIndex) {
+    var selectedColor = null;
+    for (var offset = 0; offset < activeColors.length; offset += 1) {
+      var candidate = activeColors[(slotIndex + levelIdOffset(tableRow.levelId) + offset) % activeColors.length];
+      if (remaining[candidate] > 0) {
+        selectedColor = candidate;
+        break;
+      }
+    }
+    if (selectedColor === null) {
+      throw new Error("Reference layout color seed exhausted for level " + tableRow.levelId + ".");
+    }
+    setCell(rows, slot.row, slot.col, selectedColor);
+    remaining[selectedColor] -= 1;
+  });
+  activeColors.forEach(function (color) {
+    if (remaining[color] !== 0) {
+      throw new Error("Reference layout color seed mismatch for level " + tableRow.levelId + " color " + color + ".");
+    }
+  });
+}
+
 function countLayoutColors(rows, activeColors) {
   var counts = {};
   activeColors.forEach(function (color) {
@@ -816,7 +900,7 @@ function applyFirstLevelTutorialLayout(rows, entities, tableRow, activeColors) {
   });
 }
 
-function fillTableLayoutColors(rows, entities, tableRow, activeColors) {
+function fillTableLayoutColors(rows, entities, tableRow, activeColors, firstHundredSpec, preserveOccupiedSlots) {
   var specialCells = {};
   entities.forEach(function (entity) {
     specialCells[entity.row + ":" + entity.col] = true;
@@ -827,10 +911,6 @@ function fillTableLayoutColors(rows, entities, tableRow, activeColors) {
     remaining[color] = tableRow.colorCounts[color];
   });
   var remainingTotal = sumColorCounts(tableRow.colorCounts);
-  if (tableRow.levelId === 1) {
-    applyFirstLevelTutorialLayout(rows, entities, tableRow, activeColors);
-    return;
-  }
   if (ClusteredLevelLayout.shouldRedesign(tableRow.levelId)) {
     var clusteredResult = ClusteredLevelLayout.buildClusteredLayout({
       levelId: tableRow.levelId,
@@ -839,6 +919,7 @@ function fillTableLayoutColors(rows, entities, tableRow, activeColors) {
       colorCounts: tableRow.colorCounts,
       targetColor: tableRow.target1.color,
       specialEntities: entities,
+      preserveOccupiedSlots: preserveOccupiedSlots,
       candidateProfile: tableRow.levelId > FirstHundredLevelDesign.LAST_LEVEL_ID
         ? "relaxed_campaign"
         : "full"
@@ -1164,6 +1245,7 @@ function buildWinConditions(levelId, collectTarget, collectColor, splitterCollec
   ];
 }
 
+
 function makeLevel(levelId, placementVariant) {
   if (!Number.isInteger(placementVariant) || placementVariant < 0) {
     throw new Error("Level placement variant must be a non-negative integer: " + levelId);
@@ -1173,16 +1255,23 @@ function makeLevel(levelId, placementVariant) {
   var firstHundredSpec = levelId <= FirstHundredLevelDesign.LAST_LEVEL_ID
     ? FirstHundredLevelDesign.buildLevelSpec(levelId)
     : null;
+  var referenceLayout = levelId <= FirstHundredLevelDesign.REFERENCE_TARGET_LAST_LEVEL_ID
+    ? FirstHundredLevelDesign.buildReferenceLayoutDescriptor(levelId)
+    : null;
   if (firstHundredSpec) {
     FirstHundredLevelDesign.assertTableRowMatchesDesign(tableRow);
+  } else if (levelId >= ReferenceLevels101To300Design.FIRST_LEVEL_ID &&
+    levelId <= ReferenceLevels101To300Design.LAST_LEVEL_ID) {
+    ReferenceLevels101To300Design.assertTableRowMatchesDesign(tableRow);
   }
   validateTableTargets(tableRow);
   var colors = getActiveColors(tableRow);
-  var patternName = firstHundredSpec
-    ? firstHundredSpec.patternName
+  var patternName = referenceLayout
+    ? referenceLayout.patternName
     : PATTERNS[levelId % PATTERNS.length];
   var rows = makeEmptyRows(tableRow.rowCount);
   var specialEntities = buildTableSpecialEntities(tableRow, colors);
+  var referenceShapeSlots = null;
   if (levelId <= FirstHundredLevelDesign.LAST_LEVEL_ID) {
     FirstHundredLevelDesign.buildBoard({
       levelId: levelId,
@@ -1192,10 +1281,32 @@ function makeLevel(levelId, placementVariant) {
       specialEntities: specialEntities,
       placementVariant: placementVariant
     });
+  } else if (referenceLayout) {
+    referenceShapeSlots = FirstHundredLevelDesign.buildReferenceShapeSlots(
+      rows,
+      patternName,
+      sumColorCounts(tableRow.colorCounts) + specialEntities.length,
+      levelId
+    );
+    placeReferenceLayoutSpecialEntities(
+      rows,
+      specialEntities,
+      referenceShapeSlots,
+      levelId,
+      placementVariant
+    );
+    seedReferenceLayoutColors(rows, referenceShapeSlots, specialEntities, tableRow, colors);
   } else {
     placeTableSpecialEntities(rows, specialEntities, levelId, placementVariant);
   }
-  fillTableLayoutColors(rows, specialEntities, tableRow, colors);
+  fillTableLayoutColors(
+    rows,
+    specialEntities,
+    tableRow,
+    colors,
+    firstHundredSpec,
+    referenceShapeSlots !== null
+  );
   var mechanics = getMechanics(levelId);
   var jarColors = firstHundredSpec
     ? firstHundredSpec.jarColors.slice()
@@ -1203,6 +1314,7 @@ function makeLevel(levelId, placementVariant) {
   var firstHundredTuning = firstHundredSpec
     ? firstHundredSpec.tuning
     : null;
+  var targetScore = buildTargetScoreFromTable(tableRow);
 
   var spawnWeights = {};
   colors.forEach(function (color, index) {
@@ -1223,7 +1335,13 @@ function makeLevel(levelId, placementVariant) {
       }, { ".": "empty" }),
       pattern: patternName,
       theme: firstHundredSpec ? firstHundredSpec.themeName : getChapter(levelId),
-      focus: firstHundredSpec ? firstHundredSpec.focusName : patternName
+      focus: firstHundredSpec
+        ? firstHundredSpec.focusName
+        : (referenceLayout ? referenceLayout.focusName : patternName),
+      silhouetteVariant: firstHundredSpec
+        ? firstHundredSpec.silhouetteVariantName
+        : (referenceLayout ? referenceLayout.patternName : undefined),
+      designBeat: firstHundredSpec ? firstHundredSpec.designBeat : undefined
     },
     sharedDefaults: {
       collectMode: "any_with_same_color_bonus",
@@ -1250,20 +1368,30 @@ function makeLevel(levelId, placementVariant) {
         : (progress < 0.18 ? "advanced" : (progress < 0.55 ? "hard" : "expert")),
       teaches: mechanics.concat(
         firstHundredSpec
-          ? [firstHundredSpec.themeName + "_theme", patternName + "_pattern", firstHundredSpec.focusName + "_focus"]
+          ? [
+            firstHundredSpec.themeName + "_theme",
+            patternName + "_pattern",
+            firstHundredSpec.silhouetteVariantName + "_silhouette",
+            firstHundredSpec.focusName + "_focus",
+            firstHundredSpec.designBeat + "_design_beat"
+          ]
           : [patternName + "_pattern"]
       ),
       colorCount: colors.length,
       colors: colors,
       shotLimit: tableRow.shotLimit,
-      targetScore: buildTargetScoreFromTable(tableRow),
+      targetScore: targetScore,
+      starThresholds: firstHundredSpec
+        ? FirstHundredLevelDesign.buildStarThresholds(targetScore, firstHundredSpec.designBeat)
+        : undefined,
       dropInterval: firstHundredTuning
         ? firstHundredTuning.dropInterval
         : Math.max(3, 6 - Math.floor(progress * 4)),
       jarCount: jarColors.length,
       jarColors: jarColors,
       spawnWeights: spawnWeights,
-      initialShotBalls: [tableRow.target1.color, tableRow.target1.color],
+      initialShotBalls: firstHundredSpec ? undefined : [tableRow.target1.color, tableRow.target1.color],
+      openingShotBalls: firstHundredSpec ? firstHundredSpec.openingShotBalls.slice() : undefined,
       jarRules: {
         rimBounce: Math.min(0.92, 0.68 + progress * 0.22),
         collectZoneScale: Math.max(0.78, 1.1 - progress * 0.25),
@@ -1277,10 +1405,11 @@ function makeLevel(levelId, placementVariant) {
       ],
       clearRewardItems: buildRewardItemsFromTable(levelId),
       layout: rows,
-      designNotes: firstHundredSpec
-        ? "Generated from LEVEL_CONFIG_TABLE_1_1000.csv. Theme `" + firstHundredSpec.themeName +
-          "` uses the `" + patternName + "` silhouette with one `" + firstHundredSpec.focusName +
-          "` visual focus before color and mechanic placement."
+      designNotes: referenceLayout
+        ? "Gameplay is generated from the current LEVEL_CONFIG_TABLE_1_1000.csv rules; only the occupancy silhouette " +
+          "is projected from E:\\kxppm\\decrypted_config\\all_levels.json level " +
+          referenceLayout.sourceLevelId + " into current level " + levelId +
+          (referenceLayout.mirrored ? " as a mirrored 10/9-column variant." : " on the current 10/9-column board.")
         : "Generated from LEVEL_CONFIG_TABLE_1_1000.csv. Chapter `" + getChapter(levelId) + "` uses " +
           mechanics.join(", ") + " with a " + patternName + " board silhouette.",
       difficultyScore: firstHundredTuning
@@ -1747,6 +1876,166 @@ function updateFirstHundredManifestPack(packEntry) {
   writeManifestMeta();
 }
 
+function updateReferenceManifestPacks(packEntries) {
+  if (!Array.isArray(packEntries) || packEntries.length !== 2) {
+    throw new Error("Reference levels 101-300 rebuild requires exactly two pack entries.");
+  }
+  var entriesById = {};
+  packEntries.forEach(function (entry) {
+    if (!entry || typeof entry.id !== "string" || entriesById[entry.id]) {
+      throw new Error("Reference levels 101-300 pack entry is invalid or duplicated.");
+    }
+    entriesById[entry.id] = entry;
+  });
+  var manifest = JSON.parse(stripBom(fs.readFileSync(REMOTE_MANIFEST_PATH, "utf8")));
+  if (!Array.isArray(manifest.packs)) {
+    throw new Error("Level manifest packs must be an array.");
+  }
+  var matchCounts = {};
+  Object.keys(entriesById).forEach(function (packId) {
+    matchCounts[packId] = 0;
+  });
+  manifest.packs = manifest.packs.map(function (pack) {
+    if (!entriesById[pack.id]) {
+      return pack;
+    }
+    matchCounts[pack.id] += 1;
+    return entriesById[pack.id];
+  });
+  Object.keys(matchCounts).forEach(function (packId) {
+    if (matchCounts[packId] !== 1) {
+      throw new Error("Level manifest must contain exactly one " + packId + " entry.");
+    }
+  });
+  writeJson(REMOTE_MANIFEST_PATH, manifest);
+  writeManifestMeta();
+}
+
+function buildLevelOccupancySignature(level) {
+  if (!level || !Array.isArray(level.layout) || !Array.isArray(level.specialEntities)) {
+    throw new Error("Reference level occupancy signature requires layout and specialEntities.");
+  }
+  var rows = level.layout.map(function (rowString) {
+    return rowString.split("").map(function (cellValue) {
+      return cellValue === "." ? "." : "#";
+    });
+  });
+  level.specialEntities.forEach(function (entity) {
+    if (!rows[entity.row] || rows[entity.row][entity.col] === undefined) {
+      throw new Error("Level " + level.levelId + " special entity is outside its layout.");
+    }
+    if (rows[entity.row][entity.col] !== ".") {
+      throw new Error("Level " + level.levelId + " normal ball overlaps special entity.");
+    }
+    rows[entity.row][entity.col] = "#";
+  });
+  return rows.map(function (row) { return row.join(""); }).join("|");
+}
+
+function validateReferenceLevels101To300Outputs() {
+  var signatures = {};
+  var maxCentroidOffset = 0;
+  var maxSideBalanceDelta = 0;
+  for (var levelId = ReferenceLevels101To300Design.FIRST_LEVEL_ID;
+    levelId <= ReferenceLevels101To300Design.LAST_LEVEL_ID;
+    levelId += 1) {
+    var packFrom = Math.floor((levelId - 1) / 100) * 100 + 1;
+    var packTo = packFrom + 99;
+    var packPath = path.join(REMOTE_PACK_DIR, getPackFileName(packFrom, packTo));
+    var expandedPack = LevelPackCompactCodec.expandPack(
+      JSON.parse(stripBom(fs.readFileSync(packPath, "utf8")))
+    );
+    var levelKey = "level_" + padLevelId(levelId);
+    if (!expandedPack.levels[levelKey] || !expandedPack.levels[levelKey].level) {
+      throw new Error("Reference rebuild output is missing " + levelKey + ".");
+    }
+    var level = expandedPack.levels[levelKey].level;
+    var tableRow = getTableRow(levelId);
+    if (level.shotLimit !== tableRow.shotLimit || level.levelType !== "normal" || level.playMode !== "shot_limited") {
+      throw new Error("Level " + levelId + " gameplay fields differ from the current project table.");
+    }
+    var descriptor = FirstHundredLevelDesign.buildReferenceLayoutDescriptor(levelId);
+    var expectedSlots = FirstHundredLevelDesign.buildReferenceShapeSlots(
+      makeEmptyRows(tableRow.rowCount),
+      descriptor.patternName,
+      sumColorCounts(tableRow.colorCounts) + level.specialEntities.length,
+      levelId
+    );
+    var expectedRows = makeEmptyRows(tableRow.rowCount).map(function (rowString) {
+      return rowString.split("");
+    });
+    expectedSlots.forEach(function (slot) {
+      expectedRows[slot.row][slot.col] = "#";
+    });
+    var expectedSignature = expectedRows.map(function (row) { return row.join(""); }).join("|");
+    var actualSignature = buildLevelOccupancySignature(level);
+    if (actualSignature !== expectedSignature) {
+      throw new Error("Level " + levelId + " occupancy differs from its reference projection.");
+    }
+    var horizontalMoment = 0;
+    var leftCount = 0;
+    var rightCount = 0;
+    expectedSlots.forEach(function (slot) {
+      var rowLength = expectedRows[slot.row].length;
+      var normalizedX = rowLength === 1 ? 0 : (slot.col / (rowLength - 1)) * 2 - 1;
+      horizontalMoment += normalizedX;
+      if (normalizedX < -0.05) {
+        leftCount += 1;
+      } else if (normalizedX > 0.05) {
+        rightCount += 1;
+      }
+    });
+    var centroidOffset = Math.abs(horizontalMoment / expectedSlots.length);
+    var sideBalanceDelta = Math.abs(leftCount - rightCount) / expectedSlots.length;
+    if (centroidOffset > 0.2 || sideBalanceDelta > 0.2) {
+      throw new Error(
+        "Level " + levelId + " reference projection is visually unbalanced: centroid=" +
+        centroidOffset.toFixed(3) + ", sideDelta=" + sideBalanceDelta.toFixed(3) + "."
+      );
+    }
+    maxCentroidOffset = Math.max(maxCentroidOffset, centroidOffset);
+    maxSideBalanceDelta = Math.max(maxSideBalanceDelta, sideBalanceDelta);
+    signatures[actualSignature] = true;
+  }
+  console.log(
+    "Validated reference occupancy for levels 101-300 (" +
+    Object.keys(signatures).length + " distinct projected silhouettes, max centroid " +
+    maxCentroidOffset.toFixed(3) + ", max side delta " + maxSideBalanceDelta.toFixed(3) + ")."
+  );
+}
+
+function validateFirstHundredGeneratedOutputs() {
+  var generatedFirstHundredLevels = [];
+  for (var localLevelId = 1; localLevelId <= LOCAL_LEVEL_MAX; localLevelId += 1) {
+    generatedFirstHundredLevels.push(
+      JSON.parse(stripBom(fs.readFileSync(
+        path.join(RESOURCE_LEVEL_DIR, getLevelFileName(localLevelId)),
+        "utf8"
+      ))).level
+    );
+  }
+  var firstHundredPackPath = path.join(
+    REMOTE_PACK_DIR,
+    getPackFileName(LOCAL_LEVEL_MAX + 1, FirstHundredLevelDesign.LAST_LEVEL_ID)
+  );
+  var expandedFirstHundredPack = LevelPackCompactCodec.expandPack(
+    JSON.parse(stripBom(fs.readFileSync(firstHundredPackPath, "utf8")))
+  );
+  for (var remoteLevelId = LOCAL_LEVEL_MAX + 1;
+    remoteLevelId <= FirstHundredLevelDesign.LAST_LEVEL_ID;
+    remoteLevelId += 1) {
+    generatedFirstHundredLevels.push(
+      expandedFirstHundredPack.levels["level_" + padLevelId(remoteLevelId)].level
+    );
+  }
+  var silhouetteAudit = FirstHundredLevelDesign.validateGeneratedLevelSet(generatedFirstHundredLevels);
+  console.log(
+    "Validated " + silhouetteAudit.uniqueSilhouetteCount +
+    " unique silhouettes across levels 1-100."
+  );
+  return silhouetteAudit;
+}
+
 function rebuildFirstHundred() {
   resetGeneratedSpecialPositionState();
   normalizeManualLocalLevels();
@@ -1755,9 +2044,22 @@ function rebuildFirstHundred() {
     from: LOCAL_LEVEL_MAX + 1,
     to: FirstHundredLevelDesign.LAST_LEVEL_ID
   });
+  validateFirstHundredGeneratedOutputs();
   updateFirstHundredManifestPack(firstRemotePack);
   syncMirror();
   console.log("Rebuilt levels 1-100 and updated the 11-100 remote pack manifest entry.");
+}
+
+function rebuildReferenceLevels101To300() {
+  resetGeneratedSpecialPositionState();
+  ensureDirectory(REMOTE_PACK_DIR);
+  var packEntries = [
+    buildRemotePack({ from: 101, to: 200 }),
+    buildRemotePack({ from: 201, to: 300 })
+  ];
+  validateReferenceLevels101To300Outputs();
+  updateReferenceManifestPacks(packEntries);
+  console.log("Rebuilt levels 101-300 and updated their two remote pack manifest entries.");
 }
 
 function main() {
@@ -1776,6 +2078,10 @@ function main() {
     rebuildFirstHundred();
     return;
   }
+  if (args.length === 1 && args[0] === "--reference101-300") {
+    rebuildReferenceLevels101To300();
+    return;
+  }
   if (args.length !== 0) {
     throw new Error("Unsupported level generator arguments: " + args.join(" "));
   }
@@ -1783,6 +2089,7 @@ function main() {
   resetGeneratedSpecialPositionState();
   normalizeManualLocalLevels();
   var packs = buildRemotePacks();
+  validateFirstHundredGeneratedOutputs();
   removeGeneratedRemoteLocalFiles();
   writeManifest(packs);
   syncMirror();

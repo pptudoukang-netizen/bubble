@@ -10,9 +10,11 @@
             "G": "green",
             "B": "blue"
         },
-        "pattern": "flower_lotus",
+        "pattern": "kxppm_layout_003",
         "theme": "flower",
-        "focus": "lotus_center"
+        "focus": "lotus_center",
+        "silhouetteVariant": "kxppm_layout_003",
+        "designBeat": "practice"
     },
     "sharedDefaults": {
         "collectMode": "any_with_same_color_bonus",
@@ -45,8 +47,10 @@
             "color_cluster",
             "support_drop",
             "flower_theme",
-            "flower_lotus_pattern",
-            "lotus_center_focus"
+            "kxppm_layout_003_pattern",
+            "kxppm_layout_003_silhouette",
+            "lotus_center_focus",
+            "practice_design_beat"
         ],
         "colorCount": 3,
         "colors": [
@@ -54,8 +58,13 @@
             "G",
             "B"
         ],
-        "shotLimit": 16,
-        "targetScore": 4230,
+        "shotLimit": 11,
+        "targetScore": 4710,
+        "starThresholds": {
+            "star1": 1601,
+            "star2": 2967,
+            "star3": 4098
+        },
         "dropInterval": 8,
         "jarCount": 3,
         "jarColors": [
@@ -68,9 +77,11 @@
             "G": 2.4,
             "B": 1.24
         },
-        "initialShotBalls": [
+        "openingShotBalls": [
             "G",
-            "G"
+            "R",
+            "G",
+            "B"
         ],
         "jarRules": {
             "rimBounce": 0.6804404404404405,
@@ -81,7 +92,7 @@
             {
                 "type": "collect_color",
                 "color": "G",
-                "value": 22
+                "value": 24
             }
         ],
         "bonusObjectives": [
@@ -101,18 +112,19 @@
             }
         ],
         "layout": [
-            "GGGGBBGGGG",
-            "..RRGRR..",
-            "..RR.GBB..",
-            ".BB.RGGB.",
-            ".RGGRRG.B.",
-            ".BGRRR.B.",
-            "..BGGG.BB.",
-            "..BGGGR..",
-            "...BB.BR..",
-            "...RRR..."
+            "GGRRRRBBBB",
+            "GGRRRRGGG",
+            "GBB....BBG",
+            "GGG...BBB",
+            "..R....RB.",
+            "..R....R.",
+            ".BB....BB.",
+            "RR.....RR",
+            "RRG....GGG",
+            "RRG...GGG",
+            "GGGG..BBBB"
         ],
-        "designNotes": "Generated from LEVEL_CONFIG_TABLE_1_1000.csv. Theme `flower` uses the `flower_lotus` silhouette with one `lotus_center` visual focus before color and mechanic placement.",
+        "designNotes": "Gameplay is generated from the current LEVEL_CONFIG_TABLE_1_1000.csv rules; only the occupancy silhouette is projected from E:\\kxppm\\decrypted_config\\all_levels.json level 3 into the current 10/9-column board.",
         "difficultyScore": 29,
         "specialEntities": [],
         "levelType": "normal",

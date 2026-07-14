@@ -32,9 +32,10 @@
 - `tools/build-wechat-gameplay-code.js`：局内玩法源码打包工具；编辑器构建完成会由 `packages/build-loading-splash` 自动调用，也可用 `npm run build:wechat-gameplay-code` 手动补跑；输出微信脚本懒包和模拟器资源懒包。
 - `open-data/`：历史微信开放数据域逻辑。当前世界排行榜由主域源码和云函数实现，不再依赖开放数据域读取好友云存储。
 - `tools/`：校验、同步、构建修复、调试辅助脚本。
-- `tools/first-100-level-design.js`：前 100 关权威设计规则；先按花形、水晶、雪花、星形、羽翼、皇冠六组 15～20 关主题生成整体轮廓，再校验视觉重心、左右重量、单一焦点和自然边缘，之后放置特殊球并填充聚类颜色；同时统一定义目标、发射数和每 10 关难度波形。
-- `tools/rebuild-first-100-level-configs.js`：前 100 关定向重建入口；先同步 `LEVEL_CONFIG_TABLE_1_1000.csv` 前 100 行，再只重建本地 1-10、远程包 11-100 和对应 manifest 条目，不改写 101-1000 关远程包。运行命令为 `npm run generate:levels-first100`。
-- `tools/clustered-level-layout.js`、`tools/rebuild-relaxed-campaign-level-configs.js`、`tools/redesign-first-100-clustered-levels.js`、`tools/redesign-levels-100-500-aesthetic.js`：1-1000 关颜色聚类与爽感校验规则；休闲解压版全量重建通过 `npm run redesign:relaxed-campaign` 同步 CSV、本地 1-10、远程 11-1000 compact 包和 manifest；前 100 关保留既有轮廓规则，100-500 关可通过 `npm run redesign:levels100-500` 重建，501-1000 关可通过 `npm run redesign:levels501-1000` 重建远程包布局、对称轮廓、色彩流动和 manifest 摘要。
+- `tools/first-100-level-design.js`：前 100 关权威设计规则；Fail-Fast 读取 `E:\kxppm\decrypted_config\all_levels.json`，只提取前 100 关 `bubbles` 的占位/空位轮廓。母版 11/10 列轮廓通过归一化距离场投影到当前 10/9 列、8～15 行棋盘，并强制顶部满行、逐行连通、当前球数不变和 100 个轮廓唯一；颜色数量、收集目标、冰球目标、特殊球、开局球序列、星级线、奖励和关卡模式全部继续使用当前项目规则。发射数由当前项目真实玩法模拟得到的 100 项逐关校准表控制，优先削减连锁掉落关的过量余球并保留高压关安全线，不读取参考项目发射数；校准表长度或数值非法时直接报错。源文件缺失、行宽或字符非法、投影不连通时直接报错，不导入参考项目玩法，也不使用默认关卡兜底。
+- `tools/rebuild-first-100-level-configs.js`：前 100 关定向重建入口；先按当前项目设计规则同步 `LEVEL_CONFIG_TABLE_1_1000.csv` 前 100 行，再只重建本地 1-10、远程包 11-100 和对应 manifest 条目，不改写 101-1000 关远程包。运行命令为 `npm run generate:levels-first100`，重建时会复验当前玩法字段、10/9 列布局、支撑关系以及 100 个占位轮廓的唯一性。
+- `tools/reference-levels-101-300-design.js`、`tools/rebuild-reference-levels-101-300.js`：101–300 关参考轮廓与逐关发射数权威规则。参考项目普通主线只存在 1–200 关，因此 101–200 一一投影同编号轮廓，201–300 使用参考 101–200 的水平镜像投影；目标棋盘仍采用当前项目 10/9 列、15 行、当前球数、颜色目标和特殊球。200 项发射数校准表缺项或数值非法时直接报错。运行 `npm run generate:levels101-300` 只重写 CSV 的 101–300 发射数、两个远程包及对应 manifest 条目，并校验 200 个投影轮廓全部不同、水平重心偏移和左右占位差均不超过 0.20。
+- `tools/clustered-level-layout.js`、`tools/rebuild-relaxed-campaign-level-configs.js`、`tools/redesign-first-100-clustered-levels.js`、`tools/redesign-levels-100-500-aesthetic.js`：1-1000 关颜色聚类与爽感校验规则；前 300 关保留参考占位轮廓，颜色填充和玩法仍走当前规则；101–300 参考轮廓允许来源布局本身的自然收腰边界，但仍强制顶部支撑、全盘连通、颜色聚类和低孤立率。休闲解压版全量重建通过 `npm run redesign:relaxed-campaign` 同步 CSV、本地 1-10、远程 11-1000 compact 包和 manifest；`npm run redesign:levels100-500` 会保留 101–300 参考占位，仅重建其颜色聚类并为 301–500 生成美术轮廓；501-1000 关可通过 `npm run redesign:levels501-1000` 重建远程包布局、对称轮廓、色彩流动和 manifest 摘要。
 - `settings/`：Cocos Creator 项目设置。
 - `package.json`：校验脚本入口。
 
@@ -89,7 +90,7 @@
 - `GameManagerShotResolutionMethods.js`：发射命中后的消除、掉落、收集等结算扩展；`_resolveBoardClearedOutcome` / `_beginSurplusShotBonus` 处理自然清屏后的星级校验、剩余球奖励与终局结算。
 - `AdRevivePolicy.js`：广告复活策略，统一复活补球、目标色选择和 LoseView 描述文案。
 - `ProjectileMath.js`：弹道与几何计算。
-- `StarRatingPolicy.js`：星级计算策略。
+- `StarRatingPolicy.js`：星级计算策略；优先使用关卡显式 `starThresholds`，未配置该字段的既有普通关卡继续按 `targetScore` 的统一比例计算。
 
 ### systems
 
@@ -104,7 +105,7 @@
 - `FairyAssistSystem.js`：管理 `GameView/geniuses` 六个固定协助精灵槽位；只要本次发射产生消除，就按匹配消除数量生成红/黄/绿精灵，未消除时移除最早两只；碰撞中心由 `LevelRenderer.syncFairyAssistCollisionCenters` 从槽位节点转换到棋盘坐标后再参与判定，并维护每精灵最多 7 次碰撞计数与光效层数 snapshot。
 - `FallingMarbleSystem.js`：掉落球运动（默认重力 900）；`maxDynamicMarbles` 当前由 `FallingRulesDefaults.maxDynamicMarbles`（9999，试验值）统一控制，暂忽略关卡 `fallingRules.maxDynamicMarbles: 10`，一次注册的全部掉落球会立即进入物理模拟；固定精灵反弹、红黄绿倍率、绿色精灵单次一分为二；清屏后余球每 0.2s 连续抛射入缸（不等上一颗入缸），炮台每 0.2s 在 15°～165° 间按 15° 步进往返旋转。
 - `JarCollectorSystem.js`：底部罐子收集。
-- `ShooterController.js`：射手和待发球；`drainRemainingShotBalls` 在剩余球奖励阶段排空炮台队列。
+- `ShooterController.js`：射手和待发球；前 100 关的 `openingShotBalls` 会按配置顺序先进入炮台，序列耗尽后才进入权重随机球；广告复活覆盖炮台时会明确清空未消费的开局序列；`drainRemainingShotBalls` 在剩余球奖励阶段排空炮台队列。
 - `TrajectoryPredictor.js`：瞄准轨迹预测。
 - `BaseSystem.js`：系统基类。
 
@@ -270,7 +271,8 @@
 - `coordinateSystem`
 - `level.levelId` 与文件名匹配
 - `level.code` 前缀
-- 颜色集合、布局行、射击次数、目标分、下落间隔
+- 颜色集合、布局行、射击次数、目标分、显式星级线、下落间隔
+- `initialShotBalls`（1～2 球）与 `openingShotBalls`（3～6 球）的互斥、颜色范围和模式约束
 - 特殊球/障碍球配置
 - 关卡模式、初始下压空间和局内广告道具规则
 - 通关奖励配置

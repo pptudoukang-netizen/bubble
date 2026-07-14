@@ -13,6 +13,7 @@ var UI_IMAGE_SIGN_PREFIX = "image/sign/";
 var UI_IMAGE_LOSE_PREFIX = "image/lose/";
 var UI_IMAGE_WIN_PREFIX = "image/win/";
 var UI_IMAGE_COMMONE_PREFIX = "image/commone/";
+var UI_IMAGE_SETTING_PREFIX = "image/setting/";
 var UI_COMMENT_ANIMATION_LEGACY_PREFIX = "ui/animation/comments/";
 var UI_COMMENT_ANIMATION_BUNDLE_PREFIX = "animation/comments/";
 var UI_BUNDLE_PREFABS = {
@@ -605,6 +606,13 @@ function resolveLoadRoute(path) {
   }
 
   if (path.indexOf(UI_IMAGE_COMMONE_PREFIX) === 0) {
+    return {
+      bundleName: UI_BUNDLE_NAME,
+      path: path
+    };
+  }
+
+  if (path.indexOf(UI_IMAGE_SETTING_PREFIX) === 0) {
     return {
       bundleName: UI_BUNDLE_NAME,
       path: path

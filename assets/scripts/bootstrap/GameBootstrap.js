@@ -277,6 +277,18 @@ cc.Class({
       default: "sound/lock_open",
       tooltip: "锁定球被钥匙解锁时播放的音效资源路径（Resources 相对路径）。"
     },
+    fireworksSfxResource: {
+      default: "sound/fireworks",
+      tooltip: "顶部空槽触发全盘掉落时播放的音效资源路径（Resources 相对路径）。"
+    },
+    iceBreakSfxResource: {
+      default: "sound/ice_break",
+      tooltip: "冰冻球成功解冻时播放的音效资源路径（Resources 相对路径）。"
+    },
+    usePropsSfxResource: {
+      default: "sound/use_props",
+      tooltip: "道具球成功装填进炮台时播放的音效资源路径（Resources 相对路径）。"
+    },
     rewardedVideoAdUnitId: {
       default: "",
       tooltip: "微信激励视频广告位 ID。发布前必须配置。"

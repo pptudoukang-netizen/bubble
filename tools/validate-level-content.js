@@ -64,8 +64,8 @@ function getLevelNumber(fileName) {
   return match ? Number(match[1]) : Number.NaN;
 }
 
-function getExpectedRowColumns(rowIndex) {
-  return BoardLayout.getRowColumnCount(rowIndex, BoardLayout.defaultColumns);
+function getExpectedRowColumns(rowIndex, maxColumns) {
+  return BoardLayout.getRowColumnCount(rowIndex, maxColumns);
 }
 
 function countOccupiedLayoutRows(layout, specialEntities) {
@@ -461,6 +461,56 @@ function validateInitialShotBalls(level, issues) {
   });
 }
 
+function validateOpeningShotBalls(level, issues) {
+  if (level.openingShotBalls === undefined) {
+    return;
+  }
+  if (level.initialShotBalls !== undefined) {
+    issues.push("openingShotBalls and initialShotBalls cannot both be configured");
+  }
+  if (level.levelType !== "normal" || level.playMode !== "shot_limited") {
+    issues.push("openingShotBalls is only supported by normal shot_limited levels");
+  }
+  if (!Array.isArray(level.openingShotBalls) || level.openingShotBalls.length < 3 || level.openingShotBalls.length > 6) {
+    issues.push("openingShotBalls must contain 3 to 6 colors");
+    return;
+  }
+  if (isPositiveInteger(level.shotLimit) && level.openingShotBalls.length > level.shotLimit) {
+    issues.push("openingShotBalls length must not exceed shotLimit");
+  }
+  level.openingShotBalls.forEach(function (color, index) {
+    if (typeof color !== "string" || level.colors.indexOf(color) === -1) {
+      issues.push("openingShotBalls[" + index + "] must use a color from level.colors");
+    }
+  });
+}
+
+function validateStarThresholds(level, issues) {
+  if (level.starThresholds === undefined) {
+    return;
+  }
+  var thresholds = level.starThresholds;
+  if (!thresholds || typeof thresholds !== "object" || Array.isArray(thresholds)) {
+    issues.push("starThresholds must be an object");
+    return;
+  }
+  var fields = Object.keys(thresholds);
+  if (fields.length !== 3 || fields.indexOf("star1") === -1 || fields.indexOf("star2") === -1 || fields.indexOf("star3") === -1) {
+    issues.push("starThresholds must contain only star1, star2 and star3");
+    return;
+  }
+  if (!isPositiveInteger(thresholds.star1) || !isPositiveInteger(thresholds.star2) || !isPositiveInteger(thresholds.star3)) {
+    issues.push("starThresholds values must be positive integers");
+    return;
+  }
+  if (!(thresholds.star1 < thresholds.star2 && thresholds.star2 < thresholds.star3)) {
+    issues.push("starThresholds must be strictly increasing");
+  }
+  if (isPositiveInteger(level.targetScore) && thresholds.star3 > level.targetScore) {
+    issues.push("starThresholds.star3 must not exceed targetScore");
+  }
+}
+
 function validateLevelData(data, expectedLevelId) {
   var issues = [];
   var level = data.level || null;
@@ -514,6 +564,7 @@ function validateLevelData(data, expectedLevelId) {
   if (!isPositiveInteger(level.targetScore)) {
     issues.push("targetScore must be a positive integer");
   }
+  validateStarThresholds(level, issues);
 
   if (!isPositiveInteger(level.dropInterval)) {
     issues.push("dropInterval must be a positive integer");
@@ -577,6 +628,7 @@ function validateLevelData(data, expectedLevelId) {
     if (level.layout.length < MIN_LAYOUT_ROWS) {
       issues.push("layout must contain at least " + MIN_LAYOUT_ROWS + " rows");
     }
+    var layoutMaxColumns = BoardLayout.defaultColumns;
     var normalizedLayoutRows = [];
     level.layout.forEach(function (rowString, rowIndex) {
       if (typeof rowString !== "string") {
@@ -584,7 +636,7 @@ function validateLevelData(data, expectedLevelId) {
         return;
       }
 
-      var expectedColumns = getExpectedRowColumns(rowIndex);
+      var expectedColumns = getExpectedRowColumns(rowIndex, layoutMaxColumns);
       var normalizedRow = rowString;
       if (rowString.length > expectedColumns) {
         issues.push("layout row #" + rowIndex + " exceeds max columns " + expectedColumns);
@@ -604,17 +656,16 @@ function validateLevelData(data, expectedLevelId) {
 
     if (normalizedLayoutRows.length) {
       var topRow = normalizedLayoutRows[0];
-      var topExpectedColumns = getExpectedRowColumns(0);
-      var topSpecialCols = {};
+      var topOccupiedCount = topRow.split("").filter(function (cellCode) {
+        return cellCode !== ".";
+      }).length;
       (level.specialEntities || []).forEach(function (entity) {
         if (entity && entity.row === 0 && Number.isInteger(entity.col)) {
-          topSpecialCols[entity.col] = true;
+          topOccupiedCount += 1;
         }
       });
-      for (var topCol = 0; topCol < topExpectedColumns; topCol += 1) {
-        if (topRow.charAt(topCol) === "." && !topSpecialCols[topCol]) {
-          issues.push("layout top row must be filled at col #" + topCol);
-        }
+      if (topOccupiedCount <= 0) {
+        issues.push("layout top row must contain at least one anchor");
       }
     }
 
@@ -642,7 +693,7 @@ function validateLevelData(data, expectedLevelId) {
 
   validateObjectives(level.winConditions, "win", level, issues);
   validateObjectives(level.bonusObjectives, "bonus", level, issues);
-  if (ClusteredLevelLayout.shouldRedesign(expectedLevelId)) {
+  if (expectedLevelId > FirstHundredLevelDesign.LAST_LEVEL_ID && ClusteredLevelLayout.shouldRedesign(expectedLevelId)) {
     try {
       var clusteredMetrics = ClusteredLevelLayout.validateClusteredLevel(level);
       var requiredGroupedRatio = expectedLevelId <= 40 ? 0.7 : 0.55;
@@ -672,6 +723,7 @@ function validateLevelData(data, expectedLevelId) {
   validateSplitterObjectives(level, issues);
   validateKeyLockCounts(level, issues);
   validateInitialShotBalls(level, issues);
+  validateOpeningShotBalls(level, issues);
   validateIceSnowballSupply(level, issues);
   validateAdPowerupRules(level, issues);
   validateClearRewardItems(level, expectedLevelId, issues);

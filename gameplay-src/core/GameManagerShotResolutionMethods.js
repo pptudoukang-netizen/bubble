@@ -2344,6 +2344,12 @@ function createGameManagerShotResolutionMethods(deps) {
         }
       });
 
+      if (thawed.length > 0) {
+        this._pushRuntimeEvent("ice_thawed", {
+          count: thawed.length
+        });
+      }
+
       return thawed;
     },
 
