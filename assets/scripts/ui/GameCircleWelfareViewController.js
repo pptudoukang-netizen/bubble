@@ -4,14 +4,14 @@ var BundleLoader = require("../utils/BundleLoader");
 var SpriteProxyLayerHelper = require("../utils/SpriteProxyLayerHelper");
 
 var REWARD_ICON_PATHS = {
-  coin: "image/props/coin",
-  stamina: "image/props/treasure_chest",
-  precise_aim: "image/props/aim",
-  swap_ball: "image/props/change_ball",
-  rainbow_ball: "image/props/rainbow_ball",
-  blast_ball: "image/props/blast_ball",
-  barrier_hammer: "image/props/barrier_hammer",
-  snow_removal: "image/props/snow_removal"
+  coin: "ui/image/props/coin",
+  stamina: "ui/image/props/treasure_chest",
+  precise_aim: "ui/image/props/aim",
+  swap_ball: "ui/image/props/change_ball",
+  rainbow_ball: "ui/image/props/rainbow_ball",
+  blast_ball: "ui/image/props/blast_ball",
+  barrier_hammer: "ui/image/props/barrier_hammer",
+  snow_removal: "ui/image/props/snow_removal"
 };
 var GAME_CIRCLE_RENDER_PROXY_ROOT_NAME = "game_circle_render_proxy_root";
 var GAME_CIRCLE_RENDER_PROXY_LAYER_NAMES = {

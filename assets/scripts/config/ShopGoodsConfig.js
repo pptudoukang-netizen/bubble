@@ -9,7 +9,7 @@ module.exports = {
       itemCount: 1,
       displayName: "体力",
       functionText: "补充 1 点关卡挑战体力",
-      iconPath: "image/props/love",
+      iconPath: "ui/image/props/love",
       price: {
         currency: "coin",
         amount: 100
@@ -25,7 +25,7 @@ module.exports = {
       itemCount: 1,
       displayName: "精确瞄准",
       functionText: "瞄准时显示完整反弹路径",
-      iconPath: "image/props/aim",
+      iconPath: "ui/image/props/aim",
       price: {
         currency: "coin",
         amount: 500
@@ -41,7 +41,7 @@ module.exports = {
       itemCount: 1,
       displayName: "换球",
       functionText: "立即更换当前待发射泡泡",
-      iconPath: "image/props/change_ball",
+      iconPath: "ui/image/props/change_ball",
       price: {
         currency: "coin",
         amount: 100
@@ -57,7 +57,7 @@ module.exports = {
       itemCount: 1,
       displayName: "彩虹球",
       functionText: "可匹配任意颜色泡泡",
-      iconPath: "image/props/rainbow_ball",
+      iconPath: "ui/image/props/rainbow_ball",
       price: {
         currency: "coin",
         amount: 300
@@ -73,7 +73,7 @@ module.exports = {
       itemCount: 1,
       displayName: "炸裂球",
       functionText: "命中后炸开周围泡泡",
-      iconPath: "image/props/blast_ball",
+      iconPath: "ui/image/props/blast_ball",
       price: {
         currency: "coin",
         amount: 300
@@ -89,7 +89,7 @@ module.exports = {
       itemCount: 1,
       displayName: "破障锤",
       functionText: "点选并破除一个障碍球",
-      iconPath: "image/props/barrier_hammer",
+      iconPath: "ui/image/props/barrier_hammer",
       price: {
         currency: "coin",
         amount: 300
@@ -105,7 +105,7 @@ module.exports = {
       itemCount: 1,
       displayName: "除雪剂",
       functionText: "从棋盘底部开始清理 10 个雪块",
-      iconPath: "image/props/snow_removal",
+      iconPath: "ui/image/props/snow_removal",
       price: {
         currency: "coin",
         amount: 300

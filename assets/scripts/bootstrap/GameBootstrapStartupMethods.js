@@ -12,12 +12,9 @@ var STARTUP_PREFAB_PROGRESS_SPAN = 0.25;
 var STARTUP_SUBPACKAGE_PHASE_WEIGHT = 0.9;
 var STARTUP_BUNDLE_PHASE_WEIGHT = 0.1;
 var STARTUP_BUNDLE_WEIGHTS = {
-  resources: 9,
-  map: 3
+  map: 1
 };
 var STARTUP_BUNDLE_STAGE_LABELS = {
-  "resources:subpackage": "下载基础资源...",
-  "resources:bundle": "加载基础资源...",
   "map:subpackage": "下载地图资源...",
   "map:bundle": "加载地图资源..."
 };
@@ -132,10 +129,6 @@ function requireStartupBundleProgressEvent(event) {
 
 function createStartupBundleProgressReporter(host) {
   var progressByBundle = {
-    resources: {
-      subpackage: 0,
-      bundle: 0
-    },
     map: {
       subpackage: 0,
       bundle: 0
@@ -190,8 +183,14 @@ module.exports = {
     }
 
     if (!this.enableStartupLoadingView) {
-      this._startupFlowPromise = this._runWeightedStartupTasks().then(function () {
-        this._showLevelSelectView();
+      this._startupFlowPromise = this._waitForNextRenderedFrame().then(function () {
+        return this._runWeightedStartupTasks();
+      }.bind(this)).then(function () {
+        this._initializePostLoadingServices();
+        return this._showLevelSelectView();
+      }.bind(this)).then(function () {
+        return this._waitForNextRenderedFrame();
+      }.bind(this)).then(function () {
         this._scheduleDeferredUiBundleWarmup();
         this._scheduleDeferredFriendStaminaGiftClaim();
         this._scheduleDeferredPlayerCloudProfileSync();
@@ -209,16 +208,33 @@ module.exports = {
       controller.setStage("启动准备中...");
       return controller.playIn();
     }.bind(this)).then(function () {
+      return this._waitForNextRenderedFrame();
+    }.bind(this)).then(function () {
       return this._runWeightedStartupTasks();
+    }.bind(this)).then(function () {
+      this._initializePostLoadingServices();
     }.bind(this)).then(function () {
       if (!this._loadingViewController) {
         return;
       }
       this._loadingViewController.setProgress(1, true);
       this._loadingViewController.setStage("准备进入关卡...");
-      return this._loadingViewController.playOut();
+      var loadingViewController = this._loadingViewController;
+      return loadingViewController.waitForProgressComplete().then(function () {
+        return loadingViewController.playOut();
+      }).then(function () {
+        if (typeof loadingViewController.disposeAndReleaseAssets !== "function") {
+          throw new Error("Startup LoadingView requires disposeAndReleaseAssets.");
+        }
+        loadingViewController.disposeAndReleaseAssets();
+        this._loadingViewController = null;
+        this._loadingViewNode = null;
+      }.bind(this));
     }.bind(this)).then(function () {
-      this._showLevelSelectView();
+      return this._showLevelSelectView();
+    }.bind(this)).then(function () {
+      return this._waitForNextRenderedFrame();
+    }.bind(this)).then(function () {
       this._scheduleDeferredUiBundleWarmup();
       this._scheduleDeferredFriendStaminaGiftClaim();
       this._scheduleDeferredPlayerCloudProfileSync();
@@ -362,10 +378,7 @@ module.exports = {
       return this._startupBundlePrefetchPromise;
     }
 
-    this._startupBundlePrefetchPromise = Promise.all([
-      BundleLoader.ensureResourcesBundleLoaded(options),
-      BundleLoader.ensureNamedBundleLoaded("map", options)
-    ]);
+    this._startupBundlePrefetchPromise = BundleLoader.ensureNamedBundleLoaded("map", options);
 
     return this._startupBundlePrefetchPromise;
   },
@@ -395,6 +408,22 @@ module.exports = {
     }.bind(this));
 
     return this._deferredUiBundleWarmupPromise;
+  },
+
+  _waitForNextRenderedFrame: function () {
+    if (
+      typeof cc === "undefined" ||
+      !cc ||
+      !cc.director ||
+      typeof cc.director.once !== "function" ||
+      !cc.Director ||
+      typeof cc.Director.EVENT_AFTER_DRAW !== "string"
+    ) {
+      return Promise.reject(new Error("Rendered-frame wait requires cc.Director.EVENT_AFTER_DRAW."));
+    }
+    return new Promise(function (resolve) {
+      cc.director.once(cc.Director.EVENT_AFTER_DRAW, resolve);
+    });
   },
 
   _scheduleDeferredFriendStaminaGiftClaim: function () {

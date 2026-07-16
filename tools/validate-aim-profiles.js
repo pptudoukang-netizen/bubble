@@ -5,7 +5,7 @@ var path = require("path");
 var AimTuningProfiles = require("../assets/scripts/config/AimTuningProfiles");
 var LevelPackCompactCodec = require("../assets/scripts/config/LevelPackCompactCodec");
 
-var LEVEL_DIR = path.resolve(__dirname, "../assets/resources/config/levels");
+var LEVEL_DIR = path.resolve(__dirname, "../assets/map/config/levels");
 var REMOTE_PACK_DIR = path.resolve(__dirname, "../remote-level-packs");
 
 function readJson(filePath) {

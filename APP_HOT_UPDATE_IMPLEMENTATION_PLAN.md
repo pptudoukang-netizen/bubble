@@ -34,7 +34,7 @@
 - `assets/scripts/config/RemoteLevelPackLoader.js`
 - `assets/scripts/config/LevelPackManifest.js`
 - `assets/scripts/config/LevelPackIntegrity.js`
-- `assets/resources/config/level_manifest.json`
+- `assets/map/config/level_manifest.json`
 - `remote-level-packs/level_manifest.json`
 
 ### 2.2 局内玩法脚本
@@ -52,7 +52,7 @@ gameplay-src/
 非微信运行时当前默认使用：
 
 ```text
-assets/resources/generated/lazy-gameplay-code.json
+assets/game/generated/lazy-gameplay-code.json
 ```
 
 `assets/scripts/utils/BundleLoader.js` 已支持通过
@@ -160,7 +160,7 @@ https://636c-cloud1-d7gqettx3e9249ca1-1428064608.tcb.qcloud.la/app-hotupdate/man
 建议本地首包文件：
 
 ```text
-assets/resources/config/app_level_manifest.json
+assets/map/config/app_level_manifest.json
 ```
 
 示例：
@@ -324,7 +324,7 @@ assets/scripts/config/AppLevelPackManifest.js
 assets/scripts/config/AppRemoteLevelPackLoader.js
 assets/scripts/services/AppGameplayScriptUpdateService.js
 assets/scripts/config/RemoteLevelPackLoaderFactory.js
-assets/resources/config/app_level_manifest.json
+assets/map/config/app_level_manifest.json
 tools/build-app-gameplay-code.js
 tools/generate-app-level-manifest.js
 tools/validate-app-hot-update.js
@@ -346,7 +346,7 @@ App 脚本生成器必须使用独立输出目录。不得将 App 脚本写入�
 
 ```text
 build/wechatgame/src/lazy-gameplay-code.js
-assets/resources/generated/lazy-gameplay-code.json
+assets/game/generated/lazy-gameplay-code.json
 ```
 
 现有 `tools/build-wechat-gameplay-code.js` 的默认输出行为必须保持不变。

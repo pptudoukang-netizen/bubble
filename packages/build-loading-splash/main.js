@@ -210,15 +210,30 @@ function buildWeChatGameplayCodeBundle(buildDestPath) {
     assertExistingFile(builderPath);
 
     const builderModule = require(builderPath);
-    if (!builderModule || typeof builderModule.buildWeChatGameplayCode !== 'function') {
+    if (!builderModule || typeof builderModule.verifyWeChatGameplayCodeBuild !== 'function') {
         throw new Error(`${PLUGIN_TAG} invalid WeChat gameplay code builder module: ${builderPath}`);
     }
 
-    const result = builderModule.buildWeChatGameplayCode(buildDestPath, Editor.Project.path);
-    Editor.log(`${PLUGIN_TAG} built WeChat gameplay code bundle in ${result.outputPath}`);
-    Editor.log(`${PLUGIN_TAG} patched WeChat main lazy gameplay loader in ${result.mainJsPath}`);
-    Editor.log(`${PLUGIN_TAG} built runtime gameplay code resource in ${result.runtimeResourcePath}`);
+    const result = builderModule.verifyWeChatGameplayCodeBuild(buildDestPath, Editor.Project.path);
+    Editor.log(`${PLUGIN_TAG} verified gameplay code in game subpackage: ${result.builtGameplayPath}`);
+    Editor.log(`${PLUGIN_TAG} removed legacy main-package gameplay loader from ${result.mainJsPath}`);
+    Editor.log(`${PLUGIN_TAG} gameplay source hash: ${result.sourceHash}`);
     Editor.log(`${PLUGIN_TAG} gameplay source modules: ${result.moduleCount}`);
+}
+
+function verifyWeChatCoreCodeBundle(buildDestPath) {
+    const verifierPath = path.join(Editor.Project.path, 'tools', 'verify-wechat-core-bundle.js');
+    assertExistingFile(verifierPath);
+
+    const verifierModule = require(verifierPath);
+    if (!verifierModule || typeof verifierModule.verifyWeChatCoreBundleBuild !== 'function') {
+        throw new Error(`${PLUGIN_TAG} invalid WeChat core bundle verifier module: ${verifierPath}`);
+    }
+
+    const result = verifierModule.verifyWeChatCoreBundleBuild(buildDestPath);
+    Editor.log(`${PLUGIN_TAG} verified core code subpackage: ${result.coreGameJsPath}`);
+    Editor.log(`${PLUGIN_TAG} core script bytes: ${result.coreBytes}`);
+    Editor.log(`${PLUGIN_TAG} built-in main script bytes: ${result.mainBytes}`);
 }
 
 function onBuildFinished(options, callback) {
@@ -235,6 +250,7 @@ function onBuildFinished(options, callback) {
             patchWeChatWorldLeaderboard(options.dest);
             patchWeChatMinigameLoadingCover(options.dest);
             buildWeChatGameplayCodeBundle(options.dest);
+            verifyWeChatCoreCodeBundle(options.dest);
         }
     } catch (error) {
         Editor.error(`${PLUGIN_TAG} build patch failed: ${error && error.stack ? error.stack : error}`);

@@ -2,18 +2,19 @@
 
 var LevelSelectMemoryDiagnostics = require("./LevelSelectMemoryDiagnostics");
 
-var RESOURCES_BUNDLE_NAME = "resources";
 var UI_BUNDLE_NAME = "ui";
 var GAME_BUNDLE_NAME = "game";
-var GAMEPLAY_CODE_RESOURCE_PATH = "generated/lazy-gameplay-code";
+var MAP_BUNDLE_NAME = "map";
+var AUDIO_BUNDLE_NAME = "audio";
 var GAME_ASSET_PREFIX = "game/";
+var MAP_ASSET_PREFIX = "map/";
+var UI_ASSET_PREFIX = "ui/";
+var AUDIO_ASSET_PREFIX = "sound/";
+var MAP_CONFIG_PREFIX = "config/";
+var MAP_LEVEL_VIEW_PATH = "prefabs/ui/LevelView";
 var UI_PREFAB_LEGACY_PREFIX = "prefabs/ui/";
 var UI_PREFAB_BUNDLE_PREFIX = "prefabs/";
-var UI_IMAGE_SIGN_PREFIX = "image/sign/";
-var UI_IMAGE_LOSE_PREFIX = "image/lose/";
-var UI_IMAGE_WIN_PREFIX = "image/win/";
-var UI_IMAGE_COMMONE_PREFIX = "image/commone/";
-var UI_IMAGE_SETTING_PREFIX = "image/setting/";
+var UI_IMAGE_PREFIX = "image/";
 var UI_COMMENT_ANIMATION_LEGACY_PREFIX = "ui/animation/comments/";
 var UI_COMMENT_ANIMATION_BUNDLE_PREFIX = "animation/comments/";
 var UI_BUNDLE_PREFABS = {
@@ -40,12 +41,9 @@ var UI_BUNDLE_PREFABS = {
   Tips: true,
   WinView: true
 };
-var resourcesBundle = null;
-var resourcesBundlePromise = null;
 var namedBundleCache = {};
 var namedBundlePromises = {};
 var namedSubpackagePromises = {};
-var gameplayCodePromise = null;
 
 function getRuntimeGlobal() {
   if (typeof GameGlobal !== "undefined" && GameGlobal) {
@@ -58,25 +56,6 @@ function getRuntimeGlobal() {
     return globalThis;
   }
   return null;
-}
-
-function getAllRuntimeGlobals() {
-  var globals = [];
-  function pushGlobal(candidate) {
-    if (candidate && globals.indexOf(candidate) < 0) {
-      globals.push(candidate);
-    }
-  }
-  if (typeof GameGlobal !== "undefined") {
-    pushGlobal(GameGlobal);
-  }
-  if (typeof window !== "undefined") {
-    pushGlobal(window);
-  }
-  if (typeof globalThis !== "undefined") {
-    pushGlobal(globalThis);
-  }
-  return globals;
 }
 
 function normalizeLoadOptions(options, description) {
@@ -211,66 +190,6 @@ function runBundleLoadDir(bundle, bundleName, path, type, callback) {
   bundle.loadDir(path, wrappedCallback);
 }
 
-function ensureResourcesBundleLoaded(options) {
-  var loadOptions = normalizeLoadOptions(options, "resources bundle load");
-  if (resourcesBundle) {
-    LevelSelectMemoryDiagnostics.increment("bundle.cache:resources");
-    reportProgress(loadOptions, RESOURCES_BUNDLE_NAME, "subpackage", 1);
-    reportProgress(loadOptions, RESOURCES_BUNDLE_NAME, "bundle", 1);
-    return Promise.resolve(resourcesBundle);
-  }
-
-  if (!hasAssetManager()) {
-    return Promise.reject(new Error("AssetManager is required to load resources."));
-  }
-
-  var existingBundle = (cc.assetManager && typeof cc.assetManager.getBundle === "function")
-    ? cc.assetManager.getBundle(RESOURCES_BUNDLE_NAME)
-    : null;
-  if (existingBundle && typeof existingBundle.load === "function") {
-    resourcesBundle = existingBundle;
-    LevelSelectMemoryDiagnostics.increment("bundle.existing:resources");
-    reportProgress(loadOptions, RESOURCES_BUNDLE_NAME, "subpackage", 1);
-    reportProgress(loadOptions, RESOURCES_BUNDLE_NAME, "bundle", 1);
-    return Promise.resolve(resourcesBundle);
-  }
-
-  if (resourcesBundlePromise) {
-    LevelSelectMemoryDiagnostics.increment("bundle.pending:resources");
-    return resourcesBundlePromise;
-  }
-
-  LevelSelectMemoryDiagnostics.increment("bundle.loadBundle:resources");
-  resourcesBundlePromise = ensureWeChatSubpackageLoaded(RESOURCES_BUNDLE_NAME, loadOptions).then(function () {
-    reportProgress(loadOptions, RESOURCES_BUNDLE_NAME, "bundle", 0);
-    return new Promise(function (resolve, reject) {
-      cc.assetManager.loadBundle(RESOURCES_BUNDLE_NAME, function (error, bundle) {
-        if (error) {
-          resourcesBundlePromise = null;
-          reject(toError(error, "Load resources bundle failed."));
-          return;
-        }
-
-        if (!bundle || typeof bundle.load !== "function") {
-          resourcesBundlePromise = null;
-          reject(new Error("Loaded resources bundle is invalid."));
-          return;
-        }
-
-        resourcesBundle = bundle;
-        resourcesBundlePromise = null;
-        reportProgress(loadOptions, RESOURCES_BUNDLE_NAME, "bundle", 1);
-        resolve(resourcesBundle);
-      });
-    });
-  }).catch(function (error) {
-    resourcesBundlePromise = null;
-    throw error;
-  });
-
-  return resourcesBundlePromise;
-}
-
 function isWeChatGameRuntime() {
   return !!(
     typeof wx !== "undefined" &&
@@ -322,10 +241,6 @@ function ensureNamedBundleLoaded(bundleName, options) {
     return Promise.reject(new Error("Invalid bundle name: " + bundleName));
   }
 
-  if (bundleName === RESOURCES_BUNDLE_NAME) {
-    return ensureResourcesBundleLoaded(loadOptions);
-  }
-
   if (namedBundleCache[bundleName]) {
     LevelSelectMemoryDiagnostics.increment("bundle.cache:" + bundleName);
     reportProgress(loadOptions, bundleName, "subpackage", 1);
@@ -371,152 +286,24 @@ function ensureNamedBundleLoaded(bundleName, options) {
   return namedBundlePromises[bundleName];
 }
 
-function resolveGameplayCodePath() {
-  var runtimeGlobal = getRuntimeGlobal();
-  if (!runtimeGlobal) {
-    return "";
-  }
-  if (runtimeGlobal.__BUBBLE_LAZY_GAMEPLAY_CODE_PATH__ === undefined) {
-    return "";
-  }
-  if (typeof runtimeGlobal.__BUBBLE_LAZY_GAMEPLAY_CODE_PATH__ !== "string") {
-    throw new Error("Lazy gameplay code path must be a string.");
-  }
-  if (runtimeGlobal.__BUBBLE_LAZY_GAMEPLAY_CODE_PATH__.trim().length === 0) {
-    throw new Error("Lazy gameplay code path must not be empty.");
-  }
-  var codePath = runtimeGlobal.__BUBBLE_LAZY_GAMEPLAY_CODE_PATH__;
-  if (codePath.indexOf("src/") === 0) {
-    return "./" + codePath;
-  }
-  return codePath;
-}
-
 function ensureGameplayCodeLoaded() {
   var runtimeGlobal = getRuntimeGlobal();
-  var codePath = resolveGameplayCodePath();
-  if (runtimeGlobal && runtimeGlobal.__BUBBLE_LAZY_GAMEPLAY_CODE_LOADED__ === true) {
-    return Promise.resolve();
+  if (!runtimeGlobal) {
+    return Promise.reject(new Error("Runtime global is required after loading the game bundle."));
   }
-  if (gameplayCodePromise) {
-    return gameplayCodePromise;
-  }
-  if (codePath.length === 0) {
-    gameplayCodePromise = loadGameplayCodeFromResource().catch(function (error) {
-      gameplayCodePromise = null;
-      throw error;
-    });
-    return gameplayCodePromise;
-  }
-
-  if (!cc || !cc.assetManager || typeof cc.assetManager.loadScript !== "function") {
-    return Promise.reject(new Error("cc.assetManager.loadScript is required for lazy gameplay code."));
-  }
-  try {
-    rememberCocosRequire();
-  } catch (rememberError) {
-    return Promise.reject(rememberError);
-  }
-
-  gameplayCodePromise = new Promise(function (resolve, reject) {
-    cc.assetManager.loadScript([codePath], function (error) {
-      if (error) {
-        gameplayCodePromise = null;
-        reject(toError(error, "Load lazy gameplay code failed."));
-        return;
-      }
-      var loadedRuntimeGlobal = getRuntimeGlobal();
-      if (!loadedRuntimeGlobal || loadedRuntimeGlobal.__BUBBLE_LAZY_GAMEPLAY_CODE_LOADED__ !== true) {
-        gameplayCodePromise = null;
-        reject(new Error("Lazy gameplay code loaded without completion marker."));
-        return;
-      }
-      if (typeof loadedRuntimeGlobal.__BUBBLE_LAZY_GAMEPLAY_REQUIRE__ !== "function") {
-        gameplayCodePromise = null;
-        reject(new Error("Lazy gameplay code loaded without gameplay module loader."));
-        return;
-      }
-      resolve();
-    });
-  }).catch(function (error) {
-    gameplayCodePromise = null;
-    throw error;
-  });
-
-  return gameplayCodePromise;
-}
-
-function readGameplayCodeFromAsset(asset) {
-  if (!asset || typeof asset !== "object" || Array.isArray(asset)) {
-    throw new Error("Lazy gameplay code resource must be an asset object.");
-  }
-  if (asset.json && typeof asset.json === "object" && typeof asset.json.code === "string") {
-    return asset.json.code;
-  }
-  if (typeof asset.code === "string") {
-    return asset.code;
-  }
-  throw new Error("Lazy gameplay code resource must provide json.code.");
-}
-
-function rememberCocosRequire() {
-  var globals = getAllRuntimeGlobals();
-  if (globals.length === 0) {
-    throw new Error("Runtime global is required before loading lazy gameplay code.");
-  }
-  var cocosRequire = null;
-  globals.forEach(function (runtimeGlobal) {
-    if (!cocosRequire && runtimeGlobal && typeof runtimeGlobal.__BUBBLE_COCOS_REQUIRE__ === "function") {
-      cocosRequire = runtimeGlobal.__BUBBLE_COCOS_REQUIRE__;
-    }
-  });
-  if (!cocosRequire && typeof __require === "function") {
-    cocosRequire = __require;
-  }
-  globals.forEach(function (runtimeGlobal) {
-    if (!cocosRequire && runtimeGlobal && typeof runtimeGlobal.__require === "function") {
-      cocosRequire = runtimeGlobal.__require;
-    }
-  });
-  if (typeof cocosRequire !== "function") {
-    throw new Error("Cocos module loader must exist before loading lazy gameplay code.");
-  }
-  globals.forEach(function (runtimeGlobal) {
-    runtimeGlobal.__BUBBLE_COCOS_REQUIRE__ = cocosRequire;
-  });
-}
-
-function evaluateGameplayCode(codeText) {
-  if (typeof codeText !== "string" || codeText.length === 0) {
-    throw new Error("Lazy gameplay code text must be a non-empty string.");
-  }
-  rememberCocosRequire();
-  var globalEval = eval;
-  globalEval(codeText);
-  var runtimeGlobal = getRuntimeGlobal();
-  if (!runtimeGlobal || runtimeGlobal.__BUBBLE_LAZY_GAMEPLAY_CODE_LOADED__ !== true) {
-    throw new Error("Lazy gameplay code resource evaluated without completion marker.");
+  if (runtimeGlobal.__BUBBLE_LAZY_GAMEPLAY_CODE_LOADED__ !== true) {
+    return Promise.reject(new Error("Game bundle loaded without gameplay code completion marker."));
   }
   if (typeof runtimeGlobal.__BUBBLE_LAZY_GAMEPLAY_REQUIRE__ !== "function") {
-    throw new Error("Lazy gameplay code resource evaluated without gameplay module loader.");
+    return Promise.reject(new Error("Game bundle loaded without gameplay module loader."));
   }
-}
-
-function loadGameplayCodeFromResource() {
-  return new Promise(function (resolve, reject) {
-    loadRes(GAMEPLAY_CODE_RESOURCE_PATH, function (error, asset) {
-      if (error) {
-        reject(toError(error, "Load lazy gameplay code resource failed."));
-        return;
-      }
-      try {
-        evaluateGameplayCode(readGameplayCodeFromAsset(asset));
-        resolve();
-      } catch (evalError) {
-        reject(evalError);
-      }
-    });
-  });
+  if (
+    typeof runtimeGlobal.__BUBBLE_LAZY_GAMEPLAY_CODE_HASH__ !== "string" ||
+    runtimeGlobal.__BUBBLE_LAZY_GAMEPLAY_CODE_HASH__.length === 0
+  ) {
+    return Promise.reject(new Error("Game bundle loaded without gameplay code build hash."));
+  }
+  return Promise.resolve();
 }
 
 function requireGameplayModule(moduleName) {
@@ -533,9 +320,6 @@ function requireGameplayModule(moduleName) {
 function releaseNamedBundle(bundleName) {
   if (!bundleName || typeof bundleName !== "string") {
     throw new Error("Invalid bundle name for release: " + bundleName);
-  }
-  if (bundleName === RESOURCES_BUNDLE_NAME) {
-    throw new Error("Resources bundle cannot be released at runtime.");
   }
   if (!namedBundleCache[bundleName]) {
     return;
@@ -577,6 +361,34 @@ function resolveLoadRoute(path) {
     };
   }
 
+  if (path.indexOf(MAP_ASSET_PREFIX) === 0) {
+    return {
+      bundleName: MAP_BUNDLE_NAME,
+      path: path.slice(MAP_ASSET_PREFIX.length)
+    };
+  }
+
+  if (path.indexOf(UI_ASSET_PREFIX) === 0) {
+    return {
+      bundleName: UI_BUNDLE_NAME,
+      path: path.slice(UI_ASSET_PREFIX.length)
+    };
+  }
+
+  if (path.indexOf(AUDIO_ASSET_PREFIX) === 0) {
+    return {
+      bundleName: AUDIO_BUNDLE_NAME,
+      path: path
+    };
+  }
+
+  if (path.indexOf(MAP_CONFIG_PREFIX) === 0 || path === MAP_LEVEL_VIEW_PATH) {
+    return {
+      bundleName: MAP_BUNDLE_NAME,
+      path: path
+    };
+  }
+
   if (path.indexOf(UI_COMMENT_ANIMATION_LEGACY_PREFIX) === 0) {
     return {
       bundleName: UI_BUNDLE_NAME,
@@ -584,35 +396,7 @@ function resolveLoadRoute(path) {
     };
   }
 
-  if (path.indexOf(UI_IMAGE_SIGN_PREFIX) === 0) {
-    return {
-      bundleName: UI_BUNDLE_NAME,
-      path: path
-    };
-  }
-
-  if (path.indexOf(UI_IMAGE_LOSE_PREFIX) === 0) {
-    return {
-      bundleName: UI_BUNDLE_NAME,
-      path: path
-    };
-  }
-
-  if (path.indexOf(UI_IMAGE_WIN_PREFIX) === 0) {
-    return {
-      bundleName: UI_BUNDLE_NAME,
-      path: path
-    };
-  }
-
-  if (path.indexOf(UI_IMAGE_COMMONE_PREFIX) === 0) {
-    return {
-      bundleName: UI_BUNDLE_NAME,
-      path: path
-    };
-  }
-
-  if (path.indexOf(UI_IMAGE_SETTING_PREFIX) === 0) {
+  if (path.indexOf(UI_IMAGE_PREFIX) === 0) {
     return {
       bundleName: UI_BUNDLE_NAME,
       path: path
@@ -620,18 +404,12 @@ function resolveLoadRoute(path) {
   }
 
   if (path.indexOf(UI_PREFAB_LEGACY_PREFIX) !== 0) {
-    return {
-      bundleName: RESOURCES_BUNDLE_NAME,
-      path: path
-    };
+    throw new Error("No asset bundle route configured for path: " + path);
   }
 
   var prefabName = path.slice(UI_PREFAB_LEGACY_PREFIX.length);
   if (UI_BUNDLE_PREFABS[prefabName] !== true) {
-    return {
-      bundleName: RESOURCES_BUNDLE_NAME,
-      path: path
-    };
+    throw new Error("No UI prefab bundle route configured for path: " + path);
   }
 
   return {
@@ -648,15 +426,8 @@ function loadRes(path, typeOrCallback, callback) {
   }
 
   var route = resolveLoadRoute(path);
-  if (route.bundleName !== RESOURCES_BUNDLE_NAME) {
-    ensureNamedBundleLoaded(route.bundleName).then(function (bundle) {
-      runNamedBundleLoad(route.bundleName, bundle, route.path, args.type, args.callback);
-    }).catch(args.callback);
-    return;
-  }
-
-  ensureResourcesBundleLoaded().then(function (bundle) {
-    runBundleLoad(bundle, RESOURCES_BUNDLE_NAME, path, args.type, args.callback);
+  ensureNamedBundleLoaded(route.bundleName).then(function (bundle) {
+    runNamedBundleLoad(route.bundleName, bundle, route.path, args.type, args.callback);
   }).catch(args.callback);
 }
 
@@ -667,13 +438,13 @@ function loadResDir(path, typeOrCallback, callback) {
     return;
   }
 
-  ensureResourcesBundleLoaded().then(function (bundle) {
-    runBundleLoadDir(bundle, RESOURCES_BUNDLE_NAME, path, args.type, args.callback);
+  var route = resolveLoadRoute(path);
+  ensureNamedBundleLoaded(route.bundleName).then(function (bundle) {
+    runBundleLoadDir(bundle, route.bundleName, route.path, args.type, args.callback);
   }).catch(args.callback);
 }
 
 module.exports = {
-  ensureResourcesBundleLoaded: ensureResourcesBundleLoaded,
   ensureNamedBundleLoaded: ensureNamedBundleLoaded,
   releaseNamedBundle: releaseNamedBundle,
   ensureGameplayBundleLoaded: function () {

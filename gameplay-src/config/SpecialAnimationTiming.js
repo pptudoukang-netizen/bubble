@@ -17,6 +17,19 @@ var molotovBlast = {
   blastTriggerDelay: 0
 };
 
+var swirlRotation = {
+  duration: 0.4,
+  angleDegrees: 60
+};
+
+var wormholeShift = {
+  duration: 0.35
+};
+
+var vineCast = {
+  previewDuration: 0.65
+};
+
 var fairyAssist = {
   flyInDuration: 0.45,
   flyOutDuration: 0.65,
@@ -76,6 +89,9 @@ iceSnowballCollect.floatingIceDropDelay =
 module.exports = Object.freeze({
   keyUnlock: Object.freeze(keyUnlock),
   molotovBlast: Object.freeze(molotovBlast),
+  swirlRotation: Object.freeze(swirlRotation),
+  wormholeShift: Object.freeze(wormholeShift),
+  vineCast: Object.freeze(vineCast),
   fairyAssist: Object.freeze(fairyAssist),
   impactBounce: Object.freeze(impactBounce),
   iceSnowballCollect: Object.freeze(iceSnowballCollect),

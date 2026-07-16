@@ -40,7 +40,7 @@ function createGridWithViewport(levelConfig) {
   return grid;
 }
 
-var LEVEL_DIR = path.resolve(__dirname, "../assets/resources/config/levels");
+var LEVEL_DIR = path.resolve(__dirname, "../assets/map/config/levels");
 var REMOTE_PACK_DIR = path.resolve(__dirname, "../remote-level-packs");
 var MANIFEST_PATH = path.resolve(REMOTE_PACK_DIR, "level_manifest.json");
 
@@ -1178,6 +1178,9 @@ function runMolotovEliminationSequencePositionCase() {
       }
       return null;
     },
+    getNeighborCoordinates: function () {
+      return [];
+    },
     removeCells: function (cells) {
       return cells.slice();
     },
@@ -1194,7 +1197,10 @@ function runMolotovEliminationSequencePositionCase() {
     floating: [],
     reactiveTriggered: [],
     eliminationSequence: [],
-    matchedObjectiveCollected: []
+    matchedObjectiveCollected: [],
+    vineSpiritHits: [],
+    releasedVines: [],
+    witheredVines: []
   };
   manager.currentLevel = {
     level: {
@@ -1370,7 +1376,10 @@ function runMolotovChainSplitterDedupCase() {
     eliminationSequence: [],
     matchedObjectiveCollected: [],
     collectedKeys: [],
-    unlockedLockedBalls: []
+    unlockedLockedBalls: [],
+    vineSpiritHits: [],
+    releasedVines: [],
+    witheredVines: []
   };
 
   manager.currentLevel = {
@@ -1518,7 +1527,10 @@ function runMolotovPendingResolutionSeedsSplitterDedupCase() {
     eliminationSequence: [],
     matchedObjectiveCollected: [],
     collectedKeys: [],
-    unlockedLockedBalls: []
+    unlockedLockedBalls: [],
+    vineSpiritHits: [],
+    releasedVines: [],
+    witheredVines: []
   };
 
   manager.currentLevel = {
@@ -1617,6 +1629,9 @@ function runMolotovBlastPhaseDropsUnsupportedSourceSupportCase() {
       }
       return null;
     },
+    getNeighborCoordinates: function () {
+      return [];
+    },
     removeCells: function (cells) {
       return cells.map(function (cell) {
         if (cell.id === "molotov_source_support") {
@@ -1651,7 +1666,10 @@ function runMolotovBlastPhaseDropsUnsupportedSourceSupportCase() {
       sourceSplitterCol: 0
     }],
     thawed: [],
-    iceCollected: 0
+    iceCollected: 0,
+    vineSpiritHits: [],
+    releasedVines: [],
+    witheredVines: []
   };
 
   manager.currentLevel = {
@@ -1737,6 +1755,9 @@ function runMolotovPendingResolutionFinalizeCase() {
         { id: "anchored_survivor", row: 0, col: 0, color: "B", entityCategory: "normal_ball", entityType: null }
       ];
     },
+    getVineSpirits: function () {
+      return [];
+    },
     assertNoVisualOverlap: function () {}
   };
 
@@ -1771,11 +1792,17 @@ function runMolotovPendingResolutionFinalizeCase() {
     collectedKeys: [],
     unlockedLockedBalls: [],
     fairyAssistEvents: [],
+    vineCastEvaluated: false,
+    vineCasts: [],
+    vineSpiritHits: [],
+    releasedVines: [],
+    witheredVines: [],
     impact: {
       center: { row: 0, col: 0 }
     }
   };
   manager.remainingShots = 1;
+  manager.shotsFired = 1;
   manager.molotovResolutionPending = true;
   manager.molotovPendingResolutionContext = {
     dropScoreRuleKey: "matchedDrop",
@@ -3197,7 +3224,7 @@ function runColorPermutationJarScoreCase() {
   var GameManagerCtor = require("../gameplay-src/core/GameManager");
   var JarCollectorSystem = require("../gameplay-src/systems/JarCollectorSystem");
   var LevelColorPermutation = require("../assets/scripts/config/LevelColorPermutation");
-  var sourceLevel = require("../assets/resources/config/levels/level_001.json");
+  var sourceLevel = require("../assets/map/config/levels/level_001.json");
   var levelConfig = JSON.parse(JSON.stringify(sourceLevel));
   levelConfig.level.colors = ["R", "B"];
   levelConfig.level.colorCount = 2;

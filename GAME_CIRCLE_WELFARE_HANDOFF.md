@@ -48,8 +48,8 @@
 - `assets/scripts/bootstrap/GameBootstrapUiFlowMethods.js`
 
 资源与预制体：
-- `assets/resources/prefabs/ui/GamingCircleView.prefab`
-- `assets/resources/prefabs/ui/LevelView.prefab`
+- `assets/ui/prefabs/GamingCircleView.prefab`
+- `assets/map/prefabs/ui/LevelView.prefab`
 - `assets/image/gaming_circle/*`
 - `assets/image/icon/icon_gaming_circle.png`
 

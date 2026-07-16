@@ -2,16 +2,19 @@
 
 var fs = require("fs");
 var path = require("path");
+var crypto = require("crypto");
 
 var BUNDLE_MARKER = "[wechat-gameplay-code-bundle]";
 var OLD_SPLIT_MARKER = "[wechat-main-index-split]";
 var GAMEPLAY_SOURCE_DIR = "gameplay-src";
-var LAZY_GAMEPLAY_RELATIVE_PATH = path.join("src", "lazy-gameplay-code.js");
-var RUNTIME_RESOURCE_RELATIVE_PATH = path.join("assets", "resources", "generated", "lazy-gameplay-code.json");
-var RUNTIME_RESOURCE_META_RELATIVE_PATH = RUNTIME_RESOURCE_RELATIVE_PATH + ".meta";
+var GAMEPLAY_ASSET_RELATIVE_PATH = path.join("assets", "game", "generated", "lazy-gameplay-code.js");
+var GAMEPLAY_ASSET_META_RELATIVE_PATH = GAMEPLAY_ASSET_RELATIVE_PATH + ".meta";
+var LEGACY_LAZY_GAMEPLAY_RELATIVE_PATH = path.join("src", "lazy-gameplay-code.js");
+var LEGACY_RUNTIME_RESOURCE_RELATIVE_PATH = path.join("assets", "game", "generated", "lazy-gameplay-code.json");
+var BUILT_GAMEPLAY_RELATIVE_PATH = path.join("subpackages", "game", "game.js");
 var GAME_JS_FILE = "game.js";
 var MAIN_JS_FILE = "main.js";
-var RUNTIME_RESOURCE_UUID = "f93b3df4-2c67-4a5d-a3b8-4d4370cf4a71";
+var GAMEPLAY_ASSET_UUID = "f93b3df4-2c67-4a5d-a3b8-4d4370cf4a71";
 
 var REQUIRED_GAMEPLAY_MODULES = [
   "AdRevivePolicy",
@@ -199,10 +202,22 @@ function buildModuleTable(sourceRoot, modulesById) {
   }).join(",\n");
 }
 
+function buildGameplaySourceHash(modulesById) {
+  var hash = crypto.createHash("sha256");
+  Object.keys(modulesById).sort().forEach(function (moduleId) {
+    hash.update(moduleId, "utf8");
+    hash.update("\u0000", "utf8");
+    hash.update(modulesById[moduleId].text, "utf8");
+    hash.update("\u0000", "utf8");
+  });
+  return hash.digest("hex");
+}
+
 function buildLazyBundleText(sourceRoot) {
   var normalizedSourceRoot = normalizePath(sourceRoot);
   var modulesById = buildModuleIndex(normalizedSourceRoot);
   var moduleTable = buildModuleTable(normalizedSourceRoot, modulesById);
+  var gameplaySourceHash = buildGameplaySourceHash(modulesById);
 
   return [
     "// " + BUNDLE_MARKER,
@@ -250,6 +265,7 @@ function buildLazyBundleText(sourceRoot) {
     "    return null;",
     "  }",
     "  var previousRequire = resolvePreviousRequire();",
+    "  var gameplayCodeHash = " + JSON.stringify(gameplaySourceHash) + ";",
     "  var lazyRequire = (function (modules, cache, entries) {",
     "    function load(moduleId, jumped) {",
     "      if (!cache[moduleId]) {",
@@ -281,55 +297,57 @@ function buildLazyBundleText(sourceRoot) {
     moduleTable,
     "  }, {}, []);",
     "  if (runtimeGlobal) {",
-    "    runtimeGlobal.__require = lazyRequire;",
     "    runtimeGlobal.__BUBBLE_LAZY_GAMEPLAY_REQUIRE__ = lazyRequire;",
     "    runtimeGlobal.__BUBBLE_LAZY_GAMEPLAY_CODE_LOADED__ = true;",
+    "    runtimeGlobal.__BUBBLE_LAZY_GAMEPLAY_CODE_HASH__ = gameplayCodeHash;",
     "  }",
     "  if (typeof window !== \"undefined\" && window) {",
-    "    window.__require = lazyRequire;",
     "    window.__BUBBLE_LAZY_GAMEPLAY_REQUIRE__ = lazyRequire;",
     "    window.__BUBBLE_LAZY_GAMEPLAY_CODE_LOADED__ = true;",
+    "    window.__BUBBLE_LAZY_GAMEPLAY_CODE_HASH__ = gameplayCodeHash;",
     "  }",
     "  if (typeof GameGlobal !== \"undefined\" && GameGlobal) {",
-    "    GameGlobal.__require = lazyRequire;",
     "    GameGlobal.__BUBBLE_LAZY_GAMEPLAY_REQUIRE__ = lazyRequire;",
     "    GameGlobal.__BUBBLE_LAZY_GAMEPLAY_CODE_LOADED__ = true;",
+    "    GameGlobal.__BUBBLE_LAZY_GAMEPLAY_CODE_HASH__ = gameplayCodeHash;",
     "  }",
     "  if (typeof globalThis !== \"undefined\" && globalThis) {",
-    "    globalThis.__require = lazyRequire;",
     "    globalThis.__BUBBLE_LAZY_GAMEPLAY_REQUIRE__ = lazyRequire;",
     "    globalThis.__BUBBLE_LAZY_GAMEPLAY_CODE_LOADED__ = true;",
+    "    globalThis.__BUBBLE_LAZY_GAMEPLAY_CODE_HASH__ = gameplayCodeHash;",
     "  }",
     "}());",
     ""
   ].join("\n");
 }
 
-function writeRuntimeResource(projectRoot, bundleText) {
-  var resourcePath = path.join(projectRoot, RUNTIME_RESOURCE_RELATIVE_PATH);
-  var metaPath = path.join(projectRoot, RUNTIME_RESOURCE_META_RELATIVE_PATH);
-  var resourcePayload = {
-    code: bundleText
-  };
-  var metaPayload = {
-    ver: "1.0.2",
-    uuid: RUNTIME_RESOURCE_UUID,
-    importer: "json",
-    subMetas: {}
-  };
-  writeUtf8(resourcePath, JSON.stringify(resourcePayload) + "\n");
-  writeUtf8(metaPath, JSON.stringify(metaPayload, null, 2) + "\n");
-  return resourcePath;
+function removeFileIfExists(filePath) {
+  if (fs.existsSync(filePath)) {
+    if (!fs.statSync(filePath).isFile()) {
+      throw new Error("Expected removable legacy path to be a file: " + filePath);
+    }
+    fs.unlinkSync(filePath);
+  }
 }
 
-function createGameJsPathMarker() {
-  return [
-    "// " + BUNDLE_MARKER,
-    "if (typeof GameGlobal !== \"undefined\" && GameGlobal) {",
-    "  GameGlobal.__BUBBLE_LAZY_GAMEPLAY_CODE_PREPARED__ = true;",
-    "}",
-    ""
-  ].join("\n");
+function writeGameplayAsset(projectRoot, bundleText) {
+  var assetPath = path.join(projectRoot, GAMEPLAY_ASSET_RELATIVE_PATH);
+  var metaPath = path.join(projectRoot, GAMEPLAY_ASSET_META_RELATIVE_PATH);
+  var metaPayload = {
+    ver: "1.1.0",
+    uuid: GAMEPLAY_ASSET_UUID,
+    importer: "javascript",
+    isPlugin: false,
+    loadPluginInWeb: true,
+    loadPluginInNative: true,
+    loadPluginInEditor: false,
+    subMetas: {}
+  };
+  writeUtf8(assetPath, bundleText);
+  writeUtf8(metaPath, JSON.stringify(metaPayload, null, 2) + "\n");
+  removeFileIfExists(path.join(projectRoot, LEGACY_RUNTIME_RESOURCE_RELATIVE_PATH));
+  removeFileIfExists(path.join(projectRoot, LEGACY_RUNTIME_RESOURCE_RELATIVE_PATH + ".meta"));
+  return assetPath;
 }
 
 function stripExistingGameJsMarker(text) {
@@ -349,48 +367,6 @@ function stripExistingGameJsMarker(text) {
   return text.slice(0, markerIndex) + text.slice(loadGameIndex);
 }
 
-function patchGameJs(buildOutputDir) {
-  var gameJsPath = path.join(buildOutputDir, GAME_JS_FILE);
-  assertFile(gameJsPath);
-
-  var text = stripExistingGameJsMarker(readUtf8(gameJsPath));
-  var insertionPoint = text.indexOf("function loadGame()");
-  if (insertionPoint < 0) {
-    throw new Error("Cannot locate loadGame entry in game.js: " + gameJsPath);
-  }
-
-  var updatedText = [
-    text.slice(0, insertionPoint),
-    createGameJsPathMarker(),
-    text.slice(insertionPoint)
-  ].join("");
-  writeUtf8(gameJsPath, updatedText);
-}
-
-function createMainJsLazyLoaderBlock() {
-  return [
-    "        // " + BUNDLE_MARKER,
-    "        if (typeof __require !== 'function') {",
-    "          throw new Error('Cocos module loader is required before lazy gameplay code.');",
-    "        }",
-    "        if (typeof GameGlobal !== 'undefined' && GameGlobal) {",
-    "          GameGlobal.__BUBBLE_COCOS_REQUIRE__ = __require;",
-    "        }",
-    "        if (typeof window !== 'undefined' && window) {",
-    "          window.__BUBBLE_COCOS_REQUIRE__ = __require;",
-    "        }",
-    "        if (typeof globalThis !== 'undefined' && globalThis) {",
-    "          globalThis.__BUBBLE_COCOS_REQUIRE__ = __require;",
-    "        }",
-    "        require('./src/lazy-gameplay-code.js');",
-    "        var lazyRuntimeGlobal = typeof GameGlobal !== 'undefined' && GameGlobal ? GameGlobal : (typeof window !== 'undefined' ? window : null);",
-    "        if (!lazyRuntimeGlobal || lazyRuntimeGlobal.__BUBBLE_LAZY_GAMEPLAY_CODE_LOADED__ !== true) {",
-    "          throw new Error('Lazy gameplay code did not finish loading.');",
-    "        }",
-    ""
-  ].join("\n");
-}
-
 function stripExistingMainJsLazyLoader(text) {
   var marker = "        // " + BUNDLE_MARKER;
   var markerIndex = text.indexOf(marker);
@@ -405,56 +381,97 @@ function stripExistingMainJsLazyLoader(text) {
   return text.slice(0, markerIndex) + text.slice(insertionPoint);
 }
 
-function patchMainJs(buildOutputDir) {
+function stripLegacyBuildArtifacts(buildOutputDir) {
   var mainJsPath = path.join(buildOutputDir, MAIN_JS_FILE);
+  var gameJsPath = path.join(buildOutputDir, GAME_JS_FILE);
   assertFile(mainJsPath);
+  assertFile(gameJsPath);
 
-  var text = stripExistingMainJsLazyLoader(readUtf8(mainJsPath));
-  var insertionTarget = "        // [wechat-minigame-loading-patch] destroy shared canvas cover before engine run";
-  var insertionPoint = text.indexOf(insertionTarget);
-  if (insertionPoint < 0) {
-    throw new Error("Cannot locate engine run hook in main.js: " + mainJsPath);
+  var mainText = stripExistingMainJsLazyLoader(readUtf8(mainJsPath));
+  if (mainText.indexOf("require('./src/lazy-gameplay-code.js')") >= 0) {
+    throw new Error("main.js still synchronously requires legacy gameplay code: " + mainJsPath);
   }
-
-  var updatedText = [
-    text.slice(0, insertionPoint),
-    createMainJsLazyLoaderBlock(),
-    text.slice(insertionPoint)
-  ].join("");
-  writeUtf8(mainJsPath, updatedText);
+  writeUtf8(mainJsPath, mainText);
+  writeUtf8(gameJsPath, stripExistingGameJsMarker(readUtf8(gameJsPath)));
+  removeFileIfExists(path.join(buildOutputDir, LEGACY_LAZY_GAMEPLAY_RELATIVE_PATH));
+  return {
+    mainJsPath: mainJsPath,
+    gameJsPath: gameJsPath
+  };
 }
 
-function buildWeChatGameplayCode(buildOutputDir, projectRoot) {
-  var normalizedProjectRoot = normalizePath(projectRoot || process.cwd());
-  var normalizedBuildOutputDir = normalizePath(buildOutputDir || path.join(normalizedProjectRoot, "build", "wechatgame"));
-  var sourceRoot = path.join(normalizedProjectRoot, GAMEPLAY_SOURCE_DIR);
-  var outputPath = path.join(normalizedBuildOutputDir, LAZY_GAMEPLAY_RELATIVE_PATH);
+function resolveGameplayHash(bundleText) {
+  var match = bundleText.match(/var gameplayCodeHash = "([a-f0-9]{64})";/);
+  if (!match) {
+    throw new Error("Generated gameplay code is missing its build hash.");
+  }
+  return match[1];
+}
 
+function generateGameplayCodeAsset(projectRoot) {
+  if (typeof projectRoot !== "string" || projectRoot.trim().length === 0) {
+    throw new Error("Gameplay code generation requires an explicit project root.");
+  }
+  var normalizedProjectRoot = normalizePath(projectRoot);
+  var sourceRoot = path.join(normalizedProjectRoot, GAMEPLAY_SOURCE_DIR);
   var bundleText = buildLazyBundleText(sourceRoot);
-  var runtimeResourcePath = writeRuntimeResource(normalizedProjectRoot, bundleText);
-  writeUtf8(outputPath, bundleText);
-  patchGameJs(normalizedBuildOutputDir);
-  patchMainJs(normalizedBuildOutputDir);
+  var assetPath = writeGameplayAsset(normalizedProjectRoot, bundleText);
 
   return {
     sourceRoot: sourceRoot,
-    outputPath: outputPath,
-    runtimeResourcePath: runtimeResourcePath,
-    gameJsPath: path.join(normalizedBuildOutputDir, GAME_JS_FILE),
-    mainJsPath: path.join(normalizedBuildOutputDir, MAIN_JS_FILE),
+    assetPath: assetPath,
+    sourceHash: resolveGameplayHash(bundleText),
+    moduleCount: Object.keys(buildModuleIndex(sourceRoot)).length
+  };
+}
+
+function verifyWeChatGameplayCodeBuild(buildOutputDir, projectRoot) {
+  if (typeof projectRoot !== "string" || projectRoot.trim().length === 0) {
+    throw new Error("Gameplay build verification requires an explicit project root.");
+  }
+  if (typeof buildOutputDir !== "string" || buildOutputDir.trim().length === 0) {
+    throw new Error("Gameplay build verification requires an explicit build output directory.");
+  }
+  var normalizedProjectRoot = normalizePath(projectRoot);
+  var normalizedBuildOutputDir = normalizePath(buildOutputDir);
+  var sourceRoot = path.join(normalizedProjectRoot, GAMEPLAY_SOURCE_DIR);
+  var assetPath = path.join(normalizedProjectRoot, GAMEPLAY_ASSET_RELATIVE_PATH);
+  assertFile(assetPath);
+
+  var expectedAssetText = buildLazyBundleText(sourceRoot);
+  var actualAssetText = readUtf8(assetPath);
+  if (actualAssetText !== expectedAssetText) {
+    throw new Error("Gameplay code asset is stale. Run `npm run build:wechat-gameplay-code` before rebuilding Cocos.");
+  }
+
+  var legacyPaths = stripLegacyBuildArtifacts(normalizedBuildOutputDir);
+  var builtGameplayPath = path.join(normalizedBuildOutputDir, BUILT_GAMEPLAY_RELATIVE_PATH);
+  assertFile(builtGameplayPath);
+  var sourceHash = resolveGameplayHash(expectedAssetText);
+  var builtGameplayText = readUtf8(builtGameplayPath);
+  if (builtGameplayText.indexOf(sourceHash) < 0) {
+    throw new Error("game subpackage does not contain the current gameplay code hash: " + sourceHash);
+  }
+
+  return {
+    assetPath: assetPath,
+    builtGameplayPath: builtGameplayPath,
+    mainJsPath: legacyPaths.mainJsPath,
+    gameJsPath: legacyPaths.gameJsPath,
+    sourceHash: sourceHash,
     moduleCount: Object.keys(buildModuleIndex(sourceRoot)).length
   };
 }
 
 if (require.main === module) {
-  var result = buildWeChatGameplayCode(process.argv[2], process.argv[3]);
-  console.log("Built WeChat gameplay code bundle: " + result.outputPath);
-  console.log("Patched WeChat main lazy gameplay loader: " + result.mainJsPath);
-  console.log("Built runtime gameplay code resource: " + result.runtimeResourcePath);
+  var result = generateGameplayCodeAsset(process.argv[2] === undefined ? process.cwd() : process.argv[2]);
+  console.log("Generated game bundle gameplay asset: " + result.assetPath);
+  console.log("Gameplay source hash: " + result.sourceHash);
   console.log("Gameplay module count: " + result.moduleCount);
 }
 
 module.exports = {
-  buildWeChatGameplayCode: buildWeChatGameplayCode,
+  generateGameplayCodeAsset: generateGameplayCodeAsset,
+  verifyWeChatGameplayCodeBuild: verifyWeChatGameplayCodeBuild,
   buildLazyBundleText: buildLazyBundleText
 };

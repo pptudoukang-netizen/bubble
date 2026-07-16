@@ -28,6 +28,10 @@
             "root": "subpackages/animation"
         },
         {
+            "name": "audio",
+            "root": "subpackages/audio"
+        },
+        {
             "name": "game",
             "root": "subpackages/game"
         },
@@ -36,8 +40,8 @@
             "root": "subpackages/map"
         },
         {
-            "name": "resources",
-            "root": "subpackages/resources"
+            "name": "core",
+            "root": "subpackages/core"
         },
         {
             "name": "ui",

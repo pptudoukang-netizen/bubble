@@ -11,7 +11,7 @@ var LevelPackManifest = require("../assets/scripts/config/LevelPackManifest");
 var ClusteredLevelLayout = require("./clustered-level-layout");
 var FirstHundredLevelDesign = require("./first-100-level-design");
 
-var LEVEL_DIR = path.resolve(__dirname, "../assets/resources/config/levels");
+var LEVEL_DIR = path.resolve(__dirname, "../assets/map/config/levels");
 var REMOTE_PACK_DIR = path.resolve(__dirname, "../remote-level-packs");
 var MANIFEST_PATH = path.resolve(REMOTE_PACK_DIR, "level_manifest.json");
 var ALLOWED_COLORS = ["R", "G", "B", "Y", "P"];
@@ -30,7 +30,7 @@ var ALLOWED_ENTITY_CATEGORIES = ["skill_ball", "obstacle_ball", "reactive_ball",
 var ALLOWED_ENTITY_TYPES = {
   skill_ball: ["rainbow", "blast"],
   obstacle_ball: ["stone", "ice"],
-  reactive_ball: ["molotov", "splitter"],
+  reactive_ball: ["molotov", "splitter", "swirl", "vine_spirit", "wormhole"],
   locked_ball: ["locked"],
   key_ball: ["key"]
 };
@@ -42,6 +42,7 @@ var MIN_OCCUPIED_LAYOUT_ROWS = 8;
 var MAX_SHOT_LIMIT = 54;
 var CLEAR_REWARD_START_LEVEL_ID = 1;
 var TOP_BOARD_ROW_INDEX = 0;
+var WORMHOLE_MOVE_DIRECTIONS = ["left", "right"];
 
 function readJson(filePath) {
   var raw = fs.readFileSync(filePath, "utf8");
@@ -97,6 +98,20 @@ function hasUniqueItems(items) {
 
 function isPositiveInteger(value) {
   return Number.isInteger(value) && value > 0;
+}
+
+function getHexNeighborCoordinates(row, col) {
+  var offsets = row % 2 === 1 ? [
+    [-1, 0], [-1, 1], [0, -1], [0, 1], [1, 0], [1, 1]
+  ] : [
+    [-1, -1], [-1, 0], [0, -1], [0, 1], [1, -1], [1, 0]
+  ];
+  return offsets.map(function (offset) {
+    return {
+      row: row + offset[0],
+      col: col + offset[1]
+    };
+  });
 }
 
 function validateObjectives(objectives, objectiveType, level, issues) {
@@ -194,6 +209,11 @@ function validateSpecialEntities(level, normalizedLayoutRows, issues) {
         issues.push("specialEntities[" + index + "] splitter must not be placed in top board row");
       }
     }
+    if (entity.entityCategory === "reactive_ball" && entity.entityType === "wormhole") {
+      if (WORMHOLE_MOVE_DIRECTIONS.indexOf(entity.moveDirection) === -1) {
+        issues.push("specialEntities[" + index + "].moveDirection must be left or right for wormhole");
+      }
+    }
     if (entity.entityCategory === "locked_ball" && entity.entityType === "locked") {
       if (typeof entity.lockedColor !== "string" || level.colors.indexOf(entity.lockedColor) === -1) {
         issues.push("specialEntities[" + index + "].lockedColor must use a color from level.colors");
@@ -227,6 +247,54 @@ function validateSpecialEntities(level, normalizedLayoutRows, issues) {
       issues.push("specialEntities[" + index + "] must be placed on `.` layout slot at " + cellKey);
     }
   });
+
+  var claimedSwirlTrackCells = {};
+  level.specialEntities.forEach(function (entity, index) {
+    if (!entity || entity.entityCategory !== "reactive_ball" || entity.entityType !== "swirl") {
+      return;
+    }
+    if (!Number.isInteger(entity.row) || !Number.isInteger(entity.col)) {
+      return;
+    }
+    getHexNeighborCoordinates(entity.row, entity.col).forEach(function (coordinate) {
+      if (
+        coordinate.row < 0 ||
+        coordinate.row >= normalizedLayoutRows.length ||
+        coordinate.col < 0 ||
+        coordinate.col >= normalizedLayoutRows[coordinate.row].length
+      ) {
+        issues.push("specialEntities[" + index + "] swirl requires a complete six-cell hex track");
+        return;
+      }
+      var coordinateKey = coordinate.row + ":" + coordinate.col;
+      if (seenCells[coordinateKey]) {
+        issues.push("specialEntities[" + index + "] swirl track contains special entity at " + coordinateKey);
+      }
+      if (claimedSwirlTrackCells[coordinateKey]) {
+        issues.push("swirl tracks overlap at " + coordinateKey);
+      }
+      claimedSwirlTrackCells[coordinateKey] = true;
+    });
+  });
+
+  var wormholes = level.specialEntities.filter(function (entity) {
+    return entity && entity.entityCategory === "reactive_ball" && entity.entityType === "wormhole";
+  }).sort(function (left, right) {
+    return left.col - right.col;
+  });
+  if (wormholes.length !== 0 && wormholes.length !== 2) {
+    issues.push("level must contain exactly two wormholes when wormhole is configured");
+  } else if (wormholes.length === 2) {
+    if (wormholes[0].row !== wormholes[1].row) {
+      issues.push("wormholes must be placed on the same row");
+    }
+    if (wormholes[1].col - wormholes[0].col < 2) {
+      issues.push("wormholes must contain at least one interior slot");
+    }
+    if (wormholes[0].moveDirection !== wormholes[1].moveDirection) {
+      issues.push("wormhole pair moveDirection must match");
+    }
+  }
 }
 
 function validateClearRewardItems(level, expectedLevelId, issues) {

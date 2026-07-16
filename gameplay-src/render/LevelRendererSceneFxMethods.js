@@ -997,6 +997,199 @@ LevelRenderer.prototype._playSplitterSpawnAnimation = function (runtimeSnapshot)
   }, this);
 };
 
+LevelRenderer.prototype._playSwirlRotationAnimation = function (runtimeSnapshot) {
+  var resolution = runtimeSnapshot && runtimeSnapshot.lastResolution ? runtimeSnapshot.lastResolution : null;
+  if (!resolution) {
+    return;
+  }
+  if (!Array.isArray(resolution.swirlRotations)) {
+    throw new Error("Swirl animation requires lastResolution.swirlRotations.");
+  }
+  if (!resolution.swirlRotations.length) {
+    return;
+  }
+  if (!this.swirlRotationAnimatedIds || typeof this.swirlRotationAnimatedIds !== "object") {
+    throw new Error("Swirl animated id map is required.");
+  }
+  if (
+    typeof cc.moveTo !== "function" ||
+    typeof cc.rotateBy !== "function" ||
+    typeof cc.sequence !== "function" ||
+    typeof cc.callFunc !== "function"
+  ) {
+    throw new Error("Swirl animation requires Cocos action APIs.");
+  }
+  var boardSnapshot = runtimeSnapshot.board;
+  if (!boardSnapshot || !Number.isInteger(boardSnapshot.maxColumns)) {
+    throw new Error("Swirl animation requires board snapshot geometry.");
+  }
+  if (typeof boardSnapshot.viewportOffsetY !== "number" || !isFinite(boardSnapshot.viewportOffsetY)) {
+    throw new Error("Swirl animation requires finite board viewportOffsetY.");
+  }
+
+  resolution.swirlRotations.forEach(function (rotation) {
+    if (!rotation || typeof rotation.id !== "string" || !rotation.id) {
+      throw new Error("Swirl animation requires rotation id.");
+    }
+    if (this.swirlRotationAnimatedIds[rotation.id]) {
+      return;
+    }
+    if (rotation.duration !== SpecialAnimationTiming.swirlRotation.duration) {
+      throw new Error("Swirl animation duration must match SpecialAnimationTiming.");
+    }
+    if (rotation.angleDegrees !== 60) {
+      throw new Error("Swirl animation angle must be exactly 60 degrees.");
+    }
+    if (!Array.isArray(rotation.moves) || !rotation.moves.length) {
+      throw new Error("Swirl animation requires occupied track moves.");
+    }
+    this.swirlRotationAnimatedIds[rotation.id] = true;
+
+    rotation.moves.forEach(function (move) {
+      if (
+        !move ||
+        !Number.isInteger(move.fromRow) ||
+        !Number.isInteger(move.fromCol) ||
+        !Number.isInteger(move.toRow) ||
+        !Number.isInteger(move.toCol) ||
+        typeof move.targetCellId !== "string" ||
+        !move.targetCellId
+      ) {
+        throw new Error("Swirl animation move is invalid.");
+      }
+      var bubbleNode = this.boardBubbleNodes[move.targetCellId];
+      if (!bubbleNode || !bubbleNode.isValid) {
+        throw new Error("Swirl animation target bubble node missing: " + move.targetCellId);
+      }
+      var startPosition = BoardLayout.getCellPosition(
+        move.fromRow,
+        move.fromCol,
+        boardSnapshot.maxColumns,
+        boardSnapshot.viewportOffsetY
+      );
+      var targetPosition = BoardLayout.getCellPosition(
+        move.toRow,
+        move.toCol,
+        boardSnapshot.maxColumns,
+        boardSnapshot.viewportOffsetY
+      );
+      bubbleNode.stopAllActions();
+      bubbleNode.setPosition(startPosition.x, startPosition.y);
+      bubbleNode.runAction(cc.moveTo(rotation.duration, targetPosition.x, targetPosition.y));
+    }, this);
+
+    if (typeof rotation.centerId !== "string" && typeof rotation.centerId !== "number") {
+      throw new Error("Swirl animation requires centerId.");
+    }
+    var centerNode = this.boardBubbleNodes[String(rotation.centerId)];
+    if (!centerNode || !centerNode.isValid) {
+      throw new Error("Swirl animation center node missing: " + rotation.centerId);
+    }
+    centerNode.stopAllActions();
+    centerNode.angle = 0;
+    centerNode.runAction(cc.sequence(
+      cc.rotateBy(rotation.duration, -rotation.angleDegrees),
+      cc.callFunc(function () {
+        if (!centerNode || !centerNode.isValid) {
+          throw new Error("Swirl animation center node was destroyed before completion.");
+        }
+        centerNode.angle = 0;
+      })
+    ));
+  }, this);
+};
+
+LevelRenderer.prototype._playWormholeShiftAnimation = function (runtimeSnapshot) {
+  var resolution = runtimeSnapshot && runtimeSnapshot.lastResolution ? runtimeSnapshot.lastResolution : null;
+  if (!resolution) {
+    return;
+  }
+  if (!Array.isArray(resolution.wormholeShifts)) {
+    throw new Error("Wormhole animation requires lastResolution.wormholeShifts.");
+  }
+  if (!resolution.wormholeShifts.length) {
+    return;
+  }
+  if (!this.wormholeShiftAnimatedIds || typeof this.wormholeShiftAnimatedIds !== "object") {
+    throw new Error("Wormhole animated id map is required.");
+  }
+  if (typeof cc.moveTo !== "function") {
+    throw new Error("Wormhole animation requires Cocos action APIs.");
+  }
+  var boardSnapshot = runtimeSnapshot.board;
+  if (!boardSnapshot || !Number.isInteger(boardSnapshot.maxColumns)) {
+    throw new Error("Wormhole animation requires board snapshot geometry.");
+  }
+  if (typeof boardSnapshot.viewportOffsetY !== "number" || !isFinite(boardSnapshot.viewportOffsetY)) {
+    throw new Error("Wormhole animation requires finite board viewportOffsetY.");
+  }
+
+  resolution.wormholeShifts.forEach(function (shift) {
+    if (!shift || typeof shift.id !== "string" || !shift.id) {
+      throw new Error("Wormhole animation requires shift id.");
+    }
+    if (this.wormholeShiftAnimatedIds[shift.id]) {
+      return;
+    }
+    if (shift.duration !== SpecialAnimationTiming.wormholeShift.duration) {
+      throw new Error("Wormhole animation duration must match SpecialAnimationTiming.");
+    }
+    if (shift.moveDirection !== "left" && shift.moveDirection !== "right") {
+      throw new Error("Wormhole animation requires left/right moveDirection.");
+    }
+    if (!Array.isArray(shift.moves)) {
+      throw new Error("Wormhole animation requires moves array.");
+    }
+    this.wormholeShiftAnimatedIds[shift.id] = true;
+
+    shift.moves.forEach(function (move) {
+      if (
+        !move ||
+        !Number.isInteger(move.fromRow) ||
+        !Number.isInteger(move.fromCol) ||
+        !Number.isInteger(move.toRow) ||
+        !Number.isInteger(move.toCol) ||
+        typeof move.targetCellId !== "string" ||
+        !move.targetCellId
+      ) {
+        throw new Error("Wormhole animation move is invalid.");
+      }
+      var bubbleNode = this.boardBubbleNodes[move.targetCellId];
+      if (!bubbleNode || !bubbleNode.isValid) {
+        throw new Error("Wormhole animation target bubble node missing: " + move.targetCellId);
+      }
+      var startPosition = BoardLayout.getCellPosition(
+        move.fromRow,
+        move.fromCol,
+        boardSnapshot.maxColumns,
+        boardSnapshot.viewportOffsetY
+      );
+      var targetPosition = BoardLayout.getCellPosition(
+        move.toRow,
+        move.toCol,
+        boardSnapshot.maxColumns,
+        boardSnapshot.viewportOffsetY
+      );
+      bubbleNode.stopAllActions();
+      bubbleNode.setPosition(startPosition.x, startPosition.y);
+      bubbleNode.runAction(cc.moveTo(shift.duration, targetPosition.x, targetPosition.y));
+    }, this);
+
+    [shift.leftWormholeId, shift.rightWormholeId].forEach(function (wormholeId) {
+      if (typeof wormholeId !== "string" && typeof wormholeId !== "number") {
+        throw new Error("Wormhole animation requires endpoint ids.");
+      }
+      var wormholeNode = this.boardBubbleNodes[String(wormholeId)];
+      if (!wormholeNode || !wormholeNode.isValid) {
+        throw new Error("Wormhole animation endpoint node missing: " + wormholeId);
+      }
+      if (wormholeNode.__wormholeShaderActive !== true) {
+        throw new Error("Wormhole animation endpoint must keep its flow shader active: " + wormholeId);
+      }
+    }, this);
+  }, this);
+};
+
 LevelRenderer.prototype._playMolotovBlastAnimation = function (runtimeSnapshot) {
   var resolution = runtimeSnapshot && runtimeSnapshot.lastResolution ? runtimeSnapshot.lastResolution : null;
   var triggered = resolution && Array.isArray(resolution.reactiveTriggered) ? resolution.reactiveTriggered : [];

@@ -12,6 +12,12 @@ function keyFor(row, col) {
   return row + ":" + col;
 }
 
+function buildColorCountSignature(colorCounts) {
+  return Object.keys(colorCounts).sort().map(function (color) {
+    return color + ":" + colorCounts[color];
+  }).join("|");
+}
+
 function normalize(vector) {
   var length = Math.sqrt(vector.x * vector.x + vector.y * vector.y) || 1;
   return {
@@ -30,6 +36,34 @@ function clamp(value, min, max) {
 
 var EPSILON = 0.000001;
 var MIN_VISUAL_CELL_DISTANCE = BoardLayout.bubbleDiameter - 0.5;
+var VINE_SPIRIT_MAX_HEALTH = 3;
+
+function isVineSpiritCell(cell) {
+  return !!(
+    cell &&
+    cell.entityCategory === "reactive_ball" &&
+    cell.entityType === "vine_spirit"
+  );
+}
+
+function isWormholeCell(cell) {
+  return !!(
+    cell &&
+    cell.entityCategory === "reactive_ball" &&
+    cell.entityType === "wormhole"
+  );
+}
+
+function isVineProtectedCell(cell) {
+  return !!(
+    cell &&
+    (
+      isVineSpiritCell(cell) ||
+      isWormholeCell(cell) ||
+      (cell.entityCategory === "normal_ball" && typeof cell.vineOwnerId === "string" && cell.vineOwnerId)
+    )
+  );
+}
 
 function collectOccupiedRows(cells) {
   var rowMap = {};
@@ -69,7 +103,7 @@ function createSpecialEntityRecord(entity, row, col) {
     lockedColor = entity.lockedColor;
   }
 
-  return {
+  var record = {
     id: entity.id || ("special_" + row + "_" + col),
     entityCategory: entity.entityCategory,
     entityType: entity.entityType,
@@ -77,9 +111,17 @@ function createSpecialEntityRecord(entity, row, col) {
     splitColor: entity.splitColor || null,
     lockedColor: lockedColor,
     blastRadius: Number.isInteger(entity.blastRadius) ? entity.blastRadius : null,
+    moveDirection: typeof entity.moveDirection === "string" && entity.moveDirection
+      ? entity.moveDirection
+      : null,
     row: row,
     col: col
   };
+  if (entity.entityCategory === "reactive_ball" && entity.entityType === "vine_spirit") {
+    record.health = Number.isInteger(entity.health) ? entity.health : VINE_SPIRIT_MAX_HEALTH;
+    record.maxHealth = VINE_SPIRIT_MAX_HEALTH;
+  }
+  return record;
 }
 
 function BubbleGrid() {
@@ -94,6 +136,8 @@ function BubbleGrid() {
   this._cellMap = {};
   this._cellsByRow = {};
   this._specialCellMap = {};
+  this._vineOwnerByCell = {};
+  this._vinePreviewOwnerByCell = {};
 }
 
 BubbleGrid.prototype = Object.create(BaseSystem.prototype);
@@ -130,6 +174,8 @@ BubbleGrid.prototype.configureLevel = function (levelConfig) {
     ? clone(levelConfig.level.specialEntities)
     : [];
   this.coordinateSystem = levelConfig.coordinateSystem || this.coordinateSystem;
+  this._vineOwnerByCell = {};
+  this._vinePreviewOwnerByCell = {};
   var layoutMaxColumns = this.layout.reduce(function (max, row) {
     return Math.max(max, row.length);
   }, 0);
@@ -182,6 +228,7 @@ BubbleGrid.prototype._rebuildSpecialCellMap = function () {
 };
 
 BubbleGrid.prototype._createNormalCell = function (row, col, colorCode) {
+  var cellKey = keyFor(row, col);
   return {
     row: row,
     col: col,
@@ -189,6 +236,12 @@ BubbleGrid.prototype._createNormalCell = function (row, col, colorCode) {
     id: row + "_" + col,
     entityCategory: "normal_ball",
     entityType: null,
+    vineOwnerId: Object.prototype.hasOwnProperty.call(this._vineOwnerByCell, cellKey)
+      ? this._vineOwnerByCell[cellKey]
+      : null,
+    vinePreviewOwnerId: Object.prototype.hasOwnProperty.call(this._vinePreviewOwnerByCell, cellKey)
+      ? this._vinePreviewOwnerByCell[cellKey]
+      : null,
     isSpecial: false
   };
 };
@@ -202,7 +255,7 @@ BubbleGrid.prototype._createSpecialCell = function (entity, row, col) {
     lockedColor = entity.lockedColor;
   }
 
-  return {
+  var cell = {
     row: row,
     col: col,
     color: null,
@@ -213,8 +266,19 @@ BubbleGrid.prototype._createSpecialCell = function (entity, row, col) {
     splitColor: entity.splitColor || null,
     lockedColor: lockedColor,
     blastRadius: Number.isInteger(entity.blastRadius) ? entity.blastRadius : null,
+    moveDirection: typeof entity.moveDirection === "string" && entity.moveDirection
+      ? entity.moveDirection
+      : null,
     isSpecial: true
   };
+  if (isVineSpiritCell(entity)) {
+    if (!Number.isInteger(entity.health) || entity.health <= 0 || entity.health > VINE_SPIRIT_MAX_HEALTH) {
+      throw new Error("Vine spirit special cell requires health in [1, 3].");
+    }
+    cell.health = entity.health;
+    cell.maxHealth = VINE_SPIRIT_MAX_HEALTH;
+  }
+  return cell;
 };
 
 BubbleGrid.prototype._rebuildCaches = function () {
@@ -421,6 +485,213 @@ BubbleGrid.prototype.getCells = function () {
   return clone(this.cells);
 };
 
+BubbleGrid.prototype.getClearableCells = function () {
+  return clone(this.cells.filter(function (cell) {
+    return !isWormholeCell(cell);
+  }));
+};
+
+BubbleGrid.prototype.hasWormholePair = function () {
+  var wormholeCount = this.cells.filter(isWormholeCell).length;
+  if (wormholeCount !== 0 && wormholeCount !== 2) {
+    throw new Error("BubbleGrid requires exactly two live wormholes when wormhole is configured.");
+  }
+  return wormholeCount === 2;
+};
+
+BubbleGrid.prototype.getVineSpirits = function () {
+  return this.getCells().filter(isVineSpiritCell).sort(function (left, right) {
+    if (left.row !== right.row) {
+      return left.row - right.row;
+    }
+    if (left.col !== right.col) {
+      return left.col - right.col;
+    }
+    return String(left.id).localeCompare(String(right.id));
+  });
+};
+
+BubbleGrid.prototype.findNearestNormalCellForVine = function (spiritCell, reservedCellKeys) {
+  if (!isVineSpiritCell(spiritCell)) {
+    throw new Error("Vine target selection requires a vine spirit cell.");
+  }
+  if (!reservedCellKeys || typeof reservedCellKeys !== "object" || Array.isArray(reservedCellKeys)) {
+    throw new Error("Vine target selection requires reserved cell key map.");
+  }
+  Object.keys(reservedCellKeys).forEach(function (reservedKey) {
+    if (reservedCellKeys[reservedKey] !== true) {
+      throw new Error("Vine target reserved cell key map must contain true flags.");
+    }
+  });
+
+  var spiritPosition = this.getCellPosition(spiritCell.row, spiritCell.col);
+  var candidates = this.getCells().filter(function (cell) {
+    if (cell.entityCategory !== "normal_ball" || typeof cell.color !== "string" || !cell.color) {
+      return false;
+    }
+    if (typeof cell.vineOwnerId === "string" && cell.vineOwnerId) {
+      return false;
+    }
+    if (typeof cell.vinePreviewOwnerId === "string" && cell.vinePreviewOwnerId) {
+      return false;
+    }
+    return reservedCellKeys[keyFor(cell.row, cell.col)] !== true;
+  }).map(function (cell) {
+    var position = this.getCellPosition(cell.row, cell.col);
+    var dx = position.x - spiritPosition.x;
+    var dy = position.y - spiritPosition.y;
+    return {
+      cell: cell,
+      distanceSq: dx * dx + dy * dy
+    };
+  }, this).sort(function (left, right) {
+    if (left.distanceSq !== right.distanceSq) {
+      return left.distanceSq - right.distanceSq;
+    }
+    if (left.cell.row !== right.cell.row) {
+      return left.cell.row - right.cell.row;
+    }
+    if (left.cell.col !== right.cell.col) {
+      return left.cell.col - right.cell.col;
+    }
+    return String(left.cell.id).localeCompare(String(right.cell.id));
+  });
+
+  return candidates.length ? clone(candidates[0].cell) : null;
+};
+
+BubbleGrid.prototype.beginVinePreview = function (spiritId, targetCell) {
+  if (typeof spiritId !== "string" || !spiritId) {
+    throw new Error("Vine preview requires spiritId.");
+  }
+  if (!targetCell || !Number.isInteger(targetCell.row) || !Number.isInteger(targetCell.col)) {
+    throw new Error("Vine preview requires target cell coordinates.");
+  }
+  var spirit = this.getVineSpirits().filter(function (cell) {
+    return cell.id === spiritId;
+  })[0];
+  if (!spirit) {
+    throw new Error("Vine preview owner is not a live vine spirit: " + spiritId);
+  }
+  var liveTarget = this.getCell(targetCell.row, targetCell.col);
+  if (!liveTarget || liveTarget.entityCategory !== "normal_ball") {
+    throw new Error("Vine preview target must be a live normal ball.");
+  }
+  if (typeof liveTarget.vineOwnerId === "string" && liveTarget.vineOwnerId) {
+    throw new Error("Vine preview target is already entangled.");
+  }
+  if (typeof liveTarget.vinePreviewOwnerId === "string" && liveTarget.vinePreviewOwnerId) {
+    throw new Error("Vine preview target already has a preview owner.");
+  }
+  this._vinePreviewOwnerByCell[keyFor(liveTarget.row, liveTarget.col)] = spiritId;
+  this.version += 1;
+  this._rebuildCaches();
+  return this.getCell(liveTarget.row, liveTarget.col);
+};
+
+BubbleGrid.prototype.completeVineEntanglement = function (spiritId, targetCell) {
+  if (typeof spiritId !== "string" || !spiritId) {
+    throw new Error("Vine entanglement requires spiritId.");
+  }
+  if (!targetCell || !Number.isInteger(targetCell.row) || !Number.isInteger(targetCell.col)) {
+    throw new Error("Vine entanglement requires target cell coordinates.");
+  }
+  var cellKey = keyFor(targetCell.row, targetCell.col);
+  if (this._vinePreviewOwnerByCell[cellKey] !== spiritId) {
+    throw new Error("Vine entanglement preview owner mismatch at " + cellKey + ".");
+  }
+  var liveTarget = this.getCell(targetCell.row, targetCell.col);
+  if (!liveTarget || liveTarget.entityCategory !== "normal_ball") {
+    throw new Error("Vine entanglement target must remain a live normal ball.");
+  }
+  delete this._vinePreviewOwnerByCell[cellKey];
+  this._vineOwnerByCell[cellKey] = spiritId;
+  this.version += 1;
+  this._rebuildCaches();
+  return this.getCell(targetCell.row, targetCell.col);
+};
+
+BubbleGrid.prototype.removeVineAt = function (row, col) {
+  var cellKey = keyFor(row, col);
+  var ownerId = this._vineOwnerByCell[cellKey];
+  if (typeof ownerId !== "string" || !ownerId) {
+    throw new Error("Vine removal requires an entangled normal ball at " + cellKey + ".");
+  }
+  var liveCell = this.getCell(row, col);
+  if (!liveCell || liveCell.entityCategory !== "normal_ball") {
+    throw new Error("Vine removal target must be a live normal ball at " + cellKey + ".");
+  }
+  delete this._vineOwnerByCell[cellKey];
+  this.version += 1;
+  this._rebuildCaches();
+  liveCell.vineOwnerId = ownerId;
+  liveCell.vinePreviewOwnerId = null;
+  return liveCell;
+};
+
+BubbleGrid.prototype.damageVineSpirit = function (spiritId) {
+  if (typeof spiritId !== "string" || !spiritId) {
+    throw new Error("Vine spirit damage requires spiritId.");
+  }
+  var spiritKey = null;
+  var spiritRecord = null;
+  Object.keys(this._specialCellMap).forEach(function (cellKey) {
+    var candidate = this._specialCellMap[cellKey];
+    if (candidate.id !== spiritId) {
+      return;
+    }
+    if (!isVineSpiritCell(candidate)) {
+      throw new Error("Vine spirit damage id belongs to another special entity: " + spiritId);
+    }
+    spiritKey = cellKey;
+    spiritRecord = candidate;
+  }, this);
+  if (!spiritRecord || !spiritKey) {
+    throw new Error("Vine spirit damage requires a live spirit: " + spiritId);
+  }
+  if (!Number.isInteger(spiritRecord.health) || spiritRecord.health <= 0 || spiritRecord.health > VINE_SPIRIT_MAX_HEALTH) {
+    throw new Error("Vine spirit runtime health is invalid: " + spiritId);
+  }
+
+  var healthBefore = spiritRecord.health;
+  spiritRecord.health -= 1;
+  var destroyed = spiritRecord.health === 0;
+  var clearedVines = [];
+  if (destroyed) {
+    delete this._specialCellMap[spiritKey];
+    Object.keys(this._vineOwnerByCell).forEach(function (cellKey) {
+      if (this._vineOwnerByCell[cellKey] !== spiritId) {
+        return;
+      }
+      var coordinates = cellKey.split(":").map(Number);
+      clearedVines.push({
+        ownerId: spiritId,
+        row: coordinates[0],
+        col: coordinates[1],
+        cellId: coordinates[0] + "_" + coordinates[1]
+      });
+      delete this._vineOwnerByCell[cellKey];
+    }, this);
+    Object.keys(this._vinePreviewOwnerByCell).forEach(function (cellKey) {
+      if (this._vinePreviewOwnerByCell[cellKey] === spiritId) {
+        delete this._vinePreviewOwnerByCell[cellKey];
+      }
+    }, this);
+  }
+
+  this.version += 1;
+  this._rebuildCaches();
+  return {
+    spiritId: spiritId,
+    row: spiritRecord.row,
+    col: spiritRecord.col,
+    healthBefore: healthBefore,
+    healthAfter: destroyed ? 0 : spiritRecord.health,
+    destroyed: destroyed,
+    clearedVines: clearedVines
+  };
+};
+
 BubbleGrid.prototype.assertNoVisualOverlap = function (source) {
   assertNoDuplicateCellCoordinates(this.cells);
   if (!DebugFlags.get("gridOverlapCheck")) {
@@ -493,6 +764,229 @@ BubbleGrid.prototype.getNeighborCoordinates = function (row, col) {
   }).filter(function (candidate) {
     return this.isValidCell(candidate.row, candidate.col);
   }, this);
+};
+
+BubbleGrid.prototype.getClockwiseNeighborCoordinates = function (row, col) {
+  var center = this.getCellPosition(row, col);
+  var coordinates = this.getNeighborCoordinates(row, col);
+  if (coordinates.length !== 6) {
+    throw new Error("BubbleGrid clockwise track requires six valid neighbor cells.");
+  }
+  return coordinates.map(function (coordinate) {
+    var position = this.getCellPosition(coordinate.row, coordinate.col);
+    return {
+      row: coordinate.row,
+      col: coordinate.col,
+      angle: Math.atan2(position.y - center.y, position.x - center.x)
+    };
+  }, this).sort(function (left, right) {
+    return right.angle - left.angle;
+  }).map(function (coordinate) {
+    return {
+      row: coordinate.row,
+      col: coordinate.col
+    };
+  });
+};
+
+BubbleGrid.prototype.rotateSwirlNeighborsClockwise = function (swirlCell) {
+  if (
+    !swirlCell ||
+    swirlCell.entityCategory !== "reactive_ball" ||
+    swirlCell.entityType !== "swirl" ||
+    !Number.isInteger(swirlCell.row) ||
+    !Number.isInteger(swirlCell.col)
+  ) {
+    throw new Error("BubbleGrid swirl rotation requires a swirl cell.");
+  }
+  var liveSwirlCell = this.getCell(swirlCell.row, swirlCell.col);
+  if (!liveSwirlCell || liveSwirlCell.id !== swirlCell.id || liveSwirlCell.entityType !== "swirl") {
+    throw new Error("BubbleGrid swirl rotation requires the live swirl center.");
+  }
+
+  var track = this.getClockwiseNeighborCoordinates(swirlCell.row, swirlCell.col);
+  var occupiedBefore = [];
+  var colorCountsBefore = {};
+  track.forEach(function (coordinate) {
+    var cell = this.getCell(coordinate.row, coordinate.col);
+    if (!cell) {
+      occupiedBefore.push(null);
+      return;
+    }
+    if (cell.entityCategory !== "normal_ball" || typeof cell.color !== "string" || !cell.color) {
+      throw new Error(
+        "BubbleGrid swirl track only supports normal colored bubbles at " + coordinate.row + ":" + coordinate.col + "."
+      );
+    }
+    occupiedBefore.push(cell);
+    if (!Object.prototype.hasOwnProperty.call(colorCountsBefore, cell.color)) {
+      colorCountsBefore[cell.color] = 0;
+    }
+    colorCountsBefore[cell.color] += 1;
+  }, this);
+
+  if (occupiedBefore.every(function (cell) { return cell === null; })) {
+    return [];
+  }
+
+  track.forEach(function (coordinate) {
+    delete this._vineOwnerByCell[keyFor(coordinate.row, coordinate.col)];
+    delete this._vinePreviewOwnerByCell[keyFor(coordinate.row, coordinate.col)];
+    this._setCell(coordinate.row, coordinate.col, ".");
+  }, this);
+
+  var moves = [];
+  occupiedBefore.forEach(function (cell, sourceIndex) {
+    if (!cell) {
+      return;
+    }
+    var source = track[sourceIndex];
+    var target = track[(sourceIndex + 1) % track.length];
+    this._setCell(target.row, target.col, cell.color);
+    if (typeof cell.vineOwnerId === "string" && cell.vineOwnerId) {
+      this._vineOwnerByCell[keyFor(target.row, target.col)] = cell.vineOwnerId;
+    }
+    if (typeof cell.vinePreviewOwnerId === "string" && cell.vinePreviewOwnerId) {
+      this._vinePreviewOwnerByCell[keyFor(target.row, target.col)] = cell.vinePreviewOwnerId;
+    }
+    moves.push({
+      color: cell.color,
+      fromRow: source.row,
+      fromCol: source.col,
+      toRow: target.row,
+      toCol: target.col,
+      targetCellId: target.row + "_" + target.col
+    });
+  }, this);
+
+  this.version += 1;
+  this._rebuildCaches();
+  this.assertNoVisualOverlap("swirl rotation");
+
+  var occupiedAfter = this.getNeighborCells(swirlCell.row, swirlCell.col);
+  var colorCountsAfter = {};
+  occupiedAfter.forEach(function (cell) {
+    if (cell.entityCategory !== "normal_ball" || typeof cell.color !== "string" || !cell.color) {
+      throw new Error("BubbleGrid swirl rotation produced a non-normal track cell.");
+    }
+    if (!Object.prototype.hasOwnProperty.call(colorCountsAfter, cell.color)) {
+      colorCountsAfter[cell.color] = 0;
+    }
+    colorCountsAfter[cell.color] += 1;
+  });
+  if (occupiedAfter.length !== moves.length) {
+    throw new Error("BubbleGrid swirl rotation changed the number of track bubbles.");
+  }
+  if (buildColorCountSignature(colorCountsAfter) !== buildColorCountSignature(colorCountsBefore)) {
+    throw new Error("BubbleGrid swirl rotation changed track colors.");
+  }
+  return moves;
+};
+
+BubbleGrid.prototype.shiftWormholeInterior = function () {
+  var wormholes = this.getCells().filter(isWormholeCell).sort(function (left, right) {
+    return left.col - right.col;
+  });
+  if (!wormholes.length) {
+    return null;
+  }
+  if (wormholes.length !== 2) {
+    throw new Error("BubbleGrid wormhole shift requires exactly two wormholes.");
+  }
+  var leftWormhole = wormholes[0];
+  var rightWormhole = wormholes[1];
+  if (leftWormhole.row !== rightWormhole.row) {
+    throw new Error("BubbleGrid wormholes must remain on the same row.");
+  }
+  if (rightWormhole.col - leftWormhole.col < 2) {
+    throw new Error("BubbleGrid wormholes require at least one interior slot.");
+  }
+  if (
+    (leftWormhole.moveDirection !== "left" && leftWormhole.moveDirection !== "right") ||
+    leftWormhole.moveDirection !== rightWormhole.moveDirection
+  ) {
+    throw new Error("BubbleGrid wormhole pair requires matching left/right moveDirection.");
+  }
+
+  var track = [];
+  for (var col = leftWormhole.col + 1; col < rightWormhole.col; col += 1) {
+    if (!this.isValidCell(leftWormhole.row, col)) {
+      throw new Error("BubbleGrid wormhole interior contains an invalid cell.");
+    }
+    track.push({ row: leftWormhole.row, col: col });
+  }
+  var occupiedBefore = track.map(function (coordinate) {
+    return this.getCell(coordinate.row, coordinate.col);
+  }, this);
+  var occupiedCountBefore = occupiedBefore.filter(Boolean).length;
+
+  track.forEach(function (coordinate) {
+    var coordinateKey = keyFor(coordinate.row, coordinate.col);
+    delete this._vineOwnerByCell[coordinateKey];
+    delete this._vinePreviewOwnerByCell[coordinateKey];
+    this._clearSpecialCell(coordinate.row, coordinate.col);
+    this._setCell(coordinate.row, coordinate.col, ".");
+  }, this);
+
+  var directionStep = leftWormhole.moveDirection === "right" ? 1 : -1;
+  var moves = [];
+  occupiedBefore.forEach(function (cell, sourceIndex) {
+    if (!cell) {
+      return;
+    }
+    var targetIndex = (sourceIndex + directionStep + track.length) % track.length;
+    var source = track[sourceIndex];
+    var target = track[targetIndex];
+    var targetKey = keyFor(target.row, target.col);
+    var targetCellId = null;
+    if (cell.entityCategory === "normal_ball") {
+      if (typeof cell.color !== "string" || !cell.color) {
+        throw new Error("BubbleGrid wormhole normal cell requires color.");
+      }
+      this._setCell(target.row, target.col, cell.color);
+      if (typeof cell.vineOwnerId === "string" && cell.vineOwnerId) {
+        this._vineOwnerByCell[targetKey] = cell.vineOwnerId;
+      }
+      if (typeof cell.vinePreviewOwnerId === "string" && cell.vinePreviewOwnerId) {
+        this._vinePreviewOwnerByCell[targetKey] = cell.vinePreviewOwnerId;
+      }
+      targetCellId = target.row + "_" + target.col;
+    } else {
+      this._setCell(target.row, target.col, ".");
+      this._specialCellMap[targetKey] = createSpecialEntityRecord(cell, target.row, target.col);
+      targetCellId = String(cell.id);
+    }
+    moves.push({
+      cellId: String(cell.id),
+      entityCategory: cell.entityCategory,
+      entityType: cell.entityType,
+      fromRow: source.row,
+      fromCol: source.col,
+      toRow: target.row,
+      toCol: target.col,
+      targetCellId: targetCellId
+    });
+  }, this);
+
+  this.version += 1;
+  this._rebuildCaches();
+  this.assertNoVisualOverlap("wormhole shift");
+  var occupiedCountAfter = track.reduce(function (count, coordinate) {
+    return count + (this.hasCell(coordinate.row, coordinate.col) ? 1 : 0);
+  }.bind(this), 0);
+  if (occupiedCountAfter !== occupiedCountBefore) {
+    throw new Error("BubbleGrid wormhole shift changed the number of occupied interior cells.");
+  }
+  return {
+    row: leftWormhole.row,
+    leftWormholeId: leftWormhole.id,
+    leftCol: leftWormhole.col,
+    rightWormholeId: rightWormhole.id,
+    rightCol: rightWormhole.col,
+    moveDirection: leftWormhole.moveDirection,
+    slotCount: track.length,
+    moves: moves
+  };
 };
 
 BubbleGrid.prototype.getNeighborCells = function (row, col) {
@@ -1189,8 +1683,13 @@ BubbleGrid.prototype.removeCells = function (cells) {
       return;
     }
 
+    var liveCell = this.getCell(cell.row, cell.col);
+    if (isVineProtectedCell(liveCell)) {
+      return;
+    }
+
     touchedKeys[key] = true;
-    removed.push(this.getCell(cell.row, cell.col));
+    removed.push(liveCell);
     this._setCell(cell.row, cell.col, ".");
     this._clearSpecialCell(cell.row, cell.col);
   }, this);

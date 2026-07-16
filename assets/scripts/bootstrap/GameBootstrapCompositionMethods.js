@@ -168,103 +168,26 @@ module.exports = {
       this._markStaminaRecoveryBaseline(new Date());
     }
     this.playerResources = this._refreshPlayerResources();
-    this.dailyTaskConfig = clone(DailyTaskConfig);
-    this.dailyTaskStore = new DailyTaskStore({
-      resetTimezone: this.dailyTaskConfig.resetTimezone
-    });
-    this.dailyTaskRewardService = new DailyTaskRewardService({
-      getResources: function () {
-        return this._refreshPlayerResources();
-      }.bind(this),
-      saveResources: function (resources) {
-        this.playerResources = resources;
-        if (!this.playerResourceStore || typeof this.playerResourceStore.save !== "function") {
-          throw new Error("Daily task reward requires PlayerResourceStore.save.");
-        }
-        this.playerResourceStore.save(this.playerResources);
-        return true;
-      }.bind(this)
-    });
-    this.dailyTaskService = new DailyTaskService({
-      config: this.dailyTaskConfig,
-      store: this.dailyTaskStore,
-      rewardService: this.dailyTaskRewardService,
-      telemetry: this.telemetryService
-    });
-    this.dailyTaskState = this.dailyTaskStore.load(new Date());
+    this._postLoadingServicesInitialized = false;
+    this.dailyTaskConfig = null;
+    this.dailyTaskStore = null;
+    this.dailyTaskRewardService = null;
+    this.dailyTaskService = null;
+    this.dailyTaskState = null;
     this.inventoryStore = new InventoryStore();
     this.playerInventory = this.inventoryStore.load();
-    this.starChestConfig = clone(StarChestConfig);
-    this.starChestStore = new StarChestStore({
-      activityId: this.starChestConfig.activityId
-    });
-    this.starChestStore.load();
-    this.starChestRewardService = new StarChestRewardService({
-      getResources: function () {
-        return this._refreshPlayerResources();
-      }.bind(this),
-      saveResources: function (resources) {
-        this.playerResources = resources;
-        if (!this.playerResourceStore || typeof this.playerResourceStore.save !== "function") {
-          throw new Error("Star chest reward requires PlayerResourceStore.save.");
-        }
-        this.playerResourceStore.save(this.playerResources);
-        return true;
-      }.bind(this),
-      addInventoryItem: function (itemId, count) {
-        return this._addInventoryItem(itemId, count);
-      }.bind(this)
-    });
-    this.starChestService = new StarChestService({
-      config: this.starChestConfig,
-      store: this.starChestStore,
-      rewardService: this.starChestRewardService,
-      telemetry: this.telemetryService
-    });
-    this.gameCircleWelfareConfig = clone(GameCircleWelfareConfig);
-    this.gameCircleWelfareStore = new GameCircleWelfareStore({
-      activityId: this.gameCircleWelfareConfig.activityId
-    });
-    this.gameCircleWelfareStore.load(new Date());
-    this.gameCircleButtonAdapter = new GameCircleButtonAdapter({
-      cloud: this.gameCircleWelfareConfig.cloud
-    });
-    this.gameCircleWelfareService = new GameCircleWelfareService({
-      config: this.gameCircleWelfareConfig,
-      store: this.gameCircleWelfareStore,
-      rewardService: this.starChestRewardService,
-      platformClient: this.gameCircleButtonAdapter,
-      telemetry: this.telemetryService
-    });
-    this.shopConfigService = new ShopConfigService({
-      goodsConfig: clone(ShopGoodsConfig),
-      rulesConfig: clone(ShopRulesConfig)
-    });
-    this.shopStateStore = new ShopStateStore();
-    this.shopStateService = new ShopStateService({
-      store: this.shopStateStore,
-      configService: this.shopConfigService
-    });
-    this.shopPurchaseService = new ShopPurchaseService({
-      configService: this.shopConfigService,
-      stateService: this.shopStateService,
-      getCoinBalance: function () {
-        return this._getCurrentCoins();
-      }.bind(this),
-      spendCoin: function (amount, reason) {
-        return this._spendCoinsForShop(amount, reason);
-      }.bind(this),
-      refundCoin: function (amount, reason) {
-        return this._refundCoinsForShop(amount, reason);
-      }.bind(this),
-      addInventoryItem: function (itemId, count, reason) {
-        if (itemId === "stamina") {
-          return this._addStaminaForShop(count, reason);
-        }
-        return this._addInventoryItem(itemId, count);
-      }.bind(this),
-      telemetry: this.telemetryService
-    });
+    this.starChestConfig = null;
+    this.starChestStore = null;
+    this.starChestRewardService = null;
+    this.starChestService = null;
+    this.gameCircleWelfareConfig = null;
+    this.gameCircleWelfareStore = null;
+    this.gameCircleButtonAdapter = null;
+    this.gameCircleWelfareService = null;
+    this.shopConfigService = null;
+    this.shopStateStore = null;
+    this.shopStateService = null;
+    this.shopPurchaseService = null;
     this.selectedPowerupsStore = new SelectedPowerupsStore();
     this.selectedPowerupsState = this.selectedPowerupsStore.load();
     this.newUserGuideStore = new NewUserGuideStore({
@@ -304,9 +227,9 @@ module.exports = {
     };
     this._pendingStartGameTemporaryPowerupCosts = {};
     this._startGameTemporaryPowerupsCommitted = false;
-    this._startGamePropDescriptionViewPrefab = null;
     this._startGamePropDescriptionViewNode = null;
     this._startGamePropDescriptionViewController = null;
+    this._startGamePropDescriptionPrefabLease = null;
     this._startGamePropDescriptionSpriteFrameCache = {};
     this._startGamePropDescriptionSpriteLoadPromise = null;
     this._isStartGamePropDescriptionViewOpen = false;
@@ -347,49 +270,18 @@ module.exports = {
     this._buyViewController = null;
     this._buyViewSkuId = "";
     this._buyViewContext = null;
-    this.dailySignInConfig = clone(DailySignInConfig);
-    this.signInStore = new SignInStore({
-      cycleLength: this.dailySignInConfig.cycleLength,
-      autoPopupOnFirstLogin: this.dailySignInConfig.autoPopupOnFirstLogin,
-      autoPopupUserDefault: this.dailySignInConfig.autoPopupUserDefault
-    });
-    this.signInState = this.signInStore.load();
-    this.signInStore.save(this.signInState);
-    this.newGiftStore = new NewGiftStore();
-    this.newGiftState = this.newGiftStore.load();
-    this.newGiftStore.save(this.newGiftState);
+    this.dailySignInConfig = null;
+    this.signInStore = null;
+    this.signInState = null;
+    this.newGiftStore = null;
+    this.newGiftState = null;
     this.routeConfigStore = new RouteConfigStore();
     this.routeConfig = this.routeConfigStore.load();
-    this.adRewardQuotaStore = new AdRewardQuotaStore({
-      rules: {
-        lose_next_round: {
-          dailyLimit: requireNonNegativeInteger(this.loseAdDailyLimit, "loseAdDailyLimit"),
-          cooldownSec: requireNonNegativeInteger(this.adRewardCooldownSeconds, "adRewardCooldownSeconds")
-        },
-        inventory_refill: {
-          dailyLimit: requireNonNegativeInteger(this.inventoryAdDailyLimit, "inventoryAdDailyLimit"),
-          cooldownSec: requireNonNegativeInteger(this.adRewardCooldownSeconds, "adRewardCooldownSeconds")
-        },
-        stamina_refill: {
-          dailyLimit: requireNonNegativeInteger(this.staminaAdDailyLimit, "staminaAdDailyLimit"),
-          cooldownSec: requireNonNegativeInteger(this.adRewardCooldownSeconds, "adRewardCooldownSeconds")
-        }
-      }
-    });
-    this.adService = new AdService({
-      adUnitId: this.rewardedVideoAdUnitId,
-      interstitialAdUnitId: this.interstitialAdUnitId,
-      logger: Logger,
-      mockEnabled: this.enableMockRewardedAdOnUnsupported === true,
-      hostedShareBehaviorEnabled: true
-    });
-    this.nativeTemplateAdAdapter = new WechatNativeTemplateAdAdapter({
-      logger: Logger
-    });
-    this.levelSelectNativeTemplateAdAdapter = this.nativeTemplateAdAdapter;
-    this.startGameNativeTemplateAdAdapter = new WechatNativeTemplateAdAdapter({
-      logger: Logger
-    });
+    this.adRewardQuotaStore = null;
+    this.adService = null;
+    this.nativeTemplateAdAdapter = null;
+    this.levelSelectNativeTemplateAdAdapter = null;
+    this.startGameNativeTemplateAdAdapter = null;
     this._settingViewPrefab = null;
     this._settingViewNode = null;
     this._awardViewPrefab = null;
@@ -437,34 +329,6 @@ module.exports = {
       timeoutMs: requireNonNegativeInteger(this.networkLoadingTimeoutMs, "networkLoadingTimeoutMs"),
       zIndex: 800
     });
-    this.wechatShareService = new WechatShareService({
-      logger: Logger,
-      shareConfig: {
-        title: this.shareTitle,
-        imageUrl: this.shareImageUrl,
-        query: this.shareQuery
-      }
-    });
-    this.friendGiftService = new FriendGiftService({
-      cloudEnvId: this.friendGiftCloudEnvId
-    });
-    this._bindFriendGiftEnterClaim();
-    this.worldLeaderboardService = new WorldLeaderboardService({
-      cloudEnvId: this.worldLeaderboardCloudEnvId,
-      functionName: this.worldLeaderboardCloudFunctionName,
-      limit: requireNonNegativeInteger(this.worldLeaderboardLimit, "worldLeaderboardLimit")
-    });
-    this._worldLeaderboardUserProfile = this.worldLeaderboardService.loadCachedUserProfile();
-    if (this.enablePlayerCloudProfile === true) {
-      this.playerCloudProfileService = new PlayerCloudProfileService({
-        cloudEnvId: this.playerProfileCloudEnvId,
-        functionName: this.playerProfileCloudFunctionName,
-        syncDebounceMs: requireNonNegativeInteger(this.playerProfileCloudSyncDebounceMs, "playerProfileCloudSyncDebounceMs"),
-        logger: Logger
-      });
-    }
-    this._wechatShareMenuPromise = this._initializeWechatShare();
-
     this._createStatusOverlay();
     this._createDropTestButton();
     this._createRouteEditorButtons();
@@ -500,6 +364,198 @@ module.exports = {
         }.bind(this)
       };
     }
+  },
+
+  _initializePostLoadingServices: function () {
+    if (this._postLoadingServicesInitialized === true) {
+      return this;
+    }
+
+    this.dailyTaskConfig = clone(DailyTaskConfig);
+    this.dailyTaskStore = new DailyTaskStore({
+      resetTimezone: this.dailyTaskConfig.resetTimezone
+    });
+    this.dailyTaskRewardService = new DailyTaskRewardService({
+      getResources: function () {
+        return this._refreshPlayerResources();
+      }.bind(this),
+      saveResources: function (resources) {
+        this.playerResources = resources;
+        if (!this.playerResourceStore || typeof this.playerResourceStore.save !== "function") {
+          throw new Error("Daily task reward requires PlayerResourceStore.save.");
+        }
+        this.playerResourceStore.save(this.playerResources);
+        return true;
+      }.bind(this)
+    });
+    this.dailyTaskService = new DailyTaskService({
+      config: this.dailyTaskConfig,
+      store: this.dailyTaskStore,
+      rewardService: this.dailyTaskRewardService,
+      telemetry: this.telemetryService
+    });
+    this.dailyTaskState = this.dailyTaskStore.load(new Date());
+
+    this.starChestConfig = clone(StarChestConfig);
+    this.starChestStore = new StarChestStore({
+      activityId: this.starChestConfig.activityId
+    });
+    this.starChestStore.load();
+    this.starChestRewardService = new StarChestRewardService({
+      getResources: function () {
+        return this._refreshPlayerResources();
+      }.bind(this),
+      saveResources: function (resources) {
+        this.playerResources = resources;
+        if (!this.playerResourceStore || typeof this.playerResourceStore.save !== "function") {
+          throw new Error("Star chest reward requires PlayerResourceStore.save.");
+        }
+        this.playerResourceStore.save(this.playerResources);
+        return true;
+      }.bind(this),
+      addInventoryItem: function (itemId, count) {
+        return this._addInventoryItem(itemId, count);
+      }.bind(this)
+    });
+    this.starChestService = new StarChestService({
+      config: this.starChestConfig,
+      store: this.starChestStore,
+      rewardService: this.starChestRewardService,
+      telemetry: this.telemetryService
+    });
+
+    this.gameCircleWelfareConfig = clone(GameCircleWelfareConfig);
+    this.gameCircleWelfareStore = new GameCircleWelfareStore({
+      activityId: this.gameCircleWelfareConfig.activityId
+    });
+    this.gameCircleWelfareStore.load(new Date());
+    this.gameCircleButtonAdapter = new GameCircleButtonAdapter({
+      cloud: this.gameCircleWelfareConfig.cloud
+    });
+    this.gameCircleWelfareService = new GameCircleWelfareService({
+      config: this.gameCircleWelfareConfig,
+      store: this.gameCircleWelfareStore,
+      rewardService: this.starChestRewardService,
+      platformClient: this.gameCircleButtonAdapter,
+      telemetry: this.telemetryService
+    });
+
+    this.shopConfigService = new ShopConfigService({
+      goodsConfig: clone(ShopGoodsConfig),
+      rulesConfig: clone(ShopRulesConfig)
+    });
+    this.shopStateStore = new ShopStateStore();
+    this.shopStateService = new ShopStateService({
+      store: this.shopStateStore,
+      configService: this.shopConfigService
+    });
+    this.shopPurchaseService = new ShopPurchaseService({
+      configService: this.shopConfigService,
+      stateService: this.shopStateService,
+      getCoinBalance: function () {
+        return this._getCurrentCoins();
+      }.bind(this),
+      spendCoin: function (amount, reason) {
+        return this._spendCoinsForShop(amount, reason);
+      }.bind(this),
+      refundCoin: function (amount, reason) {
+        return this._refundCoinsForShop(amount, reason);
+      }.bind(this),
+      addInventoryItem: function (itemId, count, reason) {
+        if (itemId === "stamina") {
+          return this._addStaminaForShop(count, reason);
+        }
+        return this._addInventoryItem(itemId, count);
+      }.bind(this),
+      telemetry: this.telemetryService
+    });
+
+    this.dailySignInConfig = clone(DailySignInConfig);
+    this.signInStore = new SignInStore({
+      cycleLength: this.dailySignInConfig.cycleLength,
+      autoPopupOnFirstLogin: this.dailySignInConfig.autoPopupOnFirstLogin,
+      autoPopupUserDefault: this.dailySignInConfig.autoPopupUserDefault
+    });
+    this.signInState = this.signInStore.load();
+    this.signInStore.save(this.signInState);
+    this.newGiftStore = new NewGiftStore();
+    this.newGiftState = this.newGiftStore.load();
+    this.newGiftStore.save(this.newGiftState);
+
+    this.adRewardQuotaStore = new AdRewardQuotaStore({
+      rules: {
+        lose_next_round: {
+          dailyLimit: requireNonNegativeInteger(this.loseAdDailyLimit, "loseAdDailyLimit"),
+          cooldownSec: requireNonNegativeInteger(this.adRewardCooldownSeconds, "adRewardCooldownSeconds")
+        },
+        inventory_refill: {
+          dailyLimit: requireNonNegativeInteger(this.inventoryAdDailyLimit, "inventoryAdDailyLimit"),
+          cooldownSec: requireNonNegativeInteger(this.adRewardCooldownSeconds, "adRewardCooldownSeconds")
+        },
+        stamina_refill: {
+          dailyLimit: requireNonNegativeInteger(this.staminaAdDailyLimit, "staminaAdDailyLimit"),
+          cooldownSec: requireNonNegativeInteger(this.adRewardCooldownSeconds, "adRewardCooldownSeconds")
+        }
+      }
+    });
+    this.adService = new AdService({
+      adUnitId: this.rewardedVideoAdUnitId,
+      interstitialAdUnitId: this.interstitialAdUnitId,
+      logger: Logger,
+      mockEnabled: this.enableMockRewardedAdOnUnsupported === true,
+      hostedShareBehaviorEnabled: true
+    });
+    this.nativeTemplateAdAdapter = new WechatNativeTemplateAdAdapter({
+      logger: Logger
+    });
+    this.levelSelectNativeTemplateAdAdapter = this.nativeTemplateAdAdapter;
+    this.startGameNativeTemplateAdAdapter = new WechatNativeTemplateAdAdapter({
+      logger: Logger
+    });
+
+    this.wechatShareService = new WechatShareService({
+      logger: Logger,
+      shareConfig: {
+        title: this.shareTitle,
+        imageUrl: this.shareImageUrl,
+        query: this.shareQuery
+      }
+    });
+    this.friendGiftService = new FriendGiftService({
+      cloudEnvId: this.friendGiftCloudEnvId
+    });
+    this.worldLeaderboardService = new WorldLeaderboardService({
+      cloudEnvId: this.worldLeaderboardCloudEnvId,
+      functionName: this.worldLeaderboardCloudFunctionName,
+      limit: requireNonNegativeInteger(this.worldLeaderboardLimit, "worldLeaderboardLimit")
+    });
+    this._worldLeaderboardUserProfile = this.worldLeaderboardService.loadCachedUserProfile();
+    if (this.enablePlayerCloudProfile === true) {
+      this.playerCloudProfileService = new PlayerCloudProfileService({
+        cloudEnvId: this.playerProfileCloudEnvId,
+        functionName: this.playerProfileCloudFunctionName,
+        syncDebounceMs: requireNonNegativeInteger(this.playerProfileCloudSyncDebounceMs, "playerProfileCloudSyncDebounceMs"),
+        logger: Logger
+      });
+    }
+
+    this._postLoadingServicesInitialized = true;
+    this._bindGameCircleWelfareReturnRefresh();
+    this._bindFriendGiftEnterClaim();
+    if (typeof this._bindReturnToForegroundInterstitialAd !== "function") {
+      throw new Error("Post-loading service initialization requires foreground interstitial binding.");
+    }
+    this._bindReturnToForegroundInterstitialAd();
+    this._wechatShareMenuPromise = this._initializeWechatShare();
+
+    if (RuntimeModeConfig.exposeDebugHandle === true && typeof window !== "undefined") {
+      if (!window["__bubbleDebug"] || window["__bubbleDebug"].bootstrap !== this) {
+        throw new Error("Post-loading service initialization requires the Bubble debug handle.");
+      }
+      window["__bubbleDebug"].gameCircleWelfareService = this.gameCircleWelfareService;
+      window["__bubbleDebug"].playerCloudProfileService = this.playerCloudProfileService;
+    }
+    return this;
   },
 
   _ensureGameplayKernel: function () {

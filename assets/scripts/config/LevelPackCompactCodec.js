@@ -7,6 +7,9 @@ var ENTITY_TYPE_TO_CODE = {
   "obstacle_ball/stone": "s",
   "reactive_ball/molotov": "m",
   "reactive_ball/splitter": "p",
+  "reactive_ball/swirl": "w",
+  "reactive_ball/vine_spirit": "v",
+  "reactive_ball/wormhole": "h",
   "locked_ball/locked": "l",
   "key_ball/key": "k",
   "skill_ball/blast": "b",
@@ -18,6 +21,9 @@ var ENTITY_CODE_TO_TYPE = {
   s: { category: "obstacle_ball", type: "stone", idPrefix: "stone" },
   m: { category: "reactive_ball", type: "molotov", idPrefix: "molotov" },
   p: { category: "reactive_ball", type: "splitter", idPrefix: "splitter" },
+  w: { category: "reactive_ball", type: "swirl", idPrefix: "swirl" },
+  v: { category: "reactive_ball", type: "vine_spirit", idPrefix: "vine_spirit" },
+  h: { category: "reactive_ball", type: "wormhole", idPrefix: "wormhole" },
   l: { category: "locked_ball", type: "locked", idPrefix: "locked" },
   k: { category: "key_ball", type: "key", idPrefix: "key" },
   b: { category: "skill_ball", type: "blast", idPrefix: "blast" },
@@ -75,6 +81,8 @@ function encodeSpecialEntity(entity, index, levelKey) {
     encoded.push(assertString(entity.splitColor, "specialEntities[" + index + "].splitColor"));
   } else if (typeCode === "l") {
     encoded.push(assertString(entity.lockedColor, "specialEntities[" + index + "].lockedColor"));
+  } else if (typeCode === "h") {
+    encoded.push(assertString(entity.moveDirection, "specialEntities[" + index + "].moveDirection"));
   }
 
   return encoded;
@@ -125,6 +133,11 @@ function decodeSpecialEntity(encoded, index, levelKey) {
     } else {
       throw new Error("compact locked specialEntities[" + index + "] must contain lockedColor: " + levelKey);
     }
+  } else if (typeCode === "h") {
+    if (encoded.length !== 4) {
+      throw new Error("compact wormhole specialEntities[" + index + "] must contain moveDirection: " + levelKey);
+    }
+    entity.moveDirection = assertString(encoded[3], "compact specialEntities[" + index + "][3]");
   } else if (typeCode === "k") {
     if (encoded.length === 4) {
       return entity;

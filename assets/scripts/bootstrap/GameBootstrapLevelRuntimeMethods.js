@@ -32,6 +32,13 @@ module.exports = {
       });
       return;
     }
+    if (this._currentRunContext && this._currentRunContext.mode === "test") {
+      if (typeof this._startTestLevelEntry !== "function") {
+        throw new Error("Test level retry requires _startTestLevelEntry.");
+      }
+      this._startTestLevelEntry();
+      return;
+    }
     var currentLevelId = this.currentLevelConfig.level
       ? Math.max(1, Math.floor(Number(this.currentLevelConfig.level.levelId) || 0))
       : 0;

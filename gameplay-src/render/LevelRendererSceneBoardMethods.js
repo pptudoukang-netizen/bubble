@@ -8,6 +8,7 @@ function attachLevelRendererSceneBoardMethods(LevelRenderer, deps) {
   var PREFAB_PATHS = deps.PREFAB_PATHS;
   var ICE_OVERLAY_OPACITY = deps.ICE_OVERLAY_OPACITY;
   var BOARD_BUBBLE_SIZE = deps.BOARD_BUBBLE_SIZE;
+  var VINE_VISUAL_SIZE = deps.VINE_VISUAL_SIZE;
   var TEST_SLOT_RADIUS = deps.TEST_SLOT_RADIUS;
   var FairyAssistConfig = deps.FairyAssistConfig;
   var ensureSprite = deps.ensureSprite;
@@ -28,6 +29,9 @@ function attachLevelRendererSceneBoardMethods(LevelRenderer, deps) {
   var TOP_SLOT_STAR_MIN_SCALE = 0.92;
   var TOP_SLOT_STAR_MAX_SCALE = 1.08;
   var TOP_SLOT_STAR_TWINKLE_DURATION = 0.45;
+  var VINE_OVERLAY_NODE_NAME = "VinesOverlay";
+  var VINE_HEALTH_NODE_NAME = "VineSpiritHealth";
+  var VINE_PREVIEW_FADE_DURATION = 0.18;
 
   function requirePositiveSize(size, fieldName) {
     if (
@@ -185,7 +189,10 @@ function attachLevelRendererSceneBoardMethods(LevelRenderer, deps) {
       boardSnapshot.viewportOffsetY,
       resolveBoardBubblePrefabPath(cell),
       resolveBallVisualKey(cell),
-      lockedColorKey
+      lockedColorKey,
+      typeof cell.health === "number" ? cell.health : "",
+      typeof cell.vineOwnerId === "string" ? cell.vineOwnerId : "",
+      typeof cell.vinePreviewOwnerId === "string" ? cell.vinePreviewOwnerId : ""
     ].join("|");
   }
 
@@ -373,6 +380,78 @@ function attachLevelRendererSceneBoardMethods(LevelRenderer, deps) {
     }
   }
 
+  function syncVineOverlay(renderer, node, cell) {
+    if (!node || !node.isValid) {
+      throw new Error("Vine overlay requires valid board node.");
+    }
+    var spriteTarget = node.getChildByName("Icon") || node;
+    var overlayNode = getOrCreateChild(spriteTarget, VINE_OVERLAY_NODE_NAME);
+    var isEntangled = !!(cell && typeof cell.vineOwnerId === "string" && cell.vineOwnerId);
+    var isPreview = !!(cell && typeof cell.vinePreviewOwnerId === "string" && cell.vinePreviewOwnerId);
+    if (!isEntangled && !isPreview) {
+      overlayNode.stopAllActions();
+      overlayNode.__vinePreviewActive = false;
+      overlayNode.active = false;
+      overlayNode.opacity = 255;
+      return;
+    }
+    var vinesFrame = renderer.spriteFrameCache[BALL_RESOURCES.VINES];
+    if (!vinesFrame) {
+      throw new Error("Vine overlay sprite was not preloaded: " + BALL_RESOURCES.VINES);
+    }
+    overlayNode.active = true;
+    overlayNode.setPosition(0, 0);
+    overlayNode.zIndex = 12;
+    var vinesSprite = ensureSprite(overlayNode, vinesFrame);
+    vinesSprite.trim = false;
+    overlayNode.setContentSize(VINE_VISUAL_SIZE);
+    if (isPreview) {
+      if (overlayNode.__vinePreviewActive !== true) {
+        overlayNode.stopAllActions();
+        overlayNode.opacity = 80;
+        overlayNode.__vinePreviewActive = true;
+        overlayNode.runAction(cc.repeatForever(cc.sequence(
+          cc.fadeTo(VINE_PREVIEW_FADE_DURATION, 210),
+          cc.fadeTo(VINE_PREVIEW_FADE_DURATION, 80)
+        )));
+      }
+      return;
+    }
+    overlayNode.stopAllActions();
+    overlayNode.__vinePreviewActive = false;
+    overlayNode.opacity = 255;
+  }
+
+  function syncVineSpiritHealth(node, cell) {
+    if (!node || !node.isValid) {
+      throw new Error("Vine spirit health requires valid board node.");
+    }
+    var healthNode = getOrCreateChild(node, VINE_HEALTH_NODE_NAME);
+    if (!cell || cell.entityType !== "vine_spirit") {
+      healthNode.active = false;
+      return;
+    }
+    if (!Number.isInteger(cell.health) || cell.health <= 0 || cell.health > 3) {
+      throw new Error("Vine spirit render health must be in [1, 3].");
+    }
+    healthNode.active = true;
+    healthNode.setPosition(23, -25);
+    healthNode.zIndex = 20;
+    healthNode.color = cc.Color.WHITE;
+    var label = ensureLabel(healthNode, String(cell.health), 20, 22);
+    label.horizontalAlign = cc.Label.HorizontalAlign.CENTER;
+    label.verticalAlign = cc.Label.VerticalAlign.CENTER;
+    var outline = healthNode.getComponent(cc.LabelOutline);
+    if (!outline) {
+      outline = healthNode.addComponent(cc.LabelOutline);
+    }
+    if (!outline) {
+      throw new Error("Vine spirit health requires cc.LabelOutline.");
+    }
+    outline.color = cc.Color.BLACK;
+    outline.width = 2;
+  }
+
   function instantiateRequired(prefabFactory, prefabPath, parent, name, ownerName) {
     if (!prefabFactory || typeof prefabFactory.instantiate !== "function") {
       throw new Error(ownerName + " requires prefabFactory.instantiate.");
@@ -391,7 +470,28 @@ function attachLevelRendererSceneBoardMethods(LevelRenderer, deps) {
     return node.__bubblePrefabPath;
   }
 
+LevelRenderer.prototype._syncCurrentResolutionFloatingCellIds = function () {
+  if (!this.lastRuntimeSnapshot || !this.lastRuntimeSnapshot.lastResolution) {
+    throw new Error("Board rendering requires lastRuntimeSnapshot.lastResolution.");
+  }
+  var floating = this.lastRuntimeSnapshot.lastResolution.floating;
+  if (!Array.isArray(floating)) {
+    throw new Error("Board rendering requires lastResolution.floating array.");
+  }
+
+  var floatingCellIds = {};
+  floating.forEach(function (cell) {
+    if (!cell || (typeof cell.id !== "string" && typeof cell.id !== "number")) {
+      throw new Error("Board rendering requires every floating cell to have an id.");
+    }
+    floatingCellIds[String(cell.id)] = true;
+  });
+  this.currentResolutionFloatingCellIds = floatingCellIds;
+  return floatingCellIds;
+};
+
 LevelRenderer.prototype._renderBoard = function (boardSnapshot) {
+  this._syncCurrentResolutionFloatingCellIds();
   this.lastBoardVersion = boardSnapshot.version;
   this.lastBoardViewportOffsetY = boardSnapshot.viewportOffsetY;
   this.boardRenderTick += 1;
@@ -411,6 +511,9 @@ LevelRenderer.prototype._renderBoard = function (boardSnapshot) {
         existingNode.parent = this.layers.board;
       }
       restoreBoardBubbleVisualState(this, existingNode, cell);
+      this.wormholeShaderRenderer.syncNode(existingNode, cell);
+      syncVineOverlay(this, existingNode, cell);
+      syncVineSpiritHealth(existingNode, cell);
       this._applySplitterSpawnHiddenBoardState(existingNode, cell.id);
       this._applyMolotovBlastHiddenBoardState(existingNode, cell.id);
       return;
@@ -424,6 +527,9 @@ LevelRenderer.prototype._renderBoard = function (boardSnapshot) {
     bubbleNode.setScale(1);
     bubbleNode.opacity = 255;
     this._applyBoardBubbleVisualCached(bubbleNode, cell, BOARD_BUBBLE_SIZE);
+    this.wormholeShaderRenderer.syncNode(bubbleNode, cell);
+    syncVineOverlay(this, bubbleNode, cell);
+    syncVineSpiritHealth(bubbleNode, cell);
     this._applySplitterSpawnHiddenBoardState(bubbleNode, cell.id);
     this._applyMolotovBlastHiddenBoardState(bubbleNode, cell.id);
   }, this);
@@ -514,6 +620,7 @@ LevelRenderer.prototype._acquireBoardBubbleNode = function (cell) {
     var expectedPath = resolveBoardBubblePrefabPath(cell);
     if (existing.__bubblePrefabPath !== expectedPath) {
       this._removeBarrierHammerHintNodeByCellId(nodeId);
+      this.wormholeShaderRenderer.resetNode(existing);
       existing.stopAllActions();
       existing.active = false;
       existing.removeFromParent(false);
@@ -549,6 +656,12 @@ LevelRenderer.prototype._acquireBoardBubbleNode = function (cell) {
 LevelRenderer.prototype._resetBubblePrefabNode = function (node, cell) {
   if (!node || !node.isValid) {
     throw new Error("Bubble prefab node is required.");
+  }
+  if (!this.wormholeShaderRenderer || typeof this.wormholeShaderRenderer.resetNode !== "function") {
+    throw new Error("Bubble prefab reset requires WormholeShaderRenderer.");
+  }
+  if (!cell || cell.entityType !== "wormhole") {
+    this.wormholeShaderRenderer.resetNode(node);
   }
   node.stopAllActions();
   node.angle = 0;
@@ -588,10 +701,22 @@ LevelRenderer.prototype._applyBoardBubbleVisualCached = function (node, cell, fo
     return;
   }
 
+  if (cell.entityType === "vine_spirit") {
+    this._applyBallVisualCached(node, cell, VINE_VISUAL_SIZE);
+    return;
+  }
+
   this._applyBallVisualCached(node, cell, forcedSize);
 };
 
 LevelRenderer.prototype._recycleInactiveBoardBubbleNodes = function (activeTick) {
+  if (
+    !this.currentResolutionFloatingCellIds ||
+    typeof this.currentResolutionFloatingCellIds !== "object" ||
+    Array.isArray(this.currentResolutionFloatingCellIds)
+  ) {
+    throw new Error("Inactive board bubble recycling requires current floating cell id map.");
+  }
   for (var cellId in this.boardBubbleNodes) {
     if (!Object.prototype.hasOwnProperty.call(this.boardBubbleNodes, cellId)) {
       continue;
@@ -601,12 +726,17 @@ LevelRenderer.prototype._recycleInactiveBoardBubbleNodes = function (activeTick)
     if (node && node.__boardTick === activeTick) {
       continue;
     }
-    if (this.bubbleShatterRenderer && this.bubbleShatterRenderer.isCellShatterPending(cellId)) {
+    if (
+      this.bubbleShatterRenderer &&
+      this.bubbleShatterRenderer.isCellShatterPending(cellId) &&
+      this.currentResolutionFloatingCellIds[cellId] !== true
+    ) {
       continue;
     }
 
     if (node) {
       this._removeBarrierHammerHintNodeByCellId(cellId);
+      this.wormholeShaderRenderer.resetNode(node);
       node.stopAllActions();
       node.active = false;
       node.removeFromParent(false);

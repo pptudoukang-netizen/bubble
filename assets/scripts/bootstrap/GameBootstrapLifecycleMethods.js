@@ -9,9 +9,12 @@ module.exports = {
       this._resizeCallback = this._handleViewResize.bind(this);
       cc.view.setResizeCallback(this._resizeCallback);
     }
-    this._bindGameCircleWelfareReturnRefresh();
-    this._bindFriendGiftEnterClaim();
-    if (typeof this._bindReturnToForegroundInterstitialAd === "function") {
+    if (this._postLoadingServicesInitialized === true) {
+      this._bindGameCircleWelfareReturnRefresh();
+      this._bindFriendGiftEnterClaim();
+      if (typeof this._bindReturnToForegroundInterstitialAd !== "function") {
+        throw new Error("Enabled post-loading services require foreground interstitial binding.");
+      }
       this._bindReturnToForegroundInterstitialAd();
     }
     if (this.isSelectingLevel && typeof this._ensureStaminaRecoveryTicker === "function") {
@@ -70,6 +73,10 @@ module.exports = {
     if (this.audioManager) {
       this.audioManager.stopBgm();
       this.audioManager.stopAllSfx();
+      if (typeof this.audioManager.releaseCachedClipsExcept !== "function") {
+        throw new Error("GameBootstrap destroy requires AudioManager.releaseCachedClipsExcept.");
+      }
+      this.audioManager.releaseCachedClipsExcept([]);
     }
     if (this.networkLoadingOverlay && typeof this.networkLoadingOverlay.destroy === "function") {
       this.networkLoadingOverlay.destroy();

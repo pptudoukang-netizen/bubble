@@ -1101,8 +1101,8 @@ schema 2 的整体迁移放在 P4 开始时完成；P0/P1 不为尚未出现的�
 
 所有新图以现有资源为风格参考：
 
-- 炮台：`assets/resources/image/ball/fort.png`
-- 琉璃球：`assets/resources/image/ball/red_ball.png`
+- 炮台：`assets/game/image/ball/fort.png`
+- 琉璃球：`assets/game/image/ball/red_ball.png`
 - 局内道具底：`assets/game/props_bg.png`
 - 通用弹窗底：`assets/ui/image/commone/bg.png`
 - 通用关闭按钮、价格底等优先复用 `assets/ui/image/commone/`，能复用时不重新生图。
@@ -1276,7 +1276,7 @@ schema 2 的整体迁移放在 P4 开始时完成；P0/P1 不为尚未出现的�
 
 用途：需求 22。
 
-建议路径：`assets/resources/image/ball/rescue_fairy_ball.png`
+建议路径：`assets/game/image/ball/rescue_fairy_ball.png`
 
 ```text
 生成一颗“被困小精灵球”游戏精灵图，尺寸和现有红色琉璃球一致。透明高光球壳内部蜷缩着一只发光的小精灵，翅膀被三条细小紫色魔法锁链束缚，精灵表情期待救援；球壳上有轻微裂纹和解锁星光提示，但不能像已经破碎。整体圆形轮廓必须完整，适合蜂窝棋盘单格显示，透明 PNG，正视图，2 倍分辨率。不要文字、数字、场景、手、额外球体或裁切高光。
@@ -1286,7 +1286,7 @@ schema 2 的整体迁移放在 P4 开始时完成；P0/P1 不为尚未出现的�
 
 用途：需求 26。
 
-建议路径：`assets/resources/image/ball/enemy_fairy_ball.png`、`assets/game/effect/solidified_overlay.png`
+建议路径：`assets/game/image/ball/enemy_fairy_ball.png`、`assets/game/effect/solidified_overlay.png`
 
 ```text
 在一张透明 2048×1024 PNG 中生成两个彼此分离的游戏组件。左侧是一颗坏蛋精灵球：暗紫色透明琉璃球壳，内部是一只淘气而非恐怖的凝石小恶灵，短角、坏笑、手持灰白魔法晶体，轮廓与现有泡泡球尺寸一致。右侧是可覆盖在普通球上的“固化状态”透明罩：完整圆形的灰白半透明石晶外壳，带六角裂纹、冷光边缘和少量粉尘，中心仍能透出原球颜色。卡通、清晰、高光统一。不要文字、背景、血腥、写实恶魔或两个组件重叠。
@@ -1296,7 +1296,7 @@ schema 2 的整体迁移放在 P4 开始时完成；P0/P1 不为尚未出现的�
 
 用途：需求 27。首版按文档示例使用小狐狸；右向通过引擎水平翻转左向资源。
 
-建议路径：`assets/resources/image/ball/animal_ball.png`、`assets/game/animal/fox_runner_sheet.png`
+建议路径：`assets/game/image/ball/animal_ball.png`、`assets/game/animal/fox_runner_sheet.png`
 
 ```text
 为 2D 琉璃泡泡消除手游生成“小狐狸动物球与奔跑动画”资源，透明 2048×1536 PNG。上方单独放置一颗完整动物球：高光透明琉璃球壳内蜷缩着一只橙金色小狐狸，小狐狸明确朝左看，尾巴环绕身体，表情兴奋，圆形轮廓与现有泡泡球一致。下方放置一条 6 帧左向奔跑序列，每帧占相同大小的独立方格区域但不要绘制格线：起跑、前脚伸出、身体压低、张嘴吞吃、跃起、收尾冲刺；角色比例、颜色、体积和视线方向在 6 帧中严格一致，完整身体不裁切。可爱、速度感清晰、适合水平翻转得到右向动画。不要文字、箭头、场景背景、额外狐狸、格线或水印。
@@ -1329,7 +1329,7 @@ schema 2 的整体迁移放在 P4 开始时完成；P0/P1 不为尚未出现的�
 | 3、2、1、GO | BMFont/Label + Tween + 通用星光粒子 |
 | 消除位置 `+分数` | 数字 Sprite/BMFont，不生成固定分数字样 |
 | WinView/LoseView | 复用现有弹窗，只新增主角胜败动作 |
-| 金币、生命、通用关闭按钮 | 复用 `assets/resources/image/props/` 与 `assets/ui/image/commone/` |
+| 金币、生命、通用关闭按钮 | 复用 `assets/map/image/props/` 与 `assets/ui/image/commone/` |
 | 红黄绿精灵表面光效层数 | 复用一张通用光效并用材质参数控制，不按层数生成多张图 |
 
 ### 27.8 生图与切图验收

@@ -18,7 +18,7 @@
 
 适用于全部正式关卡：
 
-- 本地关卡：`assets/resources/config/levels/level_001.json` 到 `level_100.json`
+- 本地关卡：`assets/map/config/levels/level_001.json` 到 `level_100.json`
 - 远程关卡包：`remote-level-packs/levels_pack_101_200.json` 到 `levels_pack_901_1000.json`
 - 根目录镜像关卡：`levels/level_001.json` 到 `levels/level_100.json`
 

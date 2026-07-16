@@ -4,6 +4,7 @@ var LevelConfigLoader = require("./LevelConfigLoader");
 var RemoteLevelPackLoader = require("./RemoteLevelPackLoader");
 var LevelPackManifest = require("./LevelPackManifest");
 var RandomChallengeManager = require("./RandomChallengeManager");
+var TEST_LEVEL_KEY = "level_test";
 
 function padLevelId(levelId) {
   return String(levelId).padStart(3, "0");
@@ -47,6 +48,20 @@ LevelManager.prototype.loadLevel = function (levelId) {
 
   return loader.loadLevelByKey(levelKey).then(function (config) {
     this._cache[levelKey] = config;
+    return clone(config);
+  }.bind(this));
+};
+
+LevelManager.prototype.loadTestLevel = function () {
+  if (this._cache[TEST_LEVEL_KEY]) {
+    return Promise.resolve(clone(this._cache[TEST_LEVEL_KEY]));
+  }
+  if (!this._loader || typeof this._loader.loadLevelByKey !== "function") {
+    throw new Error("Local level loader missing loadLevelByKey for " + TEST_LEVEL_KEY + ".");
+  }
+
+  return this._loader.loadLevelByKey(TEST_LEVEL_KEY).then(function (config) {
+    this._cache[TEST_LEVEL_KEY] = config;
     return clone(config);
   }.bind(this));
 };

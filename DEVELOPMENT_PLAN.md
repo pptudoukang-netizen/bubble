@@ -36,7 +36,7 @@
 - 缸口碰撞音效已改为每次碰撞都触发。
 - 资源修复：
 - 背景路径 `image/bg` -> `image/game_bg`
-- 同步 `levels` 到 `assets/resources/config/levels`（至 `level_030`）
+- 同步 `levels` 到 `assets/map/config/levels`（至 `level_030`）
 - `SettingView.prefab` 缺失资源 UUID 修复
 - 面板调试项新增：
 - `inspectorStaminaValue`
@@ -68,7 +68,7 @@
 
 ### Phase C：配置与资源一致性收口
 - 在 Cocos Editor 刷新资源并确认 `level_021~030` 的 `.meta` 自动生成。
-- 验证 `assets/resources/config/levels` 的新增关卡可被扫描并进入选关。
+- 验证 `assets/map/config/levels` 的新增关卡可被扫描并进入选关。
 - 继续维持根目录 `levels` 与资源目录镜像一致。
 
 ### Phase D：发布候选准备（RC）

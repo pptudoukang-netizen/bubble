@@ -4,7 +4,7 @@ var fs = require("fs");
 var path = require("path");
 
 var PROJECT_ROOT = path.resolve(__dirname, "..");
-var SOURCE_DIR = path.join(PROJECT_ROOT, "assets/resources/config/levels");
+var SOURCE_DIR = path.join(PROJECT_ROOT, "assets/map/config/levels");
 var MIRROR_DIR = path.join(PROJECT_ROOT, "levels");
 
 function normalizeContent(raw) {
@@ -34,13 +34,13 @@ function main() {
 
   if (sourceFiles.length !== mirrorFiles.length) {
     failed = true;
-    console.log("[FAIL] Level file count differs: resources=" + sourceFiles.length + ", levels=" + mirrorFiles.length);
+    console.log("[FAIL] Level file count differs: map=" + sourceFiles.length + ", levels=" + mirrorFiles.length);
   }
 
   sourceFiles.forEach(function (name, index) {
     if (mirrorFiles[index] !== name) {
       failed = true;
-      console.log("[FAIL] Level file mismatch at index " + index + ": resources=" + name + ", levels=" + mirrorFiles[index]);
+      console.log("[FAIL] Level file mismatch at index " + index + ": map=" + name + ", levels=" + mirrorFiles[index]);
       return;
     }
 

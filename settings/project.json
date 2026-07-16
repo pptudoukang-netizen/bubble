@@ -10,7 +10,14 @@
   "excluded-modules": [
     "DragonBones",
     "EditBox",
+    "MotionStreak",
+    "Native Socket",
+    "Physics",
+    "PageView",
+    "PageViewIndicator",
     "RichText",
+    "Spine Skeleton",
+    "StudioComponent",
     "TiledMap",
     "VideoPlayer",
     "WebView",
@@ -47,5 +54,5 @@
   "migrate-history": [
     "cloud-function"
   ],
-  "start-scene": "09e76a1a-d8f8-4c9d-b670-d230ac637df1"
+  "start-scene": "a71c8990-55ee-42a6-b5df-1a4f541d6ec5"
 }

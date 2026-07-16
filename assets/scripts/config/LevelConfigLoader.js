@@ -9,7 +9,7 @@ var LevelBoardSupportValidator = require("./LevelBoardSupportValidator");
 var SPECIAL_ENTITY_TYPES = {
   skill_ball: ["rainbow", "blast"],
   obstacle_ball: ["stone", "ice"],
-  reactive_ball: ["molotov", "splitter"],
+  reactive_ball: ["molotov", "splitter", "swirl", "vine_spirit", "wormhole"],
   locked_ball: ["locked"],
   key_ball: ["key"]
 };
@@ -17,6 +17,7 @@ var ALLOWED_COLORS = ["R", "G", "B", "Y", "P"];
 var ALLOWED_INNER_COLORS = ALLOWED_COLORS.slice();
 var ALLOWED_CLEAR_REWARD_ITEM_IDS = ["coin", "stamina"];
 var TOP_BOARD_ROW_INDEX = 0;
+var WORMHOLE_MOVE_DIRECTIONS = ["left", "right"];
 var COLLECTION_OBJECTIVE_TYPES = {
   collect_any: true,
   collect_color: true,
@@ -162,13 +163,106 @@ function validateEntityType(category, entityType) {
   return SPECIAL_ENTITY_TYPES[category].indexOf(entityType) !== -1;
 }
 
+function getHexNeighborCoordinates(row, col) {
+  var offsets = row % 2 === 1 ? [
+    { row: -1, col: 0 },
+    { row: -1, col: 1 },
+    { row: 0, col: -1 },
+    { row: 0, col: 1 },
+    { row: 1, col: 0 },
+    { row: 1, col: 1 }
+  ] : [
+    { row: -1, col: -1 },
+    { row: -1, col: 0 },
+    { row: 0, col: -1 },
+    { row: 0, col: 1 },
+    { row: 1, col: -1 },
+    { row: 1, col: 0 }
+  ];
+  return offsets.map(function (offset) {
+    return {
+      row: row + offset.row,
+      col: col + offset.col
+    };
+  });
+}
+
+function validateSwirlTracks(normalizedLayout, normalizedEntities, levelKey) {
+  var specialByCoordinate = {};
+  var claimedTrackCoordinates = {};
+  normalizedEntities.forEach(function (entity) {
+    specialByCoordinate[entity.row + ":" + entity.col] = entity;
+  });
+
+  normalizedEntities.forEach(function (entity, entityIndex) {
+    if (entity.entityCategory !== "reactive_ball" || entity.entityType !== "swirl") {
+      return;
+    }
+    var trackCoordinates = getHexNeighborCoordinates(entity.row, entity.col);
+    trackCoordinates.forEach(function (coordinate) {
+      if (
+        coordinate.row < 0 ||
+        coordinate.row >= normalizedLayout.length ||
+        coordinate.col < 0 ||
+        coordinate.col >= normalizedLayout[coordinate.row].length
+      ) {
+        throw new Error(
+          "specialEntities[" + entityIndex + "] swirl requires a complete six-cell hex track: " + levelKey
+        );
+      }
+      var coordinateKey = coordinate.row + ":" + coordinate.col;
+      if (specialByCoordinate[coordinateKey]) {
+        throw new Error(
+          "specialEntities[" + entityIndex + "] swirl track must not contain another special entity at `" +
+          coordinateKey + "`: " + levelKey
+        );
+      }
+      if (claimedTrackCoordinates[coordinateKey]) {
+        throw new Error(
+          "swirl tracks must not overlap at `" + coordinateKey + "`: " + levelKey
+        );
+      }
+      claimedTrackCoordinates[coordinateKey] = true;
+    });
+  });
+}
+
+function validateWormholePair(normalizedEntities, levelKey) {
+  var wormholes = normalizedEntities.filter(function (entity) {
+    return entity.entityCategory === "reactive_ball" && entity.entityType === "wormhole";
+  }).sort(function (left, right) {
+    return left.col - right.col;
+  });
+  if (!wormholes.length) {
+    return;
+  }
+  if (wormholes.length !== 2) {
+    throw new Error("level must contain exactly two wormholes when wormhole is configured: " + levelKey);
+  }
+  if (wormholes[0].row !== wormholes[1].row) {
+    throw new Error("wormholes must be placed on the same row: " + levelKey);
+  }
+  if (wormholes[1].col - wormholes[0].col < 2) {
+    throw new Error("wormholes must contain at least one interior slot: " + levelKey);
+  }
+  if (wormholes[0].moveDirection !== wormholes[1].moveDirection) {
+    throw new Error("wormhole pair moveDirection must match: " + levelKey);
+  }
+}
+
 function hasUniqueItems(items) {
   return new Set(items).size === items.length;
 }
 
-function resolveExpectedLevelId(levelKey) {
+function resolveExpectedLevelId(rawConfig, levelKey) {
   if (typeof levelKey !== "string") {
     throw new Error("levelKey must be a string.");
+  }
+  if (levelKey === "level_test") {
+    if (!rawConfig || typeof rawConfig !== "object" || !rawConfig.level) {
+      throw new Error("Test level config is missing `level`: " + levelKey);
+    }
+    return assertPositiveInteger(rawConfig.level.levelId, "level.levelId", levelKey);
   }
   var match = levelKey.match(/^level_(\d{3,})$/);
   if (!match) {
@@ -249,7 +343,7 @@ function normalizeSpecialEntities(levelConfig, levelKey) {
   var seenIds = {};
   var seenCoordinates = {};
 
-  return levelConfig.specialEntities.map(function (entity, index) {
+  var normalizedEntities = levelConfig.specialEntities.map(function (entity, index) {
     if (!entity || typeof entity !== "object") {
       throw new Error("specialEntities[" + index + "] must be object: " + levelKey);
     }
@@ -298,6 +392,7 @@ function normalizeSpecialEntities(levelConfig, levelKey) {
     var splitColor = null;
     var lockedColor = null;
     var blastRadius = null;
+    var moveDirection = null;
     if (category === "obstacle_ball" && entityType === "ice") {
       innerColor = typeof entity.innerColor === "string" ? entity.innerColor.trim() : "";
       if (ALLOWED_INNER_COLORS.indexOf(innerColor) === -1) {
@@ -319,6 +414,12 @@ function normalizeSpecialEntities(levelConfig, levelKey) {
         throw new Error("specialEntities[" + index + "].splitColor must be in level.colors: " + levelKey);
       }
     }
+    if (category === "reactive_ball" && entityType === "wormhole") {
+      moveDirection = typeof entity.moveDirection === "string" ? entity.moveDirection.trim() : "";
+      if (WORMHOLE_MOVE_DIRECTIONS.indexOf(moveDirection) === -1) {
+        throw new Error("specialEntities[" + index + "].moveDirection must be left or right for wormhole: " + levelKey);
+      }
+    }
     if (category === "locked_ball" && entityType === "locked") {
       lockedColor = typeof entity.lockedColor === "string" ? entity.lockedColor.trim() : "";
       if (levelConfig.colors.indexOf(lockedColor) === -1) {
@@ -335,9 +436,13 @@ function normalizeSpecialEntities(levelConfig, levelKey) {
       innerColor: innerColor,
       splitColor: splitColor,
       lockedColor: lockedColor,
-      blastRadius: blastRadius
+      blastRadius: blastRadius,
+      moveDirection: moveDirection
     };
   });
+  validateSwirlTracks(normalizedLayout, normalizedEntities, levelKey);
+  validateWormholePair(normalizedEntities, levelKey);
+  return normalizedEntities;
 }
 
 function normalizeObjectiveList(objectives, allowedTypes, fieldName, levelConfig, levelKey) {
@@ -598,7 +703,7 @@ function validateInitialDropSpaceRows(levelConfig, levelKey) {
 
 function normalizeLevelConfig(rawConfig, levelKey) {
   var config = clone(rawConfig);
-  var expectedLevelId = resolveExpectedLevelId(levelKey);
+  var expectedLevelId = resolveExpectedLevelId(config, levelKey);
 
   if (config.schemaVersion !== 1) {
     throw new Error("schemaVersion must be 1: " + levelKey);

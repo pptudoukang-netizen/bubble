@@ -14,14 +14,14 @@ var FairyAssistConfig = require("../gameplay-src/config/FairyAssistConfig");
 var GameManager = require("../gameplay-src/core/GameManager");
 var LevelPackCompactCodec = require("../assets/scripts/config/LevelPackCompactCodec");
 
-var LEVEL_DIR = path.resolve(__dirname, "../assets/resources/config/levels");
+var LEVEL_DIR = path.resolve(__dirname, "../assets/map/config/levels");
 var REMOTE_PACK_DIR = path.resolve(__dirname, "../remote-level-packs");
 var DEFAULT_ANGLE_STEP_DEG = 2;
 var DEFAULT_CANDIDATE_WINDOW = 6;
 var DEFAULT_SEARCH_DEPTH = 2;
 var FRAME_DT = 0.05;
 var MAX_SETTLE_FRAMES = 3000;
-var GAME_VIEW_PREFAB_PATH = path.resolve(__dirname, "../assets/resources/prefabs/ui/GameView.prefab");
+var GAME_VIEW_PREFAB_PATH = path.resolve(__dirname, "../assets/game/prefabs/ui/GameView.prefab");
 
 function syncHudBottomLineYForSimulation() {
   if (typeof BoardLayout.boardStartY !== "number" || !isFinite(BoardLayout.boardStartY)) {

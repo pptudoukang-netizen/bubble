@@ -20,7 +20,7 @@ var POWER_TIPS_VIEW_PREFAB_PATH = Shared.POWER_TIPS_VIEW_PREFAB_PATH;
 var PROP_DESCRIPTION_VIEW_PREFAB_PATH = Shared.PROP_DESCRIPTION_VIEW_PREFAB_PATH;
 var POWERUP_TYPE_BY_ITEM_ID = Shared.POWERUP_TYPE_BY_ITEM_ID;
 var ITEM_ID_BY_POWERUP_TYPE = Shared.ITEM_ID_BY_POWERUP_TYPE;
-var STAMINA_FLY_ICON_PATH = "image/props/love";
+var STAMINA_FLY_ICON_PATH = "ui/image/props/love";
 var STAMINA_FLY_DURATION = 0.45;
 var POWER_TIPS_PROXY_ROOT_NAME = "power_tips_auto_proxy_root";
 var UiModalReleaseHelper = require("../utils/UiModalReleaseHelper");
@@ -51,13 +51,13 @@ var START_GAME_TEMPORARY_POWERUP_CONFIG_BY_ITEM_ID = {
   }
 };
 var START_GAME_OBJECTIVE_ICON_PATHS = {
-  R: "image/ball/red_ball",
-  G: "image/ball/green_ball",
-  B: "image/ball/blue_ball",
-  Y: "image/ball/yellow_ball",
-  P: "image/ball/purple_ball",
-  RAINBOW: "image/ball/rainbow_ball",
-  ICE_SNOWBALL: "image/ball/ice_ball"
+  R: "ui/image/preview_balls/red_ball",
+  G: "ui/image/preview_balls/green_ball",
+  B: "ui/image/preview_balls/blue_ball",
+  Y: "ui/image/preview_balls/yellow_ball",
+  P: "ui/image/preview_balls/purple_ball",
+  RAINBOW: "ui/image/preview_balls/rainbow_ball",
+  ICE_SNOWBALL: "ui/image/preview_balls/ice_ball"
 };
 var START_GAME_COLLECTION_OBJECTIVE_TYPES = {
   collect_any: true,
@@ -124,6 +124,30 @@ function releaseStartGamePropDescriptionSpriteFrameCache(host) {
   host._startGamePropDescriptionSpriteFrameCache = {};
 }
 
+function retainStartGamePropDescriptionPrefab(host, prefab) {
+  if (host._startGamePropDescriptionPrefabLease) {
+    throw new Error("StartGameView PropDescriptionView prefab lease is already active.");
+  }
+  if (!prefab || typeof prefab.addRef !== "function") {
+    throw new Error("StartGameView PropDescriptionView prefab addRef is required.");
+  }
+  prefab.addRef();
+  host._startGamePropDescriptionPrefabLease = prefab;
+  return prefab;
+}
+
+function releaseStartGamePropDescriptionPrefab(host) {
+  var prefab = host._startGamePropDescriptionPrefabLease;
+  if (!prefab) {
+    return;
+  }
+  if (typeof prefab.decRef !== "function") {
+    throw new Error("StartGameView PropDescriptionView prefab decRef is required.");
+  }
+  prefab.decRef();
+  host._startGamePropDescriptionPrefabLease = null;
+}
+
 function destroyStartGamePropDescriptionView(host) {
   var viewNode = host._startGamePropDescriptionViewNode;
   if (viewNode && viewNode.isValid) {
@@ -133,6 +157,7 @@ function destroyStartGamePropDescriptionView(host) {
   host._startGamePropDescriptionViewNode = null;
   host._startGamePropDescriptionViewController = null;
   host._isStartGamePropDescriptionViewOpen = false;
+  releaseStartGamePropDescriptionPrefab(host);
 }
 
 function logStartGameNativeTemplateAd() {
@@ -1729,6 +1754,8 @@ module.exports = {
           onClose: function () {
             this._playSfx("uiClick");
             this._rewindNewUserGuideToQuickStart();
+            this._pendingStartGamePowerups = [];
+            this._pendingStartGamePreciseAimActivation = false;
             this._hideStartGameView({
               refundTemporaryPowerups: true
             });
@@ -2097,12 +2124,11 @@ module.exports = {
   },
 
   _ensureStartGamePropDescriptionViewPrefab: function () {
-    if (this._startGamePropDescriptionViewPrefab) {
-      return Promise.resolve(this._startGamePropDescriptionViewPrefab);
-    }
     return this._loadPrefab(PROP_DESCRIPTION_VIEW_PREFAB_PATH).then(function (prefab) {
-      this._startGamePropDescriptionViewPrefab = prefab;
-      return prefab;
+      if (!prefab || !cc.isValid(prefab)) {
+        throw new Error("StartGameView loaded an invalid PropDescriptionView prefab.");
+      }
+      return retainStartGamePropDescriptionPrefab(this, prefab);
     }.bind(this));
   },
 
@@ -2194,6 +2220,9 @@ module.exports = {
         PopupPresentationHelper.playPopupContentOpenAnimation(popupContent);
         this._isStartGamePropDescriptionViewOpen = true;
       }.bind(this));
+    }.bind(this)).catch(function (error) {
+      destroyStartGamePropDescriptionView(this);
+      throw error;
     }.bind(this));
   },
 

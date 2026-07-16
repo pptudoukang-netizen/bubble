@@ -3,7 +3,7 @@
 var fs = require("fs");
 var path = require("path");
 
-var SOURCE_DIR = path.resolve(__dirname, "../assets/resources/config/levels");
+var SOURCE_DIR = path.resolve(__dirname, "../assets/map/config/levels");
 var TARGET_DIR = path.resolve(__dirname, "../levels");
 
 function normalizeContent(raw) {

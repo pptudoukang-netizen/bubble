@@ -89,18 +89,31 @@ module.exports = {
 
   _playBackgroundMusic: function (resourcePath) {
     if (!this.audioManager || typeof this.audioManager.playBgm !== "function") {
-      return;
+      throw new Error("Background music playback requires AudioManager.playBgm.");
     }
 
-    this.audioManager.playBgm(resourcePath, { loop: true });
+    return this.audioManager.playBgm(resourcePath, { loop: true }).then(function (clip) {
+      if (!clip) {
+        return null;
+      }
+      if (typeof this.audioManager.stopAllSfx !== "function") {
+        throw new Error("Background music transition requires AudioManager.stopAllSfx.");
+      }
+      if (typeof this.audioManager.releaseCachedClipsExcept !== "function") {
+        throw new Error("Background music transition requires AudioManager.releaseCachedClipsExcept.");
+      }
+      this.audioManager.stopAllSfx();
+      this.audioManager.releaseCachedClipsExcept([resourcePath]);
+      return clip;
+    }.bind(this));
   },
 
   _playLevelSelectBackgroundMusic: function () {
-    this._playBackgroundMusic(this._getLevelSelectBgmPath());
+    return this._playBackgroundMusic(this._getLevelSelectBgmPath());
   },
 
   _playGameplayBackgroundMusic: function () {
-    this._playBackgroundMusic(this._getGameplayBgmPath());
+    return this._playBackgroundMusic(this._getGameplayBgmPath());
   },
 
   _playSfx: function (name) {

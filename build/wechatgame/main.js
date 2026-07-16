@@ -49,24 +49,6 @@ window.boot = function () {
       // Otherwise the main bundle should be the last
       cc.assetManager.loadBundle(settings.hasStartSceneBundle ? START_SCENE : MAIN, function (err) {
         if (!err) {
-        // [wechat-gameplay-code-bundle]
-        if (typeof __require !== 'function') {
-          throw new Error('Cocos module loader is required before lazy gameplay code.');
-        }
-        if (typeof GameGlobal !== 'undefined' && GameGlobal) {
-          GameGlobal.__BUBBLE_COCOS_REQUIRE__ = __require;
-        }
-        if (typeof window !== 'undefined' && window) {
-          window.__BUBBLE_COCOS_REQUIRE__ = __require;
-        }
-        if (typeof globalThis !== 'undefined' && globalThis) {
-          globalThis.__BUBBLE_COCOS_REQUIRE__ = __require;
-        }
-        require('./src/lazy-gameplay-code.js');
-        var lazyRuntimeGlobal = typeof GameGlobal !== 'undefined' && GameGlobal ? GameGlobal : (typeof window !== 'undefined' ? window : null);
-        if (!lazyRuntimeGlobal || lazyRuntimeGlobal.__BUBBLE_LAZY_GAMEPLAY_CODE_LOADED__ !== true) {
-          throw new Error('Lazy gameplay code did not finish loading.');
-        }
         // [wechat-minigame-loading-patch] destroy shared canvas cover before engine run
         if (GameGlobal.LoadingManager && GameGlobal.LoadingManager.isMainCanvas) {
           GameGlobal.LoadingManager.destroy().then(function () {

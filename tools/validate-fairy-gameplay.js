@@ -115,7 +115,7 @@ function syncFairyCollisionCentersForTests(fairySystem) {
 }
 
 function readGameViewPrefab() {
-  var prefabPath = path.join(__dirname, "..", "assets", "resources", "prefabs", "ui", "GameView.prefab");
+  var prefabPath = path.join(__dirname, "..", "assets", "game", "prefabs", "ui", "GameView.prefab");
   return JSON.parse(fs.readFileSync(prefabPath, "utf8"));
 }
 

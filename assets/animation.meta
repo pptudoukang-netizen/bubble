@@ -3,7 +3,7 @@
   "uuid": "80f243e3-5cb2-40e1-b82d-c3ed1918f84e",
   "importer": "folder",
   "isBundle": true,
-  "bundleName": "",
+  "bundleName": "animation",
   "priority": 2,
   "compressionType": {
     "wechatgame": "subpackage"

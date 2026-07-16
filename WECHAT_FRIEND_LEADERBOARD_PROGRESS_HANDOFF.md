@@ -220,8 +220,8 @@ Bundle resources doesn't contain image/gaming_circle/jump
 
 - `image/gaming_circle/jump.png` 位于 `assets/image/gaming_circle/jump.png`
 - 代码使用 `BundleLoader.loadRes("image/gaming_circle/jump")`
-- `BundleLoader` 读取的是 `resources` bundle
-- 该图片不在 `assets/resources` 下，因此运行时加载失败
+- 当时的旧版 `BundleLoader` 只读取内置 Resources bundle
+- 该图片不在旧版内置资源目录，因此运行时加载失败；当前工程已移除该 bundle
 
 当前源码修复：
 

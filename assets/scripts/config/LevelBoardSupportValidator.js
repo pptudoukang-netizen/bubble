@@ -81,7 +81,8 @@ function collectOccupiedCells(levelConfig, levelKey) {
     var cell = {
       row: row,
       col: col,
-      source: source
+      source: source,
+      fixedAnchor: false
     };
     occupiedMap[cellKey] = cell;
     cells.push(cell);
@@ -113,6 +114,8 @@ function collectOccupiedCells(levelConfig, levelKey) {
       throw new Error("specialEntities[" + index + "] overlaps layout for initial board support validation: " + levelKey);
     }
     addCell(entity.row, entity.col, "specialEntities[" + index + "]");
+    occupiedMap[keyFor(entity.row, entity.col)].fixedAnchor =
+      entity.entityCategory === "reactive_ball" && entity.entityType === "wormhole";
   });
 
   return {
@@ -130,7 +133,7 @@ function findUnsupportedInitialCells(levelConfig, levelKey) {
   var queueIndex = 0;
 
   cells.forEach(function (cell) {
-    if (cell.row === TOP_BOARD_ROW_INDEX) {
+    if (cell.row === TOP_BOARD_ROW_INDEX || cell.fixedAnchor === true) {
       queue.push(cell);
     }
   });

@@ -16,6 +16,7 @@ var AdRewardCatalog = require("../../assets/scripts/services/AdRewardCatalog");
 var RenderNodeHelpers = require("../../assets/scripts/render/RenderNodeHelpers");
 var SpriteProxyLayerHelper = require("../../assets/scripts/utils/SpriteProxyLayerHelper");
 var BubbleShatterRenderer = require("./BubbleShatterRenderer");
+var WormholeShaderRenderer = require("./WormholeShaderRenderer");
 var PropDescriptionViewController = require("../../assets/scripts/ui/PropDescriptionViewController");
 var attachLevelRendererSceneMethods = require("./LevelRendererSceneMethods");
 var attachLevelRendererFairyMethods = require("./LevelRendererFairyMethods");
@@ -29,43 +30,47 @@ var clearChildren = RenderNodeHelpers.clearChildren;
 var getOrCreateChild = RenderNodeHelpers.getOrCreateChild;
 
 var BALL_RESOURCES = {
-  R: "image/ball/red_ball",
-  G: "image/ball/green_ball",
-  B: "image/ball/blue_ball",
-  Y: "image/ball/yellow_ball",
-  P: "image/ball/purple_ball",
-  RAINBOW: "image/ball/rainbow_ball",
-  BLAST: "image/ball/bomb_ball",
-  STONE: "image/ball/stone_ball",
-  ICE: "image/ball/ice_ball",
-  MOLOTOV: "image/props/fire_box",
-  KEY: "image/props/key",
-  LOCKED: "image/commone/lock",
-  SPLIT_R: "image/ball/split_red_ball",
-  SPLIT_G: "image/ball/split_green_ball",
-  SPLIT_B: "image/ball/split_blue_ball",
-  SPLIT_Y: "image/ball/split_yellow_ball",
-  SPLIT_P: "image/ball/split_purple_ball",
-  ICE_SNOWBALL: "image/ball/ice_ball",
-  BLOCKADE_LINE: "image/ball/blockade_line",
-  LIGHT: "image/ball/light_ball",
-  SNOW_REMOVAL_TOOLS: "image/ball/snow_removal_tools"
+  R: "game/image/ball/red_ball",
+  G: "game/image/ball/green_ball",
+  B: "game/image/ball/blue_ball",
+  Y: "game/image/ball/yellow_ball",
+  P: "game/image/ball/purple_ball",
+  RAINBOW: "game/image/ball/rainbow_ball",
+  BLAST: "game/image/ball/bomb_ball",
+  STONE: "game/image/ball/stone_ball",
+  ICE: "game/image/ball/ice_ball",
+  MOLOTOV: "game/image/props/fire_box",
+  KEY: "game/image/props/key",
+  LOCKED: "ui/image/commone/lock",
+  SPLIT_R: "game/image/ball/split_red_ball",
+  SPLIT_G: "game/image/ball/split_green_ball",
+  SPLIT_B: "game/image/ball/split_blue_ball",
+  SPLIT_Y: "game/image/ball/split_yellow_ball",
+  SPLIT_P: "game/image/ball/split_purple_ball",
+  SWIRL: "game/image/ball/swirl_ball",
+  WORMHOLE: "game/image/ball/wormhole",
+  VINE_SPIRIT: "game/image/ball/vine_spirit",
+  VINES: "game/image/ball/vines",
+  ICE_SNOWBALL: "game/image/ball/ice_ball",
+  BLOCKADE_LINE: "game/image/ball/blockade_line",
+  LIGHT: "game/image/ball/light_ball",
+  SNOW_REMOVAL_TOOLS: "game/image/ball/snow_removal_tools"
 };
 
 var JAR_RESOURCES = {
-  R: "image/jar/red_jar",
-  G: "image/jar/green_jar",
-  B: "image/jar/blue_jar",
-  Y: "image/jar/yellow_jar",
-  P: "image/jar/purple_jar"
+  R: "game/image/jar/red_jar",
+  G: "game/image/jar/green_jar",
+  B: "game/image/jar/blue_jar",
+  Y: "game/image/jar/yellow_jar",
+  P: "game/image/jar/purple_jar"
 };
 
 var JAR_MASK_RESOURCES = {
-  R: "image/jar/red_jar_mask",
-  G: "image/jar/green_jar_mask",
-  B: "image/jar/blue_jar_mask",
-  Y: "image/jar/yellow_jar_mask",
-  P: "image/jar/purple_jar_mask"
+  R: "game/image/jar/red_jar_mask",
+  G: "game/image/jar/green_jar_mask",
+  B: "game/image/jar/blue_jar_mask",
+  Y: "game/image/jar/yellow_jar_mask",
+  P: "game/image/jar/purple_jar_mask"
 };
 
 var JAR_SCORE_RESOURCE_COLOR_NAMES = {
@@ -92,28 +97,28 @@ function resolveJarScoreSpritePath(colorCode, baseScore) {
   if (!Number.isInteger(baseScore) || !JAR_SCORE_RESOURCE_VALUES[baseScore]) {
     throw new Error("Unsupported jar base score sprite value: " + baseScore);
   }
-  return "image/jar/" + colorName + "_" + baseScore;
+  return "game/image/jar/" + colorName + "_" + baseScore;
 }
 
 var REWARD_ITEM_RESOURCES = {
-  coin: "image/props/coin",
-  stamina: "image/props/love"
+  coin: "ui/image/props/coin",
+  stamina: "ui/image/props/love"
 };
 
 var LOSE_STATUS_RESOURCES = {
-  complete: "image/lose/complete",
-  incomplete: "image/lose/un_complete"
+  complete: "ui/image/lose/complete",
+  incomplete: "ui/image/lose/un_complete"
 };
 
 var POWERUP_ICON_RESOURCES = {
-  rainbow: "image/props/rainbow_ball",
-  swap: "image/props/change_ball",
-  blast: "image/props/blast_ball",
-  barrier_hammer: "image/props/barrier_hammer",
-  precise_aim: "image/props/aim",
-  snow_removal: "image/props/snow_removal",
-  three_line_elimination: "image/props/three_line_elimination",
-  plus_three_balls: "image/props/plus_ball"
+  rainbow: "ui/image/props/rainbow_ball",
+  swap: "ui/image/props/change_ball",
+  blast: "ui/image/props/blast_ball",
+  barrier_hammer: "ui/image/props/barrier_hammer",
+  precise_aim: "ui/image/props/aim",
+  snow_removal: "ui/image/props/snow_removal",
+  three_line_elimination: "ui/image/props/three_line_elimination",
+  plus_three_balls: "ui/image/props/plus_ball"
 };
 
 var FAIRY_ANIMATION_BUNDLE_NAME = "animation";
@@ -123,28 +128,29 @@ var BOARD_CLEAR_FIREWORKS_BURST_COUNT = 1;
 var BOARD_CLEAR_FIREWORKS_INTERVAL_SEC = 1.1;
 
 var HUD_STAR_RESOURCES = {
-  lit: "image/ball/img101",
-  unlit: "image/ball/img106"
+  lit: "game/image/ball/img101",
+  unlit: "game/image/ball/img106"
 };
 var TOP_SLOT_STAR_RESOURCE = "game/top_star";
+var GAME_RESOURCE_PATH_PREFIX = "game/";
 
 var PREFAB_PATHS = {
-  gameView: "prefabs/ui/GameView",
+  gameView: "game/prefabs/ui/GameView",
   hudPanel: "prefabs/ui/HudPanel",
   winView: "prefabs/ui/WinView",
   loseView: "prefabs/ui/LoseView",
   addBallTipsView: "prefabs/ui/AddBallTipsView",
   pauseView: "prefabs/ui/PauseView",
   propDescriptionView: "prefabs/ui/PropDescriptionView",
-  bubbleItem: "prefabs/game/BubbleItem",
-  fireBubbleItem: "prefabs/game/FireBubbleItem",
-  splitBubbleItem: "prefabs/game/SplitBubbleItem",
-  lockingBubbleItem: "prefabs/game/LockingBubbleItem",
-  keyBubbleItem: "prefabs/game/KeyBubbleItem",
-  jarItem: "prefabs/game/JarItem",
-  shooterPanel: "prefabs/game/ShooterPanel",
-  propsBtn: "prefabs/game/PropsBtn",
-  previewBall: "prefabs/game/PreviewBall"
+  bubbleItem: "game/prefabs/game/BubbleItem",
+  fireBubbleItem: "game/prefabs/game/FireBubbleItem",
+  splitBubbleItem: "game/prefabs/game/SplitBubbleItem",
+  lockingBubbleItem: "game/prefabs/game/LockingBubbleItem",
+  keyBubbleItem: "game/prefabs/game/KeyBubbleItem",
+  jarItem: "game/prefabs/game/JarItem",
+  shooterPanel: "game/prefabs/game/ShooterPanel",
+  propsBtn: "game/prefabs/game/PropsBtn",
+  previewBall: "game/prefabs/game/PreviewBall"
 };
 
 var JAR_RENDER_Y_OFFSET = Number(BoardLayout.jarRenderYOffset) || 0;
@@ -155,7 +161,7 @@ var GUIDE_DOT_FAR_SCALE = 0.5;
 var GUIDE_DOT_MAX_COUNT = 64;
 var GUIDE_DOT_MIN_SCALE = 0.5;
 var GUIDE_DOT_MAX_SCALE = 1;
-var GUIDE_DOT_SPRITE_PATH = "image/ball/white_point";
+var GUIDE_DOT_SPRITE_PATH = "game/image/ball/white_point";
 var GUIDE_DOT_TINTS = {
   R: { r: 255, g: 80, b: 80 },
   G: { r: 78, g: 214, b: 100 },
@@ -198,6 +204,8 @@ var TEST_SLOT_RADIUS = Math.floor(BoardLayout.bubbleRadius * 0.88);
 var SHOOTER_MAX_ROTATION = 75;
 var ICE_OVERLAY_OPACITY = 255;
 var BOARD_BUBBLE_SIZE = new cc.Size(72, 72);
+// vine_spirit.png and vines.png share a 140x172 raw canvas; render at exact half scale.
+var VINE_VISUAL_SIZE = new cc.Size(70, 86);
 var NEXT_SHOT_BUBBLE_SIZE = new cc.Size(50, 50);
 var JAR_RENDER_SIZE = new cc.Size(
   Math.max(1, Number(BoardLayout.jarWidth) || 237),
@@ -334,6 +342,35 @@ function releaseRetainedSpriteFrame(spriteFrame, path) {
   spriteFrame.decRef();
 }
 
+function releaseRetainedSpriteFramesByPrefix(cache, pathPrefix) {
+  if (!cache || typeof cache !== "object" || Array.isArray(cache)) {
+    throw new Error("LevelRenderer retained SpriteFrame cache must be an object.");
+  }
+  if (typeof pathPrefix !== "string" || pathPrefix.length === 0 || pathPrefix.charAt(pathPrefix.length - 1) !== "/") {
+    throw new Error("LevelRenderer retained SpriteFrame path prefix must end with '/'.");
+  }
+  Object.keys(cache).forEach(function (path) {
+    if (path.indexOf(pathPrefix) !== 0) {
+      return;
+    }
+    var spriteFrame = cache[path];
+    delete cache[path];
+    releaseRetainedSpriteFrame(spriteFrame, path);
+  });
+}
+
+function assertNoPendingSpriteFrameLoadsByPrefix(loadPromises, pathPrefix) {
+  if (!loadPromises || typeof loadPromises !== "object" || Array.isArray(loadPromises)) {
+    throw new Error("LevelRenderer SpriteFrame load promise cache must be an object.");
+  }
+  var pendingPaths = Object.keys(loadPromises).filter(function (path) {
+    return path.indexOf(pathPrefix) === 0;
+  });
+  if (pendingPaths.length > 0) {
+    throw new Error("Cannot release gameplay assets while SpriteFrames are still loading: " + pendingPaths.join(", "));
+  }
+}
+
 function hasValidSpriteFrame(spriteFrame) {
   if (!spriteFrame) {
     return false;
@@ -366,6 +403,17 @@ function pushBallSpritePath(paths, code, label) {
 function collectBallVisualSpritePaths(paths, ballLike, label) {
   var code = resolveBallCode(ballLike);
   pushBallSpritePath(paths, code, label);
+  if (
+    ballLike &&
+    typeof ballLike === "object" &&
+    (
+      ballLike.entityType === "vine_spirit" ||
+      (typeof ballLike.vineOwnerId === "string" && ballLike.vineOwnerId) ||
+      (typeof ballLike.vinePreviewOwnerId === "string" && ballLike.vinePreviewOwnerId)
+    )
+  ) {
+    pushUniqueSpritePath(paths, BALL_RESOURCES.VINES, label + "/vines");
+  }
   if (isIceBallLike(ballLike)) {
     pushUniqueSpritePath(paths, BALL_RESOURCES.ICE, label + "/ice_overlay");
   }
@@ -954,6 +1002,18 @@ function resolveBallCode(ballLike) {
       }
       return "SPLIT_" + ballLike.splitColor;
     }
+
+    if (ballLike.entityType === "swirl") {
+      return "SWIRL";
+    }
+
+    if (ballLike.entityType === "wormhole") {
+      return "WORMHOLE";
+    }
+
+    if (ballLike.entityType === "vine_spirit") {
+      return "VINE_SPIRIT";
+    }
   }
 
   return null;
@@ -1022,6 +1082,7 @@ function LevelRenderer(rootNode) {
     bubbleWidth: BOARD_BUBBLE_SIZE.width,
     bubbleHeight: BOARD_BUBBLE_SIZE.height
   });
+  this.wormholeShaderRenderer = new WormholeShaderRenderer();
   this._sharedWarmupPromise = null;
   this.currentLevelConfig = null;
   this.lastRuntimeSnapshot = null;
@@ -1058,6 +1119,8 @@ function LevelRenderer(rootNode) {
   this.splitterSpawnHiddenCellIds = {};
   this.molotovBlastHiddenCellIds = {};
   this.molotovBlastAnimatedIds = {};
+  this.swirlRotationAnimatedIds = {};
+  this.wormholeShiftAnimatedIds = {};
   this.blastExplosionAnimatedIds = {};
   this.lastCommentResolution = null;
   this.boardClearFireworksRoot = null;
@@ -1067,6 +1130,7 @@ function LevelRenderer(rootNode) {
   this.boardBubbleNodes = {};
   this.boardBubbleNodePool = {};
   this.boardCellRenderKeys = {};
+  this.currentResolutionFloatingCellIds = {};
   this.boardRenderTick = 1;
   this.topSlotStarNodes = {};
   this.topSlotStarNodePool = [];
@@ -1205,7 +1269,8 @@ LevelRenderer.prototype.warmupSharedAssets = function () {
     this._preloadExplodeAnimationClip(),
     this._preloadFireworksPrefab(),
     this.prefabFactory.preload(this._collectPrefabPaths()),
-    this.bubbleShatterRenderer.preload()
+    this.bubbleShatterRenderer.preload(),
+    this.wormholeShaderRenderer.preload()
   ]).catch(function (error) {
     this._sharedWarmupPromise = null;
     throw error;
@@ -1523,12 +1588,15 @@ LevelRenderer.prototype.renderLevel = function (levelConfig, runtimeSnapshot) {
   this.splitterSpawnHiddenCellIds = {};
   this.molotovBlastHiddenCellIds = {};
   this.molotovBlastAnimatedIds = {};
+  this.swirlRotationAnimatedIds = {};
+  this.wormholeShiftAnimatedIds = {};
   this.blastExplosionAnimatedIds = {};
   this.lastCommentResolution = null;
   this.boardClearFireworksRoot = null;
   this.boardClearFireworksActive = false;
   this.boardClearFireworksBurstSerial = 0;
   this.bottomPanelInitialBoardTargets = null;
+  this.currentResolutionFloatingCellIds = {};
   this.boardRenderTick = 1;
   this.topSlotStarNodes = {};
   this.topSlotStarNodePool = [];
@@ -1723,6 +1791,8 @@ LevelRenderer.prototype._refreshRuntimeFull = function (levelConfig, runtimeSnap
     this._renderMainland(runtimeSnapshot.board);
     this._renderJianbian(runtimeSnapshot.board);
   }
+  this._playSwirlRotationAnimation(runtimeSnapshot);
+  this._playWormholeShiftAnimation(runtimeSnapshot);
   this._syncBarrierHammerStoneHints(runtimeSnapshot);
 
   if (!this._shouldFlyIceSnowballToHud(levelConfig)) {
@@ -2022,12 +2092,8 @@ LevelRenderer.prototype.releaseLevelSpecificSpriteCache = function () {
 };
 
 LevelRenderer.prototype.releaseAfterGameplayBundleUnload = function () {
-  Object.keys(this.spriteFrameCache).forEach(function (path) {
-    var spriteFrame = this.spriteFrameCache[path];
-    releaseRetainedSpriteFrame(spriteFrame, path);
-  }.bind(this));
-  this.spriteFrameCache = {};
-  this.spriteFrameLoadPromises = {};
+  assertNoPendingSpriteFrameLoadsByPrefix(this.spriteFrameLoadPromises, GAME_RESOURCE_PATH_PREFIX);
+  releaseRetainedSpriteFramesByPrefix(this.spriteFrameCache, GAME_RESOURCE_PATH_PREFIX);
   this.fairyPrefabCache = {};
   this.fairyPrefabLoadPromises = {};
   this.fireworksPrefab = null;
@@ -2035,10 +2101,18 @@ LevelRenderer.prototype.releaseAfterGameplayBundleUnload = function () {
   this.explodeAnimationClip = null;
   this.explodeAnimationClipPromise = null;
   this._sharedWarmupPromise = null;
-  if (this.prefabFactory && typeof this.prefabFactory.releaseLoadedCache === "function") {
-    this.prefabFactory.releaseLoadedCache();
+  if (!this.bubbleShatterRenderer || typeof this.bubbleShatterRenderer.releaseAfterGameplayBundleUnload !== "function") {
+    throw new Error("LevelRenderer requires BubbleShatterRenderer.releaseAfterGameplayBundleUnload.");
+  }
+  this.bubbleShatterRenderer.releaseAfterGameplayBundleUnload();
+  if (!this.wormholeShaderRenderer || typeof this.wormholeShaderRenderer.releaseAfterGameplayBundleUnload !== "function") {
+    throw new Error("LevelRenderer requires WormholeShaderRenderer.releaseAfterGameplayBundleUnload.");
+  }
+  this.wormholeShaderRenderer.releaseAfterGameplayBundleUnload();
+  if (this.prefabFactory && typeof this.prefabFactory.releaseLoadedCacheByPrefix === "function") {
+    this.prefabFactory.releaseLoadedCacheByPrefix(GAME_RESOURCE_PATH_PREFIX);
   } else {
-    throw new Error("LevelRenderer requires PrefabFactory.releaseLoadedCache.");
+    throw new Error("LevelRenderer requires PrefabFactory.releaseLoadedCacheByPrefix.");
   }
   this.lastHudRenderKey = "";
   this.lastJarRenderKey = "";
@@ -2334,6 +2408,7 @@ var LEVEL_RENDERER_SCENE_DEPS = {
   FairyAssistConfig: FairyAssistConfig,
   ICE_OVERLAY_OPACITY: ICE_OVERLAY_OPACITY,
   BOARD_BUBBLE_SIZE: BOARD_BUBBLE_SIZE,
+  VINE_VISUAL_SIZE: VINE_VISUAL_SIZE,
   NEXT_SHOT_BUBBLE_SIZE: NEXT_SHOT_BUBBLE_SIZE,
   JAR_RENDER_SIZE: JAR_RENDER_SIZE,
   POPUP_CONTENT_CONTAINER_NAME: POPUP_CONTENT_CONTAINER_NAME,
@@ -2525,7 +2600,8 @@ LevelRenderer.prototype._applyBallVisual = function (node, ballLike, forcedSize)
 
   spriteTarget.active = true;
   spriteTarget.opacity = 255;
-  ensureSprite(spriteTarget, spriteFrame);
+  var sprite = ensureSprite(spriteTarget, spriteFrame);
+  sprite.trim = spriteCode !== "VINE_SPIRIT";
   var visualSize = forcedSize || spriteFrame.getOriginalSize();
   spriteTarget.setContentSize(visualSize);
 

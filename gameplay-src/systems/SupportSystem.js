@@ -18,6 +18,31 @@ function isLockedAnchor(cell) {
   );
 }
 
+function isVineAnchor(cell) {
+  return !!(
+    cell &&
+    (
+      (
+        cell.entityCategory === "reactive_ball" &&
+        cell.entityType === "vine_spirit"
+      ) ||
+      (
+        cell.entityCategory === "normal_ball" &&
+        typeof cell.vineOwnerId === "string" &&
+        cell.vineOwnerId
+      )
+    )
+  );
+}
+
+function isWormholeAnchor(cell) {
+  return !!(
+    cell &&
+    cell.entityCategory === "reactive_ball" &&
+    cell.entityType === "wormhole"
+  );
+}
+
 function SupportSystem() {
   BaseSystem.call(this, "SupportSystem");
   this.anchorRows = 1;
@@ -46,7 +71,7 @@ SupportSystem.prototype.findFloatingCells = function (grid) {
 
   for (var seedIndex = 0; seedIndex < cells.length; seedIndex += 1) {
     var seedCell = cells[seedIndex];
-    if (seedCell.row < this.anchorRows || isLockedAnchor(seedCell)) {
+    if (seedCell.row < this.anchorRows || isLockedAnchor(seedCell) || isVineAnchor(seedCell) || isWormholeAnchor(seedCell)) {
       queue.push({
         row: seedCell.row,
         col: seedCell.col

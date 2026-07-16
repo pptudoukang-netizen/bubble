@@ -21,6 +21,91 @@ Levels 1-100 keep the current `collect_color` primary objective and add the curr
 
 ## New Entity Rules
 
+### Swirl Bubble
+
+Config:
+
+```json
+{
+    "id": "swirl_001",
+    "entityCategory": "reactive_ball",
+    "entityType": "swirl",
+    "row": 4,
+    "col": 4
+}
+```
+
+Rule:
+
+- After every fired bubble finishes attaching, each live swirl rotates its six neighboring hex slots clockwise by exactly 60 degrees.
+- Every occupied bubble moves along one straight edge of the six-cell hexagonal track. Empty slots rotate with the ring, so the operation preserves the exact bubble count and color multiset.
+- The swirl center stays in place and does not participate in normal color matching.
+- A swirl requires all six neighboring coordinates to exist. Its track cannot contain another special entity, and tracks from different swirls cannot overlap.
+- Input remains locked during the 0.4-second rotation. When it ends, support is recalculated immediately; every bubble no longer connected to the top enters the normal falling-marble pipeline.
+- Runtime and level validation fail immediately if an occupied swirl-track cell is not a normal colored bubble or if the six-cell geometry is invalid.
+
+### Wormhole Bubble
+
+Config:
+
+```json
+[
+  {
+    "id": "wormhole_left",
+    "entityCategory": "reactive_ball",
+    "entityType": "wormhole",
+    "moveDirection": "right",
+    "row": 5,
+    "col": 0
+  },
+  {
+    "id": "wormhole_right",
+    "entityCategory": "reactive_ball",
+    "entityType": "wormhole",
+    "moveDirection": "right",
+    "row": 5,
+    "col": 8
+  }
+]
+```
+
+Rule:
+
+- A level either contains no wormhole or exactly two wormholes. The pair must stay on the same row, use the same `moveDirection` (`left` or `right`), and contain at least one interior slot.
+- After each fired bubble finishes its normal shot resolution, every interior slot between the two fixed endpoints moves exactly one slot in `moveDirection`, wrapping at the opposite end. Normal balls, special balls, vine ownership state and empty slots all move together.
+- Wormholes never move with their own cycle, never participate in color matching, cannot be eliminated or dropped, and act as permanent support anchors.
+- The wormhole node and outer ring stay fixed. `effects/WormholeFlow` rotates only the inner UV field with stronger distortion toward the center, adds a fast blue-purple highlight sweeping around a circular band, softly breathes the star and rim brightness, and pulses the dark center. The shader remains active during the interior-slot shift animation; the complete texture never rotates mechanically.
+- The 0.35-second shift locks input. Support is recalculated when the animation finishes, and every newly unsupported non-wormhole cell immediately enters the normal falling-marble pipeline.
+- The shift never invokes color matching. Even if the new arrangement forms a valid same-color group, it remains until a later player shot resolves that match.
+- A board containing only the two permanent wormholes counts as cleared. The top-anchor collapse rule does not override wormhole support.
+- Rendering and introduction UI use `image/ball/wormhole`; board rendering applies `effects/WormholeFlow`, and the texture is excluded from dynamic-atlas packing so its distortion UV domain remains stable. Remote compact packs encode wormholes with type code `h` plus the explicit move direction.
+
+### Vine Spirit
+
+Config:
+
+```json
+{
+    "id": "vine_spirit_001",
+    "entityCategory": "reactive_ball",
+    "entityType": "vine_spirit",
+    "row": 4,
+    "col": 8
+}
+```
+
+Rule:
+
+- A vine spirit occupies one board cell and always starts with exactly 3 health.
+- A direct projectile collision, or a completed elimination in any adjacent hex cell, deals exactly 1 damage. One shot resolution cannot damage the same spirit more than once.
+- Every third fired bubble, each surviving spirit selects the nearest unentangled normal colored bubble. Ties are resolved by row, column and cell id so the result is deterministic.
+- The selected target first shows the semi-transparent `image/ball/vines` warning for 0.65 seconds. Input and other post-shot special phases remain locked until the warning completes, then the vine becomes active.
+- An entangled ball cannot participate in color matching and is treated as a support anchor, so it does not enter the normal floating-drop pipeline.
+- A direct projectile collision or an elimination in an adjacent hex cell removes the vine without removing the underlying colored ball.
+- When a vine spirit reaches 0 health, its board cell is removed and every active or preview vine owned by that spirit withers immediately.
+- Runtime state stores the owning spirit id on each entangled cell. Missing owners, invalid health, mismatched preview ownership and unsupported render resources fail immediately.
+- The spirit uses `image/ball/vine_spirit`; active and preview vines use `image/ball/vines`.
+
 ### Molotov
 
 Config:
@@ -134,7 +219,7 @@ Current special entities are placed inside the projected occupied silhouette bef
 
 The base generator is `tools/generate-1000-level-configs.js`.
 
-For the relaxed 1000-level campaign rebuild, run `npm run redesign:relaxed-campaign`. This command rewrites `LEVEL_CONFIG_TABLE_1_1000.csv`, regenerates local levels 1-10, regenerates every remote compact pack from 11-1000, updates `remote-level-packs/level_manifest.json`, updates `assets/resources/config/level_manifest.json`, and syncs the root `levels/` mirror.
+For the relaxed 1000-level campaign rebuild, run `npm run redesign:relaxed-campaign`. This command rewrites `LEVEL_CONFIG_TABLE_1_1000.csv`, regenerates local levels 1-10, regenerates every remote compact pack from 11-1000, updates `remote-level-packs/level_manifest.json`, updates `assets/map/config/level_manifest.json`, and syncs the root `levels/` mirror.
 
 For the staged first-100 rebuild, first ensure `E:\kxppm\decrypted_config\all_levels.json` exists, then run `npm run generate:levels-first100`. This command rewrites only the first 100 CSV rows, local levels 1-10, `levels_pack_011_100.json`, and that pack's manifest hash/size entry. It verifies source row widths/codes, current gameplay fields, 10/9 target widths, ceiling support, exact current color/special counts and 100 unique occupancy silhouettes. It intentionally leaves levels 101-1000 and their remote packs unchanged. There is deliberately no fallback when the reference file is missing or invalid.
 
@@ -142,9 +227,9 @@ For levels 101-300, run `npm run generate:levels101-300`. This command rewrites 
 
 Local outputs:
 
-- `assets/resources/config/levels/level_001.json` through `level_010.json`
+- `assets/map/config/levels/level_001.json` through `level_010.json`
 - `levels/level_001.json` through `level_010.json`
-- `assets/resources/config/level_manifest.json`
+- `assets/map/config/level_manifest.json`
 
 Remote outputs:
 

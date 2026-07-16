@@ -10,6 +10,15 @@ function keyFor(cell) {
   return cell.row + ":" + cell.col;
 }
 
+function isVineEntangled(cell) {
+  return !!(
+    cell &&
+    cell.entityCategory === "normal_ball" &&
+    typeof cell.vineOwnerId === "string" &&
+    cell.vineOwnerId
+  );
+}
+
 function MatchSystem() {
   BaseSystem.call(this, "MatchSystem");
   this.matchThreshold = 3;
@@ -34,6 +43,10 @@ MatchSystem.prototype.findMatchGroup = function (grid, startCell) {
   }
 
   var startFromGrid = grid.getCell(startCell.row, startCell.col);
+  if (isVineEntangled(startFromGrid)) {
+    this.lastMatches = [];
+    return [];
+  }
   var targetColor = (startFromGrid && startFromGrid.color) || startCell.color;
 
   if (!targetColor) {
@@ -57,7 +70,7 @@ MatchSystem.prototype.findMatchGroup = function (grid, startCell) {
 
     visited[key] = true;
     var gridCell = grid.getCell(current.row, current.col);
-    if (!gridCell || gridCell.color !== targetColor) {
+    if (!gridCell || gridCell.color !== targetColor || isVineEntangled(gridCell)) {
       continue;
     }
 
@@ -70,7 +83,7 @@ MatchSystem.prototype.findMatchGroup = function (grid, startCell) {
       }
 
       var neighborCell = grid.getCell(neighbor.row, neighbor.col);
-      if (neighborCell && neighborCell.color === targetColor) {
+      if (neighborCell && neighborCell.color === targetColor && !isVineEntangled(neighborCell)) {
         queue.push({
           row: neighbor.row,
           col: neighbor.col

@@ -8,7 +8,7 @@ var LevelPackCompactCodec = require("../assets/scripts/config/LevelPackCompactCo
 var ClusteredLevelLayout = require("./clustered-level-layout");
 
 var PROJECT_ROOT = path.resolve(__dirname, "..");
-var RESOURCE_LEVEL_DIR = path.join(PROJECT_ROOT, "assets/resources/config/levels");
+var RESOURCE_LEVEL_DIR = path.join(PROJECT_ROOT, "assets/map/config/levels");
 var MIRROR_LEVEL_DIR = path.join(PROJECT_ROOT, "levels");
 var REMOTE_PACK_PATH = path.join(PROJECT_ROOT, "remote-level-packs/levels_pack_011_100.json");
 var MANIFEST_PATH = path.join(PROJECT_ROOT, "remote-level-packs/level_manifest.json");

@@ -42,6 +42,8 @@ var AD_RUN_POWERUP_TYPES = {
 var PLUS_THREE_BALLS_AMOUNT = 10;
 var SNOW_REMOVAL_CLEAR_COUNT = 10;
 var SPLITTER_SPAWN_DELAY_SEC = 0.2;
+var VINE_CAST_SHOT_INTERVAL = 3;
+var VINE_CAST_PREVIEW_DURATION = SpecialAnimationTiming.vineCast.previewDuration;
 var TIMED_LEVEL_RENDER_BUCKET_MS = 250;
 var BUBBLE_BREAK_SOUND_INTERVAL_MS = 30;
 
@@ -96,6 +98,13 @@ function createEmptyResolution() {
     reactiveTriggered: [],
     blastExplosions: [],
     spawnedBySplitters: [],
+    swirlRotations: [],
+    wormholeShifts: [],
+    vineCastEvaluated: false,
+    vineCasts: [],
+    vineSpiritHits: [],
+    releasedVines: [],
+    witheredVines: [],
     collectedKeys: [],
     unlockedLockedBalls: [],
     fairyAssistEvents: [],
@@ -215,6 +224,27 @@ var BOARD_ADVANCE_AFTER_IMPACT_DELAY = assertPositiveNumber(
 );
 var BOARD_ADVANCE_DELAY_EPSILON = 0.000001;
 var KEY_UNLOCK_BOARD_ADVANCE_BLOCK_DELAY = SpecialAnimationTiming.keyUnlock.totalDuration;
+if (
+  !SpecialAnimationTiming.swirlRotation ||
+  typeof SpecialAnimationTiming.swirlRotation.duration !== "number" ||
+  !isFinite(SpecialAnimationTiming.swirlRotation.duration) ||
+  SpecialAnimationTiming.swirlRotation.duration <= 0
+) {
+  throw new Error("SpecialAnimationTiming.swirlRotation.duration must be positive.");
+}
+if (SpecialAnimationTiming.swirlRotation.angleDegrees !== 60) {
+  throw new Error("SpecialAnimationTiming.swirlRotation.angleDegrees must be exactly 60.");
+}
+var SWIRL_ROTATION_DURATION = SpecialAnimationTiming.swirlRotation.duration;
+if (
+  !SpecialAnimationTiming.wormholeShift ||
+  typeof SpecialAnimationTiming.wormholeShift.duration !== "number" ||
+  !isFinite(SpecialAnimationTiming.wormholeShift.duration) ||
+  SpecialAnimationTiming.wormholeShift.duration <= 0
+) {
+  throw new Error("SpecialAnimationTiming.wormholeShift.duration must be positive.");
+}
+var WORMHOLE_SHIFT_DURATION = SpecialAnimationTiming.wormholeShift.duration;
 // 最后一颗入缸后，延迟再弹出 WinView。
 var WIN_SETTLEMENT_DELAY_SEC = 1;
 var DEFAULT_JAR_SCORE_BOOST_MULTIPLIER = 2;
@@ -248,6 +278,10 @@ function resolveBallDisplayCode(ball) {
 
   if (ball.entityType === "splitter") {
     return "SPLIT_" + ball.splitColor;
+  }
+
+  if (ball.entityType === "swirl") {
+    return "SWIRL";
   }
 
   if (ball.entityType === "locked") {
@@ -299,6 +333,27 @@ function isMolotovBall(ball) {
 
 function isSplitterBall(ball) {
   return !!(ball && ball.entityCategory === "reactive_ball" && ball.entityType === "splitter");
+}
+
+function isSwirlBall(ball) {
+  return !!(ball && ball.entityCategory === "reactive_ball" && ball.entityType === "swirl");
+}
+
+function isWormholeBall(ball) {
+  return !!(ball && ball.entityCategory === "reactive_ball" && ball.entityType === "wormhole");
+}
+
+function isVineSpiritBall(ball) {
+  return !!(ball && ball.entityCategory === "reactive_ball" && ball.entityType === "vine_spirit");
+}
+
+function isVineEntangledBall(ball) {
+  return !!(
+    ball &&
+    ball.entityCategory === "normal_ball" &&
+    typeof ball.vineOwnerId === "string" &&
+    ball.vineOwnerId
+  );
 }
 
 function isLockedBall(ball) {
@@ -673,6 +728,12 @@ function GameManager(options) {
   this.molotovBlastTriggeredIds = {};
   this.molotovResolutionPending = false;
   this.molotovPendingResolutionContext = null;
+  this.pendingSwirlRotationRemaining = 0;
+  this.pendingSwirlRotationResolution = null;
+  this.pendingWormholeShiftRemaining = 0;
+  this.pendingWormholeShiftResolution = null;
+  this.pendingVineCastRemaining = 0;
+  this.pendingVineCastResolution = null;
   this.pendingBarrierHammer = false;
   this.pendingRainbowColorSelection = null;
   this.ricochetGuideActive = false;
@@ -778,6 +839,12 @@ GameManager.prototype.startLevel = function (levelConfig) {
   this.molotovBlastTriggeredIds = {};
   this.molotovResolutionPending = false;
   this.molotovPendingResolutionContext = null;
+  this.pendingSwirlRotationRemaining = 0;
+  this.pendingSwirlRotationResolution = null;
+  this.pendingWormholeShiftRemaining = 0;
+  this.pendingWormholeShiftResolution = null;
+  this.pendingVineCastRemaining = 0;
+  this.pendingVineCastResolution = null;
   this.pendingBarrierHammer = false;
   this.pendingRainbowColorSelection = null;
   this.ricochetGuideActive = false;
@@ -1037,6 +1104,432 @@ GameManager.prototype._hasPendingMolotovBlasts = function () {
   return this.molotovResolutionPending || this.activeMolotovBlast !== null || this.pendingMolotovBlastQueue.length > 0;
 };
 
+GameManager.prototype._hasPendingSwirlRotation = function () {
+  if (typeof this.pendingSwirlRotationRemaining !== "number" || !isFinite(this.pendingSwirlRotationRemaining)) {
+    throw new Error("GameManager pendingSwirlRotationRemaining must be finite.");
+  }
+  if (this.pendingSwirlRotationRemaining < 0) {
+    throw new Error("GameManager pendingSwirlRotationRemaining must not be negative.");
+  }
+  if (this.pendingSwirlRotationRemaining > 0 && !this.pendingSwirlRotationResolution) {
+    throw new Error("GameManager pending swirl rotation requires its resolution.");
+  }
+  return this.pendingSwirlRotationRemaining > 0;
+};
+
+GameManager.prototype._hasPendingWormholeShift = function () {
+  if (typeof this.pendingWormholeShiftRemaining !== "number" || !isFinite(this.pendingWormholeShiftRemaining)) {
+    throw new Error("GameManager pendingWormholeShiftRemaining must be finite.");
+  }
+  if (this.pendingWormholeShiftRemaining < 0) {
+    throw new Error("GameManager pendingWormholeShiftRemaining must not be negative.");
+  }
+  if (this.pendingWormholeShiftRemaining > 0 && !this.pendingWormholeShiftResolution) {
+    throw new Error("GameManager pending wormhole shift requires its resolution.");
+  }
+  return this.pendingWormholeShiftRemaining > 0;
+};
+
+GameManager.prototype._hasPendingVineCast = function () {
+  if (typeof this.pendingVineCastRemaining !== "number" || !isFinite(this.pendingVineCastRemaining)) {
+    throw new Error("GameManager pendingVineCastRemaining must be finite.");
+  }
+  if (this.pendingVineCastRemaining < 0) {
+    throw new Error("GameManager pendingVineCastRemaining must not be negative.");
+  }
+  if (this.pendingVineCastRemaining > 0 && !this.pendingVineCastResolution) {
+    throw new Error("GameManager pending vine cast requires its resolution.");
+  }
+  return this.pendingVineCastRemaining > 0;
+};
+
+GameManager.prototype._beginVineCastForResolution = function (resolution) {
+  if (!resolution || typeof resolution !== "object" || Array.isArray(resolution)) {
+    throw new Error("Vine cast requires resolution.");
+  }
+  if (typeof resolution.vineCastEvaluated !== "boolean") {
+    throw new Error("Vine cast requires resolution.vineCastEvaluated boolean.");
+  }
+  if (!Array.isArray(resolution.vineCasts)) {
+    throw new Error("Vine cast requires resolution.vineCasts array.");
+  }
+  if (this._hasPendingVineCast() || this.pendingVineCastResolution !== null) {
+    throw new Error("Vine cast cannot start while another cast is pending.");
+  }
+  if (resolution.vineCastEvaluated) {
+    return false;
+  }
+  resolution.vineCastEvaluated = true;
+  if (!Number.isInteger(this.shotsFired) || this.shotsFired <= 0) {
+    throw new Error("Vine cast evaluation requires positive shotsFired.");
+  }
+  if (this.shotsFired % VINE_CAST_SHOT_INTERVAL !== 0) {
+    return false;
+  }
+
+  var grid = this.systems.bubbleGrid;
+  if (!grid || typeof grid.getVineSpirits !== "function") {
+    throw new Error("Vine cast requires BubbleGrid.getVineSpirits.");
+  }
+  if (typeof grid.findNearestNormalCellForVine !== "function" || typeof grid.beginVinePreview !== "function") {
+    throw new Error("Vine cast requires BubbleGrid vine target and preview methods.");
+  }
+  var spirits = grid.getVineSpirits();
+  if (!spirits.length) {
+    return false;
+  }
+
+  var reservedCellKeys = {};
+  spirits.forEach(function (spirit) {
+    var target = grid.findNearestNormalCellForVine(spirit, reservedCellKeys);
+    if (!target) {
+      return;
+    }
+    var targetKey = target.row + ":" + target.col;
+    reservedCellKeys[targetKey] = true;
+    grid.beginVinePreview(spirit.id, target);
+    resolution.vineCasts.push({
+      id: "vine_cast_" + this.shotsFired + "_" + spirit.id,
+      spiritId: spirit.id,
+      spiritRow: spirit.row,
+      spiritCol: spirit.col,
+      targetId: target.id,
+      targetRow: target.row,
+      targetCol: target.col,
+      duration: VINE_CAST_PREVIEW_DURATION,
+      completed: false
+    });
+  }, this);
+  if (!resolution.vineCasts.length) {
+    return false;
+  }
+
+  this.pendingVineCastRemaining = VINE_CAST_PREVIEW_DURATION;
+  this.pendingVineCastResolution = resolution;
+  return true;
+};
+
+GameManager.prototype._beginSwirlRotationForResolution = function (resolution) {
+  if (!resolution) {
+    throw new Error("Swirl rotation requires resolution.");
+  }
+  if (this._hasPendingSwirlRotation() || this.pendingSwirlRotationResolution !== null) {
+    throw new Error("Swirl rotation cannot start while another rotation is pending.");
+  }
+  var grid = this.systems.bubbleGrid;
+  if (!grid || typeof grid.getCells !== "function") {
+    throw new Error("Swirl rotation requires BubbleGrid.getCells.");
+  }
+  var centers = grid.getCells().filter(isSwirlBall).sort(function (left, right) {
+    if (left.row !== right.row) {
+      return left.row - right.row;
+    }
+    if (left.col !== right.col) {
+      return left.col - right.col;
+    }
+    return String(left.id).localeCompare(String(right.id));
+  });
+  if (!centers.length) {
+    return false;
+  }
+  if (typeof grid.rotateSwirlNeighborsClockwise !== "function") {
+    throw new Error("Swirl rotation requires BubbleGrid.rotateSwirlNeighborsClockwise.");
+  }
+  if (!Array.isArray(resolution.swirlRotations)) {
+    throw new Error("Swirl rotation requires resolution.swirlRotations.");
+  }
+
+  centers.forEach(function (center) {
+    var moves = grid.rotateSwirlNeighborsClockwise(center);
+    if (!moves.length) {
+      return;
+    }
+    resolution.swirlRotations.push({
+      id: "swirl_" + this.shotsFired + "_" + center.id,
+      centerId: center.id,
+      centerRow: center.row,
+      centerCol: center.col,
+      duration: SWIRL_ROTATION_DURATION,
+      angleDegrees: SpecialAnimationTiming.swirlRotation.angleDegrees,
+      moves: moves
+    });
+  }, this);
+  if (!resolution.swirlRotations.length) {
+    return false;
+  }
+  this.pendingSwirlRotationRemaining = SWIRL_ROTATION_DURATION;
+  this.pendingSwirlRotationResolution = resolution;
+  return true;
+};
+
+GameManager.prototype._beginWormholeShiftForResolution = function (resolution) {
+  if (!resolution || typeof resolution !== "object" || Array.isArray(resolution)) {
+    throw new Error("Wormhole shift requires resolution.");
+  }
+  if (this._hasPendingWormholeShift() || this.pendingWormholeShiftResolution !== null) {
+    throw new Error("Wormhole shift cannot start while another shift is pending.");
+  }
+  var grid = this.systems.bubbleGrid;
+  if (!grid || typeof grid.getCells !== "function") {
+    throw new Error("Wormhole shift requires BubbleGrid.getCells.");
+  }
+  var wormholes = grid.getCells().filter(isWormholeBall);
+  if (!wormholes.length) {
+    return false;
+  }
+  if (wormholes.length !== 2) {
+    throw new Error("Wormhole shift requires exactly two live wormholes.");
+  }
+  if (typeof grid.shiftWormholeInterior !== "function") {
+    throw new Error("Wormhole shift requires BubbleGrid.shiftWormholeInterior.");
+  }
+  if (!Array.isArray(resolution.wormholeShifts)) {
+    throw new Error("Wormhole shift requires resolution.wormholeShifts.");
+  }
+  var shift = grid.shiftWormholeInterior();
+  if (!shift) {
+    throw new Error("BubbleGrid.shiftWormholeInterior must return a shift for a live wormhole pair.");
+  }
+  if (!Array.isArray(shift.moves)) {
+    throw new Error("Wormhole shift result requires moves array.");
+  }
+  shift.moves.forEach(function (move) {
+    if (!move || move.entityType !== "splitter") {
+      return;
+    }
+    this.pendingSplitterSpawns.forEach(function (pending) {
+      if (String(pending.id) === move.cellId) {
+        pending.row = move.toRow;
+        pending.col = move.toCol;
+      }
+    });
+    resolution.reactiveTriggered.forEach(function (triggered) {
+      if (triggered && String(triggered.id) === move.cellId) {
+        triggered.row = move.toRow;
+        triggered.col = move.toCol;
+      }
+    });
+  }, this);
+  resolution.wormholeShifts.push({
+    id: "wormhole_" + this.shotsFired,
+    row: shift.row,
+    leftWormholeId: shift.leftWormholeId,
+    leftCol: shift.leftCol,
+    rightWormholeId: shift.rightWormholeId,
+    rightCol: shift.rightCol,
+    moveDirection: shift.moveDirection,
+    slotCount: shift.slotCount,
+    duration: WORMHOLE_SHIFT_DURATION,
+    moves: shift.moves
+  });
+  this.pendingWormholeShiftRemaining = WORMHOLE_SHIFT_DURATION;
+  this.pendingWormholeShiftResolution = resolution;
+  return true;
+};
+
+GameManager.prototype._scoreSwirlFloatingDrops = function (resolution, cells) {
+  if (!resolution || !Array.isArray(cells)) {
+    throw new Error("Swirl floating score requires resolution and cells.");
+  }
+  if (!cells.length) {
+    return 0;
+  }
+  var scorePerBall = this._getScoreRule("floatingDrop");
+  if (!Number.isInteger(scorePerBall) || scorePerBall < 0) {
+    throw new Error("Swirl floating drop score must be a non-negative integer.");
+  }
+  var gained = cells.length * scorePerBall;
+  this.score += gained;
+  resolution.scoreDelta += gained;
+  return gained;
+};
+
+GameManager.prototype._continueAfterSwirlRotation = function (resolution) {
+  if (!resolution) {
+    throw new Error("Swirl completion requires resolution.");
+  }
+  if (this._beginWormholeShiftForResolution(resolution)) {
+    return;
+  }
+  if (this._beginVineCastForResolution(resolution)) {
+    return;
+  }
+  this._continueAfterVineCast(resolution);
+};
+
+GameManager.prototype._continueAfterWormholeShift = function (resolution) {
+  if (!resolution) {
+    throw new Error("Wormhole completion requires resolution.");
+  }
+  if (this._beginVineCastForResolution(resolution)) {
+    return;
+  }
+  this._continueAfterVineCast(resolution);
+};
+
+GameManager.prototype._continueAfterVineCast = function (resolution) {
+  if (!resolution) {
+    throw new Error("Vine cast completion requires resolution.");
+  }
+  if (resolution.boardCleared) {
+    this._resolveBoardClearedOutcome();
+    return;
+  }
+  if (this._tryTopAnchorCollapse()) {
+    return;
+  }
+  var eliminationPresentationWasComplete = this.pendingBoardAdvanceEliminationPresentation === false;
+  if (this._applyPostImpactBoardShiftPolicy(resolution)) {
+    if (eliminationPresentationWasComplete) {
+      this.notifyBoardAdvanceEliminationPresentationComplete();
+    }
+    return;
+  }
+  if (this._scheduleBoardAdvanceAfterImpact()) {
+    return;
+  }
+  if (!this.isTimedInfiniteShots && this.remainingShots <= 0) {
+    if (
+      this.systems.fallingMarbleSystem.hasActiveDrops() ||
+      this._isBoardAdvanceBusy() ||
+      this._hasPendingSplitterSpawns() ||
+      this._hasPendingMolotovBlasts() ||
+      this._hasPendingVineCast()
+    ) {
+      this.state = "out_of_shots_pending";
+    } else {
+      this._showOutOfShotsAddBallPrompt();
+    }
+  }
+};
+
+GameManager.prototype._updatePendingVineCast = function (dt) {
+  if (!this._hasPendingVineCast()) {
+    return false;
+  }
+  var safeDt = assertFiniteNumber(dt, "Pending vine cast dt");
+  if (safeDt < 0) {
+    throw new Error("Pending vine cast dt must not be negative.");
+  }
+  this.pendingVineCastRemaining = Math.max(0, this.pendingVineCastRemaining - safeDt);
+  if (this.pendingVineCastRemaining > 0) {
+    return false;
+  }
+
+  var resolution = this.pendingVineCastResolution;
+  if (resolution !== this.lastResolution) {
+    throw new Error("Pending vine cast resolution must remain lastResolution.");
+  }
+  if (!Array.isArray(resolution.vineCasts) || !resolution.vineCasts.length) {
+    throw new Error("Pending vine cast requires non-empty resolution.vineCasts.");
+  }
+  var grid = this.systems.bubbleGrid;
+  if (!grid || typeof grid.completeVineEntanglement !== "function") {
+    throw new Error("Pending vine cast requires BubbleGrid.completeVineEntanglement.");
+  }
+  resolution.vineCasts.forEach(function (cast) {
+    if (!cast || cast.completed !== false) {
+      throw new Error("Pending vine cast entry must be incomplete.");
+    }
+    var entangled = grid.completeVineEntanglement(cast.spiritId, {
+      row: cast.targetRow,
+      col: cast.targetCol
+    });
+    if (!entangled || entangled.vineOwnerId !== cast.spiritId) {
+      throw new Error("Vine cast completion failed to entangle its target.");
+    }
+    cast.completed = true;
+  });
+  this.pendingVineCastResolution = null;
+  this._continueAfterVineCast(resolution);
+  return true;
+};
+
+GameManager.prototype._updatePendingSwirlRotation = function (dt) {
+  if (!this._hasPendingSwirlRotation()) {
+    return false;
+  }
+  var safeDt = assertFiniteNumber(dt, "Pending swirl rotation dt");
+  if (safeDt < 0) {
+    throw new Error("Pending swirl rotation dt must not be negative.");
+  }
+  this.pendingSwirlRotationRemaining = Math.max(0, this.pendingSwirlRotationRemaining - safeDt);
+  if (this.pendingSwirlRotationRemaining > 0) {
+    return false;
+  }
+
+  var resolution = this.pendingSwirlRotationResolution;
+  if (resolution !== this.lastResolution) {
+    throw new Error("Pending swirl rotation resolution must remain lastResolution.");
+  }
+  var grid = this.systems.bubbleGrid;
+  var newlyFloating = [];
+  while (true) {
+    var floatingCells = this.systems.supportSystem.findFloatingCells(grid);
+    if (!floatingCells.length) {
+      break;
+    }
+    var removedFloating = grid.removeCells(floatingCells);
+    if (!removedFloating.length) {
+      throw new Error("Swirl connection scan found cells that could not be removed.");
+    }
+    this._appendUniqueCells(newlyFloating, removedFloating);
+    this._appendUniqueCells(resolution.floating, removedFloating);
+    this._collectRemovedKeysAndResolveUnlocks(removedFloating, grid, resolution);
+    this._cancelPendingSplitterSpawnsForDroppedCells(removedFloating);
+    this._registerResolutionDrops(removedFloating, grid, resolution);
+    this.systems.jarCollectorSystem.collect([]);
+  }
+  this._appendUniqueCells(resolution.collected, newlyFloating);
+  this._scoreSwirlFloatingDrops(resolution, newlyFloating);
+  resolution.boardCleared = this._isBoardCleared(grid);
+  this.pendingSwirlRotationResolution = null;
+  this._continueAfterSwirlRotation(resolution);
+  return true;
+};
+
+GameManager.prototype._updatePendingWormholeShift = function (dt) {
+  if (!this._hasPendingWormholeShift()) {
+    return false;
+  }
+  var safeDt = assertFiniteNumber(dt, "Pending wormhole shift dt");
+  if (safeDt < 0) {
+    throw new Error("Pending wormhole shift dt must not be negative.");
+  }
+  this.pendingWormholeShiftRemaining = Math.max(0, this.pendingWormholeShiftRemaining - safeDt);
+  if (this.pendingWormholeShiftRemaining > 0) {
+    return false;
+  }
+  var resolution = this.pendingWormholeShiftResolution;
+  if (resolution !== this.lastResolution) {
+    throw new Error("Pending wormhole shift resolution must remain lastResolution.");
+  }
+  var grid = this.systems.bubbleGrid;
+  var newlyFloating = [];
+  while (true) {
+    var floatingCells = this.systems.supportSystem.findFloatingCells(grid);
+    if (!floatingCells.length) {
+      break;
+    }
+    var removedFloating = grid.removeCells(floatingCells);
+    if (!removedFloating.length) {
+      throw new Error("Wormhole support scan found cells that could not be removed.");
+    }
+    this._appendUniqueCells(newlyFloating, removedFloating);
+    this._appendUniqueCells(resolution.floating, removedFloating);
+    this._collectRemovedKeysAndResolveUnlocks(removedFloating, grid, resolution);
+    this._cancelPendingSplitterSpawnsForDroppedCells(removedFloating);
+    this._registerResolutionDrops(removedFloating, grid, resolution);
+    this.systems.jarCollectorSystem.collect([]);
+  }
+  this._appendUniqueCells(resolution.collected, newlyFloating);
+  this._scoreSwirlFloatingDrops(resolution, newlyFloating);
+  resolution.boardCleared = this._isBoardCleared(grid);
+  this.pendingWormholeShiftResolution = null;
+  this._continueAfterWormholeShift(resolution);
+  return true;
+};
+
 GameManager.prototype._queuePendingSplitterSpawn = function (splitterCell, resolution) {
   if (!splitterCell || !Number.isInteger(splitterCell.row) || !Number.isInteger(splitterCell.col)) {
     throw new Error("Pending splitter spawn requires splitter cell coordinates.");
@@ -1153,11 +1646,11 @@ GameManager.prototype._updatePendingSplitterSpawns = function (dt) {
     throw new Error("Pending splitter spawn requires lastResolution.spawnedBySplitters.");
   }
   Array.prototype.push.apply(this.lastResolution.spawnedBySplitters, spawnedCells);
-  if (this.state === "won_pending" && grid.getCells().length > 0) {
+  if (this.state === "won_pending" && !this._isBoardCleared(grid)) {
     this.state = "running";
   }
   this._ensureMinimumVisibleBoardRows(this.lastResolution);
-  if (this.state === "out_of_shots_pending" && !this.systems.fallingMarbleSystem.hasActiveDrops() && !this._hasPendingSplitterSpawns() && !this._hasPendingMolotovBlasts() && !this._isBoardAdvanceBusy()) {
+  if (this.state === "out_of_shots_pending" && !this.systems.fallingMarbleSystem.hasActiveDrops() && !this._hasPendingSplitterSpawns() && !this._hasPendingMolotovBlasts() && !this._hasPendingSwirlRotation() && !this._hasPendingWormholeShift() && !this._hasPendingVineCast() && !this._isBoardAdvanceBusy()) {
     this._showOutOfShotsAddBallPrompt();
   }
   if (grid && typeof grid.assertNoVisualOverlap === "function") {
@@ -1301,8 +1794,19 @@ GameManager.prototype._updateJarScoreBoost = function (dt) {
   return true;
 };
 
+GameManager.prototype._isBoardCleared = function (grid) {
+  if (!grid || typeof grid.getCells !== "function") {
+    throw new Error("Board cleared check requires BubbleGrid.getCells.");
+  }
+  var cells = grid.getCells();
+  if (!Array.isArray(cells)) {
+    throw new Error("Board cleared check requires BubbleGrid.getCells array.");
+  }
+  return cells.every(isWormholeBall);
+};
+
 GameManager.prototype._resolveOutOfShotsOutcome = function () {
-  if (this.systems.bubbleGrid.getCells().length === 0) {
+  if (this._isBoardCleared(this.systems.bubbleGrid)) {
     this._resolveBoardClearedOutcome();
     return;
   }
@@ -1311,7 +1815,7 @@ GameManager.prototype._resolveOutOfShotsOutcome = function () {
 };
 
 GameManager.prototype._showOutOfShotsAddBallPrompt = function () {
-  if (this.systems.bubbleGrid.getCells().length === 0) {
+  if (this._isBoardCleared(this.systems.bubbleGrid)) {
     this._resolveBoardClearedOutcome();
     return;
   }
@@ -1633,7 +2137,7 @@ GameManager.prototype._hasRequiredStarRating = function () {
 };
 
 GameManager.prototype._isClearWinCompleted = function () {
-  return this._hasRequiredStarRating() && this.systems.bubbleGrid.getCells().length === 0;
+  return this._hasRequiredStarRating() && this._isBoardCleared(this.systems.bubbleGrid);
 };
 
 GameManager.prototype._resolveClearWinOutcome = function () {
@@ -1696,6 +2200,9 @@ GameManager.prototype.setAim = function (point) {
     this._isBoardAdvanceBusy() ||
     this._hasPendingSplitterSpawns() ||
     this._hasPendingMolotovBlasts() ||
+    this._hasPendingSwirlRotation() ||
+    this._hasPendingWormholeShift() ||
+    this._hasPendingVineCast() ||
     this.pendingBarrierHammer ||
     this.pendingRainbowColorSelection
   ) {
@@ -1714,6 +2221,9 @@ GameManager.prototype.beginAim = function (point) {
     this._isBoardAdvanceBusy() ||
     this._hasPendingSplitterSpawns() ||
     this._hasPendingMolotovBlasts() ||
+    this._hasPendingSwirlRotation() ||
+    this._hasPendingWormholeShift() ||
+    this._hasPendingVineCast() ||
     this.pendingBarrierHammer ||
     this.pendingRainbowColorSelection
   ) {
@@ -1742,6 +2252,9 @@ GameManager.prototype.fireShot = function () {
     this._isBoardAdvanceBusy() ||
     this._hasPendingSplitterSpawns() ||
     this._hasPendingMolotovBlasts() ||
+    this._hasPendingSwirlRotation() ||
+    this._hasPendingWormholeShift() ||
+    this._hasPendingVineCast() ||
     this.pendingBarrierHammer ||
     this.pendingRainbowColorSelection
   ) {
@@ -1828,6 +2341,9 @@ GameManager.prototype._isInstantAdPowerupBusy = function () {
     this._isBoardAdvanceBusy() ||
     this._hasPendingSplitterSpawns() ||
     this._hasPendingMolotovBlasts() ||
+    this._hasPendingSwirlRotation() ||
+    this._hasPendingWormholeShift() ||
+    this._hasPendingVineCast() ||
     this.pendingBarrierHammer ||
     this.pendingRainbowColorSelection ||
     this.systems.fallingMarbleSystem.hasActiveDrops()
@@ -2134,6 +2650,7 @@ GameManager.prototype.useThreeLineElimination = function (expectedRows) {
   this._pushBubbleBreakEvent(removedLineCells);
   var resolution = createEmptyResolution();
   resolution.matched = removedLineCells;
+  this._resolveVinesAfterRemoval(removedLineCells, grid, resolution);
   this._collectRemovedKeysAndResolveUnlocks(removedLineCells, grid, resolution);
   this._registerMatchedObjectiveCollection(removedLineCells, resolution.eliminationSequence, resolution, grid);
   if (removedLineCells.length) {
@@ -2151,7 +2668,7 @@ GameManager.prototype.useThreeLineElimination = function (expectedRows) {
   this.systems.jarCollectorSystem.collect([]);
 
   resolution.collected = fallingCandidates;
-  resolution.boardCleared = grid.getCells().length === 0;
+  resolution.boardCleared = this._isBoardCleared(grid);
   this.lastResolution = resolution;
   this._applyPostImpactBoardShiftPolicy(this.lastResolution);
   this.pendingShotPlan = null;
@@ -2486,7 +3003,7 @@ GameManager.prototype.useSnowRemoval = function (expectedTargets) {
 
   resolution.floating = removedFloating;
   resolution.collected = removedFloating;
-  resolution.boardCleared = grid.getCells().length === 0;
+  resolution.boardCleared = this._isBoardCleared(grid);
   this._applyPostImpactBoardShiftPolicy(this.lastResolution);
   this.pendingShotPlan = null;
   this.isAiming = false;
@@ -2721,14 +3238,14 @@ GameManager.prototype.useBarrierHammerAt = function (point) {
 
     resolution.matched = removedObstacle;
     resolution.collected = resolution.floating.slice();
-    resolution.boardCleared = grid.getCells().length === 0;
+    resolution.boardCleared = this._isBoardCleared(grid);
   } else {
     var thawedCell = this._thawIceCellAtCurrentPosition(grid, targetCell);
     resolution.thawed = thawedCell ? [thawedCell] : [];
     if (typeof this._registerIceCollection === "function") {
       resolution.iceCollected = this._registerIceCollection(resolution.thawed);
     }
-    resolution.boardCleared = grid.getCells().length === 0;
+    resolution.boardCleared = this._isBoardCleared(grid);
     this.systems.fallingMarbleSystem.registerDrops([], grid);
     this.systems.jarCollectorSystem.collect([]);
   }
@@ -2941,13 +3458,27 @@ GameManager.prototype.update = function (dt) {
   runtimeEvents = runtimeEvents.concat(this._drainRuntimeEvents());
 
   var boardAdvancedThisFrame = viewportFinished || this._updatePendingBoardAdvance(dt) || this._hasBoardAdvancedThisFrame();
-  var splitterSpawned = boardAdvancedThisFrame ? false : this._updatePendingSplitterSpawns(dt);
-  var molotovBlastUpdated = boardAdvancedThisFrame ? false : this._updatePendingMolotovBlasts(dt);
+  var swirlRotationWasPending = this._hasPendingSwirlRotation();
+  var swirlRotationCompleted = boardAdvancedThisFrame ? false : this._updatePendingSwirlRotation(dt);
+  var wormholeShiftWasPending = this._hasPendingWormholeShift();
+  var wormholeShiftCompleted = boardAdvancedThisFrame || swirlRotationWasPending || this._hasPendingSwirlRotation()
+    ? false
+    : this._updatePendingWormholeShift(dt);
+  var vineCastWasPending = this._hasPendingVineCast();
+  var vineCastCompleted = boardAdvancedThisFrame || swirlRotationWasPending || this._hasPendingSwirlRotation() || wormholeShiftWasPending || this._hasPendingWormholeShift()
+    ? false
+    : this._updatePendingVineCast(dt);
+  var blockOtherSpecialUpdates = swirlRotationWasPending || this._hasPendingSwirlRotation() || wormholeShiftWasPending || this._hasPendingWormholeShift() || vineCastWasPending || this._hasPendingVineCast();
+  var splitterSpawned = boardAdvancedThisFrame || blockOtherSpecialUpdates ? false : this._updatePendingSplitterSpawns(dt);
+  var molotovBlastUpdated = boardAdvancedThisFrame || blockOtherSpecialUpdates ? false : this._updatePendingMolotovBlasts(dt);
   runtimeEvents = runtimeEvents.concat(this._drainRuntimeEvents());
   var hasProjectile = !!this.activeProjectile;
   var hasFallingDrops = this.systems.fallingMarbleSystem.hasActiveDrops();
   var hasPendingSplitterSpawns = this._hasPendingSplitterSpawns();
   var hasPendingMolotovBlasts = this._hasPendingMolotovBlasts();
+  var hasPendingSwirlRotation = this._hasPendingSwirlRotation();
+  var hasPendingWormholeShift = this._hasPendingWormholeShift();
+  var hasPendingVineCast = this._hasPendingVineCast();
 
   if (
     this.state === "won_surplus_shots_pending" &&
@@ -2966,6 +3497,9 @@ GameManager.prototype.update = function (dt) {
     !hasFallingDrops &&
     !hasPendingSplitterSpawns &&
     !hasPendingMolotovBlasts &&
+    !hasPendingSwirlRotation &&
+    !hasPendingWormholeShift &&
+    !hasPendingVineCast &&
     !this._isBoardAdvanceBusy()
   ) {
     this._showOutOfShotsAddBallPrompt();
@@ -2979,6 +3513,9 @@ GameManager.prototype.update = function (dt) {
     !hasFallingDrops &&
     !hasPendingSplitterSpawns &&
     !hasPendingMolotovBlasts &&
+    !hasPendingSwirlRotation &&
+    !hasPendingWormholeShift &&
+    !hasPendingVineCast &&
     !this._isBoardAdvanceBusy()
   ) {
     this._showOutOfShotsAddBallPrompt();
@@ -2994,7 +3531,7 @@ GameManager.prototype.update = function (dt) {
     }
   }
 
-  if (this.state === "won_pending" && !hasProjectile && !hasFallingDrops && !hasPendingSplitterSpawns && !hasPendingMolotovBlasts) {
+  if (this.state === "won_pending" && !hasProjectile && !hasFallingDrops && !hasPendingSplitterSpawns && !hasPendingMolotovBlasts && !hasPendingSwirlRotation && !hasPendingWormholeShift && !hasPendingVineCast) {
     this._resolveBoardClearedOutcome();
     return this.getRuntimeSnapshot(runtimeEvents);
   }
@@ -3005,6 +3542,9 @@ GameManager.prototype.update = function (dt) {
     !hasFallingDrops &&
     !hasPendingSplitterSpawns &&
     !hasPendingMolotovBlasts &&
+    !hasPendingSwirlRotation &&
+    !hasPendingWormholeShift &&
+    !hasPendingVineCast &&
     !this.systems.fallingMarbleSystem.hasPendingSurplusShots()
   ) {
     if (typeof this._pushRuntimeEvent === "function") {
@@ -3019,7 +3559,7 @@ GameManager.prototype.update = function (dt) {
     return this.getRuntimeSnapshot(runtimeEvents);
   }
 
-  if (this.state === "out_of_shots_pending" && !hasProjectile && !hasFallingDrops && !hasPendingSplitterSpawns && !hasPendingMolotovBlasts && !this._isBoardAdvanceBusy()) {
+  if (this.state === "out_of_shots_pending" && !hasProjectile && !hasFallingDrops && !hasPendingSplitterSpawns && !hasPendingMolotovBlasts && !hasPendingSwirlRotation && !hasPendingWormholeShift && !hasPendingVineCast && !this._isBoardAdvanceBusy()) {
     this._showOutOfShotsAddBallPrompt();
     return this.getRuntimeSnapshot(runtimeEvents);
   }
@@ -3033,6 +3573,9 @@ GameManager.prototype.update = function (dt) {
     !scoreBoostChanged &&
     !splitterSpawned &&
     !molotovBlastUpdated &&
+    !swirlRotationCompleted &&
+    !wormholeShiftCompleted &&
+    !vineCastCompleted &&
     !surplusUpdated &&
     !viewportUpdated &&
     !boardAdvancedThisFrame &&
@@ -3052,6 +3595,9 @@ GameManager.prototype.update = function (dt) {
     scoreBoostChanged ||
     splitterSpawned ||
     molotovBlastUpdated ||
+    swirlRotationCompleted ||
+    wormholeShiftCompleted ||
+    vineCastCompleted ||
     surplusUpdated ||
     viewportUpdated ||
     boardAdvancedThisFrame ||
@@ -3067,6 +3613,9 @@ GameManager.prototype.update = function (dt) {
       !scoreBoostChanged &&
       !splitterSpawned &&
       !molotovBlastUpdated &&
+      !swirlRotationCompleted &&
+      !wormholeShiftCompleted &&
+      !vineCastCompleted &&
       !surplusUpdated &&
       !viewportUpdated &&
       !boardAdvancedThisFrame &&
@@ -3083,6 +3632,9 @@ GameManager.prototype.update = function (dt) {
       !scoreBoostChanged &&
       !splitterSpawned &&
       !molotovBlastUpdated &&
+      !swirlRotationCompleted &&
+      !wormholeShiftCompleted &&
+      !vineCastCompleted &&
       !surplusUpdated &&
       !viewportUpdated &&
       !boardAdvancedThisFrame &&
@@ -3096,6 +3648,9 @@ GameManager.prototype.update = function (dt) {
       !scoreBoostChanged &&
       !splitterSpawned &&
       !molotovBlastUpdated &&
+      !swirlRotationCompleted &&
+      !wormholeShiftCompleted &&
+      !vineCastCompleted &&
       !surplusUpdated &&
       !viewportUpdated &&
       !boardAdvancedThisFrame &&
@@ -3124,6 +3679,8 @@ Object.assign(GameManager.prototype, createGameManagerShotResolutionMethods({
   isRainbowBall: isRainbowBall,
   isMolotovBall: isMolotovBall,
   isSplitterBall: isSplitterBall,
+  isVineSpiritBall: isVineSpiritBall,
+  isVineEntangledBall: isVineEntangledBall,
   isLockedBall: isLockedBall,
   isKeyBall: isKeyBall,
   resolveIceInnerColor: resolveIceInnerColor,
@@ -3170,7 +3727,7 @@ GameManager.prototype.debugDropBottomRow = function () {
   this._registerResolutionDrops(removedBottom, grid, resolution);
   this.systems.jarCollectorSystem.collect([]);
 
-  resolution.boardCleared = grid.getCells().length === 0;
+  resolution.boardCleared = this._isBoardCleared(grid);
   this.lastResolution = resolution;
   this._ensureMinimumVisibleBoardRows(this.lastResolution);
   this.pendingShotPlan = null;
@@ -3269,6 +3826,9 @@ GameManager.prototype.getRuntimeSnapshot = function (runtimeEvents, renderOption
     this.state === "running" &&
     !this.activeProjectile &&
     !this._isBoardAdvanceBusy() &&
+    !this._hasPendingSwirlRotation() &&
+    !this._hasPendingWormholeShift() &&
+    !this._hasPendingVineCast() &&
     !this.pendingRainbowColorSelection
   );
   shooterSnapshot.trajectory = this.isAiming && this.pendingShotPlan && !this.activeProjectile && !this.pendingRainbowColorSelection
@@ -3322,7 +3882,7 @@ GameManager.prototype.getRuntimeSnapshot = function (runtimeEvents, renderOption
     jarScoreBoostRemainingMs: Math.max(0, Math.floor(Number(this.jarScoreBoostRemainingMs) || 0)),
     dropInterval: 0,
     boardViewport: this.systems.boardViewportSystem.snapshot(),
-    inputLocked: this._isBoardAdvanceBusy() || this.state !== "running",
+    inputLocked: this._isBoardAdvanceBusy() || this._hasPendingSwirlRotation() || this._hasPendingWormholeShift() || this._hasPendingVineCast() || this.state !== "running",
     turnsUntilDrop: this.getTurnsUntilDrop(),
     lastFiredColor: this.lastFiredColor,
     // Keep runtime snapshot light during flight to avoid per-frame deep-clone spikes.

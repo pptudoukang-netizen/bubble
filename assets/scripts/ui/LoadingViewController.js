@@ -235,6 +235,51 @@ var LoadingViewController = cc.Class({
     this.node.active = false;
   },
 
+  disposeAndReleaseAssets: function () {
+    if (!this.node || !cc.isValid(this.node)) {
+      throw new Error("LoadingView dispose requires a valid node.");
+    }
+    if (this._progressAnim || this._progressCompleteWaiters.length > 0) {
+      throw new Error("LoadingView cannot dispose while progress animation is active.");
+    }
+    if (!cc.assetManager || typeof cc.assetManager.releaseAsset !== "function") {
+      throw new Error("LoadingView dispose requires cc.assetManager.releaseAsset.");
+    }
+
+    this.hideImmediate();
+    var spriteFrames = [];
+    var collectSpriteFrames = function (node) {
+      var sprite = node.getComponent(cc.Sprite);
+      if (sprite && sprite.spriteFrame) {
+        if (spriteFrames.indexOf(sprite.spriteFrame) < 0) {
+          spriteFrames.push(sprite.spriteFrame);
+        }
+        sprite.spriteFrame = null;
+      }
+      node.children.forEach(collectSpriteFrames);
+    };
+    collectSpriteFrames(this.node);
+
+    var loadingNode = this.node;
+    this._bgNode = null;
+    this._panelNode = null;
+    this._stageNode = null;
+    this._percentNode = null;
+    this._trackNode = null;
+    this._fillNode = null;
+    this._spinnerNode = null;
+    this._aniNode = null;
+    this._stageLabel = null;
+    this._percentLabel = null;
+    this._progressBar = null;
+
+    loadingNode.destroy();
+    spriteFrames.forEach(function (spriteFrame) {
+      cc.assetManager.releaseAsset(spriteFrame);
+    });
+    return spriteFrames.length;
+  },
+
   _cacheNodesFromPrefab: function () {
     this._bgNode = this.node.getChildByName("Bg");
     this._panelNode = this.node.getChildByName("Panel");

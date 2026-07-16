@@ -4,7 +4,7 @@ var fs = require("fs");
 var path = require("path");
 
 var LevelPackCompactCodec = require("../assets/scripts/config/LevelPackCompactCodec");
-var LEVEL_DIR = path.resolve(__dirname, "../assets/resources/config/levels");
+var LEVEL_DIR = path.resolve(__dirname, "../assets/map/config/levels");
 var REMOTE_PACK_DIR = path.resolve(__dirname, "../remote-level-packs");
 var OUTPUT_CSV = path.resolve(__dirname, "../LEVEL_CONFIG_TABLE_1_1000_ACTUAL.csv");
 var OUTPUT_MD = path.resolve(__dirname, "../LEVEL_CONFIG_TABLE_1_1000_ACTUAL.md");

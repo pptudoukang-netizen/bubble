@@ -7,8 +7,22 @@ var BootstrapButtonFactory = Shared.BootstrapButtonFactory;
 var hideGameCircleWelfareViewNode = Shared.hideGameCircleWelfareViewNode;
 var LevelColorPermutation = require("../config/LevelColorPermutation");
 
+function resolveLevelEntryMode(options) {
+  if (options === undefined) {
+    return "campaign";
+  }
+  if (!options || typeof options !== "object" || Array.isArray(options)) {
+    throw new Error("Level entry options must be an object.");
+  }
+  if (options.mode !== "campaign" && options.mode !== "test") {
+    throw new Error("Level entry mode must be campaign or test.");
+  }
+  return options.mode;
+}
+
 module.exports = {
-  _loadLevelById: function (levelId, successLogPrefix, failStatusMessage) {
+  _loadLevelById: function (levelId, successLogPrefix, failStatusMessage, entryOptions) {
+    var entryMode = resolveLevelEntryMode(entryOptions);
     this._recordCurrentAttemptQuit("start_new_level");
     this._cancelGameplayBundleIdleRelease();
     this._persistRouteEditorIfDirty();
@@ -48,18 +62,31 @@ module.exports = {
         if (preparedLevelEntry) {
           return preparedLevelEntry.levelConfig;
         }
+        if (entryMode === "test") {
+          if (!this.levelManager || typeof this.levelManager.loadTestLevel !== "function") {
+            throw new Error("Test level entry requires LevelManager.loadTestLevel.");
+          }
+          return this.levelManager.loadTestLevel();
+        }
         return this.levelManager.loadLevel(levelId).then(function (levelConfig) {
           LevelColorPermutation.apply(levelConfig);
           return levelConfig;
         });
       }.bind(this)).then(function (levelConfig) {
         this.currentLevelConfig = levelConfig;
-        this._currentLevelId = Math.max(1, Number(levelId) || 1);
+        this._currentLevelId = Math.max(1, Number(levelConfig.level.levelId) || 1);
+        if (this._currentLevelId !== requestedLevelId) {
+          throw new Error("Loaded level id does not match requested level: " + levelId);
+        }
         this._currentRunContext = {
-          mode: "campaign",
+          mode: entryMode,
           levelId: this._currentLevelId
         };
-        this._rememberSelectedLevel(this._currentLevelId);
+        if (entryMode === "test") {
+          this._currentLevelEnteredByTestUnlock = true;
+        } else {
+          this._rememberSelectedLevel(this._currentLevelId);
+        }
         this._prepareRouteEditorForLevel(levelConfig, this._currentLevelId);
         return this.levelRenderer.syncBoardLayoutHudBottomLineAsync().then(function () {
           this._applyBoardTuningFromProperties();
@@ -70,7 +97,7 @@ module.exports = {
           if (typeof this._applyPendingNextRoundRewards === "function") {
             snapshot = this._applyPendingNextRoundRewards(snapshot);
           }
-          if (typeof this._beginLevelAttemptTracking === "function") {
+          if (entryMode !== "test" && typeof this._beginLevelAttemptTracking === "function") {
             this._beginLevelAttemptTracking(levelConfig, snapshot);
           }
           this._lastRuntimeState = snapshot ? snapshot.state : null;

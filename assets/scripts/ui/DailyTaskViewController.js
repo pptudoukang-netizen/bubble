@@ -4,7 +4,7 @@ var BundleLoader = require("../utils/BundleLoader");
 var SpriteProxyLayerHelper = require("../utils/SpriteProxyLayerHelper");
 
 var UI_BUNDLE_NAME = "ui";
-var COIN_ICON_PATH = "image/props/coin";
+var COIN_ICON_PATH = "ui/image/props/coin";
 var GO_BUTTON_PATH = "image/dailytask/go_btn";
 var CLAIM_BUTTON_PATH = "image/dailytask/get_btn";
 var TASK_ITEM_GAP = 15;

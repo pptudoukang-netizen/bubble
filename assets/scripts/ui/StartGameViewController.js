@@ -4,14 +4,14 @@ var BundleLoader = require("../utils/BundleLoader");
 var SpriteProxyLayerHelper = require("../utils/SpriteProxyLayerHelper");
 
 var POWERUP_DEFINITIONS = [
-  { itemId: "plus_three_balls", unlockLevel: 1, iconPath: "image/props/plus_ball", temporary: true },
-  { itemId: "three_line_elimination", unlockLevel: 1, iconPath: "image/props/three_line_elimination", temporary: true },
-  { itemId: "precise_aim", unlockLevel: 1, iconPath: "image/props/aim" },
-  { itemId: "swap_ball", unlockLevel: 5, iconPath: "image/props/change_ball" },
-  { itemId: "rainbow_ball", unlockLevel: 10, iconPath: "image/props/rainbow_ball" },
-  { itemId: "blast_ball", unlockLevel: 15, iconPath: "image/props/blast_ball" },
-  { itemId: "barrier_hammer", unlockLevel: 20, iconPath: "image/props/barrier_hammer" },
-  { itemId: "snow_removal", unlockLevel: 16, iconPath: "image/props/snow_removal" }
+  { itemId: "plus_three_balls", unlockLevel: 1, iconPath: "ui/image/props/plus_ball", temporary: true },
+  { itemId: "three_line_elimination", unlockLevel: 1, iconPath: "ui/image/props/three_line_elimination", temporary: true },
+  { itemId: "precise_aim", unlockLevel: 1, iconPath: "ui/image/props/aim" },
+  { itemId: "swap_ball", unlockLevel: 5, iconPath: "ui/image/props/change_ball" },
+  { itemId: "rainbow_ball", unlockLevel: 10, iconPath: "ui/image/props/rainbow_ball" },
+  { itemId: "blast_ball", unlockLevel: 15, iconPath: "ui/image/props/blast_ball" },
+  { itemId: "barrier_hammer", unlockLevel: 20, iconPath: "ui/image/props/barrier_hammer" },
+  { itemId: "snow_removal", unlockLevel: 16, iconPath: "ui/image/props/snow_removal" }
 ];
 var LOCK_ICON_PATH = "image/commone/lock";
 var PROP_ITEM_HORIZONTAL_PADDING = 12;

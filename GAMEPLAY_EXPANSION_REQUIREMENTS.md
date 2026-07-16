@@ -82,7 +82,7 @@
 资源路径固定为：
 
 ```text
-resources/image/light_effect.png
+assets/game/image/light_effect.png
 ```
 
 使用时表现：
@@ -154,7 +154,7 @@ Fail-Fast 要求：
 
 - `collect_ice_snowball` 表示收集冰冻雪球目标。
 - 目标对象来自现有冰冻球/雪球实体。
-- 具体视觉资源可使用当前已加入的冰冻雪球相关资源，例如 `resources/image/snow_cube.png` 或最终 UI 指定资源。
+- 具体视觉资源可使用当前已加入的冰冻雪球相关资源，例如 `assets/game/image/ball/snow_cube.png` 或最终 UI 指定资源。
 
 ### 4.2 与现有冰冻球关系
 
@@ -490,7 +490,7 @@ Fail-Fast 要求：
 
 - 两种新道具只能通过当前局广告获得。
 - 当前局结束后新道具次数清空。
-- 消三行动画使用 `resources/image/light_effect.png`。
+- 消三行动画使用 `assets/game/image/light_effect.png`。
 - 消三行动画结束后才触发三行消除和掉落。
 - 消三行清除普通颜色球不提供额外分数。
 - 加三球使用后剩余球数增加 `3`。

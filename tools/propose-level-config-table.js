@@ -5,7 +5,7 @@ var path = require("path");
 var BoardLayout = require("../assets/scripts/config/BoardLayout");
 var LevelPackCompactCodec = require("../assets/scripts/config/LevelPackCompactCodec");
 
-var LEVEL_DIR = path.resolve(__dirname, "../assets/resources/config/levels");
+var LEVEL_DIR = path.resolve(__dirname, "../assets/map/config/levels");
 var REMOTE_PACK_DIR = path.resolve(__dirname, "../remote-level-packs");
 var OUTPUT_CSV = path.resolve(__dirname, "../LEVEL_CONFIG_TABLE_1_1000.csv");
 var OUTPUT_MD = path.resolve(__dirname, "../LEVEL_CONFIG_TABLE_1_1000.md");

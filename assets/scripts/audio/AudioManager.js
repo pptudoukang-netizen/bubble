@@ -206,6 +206,40 @@ AudioManager.prototype._loadClip = function (resourcePath) {
   return this.clipLoadPromises[resourcePath];
 };
 
+AudioManager.prototype.releaseCachedClipsExcept = function (retainedPaths) {
+  if (!Array.isArray(retainedPaths)) {
+    throw new Error("AudioManager.releaseCachedClipsExcept requires an array.");
+  }
+  if (!cc.assetManager || typeof cc.assetManager.releaseAsset !== "function") {
+    throw new Error("AudioManager cache release requires cc.assetManager.releaseAsset.");
+  }
+
+  var retainedPathMap = {};
+  retainedPaths.forEach(function (path) {
+    if (typeof path !== "string" || path.trim().length === 0) {
+      throw new Error("AudioManager retained audio path must be a non-empty string.");
+    }
+    retainedPathMap[path.trim()] = true;
+  });
+
+  var releasedClips = [];
+  Object.keys(this.clipCache).forEach(function (path) {
+    if (retainedPathMap[path] === true) {
+      return;
+    }
+    var clip = this.clipCache[path];
+    delete this.clipCache[path];
+    if (releasedClips.indexOf(clip) < 0) {
+      releasedClips.push(clip);
+    }
+  }, this);
+
+  releasedClips.forEach(function (clip) {
+    cc.assetManager.releaseAsset(clip);
+  });
+  return releasedClips.length;
+};
+
 AudioManager.prototype._applyVolumeSettings = function () {
   this._applyMusicVolumeSetting();
   this._applySfxVolumeSetting();

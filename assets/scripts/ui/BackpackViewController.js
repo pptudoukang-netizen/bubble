@@ -7,32 +7,32 @@ var ITEM_DEFINITIONS = [
   {
     itemId: "precise_aim",
     displayName: "精确瞄准",
-    iconPath: "image/props/aim"
+    iconPath: "ui/image/props/aim"
   },
   {
     itemId: "swap_ball",
     displayName: "换球",
-    iconPath: "image/props/change_ball"
+    iconPath: "ui/image/props/change_ball"
   },
   {
     itemId: "rainbow_ball",
     displayName: "彩虹球",
-    iconPath: "image/props/rainbow_ball"
+    iconPath: "ui/image/props/rainbow_ball"
   },
   {
     itemId: "blast_ball",
     displayName: "炸裂球",
-    iconPath: "image/props/blast_ball"
+    iconPath: "ui/image/props/blast_ball"
   },
   {
     itemId: "barrier_hammer",
     displayName: "破障锤",
-    iconPath: "image/props/barrier_hammer"
+    iconPath: "ui/image/props/barrier_hammer"
   },
   {
     itemId: "snow_removal",
     displayName: "除雪剂",
-    iconPath: "image/props/snow_removal"
+    iconPath: "ui/image/props/snow_removal"
   }
 ];
 

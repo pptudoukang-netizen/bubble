@@ -12,8 +12,8 @@ var FirstHundredLevelDesign = require("./first-100-level-design");
 var ReferenceLevels101To300Design = require("./reference-levels-101-300-design");
 
 var PROJECT_ROOT = path.resolve(__dirname, "..");
-var RESOURCE_LEVEL_DIR = path.join(PROJECT_ROOT, "assets/resources/config/levels");
-var RESOURCE_CONFIG_DIR = path.join(PROJECT_ROOT, "assets/resources/config");
+var RESOURCE_LEVEL_DIR = path.join(PROJECT_ROOT, "assets/map/config/levels");
+var RESOURCE_CONFIG_DIR = path.join(PROJECT_ROOT, "assets/map/config");
 var MIRROR_LEVEL_DIR = path.join(PROJECT_ROOT, "levels");
 var REMOTE_PACK_DIR = path.join(PROJECT_ROOT, "remote-level-packs");
 var MANIFEST_PATH = path.join(RESOURCE_CONFIG_DIR, "level_manifest.json");

@@ -296,7 +296,7 @@ module.exports = {
   _showLevelSelectView: function (options) {
     options = options || {};
     if (this.isRestarting) {
-      return;
+      return Promise.reject(new Error("Cannot show level select while restart is in progress."));
     }
     this._levelSelectHiddenUnlockTapCount = 0;
     this._levelSelectHiddenUnlockFirstTapAt = 0;
@@ -368,7 +368,7 @@ module.exports = {
       ? Math.max(0, Math.floor(Number(options.forcedMapIndex) || 0))
       : 0;
 
-    Promise.all([
+    return Promise.all([
       this._ensureLevelSelectPrefabs(),
       LevelSelectView.ensureTopResourceIconFrames(),
       this._loadAvailableLevelIds()
@@ -419,6 +419,7 @@ module.exports = {
         : (error && error.message ? error.message : String(error));
       this._setStatus("Load level list failed. Please check LevelView/LevelMap prefabs.");
       Logger.error("Load level list failed detail", errorMessage);
+      throw error;
     }.bind(this));
   },
 
@@ -487,28 +488,37 @@ module.exports = {
     this._hideSpecialIntroduceView();
     this._hideSignInView();
 
-    if (this._levelSelectNode && cc.isValid(this._levelSelectNode)) {
-      var mapHostNode = this._levelSelectNode.getChildByName("map");
-      if (mapHostNode && mapHostNode.isValid) {
-        LevelSelectFloatingMap.disposeRuntime(mapHostNode);
-      }
+    var levelSelectNode = this._levelSelectNode;
+    if (!levelSelectNode || !cc.isValid(levelSelectNode)) {
+      throw new Error("Level select node must exist before leaving level select.");
     }
+
+    var mapHostNode = levelSelectNode.getChildByName("map");
+    if (mapHostNode && mapHostNode.isValid) {
+      LevelSelectFloatingMap.disposeRuntime(mapHostNode);
+    }
+    if (typeof LevelSelectView.releaseMapBundleAssets !== "function") {
+      throw new Error("LevelSelectView.releaseMapBundleAssets is required when leaving level select.");
+    }
+    LevelSelectView.releaseMapBundleAssets();
+    levelSelectNode.active = false;
+    levelSelectNode.destroy();
+    this._levelSelectNode = null;
 
     if (this._floatingMapAssets) {
       LevelSelectFloatingMap.releaseAllCachedMapPrefabs(this._floatingMapAssets);
     }
     LevelSelectFloatingMap.invalidateAssetCache();
     this._floatingMapAssets = null;
+
+    if (!this._levelSelectViewPrefab) {
+      throw new Error("LevelView prefab must exist before releasing the map bundle.");
+    }
+    this._levelSelectViewPrefab = null;
     if (typeof BundleLoader.releaseNamedBundle !== "function") {
       throw new Error("BundleLoader.releaseNamedBundle is required when leaving level select.");
     }
     BundleLoader.releaseNamedBundle("map");
-
-    if (!this._levelSelectNode || !cc.isValid(this._levelSelectNode)) {
-      return;
-    }
-
-    this._levelSelectNode.active = false;
   },
 
   _resolveFloatingMapFocusLevelId: function () {
@@ -695,6 +705,7 @@ module.exports = {
       onLevelSelectTap: this._onLevelSelectTap.bind(this),
       onQuickStart: this._onLevelSelectQuickStartTap.bind(this),
       onRandomChallenge: this._onLevelSelectRandomChallengeTap.bind(this),
+      onTestLevel: this._onLevelSelectTestTap.bind(this),
       onBackToCurrentLevel: this._onLevelSelectBackToCurrentLevelTap.bind(this)
     });
     this._levelSelectNode = renderResult.levelViewNode;
@@ -1040,6 +1051,46 @@ module.exports = {
       throw new Error("Level select requires StartGameView entry method.");
     }
     this._showStartGameView(levelId);
+  },
+
+  _startTestLevelEntry: function () {
+    if (!this.levelManager || typeof this.levelManager.loadTestLevel !== "function") {
+      throw new Error("Test level entry requires LevelManager.loadTestLevel.");
+    }
+    if (!Array.isArray(this._pendingStartGamePowerups)) {
+      throw new Error("Test level entry requires pending StartGameView powerups array.");
+    }
+    this._pendingStartGamePowerups = [];
+    this._pendingStartGamePreciseAimActivation = false;
+    this.isRestarting = true;
+    this._setStatus("Loading level_test...");
+    return this.levelManager.loadTestLevel().then(function (levelConfig) {
+      if (!levelConfig || !levelConfig.level || !Number.isInteger(levelConfig.level.levelId) || levelConfig.level.levelId <= 0) {
+        throw new Error("level_test requires a positive integer level.levelId.");
+      }
+      this._pendingPreparedLevelConfig = {
+        levelId: levelConfig.level.levelId,
+        levelConfig: levelConfig
+      };
+      return this._loadLevelById(
+        levelConfig.level.levelId,
+        "Test level started",
+        "Load level_test failed. Check console logs.",
+        { mode: "test" }
+      );
+    }.bind(this)).catch(function (error) {
+      this.isRestarting = false;
+      this._setStatus("Load level_test failed. Check console logs.");
+      throw error;
+    }.bind(this));
+  },
+
+  _onLevelSelectTestTap: function () {
+    if (this.isRestarting) {
+      return;
+    }
+    this._playSfx("uiClick");
+    this._startTestLevelEntry();
   },
 
   _resolveHighestUnlockedLevelId: function (levelIds) {

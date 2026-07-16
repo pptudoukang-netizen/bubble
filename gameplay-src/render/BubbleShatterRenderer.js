@@ -1,6 +1,7 @@
 "use strict";
 
-var EFFECT_RESOURCE_PATH = "effects/BubbleShatter";
+var BundleLoader = require("../../assets/scripts/utils/BundleLoader");
+var EFFECT_RESOURCE_PATH = "game/effects/BubbleShatter";
 var SHATTER_LIFETIME = 0.48;
 var SHATTER_SEQUENCE_INTERVAL_SEC = 0.03;
 var FIRST_FRAME_BURST_TIME = 0.055;
@@ -316,7 +317,7 @@ BubbleShatterRenderer.prototype.preload = function () {
   }
 
   this.effectLoadPromise = new Promise(function (resolve, reject) {
-    cc.resources.load(EFFECT_RESOURCE_PATH, cc.EffectAsset, function (error, effectAsset) {
+    BundleLoader.loadRes(EFFECT_RESOURCE_PATH, cc.EffectAsset, function (error, effectAsset) {
       if (error) {
         reject(new Error("Bubble shatter effect load failed: " + error.message));
         return;
@@ -343,6 +344,13 @@ BubbleShatterRenderer.prototype.reset = function () {
   this._resetPresentationTracking(true);
   this.currentResolution = null;
   this.playedCellIds = {};
+};
+
+BubbleShatterRenderer.prototype.releaseAfterGameplayBundleUnload = function () {
+  this.reset();
+  this.sharedMaterials = {};
+  this.effectAsset = null;
+  this.effectLoadPromise = null;
 };
 
 BubbleShatterRenderer.prototype._resetPresentationTracking = function (notifyComplete) {

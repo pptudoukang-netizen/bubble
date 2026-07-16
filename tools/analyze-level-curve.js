@@ -3,7 +3,7 @@
 var fs = require("fs");
 var path = require("path");
 
-var LEVEL_DIR = path.resolve(__dirname, "../assets/resources/config/levels");
+var LEVEL_DIR = path.resolve(__dirname, "../assets/map/config/levels");
 
 var DIFFICULTY_ORDER = ["tutorial", "easy", "normal", "hard", "expert"];
 var DIFFICULTY_BASE = {

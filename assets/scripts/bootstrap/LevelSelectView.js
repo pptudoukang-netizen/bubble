@@ -78,8 +78,8 @@ var QUICK_START_BUTTON_BREATH_UP_DURATION = 0.48;
 var QUICK_START_BUTTON_BREATH_DOWN_DURATION = 0.54;
 var LEVEL_SELECT_IDLE_ANIMATIONS_ENABLED = false;
 var TOP_RESOURCE_ICON_PATHS = {
-  stamina: "image/props/love",
-  coin: "image/props/coin"
+  stamina: "map/image/props/love",
+  coin: "map/image/props/coin"
 };
 var DAILY_CHALLENGE_ATTEMPT_TASK_ID = "challenge_attempt_10";
 
@@ -122,12 +122,9 @@ function loadRequiredSpriteFrame(path, description) {
   });
 }
 
-function retainSpriteFrame(spriteFrame, description) {
+function cacheSpriteFrame(spriteFrame, description) {
   if (!spriteFrame) {
     throw new Error(description + " sprite frame is required.");
-  }
-  if (typeof spriteFrame.addRef === "function") {
-    spriteFrame.addRef();
   }
   return spriteFrame;
 }
@@ -164,8 +161,8 @@ function ensureTopResourceIconFrames() {
     loadRequiredSpriteFrame(TOP_RESOURCE_ICON_PATHS.coin, "LevelView coin icon")
   ]).then(function (results) {
     topResourceIconFrames = {
-      stamina: retainSpriteFrame(results[0], "LevelView stamina icon"),
-      coin: retainSpriteFrame(results[1], "LevelView coin icon")
+      stamina: cacheSpriteFrame(results[0], "LevelView stamina icon"),
+      coin: cacheSpriteFrame(results[1], "LevelView coin icon")
     };
     topResourceIconLoadPromise = null;
     return topResourceIconFrames;
@@ -175,6 +172,25 @@ function ensureTopResourceIconFrames() {
   });
 
   return topResourceIconLoadPromise;
+}
+
+function validateCachedSpriteFrameBeforeBundleRelease(spriteFrame, description) {
+  if (!hasValidSpriteFrame(spriteFrame)) {
+    throw new Error(description + " cached sprite frame is invalid before bundle release.");
+  }
+}
+
+function releaseMapBundleAssets() {
+  if (topResourceIconLoadPromise) {
+    throw new Error("LevelView map bundle assets cannot release while top resource icons are loading.");
+  }
+  if (!topResourceIconFrames) {
+    throw new Error("LevelView map bundle assets must be cached before release.");
+  }
+
+  validateCachedSpriteFrameBeforeBundleRelease(topResourceIconFrames.stamina, "LevelView stamina icon");
+  validateCachedSpriteFrameBeforeBundleRelease(topResourceIconFrames.coin, "LevelView coin icon");
+  topResourceIconFrames = null;
 }
 
 function ensureLevelButtonSkinFrames() {
@@ -1418,6 +1434,22 @@ function bindRandomChallengeButton(levelView, onRandomChallenge) {
   );
 }
 
+function bindTestLevelButton(levelView, onTestLevel) {
+  if (typeof onTestLevel !== "function") {
+    throw new Error("LevelSelectView requires onTestLevel.");
+  }
+  var testLevelButtonNode = findChildByNameRecursive(levelView, "test_btn");
+  if (!testLevelButtonNode || !testLevelButtonNode.isValid) {
+    throw new Error("LevelSelectView requires test_btn.");
+  }
+  bindNamedButtonTap(
+    testLevelButtonNode,
+    "__testLevelTapBound",
+    "__onTestLevel",
+    onTestLevel
+  );
+}
+
 function updateDailyChallengeAttemptCount(levelView, attemptCount) {
   if (!levelView || !levelView.isValid) {
     throw new Error("LevelSelectView requires a valid level view node before updating daily challenge count.");
@@ -1514,6 +1546,10 @@ function renderLevelSelectContent(options) {
     throw new Error("LevelSelectView requires onRandomChallenge.");
   }
   var onRandomChallenge = options.onRandomChallenge;
+  if (typeof options.onTestLevel !== "function") {
+    throw new Error("LevelSelectView requires onTestLevel.");
+  }
+  var onTestLevel = options.onTestLevel;
   if (typeof options.onBackToCurrentLevel !== "function") {
     throw new Error("LevelSelectView requires onBackToCurrentLevel.");
   }
@@ -1565,6 +1601,7 @@ function renderLevelSelectContent(options) {
   });
   bindQuickStartButton(levelView, onQuickStart);
   bindRandomChallengeButton(levelView, onRandomChallenge);
+  bindTestLevelButton(levelView, onTestLevel);
   var backToCurrentLevelButtonNode = levelView.getChildByName("back_cur_level");
   if (!backToCurrentLevelButtonNode || !backToCurrentLevelButtonNode.isValid) {
     throw new Error("LevelView/back_cur_level is required.");
@@ -1621,6 +1658,7 @@ function renderLevelSelectContent(options) {
 
 module.exports = {
   ensureTopResourceIconFrames: ensureTopResourceIconFrames,
+  releaseMapBundleAssets: releaseMapBundleAssets,
   rebindTopResourceSprites: rebindTopResourceSprites,
   loadFloatingMapAssets: FloatingMap.loadAssets,
   renderLevelSelectContent: renderLevelSelectContent,
