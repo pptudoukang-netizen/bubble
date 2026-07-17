@@ -98,7 +98,7 @@ https://636c-cloud1-d7gqettx3e9249ca1-1428064608.tcb.qcloud.la
 ### 4.1 微信小游戏目录：保持不变
 
 ```text
-level-packs-compact/
+level-packs/
   level_manifest.json
   levels_pack_011_100.json
   levels_pack_101_200.json

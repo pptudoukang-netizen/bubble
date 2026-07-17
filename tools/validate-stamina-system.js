@@ -6,6 +6,7 @@ var vm = require("vm");
 
 var PROJECT_ROOT = path.resolve(__dirname, "..");
 var PLAYER_RESOURCE_STORE_PATH = path.join(PROJECT_ROOT, "assets/scripts/utils/PlayerResourceStore.js");
+var LEVEL_PROGRESS_STORE_PATH = path.join(PROJECT_ROOT, "assets/scripts/utils/LevelProgressStore.js");
 var STRICT_STORAGE_PATH = path.join(PROJECT_ROOT, "assets/scripts/utils/StrictStorage.js");
 var LEVEL_ATTEMPT_STATS_STORE_PATH = path.join(PROJECT_ROOT, "assets/scripts/utils/LevelAttemptStatsStore.js");
 var PLAYER_CLOUD_PROFILE_SERVICE_PATH = path.join(PROJECT_ROOT, "assets/scripts/services/PlayerCloudProfileService.js");
@@ -118,6 +119,11 @@ function loadStatusResourceFlowMethodsForTest() {
       if (request === "../utils/LevelSelectMemoryDiagnostics") {
         return {
           increment: function () {}
+        };
+      }
+      if (request === "../config/LevelPackManifest") {
+        return {
+          TOTAL_LEVEL_COUNT: 1000
         };
       }
       throw new Error("Unexpected require in stamina flow validation: " + request);
@@ -371,6 +377,60 @@ function assertFirstAttemptStaminaRewardRules() {
   assert(completedHost.playerResources.stamina === 2, "Completed level replay must keep stamina deducted.");
 }
 
+function assertFinalCampaignLevelNextAction() {
+  var methods = loadStatusResourceFlowMethodsForTest();
+  var terminalRoute = null;
+  methods._onNextLevelTap.call({
+    currentLevelConfig: {
+      level: {
+        levelId: 1000
+      }
+    },
+    isRestarting: false,
+    _currentRunContext: null,
+    _playSfx: function () {},
+    _showLevelSelectView: function (options) {
+      terminalRoute = options;
+    }
+  });
+  assert(terminalRoute !== null, "Final campaign level must return to level select.");
+  assert(terminalRoute.targetLevelId === 1000, "Final campaign level must keep focus on level 1000.");
+  assert(
+    !Object.prototype.hasOwnProperty.call(terminalRoute, "prepareLevelId"),
+    "Final campaign level must not prepare a nonexistent next level."
+  );
+}
+
+function assertFinalCampaignLevelProgressBoundary() {
+  var LevelProgressStore = require(LEVEL_PROGRESS_STORE_PATH);
+  var store = new LevelProgressStore();
+  cc.sys.localStorage.setItem("bubble_level_progress_v1", JSON.stringify({
+    version: 2,
+    highestUnlockedLevel: 1001,
+    selectedLevelId: 1000,
+    completedLevels: {
+      "1000": true
+    },
+    starsByLevel: {
+      "1000": 3
+    },
+    bestScoresByLevel: {
+      "1000": 12345
+    }
+  }));
+
+  var loaded = store.load();
+  assert(loaded.highestUnlockedLevel === 1000, "Legacy terminal progress must normalize highest unlocked to 1000.");
+  assert(
+    JSON.parse(cc.sys.localStorage.getItem("bubble_level_progress_v1")).highestUnlockedLevel === 1000,
+    "Legacy terminal progress normalization must be persisted."
+  );
+
+  var completed = store.recordCompletion(loaded, 1000, 3, 13000);
+  assert(completed.highestUnlockedLevel === 1000, "Completing level 1000 must not unlock level 1001.");
+  assert(completed.selectedLevelId === 1000, "Completing level 1000 must keep selected level at 1000.");
+}
+
 function assertWinRewardStaminaItemsMergeForDisplay() {
   var methods = loadLevelSelectFlowMethodsForTest();
   var snapshot = {
@@ -544,6 +604,8 @@ Promise.resolve().then(function () {
   assertSameDayDoesNotRefill();
   assertConsumeRules();
   assertFirstAttemptStaminaRewardRules();
+  assertFinalCampaignLevelNextAction();
+  assertFinalCampaignLevelProgressBoundary();
   assertWinRewardStaminaItemsMergeForDisplay();
   return assertCloudProfileSyncDefersGameplayApply();
 }).then(function () {

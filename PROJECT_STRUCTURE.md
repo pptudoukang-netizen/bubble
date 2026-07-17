@@ -36,11 +36,12 @@
 - `tools/validate-boot-startup.js` / `tools/verify-wechat-core-bundle.js`：分别校验源工程启动边界，以及 Cocos 构建后 `core`/`main` 脚本归属。
 - `tools/validate-bundle-boundaries.js`：校验 bundle 显式名称、全项目 UUID 唯一性、`map`/`game`/`ui` 序列化资源零跨包依赖，以及动态路径必须显式使用 `game/`、`map/` 或 `ui/` 前缀并能解析到真实资源；运行 `npm run validate:bundle-boundaries`。
 - `tools/validate-ui-resource-lifecycle.js`：校验 StartGameView 目标/道具说明不依赖可释放的 `game` bundle、活动说明弹窗独立持有 prefab、`game` 空闲释放只清理 `game/` 缓存，以及 `PrefabFactory` 对缓存 prefab 使用成对 `addRef`/`decRef` 所有权；运行 `npm run validate:ui-resource-lifecycle`。
+- `tools/validate-remote-level-background-preload.js`：校验选关页首帧后会启动全量远端关卡包后台缓存、最高解锁关所在包优先、并发数固定不超过 2、重复任务复用 Promise，并禁止 StartGameView 恢复临界预下载等待；运行 `npm run validate:remote-level-preload`。
 - `open-data/`：历史微信开放数据域逻辑。当前世界排行榜由主域源码和云函数实现，不再依赖开放数据域读取好友云存储。
 - `tools/`：校验、同步、构建修复、调试辅助脚本。
-- `tools/first-100-level-design.js`：前 100 关权威设计规则；Fail-Fast 读取 `E:\kxppm\decrypted_config\all_levels.json`，只提取前 100 关 `bubbles` 的占位/空位轮廓。母版 11/10 列轮廓通过归一化距离场投影到当前 10/9 列、8～15 行棋盘，并强制顶部满行、逐行连通、当前球数不变和 100 个轮廓唯一；颜色数量、收集目标、冰球目标、特殊球、开局球序列、星级线、奖励和关卡模式全部继续使用当前项目规则。发射数由当前项目真实玩法模拟得到的 100 项逐关校准表控制，优先削减连锁掉落关的过量余球并保留高压关安全线，不读取参考项目发射数；校准表长度或数值非法时直接报错。源文件缺失、行宽或字符非法、投影不连通时直接报错，不导入参考项目玩法，也不使用默认关卡兜底。
-- `tools/rebuild-first-100-level-configs.js`：前 100 关定向重建入口；先按当前项目设计规则同步 `LEVEL_CONFIG_TABLE_1_1000.csv` 前 100 行，再只重建本地 1-10、远程包 11-100 和对应 manifest 条目，不改写 101-1000 关远程包。运行命令为 `npm run generate:levels-first100`，重建时会复验当前玩法字段、10/9 列布局、支撑关系以及 100 个占位轮廓的唯一性。
-- `tools/reference-levels-101-300-design.js`、`tools/rebuild-reference-levels-101-300.js`：101–300 关参考轮廓与逐关发射数权威规则。参考项目普通主线只存在 1–200 关，因此 101–200 一一投影同编号轮廓，201–300 使用参考 101–200 的水平镜像投影；目标棋盘仍采用当前项目 10/9 列、15 行、当前球数、颜色目标和特殊球。200 项发射数校准表缺项或数值非法时直接报错。运行 `npm run generate:levels101-300` 只重写 CSV 的 101–300 发射数、两个远程包及对应 manifest 条目，并校验 200 个投影轮廓全部不同、水平重心偏移和左右占位差均不超过 0.20。
+- `tools/first-100-level-design.js`：前 100 关权威设计规则；Fail-Fast 读取 `E:\kxppm\decrypted_config\all_levels.json`，只提取前 100 关 `bubbles` 的占位/空位轮廓。母版 11/10 列轮廓通过归一化距离场投影到当前 11/10 列、8～15 行棋盘，并强制顶部满行、逐行连通、当前球数不变和 100 个轮廓唯一；颜色数量、收集目标、冰球目标、特殊球、开局球序列、星级线、奖励和关卡模式全部继续使用当前项目规则。发射数由当前项目真实玩法模拟得到的 100 项逐关校准表控制，优先削减连锁掉落关的过量余球并保留高压关安全线，不读取参考项目发射数；校准表长度或数值非法时直接报错。源文件缺失、行宽或字符非法、投影不连通时直接报错，不导入参考项目玩法，也不使用默认关卡兜底。
+- `tools/rebuild-first-100-level-configs.js`：前 100 关定向重建入口；先按当前项目设计规则同步 `LEVEL_CONFIG_TABLE_1_1000.csv` 前 100 行，再只重建本地 1-10、远程包 11-100 和对应 manifest 条目，不改写 101-1000 关远程包。运行命令为 `npm run generate:levels-first100`，重建时会复验当前玩法字段、11/10 列布局、支撑关系以及 100 个占位轮廓的唯一性。
+- `tools/reference-levels-101-300-design.js`、`tools/rebuild-reference-levels-101-300.js`：101–300 关参考轮廓与逐关发射数权威规则。参考项目普通主线只存在 1–200 关，因此 101–200 一一投影同编号轮廓，201–300 使用参考 101–200 的水平镜像投影；目标棋盘仍采用当前项目 11/10 列、15 行、当前球数、颜色目标和特殊球。200 项发射数校准表缺项或数值非法时直接报错。运行 `npm run generate:levels101-300` 只重写 CSV 的 101–300 发射数、两个远程包及对应 manifest 条目，并校验 200 个投影轮廓全部不同、水平重心偏移和左右占位差均不超过 0.20。
 - `tools/clustered-level-layout.js`、`tools/rebuild-relaxed-campaign-level-configs.js`、`tools/redesign-first-100-clustered-levels.js`、`tools/redesign-levels-100-500-aesthetic.js`：1-1000 关颜色聚类与爽感校验规则；前 300 关保留参考占位轮廓，颜色填充和玩法仍走当前规则；101–300 参考轮廓允许来源布局本身的自然收腰边界，但仍强制顶部支撑、全盘连通、颜色聚类和低孤立率。休闲解压版全量重建通过 `npm run redesign:relaxed-campaign` 同步 CSV、本地 1-10、远程 11-1000 compact 包和 manifest；`npm run redesign:levels100-500` 会保留 101–300 参考占位，仅重建其颜色聚类并为 301–500 生成美术轮廓；501-1000 关可通过 `npm run redesign:levels501-1000` 重建远程包布局、对称轮廓、色彩流动和 manifest 摘要。
 - `settings/`：Cocos Creator 项目设置。
 - `package.json`：校验脚本入口。
@@ -56,7 +57,7 @@
 `GameBootstrap.js` 是 Cocos 组件声明文件，负责暴露 Inspector 属性，并把实际实现挂载到组件方法上。启动 LoadingView 退场后会销毁节点并释放其 SpriteFrame；选关/局内 BGM 切换成功后停止旧音效并只保留当前 BGM 缓存，防止启动图和跨场景音频常驻。具体业务实现拆在多个 `GameBootstrap*Methods.js` 文件中：
 
 - `GameBootstrapCompositionMethods.js`：`onLoad` 初始化中枢，创建 Store、Service、Manager、Audio、Tips、NetworkLoading 等；`GameManager`/`LevelRenderer` 延迟到 `_ensureGameplayKernel()`（进入局内时加载 `game` 分包并初始化）。
-- `GameBootstrapStartupMethods.js`：启动加载流程；`start()` 先展示场景内 LoadingView，再由 `_beginStartupBundlePrefetch()` 只下载并加载首屏必需的 `map` 分包，分包下载和 bundle 加载进度都会写入 LoadingView 进度条；随后加载选关预制体。选关页展示后立即后台预热 `ui` 分包，并继续后台执行好友体力领取与云档案同步。
+- `GameBootstrapStartupMethods.js`：启动加载流程；`start()` 先展示场景内 LoadingView，再由 `_beginStartupBundlePrefetch()` 只下载并加载首屏必需的 `map` 分包，分包下载和 bundle 加载进度都会写入 LoadingView 进度条；随后加载选关预制体。选关页完成首帧后立即静默后台缓存全部远端关卡包（优先最高解锁关所在包、最多 2 路并发），同时后台预热 `ui` 分包，并继续后台执行好友体力领取与云档案同步。
 - `GameBootstrapLazyModule.js` / `GameBootstrapLazyRegistry.js`：非首屏必需的 bootstrap 方法模块（签到/任务/商店/游戏圈/设置/广告/telemetry/背包等）通过 `GameBootstrapLazyModule` 在首次调用时再 `require` 对应模块；各 loader 必须使用 Cocos 可静态分析的字符串字面量路径，禁止运行时变量 `require(path)` 或对 UI Controller 做 getter 懒加载。
 - `GameBootstrapGameplayInputMethods.js`：局内触摸输入、瞄准、发射、update 驱动。
 - `GameBootstrapNewUserGuideMethods.js`：新账号首次进入的新手引导覆盖层，使用 `ui/image/finger.png` 指引快速开始、开局按钮和首次局内发射操作。
@@ -97,8 +98,8 @@
 - `GameManager.js`：玩法状态机和运行时核心。负责开局、瞄准、发射、技能、结算、胜负、分数、运行时事件、runtime snapshot。过关要求为星级达到 1 星且棋盘全部球自然消除或掉落；`bonusObjectives` / `winConditions` 中的收集目标只决定本次过关奖励是否翻倍，不再触发胜利或强制全盘掉落。清屏后进入 `won_pending` 等待掉落球全部结算，再进入 `won_surplus_shots_pending`（剩余发射球抛物线入缸，可选）、`won_settlement_pending`（入缸后 1 秒）并最终切到 `won` 触发 `WinView`。
 - `GameManagerShotResolutionMethods.js`：发射命中后的消除、掉落、收集等结算扩展；`_resolveBoardClearedOutcome` / `_beginSurplusShotBonus` 处理自然清屏后的星级校验、剩余球奖励与终局结算。
 - 漩涡泡泡由 `GameManager` 在每次发射落位结算后启动：`BubbleGrid.rotateSwirlNeighborsClockwise()` 将中心周围六格严格顺时针轮换一格，`SpecialAnimationTiming.swirlRotation` 统一 60° / 0.4 秒时序；动画结束后 `SupportSystem.findFloatingCells()` 立即重算顶部连接并复用正常掉落链路。
-- 虫洞泡泡由 `GameManager` 在漩涡阶段之后、藤蔓阶段之前处理：`BubbleGrid.shiftWormholeInterior()` 将同一行两个固定虫洞之间的普通球、特殊球与空位按 `moveDirection` 循环移动一格，`SpecialAnimationTiming.wormholeShift` 统一 0.35 秒时序；`WormholeShaderRenderer` 为两个固定端点绑定 `effects/WormholeFlow`，通过引擎时间在 Shader 内叠加中心 UV 漩涡扭曲、快速环形蓝紫流光、星点/边缘呼吸和黑洞吞吸脉动，外圈与节点本身不旋转，结算位移动画也不会中断材质。移动不调用颜色匹配，动画结束后立即重算支撑并让无支撑球进入掉落链路。虫洞自身不可移除、作为永久锚点，且清屏判定会排除虫洞。
-- 藤蔓魔灵由 `GameManager` 在发射结算链中统一处理：魔灵固定 3 点生命，直接命中或相邻格完成消除时每次结算只受 1 点伤害；每 3 次真实发射后，存活魔灵按距离选择最近的未缠绕普通球，先预告 0.65 秒再写入归属藤蔓状态。魔灵死亡时 `BubbleGrid` 按 owner id 同步清除其全部藤蔓。
+- 虫洞泡泡由 `GameManager` 在漩涡阶段之后、藤蔓阶段之前处理：`BubbleGrid.shiftWormholeInterior()` 将同一行两个固定虫洞之间的普通球、特殊球与空位按 `moveDirection` 循环移动一格，`SpecialAnimationTiming.wormholeShift` 统一 0.35 秒时序；`WormholeShaderRenderer` 为两个固定端点绑定 `effects/WormholeFlow`，通过引擎时间在 Shader 内叠加中心 UV 漩涡扭曲、快速环形蓝紫流光、星点/边缘呼吸和黑洞吞吸脉动，外圈与节点本身不旋转，结算位移动画也不会中断材质。移动不调用颜色匹配，动画结束后立即重算支撑并让无支撑球进入掉落链路。虫洞自身不可移除、作为永久锚点，且清屏判定会排除虫洞；顶部空槽达到全掉落阈值时仍触发崩塌，只保留两个固定虫洞端点；顶部陆地与渐变层定位忽略虫洞，不能下压到仅剩的虫洞行。
+- 藤蔓魔灵由 `GameManager` 在发射结算链中统一处理：魔灵固定 3 点生命，直接命中、爆炸范围命中或相邻格完成消除时每次结算只受 1 点伤害；爆炸范围命中缠绕球时只解除藤蔓并保留底层普通球。每 3 次真实发射后，存活魔灵按距离选择最近的未缠绕普通球，先预告 0.65 秒再写入归属藤蔓状态。魔灵死亡或因无支撑掉落时，`BubbleGrid` 按 owner id 同步清除其全部藤蔓；缠绕球自身掉落前也会解除藤蔓。
 - `AdRevivePolicy.js`：广告复活策略，统一复活补球、目标色选择和 LoseView 描述文案。
 - `ProjectileMath.js`：弹道与几何计算。
 - `StarRatingPolicy.js`：星级计算策略；优先使用关卡显式 `starThresholds`，未配置该字段的既有普通关卡继续按 `targetScore` 的统一比例计算。
@@ -112,7 +113,7 @@
 - `BubbleGrid.js`：棋盘格与格子状态；几何坐标通过附着的 `BoardViewportSystem.offsetY` 计算，不再使用整数 `dropOffsetRows`；漩涡泡泡使用六格顺时针轨道排列；虫洞使用同一行的严格双端点配置，并在循环移动时保留特殊球字段、藤蔓归属和空位；藤蔓球在格子快照中保存 `vineOwnerId`，预告阶段保存 `vinePreviewOwnerId`，魔灵生命与藤蔓归属都由棋盘运行时状态维护。
 - `BoardViewportSystem.js`：棋盘不超过 10 行时顶部贴 HUD 下沿；超过 10 行时开场和局内吸附结算后都匀速上移到 HUD 下方保留 10 行，移动期间锁定发射；逻辑第 0 行空槽 ≥6 时，结算后立即触发全盘崩塌判定。
 - `MatchSystem.js`：同色匹配消除；藤蔓球不进入同色连通组。
-- `SupportSystem.js`：连通/悬空判断；锁定球、虫洞、藤蔓魔灵和已缠绕普通球作为锚点，不进入正常悬空掉落。
+- `SupportSystem.js`：连通/悬空判断；锁定球和虫洞作为锚点；藤蔓魔灵与已缠绕普通球遵循普通支撑关系，无支撑时进入掉落链路。
 - `FairyAssistSystem.js`：管理 `GameView/geniuses` 六个固定协助精灵槽位；只要本次发射产生消除，就按匹配消除数量生成红/黄/绿精灵，未消除时移除最早两只；碰撞中心由 `LevelRenderer.syncFairyAssistCollisionCenters` 从槽位节点转换到棋盘坐标后再参与判定，并维护每精灵最多 7 次碰撞计数与光效层数 snapshot。
 - `FallingMarbleSystem.js`：掉落球运动（默认重力 900）；`maxDynamicMarbles` 当前由 `FallingRulesDefaults.maxDynamicMarbles`（9999，试验值）统一控制，暂忽略关卡 `fallingRules.maxDynamicMarbles: 10`，一次注册的全部掉落球会立即进入物理模拟；固定精灵反弹、红黄绿倍率、绿色精灵单次一分为二；清屏后余球每 0.2s 连续抛射入缸（不等上一颗入缸），炮台每 0.2s 在 15°～165° 间按 15° 步进往返旋转。
 - `JarCollectorSystem.js`：底部罐子收集。
@@ -148,13 +149,13 @@
 
 配置层。重点文件：
 
-- `LevelManager.js`：按关卡 ID 生成 key，1-10 调用本地 `LevelConfigLoader`，11-1000 调用 `RemoteLevelPackLoader`，并缓存关卡配置；`preloadRemotePackAfterLevel(levelId)` 用于开局弹窗前在 10、100、200、300 等分包边界预下载下一段远程关卡包。
+- `LevelManager.js`：按关卡 ID 生成 key，1-10 调用本地 `LevelConfigLoader`，11-1000 调用 `RemoteLevelPackLoader`，并缓存关卡配置；`preloadAllRemotePacks(priorityLevelId)` 用于选关页首帧完成后启动全部远端关卡包的后台磁盘缓存。
 - `LevelConfigLoader.js`：本地关卡配置加载、校验、规范化，并向远程包 loader 暴露同一套规范化入口。这里大量使用 Fail-Fast 校验。
 - `LevelColorPermutation.js`：普通关卡进入局内前对本次 `levelConfig` 拷贝执行颜色轮换；保持棋盘格局不变，同色球整体换成另一组颜色，不改写原始关卡缓存和收集目标字段。
 - `LevelPackManifest.js`：远程关卡 bootstrap manifest、远程完整 manifest、包清单和包定位的严格校验，并要求远程包声明 `compact-schema-v1` 格式。
 - `LevelPackCompactCodec.js`：远程关卡包 `compact-schema-v1` 编解码器；生成器写入压缩格式，运行时和离线工具读取后先展开为完整关卡结构。
-- `RemoteLevelPackLoader.js`：先读取本地 bootstrap manifest，再使用 `wx.cloud.getTempFileURL` 下载远程完整 manifest；随后按远程 manifest 获取关卡包临时地址、下载到本地用户文件缓存，按 manifest 校验 `compact-schema-v1` 格式并展开，最后按单关复用 `LevelConfigLoader` 的规范化校验；同时提供按当前关卡预下载下一远程包的能力。
-- `BoardLayout.js`：棋盘布局参数。
+- `RemoteLevelPackLoader.js`：先读取本地 bootstrap manifest，再使用 `wx.cloud.getTempFileURL` 下载远程完整 manifest；选关页首帧后按最高解锁关优先、最多 2 路并发静默下载全部远端 compact 包到 `USER_DATA_PATH`，每包按 manifest 执行 SHA-256 完整性校验；实际读取单关时展开对应包并复用 `LevelConfigLoader` 的规范化校验。
+- `BoardLayout.js`：棋盘与底部缸布局参数；棋盘采用 11/10 交错列，5 个不同颜色缸按实时屏幕宽度等比缩放，缸口保持在屏幕内且互不重叠，缸体允许相邻叠加。
 - `BoardViewportConfig.js`、`FairyAssistConfig.js`、`FallingRulesDefaults.js`、`JarScoreConfig.js`、`SpecialAnimationTiming.js`：局内玩法专用配置，源码位于 `gameplay-src/config`，随局内玩法延迟包加载。
 - `AimTuningProfiles.js`：瞄准调参配置。
 - `DailyTaskConfig.js`、`DailySignInConfig.js`、`ShopGoodsConfig.js`、`ShopRulesConfig.js`、`StarChestConfig.js`、`GameCircleWelfareConfig.js` 等：业务静态配置。
@@ -229,13 +230,13 @@
 3. `game.fire` 挂载的 `GameBootstrap.onLoad` 初始化启动核心、玩家基础资源、背包/引导/音频和关卡管理；任务、星箱/圈子、商店、签到、新手礼包、广告、分享/好友、排行榜和云档案服务仍延后初始化。
 4. `GameBootstrap.start` 复用完整业务场景内的 LoadingView，并调用 `_beginStartupBundlePrefetch()`，只下载并加载选关首屏必需的 `map` 分包。
 5. `game.json` 构建后不写入分包 `preloadSubpackages`。项目已移除内置 `resources` bundle，避免 Cocos 在首场景前将其作为内置资源包强制加载。微信构建后由 `packages/build-loading-splash` 接入 `MinigameLoading`，校验 `BootLoader` 位于首包、完整业务脚本位于 `core`、玩法生成资产位于 `game`；`main.js` 不再同步 require 玩法脚本，也不发布玩法 JSON 副本。
-6. `map` 首屏资源准备完成后、LoadingView 退出前，`_initializePostLoadingServices()` 初始化任务、商店、签到、广告和云相关服务；随后 `_showLevelSelectView()` 返回完整异步渲染 Promise。选关节点与地图内容完成后再等待一次 `EVENT_AFTER_DRAW`，此时才后台预热 `ui` 分包并启动好友体力领取与云档案同步，避免与地图首帧渲染抢 CPU/资源；`audio` 仍在首次播放时按需加载。
+6. `map` 首屏资源准备完成后、LoadingView 退出前，`_initializePostLoadingServices()` 初始化任务、商店、签到、广告和云相关服务；随后 `_showLevelSelectView()` 返回完整异步渲染 Promise。选关节点与地图内容完成后再等待一次 `EVENT_AFTER_DRAW`，此时立即静默后台缓存全部远端关卡包，并后台预热 `ui` 分包、启动好友体力领取与云档案同步，避免这些任务阻塞地图首帧；`audio` 仍在首次播放时按需加载。
 7. 用户点击开局弹窗「开始」后，`_loadLevelById` → `_ensureGameplayKernel()` 才加载 `game` 分包并初始化 `GameManager`/`LevelRenderer`；`_hideLevelSelectView` 会在 `LevelView` 仍有效时先校验并清空顶部资源图标缓存，再销毁整个 `LevelView`、释放浮岛 prefab，最后释放 `map` 分包并清空 prefab 缓存；返回选关时从重新加载的 `map` 分包完整实例化新节点，禁止复用已释放 SpriteFrame 的旧选关节点。
 
 ### 内存管理（P1）
 
 - `LevelSelectFloatingMap.js`：浮岛滚动后按视口 ±2 个节点保留 prefab，其余 `cc.assetManager.releaseAsset`；离开选关页时 `releaseAllCachedMapPrefabs` + `invalidateAssetCache`。
-- `RemoteLevelPackLoader.js`：远程完整 manifest 每次进程内首次加载时从云存储读取；远程 compact 包 JSON 只写入 `USER_DATA_PATH` 磁盘缓存，缓存路径包含远程 manifest `version` 和包 sha256，解析后展开为当前请求关卡所需的完整结构，并发下载仍通过 `_packTextPromises` 去重。
+- `RemoteLevelPackLoader.js`：远程完整 manifest 每次进程内首次加载时从云存储读取；远程 compact 包 JSON 在选关页首帧后按最高解锁关优先、最多 2 路并发写入 `USER_DATA_PATH` 磁盘缓存，缓存路径包含远程 manifest `version` 和包 sha256；实际读取时才解析并展开当前请求关卡所在包，并发请求通过 `_packTextPromises` 去重，全量后台任务通过 `_allPacksPreloadPromise` 去重。
 - `LevelRenderer.js`：`releaseLevelSpecificSpriteCache()` 在返回选关时释放关卡专属 sprite，只保留跨关必需的 HUD、底部道具、评论动画等小型共用图；关卡颜色球、罐子、特殊球、胜利瓶子按当前关卡和 runtime snapshot 精确预加载。
 - `BundleLoader.js`：`releaseNamedBundle(name)` 卸载分包前先调用 bundle `releaseAll()` 释放已加载资产；离开选关时卸载 `map` 分包；选关页完整渲染并完成首帧绘制后才后台预热 `ui` 分包，弹窗 prefab 仍按需加载。
 - `GameplayBundleReleaseScheduler.js`：离开局内返回选关后，超过 `gameplayBundleIdleReleaseMs`（默认 10000）未再进入局内则释放 `game` 与局内动画 `animation` 分包，并清理 `LevelRenderer` 持有的 prefab / sprite / animation 引用，以及碎裂、虫洞渲染器持有的 EffectAsset、材质和已完成加载 Promise；再次进入局内时必须重新预热这些分包资产。
@@ -246,7 +247,7 @@
 1. 选关页触发 `_onLevelSelectTap`。
 2. 浮岛地图只允许点击 `levelId <= highestUnlockedLevel` 的关卡点。
 3. 进入开局道具/体力检查流程。
-4. `_showStartGameView` 调用 `levelManager.loadLevel(levelId)` 读取当前关卡预览信息，并调用 `levelManager.preloadRemotePackAfterLevel(levelId)` 在 10、100、200、300 等分包边界预下载下一段远程关卡包。
+4. `_showStartGameView` 只调用 `levelManager.loadLevel(levelId)` 读取当前关卡预览信息，不再等待任何“下一段远端包”预下载任务；远端包已由选关页首帧后的全量后台任务提前缓存。
 5. `_loadLevelById` 调用 `levelManager.loadLevel(levelId)`。
 6. `LevelManager` 对 1-10 使用 `LevelConfigLoader` 加载本地 `levels/level_###.json`；对 11-1000 使用 `RemoteLevelPackLoader` 先下载远程完整 manifest，再按 manifest 下载云存储关卡包并复用同一套校验。
 7. `_ensureGameplayKernel()` 调用 `BundleLoader.ensureGameplayBundleLoaded()`；加载 `game` Asset Bundle 会执行其中唯一的 `generated/lazy-gameplay-code.js`，`BundleLoader` 严格校验完成标记、模块加载器和源码哈希，再通过 `requireGameplayModule("GameManager")` 与 `requireGameplayModule("LevelRenderer")` 初始化局内内核。
@@ -295,11 +296,11 @@
 
 远程包上传规则：
 
-- `remote-level-packs/level_manifest.json` 上传到云存储 `level-packs-compact/level_manifest.json`，这是新客户端运行时拉取的完整远程 manifest。
-- `remote-level-packs/levels_pack_011_100.json` 上传到云存储 `level-packs-compact/levels_pack_011_100.json`。
-- 其余 compact 包同名上传到 `level-packs-compact/`。
+- `remote-level-packs/level_manifest.json` 上传到云存储 `level-packs/level_manifest.json`，这是新客户端运行时拉取的完整远程 manifest。
+- `remote-level-packs/levels_pack_011_100.json` 上传到云存储 `level-packs/levels_pack_011_100.json`。
+- 其余 compact 包同名上传到 `level-packs/`。
 - 当前 manifest 使用的云存储 File ID 前缀为 `cloud://cloud1-d7gqettx3e9249ca1.636c-cloud1-d7gqettx3e9249ca1-1428064608`。
-- `level-packs-compact/` 是新版本 compact 静态关卡配置目录，必须在云存储权限/安全规则中允许客户端读取；否则 `wx.cloud.getTempFileURL` 会返回 `STORAGE_EXCEED_AUTHORITY`。
+- `level-packs/` 是 compact 静态关卡配置目录，必须在云存储权限/安全规则中允许客户端读取；否则 `wx.cloud.getTempFileURL` 会返回 `STORAGE_EXCEED_AUTHORITY`。
 - 上传后云 fileID 必须与 `remote-level-packs/level_manifest.json` 中的 `packs[].fileID` 保持一致；本地 `assets/map/config/level_manifest.json` 只需要保持 `remoteManifest.fileID` 指向固定远程 manifest 路径。
 - 如果重新生成包导致 sha256、bytes 或 format 改变，必须同步更新并上传 `remote-level-packs/level_manifest.json`。在远程 manifest fileID 固定不变的前提下，云端关卡包和远程 manifest 可以版本化热更新，不需要仅因包 sha256/bytes 改变而重建客户端。
 

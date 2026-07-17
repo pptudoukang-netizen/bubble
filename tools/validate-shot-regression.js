@@ -793,6 +793,9 @@ function runMolotovFloatingMolotovRegistersDropCase() {
   var grid = {
     removeCells: function (cells) {
       return cells.slice();
+    },
+    removeFloatingCells: function (cells) {
+      return cells.slice();
     }
   };
   var resolution = {
@@ -1640,6 +1643,9 @@ function runMolotovBlastPhaseDropsUnsupportedSourceSupportCase() {
         return cell;
       });
     },
+    removeFloatingCells: function (cells) {
+      return cells.slice();
+    },
     getCellPosition: function (row, col) {
       return {
         x: col * 10,
@@ -1748,6 +1754,9 @@ function runMolotovPendingResolutionFinalizeCase() {
   var scanCount = 0;
   var grid = {
     removeCells: function (cells) {
+      return cells.slice();
+    },
+    removeFloatingCells: function (cells) {
       return cells.slice();
     },
     getCells: function () {
@@ -2437,6 +2446,59 @@ function runCollectedSkillPowerupsEmitInventoryEventsCase() {
   }
 }
 
+function runCollectedSkillPowerupHudFeedbackQueueCase() {
+  function ValidationRenderer() {}
+  attachLevelRendererSceneHudMethods(ValidationRenderer, {
+    BoardLayout: BoardLayout
+  });
+
+  var renderer = Object.create(ValidationRenderer.prototype);
+  renderer.lastSkillPowerupCollectedEventId = -1;
+  renderer.skillPowerupCollectedFeedbackQueue = [];
+  renderer.skillPowerupCollectedFeedbackActive = false;
+  var playNextCallCount = 0;
+  renderer._playNextSkillPowerupCollectedFeedback = function () {
+    playNextCallCount += 1;
+  };
+  var snapshot = {
+    runtimeEvents: [
+      { id: 1, type: "jar_collect_bottom" },
+      { id: 2, type: "skill_powerup_collected", entityType: "rainbow", total: 1 },
+      { id: 3, type: "skill_powerup_collected", entityType: "blast", total: 2 }
+    ]
+  };
+
+  renderer._queueSkillPowerupCollectedFeedback(snapshot);
+  if (renderer.skillPowerupCollectedFeedbackQueue.join(",") !== "rainbow,blast") {
+    throw new Error("Collected skill powerup HUD feedback should queue rainbow and blast in event order.");
+  }
+  if (renderer.lastSkillPowerupCollectedEventId !== 3 || playNextCallCount !== 1) {
+    throw new Error("Collected skill powerup HUD feedback should advance event identity and start playback once.");
+  }
+
+  renderer._queueSkillPowerupCollectedFeedback(snapshot);
+  if (renderer.skillPowerupCollectedFeedbackQueue.join(",") !== "rainbow,blast") {
+    throw new Error("Collected skill powerup HUD feedback must not replay consumed runtime events.");
+  }
+  if (playNextCallCount !== 2) {
+    throw new Error("Collected skill powerup HUD feedback should keep the playback pump active.");
+  }
+
+  var rejectedUnsupportedType = false;
+  try {
+    renderer._queueSkillPowerupCollectedFeedback({
+      runtimeEvents: [
+        { id: 4, type: "skill_powerup_collected", entityType: "swap", total: 1 }
+      ]
+    });
+  } catch (error) {
+    rejectedUnsupportedType = /unsupported entityType/.test(error.message);
+  }
+  if (!rejectedUnsupportedType) {
+    throw new Error("Collected skill powerup HUD feedback should fail fast on unsupported entity types.");
+  }
+}
+
 function runClearWinRequiresStarAndEmptyBoardCase() {
   var manager = new GameManager();
   manager.currentLevel = {
@@ -2810,6 +2872,7 @@ function runTopAnchorCollapseCancelsPendingSplitterSpawnCase() {
     }
   ];
   var registeredDrops = [];
+  var registeredDropOptions = null;
 
   manager.state = "running";
   manager.lastResolution = {
@@ -2834,7 +2897,7 @@ function runTopAnchorCollapseCancelsPendingSplitterSpawnCase() {
     getCells: function () {
       return cells.slice();
     },
-    removeCells: function (removeTargets) {
+    removeFloatingCells: function (removeTargets) {
       var removed = [];
       removeTargets.forEach(function (target) {
         var index = cells.findIndex(function (cell) {
@@ -2849,8 +2912,9 @@ function runTopAnchorCollapseCancelsPendingSplitterSpawnCase() {
     }
   };
   manager.systems.fallingMarbleSystem = {
-    registerDrops: function (drops) {
+    registerDrops: function (drops, grid, options) {
       registeredDrops = registeredDrops.concat(drops);
+      registeredDropOptions = options;
     }
   };
 
@@ -2865,6 +2929,12 @@ function runTopAnchorCollapseCancelsPendingSplitterSpawnCase() {
   }
   if (registeredDrops.length !== 2) {
     throw new Error("Top anchor collapse must register all removed cells as drops.");
+  }
+  if (!registeredDropOptions || registeredDropOptions.startDelay !== 0) {
+    throw new Error("Top anchor collapse drops must start without delay.");
+  }
+  if (registeredDropOptions.holdUntilEliminationPresentationComplete === true) {
+    throw new Error("Top anchor collapse drops must not wait for an elimination callback that already completed.");
   }
   if (manager.state !== "won_pending") {
     throw new Error("Top anchor collapse must enter won_pending while drops settle.");
@@ -3535,6 +3605,78 @@ function runJarFractionDisplayEventIdentityCase() {
   }
 }
 
+function runJarFractionBundleUnloadCleanupCase() {
+  var hadCc = Object.prototype.hasOwnProperty.call(global, "cc");
+  var previousCc = global.cc;
+  var stoppedNodes = [];
+
+  global.cc = {
+    Tween: {
+      stopAllByTarget: function (node) {
+        stoppedNodes.push(node.name);
+      }
+    }
+  };
+
+  try {
+    function ValidationRenderer() {}
+    attachLevelRendererSceneHudMethods(ValidationRenderer, {
+      BoardLayout: BoardLayout
+    });
+
+    function createClone(name, isPooled) {
+      return {
+        name: name,
+        isValid: true,
+        __isJarFractionClone: true,
+        __isJarFractionPooled: isPooled,
+        __jarFractionDisplayToken: "old-token",
+        destroy: function () {
+          this.isValid = false;
+        }
+      };
+    }
+
+    var pooledClone = createClone("pooled_fraction", true);
+    var activeClone = createClone("active_fraction", false);
+    var templateNode = {
+      name: "fraction",
+      isValid: true
+    };
+    var renderer = Object.create(ValidationRenderer.prototype);
+    renderer.jarFractionNodePool = [pooledClone];
+    renderer.jarFractionDisplayGeneration = 4;
+    renderer.lastJarCollectScoredEvent = { id: 8 };
+    renderer._getGameViewNode = function () {
+      return {
+        isValid: true,
+        children: [templateNode, activeClone]
+      };
+    };
+
+    renderer._releaseJarFractionNodesBeforeGameplayBundleUnload();
+
+    if (renderer.jarFractionNodePool.length !== 0) {
+      throw new Error("Gameplay bundle release must clear the jar fraction node pool.");
+    }
+    if (renderer.jarFractionDisplayGeneration !== 5 || renderer.lastJarCollectScoredEvent !== null) {
+      throw new Error("Gameplay bundle release must invalidate jar fraction display state.");
+    }
+    if (pooledClone.isValid || activeClone.isValid || !templateNode.isValid) {
+      throw new Error("Gameplay bundle release must destroy only jar fraction clones.");
+    }
+    if (stoppedNodes.length !== 2) {
+      throw new Error("Gameplay bundle release must stop every jar fraction clone tween.");
+    }
+  } finally {
+    if (hadCc) {
+      global.cc = previousCc;
+    } else {
+      delete global.cc;
+    }
+  }
+}
+
 function runMatchedObjectiveCollectionCase() {
   var JarCollectorSystem = require("../gameplay-src/systems/JarCollectorSystem");
   var manager = new GameManager();
@@ -4112,6 +4254,8 @@ function main() {
   console.log("[OK]", "precise_aim_inventory_activates_guide", "precise aim inventory activates ricochet guide and consumes one item");
   runCollectedSkillPowerupsEmitInventoryEventsCase();
   console.log("[OK]", "collected_skill_powerups_emit_inventory_events", "collected rainbow and blast emit inventory sync events");
+  runCollectedSkillPowerupHudFeedbackQueueCase();
+  console.log("[OK]", "collected_skill_powerup_hud_feedback_queue", "collected rainbow and blast queue one-shot bottom-toolbar feedback in event order");
   runClearWinRequiresStarAndEmptyBoardCase();
   console.log("[OK]", "clear_win_requires_star_and_empty_board", "ignores collection targets for pass and requires an empty board");
   runOneStarTargetScoreCase();
@@ -4130,6 +4274,8 @@ function main() {
   console.log("[OK]", "ball_score_display_generation", "stale score callbacks are isolated and same-id events display independently");
   runJarFractionDisplayEventIdentityCase();
   console.log("[OK]", "jar_fraction_display_event_identity", "same-id jar score events display independently without replaying the same event");
+  runJarFractionBundleUnloadCleanupCase();
+  console.log("[OK]", "jar_fraction_bundle_unload_cleanup", "bundle unload destroys stale jar fraction clones before renderer reuse");
   runMatchedObjectiveCollectionCase();
   console.log("[OK]", "matched_objective_collection", "matched target balls count into collection target and emit HUD fly payload");
   runBlastComboAttachAnchorCase();

@@ -78,6 +78,15 @@ function validateGameplayReleaseScope() {
     -1,
     "Gameplay idle release must not release session-lifetime UI prefabs."
   );
+  assert.ok(
+    releaseBlock[1].indexOf("this._releaseJarFractionNodesBeforeGameplayBundleUnload()") >= 0,
+    "Gameplay idle release must destroy jar fraction clones retained from the game bundle."
+  );
+  assert.ok(
+    releaseBlock[1].indexOf("this._releaseJarFractionNodesBeforeGameplayBundleUnload()") <
+      releaseBlock[1].indexOf("releaseRetainedSpriteFramesByPrefix"),
+    "Jar fraction clones must be destroyed before game bundle SpriteFrames are released."
+  );
 }
 
 function validatePrefabFactoryOwnership() {

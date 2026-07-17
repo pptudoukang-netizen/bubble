@@ -19,6 +19,8 @@ The new campaign uses these chapters:
 
 Levels 1-100 keep the current `collect_color` primary objective and add the current `collect_ice_snowball` secondary objective when required by configured ice count. They remain normal `shot_limited` levels, use current special-entity progression, current reward rules, current 3-6 ball `openingShotBalls`, and project-authored explicit star thresholds. KXPPM shot counts, timed modes, colors, special codes, precedence balls, scores and rewards are deliberately ignored.
 
+The new reactive entities use a staged deterministic cadence inside levels 11-100. Swirls first appear at level 21 and recur at levels `21, 27, 34, 39, 46, 51, 57, 63, 69, 75, 81, 87, 93, 99`. Vine spirits first appear at level 31 and recur at levels `31, 37, 43, 49, 55, 61, 67, 73, 79, 85, 91, 97`. Wormhole pairs first appear at level 53 and recur at levels `53, 65, 77, 89, 95`; each listed level contains exactly two same-row endpoints with one shared deterministic move direction. The generator reserves every swirl's complete six-cell normal-ball track and places wormhole endpoints as a valid same-row pair before assigning other special entities. Missing valid geometry fails generation instead of degrading to a different element.
+
 ## New Entity Rules
 
 ### Swirl Bubble
@@ -77,7 +79,7 @@ Rule:
 - The wormhole node and outer ring stay fixed. `effects/WormholeFlow` rotates only the inner UV field with stronger distortion toward the center, adds a fast blue-purple highlight sweeping around a circular band, softly breathes the star and rim brightness, and pulses the dark center. The shader remains active during the interior-slot shift animation; the complete texture never rotates mechanically.
 - The 0.35-second shift locks input. Support is recalculated when the animation finishes, and every newly unsupported non-wormhole cell immediately enters the normal falling-marble pipeline.
 - The shift never invokes color matching. Even if the new arrangement forms a valid same-color group, it remains until a later player shot resolves that match.
-- A board containing only the two permanent wormholes counts as cleared. The top-anchor collapse rule does not override wormhole support.
+- A board containing only the two permanent wormholes counts as cleared. The top-anchor collapse rule remains active on wormhole levels: once the top-row empty-slot threshold is reached, every non-wormhole cell drops while both fixed endpoints remain on the board. The top mainland and gradient alignment ignore wormhole endpoints, so they stay at the board boundary instead of pressing down to the surviving wormhole row.
 - Rendering and introduction UI use `image/ball/wormhole`; board rendering applies `effects/WormholeFlow`, and the texture is excluded from dynamic-atlas packing so its distortion UV domain remains stable. Remote compact packs encode wormholes with type code `h` plus the explicit move direction.
 
 ### Vine Spirit
@@ -98,11 +100,12 @@ Rule:
 
 - A vine spirit occupies one board cell and always starts with exactly 3 health.
 - A direct projectile collision, or a completed elimination in any adjacent hex cell, deals exactly 1 damage. One shot resolution cannot damage the same spirit more than once.
+- A blast or molotov explosion that directly covers a vine spirit deals 1 damage, while an explosion covering an entangled ball removes only its vine and preserves the underlying colored ball. The same resolution still cannot damage one spirit more than once.
 - Every third fired bubble, each surviving spirit selects the nearest unentangled normal colored bubble. Ties are resolved by row, column and cell id so the result is deterministic.
 - The selected target first shows the semi-transparent `image/ball/vines` warning for 0.65 seconds. Input and other post-shot special phases remain locked until the warning completes, then the vine becomes active.
-- An entangled ball cannot participate in color matching and is treated as a support anchor, so it does not enter the normal floating-drop pipeline.
+- An entangled ball cannot participate in color matching, but it follows the normal support graph. If it becomes unsupported, its vine is removed before the underlying colored ball enters the normal floating-drop pipeline.
 - A direct projectile collision or an elimination in an adjacent hex cell removes the vine without removing the underlying colored ball.
-- When a vine spirit reaches 0 health, its board cell is removed and every active or preview vine owned by that spirit withers immediately.
+- A vine spirit also follows the normal support graph and falls when unsupported. When it reaches 0 health or leaves the board through an unsupported drop, every active or preview vine owned by that spirit withers immediately.
 - Runtime state stores the owning spirit id on each entangled cell. Missing owners, invalid health, mismatched preview ownership and unsupported render resources fail immediately.
 - The spirit uses `image/ball/vine_spirit`; active and preview vines use `image/ball/vines`.
 
@@ -245,17 +248,17 @@ Remote outputs:
 - `remote-level-packs/levels_pack_801_900.json`
 - `remote-level-packs/levels_pack_901_1000.json`
 
-Upload each remote pack to WeChat cloud storage under `level-packs-compact/` with the same file name. The generated manifest uses fileIDs such as:
+Upload each remote pack to WeChat cloud storage under `level-packs/` with the same file name. The generated manifest uses fileIDs such as:
 
 ```text
-cloud://cloud1-d7gqettx3e9249ca1.636c-cloud1-d7gqettx3e9249ca1-1428064608/level-packs-compact/levels_pack_101_200.json
+cloud://cloud1-d7gqettx3e9249ca1.636c-cloud1-d7gqettx3e9249ca1-1428064608/level-packs/levels_pack_101_200.json
 ```
 
 If the cloud environment or storage path changes, update the generator constants and rerun it so the manifest, hashes, and bytes stay aligned.
 
 Runtime loading resolves each fileID with `wx.cloud.getTempFileURL`, then downloads the returned URL with `wx.downloadFile`. The opening level dialog also preloads the next remote pack on pack boundaries: level 100 preloads 101-200, level 200 preloads 201-300, and so on. The CloudBase download domain must be allowed in the WeChat project network settings for release builds.
 
-The `level-packs-compact/` storage path must allow client read access. If `wx.cloud.getTempFileURL` returns `STORAGE_EXCEED_AUTHORITY`, the files are uploaded correctly but the storage permission or security rule is blocking reads.
+The `level-packs/` storage path must allow client read access. If `wx.cloud.getTempFileURL` returns `STORAGE_EXCEED_AUTHORITY`, the files are uploaded correctly but the storage permission or security rule is blocking reads.
 
 Run:
 

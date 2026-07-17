@@ -1698,9 +1698,6 @@ module.exports = {
     if (!this.levelManager || typeof this.levelManager.loadLevel !== "function") {
       throw new Error("StartGameView requires LevelManager.loadLevel.");
     }
-    if (typeof this.levelManager.preloadRemotePackAfterLevel !== "function") {
-      throw new Error("StartGameView requires LevelManager.preloadRemotePackAfterLevel.");
-    }
     this._pendingStartGamePowerups = options && options.selectedItems !== undefined
       ? validateStartGameSelectedPowerups(this, safeLevelId, options.selectedItems)
       : buildDefaultStartGameSelectedPowerups(this, safeLevelId);
@@ -1721,24 +1718,11 @@ module.exports = {
 
     return Promise.all([
       this._ensureStartGameViewPrefab(),
-      this.levelManager.loadLevel(safeLevelId),
-      this.levelManager.preloadRemotePackAfterLevel(safeLevelId)
+      this.levelManager.loadLevel(safeLevelId)
     ]).then(function (results) {
       var prefab = results[0];
       var levelConfig = results[1];
-      var remotePackPreload = results[2];
       LevelColorPermutation.apply(levelConfig);
-      if (!remotePackPreload || typeof remotePackPreload !== "object" || Array.isArray(remotePackPreload)) {
-        throw new Error("StartGameView remote pack preload result is invalid.");
-      }
-      if (remotePackPreload.preloaded === true) {
-        Logger.info("Preloaded next remote level pack", {
-          levelId: safeLevelId,
-          packId: remotePackPreload.packId,
-          from: remotePackPreload.from,
-          to: remotePackPreload.to
-        });
-      }
       var startGameViewNode = this._startGameViewNode;
       if (!startGameViewNode || !startGameViewNode.isValid) {
         startGameViewNode = cc.instantiate(prefab);

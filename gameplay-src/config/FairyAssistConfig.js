@@ -120,6 +120,7 @@ var CONFIG = {
   splitAngleDegrees: 18,
   spriteWidth: 200,
   spriteHeight: 160,
+  dropCollisionGlowScale: 86 / 72,
   maxGlowStacks: 7
 };
 
@@ -135,6 +136,7 @@ requirePositiveFiniteNumber(CONFIG.minimumUpwardSpeed, "FairyAssistConfig.minimu
 requirePositiveFiniteNumber(CONFIG.splitAngleDegrees, "FairyAssistConfig.splitAngleDegrees");
 requirePositiveFiniteNumber(CONFIG.spriteWidth, "FairyAssistConfig.spriteWidth");
 requirePositiveFiniteNumber(CONFIG.spriteHeight, "FairyAssistConfig.spriteHeight");
+requirePositiveFiniteNumber(CONFIG.dropCollisionGlowScale, "FairyAssistConfig.dropCollisionGlowScale");
 if (!Number.isInteger(CONFIG.maxGlowStacks) || CONFIG.maxGlowStacks <= 0) {
   throw new Error("FairyAssistConfig.maxGlowStacks must be a positive integer.");
 }

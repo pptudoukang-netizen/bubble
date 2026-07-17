@@ -27,7 +27,7 @@ var REMOTE_PACK_SIZE = 100;
 var START_GENERATED_LEVEL_ID = 41;
 var CLOUD_ENV_ID = "cloud1-d7gqettx3e9249ca1";
 var CLOUD_FILE_ID_PREFIX = "cloud://cloud1-d7gqettx3e9249ca1.636c-cloud1-d7gqettx3e9249ca1-1428064608";
-var CLOUD_PACK_ROOT = "level-packs-compact";
+var CLOUD_PACK_ROOT = "level-packs";
 var MANIFEST_VERSION = "levels-1000-compact-v1";
 var BOOTSTRAP_MANIFEST_VERSION = "levels-1000-bootstrap-v1";
 var REMOTE_MANIFEST_FILE_NAME = "level_manifest.json";
@@ -632,6 +632,10 @@ function buildTableSpecialEntities(tableRow, activeColors) {
     };
   });
 
+  if (levelId <= FirstHundredLevelDesign.LAST_LEVEL_ID) {
+    entities = entities.concat(FirstHundredLevelDesign.buildNewReactiveSpecialEntities(levelId));
+  }
+
   return entities;
 }
 
@@ -971,17 +975,19 @@ function buildWinConditionsFromTable(tableRow) {
 }
 
 function resolveJarColors(activeColors, target) {
-  var jarColors = activeColors.slice(0, Math.min(4, activeColors.length));
-  if (target && target.type === "collect_color" && jarColors.indexOf(target.color) === -1) {
-    if (!jarColors.length) {
-      throw new Error("Jar colors require at least one active color.");
-    }
-    jarColors[jarColors.length - 1] = target.color;
+  if (!Array.isArray(activeColors) || activeColors.length === 0) {
+    throw new Error("Jar colors require activeColors.");
   }
-  return jarColors;
+  if (!target || target.type !== "collect_color" || COLORS.indexOf(target.color) === -1) {
+    throw new Error("Jar colors require a supported collect_color target.");
+  }
+  return COLORS.slice();
 }
 
-function buildTargetScoreFromTable(tableRow) {
+function buildTargetScoreFromTable(tableRow, additionalSpecialCount) {
+  if (!Number.isInteger(additionalSpecialCount) || additionalSpecialCount < 0) {
+    throw new Error("Target score additionalSpecialCount must be a non-negative integer.");
+  }
   var primaryValue = Math.max(0, Math.floor(Number(tableRow.target1.value) || 0));
   var snowValue = tableRow.target2 ? Math.max(0, Math.floor(Number(tableRow.target2.value) || 0)) : 0;
   var normalTotal = sumColorCounts(tableRow.colorCounts);
@@ -993,7 +999,7 @@ function buildTargetScoreFromTable(tableRow) {
     countTableSplitters(tableRow.specialCounts.splitters) +
     tableRow.specialCounts.key +
     tableRow.specialCounts.locked;
-  var nonIceSpecialTotal = specialTotal - tableRow.specialCounts.ice;
+  var nonIceSpecialTotal = specialTotal - tableRow.specialCounts.ice + additionalSpecialCount;
   return Math.max(100, Math.round(
     normalTotal * 50 +
     primaryValue * 40 +
@@ -1314,7 +1320,14 @@ function makeLevel(levelId, placementVariant) {
   var firstHundredTuning = firstHundredSpec
     ? firstHundredSpec.tuning
     : null;
-  var targetScore = buildTargetScoreFromTable(tableRow);
+  var targetScore = buildTargetScoreFromTable(
+    tableRow,
+    firstHundredSpec
+      ? firstHundredSpec.specialCounts.swirl +
+        firstHundredSpec.specialCounts.vine_spirit +
+        firstHundredSpec.specialCounts.wormhole
+      : 0
+  );
 
   var spawnWeights = {};
   colors.forEach(function (color, index) {
@@ -1409,7 +1422,7 @@ function makeLevel(levelId, placementVariant) {
         ? "Gameplay is generated from the current LEVEL_CONFIG_TABLE_1_1000.csv rules; only the occupancy silhouette " +
           "is projected from E:\\kxppm\\decrypted_config\\all_levels.json level " +
           referenceLayout.sourceLevelId + " into current level " + levelId +
-          (referenceLayout.mirrored ? " as a mirrored 10/9-column variant." : " on the current 10/9-column board.")
+          (referenceLayout.mirrored ? " as a mirrored 11/10-column variant." : " on the current 11/10-column board.")
         : "Generated from LEVEL_CONFIG_TABLE_1_1000.csv. Chapter `" + getChapter(levelId) + "` uses " +
           mechanics.join(", ") + " with a " + patternName + " board silhouette.",
       difficultyScore: firstHundredTuning

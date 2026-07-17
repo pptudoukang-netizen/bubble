@@ -6,6 +6,7 @@ var LevelConfigLoader = require("./LevelConfigLoader");
 var LevelPackManifest = require("./LevelPackManifest");
 var LevelPackCompactCodec = require("./LevelPackCompactCodec");
 var LevelPackIntegrity = require("./LevelPackIntegrity");
+var BACKGROUND_PRELOAD_CONCURRENCY = 2;
 
 function resolvePlatform(platform) {
   if (platform) {
@@ -66,6 +67,45 @@ function assertObject(value, fieldName) {
   return value;
 }
 
+function prioritizePackInfos(manifest, priorityLevelId) {
+  var safePriorityLevelId = normalizePositiveLevelId(priorityLevelId, "remote pack background preload priorityLevelId");
+  var packInfos = manifest.packs.slice();
+  if (safePriorityLevelId <= manifest.localLevelMax) {
+    return packInfos;
+  }
+  var priorityPackInfo = LevelPackManifest.findPackForLevelId(manifest, safePriorityLevelId);
+  return [priorityPackInfo].concat(packInfos.filter(function (packInfo) {
+    return packInfo.id !== priorityPackInfo.id;
+  }));
+}
+
+function preloadPackInfosWithConcurrency(loader, manifest, packInfos) {
+  var nextIndex = 0;
+
+  function preloadNextPack() {
+    if (nextIndex >= packInfos.length) {
+      return Promise.resolve();
+    }
+    var packInfo = packInfos[nextIndex];
+    nextIndex += 1;
+    return loader._fetchPackText(manifest, packInfo).then(function () {
+      Logger.info("Background remote level pack cached", {
+        packId: packInfo.id,
+        from: packInfo.from,
+        to: packInfo.to
+      });
+      return preloadNextPack();
+    });
+  }
+
+  var workerCount = Math.min(BACKGROUND_PRELOAD_CONCURRENCY, packInfos.length);
+  var workers = [];
+  for (var workerIndex = 0; workerIndex < workerCount; workerIndex += 1) {
+    workers.push(preloadNextPack());
+  }
+  return Promise.all(workers);
+}
+
 function buildTempURLFailureMessage(packInfo, item) {
   var errMsg = item && typeof item.errMsg === "string" ? item.errMsg : "";
   var kind = packInfo.kind === "manifest" ? "manifest" : "pack";
@@ -111,6 +151,7 @@ function RemoteLevelPackLoader(options) {
   this.cacheRootName = opts.cacheRootName || "bubble_remote_level_packs";
   this._manifestPromise = null;
   this._packTextPromises = {};
+  this._allPacksPreloadPromise = null;
   this._cloudInitialized = false;
 }
 
@@ -425,45 +466,38 @@ RemoteLevelPackLoader.prototype._shouldAttemptRemotePreload = function () {
   return isWechatGameRuntime();
 };
 
-RemoteLevelPackLoader.prototype.preloadPackAfterLevelId = function (levelId) {
-  var safeLevelId = normalizePositiveLevelId(levelId, "remote pack preload levelId");
-  return this._loadBootstrapManifest().then(function (bootstrapManifest) {
-    var nextLevelId = safeLevelId + 1;
-    if (nextLevelId <= bootstrapManifest.localLevelMax || nextLevelId > bootstrapManifest.totalLevelCount) {
+RemoteLevelPackLoader.prototype.preloadAllPacks = function (priorityLevelId) {
+  var safePriorityLevelId = normalizePositiveLevelId(
+    priorityLevelId,
+    "remote pack background preload priorityLevelId"
+  );
+  if (this._shouldAttemptRemotePreload() !== true) {
+    return Promise.resolve({
+      preloaded: false,
+      priorityLevelId: safePriorityLevelId,
+      skippedReason: "remote_pack_background_preload_requires_wechat_game_runtime"
+    });
+  }
+  if (this._allPacksPreloadPromise) {
+    return this._allPacksPreloadPromise;
+  }
+
+  this._allPacksPreloadPromise = this.loadManifest().then(function (manifest) {
+    var packInfos = prioritizePackInfos(manifest, safePriorityLevelId);
+    return preloadPackInfosWithConcurrency(this, manifest, packInfos).then(function () {
       return {
-        preloaded: false,
-        levelId: safeLevelId
+        preloaded: true,
+        priorityLevelId: safePriorityLevelId,
+        priorityPackId: packInfos[0].id,
+        packCount: packInfos.length
       };
-    }
-
-    if (this._shouldAttemptRemotePreload() !== true) {
-      return {
-        preloaded: false,
-        levelId: safeLevelId,
-        skippedReason: "remote_pack_preload_requires_wechat_game_runtime"
-      };
-    }
-
-    return this.loadManifest().then(function (manifest) {
-      var packInfo = LevelPackManifest.findPackForLevelId(manifest, nextLevelId);
-      if (safeLevelId !== packInfo.from - 1) {
-        return {
-          preloaded: false,
-          levelId: safeLevelId
-        };
-      }
-
-      return this._fetchPackText(manifest, packInfo).then(function () {
-        return {
-          preloaded: true,
-          levelId: safeLevelId,
-          packId: packInfo.id,
-          from: packInfo.from,
-          to: packInfo.to
-        };
-      });
-    }.bind(this));
+    });
+  }.bind(this)).catch(function (error) {
+    this._allPacksPreloadPromise = null;
+    throw error;
   }.bind(this));
+
+  return this._allPacksPreloadPromise;
 };
 
 RemoteLevelPackLoader.prototype.loadLevelByKey = function (levelKey) {

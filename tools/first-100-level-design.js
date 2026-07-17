@@ -130,15 +130,18 @@ var CALIBRATED_SHOT_LIMITS = [
 ];
 var MIN_OCCUPIED_LAYOUT_ROWS = 8;
 var ADJACENCY_DISTANCE = BoardLayout.bubbleDiameter + 8;
+var SWIRL_LEVEL_IDS = [21, 27, 34, 39, 46, 51, 57, 63, 69, 75, 81, 87, 93, 99];
+var VINE_SPIRIT_LEVEL_IDS = [31, 37, 43, 49, 55, 61, 67, 73, 79, 85, 91, 97];
+var WORMHOLE_LEVEL_IDS = [53, 65, 77, 89, 95];
 var LEVEL_ONE_TUTORIAL_LAYOUT = [
-  "BBRRBBRRBB",
-  "RBBRRRBBR",
-  ".RRBBBBRR.",
-  ".RRBRBRR.",
-  "..RBBBBR..",
-  "...BBB...",
-  "....RR....",
-  "....R...."
+  "BBRRBBRRBB.",
+  "RBBRRRBBR.",
+  ".RRBBBBRR..",
+  ".RRBRBRR..",
+  "..RBBBBR...",
+  "...BBB....",
+  "....RR.....",
+  "....R....."
 ];
 var referenceLevelsById = null;
 
@@ -467,7 +470,10 @@ function buildSpecialCounts(levelId, targetColor) {
     molotov: 0,
     splitters: makeEmptySplitterCounts(),
     key: 0,
-    locked: 0
+    locked: 0,
+    swirl: SWIRL_LEVEL_IDS.indexOf(levelId) >= 0 ? 1 : 0,
+    vine_spirit: VINE_SPIRIT_LEVEL_IDS.indexOf(levelId) >= 0 ? 1 : 0,
+    wormhole: WORMHOLE_LEVEL_IDS.indexOf(levelId) >= 0 ? 2 : 0
   };
 
   if (levelId === 15) {
@@ -638,7 +644,44 @@ function countSplitters(splitterCounts) {
 function countSpecials(specialCounts) {
   return specialCounts.stone + specialCounts.ice + specialCounts.blast +
     specialCounts.rainbow + specialCounts.molotov +
-    countSplitters(specialCounts.splitters) + specialCounts.key + specialCounts.locked;
+    countSplitters(specialCounts.splitters) + specialCounts.key + specialCounts.locked +
+    specialCounts.swirl + specialCounts.vine_spirit + specialCounts.wormhole;
+}
+
+function buildNewReactiveSpecialEntities(levelId) {
+  assertFirstHundredLevelId(levelId);
+  var counts = buildSpecialCounts(levelId, getTargetColor(levelId, getActiveColors(levelId)));
+  var entities = [];
+  if (counts.swirl === 1) {
+    entities.push({
+      id: "swirl_01",
+      entityCategory: "reactive_ball",
+      entityType: "swirl"
+    });
+  }
+  if (counts.vine_spirit === 1) {
+    entities.push({
+      id: "vine_spirit_01",
+      entityCategory: "reactive_ball",
+      entityType: "vine_spirit"
+    });
+  }
+  if (counts.wormhole === 2) {
+    var moveDirection = levelId % 2 === 0 ? "left" : "right";
+    entities.push({
+      id: "wormhole_left",
+      entityCategory: "reactive_ball",
+      entityType: "wormhole",
+      moveDirection: moveDirection
+    });
+    entities.push({
+      id: "wormhole_right",
+      entityCategory: "reactive_ball",
+      entityType: "wormhole",
+      moveDirection: moveDirection
+    });
+  }
+  return entities;
 }
 
 function resolveRowCount(levelId) {
@@ -764,17 +807,7 @@ function buildLevelSpec(levelId) {
   var target2 = specialCounts.ice >= 3
     ? { type: "collect_ice_snowball", value: specialCounts.ice }
     : null;
-  var jarColors = COLORS.filter(function (color) {
-    return colorCounts[color] > 0;
-  }).slice(0, 4);
-  if (jarColors.indexOf(targetColor) === -1) {
-    jarColors[jarColors.length - 1] = targetColor;
-  }
-  if (levelId === 1) {
-    while (jarColors.length < 3) {
-      jarColors.push(targetColor);
-    }
-  }
+  var jarColors = COLORS.slice();
   return {
     levelId: levelId,
     themeName: theme.name,
@@ -815,6 +848,30 @@ function areAdjacent(cellA, cellB) {
   var dx = positionA.x - positionB.x;
   var dy = positionA.y - positionB.y;
   return Math.sqrt(dx * dx + dy * dy) < ADJACENCY_DISTANCE;
+}
+
+function getHexNeighborCoordinates(row, col) {
+  var offsets = row % 2 === 1 ? [
+    { row: -1, col: 0 },
+    { row: -1, col: 1 },
+    { row: 0, col: -1 },
+    { row: 0, col: 1 },
+    { row: 1, col: 0 },
+    { row: 1, col: 1 }
+  ] : [
+    { row: -1, col: -1 },
+    { row: -1, col: 0 },
+    { row: 0, col: -1 },
+    { row: 0, col: 1 },
+    { row: 1, col: -1 },
+    { row: 1, col: 0 }
+  ];
+  return offsets.map(function (offset) {
+    return {
+      row: row + offset.row,
+      col: col + offset.col
+    };
+  });
 }
 
 function getNormalizedCoordinates(cell, rows) {
@@ -1396,7 +1453,8 @@ function buildSlotsFromFixedLayout(rows, fixedLayout, requiredCount, levelId) {
 function getFocalEntityRank(entity) {
   if (entity.entityType === "rainbow" || entity.entityType === "blast" ||
       entity.entityType === "molotov" || entity.entityType === "splitter" ||
-      entity.entityType === "key") {
+      entity.entityType === "key" || entity.entityType === "swirl" ||
+      entity.entityType === "vine_spirit" || entity.entityType === "wormhole") {
     return 0;
   }
   if (entity.entityType === "stone" || entity.entityType === "locked") {
@@ -1421,7 +1479,8 @@ function scoreSpecialSlot(entity, cell, rows, levelId, entityIndex, placementVar
     score = Math.abs(y - 0.48) * 12 + centerDistance * 3;
   } else if (entity.entityType === "blast" || entity.entityType === "rainbow") {
     score = Math.abs(y - 0.56) * 10 + centerDistance * 5;
-  } else if (entity.entityType === "molotov" || entity.entityType === "splitter") {
+  } else if (entity.entityType === "molotov" || entity.entityType === "splitter" ||
+      entity.entityType === "vine_spirit") {
     score = Math.abs(y - 0.62) * 12 + centerDistance * 4;
   } else if (entity.entityType === "key") {
     score = Math.abs(y - 0.68) * 12 + Math.abs(x - (entityIndex % 2 === 0 ? -0.42 : 0.42)) * 5;
@@ -1448,6 +1507,101 @@ function scoreSpecialSlot(entity, cell, rows, levelId, entityIndex, placementVar
   return score + variantSalt + cell.row * 0.0001 + cell.col * 0.00001;
 }
 
+function buildShapeSlotMap(shapeSlots) {
+  var slotMap = {};
+  shapeSlots.forEach(function (cell) {
+    slotMap[cell.row + ":" + cell.col] = true;
+  });
+  return slotMap;
+}
+
+function placeSwirlEntity(rows, shapeSlots, entity, levelId, placementVariant, used, forbiddenSpecialSlots) {
+  var shapeSlotMap = buildShapeSlotMap(shapeSlots);
+  var candidates = shapeSlots.filter(function (cell) {
+    var centerKey = cell.row + ":" + cell.col;
+    if (used[centerKey] || forbiddenSpecialSlots[centerKey]) {
+      return false;
+    }
+    return getHexNeighborCoordinates(cell.row, cell.col).every(function (neighbor) {
+      return shapeSlotMap[neighbor.row + ":" + neighbor.col] === true;
+    });
+  });
+  if (candidates.length === 0) {
+    throw new Error("No complete six-cell swirl track is available for level " + levelId + ".");
+  }
+  candidates.sort(function (cellA, cellB) {
+    var normalizedA = getNormalizedCoordinates(cellA, rows);
+    var normalizedB = getNormalizedCoordinates(cellB, rows);
+    var scoreA = Math.abs(normalizedA.x) * 8 + Math.abs(normalizedA.y - 0.5) * 12;
+    var scoreB = Math.abs(normalizedB.x) * 8 + Math.abs(normalizedB.y - 0.5) * 12;
+    if (scoreA !== scoreB) {
+      return scoreA - scoreB;
+    }
+    return cellA.row - cellB.row || cellA.col - cellB.col;
+  });
+  var candidateCount = Math.min(6, candidates.length);
+  var selected = candidates[placementVariant % candidateCount];
+  entity.row = selected.row;
+  entity.col = selected.col;
+  used[selected.row + ":" + selected.col] = true;
+  getHexNeighborCoordinates(selected.row, selected.col).forEach(function (neighbor) {
+    forbiddenSpecialSlots[neighbor.row + ":" + neighbor.col] = true;
+  });
+}
+
+function placeWormholePair(rows, shapeSlots, wormholes, levelId, placementVariant, used, forbiddenSpecialSlots) {
+  if (wormholes.length !== 2) {
+    throw new Error("First-100 wormhole configuration must contain exactly two endpoints for level " + levelId + ".");
+  }
+  if (wormholes[0].moveDirection !== wormholes[1].moveDirection) {
+    throw new Error("First-100 wormhole directions differ for level " + levelId + ".");
+  }
+  var candidates = [];
+  shapeSlots.forEach(function (left) {
+    var leftKey = left.row + ":" + left.col;
+    if (used[leftKey] || forbiddenSpecialSlots[leftKey]) {
+      return;
+    }
+    shapeSlots.forEach(function (right) {
+      var rightKey = right.row + ":" + right.col;
+      if (right.row !== left.row || right.col - left.col < 3 ||
+          used[rightKey] || forbiddenSpecialSlots[rightKey]) {
+        return;
+      }
+      var normalizedLeft = getNormalizedCoordinates(left, rows);
+      var normalizedRight = getNormalizedCoordinates(right, rows);
+      candidates.push({
+        left: left,
+        right: right,
+        score: Math.abs((normalizedLeft.x + normalizedRight.x) / 2) * 8 +
+          Math.abs(normalizedLeft.y - 0.58) * 12 -
+          (right.col - left.col) * 0.15
+      });
+    });
+  });
+  if (candidates.length === 0) {
+    throw new Error("No same-row wormhole endpoint pair is available for level " + levelId + ".");
+  }
+  candidates.sort(function (pairA, pairB) {
+    if (pairA.score !== pairB.score) {
+      return pairA.score - pairB.score;
+    }
+    return pairA.left.row - pairB.left.row || pairA.left.col - pairB.left.col ||
+      pairA.right.col - pairB.right.col;
+  });
+  var candidateCount = Math.min(8, candidates.length);
+  var selected = candidates[placementVariant % candidateCount];
+  var orderedWormholes = wormholes.slice().sort(function (left, right) {
+    return String(left.id).localeCompare(String(right.id));
+  });
+  orderedWormholes[0].row = selected.left.row;
+  orderedWormholes[0].col = selected.left.col;
+  orderedWormholes[1].row = selected.right.row;
+  orderedWormholes[1].col = selected.right.col;
+  used[selected.left.row + ":" + selected.left.col] = true;
+  used[selected.right.row + ":" + selected.right.col] = true;
+}
+
 function placeSpecialEntities(rows, shapeSlots, entities, levelId, placementVariant) {
   if (!Array.isArray(entities)) {
     throw new Error("Special entities must be an array for level " + levelId + ".");
@@ -1456,8 +1610,42 @@ function placeSpecialEntities(rows, shapeSlots, entities, levelId, placementVari
     throw new Error("First-100 placement variant must be a non-negative integer.");
   }
   var used = {};
+  var forbiddenSpecialSlots = {};
   var placedMomentX = 0;
-  var orderedEntities = entities.slice().sort(function (entityA, entityB) {
+  var swirlEntities = entities.filter(function (entity) {
+    return entity.entityType === "swirl";
+  });
+  var wormholeEntities = entities.filter(function (entity) {
+    return entity.entityType === "wormhole";
+  });
+  if (swirlEntities.length > 1) {
+    throw new Error("First-100 levels support at most one swirl: " + levelId + ".");
+  }
+  if (swirlEntities.length === 1) {
+    placeSwirlEntity(
+      rows,
+      shapeSlots,
+      swirlEntities[0],
+      levelId,
+      placementVariant,
+      used,
+      forbiddenSpecialSlots
+    );
+  }
+  if (wormholeEntities.length > 0) {
+    placeWormholePair(
+      rows,
+      shapeSlots,
+      wormholeEntities,
+      levelId,
+      placementVariant,
+      used,
+      forbiddenSpecialSlots
+    );
+  }
+  var orderedEntities = entities.filter(function (entity) {
+    return entity.entityType !== "swirl" && entity.entityType !== "wormhole";
+  }).sort(function (entityA, entityB) {
     var rankDelta = getFocalEntityRank(entityA) - getFocalEntityRank(entityB);
     if (rankDelta !== 0) {
       return rankDelta;
@@ -1468,7 +1656,7 @@ function placeSpecialEntities(rows, shapeSlots, entities, levelId, placementVari
     assertObject(entity, "Special entity " + entityIndex);
     var candidates = shapeSlots.filter(function (cell) {
       var key = cell.row + ":" + cell.col;
-      if (used[key]) {
+      if (used[key] || forbiddenSpecialSlots[key]) {
         return false;
       }
       return !(entity.entityType === "splitter" && cell.row === 0);
@@ -1869,7 +2057,10 @@ function validateGeneratedLevel(level) {
     molotov: 0,
     splitters: makeEmptySplitterCounts(),
     key: 0,
-    locked: 0
+    locked: 0,
+    swirl: 0,
+    vine_spirit: 0,
+    wormhole: 0
   };
   level.specialEntities.forEach(function (entity) {
     if (entity.entityType === "splitter") {
@@ -1883,7 +2074,10 @@ function validateGeneratedLevel(level) {
       throw new Error("Level " + level.levelId + " contains unsupported first-100 special type.");
     }
   });
-  ["stone", "ice", "blast", "rainbow", "molotov", "key", "locked"].forEach(function (type) {
+  [
+    "stone", "ice", "blast", "rainbow", "molotov", "key", "locked",
+    "swirl", "vine_spirit", "wormhole"
+  ].forEach(function (type) {
     compareNumber(actualSpecialCounts[type], spec.specialCounts[type], "generated special count " + type, level.levelId);
   });
   COLORS.forEach(function (color) {
@@ -2006,6 +2200,7 @@ module.exports = {
   THEME_GROUPS: JSON.parse(JSON.stringify(THEME_GROUPS)),
   LEVEL_ONE_TUTORIAL_LAYOUT: LEVEL_ONE_TUTORIAL_LAYOUT.slice(),
   buildLevelSpec: buildLevelSpec,
+  buildNewReactiveSpecialEntities: buildNewReactiveSpecialEntities,
   buildReferenceLayoutDescriptor: buildReferenceLayoutDescriptor,
   buildReferenceShapeSlots: buildShapeSlots,
   buildStarThresholds: buildStarThresholds,

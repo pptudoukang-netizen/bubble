@@ -338,6 +338,8 @@ FallingMarbleSystem.prototype._buildLayoutSignature = function () {
     BoardLayout.jarRenderYOffset,
     BoardLayout.jarWidth,
     BoardLayout.jarHeight,
+    BoardLayout.jarMouthWidth,
+    BoardLayout.jarLayoutWidth,
     this.jarColors.length
   ].join("|");
 };
@@ -365,13 +367,14 @@ FallingMarbleSystem.prototype._buildJarZones = function () {
     return [];
   }
 
-  var jarPositions = BoardLayout.getJarCenterPositions(count);
-  var jarHalfWidth = Math.max(1, Number(BoardLayout.jarWidth) || 237) * 0.5;
-  var edgeThickness = clamp(this.rimEdgeThickness, 1, jarHalfWidth);
+  var jarLayout = BoardLayout.getJarLayout(count);
+  var jarPositions = jarLayout.positions;
+  var mouthHalfWidth = jarLayout.mouthWidth * 0.5;
+  var edgeThickness = clamp(this.rimEdgeThickness * jarLayout.scale, 1, mouthHalfWidth);
   // 需求：左右边缘碰撞区各 40（从边界向内）。
-  var outerHalfWidth = jarHalfWidth;
-  var innerHalfWidth = Math.max(0, jarHalfWidth - edgeThickness);
-  var jarHeight = Math.max(1, Number(BoardLayout.jarHeight) || 230);
+  var outerHalfWidth = mouthHalfWidth;
+  var innerHalfWidth = Math.max(0, mouthHalfWidth - edgeThickness);
+  var jarHeight = jarLayout.renderHeight;
   var baseJarCenterY = getJarRenderCenterY();
 
   var zones = [];

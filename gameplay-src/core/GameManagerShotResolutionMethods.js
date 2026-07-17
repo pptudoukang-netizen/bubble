@@ -709,9 +709,6 @@ function createGameManagerShotResolutionMethods(deps) {
       if (wormholeCount !== 0 && wormholeCount !== 2) {
         throw new Error("Top anchor collapse requires exactly two live wormholes.");
       }
-      if (wormholeCount === 2) {
-        return false;
-      }
       if (!cells.length) {
         return false;
       }
@@ -727,7 +724,13 @@ function createGameManagerShotResolutionMethods(deps) {
           topRowEmptySlots: BoardViewportSystem.countTopRowEmptySlots(cells, grid.maxColumns)
         });
       }
-      var removedCells = grid.removeCells(cells);
+      var collapsibleCells = cells.filter(function (cell) {
+        return !(cell && cell.entityCategory === "reactive_ball" && cell.entityType === "wormhole");
+      });
+      var removedCells = grid.removeFloatingCells(collapsibleCells);
+      if (removedCells.length !== collapsibleCells.length) {
+        throw new Error("Top anchor collapse must remove every non-wormhole board cell.");
+      }
       this._cancelPendingSplitterSpawnsForDroppedCells(removedCells);
       if (this.lastResolution) {
         this.lastResolution.topAnchorCollapse = true;
@@ -736,7 +739,7 @@ function createGameManagerShotResolutionMethods(deps) {
       this._registerResolutionDrops(removedCells, grid, this.lastResolution, {
         dropKind: "victory_board_drop"
       }, {
-        matchedCellsForDelay: removedCells
+        skipEliminationPresentationHold: true
       });
       this.state = "won_pending";
       return true;
@@ -1419,10 +1422,20 @@ function createGameManagerShotResolutionMethods(deps) {
         throw new Error("Resolution drop registration matchedCellsForDelay must be a non-empty array when provided.");
       }
 
-      var requiresEliminationHold = EliminationSequenceBuilder.resolveRequiresEliminationPresentationHold(
-        resolution,
-        matchedCellsForDelay
+      var skipEliminationPresentationHold = !!(
+        timingOptions &&
+        Object.prototype.hasOwnProperty.call(timingOptions, "skipEliminationPresentationHold")
       );
+      if (skipEliminationPresentationHold && timingOptions.skipEliminationPresentationHold !== true) {
+        throw new Error("Resolution drop registration skipEliminationPresentationHold must be true when provided.");
+      }
+
+      var requiresEliminationHold = skipEliminationPresentationHold
+        ? false
+        : EliminationSequenceBuilder.resolveRequiresEliminationPresentationHold(
+          resolution,
+          matchedCellsForDelay
+        );
       var baseDelay = 0;
       if (dropOptions && Object.prototype.hasOwnProperty.call(dropOptions, "startDelay")) {
         if (
@@ -1662,7 +1675,11 @@ function createGameManagerShotResolutionMethods(deps) {
         blastCells.push(occupiedCell);
       });
 
-      var removedByBlast = grid.removeCells(blastCells);
+      this._resolveVinesHitByExplosion(blastCells, grid, resolution);
+      var removableBlastCells = blastCells.filter(function (cell) {
+        return !isVineEntangledBall(cell) && !isVineSpiritBall(cell);
+      });
+      var removedByBlast = grid.removeCells(removableBlastCells);
       this._resolveVinesAfterRemoval(removedByBlast, grid, resolution);
       appendMolotovEliminationSequence(resolution, removedByBlast, grid);
       this._pushBubbleBreakEvent(removedByBlast, resolution.eliminationSequence);
@@ -1860,7 +1877,7 @@ function createGameManagerShotResolutionMethods(deps) {
         if (!floatingCells.length) {
           break;
         }
-        var removedFloating = grid.removeCells(floatingCells);
+        var removedFloating = grid.removeFloatingCells(floatingCells);
         if (!removedFloating.length) {
           throw new Error("Molotov floating resolution found cells that could not be removed.");
         }
@@ -2162,7 +2179,7 @@ function createGameManagerShotResolutionMethods(deps) {
       if (!resolution || !Array.isArray(resolution.releasedVines)) {
         throw new Error("Vine release requires resolution.releasedVines.");
       }
-      if (sourceType !== "direct_hit" && sourceType !== "adjacent_elimination") {
+      if (sourceType !== "direct_hit" && sourceType !== "adjacent_elimination" && sourceType !== "explosion") {
         throw new Error("Vine release sourceType is invalid: " + sourceType);
       }
       var alreadyReleased = resolution.releasedVines.some(function (entry) {
@@ -2197,7 +2214,7 @@ function createGameManagerShotResolutionMethods(deps) {
       if (!resolution || !Array.isArray(resolution.vineSpiritHits) || !Array.isArray(resolution.witheredVines)) {
         throw new Error("Vine spirit damage requires resolution vine arrays.");
       }
-      if (sourceType !== "direct_hit" && sourceType !== "adjacent_elimination") {
+      if (sourceType !== "direct_hit" && sourceType !== "adjacent_elimination" && sourceType !== "explosion") {
         throw new Error("Vine spirit damage sourceType is invalid: " + sourceType);
       }
       var alreadyDamaged = resolution.vineSpiritHits.some(function (entry) {
@@ -2259,6 +2276,35 @@ function createGameManagerShotResolutionMethods(deps) {
       }, this);
       Object.keys(spiritsById).sort().forEach(function (spiritId) {
         this._damageVineSpiritOnce(spiritsById[spiritId], grid, resolution, "adjacent_elimination");
+      }, this);
+    },
+
+    _resolveVinesHitByExplosion: function (affectedCells, grid, resolution) {
+      if (!Array.isArray(affectedCells)) {
+        throw new Error("Vine explosion resolution requires affectedCells array.");
+      }
+      if (!grid || typeof grid.getCell !== "function") {
+        throw new Error("Vine explosion resolution requires bubble grid.");
+      }
+      var entangledById = {};
+      var spiritsById = {};
+      affectedCells.forEach(function (affectedCell) {
+        if (!affectedCell || !Number.isInteger(affectedCell.row) || !Number.isInteger(affectedCell.col)) {
+          throw new Error("Vine explosion resolution requires affected cell coordinates.");
+        }
+        var liveCell = grid.getCell(affectedCell.row, affectedCell.col);
+        if (isVineEntangledBall(liveCell)) {
+          entangledById[liveCell.id] = liveCell;
+        }
+        if (isVineSpiritBall(liveCell)) {
+          spiritsById[liveCell.id] = liveCell;
+        }
+      });
+      Object.keys(entangledById).sort().forEach(function (cellId) {
+        this._releaseVineOnce(entangledById[cellId], grid, resolution, "explosion");
+      }, this);
+      Object.keys(spiritsById).sort().forEach(function (spiritId) {
+        this._damageVineSpiritOnce(spiritsById[spiritId], grid, resolution, "explosion");
       }, this);
     },
 
@@ -2577,7 +2623,12 @@ function createGameManagerShotResolutionMethods(deps) {
         }
       });
 
-      var removedBlastCells = grid.removeCells(blastCells);
+      this._resolveVinesHitByExplosion(blastCells, grid, resolution);
+      var removableBlastCells = blastCells.filter(function (cell) {
+        return !isVineEntangledBall(cell) && !isVineSpiritBall(cell);
+      });
+      var removedBlastCells = grid.removeCells(removableBlastCells);
+      this._resolveVinesAfterRemoval(removedBlastCells, grid, resolution);
       if (!Array.isArray(resolution.blastExplosions)) {
         throw new Error("Blast resolution requires blastExplosions array.");
       }
@@ -2611,7 +2662,7 @@ function createGameManagerShotResolutionMethods(deps) {
       }
 
       var floatingCells = this.systems.supportSystem.findFloatingCells(grid);
-      var removedFloating = grid.removeCells(floatingCells);
+      var removedFloating = grid.removeFloatingCells(floatingCells);
       this._appendUniqueCells(resolution.floating, removedFloating);
       this._collectRemovedKeysAndResolveUnlocks(removedFloating, grid, resolution);
       var removedAll = removedBlastCells.concat(removedReactive).concat(resolution.floating);
@@ -2808,7 +2859,7 @@ function createGameManagerShotResolutionMethods(deps) {
       }
 
       var floatingCells = this.systems.supportSystem.findFloatingCells(grid);
-      var removedFloating = grid.removeCells(floatingCells);
+      var removedFloating = grid.removeFloatingCells(floatingCells);
       this._appendUniqueCells(resolution.floating, removedFloating);
       this._collectRemovedKeysAndResolveUnlocks(removedFloating, grid, resolution);
       var collectedCells = removedMatches.concat(removedReactiveMatches).concat(resolution.floating);

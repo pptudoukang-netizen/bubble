@@ -4,6 +4,13 @@ function attachLevelRendererSceneFxMethods(LevelRenderer, deps) {
   var BoardLayout = deps.BoardLayout;
   var SpecialAnimationTiming = deps.SpecialAnimationTiming;
   var BALL_RESOURCES = deps.BALL_RESOURCES;
+  var WORMHOLE_DIRECTION_ARROW_RESOURCE = deps.WORMHOLE_DIRECTION_ARROW_RESOURCE;
+  var WORMHOLE_DIRECTION_ARROW_SIZE = deps.WORMHOLE_DIRECTION_ARROW_SIZE;
+  var WORMHOLE_DIRECTION_ARROW_TRAVEL_DISTANCE = deps.WORMHOLE_DIRECTION_ARROW_TRAVEL_DISTANCE;
+  var WORMHOLE_DIRECTION_ARROW_STAGGER = deps.WORMHOLE_DIRECTION_ARROW_STAGGER;
+  var WORMHOLE_DIRECTION_ARROW_FADE_IN_DURATION = deps.WORMHOLE_DIRECTION_ARROW_FADE_IN_DURATION;
+  var WORMHOLE_DIRECTION_ARROW_FADE_OUT_DURATION = deps.WORMHOLE_DIRECTION_ARROW_FADE_OUT_DURATION;
+  var WORMHOLE_DIRECTION_ARROW_CYCLE_PAUSE = deps.WORMHOLE_DIRECTION_ARROW_CYCLE_PAUSE;
   var PREFAB_PATHS = deps.PREFAB_PATHS;
   var BARRIER_HAMMER_HINT_SIZE = deps.BARRIER_HAMMER_HINT_SIZE;
   var BARRIER_HAMMER_HINT_OFFSET_X = deps.BARRIER_HAMMER_HINT_OFFSET_X;
@@ -1188,6 +1195,181 @@ LevelRenderer.prototype._playWormholeShiftAnimation = function (runtimeSnapshot)
       }
     }, this);
   }, this);
+};
+
+LevelRenderer.prototype._destroyWormholeDirectionGuide = function () {
+  if (!this.wormholeDirectionGuideRoot) {
+    this.lastWormholeDirectionGuideKey = "";
+    return;
+  }
+  if (!this.wormholeDirectionGuideRoot.isValid) {
+    throw new Error("Wormhole direction guide root became invalid unexpectedly.");
+  }
+  if (typeof this.wormholeDirectionGuideRoot.destroy !== "function") {
+    throw new Error("Wormhole direction guide root requires destroy API.");
+  }
+  this.wormholeDirectionGuideRoot.removeFromParent(true);
+  this.wormholeDirectionGuideRoot.destroy();
+  this.wormholeDirectionGuideRoot = null;
+  this.lastWormholeDirectionGuideKey = "";
+};
+
+LevelRenderer.prototype._syncWormholeDirectionGuide = function (boardSnapshot) {
+  if (!boardSnapshot || !Array.isArray(boardSnapshot.cells) || !Number.isInteger(boardSnapshot.maxColumns)) {
+    throw new Error("Wormhole direction guide requires board snapshot geometry.");
+  }
+  if (typeof boardSnapshot.viewportOffsetY !== "number" || !isFinite(boardSnapshot.viewportOffsetY)) {
+    throw new Error("Wormhole direction guide requires finite board viewportOffsetY.");
+  }
+  if (!this.layers || !this.layers.board || !this.layers.board.isValid) {
+    throw new Error("Wormhole direction guide requires board layer.");
+  }
+
+  var wormholes = boardSnapshot.cells.filter(function (cell) {
+    return !!(cell && cell.entityCategory === "reactive_ball" && cell.entityType === "wormhole");
+  }).sort(function (left, right) {
+    return left.col - right.col;
+  });
+
+  if (!wormholes.length) {
+    this._destroyWormholeDirectionGuide();
+    return;
+  }
+  if (wormholes.length !== 2) {
+    throw new Error("Wormhole direction guide requires exactly two wormholes.");
+  }
+
+  var leftWormhole = wormholes[0];
+  var rightWormhole = wormholes[1];
+  if (!Number.isInteger(leftWormhole.row) || !Number.isInteger(leftWormhole.col) ||
+      !Number.isInteger(rightWormhole.row) || !Number.isInteger(rightWormhole.col)) {
+    throw new Error("Wormhole direction guide requires integer endpoint coordinates.");
+  }
+  if (leftWormhole.row !== rightWormhole.row) {
+    throw new Error("Wormhole direction guide endpoints must share one row.");
+  }
+  if (rightWormhole.col - leftWormhole.col < 2) {
+    throw new Error("Wormhole direction guide requires at least one interior slot.");
+  }
+  if ((leftWormhole.moveDirection !== "left" && leftWormhole.moveDirection !== "right") ||
+      leftWormhole.moveDirection !== rightWormhole.moveDirection) {
+    throw new Error("Wormhole direction guide requires matching left/right moveDirection.");
+  }
+
+  var direction = leftWormhole.moveDirection;
+  var guideKey = [
+    leftWormhole.row,
+    leftWormhole.col,
+    rightWormhole.col,
+    direction,
+    boardSnapshot.maxColumns,
+    boardSnapshot.viewportOffsetY
+  ].join("|");
+  if (this.lastWormholeDirectionGuideKey === guideKey) {
+    if (!this.wormholeDirectionGuideRoot || !this.wormholeDirectionGuideRoot.isValid) {
+      throw new Error("Wormhole direction guide key requires a valid guide root.");
+    }
+    return;
+  }
+
+  var arrowFrame = this.spriteFrameCache[WORMHOLE_DIRECTION_ARROW_RESOURCE];
+  if (!arrowFrame || !arrowFrame.isValid) {
+    throw new Error("Wormhole direction guide requires preloaded arrow SpriteFrame: " + WORMHOLE_DIRECTION_ARROW_RESOURCE);
+  }
+  if (!WORMHOLE_DIRECTION_ARROW_SIZE ||
+      typeof WORMHOLE_DIRECTION_ARROW_SIZE.width !== "number" || WORMHOLE_DIRECTION_ARROW_SIZE.width <= 0 ||
+      typeof WORMHOLE_DIRECTION_ARROW_SIZE.height !== "number" || WORMHOLE_DIRECTION_ARROW_SIZE.height <= 0) {
+    throw new Error("Wormhole direction arrow size must be positive.");
+  }
+  requirePositiveFiniteNumber(
+    WORMHOLE_DIRECTION_ARROW_TRAVEL_DISTANCE,
+    "Wormhole direction arrow travel distance"
+  );
+  requirePositiveFiniteNumber(
+    WORMHOLE_DIRECTION_ARROW_STAGGER,
+    "Wormhole direction arrow stagger"
+  );
+  requirePositiveFiniteNumber(
+    WORMHOLE_DIRECTION_ARROW_FADE_IN_DURATION,
+    "Wormhole direction arrow fade-in duration"
+  );
+  requirePositiveFiniteNumber(
+    WORMHOLE_DIRECTION_ARROW_FADE_OUT_DURATION,
+    "Wormhole direction arrow fade-out duration"
+  );
+  requirePositiveFiniteNumber(
+    WORMHOLE_DIRECTION_ARROW_CYCLE_PAUSE,
+    "Wormhole direction arrow cycle pause"
+  );
+  if (typeof cc.Node !== "function" || typeof cc.sequence !== "function" ||
+      typeof cc.spawn !== "function" || typeof cc.callFunc !== "function" ||
+      typeof cc.delayTime !== "function" || typeof cc.moveBy !== "function" ||
+      typeof cc.fadeTo !== "function" || typeof cc.scaleTo !== "function" ||
+      typeof cc.repeatForever !== "function") {
+    throw new Error("Wormhole direction guide requires Cocos node and action APIs.");
+  }
+
+  this._destroyWormholeDirectionGuide();
+
+  var guideRoot = new cc.Node("WormholeDirectionGuide");
+  guideRoot.parent = this.layers.board;
+  guideRoot.zIndex = 1000;
+  this.wormholeDirectionGuideRoot = guideRoot;
+  this.lastWormholeDirectionGuideKey = guideKey;
+
+  var interiorSlotCount = rightWormhole.col - leftWormhole.col - 1;
+  var directionSign = direction === "right" ? 1 : -1;
+  for (var slotIndex = 0; slotIndex < interiorSlotCount; slotIndex += 1) {
+    var col = leftWormhole.col + 1 + slotIndex;
+    var position = BoardLayout.getCellPosition(
+      leftWormhole.row,
+      col,
+      boardSnapshot.maxColumns,
+      boardSnapshot.viewportOffsetY
+    );
+    if (!position || typeof position.x !== "number" || !isFinite(position.x) ||
+        typeof position.y !== "number" || !isFinite(position.y)) {
+      throw new Error("Wormhole direction guide received invalid cell position.");
+    }
+
+    var arrowNode = new cc.Node("DirectionArrow_" + slotIndex);
+    arrowNode.parent = guideRoot;
+    arrowNode.setContentSize(WORMHOLE_DIRECTION_ARROW_SIZE);
+    arrowNode.setPosition(position.x, position.y);
+    arrowNode.angle = direction === "right" ? 0 : 180;
+    arrowNode.opacity = 0;
+    arrowNode.setScale(0.78);
+    ensureSprite(arrowNode, arrowFrame);
+
+    var flowOrder = direction === "right" ? slotIndex : interiorSlotCount - 1 - slotIndex;
+    var initialDelay = flowOrder * WORMHOLE_DIRECTION_ARROW_STAGGER;
+    var trailingDelay = (interiorSlotCount - flowOrder) * WORMHOLE_DIRECTION_ARROW_STAGGER +
+      WORMHOLE_DIRECTION_ARROW_CYCLE_PAUSE;
+    var baseX = position.x;
+    var baseY = position.y;
+    arrowNode.runAction(cc.repeatForever(cc.sequence(
+      cc.callFunc(function (node, data) {
+        if (!node || !node.isValid) {
+          throw new Error("Wormhole direction arrow was destroyed during animation.");
+        }
+        node.setPosition(data.x, data.y);
+        node.opacity = 0;
+        node.setScale(0.78);
+      }, arrowNode, { x: baseX, y: baseY }),
+      cc.delayTime(initialDelay),
+      cc.spawn(
+        cc.moveBy(WORMHOLE_DIRECTION_ARROW_FADE_IN_DURATION, directionSign * WORMHOLE_DIRECTION_ARROW_TRAVEL_DISTANCE * 0.5, 0),
+        cc.fadeTo(WORMHOLE_DIRECTION_ARROW_FADE_IN_DURATION, 235),
+        cc.scaleTo(WORMHOLE_DIRECTION_ARROW_FADE_IN_DURATION, 1)
+      ),
+      cc.spawn(
+        cc.moveBy(WORMHOLE_DIRECTION_ARROW_FADE_OUT_DURATION, directionSign * WORMHOLE_DIRECTION_ARROW_TRAVEL_DISTANCE * 0.5, 0),
+        cc.fadeTo(WORMHOLE_DIRECTION_ARROW_FADE_OUT_DURATION, 0),
+        cc.scaleTo(WORMHOLE_DIRECTION_ARROW_FADE_OUT_DURATION, 0.82)
+      ),
+      cc.delayTime(trailingDelay)
+    )));
+  }
 };
 
 LevelRenderer.prototype._playMolotovBlastAnimation = function (runtimeSnapshot) {

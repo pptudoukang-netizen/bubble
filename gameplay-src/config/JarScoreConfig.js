@@ -24,7 +24,8 @@ var JarScoreConfig = {
     1: assertBaseScoreTable([120]),
     2: assertBaseScoreTable([80, 80]),
     3: assertBaseScoreTable([60, 120, 60]),
-    4: assertBaseScoreTable([40, 90, 90, 40])
+    4: assertBaseScoreTable([40, 90, 90, 40]),
+    5: assertBaseScoreTable([40, 60, 120, 60, 40])
   }
 };
 

@@ -59,18 +59,20 @@
             "B"
         ],
         "shotLimit": 14,
-        "targetScore": 3990,
+        "targetScore": 4280,
         "starThresholds": {
-            "star1": 1436,
-            "star2": 2633,
-            "star3": 3591
+            "star1": 1541,
+            "star2": 2825,
+            "star3": 3852
         },
         "dropInterval": 8,
-        "jarCount": 3,
+        "jarCount": 5,
         "jarColors": [
             "R",
             "G",
-            "B"
+            "B",
+            "Y",
+            "P"
         ],
         "spawnWeights": {
             "R": 1,
@@ -93,7 +95,7 @@
             {
                 "type": "collect_color",
                 "color": "G",
-                "value": 21
+                "value": 22
             }
         ],
         "bonusObjectives": [
@@ -109,17 +111,17 @@
             }
         ],
         "layout": [
-            "RBBGBBRRRR",
-            ".RGB.BBR.",
-            ".RRG..BBR.",
-            "..RGGBG..",
-            ".RR.GG.GG.",
-            "BB..R..BG",
-            "GBBB..GGBG",
-            "GG.....GR",
-            "GG......GR"
+            "BBGGRRBRGGG",
+            ".BRGRRBRB.",
+            "..RGR.BRB..",
+            "..RGRBBR..",
+            ".GR..B..BG.",
+            "BGR....RBG",
+            "BGRG...RBGG",
+            "BGG.....BG",
+            "BG.......GG"
         ],
-        "designNotes": "Gameplay is generated from the current LEVEL_CONFIG_TABLE_1_1000.csv rules; only the occupancy silhouette is projected from E:\\kxppm\\decrypted_config\\all_levels.json level 6 into the current 10/9-column board.",
+        "designNotes": "Gameplay is generated from the current LEVEL_CONFIG_TABLE_1_1000.csv rules; only the occupancy silhouette is projected from E:\\kxppm\\decrypted_config\\all_levels.json level 6 into current level 6 on the current 11/10-column board.",
         "difficultyScore": 38,
         "specialEntities": [],
         "levelType": "normal",

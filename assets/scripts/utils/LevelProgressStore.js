@@ -1,9 +1,11 @@
 "use strict";
 
 var StrictStorage = require("./StrictStorage");
+var LevelPackManifest = require("../config/LevelPackManifest");
 
 var STORAGE_KEY = "bubble_level_progress_v1";
 var NAMESPACE = "LevelProgressStore";
+var MAX_LEVEL_ID = LevelPackManifest.TOTAL_LEVEL_COUNT;
 
 function createDefaultProgress() {
   return {
@@ -31,6 +33,22 @@ function requirePositiveInteger(value, fieldName) {
     throw new Error(fieldName + " must be a positive integer.");
   }
   return value;
+}
+
+function requireCampaignLevelId(value, fieldName) {
+  var levelId = requirePositiveInteger(value, fieldName);
+  if (levelId > MAX_LEVEL_ID) {
+    throw new Error(fieldName + " must not exceed campaign max level " + MAX_LEVEL_ID + ".");
+  }
+  return levelId;
+}
+
+function normalizeHighestUnlockedLevel(value) {
+  var highestUnlockedLevel = requirePositiveInteger(value, "highestUnlockedLevel");
+  if (highestUnlockedLevel > MAX_LEVEL_ID + 1) {
+    throw new Error("highestUnlockedLevel must not exceed legacy terminal value " + (MAX_LEVEL_ID + 1) + ".");
+  }
+  return Math.min(highestUnlockedLevel, MAX_LEVEL_ID);
 }
 
 function requireStoredStarCount(value, fieldName) {
@@ -70,10 +88,13 @@ function resolveHighestUnlockedFromCompletedLevels(completedLevels) {
     if (completedLevels[key] !== true) {
       throw new Error("completedLevels." + key + " must be true.");
     }
-    highestCompletedLevelId = Math.max(highestCompletedLevelId, Number(key));
+    highestCompletedLevelId = Math.max(
+      highestCompletedLevelId,
+      requireCampaignLevelId(Number(key), "completedLevels." + key + " level id")
+    );
   });
 
-  return highestCompletedLevelId + 1;
+  return Math.min(highestCompletedLevelId + 1, MAX_LEVEL_ID);
 }
 
 function normalizeBestScoresByLevel(rawBestScoresByLevel) {
@@ -111,8 +132,8 @@ function normalizeProgress(raw) {
   assertObject(raw.completedLevels, "Level progress completedLevels is required.");
   assertObject(raw.starsByLevel, "Level progress starsByLevel is required.");
 
-  var highestUnlockedLevel = requirePositiveInteger(raw.highestUnlockedLevel, "highestUnlockedLevel");
-  var selectedLevelId = requirePositiveInteger(raw.selectedLevelId, "selectedLevelId");
+  var highestUnlockedLevel = normalizeHighestUnlockedLevel(raw.highestUnlockedLevel);
+  var selectedLevelId = requireCampaignLevelId(raw.selectedLevelId, "selectedLevelId");
 
   var completedLevels = {};
   Object.keys(raw.completedLevels).forEach(function (key) {
@@ -172,7 +193,7 @@ LevelProgressStore.prototype.reset = function () {
 
 LevelProgressStore.prototype.setSelectedLevel = function (progress, levelId) {
   var normalized = normalizeProgress(progress);
-  var safeLevelId = requirePositiveInteger(levelId, "levelId");
+  var safeLevelId = requireCampaignLevelId(levelId, "levelId");
   if (safeLevelId > normalized.highestUnlockedLevel) {
     throw new Error("Cannot select locked level: " + safeLevelId);
   }
@@ -183,7 +204,7 @@ LevelProgressStore.prototype.setSelectedLevel = function (progress, levelId) {
 
 LevelProgressStore.prototype.recordCompletion = function (progress, levelId, stars, score) {
   var normalized = normalizeProgress(progress);
-  var safeLevelId = requirePositiveInteger(levelId, "levelId");
+  var safeLevelId = requireCampaignLevelId(levelId, "levelId");
   var safeStars = requireRuntimeStarCount(stars, "stars");
   var safeScore = requireNonNegativeInteger(score, "score");
   var key = String(safeLevelId);
@@ -201,26 +222,29 @@ LevelProgressStore.prototype.recordCompletion = function (progress, levelId, sta
   }
   normalized.bestScoresByLevel[key] = Math.max(previousBestScore, safeScore);
   normalized.selectedLevelId = safeLevelId;
-  normalized.highestUnlockedLevel = Math.max(normalized.highestUnlockedLevel, safeLevelId + 1);
+  normalized.highestUnlockedLevel = Math.min(
+    Math.max(normalized.highestUnlockedLevel, safeLevelId + 1),
+    MAX_LEVEL_ID
+  );
   return clone(normalized);
 };
 
 LevelProgressStore.prototype.isLevelUnlocked = function (progress, levelId) {
   var normalized = normalizeProgress(progress);
-  var safeLevelId = requirePositiveInteger(levelId, "levelId");
+  var safeLevelId = requireCampaignLevelId(levelId, "levelId");
   return safeLevelId <= normalized.highestUnlockedLevel;
 };
 
 LevelProgressStore.prototype.getStars = function (progress, levelId) {
   var normalized = normalizeProgress(progress);
-  var safeLevelId = requirePositiveInteger(levelId, "levelId");
+  var safeLevelId = requireCampaignLevelId(levelId, "levelId");
   var value = normalized.starsByLevel[String(safeLevelId)];
   return value ? requireStoredStarCount(value, "starsByLevel." + safeLevelId) : 0;
 };
 
 LevelProgressStore.prototype.getBestScore = function (progress, levelId) {
   var normalized = normalizeProgress(progress);
-  var safeLevelId = requirePositiveInteger(levelId, "levelId");
+  var safeLevelId = requireCampaignLevelId(levelId, "levelId");
   var key = String(safeLevelId);
   if (!Object.prototype.hasOwnProperty.call(normalized.bestScoresByLevel, key)) {
     return 0;

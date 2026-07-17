@@ -8,7 +8,7 @@
   "compressionLevel": 6,
   "allowRotation": true,
   "forceSquared": false,
-  "powerOfTwo": false,
+  "powerOfTwo": true,
   "algorithm": "MaxRects",
   "format": "png",
   "quality": 80,
@@ -22,7 +22,7 @@
     "minigame": {
       "formats": [
         {
-          "name": "astc_6x6",
+          "name": "astc_8x8",
           "quality": "medium"
         }
       ]

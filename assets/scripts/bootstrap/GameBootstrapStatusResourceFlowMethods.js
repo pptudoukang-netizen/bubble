@@ -5,6 +5,7 @@ var DebugFlags = Shared.DebugFlags;
 var Logger = Shared.Logger;
 var LevelSelectView = Shared.LevelSelectView;
 var LevelSelectMemoryDiagnostics = require("../utils/LevelSelectMemoryDiagnostics");
+var LevelPackManifest = require("../config/LevelPackManifest");
 var NEW_GIFT_INVENTORY_ITEMS = ["swap_ball", "rainbow_ball", "blast_ball", "barrier_hammer"];
 var NEW_GIFT_STAMINA_COUNT = 5;
 var NEW_GIFT_SHAKE_IDLE_DURATION = 0.55;
@@ -307,13 +308,26 @@ module.exports = {
       this._startRandomChallengeRun({});
       return;
     }
-    var nextLevelId = (this.currentLevelConfig.level.levelId || 1) + 1;
-    if (typeof this._showStartGameView !== "function") {
-      throw new Error("Next level requires StartGameView entry method.");
+    var currentLevelId = requirePositiveInteger(
+      this.currentLevelConfig.level.levelId,
+      "Next level current level id"
+    );
+    if (currentLevelId > LevelPackManifest.TOTAL_LEVEL_COUNT) {
+      throw new Error("Next level current level id exceeds campaign max: " + currentLevelId);
     }
     if (typeof this._showLevelSelectView !== "function") {
       throw new Error("Next level requires level select entry method.");
     }
+    if (currentLevelId === LevelPackManifest.TOTAL_LEVEL_COUNT) {
+      this._showLevelSelectView({
+        targetLevelId: currentLevelId
+      });
+      return;
+    }
+    if (typeof this._showStartGameView !== "function") {
+      throw new Error("Next level requires StartGameView entry method.");
+    }
+    var nextLevelId = currentLevelId + 1;
     this._showLevelSelectView({
       targetLevelId: nextLevelId,
       prepareLevelId: nextLevelId

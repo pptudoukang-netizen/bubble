@@ -116,7 +116,7 @@ module.exports = {
     var halfWidth = width * 0.5;
     var halfHeight = height * 0.5;
     var boardHalfWidth = Math.max(
-      BoardLayout.bubbleDiameter * 4.5,
+      BoardLayout.bubbleDiameter * ((BoardLayout.defaultColumns - 1) * 0.5),
       halfWidth - BASELINE_SIDE_PADDING
     );
 

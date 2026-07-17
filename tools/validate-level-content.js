@@ -15,7 +15,8 @@ var LEVEL_DIR = path.resolve(__dirname, "../assets/map/config/levels");
 var REMOTE_PACK_DIR = path.resolve(__dirname, "../remote-level-packs");
 var MANIFEST_PATH = path.resolve(REMOTE_PACK_DIR, "level_manifest.json");
 var ALLOWED_COLORS = ["R", "G", "B", "Y", "P"];
-var MAX_JAR_COUNT = 4;
+var FIXED_JAR_COLORS = ALLOWED_COLORS.slice();
+var FIXED_JAR_COUNT = FIXED_JAR_COLORS.length;
 var ALLOWED_DIFFICULTY = ["tutorial", "easy", "normal", "hard", "expert", "advanced"];
 var ALLOWED_WIN_TYPES = ["clear_all", "collect_any", "collect_color", "collect_ice_snowball"];
 var ALLOWED_BONUS_TYPES = [
@@ -640,16 +641,26 @@ function validateLevelData(data, expectedLevelId) {
 
   if (!isPositiveInteger(level.jarCount)) {
     issues.push("jarCount must be a positive integer");
-  } else if (level.jarCount > MAX_JAR_COUNT) {
-    issues.push("jarCount must be <= " + MAX_JAR_COUNT);
+  } else if (level.jarCount !== FIXED_JAR_COUNT) {
+    issues.push("jarCount must equal " + FIXED_JAR_COUNT);
   }
 
   if (!Array.isArray(level.jarColors) || level.jarColors.length !== level.jarCount) {
     issues.push("jarColors length must equal jarCount");
   } else {
+    var jarColorSet = {};
     level.jarColors.forEach(function (color) {
       if (ALLOWED_COLORS.indexOf(color) === -1) {
         issues.push("unsupported color in jarColors: " + color);
+      }
+      if (jarColorSet[color]) {
+        issues.push("jarColors must contain five different colors: " + color);
+      }
+      jarColorSet[color] = true;
+    });
+    FIXED_JAR_COLORS.forEach(function (color) {
+      if (!jarColorSet[color]) {
+        issues.push("jarColors missing fixed color: " + color);
       }
     });
   }

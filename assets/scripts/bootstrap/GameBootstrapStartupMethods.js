@@ -191,6 +191,7 @@ module.exports = {
       }.bind(this)).then(function () {
         return this._waitForNextRenderedFrame();
       }.bind(this)).then(function () {
+        this._scheduleBackgroundRemoteLevelPackPreload();
         this._scheduleDeferredUiBundleWarmup();
         this._scheduleDeferredFriendStaminaGiftClaim();
         this._scheduleDeferredPlayerCloudProfileSync();
@@ -235,6 +236,7 @@ module.exports = {
     }.bind(this)).then(function () {
       return this._waitForNextRenderedFrame();
     }.bind(this)).then(function () {
+      this._scheduleBackgroundRemoteLevelPackPreload();
       this._scheduleDeferredUiBundleWarmup();
       this._scheduleDeferredFriendStaminaGiftClaim();
       this._scheduleDeferredPlayerCloudProfileSync();
@@ -408,6 +410,47 @@ module.exports = {
     }.bind(this));
 
     return this._deferredUiBundleWarmupPromise;
+  },
+
+  _scheduleBackgroundRemoteLevelPackPreload: function () {
+    if (this._backgroundRemoteLevelPackPreloadPromise) {
+      return this._backgroundRemoteLevelPackPreloadPromise;
+    }
+    if (!this.levelManager || typeof this.levelManager.preloadAllRemotePacks !== "function") {
+      throw new Error("Background remote level pack preload requires LevelManager.preloadAllRemotePacks.");
+    }
+    if (!this.levelProgress || !Number.isInteger(this.levelProgress.highestUnlockedLevel) || this.levelProgress.highestUnlockedLevel <= 0) {
+      throw new Error("Background remote level pack preload requires positive highestUnlockedLevel.");
+    }
+
+    this._backgroundRemoteLevelPackPreloadError = null;
+    this._backgroundRemoteLevelPackPreloadPromise = this.levelManager.preloadAllRemotePacks(
+      this.levelProgress.highestUnlockedLevel
+    ).then(function (result) {
+      if (!result || typeof result !== "object" || Array.isArray(result)) {
+        throw new Error("Background remote level pack preload result is invalid.");
+      }
+      if (result.preloaded === true) {
+        Logger.info("Background remote level pack preload completed", {
+          priorityLevelId: result.priorityLevelId,
+          priorityPackId: result.priorityPackId,
+          packCount: result.packCount
+        });
+      }
+      return result;
+    });
+
+    this._backgroundRemoteLevelPackPreloadPromise.catch(function (error) {
+      this._backgroundRemoteLevelPackPreloadError = error;
+      this._backgroundRemoteLevelPackPreloadPromise = null;
+      Logger.error("Background remote level pack preload failed", error && error.stack ? error.stack : error);
+      this._setStatus("远端关卡后台下载失败");
+      if (this.tipsPresenter && typeof this.tipsPresenter.showText === "function") {
+        this.tipsPresenter.showText("远端关卡后台下载失败");
+      }
+    }.bind(this));
+
+    return this._backgroundRemoteLevelPackPreloadPromise;
   },
 
   _waitForNextRenderedFrame: function () {

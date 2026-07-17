@@ -52,7 +52,8 @@ var AD_RUN_POWERUP_TYPES = {
 var MIN_INITIAL_DROP_SPACE_ROWS = 8;
 var MIN_LAYOUT_ROWS = 8;
 var MIN_OCCUPIED_LAYOUT_ROWS = 8;
-var MAX_JAR_COUNT = 4;
+var FIXED_JAR_COLORS = ALLOWED_COLORS.slice();
+var FIXED_JAR_COUNT = FIXED_JAR_COLORS.length;
 var MAX_SHOT_LIMIT = 54;
 var CLEAR_REWARD_START_LEVEL_ID = 1;
 
@@ -762,15 +763,25 @@ function normalizeLevelConfig(rawConfig, levelKey) {
   if (!Number.isInteger(jarCount) || jarCount <= 0) {
     throw new Error("level.jarCount must be a positive integer: " + levelKey);
   }
-  if (jarCount > MAX_JAR_COUNT) {
-    throw new Error("level.jarCount must be <= " + MAX_JAR_COUNT + ": " + levelKey);
+  if (jarCount !== FIXED_JAR_COUNT) {
+    throw new Error("level.jarCount must equal " + FIXED_JAR_COUNT + ": " + levelKey);
   }
   if (!Array.isArray(config.level.jarColors) || config.level.jarColors.length !== jarCount) {
     throw new Error("level.jarColors length must equal jarCount: " + levelKey);
   }
+  var jarColorSet = {};
   config.level.jarColors.forEach(function (colorCode) {
     if (ALLOWED_COLORS.indexOf(colorCode) === -1) {
       throw new Error("unsupported color in level.jarColors `" + colorCode + "`: " + levelKey);
+    }
+    if (jarColorSet[colorCode]) {
+      throw new Error("level.jarColors must contain five different colors: " + levelKey);
+    }
+    jarColorSet[colorCode] = true;
+  });
+  FIXED_JAR_COLORS.forEach(function (colorCode) {
+    if (!jarColorSet[colorCode]) {
+      throw new Error("level.jarColors missing fixed color `" + colorCode + "`: " + levelKey);
     }
   });
 

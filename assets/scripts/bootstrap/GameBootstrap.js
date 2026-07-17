@@ -363,6 +363,7 @@ cc.Class({
   _createFallbackLoadingViewNode: GameBootstrapStartupMethods._createFallbackLoadingViewNode,
   _runWeightedStartupTasks: GameBootstrapStartupMethods._runWeightedStartupTasks,
   _beginStartupBundlePrefetch: GameBootstrapStartupMethods._beginStartupBundlePrefetch,
+  _scheduleBackgroundRemoteLevelPackPreload: GameBootstrapStartupMethods._scheduleBackgroundRemoteLevelPackPreload,
   _scheduleDeferredUiBundleWarmup: GameBootstrapStartupMethods._scheduleDeferredUiBundleWarmup,
   _waitForNextRenderedFrame: GameBootstrapStartupMethods._waitForNextRenderedFrame,
   _scheduleDeferredFriendStaminaGiftClaim: GameBootstrapStartupMethods._scheduleDeferredFriendStaminaGiftClaim,

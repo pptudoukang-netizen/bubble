@@ -57,6 +57,14 @@ var BALL_RESOURCES = {
   SNOW_REMOVAL_TOOLS: "game/image/ball/snow_removal_tools"
 };
 
+var WORMHOLE_DIRECTION_ARROW_RESOURCE = "game/image/ball/arrow";
+var WORMHOLE_DIRECTION_ARROW_SIZE = new cc.Size(42, 42);
+var WORMHOLE_DIRECTION_ARROW_TRAVEL_DISTANCE = 18;
+var WORMHOLE_DIRECTION_ARROW_STAGGER = 0.12;
+var WORMHOLE_DIRECTION_ARROW_FADE_IN_DURATION = 0.2;
+var WORMHOLE_DIRECTION_ARROW_FADE_OUT_DURATION = 0.24;
+var WORMHOLE_DIRECTION_ARROW_CYCLE_PAUSE = 0.28;
+
 var JAR_RESOURCES = {
   R: "game/image/jar/red_jar",
   G: "game/image/jar/green_jar",
@@ -203,7 +211,7 @@ function assertValidRefreshScope(scope) {
 var TEST_SLOT_RADIUS = Math.floor(BoardLayout.bubbleRadius * 0.88);
 var SHOOTER_MAX_ROTATION = 75;
 var ICE_OVERLAY_OPACITY = 255;
-var BOARD_BUBBLE_SIZE = new cc.Size(72, 72);
+var BOARD_BUBBLE_SIZE = new cc.Size(BoardLayout.bubbleDiameter, BoardLayout.bubbleDiameter);
 // vine_spirit.png and vines.png share a 140x172 raw canvas; render at exact half scale.
 var VINE_VISUAL_SIZE = new cc.Size(70, 86);
 var NEXT_SHOT_BUBBLE_SIZE = new cc.Size(50, 50);
@@ -1114,6 +1122,10 @@ function LevelRenderer(rootNode) {
   this.lastIceThawShakeSeq = -1;
   this.lastIceSnowballCollectEventId = -1;
   this.lastMatchedObjectiveCollectEventId = -1;
+  this.lastSkillPowerupCollectedEventId = -1;
+  this.skillPowerupCollectedFeedbackQueue = [];
+  this.skillPowerupCollectedFeedbackActive = false;
+  this.skillPowerupCollectedFeedbackActiveState = null;
   this.lastKeyUnlockAnimationKey = "";
   this.splitterSpawnAnimatedEntryKeys = {};
   this.splitterSpawnHiddenCellIds = {};
@@ -1121,6 +1133,8 @@ function LevelRenderer(rootNode) {
   this.molotovBlastAnimatedIds = {};
   this.swirlRotationAnimatedIds = {};
   this.wormholeShiftAnimatedIds = {};
+  this.wormholeDirectionGuideRoot = null;
+  this.lastWormholeDirectionGuideKey = "";
   this.blastExplosionAnimatedIds = {};
   this.lastCommentResolution = null;
   this.boardClearFireworksRoot = null;
@@ -1558,6 +1572,11 @@ LevelRenderer.prototype.renderLevel = function (levelConfig, runtimeSnapshot) {
   if (typeof this._stopBoardClearFireworks === "function") {
     this._stopBoardClearFireworks("render_level");
   }
+  this._destroyWormholeDirectionGuide();
+  if (typeof this._cancelSkillPowerupCollectedFeedback !== "function") {
+    throw new Error("LevelRenderer requires collected skill powerup feedback cleanup.");
+  }
+  this._cancelSkillPowerupCollectedFeedback();
   this.currentLevelConfig = levelConfig;
   this.lastRuntimeSnapshot = runtimeSnapshot;
   this.displayedIceSnowballCollectedTotal = 0;
@@ -1583,6 +1602,10 @@ LevelRenderer.prototype.renderLevel = function (levelConfig, runtimeSnapshot) {
   this.lastIceThawShakeSeq = -1;
   this.lastIceSnowballCollectEventId = -1;
   this.lastMatchedObjectiveCollectEventId = -1;
+  this.lastSkillPowerupCollectedEventId = -1;
+  this.skillPowerupCollectedFeedbackQueue = [];
+  this.skillPowerupCollectedFeedbackActive = false;
+  this.skillPowerupCollectedFeedbackActiveState = null;
   this.lastKeyUnlockAnimationKey = "";
   this.splitterSpawnAnimatedEntryKeys = {};
   this.splitterSpawnHiddenCellIds = {};
@@ -1590,6 +1613,8 @@ LevelRenderer.prototype.renderLevel = function (levelConfig, runtimeSnapshot) {
   this.molotovBlastAnimatedIds = {};
   this.swirlRotationAnimatedIds = {};
   this.wormholeShiftAnimatedIds = {};
+  this.wormholeDirectionGuideRoot = null;
+  this.lastWormholeDirectionGuideKey = "";
   this.blastExplosionAnimatedIds = {};
   this.lastCommentResolution = null;
   this.boardClearFireworksRoot = null;
@@ -1620,6 +1645,8 @@ LevelRenderer.prototype.renderLevel = function (levelConfig, runtimeSnapshot) {
   }.bind(this)).then(function () {
     clearChildren(this.layers.background);
     clearChildren(this.layers.board);
+    this.wormholeDirectionGuideRoot = null;
+    this.lastWormholeDirectionGuideKey = "";
     this.boardBubbleNodes = {};
     this.boardBubbleNodePool = {};
     this.boardCellRenderKeys = {};
@@ -1662,6 +1689,7 @@ LevelRenderer.prototype.renderLevel = function (levelConfig, runtimeSnapshot) {
     this._renderJarScoreBoostTimer(runtimeSnapshot);
     this._renderTimedLevelTimer(runtimeSnapshot);
     this._renderBottomPanel(runtimeSnapshot);
+    this._queueSkillPowerupCollectedFeedback(runtimeSnapshot);
     this._renderBoard(runtimeSnapshot.board);
     this._syncBarrierHammerStoneHints(runtimeSnapshot);
     this._renderMainland(runtimeSnapshot.board);
@@ -1818,6 +1846,7 @@ LevelRenderer.prototype._refreshRuntimeFull = function (levelConfig, runtimeSnap
     this._renderBottomPanel(runtimeSnapshot);
     this.lastBottomPanelRenderKey = nextBottomPanelKey;
   }
+  this._queueSkillPowerupCollectedFeedback(runtimeSnapshot);
 
   var nextJarKey = buildJarRenderKey(levelConfig, runtimeSnapshot);
   if (nextJarKey !== this.lastJarRenderKey) {
@@ -2003,6 +2032,9 @@ LevelRenderer.prototype._collectSpritePaths = function (levelConfig, runtimeSnap
     }
     level.specialEntities.forEach(function (entity, index) {
       collectBallVisualSpritePaths(paths, entity, "level.specialEntities[" + index + "]");
+      if (entity && entity.entityType === "wormhole") {
+        pushUniqueSpritePath(paths, WORMHOLE_DIRECTION_ARROW_RESOURCE, "wormhole direction guide");
+      }
     });
   }
 
@@ -2092,6 +2124,10 @@ LevelRenderer.prototype.releaseLevelSpecificSpriteCache = function () {
 };
 
 LevelRenderer.prototype.releaseAfterGameplayBundleUnload = function () {
+  if (typeof this._releaseJarFractionNodesBeforeGameplayBundleUnload !== "function") {
+    throw new Error("LevelRenderer requires jar fraction bundle release cleanup.");
+  }
+  this._releaseJarFractionNodesBeforeGameplayBundleUnload();
   assertNoPendingSpriteFrameLoadsByPrefix(this.spriteFrameLoadPromises, GAME_RESOURCE_PATH_PREFIX);
   releaseRetainedSpriteFramesByPrefix(this.spriteFrameCache, GAME_RESOURCE_PATH_PREFIX);
   this.fairyPrefabCache = {};
@@ -2379,6 +2415,13 @@ var LEVEL_RENDERER_SCENE_DEPS = {
   BoardLayout: BoardLayout,
   SpecialAnimationTiming: SpecialAnimationTiming,
   BALL_RESOURCES: BALL_RESOURCES,
+  WORMHOLE_DIRECTION_ARROW_RESOURCE: WORMHOLE_DIRECTION_ARROW_RESOURCE,
+  WORMHOLE_DIRECTION_ARROW_SIZE: WORMHOLE_DIRECTION_ARROW_SIZE,
+  WORMHOLE_DIRECTION_ARROW_TRAVEL_DISTANCE: WORMHOLE_DIRECTION_ARROW_TRAVEL_DISTANCE,
+  WORMHOLE_DIRECTION_ARROW_STAGGER: WORMHOLE_DIRECTION_ARROW_STAGGER,
+  WORMHOLE_DIRECTION_ARROW_FADE_IN_DURATION: WORMHOLE_DIRECTION_ARROW_FADE_IN_DURATION,
+  WORMHOLE_DIRECTION_ARROW_FADE_OUT_DURATION: WORMHOLE_DIRECTION_ARROW_FADE_OUT_DURATION,
+  WORMHOLE_DIRECTION_ARROW_CYCLE_PAUSE: WORMHOLE_DIRECTION_ARROW_CYCLE_PAUSE,
   LOSE_STATUS_RESOURCES: LOSE_STATUS_RESOURCES,
   JAR_RESOURCES: JAR_RESOURCES,
   JAR_MASK_RESOURCES: JAR_MASK_RESOURCES,
@@ -2631,7 +2674,8 @@ LevelRenderer.prototype._applyJarVisual = function (node, colorCode) {
     return;
   }
 
-  ensureSprite(spriteTarget, spriteFrame);
+  var jarSprite = ensureSprite(spriteTarget, spriteFrame);
+  jarSprite.trim = false;
   spriteTarget.setContentSize(JAR_RENDER_SIZE);
 };
 

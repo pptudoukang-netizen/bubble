@@ -2,32 +2,32 @@
 
 var BoardLayout = {
   boardStartY: 515,
-  bubbleDiameter: 72,
+  bubbleDiameter: 65,
   bubbleGap: 0,
-  rowHeight: 64,
+  rowHeight: 58,
   projectileSpeed: 960,
   impactBounceSpeed: 220,
   jarRimBounceSpeed: 260,
   dropGravity: 900,
   dropInitialSpeedY: 240,
-  bubbleRadius: 36,
-  boardLeft: -324,
-  boardRight: 324,
+  bubbleRadius: 32.5,
+  boardLeft: -325,
+  boardRight: 325,
   dangerLineY: -180,
   shooterOrigin: { x: 0, y: -430 },
   showGhostBubble: true,
   guideFrontClipRadiusScale: 1,
   guideDotPulseSpeedScale: 1,
   jarBaseY: -665,
-  jarRenderYOffset: 20,
+  jarRenderYOffset: 50,
   jarWidth: 237,
   jarHeight: 230,
+  jarMouthWidth: 227,
+  jarHorizontalPadding: 4,
   jarSideCollisionWidth: 40,
-  jarSlotWidth: 237,
-  jarSpacingReduction: 30,
-  jarSideYOffset: 20,
+  jarSideYOffset: 10,
   jarLayoutWidth: 0,
-  defaultColumns: 10,
+  defaultColumns: 11,
   hudBottomLineY: null
 };
 
@@ -35,14 +35,14 @@ BoardLayout.cellWidth = BoardLayout.bubbleDiameter + BoardLayout.bubbleGap;
 BoardLayout.collisionDistance = BoardLayout.bubbleDiameter - 6;
 
 BoardLayout.getRowColumnCount = function (row, maxColumns) {
-  var columns = Math.max(1, maxColumns || this.defaultColumns || 10);
+  var columns = Math.max(1, maxColumns || this.defaultColumns || 11);
   return row % 2 === 0 ? columns : Math.max(1, columns - 1);
 };
 BoardLayout.getCellPosition = function (row, col, maxColumns, viewportOffsetY) {
   if (typeof viewportOffsetY !== "number" || !isFinite(viewportOffsetY)) {
     throw new Error("BoardLayout.getCellPosition requires finite viewportOffsetY.");
   }
-  var columns = Math.max(1, maxColumns || this.defaultColumns || 10);
+  var columns = Math.max(1, maxColumns || this.defaultColumns || 11);
   var rowColumns = this.getRowColumnCount(row, columns);
   var baseX = -((columns - 1) * this.cellWidth) / 2 + ((columns - rowColumns) * 0.5 * this.cellWidth);
   return {
@@ -105,49 +105,63 @@ BoardLayout.getJarLayoutWidth = function () {
 };
 
 BoardLayout.getJarCenterPositions = function (jarCount) {
-  var count = Math.max(0, Math.floor(jarCount || 0));
-  if (!count) {
-    return [];
-  }
+  return this.getJarLayout(jarCount).positions.slice();
+};
 
+BoardLayout.getJarLayout = function (jarCount) {
+  if (!Number.isInteger(jarCount) || jarCount <= 0) {
+    throw new Error("BoardLayout.getJarLayout requires positive integer jarCount.");
+  }
+  var count = jarCount;
   var layoutWidth = this.getJarLayoutWidth();
-  var slotWidth = this.jarSlotWidth || 200;
-  var totalSlotWidth = count * slotWidth;
-  var gap = 0;
-  if (count > 1 && totalSlotWidth < layoutWidth) {
-    gap = (layoutWidth - totalSlotWidth) / (count - 1);
+  var jarWidth = Number(this.jarWidth);
+  var jarHeight = Number(this.jarHeight);
+  var mouthWidth = Number(this.jarMouthWidth);
+  var horizontalPadding = Number(this.jarHorizontalPadding);
+  if (!isFinite(jarWidth) || jarWidth <= 0 || !isFinite(jarHeight) || jarHeight <= 0) {
+    throw new Error("BoardLayout jarWidth and jarHeight must be positive finite numbers.");
   }
-
-  var spacingReduction = this.jarSpacingReduction;
-  if (typeof spacingReduction !== "number" || !isFinite(spacingReduction)) {
-    throw new Error("BoardLayout.jarSpacingReduction must be a finite number.");
+  if (!isFinite(mouthWidth) || mouthWidth <= 0 || mouthWidth > jarWidth) {
+    throw new Error("BoardLayout.jarMouthWidth must be within (0, jarWidth].");
   }
-  var step = slotWidth + gap - spacingReduction;
-  if (step <= 0) {
-    throw new Error("Jar layout step must be positive after jarSpacingReduction.");
+  if (!isFinite(horizontalPadding) || horizontalPadding < 0 || horizontalPadding * 2 >= layoutWidth) {
+    throw new Error("BoardLayout.jarHorizontalPadding must leave positive jar layout width.");
   }
+  var availableWidth = layoutWidth - horizontalPadding * 2;
+  var scale = Math.min(1, availableWidth / (count * mouthWidth));
+  if (!isFinite(scale) || scale <= 0) {
+    throw new Error("BoardLayout jar scale must be a positive finite number.");
+  }
+  var renderedMouthWidth = mouthWidth * scale;
+  var renderedWidth = jarWidth * scale;
+  var renderedHeight = jarHeight * scale;
+  var centerSpan = availableWidth - renderedMouthWidth;
+  var step = count === 1 ? 0 : centerSpan / (count - 1);
   var positions = [];
-
-  if (count % 2 === 1) {
-    positions.push(0);
-    for (var ring = 1; positions.length < count; ring += 1) {
-      positions.push(ring * step);
-      if (positions.length < count) {
-        positions.push(-ring * step);
-      }
+  for (var index = 0; index < count; index += 1) {
+    positions.push(count === 1 ? 0 : -centerSpan * 0.5 + step * index);
+  }
+  for (var positionIndex = 0; positionIndex < positions.length; positionIndex += 1) {
+    var left = positions[positionIndex] - renderedMouthWidth * 0.5;
+    var right = positions[positionIndex] + renderedMouthWidth * 0.5;
+    var halfLayoutWidth = layoutWidth * 0.5;
+    if (left < -halfLayoutWidth - 0.001 || right > halfLayoutWidth + 0.001) {
+      throw new Error("Jar mouth exceeds screen width at index " + positionIndex + ".");
     }
-  } else {
-    var halfStep = step * 0.5;
-    for (var index = 0; positions.length < count; index += 1) {
-      var offset = halfStep + index * step;
-      positions.push(-offset);
-      if (positions.length < count) {
-        positions.push(offset);
-      }
+    if (positionIndex > 0 && positions[positionIndex] - positions[positionIndex - 1] < renderedMouthWidth - 0.001) {
+      throw new Error("Jar mouths overlap at index " + (positionIndex - 1) + " and " + positionIndex + ".");
     }
   }
-
-  return positions;
+  return {
+    count: count,
+    layoutWidth: layoutWidth,
+    scale: scale,
+    positions: positions,
+    mouthWidth: renderedMouthWidth,
+    renderWidth: renderedWidth,
+    renderHeight: renderedHeight,
+    centerStep: step
+  };
 };
 
 BoardLayout.getJarRenderYOffset = function (jarIndex, jarCount) {
@@ -163,19 +177,9 @@ BoardLayout.getJarRenderYOffset = function (jarIndex, jarCount) {
     throw new Error("BoardLayout.jarSideYOffset must be a finite number.");
   }
 
-  var positions = this.getJarCenterPositions(count);
-  var jarX = positions[jarIndex];
-  if (count % 2 === 1) {
-    return jarX === 0 ? 0 : sideOffset;
-  }
-  if (count === 2) {
-    return sideOffset;
-  }
-
-  var minAbsX = positions.reduce(function (minValue, x) {
-    return Math.min(minValue, Math.abs(x));
-  }, Infinity);
-  return Math.abs(jarX) > minAbsX + 0.001 ? sideOffset : 0;
+  var centerIndex = (count - 1) * 0.5;
+  var distanceFromCenter = Math.ceil(Math.abs(jarIndex - centerIndex));
+  return distanceFromCenter * sideOffset;
 };
 
 BoardLayout.getJarRenderZIndex = function (jarIndex, jarCount) {

@@ -59,7 +59,6 @@ function isVineProtectedCell(cell) {
     cell &&
     (
       isVineSpiritCell(cell) ||
-      isWormholeCell(cell) ||
       (cell.entityCategory === "normal_ball" && typeof cell.vineOwnerId === "string" && cell.vineOwnerId)
     )
   );
@@ -179,7 +178,10 @@ BubbleGrid.prototype.configureLevel = function (levelConfig) {
   var layoutMaxColumns = this.layout.reduce(function (max, row) {
     return Math.max(max, row.length);
   }, 0);
-  this.maxColumns = Math.max(BoardLayout.defaultColumns || 9, layoutMaxColumns);
+  if (!Number.isInteger(BoardLayout.defaultColumns) || BoardLayout.defaultColumns <= 0) {
+    throw new Error("BoardLayout.defaultColumns must be a positive integer.");
+  }
+  this.maxColumns = Math.max(BoardLayout.defaultColumns, layoutMaxColumns);
   this._normalizeLayoutRows();
   this._rebuildSpecialCellMap();
   this.version = 1;
@@ -629,6 +631,32 @@ BubbleGrid.prototype.removeVineAt = function (row, col) {
   return liveCell;
 };
 
+BubbleGrid.prototype._clearVinesByOwner = function (spiritId) {
+  if (typeof spiritId !== "string" || !spiritId) {
+    throw new Error("Vine owner cleanup requires spiritId.");
+  }
+  var clearedVines = [];
+  Object.keys(this._vineOwnerByCell).forEach(function (cellKey) {
+    if (this._vineOwnerByCell[cellKey] !== spiritId) {
+      return;
+    }
+    var coordinates = cellKey.split(":").map(Number);
+    clearedVines.push({
+      ownerId: spiritId,
+      row: coordinates[0],
+      col: coordinates[1],
+      cellId: coordinates[0] + "_" + coordinates[1]
+    });
+    delete this._vineOwnerByCell[cellKey];
+  }, this);
+  Object.keys(this._vinePreviewOwnerByCell).forEach(function (cellKey) {
+    if (this._vinePreviewOwnerByCell[cellKey] === spiritId) {
+      delete this._vinePreviewOwnerByCell[cellKey];
+    }
+  }, this);
+  return clearedVines;
+};
+
 BubbleGrid.prototype.damageVineSpirit = function (spiritId) {
   if (typeof spiritId !== "string" || !spiritId) {
     throw new Error("Vine spirit damage requires spiritId.");
@@ -659,24 +687,7 @@ BubbleGrid.prototype.damageVineSpirit = function (spiritId) {
   var clearedVines = [];
   if (destroyed) {
     delete this._specialCellMap[spiritKey];
-    Object.keys(this._vineOwnerByCell).forEach(function (cellKey) {
-      if (this._vineOwnerByCell[cellKey] !== spiritId) {
-        return;
-      }
-      var coordinates = cellKey.split(":").map(Number);
-      clearedVines.push({
-        ownerId: spiritId,
-        row: coordinates[0],
-        col: coordinates[1],
-        cellId: coordinates[0] + "_" + coordinates[1]
-      });
-      delete this._vineOwnerByCell[cellKey];
-    }, this);
-    Object.keys(this._vinePreviewOwnerByCell).forEach(function (cellKey) {
-      if (this._vinePreviewOwnerByCell[cellKey] === spiritId) {
-        delete this._vinePreviewOwnerByCell[cellKey];
-      }
-    }, this);
+    clearedVines = this._clearVinesByOwner(spiritId);
   }
 
   this.version += 1;
@@ -1669,7 +1680,10 @@ BubbleGrid.prototype.addBubble = function (cell, colorOrBall) {
   return this.getCell(row, col);
 };
 
-BubbleGrid.prototype.removeCells = function (cells) {
+BubbleGrid.prototype._removeCellsByMode = function (cells, allowVineDrop) {
+  if (typeof allowVineDrop !== "boolean") {
+    throw new Error("BubbleGrid cell removal mode requires allowVineDrop boolean.");
+  }
   var removed = [];
   var touchedKeys = {};
 
@@ -1684,8 +1698,25 @@ BubbleGrid.prototype.removeCells = function (cells) {
     }
 
     var liveCell = this.getCell(cell.row, cell.col);
-    if (isVineProtectedCell(liveCell)) {
+    if (isWormholeCell(liveCell) || (!allowVineDrop && isVineProtectedCell(liveCell))) {
       return;
+    }
+
+    if (allowVineDrop) {
+      if (isVineSpiritCell(liveCell)) {
+        this._clearVinesByOwner(liveCell.id);
+      } else if (
+        liveCell.entityCategory === "normal_ball" &&
+        (
+          (typeof liveCell.vineOwnerId === "string" && liveCell.vineOwnerId) ||
+          (typeof liveCell.vinePreviewOwnerId === "string" && liveCell.vinePreviewOwnerId)
+        )
+      ) {
+        delete this._vineOwnerByCell[key];
+        delete this._vinePreviewOwnerByCell[key];
+        liveCell.vineOwnerId = null;
+        liveCell.vinePreviewOwnerId = null;
+      }
     }
 
     touchedKeys[key] = true;
@@ -1701,6 +1732,17 @@ BubbleGrid.prototype.removeCells = function (cells) {
   }
 
   return removed;
+};
+
+BubbleGrid.prototype.removeCells = function (cells) {
+  return this._removeCellsByMode(cells, false);
+};
+
+BubbleGrid.prototype.removeFloatingCells = function (cells) {
+  if (!Array.isArray(cells)) {
+    throw new Error("BubbleGrid.removeFloatingCells requires cells array.");
+  }
+  return this._removeCellsByMode(cells, true);
 };
 
 BubbleGrid.prototype.getTopAttachY = function () {

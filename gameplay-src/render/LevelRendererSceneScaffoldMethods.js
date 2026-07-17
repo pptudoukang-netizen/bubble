@@ -63,6 +63,10 @@ LevelRenderer.prototype._mountGameViewScaffold = function () {
 
 LevelRenderer.prototype.prepareForLevelSelectReturn = function () {
   this._ensureLayers();
+  if (typeof this._cancelSkillPowerupCollectedFeedback !== "function") {
+    throw new Error("Level select return requires collected skill powerup feedback cleanup.");
+  }
+  this._cancelSkillPowerupCollectedFeedback();
   if (typeof this._stopBoardClearFireworks === "function") {
     this._stopBoardClearFireworks("level_select_return");
   }
@@ -439,6 +443,9 @@ LevelRenderer.prototype._resolveTopRowBubbleVisualTopY = function (boardSnapshot
     var row = Math.floor(Number(cell.row));
     if (!Number.isInteger(row) || row < 0) {
       throw new Error("Board snapshot cell row must be a non-negative integer.");
+    }
+    if (cell.entityCategory === "reactive_ball" && cell.entityType === "wormhole") {
+      return;
     }
     if (topRow === null || row < topRow) {
       topRow = row;

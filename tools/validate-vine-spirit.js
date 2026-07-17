@@ -127,14 +127,48 @@ function validateMatchAndSupportRules() {
   supportSystem.initialize({});
   supportSystem.configureLevel({ level: {} });
   var floating = supportSystem.findFloatingCells(grid);
-  assert(!floating.some(function (cell) { return cell.row === 4 && cell.col === 4; }), "Entangled ball must not float.");
-  assert(!floating.some(function (cell) { return cell.row === 5 && cell.col === 4; }), "Ball supported by an entangled anchor must not float.");
+  assert(floating.some(function (cell) { return cell.row === 1 && cell.col === 3; }), "Unsupported vine spirit must float.");
+  assert(floating.some(function (cell) { return cell.row === 4 && cell.col === 4; }), "Unsupported entangled ball must float.");
+  assert(floating.some(function (cell) { return cell.row === 5 && cell.col === 4; }), "Ball below an unsupported entangled ball must float.");
 
   var protectedRemoval = grid.removeCells([
     grid.getCell(1, 3),
     grid.getCell(4, 4)
   ]);
   assert(protectedRemoval.length === 0, "Vine spirit and entangled ball must resist normal removal.");
+
+  var removedFloating = grid.removeFloatingCells(floating);
+  var droppedEntangled = removedFloating.find(function (cell) {
+    return cell.row === 4 && cell.col === 4;
+  });
+  assert(droppedEntangled && !droppedEntangled.vineOwnerId, "Entangled ball must release its vine before falling.");
+  assert(!grid.getCell(1, 3), "Unsupported vine spirit must leave the board through the floating-drop path.");
+  assert(
+    grid.getCell(0, 1) && !grid.getCell(0, 1).vineOwnerId,
+    "Dropping vine spirit must clear its vines from supported balls."
+  );
+
+  var supportedSpiritGrid = buildGrid([
+    "RRR.......",
+    ".........",
+    "..........",
+    ".........",
+    "....R.....",
+    "....R....",
+    "..........",
+    "........."
+  ], 0, 3);
+  previewAndEntangle(supportedSpiritGrid, 4, 4);
+  var isolatedFloating = supportSystem.findFloatingCells(supportedSpiritGrid);
+  var isolatedDrops = supportedSpiritGrid.removeFloatingCells(isolatedFloating);
+  var isolatedEntangledDrop = isolatedDrops.find(function (cell) {
+    return cell.row === 4 && cell.col === 4;
+  });
+  assert(isolatedEntangledDrop && !isolatedEntangledDrop.vineOwnerId, "Falling vine ball must release independently.");
+  assert(
+    supportedSpiritGrid.getCell(0, 3) && supportedSpiritGrid.getCell(0, 3).health === 3,
+    "Supported vine spirit must remain after its unsupported vine ball falls."
+  );
 }
 
 function validateDamageReleaseAndDeathCleanup() {
@@ -191,6 +225,138 @@ function validateDamageReleaseAndDeathCleanup() {
   assert(!grid.getCell(3, 3).vineOwnerId, "Withered vine target must remain as a normal ball.");
 }
 
+function validateExplosionInteractions() {
+  var grid = buildGrid([
+    "R.........",
+    "RR.......",
+    "..........",
+    ".........",
+    "..........",
+    ".........",
+    "..........",
+    "........."
+  ], 1, 2);
+  var manager = new GameManager();
+  manager.systems.bubbleGrid = grid;
+  previewAndEntangle(grid, 1, 1);
+
+  var entangledBeforeExplosion = grid.getCell(1, 1);
+  var spiritBeforeExplosion = grid.getCell(1, 2);
+  var resolution = createVineResolution();
+  manager._resolveVinesHitByExplosion([
+    entangledBeforeExplosion,
+    spiritBeforeExplosion,
+    entangledBeforeExplosion,
+    spiritBeforeExplosion
+  ], grid, resolution);
+
+  assert(resolution.releasedVines.length === 1, "One explosion must release each affected vine once.");
+  assert(resolution.releasedVines[0].sourceType === "explosion", "Explosion vine release must record its source.");
+  assert(resolution.vineSpiritHits.length === 1, "One explosion must damage each affected spirit once.");
+  assert(resolution.vineSpiritHits[0].sourceType === "explosion", "Explosion spirit damage must record its source.");
+  assert(grid.getCell(1, 2).health === 2, "Explosion must deal exactly 1 damage to the vine spirit.");
+  assert(
+    grid.getCell(1, 1) && grid.getCell(1, 1).color === "R" && !grid.getCell(1, 1).vineOwnerId,
+    "Explosion must release the vine without removing the underlying normal ball."
+  );
+
+  manager._resolveVinesHitByExplosion([grid.getCell(1, 2)], grid, resolution);
+  assert(grid.getCell(1, 2).health === 2, "The same resolution must not damage one spirit twice.");
+
+  var blastGrid = buildGrid([
+    "R.........",
+    "RR.......",
+    "..........",
+    ".........",
+    "..........",
+    ".........",
+    "..........",
+    "........."
+  ], 1, 2);
+  previewAndEntangle(blastGrid, 1, 1);
+  var blastManager = new GameManager();
+  blastManager.shotsFired = 1;
+  blastManager.systems = {
+    bubbleGrid: blastGrid,
+    supportSystem: {
+      findFloatingCells: function () {
+        return [];
+      }
+    },
+    fallingMarbleSystem: {
+      registerDrops: function () {}
+    },
+    jarCollectorSystem: {
+      collect: function () {}
+    }
+  };
+  blastManager._pushBombExplosionEvent = function () {};
+  blastManager._registerIceCollection = function () { return 0; };
+  blastManager._resolveReactiveEntitiesAfterRemoval = function () { return []; };
+  blastManager._hasPendingMolotovBlasts = function () { return false; };
+  blastManager._collectRemovedKeysAndResolveUnlocks = function () {};
+  blastManager._cancelPendingSplitterSpawnsForDroppedCells = function () {};
+  blastManager._registerResolutionDrops = function () {};
+  blastManager._pushBubbleBreakEvent = function () {};
+  blastManager._registerMatchedObjectiveCollection = function () {};
+  blastManager._isBoardCleared = function () { return false; };
+  blastManager._applyResolutionDropScore = function () {};
+  blastManager._registerComboElimination = function () {};
+  blastManager._createImpactEventFromCell = function () { return null; };
+  var previousCc = global.cc;
+  global.cc = { log: function () {} };
+  var blastResolution = blastManager._resolveBlastShot({}, { row: 1, col: 1 });
+  if (previousCc === undefined) {
+    delete global.cc;
+  } else {
+    global.cc = previousCc;
+  }
+  assert(blastResolution.vineSpiritHits.length === 1, "Blast shot must route explosion damage into vine resolution.");
+  assert(blastResolution.releasedVines.length === 1, "Blast shot must route explosion release into vine resolution.");
+  assert(blastGrid.getCell(1, 2).health === 2, "Blast shot must deal exactly 1 damage to the spirit.");
+  assert(
+    blastGrid.getCell(1, 1) && blastGrid.getCell(1, 1).color === "R" && !blastGrid.getCell(1, 1).vineOwnerId,
+    "Blast shot must preserve the released underlying ball."
+  );
+}
+
+function validateTopAnchorCollapseDropsVineEntities() {
+  var grid = buildGrid([
+    "RRRR.......",
+    "..........",
+    "...........",
+    "..........",
+    "...........",
+    "..........",
+    "...........",
+    ".........."
+  ], 1, 2);
+  previewAndEntangle(grid, 0, 1);
+
+  var manager = new GameManager();
+  var registeredDrops = [];
+  manager.state = "running";
+  manager.lastResolution = {
+    floating: []
+  };
+  manager.systems.bubbleGrid = grid;
+  manager._registerResolutionDrops = function (removedCells) {
+    registeredDrops = removedCells.slice();
+  };
+
+  assert(manager._tryTopAnchorCollapse(), "Top anchor collapse must trigger with more than five empty top slots.");
+  assert(grid.getCells().length === 0, "Top anchor collapse must remove the vine spirit and every entangled ball.");
+  assert(registeredDrops.length === 5, "Top anchor collapse must register every vine entity and normal ball as a drop.");
+  var droppedEntangled = registeredDrops.find(function (cell) {
+    return cell.row === 0 && cell.col === 1;
+  });
+  assert(droppedEntangled && !droppedEntangled.vineOwnerId, "Top anchor collapse must release a vine before its ball falls.");
+  assert(registeredDrops.some(function (cell) {
+    return cell.entityCategory === "reactive_ball" && cell.entityType === "vine_spirit";
+  }), "Top anchor collapse must include the vine spirit in falling cells.");
+  assert(manager.state === "won_pending", "Top anchor collapse must wait for every registered drop to settle.");
+}
+
 function validateThirdShotPreviewAndCast() {
   var grid = buildGrid([
     "RR........",
@@ -238,5 +404,7 @@ function validateThirdShotPreviewAndCast() {
 validateConfigAndCompactCodec();
 validateMatchAndSupportRules();
 validateDamageReleaseAndDeathCleanup();
+validateExplosionInteractions();
+validateTopAnchorCollapseDropsVineEntities();
 validateThirdShotPreviewAndCast();
-console.log("[OK] vine_spirit config, codec, health, damage, vine release, support lock, third-shot preview and death cleanup");
+console.log("[OK] vine_spirit config, codec, health, direct/adjacent/explosion damage, unsupported and top-collapse drops, vine release, third-shot preview and death cleanup");

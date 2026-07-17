@@ -143,18 +143,22 @@ LevelRenderer.prototype._renderJarCollisionMasks = function (runtimeSnapshot) {
 
 };
 LevelRenderer.prototype._renderBottomJars = function (levelConfig, runtimeSnapshot) {
-  var jarColors = levelConfig.level.jarColors || ["R", "G", "B"];
+  if (!levelConfig || !levelConfig.level || !Array.isArray(levelConfig.level.jarColors) || levelConfig.level.jarColors.length === 0) {
+    throw new Error("Bottom jar rendering requires non-empty level.jarColors.");
+  }
+  var jarColors = levelConfig.level.jarColors;
   var jarCount = jarColors.length;
   var jarProgress = runtimeSnapshot.jars ? runtimeSnapshot.jars.collectedByColor : {};
-  var jarPositions = BoardLayout.getJarCenterPositions(jarCount);
+  var jarLayout = BoardLayout.getJarLayout(jarCount);
+  var jarPositions = jarLayout.positions;
 
 
   jarColors.forEach(function (colorCode, index) {
     var jarNode = this._instantiateOrCreate(PREFAB_PATHS.jarItem, this.layers.jars, "BottomJar_" + index);
     var jarYOffset = BoardLayout.getJarRenderYOffset(index, jarCount);
-    jarNode.setPosition(jarPositions[index] || 0, getJarBaseY() + JAR_RENDER_Y_OFFSET + jarYOffset);
+    jarNode.setPosition(jarPositions[index], getJarBaseY() + JAR_RENDER_Y_OFFSET + jarYOffset);
     jarNode.zIndex = BoardLayout.getJarRenderZIndex(index, jarCount);
-    jarNode.setScale(1);
+    jarNode.setScale(jarLayout.scale);
     this._applyJarVisual(jarNode, colorCode);
     this._applyJarMaskVisual(jarNode, colorCode);
     this._ensureJarDropContainer(jarNode);
@@ -179,31 +183,44 @@ LevelRenderer.prototype._renderBottomJars = function (levelConfig, runtimeSnapsh
     ensureOutline(countNode, cc.color(83, 109, 138), 3);
   }, this);
 
-  this._renderJarOcclusionLayer(jarColors, jarPositions);
+  this._renderJarOcclusionLayer(jarColors);
   this._renderJarCollisionMasks(runtimeSnapshot);
 };
 
-LevelRenderer.prototype._renderJarOcclusionLayer = function (jarColors, jarPositions) {
+LevelRenderer.prototype._renderJarOcclusionLayer = function (jarColors) {
   if (!this.layers || !this.layers.jarOcclusion) {
-    return;
+    throw new Error("Jar occlusion rendering requires JarOcclusionLayer.");
+  }
+  if (!this.layers.jars || !this.layers.jars.isValid) {
+    throw new Error("Jar occlusion rendering requires JarLayer.");
   }
 
   clearChildren(this.layers.jarOcclusion);
   jarColors.forEach(function (colorCode, index) {
     var spritePath = JAR_MASK_RESOURCES[colorCode];
     var spriteFrame = spritePath ? this.spriteFrameCache[spritePath] : null;
-    if (!spriteFrame) {
-      return;
+    if (!spriteFrame || !spriteFrame.isValid) {
+      throw new Error("Jar occlusion SpriteFrame is not loaded: " + spritePath);
+    }
+
+    var jarNode = this.layers.jars.getChildByName("BottomJar_" + index);
+    if (!jarNode || !jarNode.isValid) {
+      throw new Error("Jar occlusion rendering requires BottomJar_" + index + ".");
+    }
+    if (!Number.isFinite(jarNode.x) || !Number.isFinite(jarNode.y) ||
+        !Number.isFinite(jarNode.scaleX) || jarNode.scaleX <= 0 ||
+        !Number.isFinite(jarNode.scaleY) || jarNode.scaleY <= 0) {
+      throw new Error("BottomJar_" + index + " requires finite position and positive scale.");
     }
 
     var maskNode = new cc.Node("JarOcclusion_" + index);
     maskNode.parent = this.layers.jarOcclusion;
-    var jarYOffset = BoardLayout.getJarRenderYOffset(index, jarColors.length);
-    maskNode.setPosition(jarPositions[index] || 0, getJarBaseY() + jarYOffset);
-    maskNode.setScale(1);
-    maskNode.zIndex = BoardLayout.getJarRenderZIndex(index, jarColors.length);
+    maskNode.setPosition(jarNode.x, jarNode.y);
+    maskNode.setScale(jarNode.scaleX, jarNode.scaleY);
+    maskNode.zIndex = jarNode.zIndex;
     maskNode.opacity = 255;
-    ensureSprite(maskNode, spriteFrame);
+    var maskSprite = ensureSprite(maskNode, spriteFrame);
+    maskSprite.trim = false;
     maskNode.setContentSize(JAR_RENDER_SIZE);
   }, this);
 };

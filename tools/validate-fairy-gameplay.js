@@ -7,6 +7,7 @@ var BoardLayout = require("../assets/scripts/config/BoardLayout");
 var FairyAssistConfig = require("../gameplay-src/config/FairyAssistConfig");
 var FairyAssistSystem = require("../gameplay-src/systems/FairyAssistSystem");
 var FallingMarbleSystem = require("../gameplay-src/systems/FallingMarbleSystem");
+var attachLevelRendererSceneJarMethods = require("../gameplay-src/render/LevelRendererSceneJarMethods");
 
 function buildLevelConfig(maxDynamicMarbles) {
   return {
@@ -258,6 +259,90 @@ function testPrefabAndAssetContract() {
   FairyAssistConfig.colorRules.forEach(function (rule) {
     assertFairyAnimationPrefabContract(rule);
   });
+}
+
+function testJarOcclusionCopiesRenderedJarTransform() {
+  var previousCc = global.cc;
+  function MockNode(name) {
+    this.name = name;
+    this.isValid = true;
+    this.children = [];
+    this.x = 0;
+    this.y = 0;
+    this.scaleX = 1;
+    this.scaleY = 1;
+    this.zIndex = 0;
+    Object.defineProperty(this, "parent", {
+      set: function (parent) {
+        this._parent = parent;
+        parent.children.push(this);
+      }
+    });
+  }
+  MockNode.prototype.setPosition = function (x, y) {
+    this.x = x;
+    this.y = y;
+  };
+  MockNode.prototype.setScale = function (scaleX, scaleY) {
+    this.scaleX = scaleX;
+    this.scaleY = scaleY;
+  };
+  MockNode.prototype.setContentSize = function (size) {
+    this.contentSize = size;
+  };
+
+  global.cc = { Node: MockNode };
+  try {
+    function TestRenderer() {}
+    attachLevelRendererSceneJarMethods(TestRenderer, {
+      BoardLayout: BoardLayout,
+      JAR_MASK_RESOURCES: { R: "jar/red_mask" },
+      JAR_RENDER_SIZE: { width: 237, height: 230 },
+      clearChildren: function (layer) {
+        layer.children.length = 0;
+      },
+      ensureSprite: function () {
+        return foregroundSprite;
+      }
+    });
+
+    var renderedJar = {
+      isValid: true,
+      x: -284.8,
+      y: -605,
+      scaleX: 0.627,
+      scaleY: 0.627,
+      zIndex: 0
+    };
+    var jarLayer = {
+      isValid: true,
+      getChildByName: function (name) {
+        assert.strictEqual(name, "BottomJar_0");
+        return renderedJar;
+      }
+    };
+    var occlusionLayer = { isValid: true, children: [] };
+    var foregroundSprite = { trim: true };
+    var renderer = new TestRenderer();
+    renderer.layers = { jars: jarLayer, jarOcclusion: occlusionLayer };
+    renderer.spriteFrameCache = { "jar/red_mask": { isValid: true } };
+
+    renderer._renderJarOcclusionLayer(["R"]);
+    assert.strictEqual(occlusionLayer.children.length, 1);
+    var foreground = occlusionLayer.children[0];
+    assert.strictEqual(foreground.x, renderedJar.x);
+    assert.strictEqual(foreground.y, renderedJar.y);
+    assert.strictEqual(foreground.scaleX, renderedJar.scaleX);
+    assert.strictEqual(foreground.scaleY, renderedJar.scaleY);
+    assert.strictEqual(foreground.zIndex, renderedJar.zIndex);
+    assert.strictEqual(foregroundSprite.trim, false);
+  } finally {
+    if (typeof previousCc === "undefined") {
+      delete global.cc;
+    } else {
+      global.cc = previousCc;
+    }
+  }
 }
 
 function testRandomEmptySlotSelection() {
@@ -839,8 +924,8 @@ function testSideWallBounceKeepsHorizontalEscapeVelocity() {
 
 function testLeftmostJarOuterRimBounce() {
   var levelConfig = buildLevelConfig(5);
-  levelConfig.level.jarCount = 4;
-  levelConfig.level.jarColors = ["R", "G", "B", "Y"];
+  levelConfig.level.jarCount = 5;
+  levelConfig.level.jarColors = ["R", "G", "B", "Y", "P"];
   var fairySystem = new FairyAssistSystem();
   fairySystem.configureLevel(levelConfig);
   syncFairyCollisionCentersForTests(fairySystem);
@@ -886,10 +971,48 @@ function testLeftmostJarOuterRimBounce() {
   );
 }
 
+function testFiveJarAdaptiveMouthLayout() {
+  var originalLayoutWidth = BoardLayout.jarLayoutWidth;
+  try {
+    [720, 750, 828, 1080].forEach(function (screenWidth) {
+      BoardLayout.jarLayoutWidth = screenWidth;
+      var layout = BoardLayout.getJarLayout(5);
+      assert.strictEqual(layout.positions.length, 5, "adaptive jar layout must produce five positions.");
+      layout.positions.forEach(function (position, index) {
+        var left = position - layout.mouthWidth * 0.5;
+        var right = position + layout.mouthWidth * 0.5;
+        assert.ok(left >= -screenWidth * 0.5 - 0.001, "jar mouth left edge must stay inside screen at index " + index + ".");
+        assert.ok(right <= screenWidth * 0.5 + 0.001, "jar mouth right edge must stay inside screen at index " + index + ".");
+        if (index > 0) {
+          assert.ok(
+            position - layout.positions[index - 1] >= layout.mouthWidth - 0.001,
+            "adjacent jar mouths must not overlap at index " + index + "."
+          );
+        }
+      });
+    });
+    BoardLayout.jarLayoutWidth = 720;
+    var baselineLayout = BoardLayout.getJarLayout(5);
+    assert.ok(
+      baselineLayout.renderWidth > baselineLayout.centerStep,
+      "baseline five-jar layout must allow jar bodies to overlap while mouths remain separate."
+    );
+    assert.deepStrictEqual(
+      [0, 1, 2, 3, 4].map(function (jarIndex) {
+        return BoardLayout.jarRenderYOffset + BoardLayout.getJarRenderYOffset(jarIndex, 5);
+      }),
+      [70, 60, 50, 60, 70],
+      "five jars must rise by ten per step away from the center jar."
+    );
+  } finally {
+    BoardLayout.jarLayoutWidth = originalLayoutWidth;
+  }
+}
+
 function testRightmostJarOuterRimBounceStaysInsideScreen() {
   var levelConfig = buildLevelConfig(5);
-  levelConfig.level.jarCount = 4;
-  levelConfig.level.jarColors = ["R", "G", "B", "Y"];
+  levelConfig.level.jarCount = 5;
+  levelConfig.level.jarColors = ["R", "G", "B", "Y", "P"];
   var fairySystem = new FairyAssistSystem();
   fairySystem.configureLevel(levelConfig);
   syncFairyCollisionCentersForTests(fairySystem);
@@ -1047,11 +1170,16 @@ function testCollectedMultiplierContract() {
   assert.deepStrictEqual(collected.hitFairyIds, [redFairy.id]);
 }
 
-assert.strictEqual(BoardLayout.bubbleRadius, 36);
+assert.strictEqual(BoardLayout.bubbleRadius, 32.5);
 assert.strictEqual(FairyAssistConfig.fairyCollisionRadius * 2, 40);
+assert.strictEqual(
+  BoardLayout.bubbleDiameter * FairyAssistConfig.dropCollisionGlowScale,
+  65 * 86 / 72
+);
 assert.strictEqual(FairyAssistConfig.maxCollisionsPerFairy, 7);
 assert.strictEqual(FairyAssistConfig.maxGlowStacks, 7);
 testPrefabAndAssetContract();
+testJarOcclusionCopiesRenderedJarTransform();
 testRandomEmptySlotSelection();
 testSpawnRules();
 testMissRemovalPriority();
@@ -1073,6 +1201,7 @@ testVictoryBoardDropRimBounces();
 testFinalJarRimContactEmitsBounceEvent();
 testVictoryBoardDropSkipsWallBounce();
 testSideWallBounceKeepsHorizontalEscapeVelocity();
+testFiveJarAdaptiveMouthLayout();
 testLeftmostJarOuterRimBounce();
 testRightmostJarOuterRimBounceStaysInsideScreen();
 testTopAnchorCollapseStartsSurplusVolley();

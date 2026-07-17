@@ -49,9 +49,9 @@ var SPECIAL_DEFINITIONS = {
   vine_spirit: {
     title: "藤蔓魔灵",
     description: "拥有 3 点生命，每 3 次发射会预告并缠绕附近的普通球。",
-    summary: "直接命中藤蔓魔灵或在相邻位置完成消除可造成伤害；缠绕球需要直接命中或在附近消除才能解开。",
+    summary: "直接命中、爆炸命中藤蔓魔灵或在相邻位置完成消除可造成伤害；缠绕球可通过直接命中、爆炸命中或在附近消除解开。",
     effectTitle: "藤蔓规则",
-    effectDescription: "缠绕球不能参与消除，也不会正常掉落；魔灵死亡后，由它制造的全部藤蔓会自动枯萎。",
+    effectDescription: "缠绕球不能参与消除；魔灵或缠绕球失去支撑时会正常掉落，掉落前解除藤蔓。魔灵死亡或掉落后，由它制造的全部藤蔓会自动枯萎。",
     iconPath: "ui/image/preview_balls/vine_spirit"
   },
   locked: {

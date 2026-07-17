@@ -18,7 +18,7 @@ function getLayoutMaxColumns(layout) {
     }
     var expectedColumns = BoardLayout.getRowColumnCount(rowIndex, BoardLayout.defaultColumns);
     if (rowString.length > expectedColumns) {
-      throw new Error("layout row exceeds current 10/9-column grid at index " + rowIndex + ".");
+      throw new Error("layout row exceeds current 11/10-column grid at index " + rowIndex + ".");
     }
   });
   return BoardLayout.defaultColumns;

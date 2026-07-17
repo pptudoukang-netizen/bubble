@@ -1469,7 +1469,7 @@ GameManager.prototype._updatePendingSwirlRotation = function (dt) {
     if (!floatingCells.length) {
       break;
     }
-    var removedFloating = grid.removeCells(floatingCells);
+    var removedFloating = grid.removeFloatingCells(floatingCells);
     if (!removedFloating.length) {
       throw new Error("Swirl connection scan found cells that could not be removed.");
     }
@@ -1511,7 +1511,7 @@ GameManager.prototype._updatePendingWormholeShift = function (dt) {
     if (!floatingCells.length) {
       break;
     }
-    var removedFloating = grid.removeCells(floatingCells);
+    var removedFloating = grid.removeFloatingCells(floatingCells);
     if (!removedFloating.length) {
       throw new Error("Wormhole support scan found cells that could not be removed.");
     }
@@ -1519,7 +1519,9 @@ GameManager.prototype._updatePendingWormholeShift = function (dt) {
     this._appendUniqueCells(resolution.floating, removedFloating);
     this._collectRemovedKeysAndResolveUnlocks(removedFloating, grid, resolution);
     this._cancelPendingSplitterSpawnsForDroppedCells(removedFloating);
-    this._registerResolutionDrops(removedFloating, grid, resolution);
+    this._registerResolutionDrops(removedFloating, grid, resolution, undefined, {
+      skipEliminationPresentationHold: true
+    });
     this.systems.jarCollectorSystem.collect([]);
   }
   this._appendUniqueCells(resolution.collected, newlyFloating);
@@ -2658,7 +2660,7 @@ GameManager.prototype.useThreeLineElimination = function (expectedRows) {
   }
 
   var floatingCells = this.systems.supportSystem.findFloatingCells(grid);
-  var removedFloating = grid.removeCells(floatingCells);
+  var removedFloating = grid.removeFloatingCells(floatingCells);
   this._appendUniqueCells(resolution.floating, removedFloating);
   this._collectRemovedKeysAndResolveUnlocks(removedFloating, grid, resolution);
   var fallingCandidates = removedLineCells.concat(resolution.floating);
@@ -2995,7 +2997,7 @@ GameManager.prototype.useSnowRemoval = function (expectedTargets) {
   resolution.iceCollected = this._registerIceCollection(thawedSnowCells);
 
   var floatingCells = this.systems.supportSystem.findFloatingCells(grid);
-  var removedFloating = grid.removeCells(floatingCells);
+  var removedFloating = grid.removeFloatingCells(floatingCells);
   this._registerResolutionDrops(removedFloating, grid, resolution, undefined, {
     matchedCellsForDelay: thawedSnowCells
   });
@@ -3229,7 +3231,7 @@ GameManager.prototype.useBarrierHammerAt = function (point) {
     this._pushBubbleBreakEvent(removedObstacle);
     this._collectRemovedKeysAndResolveUnlocks(removedObstacle, grid, resolution);
     var floatingCells = this.systems.supportSystem.findFloatingCells(grid);
-    var removedFloating = grid.removeCells(floatingCells);
+    var removedFloating = grid.removeFloatingCells(floatingCells);
     this._appendUniqueCells(resolution.floating, removedFloating);
     this._collectRemovedKeysAndResolveUnlocks(removedFloating, grid, resolution);
 

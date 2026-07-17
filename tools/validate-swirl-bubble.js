@@ -10,6 +10,7 @@ var BubbleGrid = require("../gameplay-src/systems/BubbleGrid");
 var BoardViewportSystem = require("../gameplay-src/systems/BoardViewportSystem");
 var SupportSystem = require("../gameplay-src/systems/SupportSystem");
 var GameManager = require("../gameplay-src/core/GameManager");
+var FairyAssistConfig = require("../gameplay-src/config/FairyAssistConfig");
 var SpecialAnimationTiming = require("../gameplay-src/config/SpecialAnimationTiming");
 var attachLevelRendererSceneBoardMethods = require("../gameplay-src/render/LevelRendererSceneBoardMethods");
 
@@ -212,7 +213,10 @@ function validateRotationAndDeferredDrop() {
 
 function validateFloatingNodesOverridePendingShatterRetention() {
   function FakeLevelRenderer() {}
-  attachLevelRendererSceneBoardMethods(FakeLevelRenderer, {});
+  attachLevelRendererSceneBoardMethods(FakeLevelRenderer, {
+    BoardLayout: BoardLayout,
+    FairyAssistConfig: FairyAssistConfig
+  });
 
   function createNode() {
     return {

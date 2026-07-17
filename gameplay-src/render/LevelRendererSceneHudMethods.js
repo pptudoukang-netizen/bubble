@@ -54,6 +54,18 @@ function attachLevelRendererSceneHudMethods(LevelRenderer, deps) {
       spriteCode: "BLAST"
     }
   };
+  var SKILL_POWERUP_COLLECT_FEEDBACK_VIEW_PADDING = 16;
+  var SKILL_POWERUP_COLLECT_FEEDBACK_BUTTON_SCALE = 1.24;
+  var SKILL_POWERUP_COLLECT_FEEDBACK_BUTTON_SQUASH_SCALE = 0.96;
+  var SKILL_POWERUP_COLLECT_FEEDBACK_BUTTON_REBOUND_SCALE = 1.13;
+  var SKILL_POWERUP_COLLECT_FEEDBACK_BADGE_SCALE = 1.34;
+  var SKILL_POWERUP_COLLECT_FEEDBACK_BADGE_SQUASH_SCALE = 0.92;
+  var SKILL_POWERUP_COLLECT_FEEDBACK_BADGE_REBOUND_SCALE = 1.16;
+  var SKILL_POWERUP_COLLECT_FEEDBACK_PUNCH_DURATION = 0.11;
+  var SKILL_POWERUP_COLLECT_FEEDBACK_SQUASH_DURATION = 0.08;
+  var SKILL_POWERUP_COLLECT_FEEDBACK_REBOUND_DURATION = 0.1;
+  var SKILL_POWERUP_COLLECT_FEEDBACK_RECOVER_DURATION = 0.12;
+  var SKILL_POWERUP_COLLECT_FEEDBACK_GAP_DURATION = 0.08;
 
   function resolveBottomPanelBoardTargets(runtimeSnapshot) {
     if (!runtimeSnapshot.board || typeof runtimeSnapshot.board !== "object") {
@@ -843,6 +855,42 @@ LevelRenderer.prototype._recycleJarFractionNodesBeforeHudClear = function () {
   this._pruneJarFractionNodePool();
 };
 
+LevelRenderer.prototype._releaseJarFractionNodesBeforeGameplayBundleUnload = function () {
+  if (!Array.isArray(this.jarFractionNodePool)) {
+    throw new Error("jarFractionNodePool must be an array.");
+  }
+  if (typeof cc.Tween === "undefined" || typeof cc.Tween.stopAllByTarget !== "function") {
+    throw new Error("Jar fraction bundle release requires cc.Tween.stopAllByTarget.");
+  }
+
+  this.jarFractionDisplayGeneration += 1;
+  this.lastJarCollectScoredEvent = null;
+  this._pruneJarFractionNodePool();
+
+  var fractionNodes = this.jarFractionNodePool.slice();
+  var gameViewNode = this._getGameViewNode();
+  if (gameViewNode && gameViewNode.isValid) {
+    if (!Array.isArray(gameViewNode.children)) {
+      throw new Error("GameView children must be an array during jar fraction bundle release.");
+    }
+    gameViewNode.children.slice().forEach(function (childNode) {
+      if (childNode && childNode.isValid && childNode.__isJarFractionClone === true) {
+        fractionNodes.push(childNode);
+      }
+    });
+  }
+
+  fractionNodes.forEach(function (fractionNode) {
+    if (!fractionNode || !fractionNode.isValid || fractionNode.__isJarFractionClone !== true) {
+      throw new Error("Jar fraction bundle release requires valid clone nodes.");
+    }
+    cc.Tween.stopAllByTarget(fractionNode);
+    fractionNode.__jarFractionDisplayToken = null;
+    fractionNode.destroy();
+  });
+  this.jarFractionNodePool = [];
+};
+
 LevelRenderer.prototype._acquireJarFractionNode = function (gameViewNode, templateNode) {
   if (!gameViewNode || !gameViewNode.isValid) {
     throw new Error("GameView node is required to acquire jar fraction node.");
@@ -1575,6 +1623,283 @@ LevelRenderer.prototype._renderBottomPanel = function (runtimeSnapshot) {
   if (layout && typeof layout.updateLayout === "function") {
     layout.updateLayout();
   }
+};
+
+LevelRenderer.prototype._requireSkillPowerupCollectedFeedbackNodes = function (entityType) {
+  var config = POWERUP_LOAD_ANIMATION_CONFIG[entityType];
+  if (!config) {
+    throw new Error("Unsupported collected skill powerup feedback type: " + entityType);
+  }
+  if (!this.layers || !this.layers.hud) {
+    throw new Error("Collected skill powerup feedback requires HUD layer.");
+  }
+
+  var panelNode = requireChildNode(this.layers.hud, "BttomPanel", "HUD layer");
+  var scrollNode = requireChildNode(panelNode, "props_scroll", "BttomPanel");
+  var viewNode = requireChildNode(scrollNode, "view", "BttomPanel/props_scroll");
+  var contentNode = requireChildNode(viewNode, "content", "BttomPanel/props_scroll/view");
+  var buttonNode = requireChildNode(
+    contentNode,
+    config.buttonNodeName,
+    "BttomPanel/props_scroll/view/content"
+  );
+  var badgeNode = requireChildNode(
+    buttonNode,
+    "num_bg",
+    "BttomPanel/props_scroll/view/content/" + config.buttonNodeName
+  );
+  if (!buttonNode.active || !badgeNode.active) {
+    throw new Error("Collected skill powerup feedback requires visible inventory nodes: " + entityType);
+  }
+
+  return {
+    scrollNode: scrollNode,
+    viewNode: viewNode,
+    contentNode: contentNode,
+    buttonNode: buttonNode,
+    badgeNode: badgeNode
+  };
+};
+
+LevelRenderer.prototype._revealSkillPowerupCollectedFeedbackButton = function (nodes) {
+  var scrollView = nodes.scrollNode.getComponent(cc.ScrollView);
+  if (!scrollView) {
+    throw new Error("Collected skill powerup feedback requires cc.ScrollView.");
+  }
+  if (typeof scrollView.stopAutoScroll !== "function") {
+    throw new Error("Collected skill powerup feedback requires ScrollView.stopAutoScroll.");
+  }
+  if (typeof nodes.buttonNode.getBoundingBoxToWorld !== "function" ||
+      typeof nodes.viewNode.getBoundingBoxToWorld !== "function") {
+    throw new Error("Collected skill powerup feedback requires world bounding boxes.");
+  }
+
+  scrollView.stopAutoScroll();
+  var buttonRect = nodes.buttonNode.getBoundingBoxToWorld();
+  var viewRect = nodes.viewNode.getBoundingBoxToWorld();
+  var rectValues = [buttonRect.xMin, buttonRect.xMax, viewRect.xMin, viewRect.xMax];
+  rectValues.forEach(function (value) {
+    if (!Number.isFinite(value)) {
+      throw new Error("Collected skill powerup feedback requires finite world bounds.");
+    }
+  });
+
+  var leftLimit = viewRect.xMin + SKILL_POWERUP_COLLECT_FEEDBACK_VIEW_PADDING;
+  var rightLimit = viewRect.xMax - SKILL_POWERUP_COLLECT_FEEDBACK_VIEW_PADDING;
+  var deltaWorldX = 0;
+  if (buttonRect.xMin < leftLimit) {
+    deltaWorldX = leftLimit - buttonRect.xMin;
+  } else if (buttonRect.xMax > rightLimit) {
+    deltaWorldX = rightLimit - buttonRect.xMax;
+  } else {
+    return;
+  }
+
+  var contentParent = nodes.contentNode.parent;
+  if (!contentParent || !contentParent.isValid || typeof contentParent.convertToNodeSpaceAR !== "function") {
+    throw new Error("Collected skill powerup feedback requires valid content parent transform.");
+  }
+  var localOrigin = contentParent.convertToNodeSpaceAR(cc.v2(0, 0));
+  var localShift = contentParent.convertToNodeSpaceAR(cc.v2(deltaWorldX, 0));
+  var deltaLocalX = localShift.x - localOrigin.x;
+  if (!Number.isFinite(deltaLocalX)) {
+    throw new Error("Collected skill powerup feedback scroll delta must be finite.");
+  }
+  nodes.contentNode.setPosition(nodes.contentNode.x + deltaLocalX, nodes.contentNode.y);
+
+  buttonRect = nodes.buttonNode.getBoundingBoxToWorld();
+  viewRect = nodes.viewNode.getBoundingBoxToWorld();
+  if (
+    buttonRect.xMin < viewRect.xMin + SKILL_POWERUP_COLLECT_FEEDBACK_VIEW_PADDING ||
+    buttonRect.xMax > viewRect.xMax - SKILL_POWERUP_COLLECT_FEEDBACK_VIEW_PADDING
+  ) {
+    throw new Error("Collected skill powerup feedback button failed to enter the visible scroll area.");
+  }
+};
+
+LevelRenderer.prototype._playNextSkillPowerupCollectedFeedback = function () {
+  if (this.skillPowerupCollectedFeedbackActive === true) {
+    return;
+  }
+  if (!Array.isArray(this.skillPowerupCollectedFeedbackQueue)) {
+    throw new Error("Collected skill powerup feedback queue must be an array.");
+  }
+  if (!this.skillPowerupCollectedFeedbackQueue.length) {
+    return;
+  }
+  if (typeof cc.tween !== "function") {
+    throw new Error("Collected skill powerup feedback requires cc.tween.");
+  }
+  if (typeof cc.Tween === "undefined" || typeof cc.Tween.stopAllByTarget !== "function") {
+    throw new Error("Collected skill powerup feedback requires cc.Tween.stopAllByTarget.");
+  }
+
+  var entityType = this.skillPowerupCollectedFeedbackQueue.shift();
+  var nodes = this._requireSkillPowerupCollectedFeedbackNodes(entityType);
+  this._revealSkillPowerupCollectedFeedbackButton(nodes);
+
+  var buttonBaseScaleX = nodes.buttonNode.scaleX;
+  var buttonBaseScaleY = nodes.buttonNode.scaleY;
+  var buttonBaseAngle = nodes.buttonNode.angle;
+  var badgeBaseScaleX = nodes.badgeNode.scaleX;
+  var badgeBaseScaleY = nodes.badgeNode.scaleY;
+  var transformValues = [
+    buttonBaseScaleX,
+    buttonBaseScaleY,
+    buttonBaseAngle,
+    badgeBaseScaleX,
+    badgeBaseScaleY
+  ];
+  transformValues.forEach(function (value) {
+    if (!Number.isFinite(value)) {
+      throw new Error("Collected skill powerup feedback requires finite node transforms.");
+    }
+  });
+
+  cc.Tween.stopAllByTarget(nodes.buttonNode);
+  cc.Tween.stopAllByTarget(nodes.badgeNode);
+  this.skillPowerupCollectedFeedbackActive = true;
+  var activeState = {
+    buttonNode: nodes.buttonNode,
+    badgeNode: nodes.badgeNode,
+    buttonBaseScaleX: buttonBaseScaleX,
+    buttonBaseScaleY: buttonBaseScaleY,
+    buttonBaseAngle: buttonBaseAngle,
+    badgeBaseScaleX: badgeBaseScaleX,
+    badgeBaseScaleY: badgeBaseScaleY
+  };
+  this.skillPowerupCollectedFeedbackActiveState = activeState;
+  var renderer = this;
+
+  cc.tween(nodes.badgeNode)
+    .to(SKILL_POWERUP_COLLECT_FEEDBACK_PUNCH_DURATION, {
+      scaleX: badgeBaseScaleX * SKILL_POWERUP_COLLECT_FEEDBACK_BADGE_SCALE,
+      scaleY: badgeBaseScaleY * SKILL_POWERUP_COLLECT_FEEDBACK_BADGE_SCALE
+    }, {
+      easing: "backOut"
+    })
+    .to(SKILL_POWERUP_COLLECT_FEEDBACK_SQUASH_DURATION, {
+      scaleX: badgeBaseScaleX * SKILL_POWERUP_COLLECT_FEEDBACK_BADGE_SQUASH_SCALE,
+      scaleY: badgeBaseScaleY * SKILL_POWERUP_COLLECT_FEEDBACK_BADGE_SQUASH_SCALE
+    })
+    .to(SKILL_POWERUP_COLLECT_FEEDBACK_REBOUND_DURATION, {
+      scaleX: badgeBaseScaleX * SKILL_POWERUP_COLLECT_FEEDBACK_BADGE_REBOUND_SCALE,
+      scaleY: badgeBaseScaleY * SKILL_POWERUP_COLLECT_FEEDBACK_BADGE_REBOUND_SCALE
+    })
+    .to(SKILL_POWERUP_COLLECT_FEEDBACK_RECOVER_DURATION, {
+      scaleX: badgeBaseScaleX,
+      scaleY: badgeBaseScaleY
+    })
+    .start();
+
+  cc.tween(nodes.buttonNode)
+    .to(SKILL_POWERUP_COLLECT_FEEDBACK_PUNCH_DURATION, {
+      scaleX: buttonBaseScaleX * SKILL_POWERUP_COLLECT_FEEDBACK_BUTTON_SCALE,
+      scaleY: buttonBaseScaleY * SKILL_POWERUP_COLLECT_FEEDBACK_BUTTON_SCALE,
+      angle: buttonBaseAngle - 7
+    }, {
+      easing: "backOut"
+    })
+    .to(SKILL_POWERUP_COLLECT_FEEDBACK_SQUASH_DURATION, {
+      scaleX: buttonBaseScaleX * SKILL_POWERUP_COLLECT_FEEDBACK_BUTTON_SQUASH_SCALE,
+      scaleY: buttonBaseScaleY * SKILL_POWERUP_COLLECT_FEEDBACK_BUTTON_SQUASH_SCALE,
+      angle: buttonBaseAngle + 5
+    })
+    .to(SKILL_POWERUP_COLLECT_FEEDBACK_REBOUND_DURATION, {
+      scaleX: buttonBaseScaleX * SKILL_POWERUP_COLLECT_FEEDBACK_BUTTON_REBOUND_SCALE,
+      scaleY: buttonBaseScaleY * SKILL_POWERUP_COLLECT_FEEDBACK_BUTTON_REBOUND_SCALE,
+      angle: buttonBaseAngle - 3
+    })
+    .to(SKILL_POWERUP_COLLECT_FEEDBACK_RECOVER_DURATION, {
+      scaleX: buttonBaseScaleX,
+      scaleY: buttonBaseScaleY,
+      angle: buttonBaseAngle
+    })
+    .delay(SKILL_POWERUP_COLLECT_FEEDBACK_GAP_DURATION)
+    .call(function () {
+      if (renderer.skillPowerupCollectedFeedbackActiveState !== activeState) {
+        throw new Error("Collected skill powerup feedback active state changed during playback.");
+      }
+      nodes.buttonNode.setScale(buttonBaseScaleX, buttonBaseScaleY);
+      nodes.buttonNode.angle = buttonBaseAngle;
+      nodes.badgeNode.setScale(badgeBaseScaleX, badgeBaseScaleY);
+      renderer.skillPowerupCollectedFeedbackActive = false;
+      renderer.skillPowerupCollectedFeedbackActiveState = null;
+      renderer._playNextSkillPowerupCollectedFeedback();
+    })
+    .start();
+};
+
+LevelRenderer.prototype._cancelSkillPowerupCollectedFeedback = function () {
+  if (!Array.isArray(this.skillPowerupCollectedFeedbackQueue)) {
+    throw new Error("Collected skill powerup feedback queue must be initialized before cleanup.");
+  }
+  this.skillPowerupCollectedFeedbackQueue.length = 0;
+
+  if (this.skillPowerupCollectedFeedbackActive !== true) {
+    if (this.skillPowerupCollectedFeedbackActiveState !== null) {
+      throw new Error("Inactive collected skill powerup feedback cannot keep active state.");
+    }
+    return;
+  }
+  if (typeof cc.Tween === "undefined" || typeof cc.Tween.stopAllByTarget !== "function") {
+    throw new Error("Collected skill powerup feedback cleanup requires cc.Tween.stopAllByTarget.");
+  }
+
+  var activeState = this.skillPowerupCollectedFeedbackActiveState;
+  if (!activeState || typeof activeState !== "object" || Array.isArray(activeState)) {
+    throw new Error("Active collected skill powerup feedback requires active state.");
+  }
+  if (!activeState.buttonNode || !activeState.buttonNode.isValid ||
+      !activeState.badgeNode || !activeState.badgeNode.isValid) {
+    throw new Error("Collected skill powerup feedback cleanup requires valid animated nodes.");
+  }
+
+  cc.Tween.stopAllByTarget(activeState.buttonNode);
+  cc.Tween.stopAllByTarget(activeState.badgeNode);
+  activeState.buttonNode.setScale(activeState.buttonBaseScaleX, activeState.buttonBaseScaleY);
+  activeState.buttonNode.angle = activeState.buttonBaseAngle;
+  activeState.badgeNode.setScale(activeState.badgeBaseScaleX, activeState.badgeBaseScaleY);
+  this.skillPowerupCollectedFeedbackActive = false;
+  this.skillPowerupCollectedFeedbackActiveState = null;
+};
+
+LevelRenderer.prototype._queueSkillPowerupCollectedFeedback = function (runtimeSnapshot) {
+  if (!runtimeSnapshot || typeof runtimeSnapshot !== "object" || Array.isArray(runtimeSnapshot)) {
+    throw new Error("Collected skill powerup feedback requires runtime snapshot.");
+  }
+  if (!Array.isArray(runtimeSnapshot.runtimeEvents)) {
+    throw new Error("Collected skill powerup feedback requires runtimeEvents array.");
+  }
+  if (!Array.isArray(this.skillPowerupCollectedFeedbackQueue)) {
+    throw new Error("Collected skill powerup feedback queue must be initialized.");
+  }
+  if (!Number.isInteger(this.lastSkillPowerupCollectedEventId) || this.lastSkillPowerupCollectedEventId < -1) {
+    throw new Error("Collected skill powerup feedback event id state is invalid.");
+  }
+
+  runtimeSnapshot.runtimeEvents.forEach(function (event) {
+    if (!event || event.type !== "skill_powerup_collected") {
+      return;
+    }
+    if (!Number.isInteger(event.id) || event.id <= 0) {
+      throw new Error("skill_powerup_collected event requires a positive integer id.");
+    }
+    if (event.id <= this.lastSkillPowerupCollectedEventId) {
+      return;
+    }
+    if (!POWERUP_LOAD_ANIMATION_CONFIG[event.entityType]) {
+      throw new Error("skill_powerup_collected event has unsupported entityType: " + event.entityType);
+    }
+    if (!Number.isInteger(event.total) || event.total <= 0) {
+      throw new Error("skill_powerup_collected event requires a positive integer total.");
+    }
+
+    this.lastSkillPowerupCollectedEventId = event.id;
+    this.skillPowerupCollectedFeedbackQueue.push(event.entityType);
+  }, this);
+
+  this._playNextSkillPowerupCollectedFeedback();
 };
 
 LevelRenderer.prototype.isPowerupLoadAnimationInProgress = function () {

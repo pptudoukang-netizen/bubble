@@ -43,7 +43,7 @@
     return null;
   }
   var previousRequire = resolvePreviousRequire();
-  var gameplayCodeHash = "4fe3dd997a5ef1fc0c503f418c886f106b6b3a1b54cab1babfd277183a794a18";
+  var gameplayCodeHash = "f7714078a89e98db3ac43d7ca42e3f5519b15b0dcda0a131df3b8da86fb97a4e";
   var lazyRequire = (function (modules, cache, entries) {
     function load(moduleId, jumped) {
       if (!cache[moduleId]) {
@@ -764,7 +764,6 @@ function isVineProtectedCell(cell) {
     cell &&
     (
       isVineSpiritCell(cell) ||
-      isWormholeCell(cell) ||
       (cell.entityCategory === "normal_ball" && typeof cell.vineOwnerId === "string" && cell.vineOwnerId)
     )
   );
@@ -884,7 +883,10 @@ BubbleGrid.prototype.configureLevel = function (levelConfig) {
   var layoutMaxColumns = this.layout.reduce(function (max, row) {
     return Math.max(max, row.length);
   }, 0);
-  this.maxColumns = Math.max(BoardLayout.defaultColumns || 9, layoutMaxColumns);
+  if (!Number.isInteger(BoardLayout.defaultColumns) || BoardLayout.defaultColumns <= 0) {
+    throw new Error("BoardLayout.defaultColumns must be a positive integer.");
+  }
+  this.maxColumns = Math.max(BoardLayout.defaultColumns, layoutMaxColumns);
   this._normalizeLayoutRows();
   this._rebuildSpecialCellMap();
   this.version = 1;
@@ -1334,6 +1336,32 @@ BubbleGrid.prototype.removeVineAt = function (row, col) {
   return liveCell;
 };
 
+BubbleGrid.prototype._clearVinesByOwner = function (spiritId) {
+  if (typeof spiritId !== "string" || !spiritId) {
+    throw new Error("Vine owner cleanup requires spiritId.");
+  }
+  var clearedVines = [];
+  Object.keys(this._vineOwnerByCell).forEach(function (cellKey) {
+    if (this._vineOwnerByCell[cellKey] !== spiritId) {
+      return;
+    }
+    var coordinates = cellKey.split(":").map(Number);
+    clearedVines.push({
+      ownerId: spiritId,
+      row: coordinates[0],
+      col: coordinates[1],
+      cellId: coordinates[0] + "_" + coordinates[1]
+    });
+    delete this._vineOwnerByCell[cellKey];
+  }, this);
+  Object.keys(this._vinePreviewOwnerByCell).forEach(function (cellKey) {
+    if (this._vinePreviewOwnerByCell[cellKey] === spiritId) {
+      delete this._vinePreviewOwnerByCell[cellKey];
+    }
+  }, this);
+  return clearedVines;
+};
+
 BubbleGrid.prototype.damageVineSpirit = function (spiritId) {
   if (typeof spiritId !== "string" || !spiritId) {
     throw new Error("Vine spirit damage requires spiritId.");
@@ -1364,24 +1392,7 @@ BubbleGrid.prototype.damageVineSpirit = function (spiritId) {
   var clearedVines = [];
   if (destroyed) {
     delete this._specialCellMap[spiritKey];
-    Object.keys(this._vineOwnerByCell).forEach(function (cellKey) {
-      if (this._vineOwnerByCell[cellKey] !== spiritId) {
-        return;
-      }
-      var coordinates = cellKey.split(":").map(Number);
-      clearedVines.push({
-        ownerId: spiritId,
-        row: coordinates[0],
-        col: coordinates[1],
-        cellId: coordinates[0] + "_" + coordinates[1]
-      });
-      delete this._vineOwnerByCell[cellKey];
-    }, this);
-    Object.keys(this._vinePreviewOwnerByCell).forEach(function (cellKey) {
-      if (this._vinePreviewOwnerByCell[cellKey] === spiritId) {
-        delete this._vinePreviewOwnerByCell[cellKey];
-      }
-    }, this);
+    clearedVines = this._clearVinesByOwner(spiritId);
   }
 
   this.version += 1;
@@ -2374,7 +2385,10 @@ BubbleGrid.prototype.addBubble = function (cell, colorOrBall) {
   return this.getCell(row, col);
 };
 
-BubbleGrid.prototype.removeCells = function (cells) {
+BubbleGrid.prototype._removeCellsByMode = function (cells, allowVineDrop) {
+  if (typeof allowVineDrop !== "boolean") {
+    throw new Error("BubbleGrid cell removal mode requires allowVineDrop boolean.");
+  }
   var removed = [];
   var touchedKeys = {};
 
@@ -2389,8 +2403,25 @@ BubbleGrid.prototype.removeCells = function (cells) {
     }
 
     var liveCell = this.getCell(cell.row, cell.col);
-    if (isVineProtectedCell(liveCell)) {
+    if (isWormholeCell(liveCell) || (!allowVineDrop && isVineProtectedCell(liveCell))) {
       return;
+    }
+
+    if (allowVineDrop) {
+      if (isVineSpiritCell(liveCell)) {
+        this._clearVinesByOwner(liveCell.id);
+      } else if (
+        liveCell.entityCategory === "normal_ball" &&
+        (
+          (typeof liveCell.vineOwnerId === "string" && liveCell.vineOwnerId) ||
+          (typeof liveCell.vinePreviewOwnerId === "string" && liveCell.vinePreviewOwnerId)
+        )
+      ) {
+        delete this._vineOwnerByCell[key];
+        delete this._vinePreviewOwnerByCell[key];
+        liveCell.vineOwnerId = null;
+        liveCell.vinePreviewOwnerId = null;
+      }
     }
 
     touchedKeys[key] = true;
@@ -2406,6 +2437,17 @@ BubbleGrid.prototype.removeCells = function (cells) {
   }
 
   return removed;
+};
+
+BubbleGrid.prototype.removeCells = function (cells) {
+  return this._removeCellsByMode(cells, false);
+};
+
+BubbleGrid.prototype.removeFloatingCells = function (cells) {
+  if (!Array.isArray(cells)) {
+    throw new Error("BubbleGrid.removeFloatingCells requires cells array.");
+  }
+  return this._removeCellsByMode(cells, true);
 };
 
 BubbleGrid.prototype.getTopAttachY = function () {
@@ -3574,6 +3616,7 @@ var CONFIG = {
   splitAngleDegrees: 18,
   spriteWidth: 200,
   spriteHeight: 160,
+  dropCollisionGlowScale: 86 / 72,
   maxGlowStacks: 7
 };
 
@@ -3589,6 +3632,7 @@ requirePositiveFiniteNumber(CONFIG.minimumUpwardSpeed, "FairyAssistConfig.minimu
 requirePositiveFiniteNumber(CONFIG.splitAngleDegrees, "FairyAssistConfig.splitAngleDegrees");
 requirePositiveFiniteNumber(CONFIG.spriteWidth, "FairyAssistConfig.spriteWidth");
 requirePositiveFiniteNumber(CONFIG.spriteHeight, "FairyAssistConfig.spriteHeight");
+requirePositiveFiniteNumber(CONFIG.dropCollisionGlowScale, "FairyAssistConfig.dropCollisionGlowScale");
 if (!Number.isInteger(CONFIG.maxGlowStacks) || CONFIG.maxGlowStacks <= 0) {
   throw new Error("FairyAssistConfig.maxGlowStacks must be a positive integer.");
 }
@@ -4247,6 +4291,8 @@ FallingMarbleSystem.prototype._buildLayoutSignature = function () {
     BoardLayout.jarRenderYOffset,
     BoardLayout.jarWidth,
     BoardLayout.jarHeight,
+    BoardLayout.jarMouthWidth,
+    BoardLayout.jarLayoutWidth,
     this.jarColors.length
   ].join("|");
 };
@@ -4274,13 +4320,14 @@ FallingMarbleSystem.prototype._buildJarZones = function () {
     return [];
   }
 
-  var jarPositions = BoardLayout.getJarCenterPositions(count);
-  var jarHalfWidth = Math.max(1, Number(BoardLayout.jarWidth) || 237) * 0.5;
-  var edgeThickness = clamp(this.rimEdgeThickness, 1, jarHalfWidth);
+  var jarLayout = BoardLayout.getJarLayout(count);
+  var jarPositions = jarLayout.positions;
+  var mouthHalfWidth = jarLayout.mouthWidth * 0.5;
+  var edgeThickness = clamp(this.rimEdgeThickness * jarLayout.scale, 1, mouthHalfWidth);
   // 需求：左右边缘碰撞区各 40（从边界向内）。
-  var outerHalfWidth = jarHalfWidth;
-  var innerHalfWidth = Math.max(0, jarHalfWidth - edgeThickness);
-  var jarHeight = Math.max(1, Number(BoardLayout.jarHeight) || 230);
+  var outerHalfWidth = mouthHalfWidth;
+  var innerHalfWidth = Math.max(0, mouthHalfWidth - edgeThickness);
+  var jarHeight = jarLayout.renderHeight;
   var baseJarCenterY = getJarRenderCenterY();
 
   var zones = [];
@@ -7016,7 +7063,7 @@ GameManager.prototype._updatePendingSwirlRotation = function (dt) {
     if (!floatingCells.length) {
       break;
     }
-    var removedFloating = grid.removeCells(floatingCells);
+    var removedFloating = grid.removeFloatingCells(floatingCells);
     if (!removedFloating.length) {
       throw new Error("Swirl connection scan found cells that could not be removed.");
     }
@@ -7058,7 +7105,7 @@ GameManager.prototype._updatePendingWormholeShift = function (dt) {
     if (!floatingCells.length) {
       break;
     }
-    var removedFloating = grid.removeCells(floatingCells);
+    var removedFloating = grid.removeFloatingCells(floatingCells);
     if (!removedFloating.length) {
       throw new Error("Wormhole support scan found cells that could not be removed.");
     }
@@ -7066,7 +7113,9 @@ GameManager.prototype._updatePendingWormholeShift = function (dt) {
     this._appendUniqueCells(resolution.floating, removedFloating);
     this._collectRemovedKeysAndResolveUnlocks(removedFloating, grid, resolution);
     this._cancelPendingSplitterSpawnsForDroppedCells(removedFloating);
-    this._registerResolutionDrops(removedFloating, grid, resolution);
+    this._registerResolutionDrops(removedFloating, grid, resolution, undefined, {
+      skipEliminationPresentationHold: true
+    });
     this.systems.jarCollectorSystem.collect([]);
   }
   this._appendUniqueCells(resolution.collected, newlyFloating);
@@ -8205,7 +8254,7 @@ GameManager.prototype.useThreeLineElimination = function (expectedRows) {
   }
 
   var floatingCells = this.systems.supportSystem.findFloatingCells(grid);
-  var removedFloating = grid.removeCells(floatingCells);
+  var removedFloating = grid.removeFloatingCells(floatingCells);
   this._appendUniqueCells(resolution.floating, removedFloating);
   this._collectRemovedKeysAndResolveUnlocks(removedFloating, grid, resolution);
   var fallingCandidates = removedLineCells.concat(resolution.floating);
@@ -8542,7 +8591,7 @@ GameManager.prototype.useSnowRemoval = function (expectedTargets) {
   resolution.iceCollected = this._registerIceCollection(thawedSnowCells);
 
   var floatingCells = this.systems.supportSystem.findFloatingCells(grid);
-  var removedFloating = grid.removeCells(floatingCells);
+  var removedFloating = grid.removeFloatingCells(floatingCells);
   this._registerResolutionDrops(removedFloating, grid, resolution, undefined, {
     matchedCellsForDelay: thawedSnowCells
   });
@@ -8776,7 +8825,7 @@ GameManager.prototype.useBarrierHammerAt = function (point) {
     this._pushBubbleBreakEvent(removedObstacle);
     this._collectRemovedKeysAndResolveUnlocks(removedObstacle, grid, resolution);
     var floatingCells = this.systems.supportSystem.findFloatingCells(grid);
-    var removedFloating = grid.removeCells(floatingCells);
+    var removedFloating = grid.removeFloatingCells(floatingCells);
     this._appendUniqueCells(resolution.floating, removedFloating);
     this._collectRemovedKeysAndResolveUnlocks(removedFloating, grid, resolution);
 
@@ -10198,9 +10247,6 @@ function createGameManagerShotResolutionMethods(deps) {
       if (wormholeCount !== 0 && wormholeCount !== 2) {
         throw new Error("Top anchor collapse requires exactly two live wormholes.");
       }
-      if (wormholeCount === 2) {
-        return false;
-      }
       if (!cells.length) {
         return false;
       }
@@ -10216,7 +10262,13 @@ function createGameManagerShotResolutionMethods(deps) {
           topRowEmptySlots: BoardViewportSystem.countTopRowEmptySlots(cells, grid.maxColumns)
         });
       }
-      var removedCells = grid.removeCells(cells);
+      var collapsibleCells = cells.filter(function (cell) {
+        return !(cell && cell.entityCategory === "reactive_ball" && cell.entityType === "wormhole");
+      });
+      var removedCells = grid.removeFloatingCells(collapsibleCells);
+      if (removedCells.length !== collapsibleCells.length) {
+        throw new Error("Top anchor collapse must remove every non-wormhole board cell.");
+      }
       this._cancelPendingSplitterSpawnsForDroppedCells(removedCells);
       if (this.lastResolution) {
         this.lastResolution.topAnchorCollapse = true;
@@ -10225,7 +10277,7 @@ function createGameManagerShotResolutionMethods(deps) {
       this._registerResolutionDrops(removedCells, grid, this.lastResolution, {
         dropKind: "victory_board_drop"
       }, {
-        matchedCellsForDelay: removedCells
+        skipEliminationPresentationHold: true
       });
       this.state = "won_pending";
       return true;
@@ -10908,10 +10960,20 @@ function createGameManagerShotResolutionMethods(deps) {
         throw new Error("Resolution drop registration matchedCellsForDelay must be a non-empty array when provided.");
       }
 
-      var requiresEliminationHold = EliminationSequenceBuilder.resolveRequiresEliminationPresentationHold(
-        resolution,
-        matchedCellsForDelay
+      var skipEliminationPresentationHold = !!(
+        timingOptions &&
+        Object.prototype.hasOwnProperty.call(timingOptions, "skipEliminationPresentationHold")
       );
+      if (skipEliminationPresentationHold && timingOptions.skipEliminationPresentationHold !== true) {
+        throw new Error("Resolution drop registration skipEliminationPresentationHold must be true when provided.");
+      }
+
+      var requiresEliminationHold = skipEliminationPresentationHold
+        ? false
+        : EliminationSequenceBuilder.resolveRequiresEliminationPresentationHold(
+          resolution,
+          matchedCellsForDelay
+        );
       var baseDelay = 0;
       if (dropOptions && Object.prototype.hasOwnProperty.call(dropOptions, "startDelay")) {
         if (
@@ -11151,7 +11213,11 @@ function createGameManagerShotResolutionMethods(deps) {
         blastCells.push(occupiedCell);
       });
 
-      var removedByBlast = grid.removeCells(blastCells);
+      this._resolveVinesHitByExplosion(blastCells, grid, resolution);
+      var removableBlastCells = blastCells.filter(function (cell) {
+        return !isVineEntangledBall(cell) && !isVineSpiritBall(cell);
+      });
+      var removedByBlast = grid.removeCells(removableBlastCells);
       this._resolveVinesAfterRemoval(removedByBlast, grid, resolution);
       appendMolotovEliminationSequence(resolution, removedByBlast, grid);
       this._pushBubbleBreakEvent(removedByBlast, resolution.eliminationSequence);
@@ -11349,7 +11415,7 @@ function createGameManagerShotResolutionMethods(deps) {
         if (!floatingCells.length) {
           break;
         }
-        var removedFloating = grid.removeCells(floatingCells);
+        var removedFloating = grid.removeFloatingCells(floatingCells);
         if (!removedFloating.length) {
           throw new Error("Molotov floating resolution found cells that could not be removed.");
         }
@@ -11651,7 +11717,7 @@ function createGameManagerShotResolutionMethods(deps) {
       if (!resolution || !Array.isArray(resolution.releasedVines)) {
         throw new Error("Vine release requires resolution.releasedVines.");
       }
-      if (sourceType !== "direct_hit" && sourceType !== "adjacent_elimination") {
+      if (sourceType !== "direct_hit" && sourceType !== "adjacent_elimination" && sourceType !== "explosion") {
         throw new Error("Vine release sourceType is invalid: " + sourceType);
       }
       var alreadyReleased = resolution.releasedVines.some(function (entry) {
@@ -11686,7 +11752,7 @@ function createGameManagerShotResolutionMethods(deps) {
       if (!resolution || !Array.isArray(resolution.vineSpiritHits) || !Array.isArray(resolution.witheredVines)) {
         throw new Error("Vine spirit damage requires resolution vine arrays.");
       }
-      if (sourceType !== "direct_hit" && sourceType !== "adjacent_elimination") {
+      if (sourceType !== "direct_hit" && sourceType !== "adjacent_elimination" && sourceType !== "explosion") {
         throw new Error("Vine spirit damage sourceType is invalid: " + sourceType);
       }
       var alreadyDamaged = resolution.vineSpiritHits.some(function (entry) {
@@ -11748,6 +11814,35 @@ function createGameManagerShotResolutionMethods(deps) {
       }, this);
       Object.keys(spiritsById).sort().forEach(function (spiritId) {
         this._damageVineSpiritOnce(spiritsById[spiritId], grid, resolution, "adjacent_elimination");
+      }, this);
+    },
+
+    _resolveVinesHitByExplosion: function (affectedCells, grid, resolution) {
+      if (!Array.isArray(affectedCells)) {
+        throw new Error("Vine explosion resolution requires affectedCells array.");
+      }
+      if (!grid || typeof grid.getCell !== "function") {
+        throw new Error("Vine explosion resolution requires bubble grid.");
+      }
+      var entangledById = {};
+      var spiritsById = {};
+      affectedCells.forEach(function (affectedCell) {
+        if (!affectedCell || !Number.isInteger(affectedCell.row) || !Number.isInteger(affectedCell.col)) {
+          throw new Error("Vine explosion resolution requires affected cell coordinates.");
+        }
+        var liveCell = grid.getCell(affectedCell.row, affectedCell.col);
+        if (isVineEntangledBall(liveCell)) {
+          entangledById[liveCell.id] = liveCell;
+        }
+        if (isVineSpiritBall(liveCell)) {
+          spiritsById[liveCell.id] = liveCell;
+        }
+      });
+      Object.keys(entangledById).sort().forEach(function (cellId) {
+        this._releaseVineOnce(entangledById[cellId], grid, resolution, "explosion");
+      }, this);
+      Object.keys(spiritsById).sort().forEach(function (spiritId) {
+        this._damageVineSpiritOnce(spiritsById[spiritId], grid, resolution, "explosion");
       }, this);
     },
 
@@ -12066,7 +12161,12 @@ function createGameManagerShotResolutionMethods(deps) {
         }
       });
 
-      var removedBlastCells = grid.removeCells(blastCells);
+      this._resolveVinesHitByExplosion(blastCells, grid, resolution);
+      var removableBlastCells = blastCells.filter(function (cell) {
+        return !isVineEntangledBall(cell) && !isVineSpiritBall(cell);
+      });
+      var removedBlastCells = grid.removeCells(removableBlastCells);
+      this._resolveVinesAfterRemoval(removedBlastCells, grid, resolution);
       if (!Array.isArray(resolution.blastExplosions)) {
         throw new Error("Blast resolution requires blastExplosions array.");
       }
@@ -12100,7 +12200,7 @@ function createGameManagerShotResolutionMethods(deps) {
       }
 
       var floatingCells = this.systems.supportSystem.findFloatingCells(grid);
-      var removedFloating = grid.removeCells(floatingCells);
+      var removedFloating = grid.removeFloatingCells(floatingCells);
       this._appendUniqueCells(resolution.floating, removedFloating);
       this._collectRemovedKeysAndResolveUnlocks(removedFloating, grid, resolution);
       var removedAll = removedBlastCells.concat(removedReactive).concat(resolution.floating);
@@ -12297,7 +12397,7 @@ function createGameManagerShotResolutionMethods(deps) {
       }
 
       var floatingCells = this.systems.supportSystem.findFloatingCells(grid);
-      var removedFloating = grid.removeCells(floatingCells);
+      var removedFloating = grid.removeFloatingCells(floatingCells);
       this._appendUniqueCells(resolution.floating, removedFloating);
       this._collectRemovedKeysAndResolveUnlocks(removedFloating, grid, resolution);
       var collectedCells = removedMatches.concat(removedReactiveMatches).concat(resolution.floating);
@@ -12625,7 +12725,8 @@ var JarScoreConfig = {
     1: assertBaseScoreTable([120]),
     2: assertBaseScoreTable([80, 80]),
     3: assertBaseScoreTable([60, 120, 60]),
-    4: assertBaseScoreTable([40, 90, 90, 40])
+    4: assertBaseScoreTable([40, 90, 90, 40]),
+    5: assertBaseScoreTable([40, 60, 120, 60, 40])
   }
 };
 
@@ -12707,6 +12808,14 @@ var BALL_RESOURCES = {
   LIGHT: "game/image/ball/light_ball",
   SNOW_REMOVAL_TOOLS: "game/image/ball/snow_removal_tools"
 };
+
+var WORMHOLE_DIRECTION_ARROW_RESOURCE = "game/image/ball/arrow";
+var WORMHOLE_DIRECTION_ARROW_SIZE = new cc.Size(42, 42);
+var WORMHOLE_DIRECTION_ARROW_TRAVEL_DISTANCE = 18;
+var WORMHOLE_DIRECTION_ARROW_STAGGER = 0.12;
+var WORMHOLE_DIRECTION_ARROW_FADE_IN_DURATION = 0.2;
+var WORMHOLE_DIRECTION_ARROW_FADE_OUT_DURATION = 0.24;
+var WORMHOLE_DIRECTION_ARROW_CYCLE_PAUSE = 0.28;
 
 var JAR_RESOURCES = {
   R: "game/image/jar/red_jar",
@@ -12854,7 +12963,7 @@ function assertValidRefreshScope(scope) {
 var TEST_SLOT_RADIUS = Math.floor(BoardLayout.bubbleRadius * 0.88);
 var SHOOTER_MAX_ROTATION = 75;
 var ICE_OVERLAY_OPACITY = 255;
-var BOARD_BUBBLE_SIZE = new cc.Size(72, 72);
+var BOARD_BUBBLE_SIZE = new cc.Size(BoardLayout.bubbleDiameter, BoardLayout.bubbleDiameter);
 // vine_spirit.png and vines.png share a 140x172 raw canvas; render at exact half scale.
 var VINE_VISUAL_SIZE = new cc.Size(70, 86);
 var NEXT_SHOT_BUBBLE_SIZE = new cc.Size(50, 50);
@@ -13765,6 +13874,10 @@ function LevelRenderer(rootNode) {
   this.lastIceThawShakeSeq = -1;
   this.lastIceSnowballCollectEventId = -1;
   this.lastMatchedObjectiveCollectEventId = -1;
+  this.lastSkillPowerupCollectedEventId = -1;
+  this.skillPowerupCollectedFeedbackQueue = [];
+  this.skillPowerupCollectedFeedbackActive = false;
+  this.skillPowerupCollectedFeedbackActiveState = null;
   this.lastKeyUnlockAnimationKey = "";
   this.splitterSpawnAnimatedEntryKeys = {};
   this.splitterSpawnHiddenCellIds = {};
@@ -13772,6 +13885,8 @@ function LevelRenderer(rootNode) {
   this.molotovBlastAnimatedIds = {};
   this.swirlRotationAnimatedIds = {};
   this.wormholeShiftAnimatedIds = {};
+  this.wormholeDirectionGuideRoot = null;
+  this.lastWormholeDirectionGuideKey = "";
   this.blastExplosionAnimatedIds = {};
   this.lastCommentResolution = null;
   this.boardClearFireworksRoot = null;
@@ -14209,6 +14324,11 @@ LevelRenderer.prototype.renderLevel = function (levelConfig, runtimeSnapshot) {
   if (typeof this._stopBoardClearFireworks === "function") {
     this._stopBoardClearFireworks("render_level");
   }
+  this._destroyWormholeDirectionGuide();
+  if (typeof this._cancelSkillPowerupCollectedFeedback !== "function") {
+    throw new Error("LevelRenderer requires collected skill powerup feedback cleanup.");
+  }
+  this._cancelSkillPowerupCollectedFeedback();
   this.currentLevelConfig = levelConfig;
   this.lastRuntimeSnapshot = runtimeSnapshot;
   this.displayedIceSnowballCollectedTotal = 0;
@@ -14234,6 +14354,10 @@ LevelRenderer.prototype.renderLevel = function (levelConfig, runtimeSnapshot) {
   this.lastIceThawShakeSeq = -1;
   this.lastIceSnowballCollectEventId = -1;
   this.lastMatchedObjectiveCollectEventId = -1;
+  this.lastSkillPowerupCollectedEventId = -1;
+  this.skillPowerupCollectedFeedbackQueue = [];
+  this.skillPowerupCollectedFeedbackActive = false;
+  this.skillPowerupCollectedFeedbackActiveState = null;
   this.lastKeyUnlockAnimationKey = "";
   this.splitterSpawnAnimatedEntryKeys = {};
   this.splitterSpawnHiddenCellIds = {};
@@ -14241,6 +14365,8 @@ LevelRenderer.prototype.renderLevel = function (levelConfig, runtimeSnapshot) {
   this.molotovBlastAnimatedIds = {};
   this.swirlRotationAnimatedIds = {};
   this.wormholeShiftAnimatedIds = {};
+  this.wormholeDirectionGuideRoot = null;
+  this.lastWormholeDirectionGuideKey = "";
   this.blastExplosionAnimatedIds = {};
   this.lastCommentResolution = null;
   this.boardClearFireworksRoot = null;
@@ -14271,6 +14397,8 @@ LevelRenderer.prototype.renderLevel = function (levelConfig, runtimeSnapshot) {
   }.bind(this)).then(function () {
     clearChildren(this.layers.background);
     clearChildren(this.layers.board);
+    this.wormholeDirectionGuideRoot = null;
+    this.lastWormholeDirectionGuideKey = "";
     this.boardBubbleNodes = {};
     this.boardBubbleNodePool = {};
     this.boardCellRenderKeys = {};
@@ -14313,6 +14441,7 @@ LevelRenderer.prototype.renderLevel = function (levelConfig, runtimeSnapshot) {
     this._renderJarScoreBoostTimer(runtimeSnapshot);
     this._renderTimedLevelTimer(runtimeSnapshot);
     this._renderBottomPanel(runtimeSnapshot);
+    this._queueSkillPowerupCollectedFeedback(runtimeSnapshot);
     this._renderBoard(runtimeSnapshot.board);
     this._syncBarrierHammerStoneHints(runtimeSnapshot);
     this._renderMainland(runtimeSnapshot.board);
@@ -14469,6 +14598,7 @@ LevelRenderer.prototype._refreshRuntimeFull = function (levelConfig, runtimeSnap
     this._renderBottomPanel(runtimeSnapshot);
     this.lastBottomPanelRenderKey = nextBottomPanelKey;
   }
+  this._queueSkillPowerupCollectedFeedback(runtimeSnapshot);
 
   var nextJarKey = buildJarRenderKey(levelConfig, runtimeSnapshot);
   if (nextJarKey !== this.lastJarRenderKey) {
@@ -14654,6 +14784,9 @@ LevelRenderer.prototype._collectSpritePaths = function (levelConfig, runtimeSnap
     }
     level.specialEntities.forEach(function (entity, index) {
       collectBallVisualSpritePaths(paths, entity, "level.specialEntities[" + index + "]");
+      if (entity && entity.entityType === "wormhole") {
+        pushUniqueSpritePath(paths, WORMHOLE_DIRECTION_ARROW_RESOURCE, "wormhole direction guide");
+      }
     });
   }
 
@@ -14743,6 +14876,10 @@ LevelRenderer.prototype.releaseLevelSpecificSpriteCache = function () {
 };
 
 LevelRenderer.prototype.releaseAfterGameplayBundleUnload = function () {
+  if (typeof this._releaseJarFractionNodesBeforeGameplayBundleUnload !== "function") {
+    throw new Error("LevelRenderer requires jar fraction bundle release cleanup.");
+  }
+  this._releaseJarFractionNodesBeforeGameplayBundleUnload();
   assertNoPendingSpriteFrameLoadsByPrefix(this.spriteFrameLoadPromises, GAME_RESOURCE_PATH_PREFIX);
   releaseRetainedSpriteFramesByPrefix(this.spriteFrameCache, GAME_RESOURCE_PATH_PREFIX);
   this.fairyPrefabCache = {};
@@ -15030,6 +15167,13 @@ var LEVEL_RENDERER_SCENE_DEPS = {
   BoardLayout: BoardLayout,
   SpecialAnimationTiming: SpecialAnimationTiming,
   BALL_RESOURCES: BALL_RESOURCES,
+  WORMHOLE_DIRECTION_ARROW_RESOURCE: WORMHOLE_DIRECTION_ARROW_RESOURCE,
+  WORMHOLE_DIRECTION_ARROW_SIZE: WORMHOLE_DIRECTION_ARROW_SIZE,
+  WORMHOLE_DIRECTION_ARROW_TRAVEL_DISTANCE: WORMHOLE_DIRECTION_ARROW_TRAVEL_DISTANCE,
+  WORMHOLE_DIRECTION_ARROW_STAGGER: WORMHOLE_DIRECTION_ARROW_STAGGER,
+  WORMHOLE_DIRECTION_ARROW_FADE_IN_DURATION: WORMHOLE_DIRECTION_ARROW_FADE_IN_DURATION,
+  WORMHOLE_DIRECTION_ARROW_FADE_OUT_DURATION: WORMHOLE_DIRECTION_ARROW_FADE_OUT_DURATION,
+  WORMHOLE_DIRECTION_ARROW_CYCLE_PAUSE: WORMHOLE_DIRECTION_ARROW_CYCLE_PAUSE,
   LOSE_STATUS_RESOURCES: LOSE_STATUS_RESOURCES,
   JAR_RESOURCES: JAR_RESOURCES,
   JAR_MASK_RESOURCES: JAR_MASK_RESOURCES,
@@ -15282,7 +15426,8 @@ LevelRenderer.prototype._applyJarVisual = function (node, colorCode) {
     return;
   }
 
-  ensureSprite(spriteTarget, spriteFrame);
+  var jarSprite = ensureSprite(spriteTarget, spriteFrame);
+  jarSprite.trim = false;
   spriteTarget.setContentSize(JAR_RENDER_SIZE);
 };
 
@@ -15812,8 +15957,8 @@ function attachLevelRendererSceneBoardMethods(LevelRenderer, deps) {
   var resolveIceInnerColor = deps.resolveIceInnerColor;
   var DROP_COLLISION_GLOW_NODE_NAME = "DropCollisionGlow";
   var DROP_COLLISION_GLOW_SIZE = {
-    width: 86,
-    height: 86
+    width: BoardLayout.bubbleDiameter * FairyAssistConfig.dropCollisionGlowScale,
+    height: BoardLayout.bubbleDiameter * FairyAssistConfig.dropCollisionGlowScale
   };
   var TOP_SLOT_STAR_Z_INDEX = -1;
   var TOP_SLOT_STAR_DIM_OPACITY = 150;
@@ -16327,6 +16472,7 @@ LevelRenderer.prototype._renderBoard = function (boardSnapshot) {
   }, this);
 
   this._recycleInactiveBoardBubbleNodes(currentTick);
+  this._syncWormholeDirectionGuide(boardSnapshot);
   this._renderTopSlotStars(boardSnapshot);
 };
 
@@ -16758,6 +16904,13 @@ function attachLevelRendererSceneFxMethods(LevelRenderer, deps) {
   var BoardLayout = deps.BoardLayout;
   var SpecialAnimationTiming = deps.SpecialAnimationTiming;
   var BALL_RESOURCES = deps.BALL_RESOURCES;
+  var WORMHOLE_DIRECTION_ARROW_RESOURCE = deps.WORMHOLE_DIRECTION_ARROW_RESOURCE;
+  var WORMHOLE_DIRECTION_ARROW_SIZE = deps.WORMHOLE_DIRECTION_ARROW_SIZE;
+  var WORMHOLE_DIRECTION_ARROW_TRAVEL_DISTANCE = deps.WORMHOLE_DIRECTION_ARROW_TRAVEL_DISTANCE;
+  var WORMHOLE_DIRECTION_ARROW_STAGGER = deps.WORMHOLE_DIRECTION_ARROW_STAGGER;
+  var WORMHOLE_DIRECTION_ARROW_FADE_IN_DURATION = deps.WORMHOLE_DIRECTION_ARROW_FADE_IN_DURATION;
+  var WORMHOLE_DIRECTION_ARROW_FADE_OUT_DURATION = deps.WORMHOLE_DIRECTION_ARROW_FADE_OUT_DURATION;
+  var WORMHOLE_DIRECTION_ARROW_CYCLE_PAUSE = deps.WORMHOLE_DIRECTION_ARROW_CYCLE_PAUSE;
   var PREFAB_PATHS = deps.PREFAB_PATHS;
   var BARRIER_HAMMER_HINT_SIZE = deps.BARRIER_HAMMER_HINT_SIZE;
   var BARRIER_HAMMER_HINT_OFFSET_X = deps.BARRIER_HAMMER_HINT_OFFSET_X;
@@ -17944,6 +18097,181 @@ LevelRenderer.prototype._playWormholeShiftAnimation = function (runtimeSnapshot)
   }, this);
 };
 
+LevelRenderer.prototype._destroyWormholeDirectionGuide = function () {
+  if (!this.wormholeDirectionGuideRoot) {
+    this.lastWormholeDirectionGuideKey = "";
+    return;
+  }
+  if (!this.wormholeDirectionGuideRoot.isValid) {
+    throw new Error("Wormhole direction guide root became invalid unexpectedly.");
+  }
+  if (typeof this.wormholeDirectionGuideRoot.destroy !== "function") {
+    throw new Error("Wormhole direction guide root requires destroy API.");
+  }
+  this.wormholeDirectionGuideRoot.removeFromParent(true);
+  this.wormholeDirectionGuideRoot.destroy();
+  this.wormholeDirectionGuideRoot = null;
+  this.lastWormholeDirectionGuideKey = "";
+};
+
+LevelRenderer.prototype._syncWormholeDirectionGuide = function (boardSnapshot) {
+  if (!boardSnapshot || !Array.isArray(boardSnapshot.cells) || !Number.isInteger(boardSnapshot.maxColumns)) {
+    throw new Error("Wormhole direction guide requires board snapshot geometry.");
+  }
+  if (typeof boardSnapshot.viewportOffsetY !== "number" || !isFinite(boardSnapshot.viewportOffsetY)) {
+    throw new Error("Wormhole direction guide requires finite board viewportOffsetY.");
+  }
+  if (!this.layers || !this.layers.board || !this.layers.board.isValid) {
+    throw new Error("Wormhole direction guide requires board layer.");
+  }
+
+  var wormholes = boardSnapshot.cells.filter(function (cell) {
+    return !!(cell && cell.entityCategory === "reactive_ball" && cell.entityType === "wormhole");
+  }).sort(function (left, right) {
+    return left.col - right.col;
+  });
+
+  if (!wormholes.length) {
+    this._destroyWormholeDirectionGuide();
+    return;
+  }
+  if (wormholes.length !== 2) {
+    throw new Error("Wormhole direction guide requires exactly two wormholes.");
+  }
+
+  var leftWormhole = wormholes[0];
+  var rightWormhole = wormholes[1];
+  if (!Number.isInteger(leftWormhole.row) || !Number.isInteger(leftWormhole.col) ||
+      !Number.isInteger(rightWormhole.row) || !Number.isInteger(rightWormhole.col)) {
+    throw new Error("Wormhole direction guide requires integer endpoint coordinates.");
+  }
+  if (leftWormhole.row !== rightWormhole.row) {
+    throw new Error("Wormhole direction guide endpoints must share one row.");
+  }
+  if (rightWormhole.col - leftWormhole.col < 2) {
+    throw new Error("Wormhole direction guide requires at least one interior slot.");
+  }
+  if ((leftWormhole.moveDirection !== "left" && leftWormhole.moveDirection !== "right") ||
+      leftWormhole.moveDirection !== rightWormhole.moveDirection) {
+    throw new Error("Wormhole direction guide requires matching left/right moveDirection.");
+  }
+
+  var direction = leftWormhole.moveDirection;
+  var guideKey = [
+    leftWormhole.row,
+    leftWormhole.col,
+    rightWormhole.col,
+    direction,
+    boardSnapshot.maxColumns,
+    boardSnapshot.viewportOffsetY
+  ].join("|");
+  if (this.lastWormholeDirectionGuideKey === guideKey) {
+    if (!this.wormholeDirectionGuideRoot || !this.wormholeDirectionGuideRoot.isValid) {
+      throw new Error("Wormhole direction guide key requires a valid guide root.");
+    }
+    return;
+  }
+
+  var arrowFrame = this.spriteFrameCache[WORMHOLE_DIRECTION_ARROW_RESOURCE];
+  if (!arrowFrame || !arrowFrame.isValid) {
+    throw new Error("Wormhole direction guide requires preloaded arrow SpriteFrame: " + WORMHOLE_DIRECTION_ARROW_RESOURCE);
+  }
+  if (!WORMHOLE_DIRECTION_ARROW_SIZE ||
+      typeof WORMHOLE_DIRECTION_ARROW_SIZE.width !== "number" || WORMHOLE_DIRECTION_ARROW_SIZE.width <= 0 ||
+      typeof WORMHOLE_DIRECTION_ARROW_SIZE.height !== "number" || WORMHOLE_DIRECTION_ARROW_SIZE.height <= 0) {
+    throw new Error("Wormhole direction arrow size must be positive.");
+  }
+  requirePositiveFiniteNumber(
+    WORMHOLE_DIRECTION_ARROW_TRAVEL_DISTANCE,
+    "Wormhole direction arrow travel distance"
+  );
+  requirePositiveFiniteNumber(
+    WORMHOLE_DIRECTION_ARROW_STAGGER,
+    "Wormhole direction arrow stagger"
+  );
+  requirePositiveFiniteNumber(
+    WORMHOLE_DIRECTION_ARROW_FADE_IN_DURATION,
+    "Wormhole direction arrow fade-in duration"
+  );
+  requirePositiveFiniteNumber(
+    WORMHOLE_DIRECTION_ARROW_FADE_OUT_DURATION,
+    "Wormhole direction arrow fade-out duration"
+  );
+  requirePositiveFiniteNumber(
+    WORMHOLE_DIRECTION_ARROW_CYCLE_PAUSE,
+    "Wormhole direction arrow cycle pause"
+  );
+  if (typeof cc.Node !== "function" || typeof cc.sequence !== "function" ||
+      typeof cc.spawn !== "function" || typeof cc.callFunc !== "function" ||
+      typeof cc.delayTime !== "function" || typeof cc.moveBy !== "function" ||
+      typeof cc.fadeTo !== "function" || typeof cc.scaleTo !== "function" ||
+      typeof cc.repeatForever !== "function") {
+    throw new Error("Wormhole direction guide requires Cocos node and action APIs.");
+  }
+
+  this._destroyWormholeDirectionGuide();
+
+  var guideRoot = new cc.Node("WormholeDirectionGuide");
+  guideRoot.parent = this.layers.board;
+  guideRoot.zIndex = 1000;
+  this.wormholeDirectionGuideRoot = guideRoot;
+  this.lastWormholeDirectionGuideKey = guideKey;
+
+  var interiorSlotCount = rightWormhole.col - leftWormhole.col - 1;
+  var directionSign = direction === "right" ? 1 : -1;
+  for (var slotIndex = 0; slotIndex < interiorSlotCount; slotIndex += 1) {
+    var col = leftWormhole.col + 1 + slotIndex;
+    var position = BoardLayout.getCellPosition(
+      leftWormhole.row,
+      col,
+      boardSnapshot.maxColumns,
+      boardSnapshot.viewportOffsetY
+    );
+    if (!position || typeof position.x !== "number" || !isFinite(position.x) ||
+        typeof position.y !== "number" || !isFinite(position.y)) {
+      throw new Error("Wormhole direction guide received invalid cell position.");
+    }
+
+    var arrowNode = new cc.Node("DirectionArrow_" + slotIndex);
+    arrowNode.parent = guideRoot;
+    arrowNode.setContentSize(WORMHOLE_DIRECTION_ARROW_SIZE);
+    arrowNode.setPosition(position.x, position.y);
+    arrowNode.angle = direction === "right" ? 0 : 180;
+    arrowNode.opacity = 0;
+    arrowNode.setScale(0.78);
+    ensureSprite(arrowNode, arrowFrame);
+
+    var flowOrder = direction === "right" ? slotIndex : interiorSlotCount - 1 - slotIndex;
+    var initialDelay = flowOrder * WORMHOLE_DIRECTION_ARROW_STAGGER;
+    var trailingDelay = (interiorSlotCount - flowOrder) * WORMHOLE_DIRECTION_ARROW_STAGGER +
+      WORMHOLE_DIRECTION_ARROW_CYCLE_PAUSE;
+    var baseX = position.x;
+    var baseY = position.y;
+    arrowNode.runAction(cc.repeatForever(cc.sequence(
+      cc.callFunc(function (node, data) {
+        if (!node || !node.isValid) {
+          throw new Error("Wormhole direction arrow was destroyed during animation.");
+        }
+        node.setPosition(data.x, data.y);
+        node.opacity = 0;
+        node.setScale(0.78);
+      }, arrowNode, { x: baseX, y: baseY }),
+      cc.delayTime(initialDelay),
+      cc.spawn(
+        cc.moveBy(WORMHOLE_DIRECTION_ARROW_FADE_IN_DURATION, directionSign * WORMHOLE_DIRECTION_ARROW_TRAVEL_DISTANCE * 0.5, 0),
+        cc.fadeTo(WORMHOLE_DIRECTION_ARROW_FADE_IN_DURATION, 235),
+        cc.scaleTo(WORMHOLE_DIRECTION_ARROW_FADE_IN_DURATION, 1)
+      ),
+      cc.spawn(
+        cc.moveBy(WORMHOLE_DIRECTION_ARROW_FADE_OUT_DURATION, directionSign * WORMHOLE_DIRECTION_ARROW_TRAVEL_DISTANCE * 0.5, 0),
+        cc.fadeTo(WORMHOLE_DIRECTION_ARROW_FADE_OUT_DURATION, 0),
+        cc.scaleTo(WORMHOLE_DIRECTION_ARROW_FADE_OUT_DURATION, 0.82)
+      ),
+      cc.delayTime(trailingDelay)
+    )));
+  }
+};
+
 LevelRenderer.prototype._playMolotovBlastAnimation = function (runtimeSnapshot) {
   var resolution = runtimeSnapshot && runtimeSnapshot.lastResolution ? runtimeSnapshot.lastResolution : null;
   var triggered = resolution && Array.isArray(resolution.reactiveTriggered) ? resolution.reactiveTriggered : [];
@@ -18698,6 +19026,18 @@ function attachLevelRendererSceneHudMethods(LevelRenderer, deps) {
       spriteCode: "BLAST"
     }
   };
+  var SKILL_POWERUP_COLLECT_FEEDBACK_VIEW_PADDING = 16;
+  var SKILL_POWERUP_COLLECT_FEEDBACK_BUTTON_SCALE = 1.24;
+  var SKILL_POWERUP_COLLECT_FEEDBACK_BUTTON_SQUASH_SCALE = 0.96;
+  var SKILL_POWERUP_COLLECT_FEEDBACK_BUTTON_REBOUND_SCALE = 1.13;
+  var SKILL_POWERUP_COLLECT_FEEDBACK_BADGE_SCALE = 1.34;
+  var SKILL_POWERUP_COLLECT_FEEDBACK_BADGE_SQUASH_SCALE = 0.92;
+  var SKILL_POWERUP_COLLECT_FEEDBACK_BADGE_REBOUND_SCALE = 1.16;
+  var SKILL_POWERUP_COLLECT_FEEDBACK_PUNCH_DURATION = 0.11;
+  var SKILL_POWERUP_COLLECT_FEEDBACK_SQUASH_DURATION = 0.08;
+  var SKILL_POWERUP_COLLECT_FEEDBACK_REBOUND_DURATION = 0.1;
+  var SKILL_POWERUP_COLLECT_FEEDBACK_RECOVER_DURATION = 0.12;
+  var SKILL_POWERUP_COLLECT_FEEDBACK_GAP_DURATION = 0.08;
 
   function resolveBottomPanelBoardTargets(runtimeSnapshot) {
     if (!runtimeSnapshot.board || typeof runtimeSnapshot.board !== "object") {
@@ -19487,6 +19827,42 @@ LevelRenderer.prototype._recycleJarFractionNodesBeforeHudClear = function () {
   this._pruneJarFractionNodePool();
 };
 
+LevelRenderer.prototype._releaseJarFractionNodesBeforeGameplayBundleUnload = function () {
+  if (!Array.isArray(this.jarFractionNodePool)) {
+    throw new Error("jarFractionNodePool must be an array.");
+  }
+  if (typeof cc.Tween === "undefined" || typeof cc.Tween.stopAllByTarget !== "function") {
+    throw new Error("Jar fraction bundle release requires cc.Tween.stopAllByTarget.");
+  }
+
+  this.jarFractionDisplayGeneration += 1;
+  this.lastJarCollectScoredEvent = null;
+  this._pruneJarFractionNodePool();
+
+  var fractionNodes = this.jarFractionNodePool.slice();
+  var gameViewNode = this._getGameViewNode();
+  if (gameViewNode && gameViewNode.isValid) {
+    if (!Array.isArray(gameViewNode.children)) {
+      throw new Error("GameView children must be an array during jar fraction bundle release.");
+    }
+    gameViewNode.children.slice().forEach(function (childNode) {
+      if (childNode && childNode.isValid && childNode.__isJarFractionClone === true) {
+        fractionNodes.push(childNode);
+      }
+    });
+  }
+
+  fractionNodes.forEach(function (fractionNode) {
+    if (!fractionNode || !fractionNode.isValid || fractionNode.__isJarFractionClone !== true) {
+      throw new Error("Jar fraction bundle release requires valid clone nodes.");
+    }
+    cc.Tween.stopAllByTarget(fractionNode);
+    fractionNode.__jarFractionDisplayToken = null;
+    fractionNode.destroy();
+  });
+  this.jarFractionNodePool = [];
+};
+
 LevelRenderer.prototype._acquireJarFractionNode = function (gameViewNode, templateNode) {
   if (!gameViewNode || !gameViewNode.isValid) {
     throw new Error("GameView node is required to acquire jar fraction node.");
@@ -20219,6 +20595,283 @@ LevelRenderer.prototype._renderBottomPanel = function (runtimeSnapshot) {
   if (layout && typeof layout.updateLayout === "function") {
     layout.updateLayout();
   }
+};
+
+LevelRenderer.prototype._requireSkillPowerupCollectedFeedbackNodes = function (entityType) {
+  var config = POWERUP_LOAD_ANIMATION_CONFIG[entityType];
+  if (!config) {
+    throw new Error("Unsupported collected skill powerup feedback type: " + entityType);
+  }
+  if (!this.layers || !this.layers.hud) {
+    throw new Error("Collected skill powerup feedback requires HUD layer.");
+  }
+
+  var panelNode = requireChildNode(this.layers.hud, "BttomPanel", "HUD layer");
+  var scrollNode = requireChildNode(panelNode, "props_scroll", "BttomPanel");
+  var viewNode = requireChildNode(scrollNode, "view", "BttomPanel/props_scroll");
+  var contentNode = requireChildNode(viewNode, "content", "BttomPanel/props_scroll/view");
+  var buttonNode = requireChildNode(
+    contentNode,
+    config.buttonNodeName,
+    "BttomPanel/props_scroll/view/content"
+  );
+  var badgeNode = requireChildNode(
+    buttonNode,
+    "num_bg",
+    "BttomPanel/props_scroll/view/content/" + config.buttonNodeName
+  );
+  if (!buttonNode.active || !badgeNode.active) {
+    throw new Error("Collected skill powerup feedback requires visible inventory nodes: " + entityType);
+  }
+
+  return {
+    scrollNode: scrollNode,
+    viewNode: viewNode,
+    contentNode: contentNode,
+    buttonNode: buttonNode,
+    badgeNode: badgeNode
+  };
+};
+
+LevelRenderer.prototype._revealSkillPowerupCollectedFeedbackButton = function (nodes) {
+  var scrollView = nodes.scrollNode.getComponent(cc.ScrollView);
+  if (!scrollView) {
+    throw new Error("Collected skill powerup feedback requires cc.ScrollView.");
+  }
+  if (typeof scrollView.stopAutoScroll !== "function") {
+    throw new Error("Collected skill powerup feedback requires ScrollView.stopAutoScroll.");
+  }
+  if (typeof nodes.buttonNode.getBoundingBoxToWorld !== "function" ||
+      typeof nodes.viewNode.getBoundingBoxToWorld !== "function") {
+    throw new Error("Collected skill powerup feedback requires world bounding boxes.");
+  }
+
+  scrollView.stopAutoScroll();
+  var buttonRect = nodes.buttonNode.getBoundingBoxToWorld();
+  var viewRect = nodes.viewNode.getBoundingBoxToWorld();
+  var rectValues = [buttonRect.xMin, buttonRect.xMax, viewRect.xMin, viewRect.xMax];
+  rectValues.forEach(function (value) {
+    if (!Number.isFinite(value)) {
+      throw new Error("Collected skill powerup feedback requires finite world bounds.");
+    }
+  });
+
+  var leftLimit = viewRect.xMin + SKILL_POWERUP_COLLECT_FEEDBACK_VIEW_PADDING;
+  var rightLimit = viewRect.xMax - SKILL_POWERUP_COLLECT_FEEDBACK_VIEW_PADDING;
+  var deltaWorldX = 0;
+  if (buttonRect.xMin < leftLimit) {
+    deltaWorldX = leftLimit - buttonRect.xMin;
+  } else if (buttonRect.xMax > rightLimit) {
+    deltaWorldX = rightLimit - buttonRect.xMax;
+  } else {
+    return;
+  }
+
+  var contentParent = nodes.contentNode.parent;
+  if (!contentParent || !contentParent.isValid || typeof contentParent.convertToNodeSpaceAR !== "function") {
+    throw new Error("Collected skill powerup feedback requires valid content parent transform.");
+  }
+  var localOrigin = contentParent.convertToNodeSpaceAR(cc.v2(0, 0));
+  var localShift = contentParent.convertToNodeSpaceAR(cc.v2(deltaWorldX, 0));
+  var deltaLocalX = localShift.x - localOrigin.x;
+  if (!Number.isFinite(deltaLocalX)) {
+    throw new Error("Collected skill powerup feedback scroll delta must be finite.");
+  }
+  nodes.contentNode.setPosition(nodes.contentNode.x + deltaLocalX, nodes.contentNode.y);
+
+  buttonRect = nodes.buttonNode.getBoundingBoxToWorld();
+  viewRect = nodes.viewNode.getBoundingBoxToWorld();
+  if (
+    buttonRect.xMin < viewRect.xMin + SKILL_POWERUP_COLLECT_FEEDBACK_VIEW_PADDING ||
+    buttonRect.xMax > viewRect.xMax - SKILL_POWERUP_COLLECT_FEEDBACK_VIEW_PADDING
+  ) {
+    throw new Error("Collected skill powerup feedback button failed to enter the visible scroll area.");
+  }
+};
+
+LevelRenderer.prototype._playNextSkillPowerupCollectedFeedback = function () {
+  if (this.skillPowerupCollectedFeedbackActive === true) {
+    return;
+  }
+  if (!Array.isArray(this.skillPowerupCollectedFeedbackQueue)) {
+    throw new Error("Collected skill powerup feedback queue must be an array.");
+  }
+  if (!this.skillPowerupCollectedFeedbackQueue.length) {
+    return;
+  }
+  if (typeof cc.tween !== "function") {
+    throw new Error("Collected skill powerup feedback requires cc.tween.");
+  }
+  if (typeof cc.Tween === "undefined" || typeof cc.Tween.stopAllByTarget !== "function") {
+    throw new Error("Collected skill powerup feedback requires cc.Tween.stopAllByTarget.");
+  }
+
+  var entityType = this.skillPowerupCollectedFeedbackQueue.shift();
+  var nodes = this._requireSkillPowerupCollectedFeedbackNodes(entityType);
+  this._revealSkillPowerupCollectedFeedbackButton(nodes);
+
+  var buttonBaseScaleX = nodes.buttonNode.scaleX;
+  var buttonBaseScaleY = nodes.buttonNode.scaleY;
+  var buttonBaseAngle = nodes.buttonNode.angle;
+  var badgeBaseScaleX = nodes.badgeNode.scaleX;
+  var badgeBaseScaleY = nodes.badgeNode.scaleY;
+  var transformValues = [
+    buttonBaseScaleX,
+    buttonBaseScaleY,
+    buttonBaseAngle,
+    badgeBaseScaleX,
+    badgeBaseScaleY
+  ];
+  transformValues.forEach(function (value) {
+    if (!Number.isFinite(value)) {
+      throw new Error("Collected skill powerup feedback requires finite node transforms.");
+    }
+  });
+
+  cc.Tween.stopAllByTarget(nodes.buttonNode);
+  cc.Tween.stopAllByTarget(nodes.badgeNode);
+  this.skillPowerupCollectedFeedbackActive = true;
+  var activeState = {
+    buttonNode: nodes.buttonNode,
+    badgeNode: nodes.badgeNode,
+    buttonBaseScaleX: buttonBaseScaleX,
+    buttonBaseScaleY: buttonBaseScaleY,
+    buttonBaseAngle: buttonBaseAngle,
+    badgeBaseScaleX: badgeBaseScaleX,
+    badgeBaseScaleY: badgeBaseScaleY
+  };
+  this.skillPowerupCollectedFeedbackActiveState = activeState;
+  var renderer = this;
+
+  cc.tween(nodes.badgeNode)
+    .to(SKILL_POWERUP_COLLECT_FEEDBACK_PUNCH_DURATION, {
+      scaleX: badgeBaseScaleX * SKILL_POWERUP_COLLECT_FEEDBACK_BADGE_SCALE,
+      scaleY: badgeBaseScaleY * SKILL_POWERUP_COLLECT_FEEDBACK_BADGE_SCALE
+    }, {
+      easing: "backOut"
+    })
+    .to(SKILL_POWERUP_COLLECT_FEEDBACK_SQUASH_DURATION, {
+      scaleX: badgeBaseScaleX * SKILL_POWERUP_COLLECT_FEEDBACK_BADGE_SQUASH_SCALE,
+      scaleY: badgeBaseScaleY * SKILL_POWERUP_COLLECT_FEEDBACK_BADGE_SQUASH_SCALE
+    })
+    .to(SKILL_POWERUP_COLLECT_FEEDBACK_REBOUND_DURATION, {
+      scaleX: badgeBaseScaleX * SKILL_POWERUP_COLLECT_FEEDBACK_BADGE_REBOUND_SCALE,
+      scaleY: badgeBaseScaleY * SKILL_POWERUP_COLLECT_FEEDBACK_BADGE_REBOUND_SCALE
+    })
+    .to(SKILL_POWERUP_COLLECT_FEEDBACK_RECOVER_DURATION, {
+      scaleX: badgeBaseScaleX,
+      scaleY: badgeBaseScaleY
+    })
+    .start();
+
+  cc.tween(nodes.buttonNode)
+    .to(SKILL_POWERUP_COLLECT_FEEDBACK_PUNCH_DURATION, {
+      scaleX: buttonBaseScaleX * SKILL_POWERUP_COLLECT_FEEDBACK_BUTTON_SCALE,
+      scaleY: buttonBaseScaleY * SKILL_POWERUP_COLLECT_FEEDBACK_BUTTON_SCALE,
+      angle: buttonBaseAngle - 7
+    }, {
+      easing: "backOut"
+    })
+    .to(SKILL_POWERUP_COLLECT_FEEDBACK_SQUASH_DURATION, {
+      scaleX: buttonBaseScaleX * SKILL_POWERUP_COLLECT_FEEDBACK_BUTTON_SQUASH_SCALE,
+      scaleY: buttonBaseScaleY * SKILL_POWERUP_COLLECT_FEEDBACK_BUTTON_SQUASH_SCALE,
+      angle: buttonBaseAngle + 5
+    })
+    .to(SKILL_POWERUP_COLLECT_FEEDBACK_REBOUND_DURATION, {
+      scaleX: buttonBaseScaleX * SKILL_POWERUP_COLLECT_FEEDBACK_BUTTON_REBOUND_SCALE,
+      scaleY: buttonBaseScaleY * SKILL_POWERUP_COLLECT_FEEDBACK_BUTTON_REBOUND_SCALE,
+      angle: buttonBaseAngle - 3
+    })
+    .to(SKILL_POWERUP_COLLECT_FEEDBACK_RECOVER_DURATION, {
+      scaleX: buttonBaseScaleX,
+      scaleY: buttonBaseScaleY,
+      angle: buttonBaseAngle
+    })
+    .delay(SKILL_POWERUP_COLLECT_FEEDBACK_GAP_DURATION)
+    .call(function () {
+      if (renderer.skillPowerupCollectedFeedbackActiveState !== activeState) {
+        throw new Error("Collected skill powerup feedback active state changed during playback.");
+      }
+      nodes.buttonNode.setScale(buttonBaseScaleX, buttonBaseScaleY);
+      nodes.buttonNode.angle = buttonBaseAngle;
+      nodes.badgeNode.setScale(badgeBaseScaleX, badgeBaseScaleY);
+      renderer.skillPowerupCollectedFeedbackActive = false;
+      renderer.skillPowerupCollectedFeedbackActiveState = null;
+      renderer._playNextSkillPowerupCollectedFeedback();
+    })
+    .start();
+};
+
+LevelRenderer.prototype._cancelSkillPowerupCollectedFeedback = function () {
+  if (!Array.isArray(this.skillPowerupCollectedFeedbackQueue)) {
+    throw new Error("Collected skill powerup feedback queue must be initialized before cleanup.");
+  }
+  this.skillPowerupCollectedFeedbackQueue.length = 0;
+
+  if (this.skillPowerupCollectedFeedbackActive !== true) {
+    if (this.skillPowerupCollectedFeedbackActiveState !== null) {
+      throw new Error("Inactive collected skill powerup feedback cannot keep active state.");
+    }
+    return;
+  }
+  if (typeof cc.Tween === "undefined" || typeof cc.Tween.stopAllByTarget !== "function") {
+    throw new Error("Collected skill powerup feedback cleanup requires cc.Tween.stopAllByTarget.");
+  }
+
+  var activeState = this.skillPowerupCollectedFeedbackActiveState;
+  if (!activeState || typeof activeState !== "object" || Array.isArray(activeState)) {
+    throw new Error("Active collected skill powerup feedback requires active state.");
+  }
+  if (!activeState.buttonNode || !activeState.buttonNode.isValid ||
+      !activeState.badgeNode || !activeState.badgeNode.isValid) {
+    throw new Error("Collected skill powerup feedback cleanup requires valid animated nodes.");
+  }
+
+  cc.Tween.stopAllByTarget(activeState.buttonNode);
+  cc.Tween.stopAllByTarget(activeState.badgeNode);
+  activeState.buttonNode.setScale(activeState.buttonBaseScaleX, activeState.buttonBaseScaleY);
+  activeState.buttonNode.angle = activeState.buttonBaseAngle;
+  activeState.badgeNode.setScale(activeState.badgeBaseScaleX, activeState.badgeBaseScaleY);
+  this.skillPowerupCollectedFeedbackActive = false;
+  this.skillPowerupCollectedFeedbackActiveState = null;
+};
+
+LevelRenderer.prototype._queueSkillPowerupCollectedFeedback = function (runtimeSnapshot) {
+  if (!runtimeSnapshot || typeof runtimeSnapshot !== "object" || Array.isArray(runtimeSnapshot)) {
+    throw new Error("Collected skill powerup feedback requires runtime snapshot.");
+  }
+  if (!Array.isArray(runtimeSnapshot.runtimeEvents)) {
+    throw new Error("Collected skill powerup feedback requires runtimeEvents array.");
+  }
+  if (!Array.isArray(this.skillPowerupCollectedFeedbackQueue)) {
+    throw new Error("Collected skill powerup feedback queue must be initialized.");
+  }
+  if (!Number.isInteger(this.lastSkillPowerupCollectedEventId) || this.lastSkillPowerupCollectedEventId < -1) {
+    throw new Error("Collected skill powerup feedback event id state is invalid.");
+  }
+
+  runtimeSnapshot.runtimeEvents.forEach(function (event) {
+    if (!event || event.type !== "skill_powerup_collected") {
+      return;
+    }
+    if (!Number.isInteger(event.id) || event.id <= 0) {
+      throw new Error("skill_powerup_collected event requires a positive integer id.");
+    }
+    if (event.id <= this.lastSkillPowerupCollectedEventId) {
+      return;
+    }
+    if (!POWERUP_LOAD_ANIMATION_CONFIG[event.entityType]) {
+      throw new Error("skill_powerup_collected event has unsupported entityType: " + event.entityType);
+    }
+    if (!Number.isInteger(event.total) || event.total <= 0) {
+      throw new Error("skill_powerup_collected event requires a positive integer total.");
+    }
+
+    this.lastSkillPowerupCollectedEventId = event.id;
+    this.skillPowerupCollectedFeedbackQueue.push(event.entityType);
+  }, this);
+
+  this._playNextSkillPowerupCollectedFeedback();
 };
 
 LevelRenderer.prototype.isPowerupLoadAnimationInProgress = function () {
@@ -21290,18 +21943,22 @@ LevelRenderer.prototype._renderJarCollisionMasks = function (runtimeSnapshot) {
 
 };
 LevelRenderer.prototype._renderBottomJars = function (levelConfig, runtimeSnapshot) {
-  var jarColors = levelConfig.level.jarColors || ["R", "G", "B"];
+  if (!levelConfig || !levelConfig.level || !Array.isArray(levelConfig.level.jarColors) || levelConfig.level.jarColors.length === 0) {
+    throw new Error("Bottom jar rendering requires non-empty level.jarColors.");
+  }
+  var jarColors = levelConfig.level.jarColors;
   var jarCount = jarColors.length;
   var jarProgress = runtimeSnapshot.jars ? runtimeSnapshot.jars.collectedByColor : {};
-  var jarPositions = BoardLayout.getJarCenterPositions(jarCount);
+  var jarLayout = BoardLayout.getJarLayout(jarCount);
+  var jarPositions = jarLayout.positions;
 
 
   jarColors.forEach(function (colorCode, index) {
     var jarNode = this._instantiateOrCreate(PREFAB_PATHS.jarItem, this.layers.jars, "BottomJar_" + index);
     var jarYOffset = BoardLayout.getJarRenderYOffset(index, jarCount);
-    jarNode.setPosition(jarPositions[index] || 0, getJarBaseY() + JAR_RENDER_Y_OFFSET + jarYOffset);
+    jarNode.setPosition(jarPositions[index], getJarBaseY() + JAR_RENDER_Y_OFFSET + jarYOffset);
     jarNode.zIndex = BoardLayout.getJarRenderZIndex(index, jarCount);
-    jarNode.setScale(1);
+    jarNode.setScale(jarLayout.scale);
     this._applyJarVisual(jarNode, colorCode);
     this._applyJarMaskVisual(jarNode, colorCode);
     this._ensureJarDropContainer(jarNode);
@@ -21326,31 +21983,44 @@ LevelRenderer.prototype._renderBottomJars = function (levelConfig, runtimeSnapsh
     ensureOutline(countNode, cc.color(83, 109, 138), 3);
   }, this);
 
-  this._renderJarOcclusionLayer(jarColors, jarPositions);
+  this._renderJarOcclusionLayer(jarColors);
   this._renderJarCollisionMasks(runtimeSnapshot);
 };
 
-LevelRenderer.prototype._renderJarOcclusionLayer = function (jarColors, jarPositions) {
+LevelRenderer.prototype._renderJarOcclusionLayer = function (jarColors) {
   if (!this.layers || !this.layers.jarOcclusion) {
-    return;
+    throw new Error("Jar occlusion rendering requires JarOcclusionLayer.");
+  }
+  if (!this.layers.jars || !this.layers.jars.isValid) {
+    throw new Error("Jar occlusion rendering requires JarLayer.");
   }
 
   clearChildren(this.layers.jarOcclusion);
   jarColors.forEach(function (colorCode, index) {
     var spritePath = JAR_MASK_RESOURCES[colorCode];
     var spriteFrame = spritePath ? this.spriteFrameCache[spritePath] : null;
-    if (!spriteFrame) {
-      return;
+    if (!spriteFrame || !spriteFrame.isValid) {
+      throw new Error("Jar occlusion SpriteFrame is not loaded: " + spritePath);
+    }
+
+    var jarNode = this.layers.jars.getChildByName("BottomJar_" + index);
+    if (!jarNode || !jarNode.isValid) {
+      throw new Error("Jar occlusion rendering requires BottomJar_" + index + ".");
+    }
+    if (!Number.isFinite(jarNode.x) || !Number.isFinite(jarNode.y) ||
+        !Number.isFinite(jarNode.scaleX) || jarNode.scaleX <= 0 ||
+        !Number.isFinite(jarNode.scaleY) || jarNode.scaleY <= 0) {
+      throw new Error("BottomJar_" + index + " requires finite position and positive scale.");
     }
 
     var maskNode = new cc.Node("JarOcclusion_" + index);
     maskNode.parent = this.layers.jarOcclusion;
-    var jarYOffset = BoardLayout.getJarRenderYOffset(index, jarColors.length);
-    maskNode.setPosition(jarPositions[index] || 0, getJarBaseY() + jarYOffset);
-    maskNode.setScale(1);
-    maskNode.zIndex = BoardLayout.getJarRenderZIndex(index, jarColors.length);
+    maskNode.setPosition(jarNode.x, jarNode.y);
+    maskNode.setScale(jarNode.scaleX, jarNode.scaleY);
+    maskNode.zIndex = jarNode.zIndex;
     maskNode.opacity = 255;
-    ensureSprite(maskNode, spriteFrame);
+    var maskSprite = ensureSprite(maskNode, spriteFrame);
+    maskSprite.trim = false;
     maskNode.setContentSize(JAR_RENDER_SIZE);
   }, this);
 };
@@ -22493,6 +23163,10 @@ LevelRenderer.prototype._mountGameViewScaffold = function () {
 
 LevelRenderer.prototype.prepareForLevelSelectReturn = function () {
   this._ensureLayers();
+  if (typeof this._cancelSkillPowerupCollectedFeedback !== "function") {
+    throw new Error("Level select return requires collected skill powerup feedback cleanup.");
+  }
+  this._cancelSkillPowerupCollectedFeedback();
   if (typeof this._stopBoardClearFireworks === "function") {
     this._stopBoardClearFireworks("level_select_return");
   }
@@ -22869,6 +23543,9 @@ LevelRenderer.prototype._resolveTopRowBubbleVisualTopY = function (boardSnapshot
     var row = Math.floor(Number(cell.row));
     if (!Number.isInteger(row) || row < 0) {
       throw new Error("Board snapshot cell row must be a non-negative integer.");
+    }
+    if (cell.entityCategory === "reactive_ball" && cell.entityType === "wormhole") {
+      return;
     }
     if (topRow === null || row < topRow) {
       topRow = row;
@@ -25189,23 +25866,6 @@ function isLockedAnchor(cell) {
   );
 }
 
-function isVineAnchor(cell) {
-  return !!(
-    cell &&
-    (
-      (
-        cell.entityCategory === "reactive_ball" &&
-        cell.entityType === "vine_spirit"
-      ) ||
-      (
-        cell.entityCategory === "normal_ball" &&
-        typeof cell.vineOwnerId === "string" &&
-        cell.vineOwnerId
-      )
-    )
-  );
-}
-
 function isWormholeAnchor(cell) {
   return !!(
     cell &&
@@ -25242,7 +25902,7 @@ SupportSystem.prototype.findFloatingCells = function (grid) {
 
   for (var seedIndex = 0; seedIndex < cells.length; seedIndex += 1) {
     var seedCell = cells[seedIndex];
-    if (seedCell.row < this.anchorRows || isLockedAnchor(seedCell) || isVineAnchor(seedCell) || isWormholeAnchor(seedCell)) {
+    if (seedCell.row < this.anchorRows || isLockedAnchor(seedCell) || isWormholeAnchor(seedCell)) {
       queue.push({
         row: seedCell.row,
         col: seedCell.col

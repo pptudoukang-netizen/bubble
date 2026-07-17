@@ -225,16 +225,7 @@ function buildJarColors(colors, targetColor) {
   if (colors.indexOf(targetColor) === -1) {
     throw new Error("Random challenge target color must exist in colors before jar creation.");
   }
-  var result = [targetColor];
-  colors.forEach(function (color) {
-    if (result.length >= 4) {
-      return;
-    }
-    if (color !== targetColor) {
-      result.push(color);
-    }
-  });
-  return result;
+  return COLOR_POOL.slice();
 }
 
 function buildRewardItems(tier) {

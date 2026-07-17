@@ -20,8 +20,8 @@ function attachLevelRendererSceneBoardMethods(LevelRenderer, deps) {
   var resolveIceInnerColor = deps.resolveIceInnerColor;
   var DROP_COLLISION_GLOW_NODE_NAME = "DropCollisionGlow";
   var DROP_COLLISION_GLOW_SIZE = {
-    width: 86,
-    height: 86
+    width: BoardLayout.bubbleDiameter * FairyAssistConfig.dropCollisionGlowScale,
+    height: BoardLayout.bubbleDiameter * FairyAssistConfig.dropCollisionGlowScale
   };
   var TOP_SLOT_STAR_Z_INDEX = -1;
   var TOP_SLOT_STAR_DIM_OPACITY = 150;
@@ -535,6 +535,7 @@ LevelRenderer.prototype._renderBoard = function (boardSnapshot) {
   }, this);
 
   this._recycleInactiveBoardBubbleNodes(currentTick);
+  this._syncWormholeDirectionGuide(boardSnapshot);
   this._renderTopSlotStars(boardSnapshot);
 };
 
