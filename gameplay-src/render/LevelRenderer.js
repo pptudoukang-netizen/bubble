@@ -35,6 +35,9 @@ var BALL_RESOURCES = {
   B: "game/image/ball/blue_ball",
   Y: "game/image/ball/yellow_ball",
   P: "game/image/ball/purple_ball",
+  K: "game/image/ball/black_ball",
+  O: "game/image/ball/orange_ball",
+  W: "game/image/ball/white_ball",
   RAINBOW: "game/image/ball/rainbow_ball",
   BLAST: "game/image/ball/bomb_ball",
   STONE: "game/image/ball/stone_ball",
@@ -175,7 +178,10 @@ var GUIDE_DOT_TINTS = {
   G: { r: 78, g: 214, b: 100 },
   B: { r: 72, g: 150, b: 255 },
   Y: { r: 255, g: 211, b: 62 },
-  P: { r: 184, g: 96, b: 255 }
+  P: { r: 184, g: 96, b: 255 },
+  K: { r: 48, g: 48, b: 48 },
+  O: { r: 255, g: 145, b: 45 },
+  W: { r: 245, g: 245, b: 245 }
 };
 var BARRIER_HAMMER_HINT_SIZE = new cc.Size(46, 46);
 var BARRIER_HAMMER_HINT_OFFSET_X = 16;

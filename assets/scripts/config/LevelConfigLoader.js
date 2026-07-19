@@ -13,8 +13,9 @@ var SPECIAL_ENTITY_TYPES = {
   locked_ball: ["locked"],
   key_ball: ["key"]
 };
-var ALLOWED_COLORS = ["R", "G", "B", "Y", "P"];
+var ALLOWED_COLORS = ["R", "G", "B", "Y", "P", "K", "O", "W"];
 var ALLOWED_INNER_COLORS = ALLOWED_COLORS.slice();
+var ALLOWED_SPLITTER_COLORS = ["R", "G", "B", "Y", "P"];
 var ALLOWED_CLEAR_REWARD_ITEM_IDS = ["coin", "stamina"];
 var TOP_BOARD_ROW_INDEX = 0;
 var WORMHOLE_MOVE_DIRECTIONS = ["left", "right"];
@@ -52,7 +53,7 @@ var AD_RUN_POWERUP_TYPES = {
 var MIN_INITIAL_DROP_SPACE_ROWS = 8;
 var MIN_LAYOUT_ROWS = 8;
 var MIN_OCCUPIED_LAYOUT_ROWS = 8;
-var FIXED_JAR_COLORS = ALLOWED_COLORS.slice();
+var FIXED_JAR_COLORS = ["R", "G", "B", "Y", "P"];
 var FIXED_JAR_COUNT = FIXED_JAR_COLORS.length;
 var MAX_SHOT_LIMIT = 54;
 var CLEAR_REWARD_START_LEVEL_ID = 1;
@@ -413,6 +414,9 @@ function normalizeSpecialEntities(levelConfig, levelKey) {
       splitColor = typeof entity.splitColor === "string" ? entity.splitColor.trim() : "";
       if (levelConfig.colors.indexOf(splitColor) === -1) {
         throw new Error("specialEntities[" + index + "].splitColor must be in level.colors: " + levelKey);
+      }
+      if (ALLOWED_SPLITTER_COLORS.indexOf(splitColor) === -1) {
+        throw new Error("specialEntities[" + index + "].splitColor has no splitter asset: " + levelKey);
       }
     }
     if (category === "reactive_ball" && entityType === "wormhole") {

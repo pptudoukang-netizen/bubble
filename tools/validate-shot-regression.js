@@ -17,6 +17,7 @@ var TrajectoryPredictor = require("../gameplay-src/systems/TrajectoryPredictor")
 var BoardViewportSystem = require("../gameplay-src/systems/BoardViewportSystem");
 var BubbleBreakSfxPolicy = require("../assets/scripts/audio/BubbleBreakSfxPolicy");
 var AudioManager = require("../assets/scripts/audio/AudioManager");
+var GameBootstrapAudioMethods = require("../assets/scripts/bootstrap/GameBootstrapAudioMethods");
 var attachLevelRendererSceneHudMethods = require("../gameplay-src/render/LevelRendererSceneHudMethods");
 
 function syncHudBottomLineYForValidation() {
@@ -3290,6 +3291,78 @@ function runJarCollectionFloatingScoreEventCase() {
   }
 }
 
+function runOutsideJarCleanupScoreCase() {
+  var GameManagerCtor = require("../gameplay-src/core/GameManager");
+  var JarCollectorSystem = require("../gameplay-src/systems/JarCollectorSystem");
+  var hadCc = Object.prototype.hasOwnProperty.call(global, "cc");
+  var previousCc = global.cc;
+  global.cc = {
+    log: function () {},
+    warn: function () {},
+    error: function () {}
+  };
+  var manager = new GameManagerCtor();
+  manager.score = 0;
+  manager.lastResolution = { scoreDelta: 0, scoreEvents: [] };
+  manager.sameColorJarCollected = 0;
+  manager.sameColorJarBonusScore = 0;
+  manager.systems = {
+    jarCollectorSystem: new JarCollectorSystem()
+  };
+  manager.systems.jarCollectorSystem.jarCount = 1;
+  manager.systems.jarCollectorSystem.jarColors = ["R"];
+  manager.systems.jarCollectorSystem.collectedTotal = 0;
+  manager.systems.jarCollectorSystem.collectedByColor = { R: 0 };
+  manager._getScoreRule = function () {
+    return 0;
+  };
+  var runtimeEvents = [];
+  manager._pushRuntimeEvent = function (type, payload) {
+    runtimeEvents.push({ type: type, payload: payload });
+  };
+
+  try {
+    var gained = manager._applyJarCollectionScore([
+      {
+        id: "outside_cleanup_red",
+        color: "R",
+        row: 4,
+        col: 2,
+        jarIndex: 0,
+        jarColor: "R",
+        sameColor: true,
+        bonusMultiplier: 1.6,
+        fairyMultiplier: 1,
+        scoreOnly: true,
+        reason: "outside_jar_cleanup",
+        position: { x: 100, y: -600 }
+      }
+    ]);
+
+    if (gained <= 0 || manager.score !== gained || manager.lastResolution.scoreDelta !== gained) {
+      throw new Error("Outside-jar cleanup must preserve jar score settlement.");
+    }
+    if (manager.sameColorJarCollected !== 0) {
+      throw new Error("Outside-jar cleanup score must not increment same-color collection count.");
+    }
+    if (
+      manager.systems.jarCollectorSystem.collectedTotal !== 0 ||
+      manager.systems.jarCollectorSystem.collectedByColor.R !== 0
+    ) {
+      throw new Error("Outside-jar cleanup score must not increment jar collection objectives.");
+    }
+    if (runtimeEvents.length !== 1 || runtimeEvents[0].type !== "jar_collect_scored") {
+      throw new Error("Outside-jar cleanup score must emit the jar floating-score event.");
+    }
+  } finally {
+    if (hadCc) {
+      global.cc = previousCc;
+    } else {
+      delete global.cc;
+    }
+  }
+}
+
 function runColorPermutationJarScoreCase() {
   var GameManagerCtor = require("../gameplay-src/core/GameManager");
   var JarCollectorSystem = require("../gameplay-src/systems/JarCollectorSystem");
@@ -3845,29 +3918,29 @@ function runBlastComboAttachAnchorCase() {
 
 function runBubbleBreakSfxCountCase() {
   var threeBallSfxCount = BubbleBreakSfxPolicy.resolveBubbleBreakSfxCount(3);
-  if (threeBallSfxCount !== 3) {
-    throw new Error("bubble_break should play one break sfx per shattered ball.");
+  if (threeBallSfxCount !== 1) {
+    throw new Error("bubble_break should play the break sfx once per event.");
   }
   var threeBallSfxSchedule = BubbleBreakSfxPolicy.resolveBubbleBreakSfxSchedule(3, [0, 30, 60]);
   if (
-    threeBallSfxSchedule.length !== 3 ||
+    threeBallSfxSchedule.length !== 1 ||
     threeBallSfxSchedule[0].delayMs !== 0 ||
-    threeBallSfxSchedule[1].delayMs !== 30 ||
-    threeBallSfxSchedule[2].delayMs !== 60
+    threeBallSfxSchedule[0].count !== 1
   ) {
-    throw new Error("bubble_break should preserve per-ball shatter sfx timing.");
+    throw new Error("bubble_break should schedule only one break sfx at the first shatter.");
   }
 
   var cappedSfxCount = BubbleBreakSfxPolicy.resolveBubbleBreakSfxCount(8);
   if (cappedSfxCount !== BubbleBreakSfxPolicy.MAX_BUBBLE_BREAK_SFX_PER_EVENT) {
-    throw new Error("bubble_break should cap break sfx playback at five per event.");
+    throw new Error("bubble_break should cap break sfx playback at one per event.");
   }
   var cappedSfxSchedule = BubbleBreakSfxPolicy.resolveBubbleBreakSfxSchedule(8, [0, 30, 60, 90, 120, 150, 180, 210]);
   if (
     cappedSfxSchedule.length !== BubbleBreakSfxPolicy.MAX_BUBBLE_BREAK_SFX_PER_EVENT ||
-    cappedSfxSchedule[cappedSfxSchedule.length - 1].delayMs !== 120
+    cappedSfxSchedule[0].delayMs !== 0 ||
+    cappedSfxSchedule[0].count !== 1
   ) {
-    throw new Error("bubble_break should cap scheduled break sfx playback at the first five shattered balls.");
+    throw new Error("bubble_break should schedule only one break sfx for large shatter events.");
   }
 
   var rejectedInvalidCount = false;
@@ -3959,8 +4032,8 @@ function runBubbleBreakSfxCountCase() {
     };
 
     var audioIds = audioManager.playSfxInstances("break", threeBallSfxCount);
-    if (audioIds.length !== 3 || playedEffects.length !== 3) {
-      throw new Error("AudioManager.playSfxInstances should create one playEffect instance per requested sfx.");
+    if (audioIds.length !== 1 || playedEffects.length !== 1) {
+      throw new Error("bubble_break should create exactly one playEffect instance per event.");
     }
     if (volumeSetCount !== 1) {
       throw new Error("AudioManager.playSfxInstances should set effects volume once per concurrent batch.");
@@ -3978,7 +4051,7 @@ function runConfiguredAudioPreloadsArraySfxCase() {
   var audioManager = Object.create(AudioManager.prototype);
   audioManager.bgmPath = "sound/game_bg1";
   audioManager.sfxMap = {
-    jarBounce: ["sound/piano1", "sound/piano2", "sound/piano1"],
+    jarBounce: ["sound/pao1", "sound/pao2", "sound/pao1"],
     jarCollectBottom: "sound/score",
     empty: []
   };
@@ -3992,12 +4065,36 @@ function runConfiguredAudioPreloadsArraySfxCase() {
 
   var expected = [
     "sound/game_bg1",
-    "sound/piano1",
-    "sound/piano2",
+    "sound/pao1",
+    "sound/pao2",
     "sound/score"
   ];
   if (!preloadedPaths || preloadedPaths.join(",") !== expected.join(",")) {
     throw new Error("AudioManager.preloadConfiguredAudio should preload unique string and array sfx paths.");
+  }
+}
+
+function runJarBounceSfxMappingCase() {
+  var context = {
+    jarBounceSfxResources: "sound/pao1,sound/pao2,sound/pao3,sound/pao4,sound/pao5",
+    _parseAudioResourceList: GameBootstrapAudioMethods._parseAudioResourceList
+  };
+
+  for (var jarIndex = 0; jarIndex < 5; jarIndex += 1) {
+    var resolvedPath = GameBootstrapAudioMethods._resolveJarBouncePath.call(context, jarIndex);
+    if (resolvedPath !== "sound/pao" + (jarIndex + 1)) {
+      throw new Error("Jar " + (jarIndex + 1) + " rim bounce should map to pao" + (jarIndex + 1) + ".");
+    }
+  }
+
+  var rejectedInvalidJarIndex = false;
+  try {
+    GameBootstrapAudioMethods._resolveJarBouncePath.call(context, 5);
+  } catch (error) {
+    rejectedInvalidJarIndex = /jarIndex from 0 to 4/.test(error.message);
+  }
+  if (!rejectedInvalidJarIndex) {
+    throw new Error("Jar bounce sfx mapping should reject jar indexes outside 1-5.");
   }
 }
 
@@ -4266,6 +4363,8 @@ function main() {
   console.log("[OK]", "stone_ball_jar_score_zero", "stone ball in jar scores 0 and keeps total score");
   runJarCollectionFloatingScoreEventCase();
   console.log("[OK]", "jar_collection_floating_score_event", "scored jar drops emit floating score events at jar mouth position");
+  runOutsideJarCleanupScoreCase();
+  console.log("[OK]", "outside_jar_cleanup_score", "outside-jar cleanup adds score without collection progress");
   runColorPermutationJarScoreCase();
   console.log("[OK]", "color_permutation_jar_score", "permuted jar colors and collect_color targets keep non-same-color jar score");
   runComboMatchedBallScoreDisplayCase();
@@ -4281,9 +4380,11 @@ function main() {
   runBlastComboAttachAnchorCase();
   console.log("[OK]", "blast_combo_attach_anchor", "blast combo display uses explosion coordinates without impact");
   runBubbleBreakSfxCountCase();
-  console.log("[OK]", "bubble_break_sfx_count", "break sfx plays per shattered ball up to five times");
+  console.log("[OK]", "bubble_break_sfx_count", "break sfx plays once per bubble_break event");
   runConfiguredAudioPreloadsArraySfxCase();
   console.log("[OK]", "configured_audio_array_sfx_preload", "array sfx paths are preloaded for immediate playback");
+  runJarBounceSfxMappingCase();
+  console.log("[OK]", "jar_bounce_sfx_mapping", "jar 1-5 rim bounces map to pao1-pao5");
   runIceThawRuntimeEventCase();
   console.log("[OK]", "ice_thaw_runtime_event", "successful ice thaw emits one counted runtime event");
   runBoardIntroViewportCase();

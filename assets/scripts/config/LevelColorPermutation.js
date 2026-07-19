@@ -1,6 +1,12 @@
 "use strict";
 
-var ALLOWED_COLORS = ["R", "G", "B", "Y", "P"];
+var COLOR_GROUPS = [
+  ["R", "G", "B", "Y", "P"],
+  ["K", "O", "W"]
+];
+var ALLOWED_COLORS = COLOR_GROUPS.reduce(function (colors, group) {
+  return colors.concat(group);
+}, []);
 var COLOR_FIELDS = ["innerColor", "splitColor", "lockedColor"];
 
 function assertLevelConfig(levelConfig) {
@@ -35,18 +41,19 @@ function buildColorMap(sourceColors) {
   }
   assertUniqueColors(sourceColors, "level.colors");
 
-  var offset = 1 + Math.floor(Math.random() * (ALLOWED_COLORS.length - 1));
   var map = {};
-  ALLOWED_COLORS.forEach(function (sourceColor) {
-    var sourceIndex = ALLOWED_COLORS.indexOf(sourceColor);
-    var targetColor = ALLOWED_COLORS[(sourceIndex + offset) % ALLOWED_COLORS.length];
-    if (sourceColor === targetColor) {
-      throw new Error("Level color permutation generated identity color mapping: " + sourceColor);
-    }
-    if (map[sourceColor] !== undefined) {
-      throw new Error("Level color permutation duplicated mapping source: " + sourceColor);
-    }
-    map[sourceColor] = targetColor;
+  COLOR_GROUPS.forEach(function (group) {
+    var offset = 1 + Math.floor(Math.random() * (group.length - 1));
+    group.forEach(function (sourceColor, sourceIndex) {
+      var targetColor = group[(sourceIndex + offset) % group.length];
+      if (sourceColor === targetColor) {
+        throw new Error("Level color permutation generated identity color mapping: " + sourceColor);
+      }
+      if (map[sourceColor] !== undefined) {
+        throw new Error("Level color permutation duplicated mapping source: " + sourceColor);
+      }
+      map[sourceColor] = targetColor;
+    });
   });
   return map;
 }

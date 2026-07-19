@@ -1,6 +1,6 @@
 "use strict";
 
-var MAX_BUBBLE_BREAK_SFX_PER_EVENT = 5;
+var MAX_BUBBLE_BREAK_SFX_PER_EVENT = 1;
 var DEFAULT_BUBBLE_BREAK_SFX_INTERVAL_MS = 30;
 
 function resolveBubbleBreakSfxCount(count) {

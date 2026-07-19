@@ -227,10 +227,11 @@ function createSystems(maxDynamicMarbles) {
   };
 }
 
-function createSystemsWithJar(maxDynamicMarbles) {
+function createSystemsWithJarColors(maxDynamicMarbles, jarColors) {
+  assert.ok(Array.isArray(jarColors) && jarColors.length > 0, "jar systems require colors.");
   var levelConfig = buildLevelConfig(maxDynamicMarbles);
-  levelConfig.level.jarCount = 1;
-  levelConfig.level.jarColors = ["R"];
+  levelConfig.level.jarCount = jarColors.length;
+  levelConfig.level.jarColors = jarColors.slice();
   var fairySystem = new FairyAssistSystem();
   fairySystem.configureLevel(levelConfig);
   syncFairyCollisionCentersForTests(fairySystem);
@@ -240,6 +241,45 @@ function createSystemsWithJar(maxDynamicMarbles) {
   return {
     fairy: fairySystem,
     falling: fallingSystem
+  };
+}
+
+function createSystemsWithJar(maxDynamicMarbles) {
+  return createSystemsWithJarColors(maxDynamicMarbles, ["R"]);
+}
+
+function buildJarProbeDrop(id, x, y) {
+  return {
+    id: id,
+    sourceId: id,
+    color: "R",
+    entityCategory: "normal_ball",
+    entityType: null,
+    row: 0,
+    col: 0,
+    position: { x: x, y: y },
+    velocity: { x: 0, y: -180 },
+    remainingBounces: 2,
+    rotation: 0,
+    rotationSpeed: 100,
+    jarCooldown: 0,
+    startDelay: 0,
+    rimBounceCount: 0,
+    lastRimBounceSpeed: 0,
+    lifeTime: 0,
+    stuckTimer: 0,
+    lastStuckX: x,
+    lastStuckY: y,
+    inJar: false,
+    jarIndex: -1,
+    jarColor: null,
+    active: true,
+    rootDropId: id,
+    hitFairyIds: [],
+    fairyBonusSteps: 0,
+    finalMultiplier: 1,
+    glowStacks: 0,
+    splitGeneration: 0
   };
 }
 
@@ -765,10 +805,88 @@ function testVictoryBoardDropRimBounces() {
   assert.strictEqual(systems.falling.lastBounceCount, 1);
   assert.strictEqual(update.bounceEvents.length, 1);
   assert.strictEqual(update.bounceEvents[0].glowStacks, FairyAssistConfig.maxGlowStacks);
+  assert.strictEqual(update.bounceEvents[0].jarIndex, zone.index);
   assert.ok(drop.velocity.y > 0, "victory board rim drop must bounce upward off jar rim.");
 }
 
-function testFinalJarRimContactEmitsBounceEvent() {
+function testJarCollectionRequiresFullBallInsideMouth() {
+  var systems = createSystemsWithJar(5);
+  var zone = systems.falling.jarZones[0];
+  assert(zone, "jar collection boundary test requires jar zone.");
+  assert.strictEqual(
+    zone.collectHalfWidth,
+    zone.innerHalfWidth - BoardLayout.bubbleRadius,
+    "jar collection width must require the full ball to fit inside the clear mouth."
+  );
+
+  var insideDrop = buildJarProbeDrop(
+    "inside_clear_mouth",
+    zone.x + zone.collectHalfWidth - 0.5,
+    zone.mouthY + BoardLayout.bubbleRadius
+  );
+  var insideInteraction = systems.falling._processJarInteraction(insideDrop);
+  assert(insideInteraction && insideInteraction.inJar === true, "fully contained ball must enter jar collection zone.");
+  assert.strictEqual(insideInteraction.bounced, undefined);
+  assert.strictEqual(insideDrop.inJar, true);
+
+  var overlappingDrop = buildJarProbeDrop(
+    "overlapping_inner_rim",
+    zone.x + zone.collectHalfWidth + 0.5,
+    zone.mouthY + BoardLayout.bubbleRadius
+  );
+  var overlappingInteraction = systems.falling._processJarInteraction(overlappingDrop);
+  assert(overlappingInteraction && overlappingInteraction.bounced === true, "ball overlapping the inner rim must bounce.");
+  assert.strictEqual(overlappingDrop.inJar, false);
+  assert.ok(overlappingDrop.velocity.x < 0, "inner-rim overlap must redirect the ball toward the jar mouth.");
+
+  var forcedOutsideDrop = buildJarProbeDrop(
+    "forced_outside_mouth",
+    zone.x + zone.collectHalfWidth + 1,
+    zone.mouthY + BoardLayout.bubbleRadius
+  );
+  var forcedOutsideResolution = systems.falling._forceDropResolution(forcedOutsideDrop, true);
+  assert(forcedOutsideResolution && forcedOutsideResolution.cleanupScored, "outside-mouth forced resolution must preserve score settlement.");
+  assert.strictEqual(forcedOutsideResolution.collected, undefined);
+  assert.strictEqual(forcedOutsideResolution.cleanupScored.scoreOnly, true);
+  assert.strictEqual(forcedOutsideResolution.cleanupScored.reason, "outside_jar_cleanup");
+  assert.strictEqual(forcedOutsideResolution.cleanupScored.jarIndex, zone.index);
+  assert.strictEqual(forcedOutsideDrop.inJar, false);
+}
+
+function testJarCollisionPartitionsCoverWallsAndInterJarSpace() {
+  var systems = createSystemsWithJarColors(10, ["R", "G", "B", "Y", "P"]);
+  var zones = systems.falling.jarZones;
+  assert.strictEqual(zones.length, 5);
+  assert.strictEqual(zones[0].collisionLeft, systems.falling._dropLeftLimit);
+  assert.strictEqual(zones[zones.length - 1].collisionRight, systems.falling._dropRightLimit);
+  for (var zoneIndex = 1; zoneIndex < zones.length; zoneIndex += 1) {
+    assert.strictEqual(
+      zones[zoneIndex - 1].collisionRight,
+      zones[zoneIndex].collisionLeft,
+      "adjacent jar collision partitions must meet without a gap."
+    );
+  }
+
+  var leftWallProbeX = (systems.falling._dropLeftLimit + zones[0].x - zones[0].outerHalfWidth) * 0.5;
+  var interJarProbeX = (zones[1].x + zones[2].x) * 0.5;
+  var rightWallProbeX = (zones[zones.length - 1].x + zones[zones.length - 1].outerHalfWidth + systems.falling._dropRightLimit) * 0.5;
+  [leftWallProbeX, interJarProbeX, rightWallProbeX].forEach(function (probeX, probeIndex) {
+    var collisionZone = systems.falling._findJarCollisionZone(probeX);
+    assert(collisionZone, "continuous jar collision probe requires owning zone at index " + probeIndex + ".");
+    var drop = buildJarProbeDrop(
+      "continuous_collision_" + probeIndex,
+      probeX,
+      collisionZone.mouthY + BoardLayout.bubbleRadius
+    );
+    var interaction = systems.falling._processJarInteraction(drop);
+    assert(interaction && interaction.bounced === true, "wall/inter-jar space must bounce at index " + probeIndex + ".");
+    assert.strictEqual(interaction.jarIndex, collisionZone.index);
+    assert.strictEqual(drop.inJar, false);
+    assert.ok(drop.velocity.y > 0, "wall/inter-jar collision must lift the ball at index " + probeIndex + ".");
+  });
+}
+
+function testFinalJarRimContactRedirectsWithoutPrematureCollection() {
   var systems = createSystemsWithJar(5);
   var zone = systems.falling.jarZones[0];
   assert(zone, "final rim contact test requires jar zone.");
@@ -795,13 +913,16 @@ function testFinalJarRimContactEmitsBounceEvent() {
   drop.glowStacks = 2;
   var update = systems.falling.update(0.01);
 
-  assert(drop, "final rim contact drop should remain active while sinking into jar.");
-  assert.strictEqual(drop.inJar, true);
-  assert.strictEqual(drop.jarIndex, zone.index);
+  assert(drop, "final rim contact drop should remain active after redirect bounce.");
+  assert.strictEqual(drop.inJar, false);
+  assert.strictEqual(drop.jarIndex, -1);
   assert.strictEqual(update.bounceEvents.length, 1);
   assert.strictEqual(update.bounceEvents[0].bounceCount, systems.falling.maxRimBounces + 1);
   assert.strictEqual(update.bounceEvents[0].glowStacks, 2);
+  assert.strictEqual(update.bounceEvents[0].jarIndex, zone.index);
   assert.strictEqual(systems.falling.lastBounceCount, 1);
+  assert.ok(drop.velocity.x < 0, "bounce beyond max count must redirect the ball toward the jar mouth.");
+  assert.ok(drop.velocity.y > 0, "bounce beyond max count must remain a physical upward bounce.");
 }
 
 function testVictoryBoardDropSkipsWallBounce() {
@@ -1198,7 +1319,9 @@ testVictoryBoardDropLaunchesDownward();
 testDeferredVictoryDropActivationKeepsHorizontalSpeed();
 testVictoryBoardDropIgnoresFairyBounce();
 testVictoryBoardDropRimBounces();
-testFinalJarRimContactEmitsBounceEvent();
+testJarCollectionRequiresFullBallInsideMouth();
+testJarCollisionPartitionsCoverWallsAndInterJarSpace();
+testFinalJarRimContactRedirectsWithoutPrematureCollection();
 testVictoryBoardDropSkipsWallBounce();
 testSideWallBounceKeepsHorizontalEscapeVelocity();
 testFiveJarAdaptiveMouthLayout();

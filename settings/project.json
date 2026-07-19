@@ -9,7 +9,6 @@
   ],
   "excluded-modules": [
     "DragonBones",
-    "EditBox",
     "MotionStreak",
     "Native Socket",
     "Physics",

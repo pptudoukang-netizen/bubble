@@ -9,12 +9,15 @@ var LevelSelectView = Shared.LevelSelectView;
 var LevelSelectFloatingMap = require("./LevelSelectFloatingMap");
 var LevelSelectMemoryDiagnostics = require("../utils/LevelSelectMemoryDiagnostics");
 var RandomChallengeRules = require("../config/RandomChallengeRules");
+var LocalEditedLevelStore = require("../config/LocalEditedLevelStore");
+var MapEditorLevelPicker = require("../editor/MapEditorLevelPicker");
 var StarRatingPolicy = Shared.StarRatingPolicy;
 var hideGameCircleWelfareViewNode = Shared.hideGameCircleWelfareViewNode;
 var HIDDEN_UNLOCK_ALL_LEVELS_TAP_COUNT = 5;
 var HIDDEN_UNLOCK_ALL_LEVELS_WINDOW_MS = 2000;
 var HIDDEN_UNLOCK_ALL_LEVELS_STAMINA_VALUE = 100;
 var HIDDEN_UNLOCK_ALL_LEVELS_COIN_VALUE = 5000;
+var MAP_EDITOR_SCENE_PATH = "scens/editor";
 
 function isWechatGameRuntime() {
   return !!(
@@ -59,6 +62,19 @@ function isAllLevelsTemporarilyUnlocked(host) {
       host._levelSelectHiddenUnlockAllActive === true
     )
   );
+}
+
+function getLocalEditedLevelStore(host) {
+  if (!host || typeof host !== "object") {
+    throw new Error("Local edited level store requires bootstrap host.");
+  }
+  if (!host._localEditedLevelStore) {
+    host._localEditedLevelStore = new LocalEditedLevelStore();
+  }
+  if (typeof host._localEditedLevelStore.listLevelIds !== "function") {
+    throw new Error("Local edited level store is invalid.");
+  }
+  return host._localEditedLevelStore;
 }
 
 function resolveWinSnapshotScore(snapshot) {
@@ -488,6 +504,14 @@ module.exports = {
     this._hideSpecialIntroduceView();
     this._hideSignInView();
 
+    if (this._localEditedLevelPicker) {
+      if (typeof this._localEditedLevelPicker.close !== "function") {
+        throw new Error("Local edited level picker requires close method.");
+      }
+      this._localEditedLevelPicker.close();
+      this._localEditedLevelPicker = null;
+    }
+
     var levelSelectNode = this._levelSelectNode;
     if (!levelSelectNode || !cc.isValid(levelSelectNode)) {
       throw new Error("Level select node must exist before leaving level select.");
@@ -695,6 +719,7 @@ module.exports = {
       staminaValue: this._getCurrentStamina(),
       coinValue: this._getCurrentCoins(),
       dailyChallengeAttemptCount: this._getDailyChallengeAttemptCount(),
+      showTestLevelButton: isAllLevelsTemporarilyUnlocked(this),
       onOpenSettings: this._onLevelSelectSettingTap.bind(this),
       onOpenRanking: this._onLevelSelectRankingTap.bind(this),
       onOpenInventory: this._showInventoryView.bind(this),
@@ -706,6 +731,7 @@ module.exports = {
       onQuickStart: this._onLevelSelectQuickStartTap.bind(this),
       onRandomChallenge: this._onLevelSelectRandomChallengeTap.bind(this),
       onTestLevel: this._onLevelSelectTestTap.bind(this),
+      onLocalEditedLevel: this._onLevelSelectLocalEditedLevelTap.bind(this),
       onBackToCurrentLevel: this._onLevelSelectBackToCurrentLevelTap.bind(this)
     });
     this._levelSelectNode = renderResult.levelViewNode;
@@ -1076,7 +1102,7 @@ module.exports = {
         levelConfig.level.levelId,
         "Test level started",
         "Load level_test failed. Check console logs.",
-        { mode: "test" }
+        { mode: "test", testSource: "bundled" }
       );
     }.bind(this)).catch(function (error) {
       this.isRestarting = false;
@@ -1090,7 +1116,91 @@ module.exports = {
       return;
     }
     this._playSfx("uiClick");
-    this._startTestLevelEntry();
+    this._openMapEditorScene();
+  },
+
+  _openMapEditorScene: function () {
+    if (!this.isSelectingLevel || !this._levelSelectNode || !this._levelSelectNode.isValid) {
+      throw new Error("Map editor can only open from LevelView/test_btn.");
+    }
+    this.isRestarting = true;
+    this._setStatus("Loading map editor scene...");
+    return BundleLoader.ensureGameplayBundleLoaded().then(function (gameBundle) {
+      if (!gameBundle || typeof gameBundle.loadScene !== "function") {
+        throw new Error("Game bundle requires loadScene for map editor.");
+      }
+      return new Promise(function (resolve, reject) {
+        gameBundle.loadScene(MAP_EDITOR_SCENE_PATH, function (error, sceneAsset) {
+          if (error) {
+            reject(new Error("Load map editor scene failed: " + error.message));
+            return;
+          }
+          if (!sceneAsset) {
+            reject(new Error("Map editor scene asset is empty: " + MAP_EDITOR_SCENE_PATH));
+            return;
+          }
+          resolve(sceneAsset);
+        });
+      });
+    }).then(function (sceneAsset) {
+      this._hideLevelSelectView();
+      this.isRestarting = false;
+      cc.director.runScene(sceneAsset);
+      return sceneAsset;
+    }.bind(this)).catch(function (error) {
+      this.isRestarting = false;
+      if (this._levelSelectNode && this._levelSelectNode.isValid) {
+        this._setStatus("Load map editor scene failed. Check console logs.");
+      }
+      throw error;
+    }.bind(this));
+  },
+
+  _startLocalEditedLevelEntry: function (levelId) {
+    if (!Number.isInteger(levelId) || levelId <= 0) {
+      throw new Error("Local edited level entry requires a positive levelId.");
+    }
+    if (!Array.isArray(this._pendingStartGamePowerups)) {
+      throw new Error("Local edited level entry requires pending StartGameView powerups array.");
+    }
+    var levelConfig = getLocalEditedLevelStore(this).loadLevel(levelId);
+    this._pendingStartGamePowerups = [];
+    this._pendingStartGamePreciseAimActivation = false;
+    this.isRestarting = true;
+    this._setStatus("Loading local edited level_" + String(levelId).padStart(3, "0") + "...");
+    this._pendingPreparedLevelConfig = {
+      levelId: levelId,
+      levelConfig: levelConfig
+    };
+    return this._loadLevelById(
+      levelId,
+      "Local edited level started",
+      "Load local edited level failed. Check console logs.",
+      { mode: "test", testSource: "local" }
+    );
+  },
+
+  _onLevelSelectLocalEditedLevelTap: function () {
+    if (this.isRestarting) {
+      return;
+    }
+    if (!this._levelSelectNode || !this._levelSelectNode.isValid) {
+      throw new Error("Local edited level list requires LevelView.");
+    }
+    this._playSfx("uiClick");
+    var levelIds = getLocalEditedLevelStore(this).listLevelIds();
+    if (levelIds.length === 0) {
+      this._setStatus("No local edited levels saved yet.");
+      return;
+    }
+    if (this._localEditedLevelPicker) {
+      this._localEditedLevelPicker.close();
+    }
+    this._localEditedLevelPicker = new MapEditorLevelPicker(this._levelSelectNode);
+    this._localEditedLevelPicker.open(levelIds, levelIds[0], function (selectedLevelId) {
+      this._startLocalEditedLevelEntry(selectedLevelId);
+    }.bind(this));
+    this._setStatus("Select a local edited level to test.");
   },
 
   _resolveHighestUnlockedLevelId: function (levelIds) {

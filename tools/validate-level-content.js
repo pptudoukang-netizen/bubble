@@ -14,8 +14,9 @@ var FirstHundredLevelDesign = require("./first-100-level-design");
 var LEVEL_DIR = path.resolve(__dirname, "../assets/map/config/levels");
 var REMOTE_PACK_DIR = path.resolve(__dirname, "../remote-level-packs");
 var MANIFEST_PATH = path.resolve(REMOTE_PACK_DIR, "level_manifest.json");
-var ALLOWED_COLORS = ["R", "G", "B", "Y", "P"];
-var FIXED_JAR_COLORS = ALLOWED_COLORS.slice();
+var ALLOWED_COLORS = ["R", "G", "B", "Y", "P", "K", "O", "W"];
+var ALLOWED_SPLITTER_COLORS = ["R", "G", "B", "Y", "P"];
+var FIXED_JAR_COLORS = ["R", "G", "B", "Y", "P"];
 var FIXED_JAR_COUNT = FIXED_JAR_COLORS.length;
 var ALLOWED_DIFFICULTY = ["tutorial", "easy", "normal", "hard", "expert", "advanced"];
 var ALLOWED_WIN_TYPES = ["clear_all", "collect_any", "collect_color", "collect_ice_snowball"];
@@ -205,6 +206,8 @@ function validateSpecialEntities(level, normalizedLayoutRows, issues) {
     if (entity.entityCategory === "reactive_ball" && entity.entityType === "splitter") {
       if (typeof entity.splitColor !== "string" || level.colors.indexOf(entity.splitColor) === -1) {
         issues.push("specialEntities[" + index + "].splitColor must use a color from level.colors");
+      } else if (ALLOWED_SPLITTER_COLORS.indexOf(entity.splitColor) === -1) {
+        issues.push("specialEntities[" + index + "].splitColor has no splitter asset: " + entity.splitColor);
       }
       if (entity.row === TOP_BOARD_ROW_INDEX) {
         issues.push("specialEntities[" + index + "] splitter must not be placed in top board row");

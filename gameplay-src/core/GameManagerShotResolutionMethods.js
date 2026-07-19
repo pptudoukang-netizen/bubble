@@ -570,7 +570,7 @@ function createGameManagerShotResolutionMethods(deps) {
         Array.prototype.push.apply(scoredDropEntries, stoneDropEntries);
       }
       var sameColorCount = scoredDrops.reduce(function (count, drop) {
-        return count + (drop.sameColor ? 1 : 0);
+        return count + (drop.sameColor && drop.scoreOnly !== true ? 1 : 0);
       }, 0);
       var bonusGained = scoredDrops.reduce(function (sum, drop) {
         var baseScore = JarScoreConfig.getBaseScoreForJarIndex(jarCount, drop.jarIndex);

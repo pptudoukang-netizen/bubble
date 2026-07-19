@@ -1434,19 +1434,62 @@ function bindRandomChallengeButton(levelView, onRandomChallenge) {
   );
 }
 
-function bindTestLevelButton(levelView, onTestLevel) {
+function bindTestLevelButton(levelView, onTestLevel, showTestLevelButton) {
   if (typeof onTestLevel !== "function") {
     throw new Error("LevelSelectView requires onTestLevel.");
+  }
+  if (typeof showTestLevelButton !== "boolean") {
+    throw new Error("LevelSelectView requires boolean showTestLevelButton.");
   }
   var testLevelButtonNode = findChildByNameRecursive(levelView, "test_btn");
   if (!testLevelButtonNode || !testLevelButtonNode.isValid) {
     throw new Error("LevelSelectView requires test_btn.");
   }
+  testLevelButtonNode.active = showTestLevelButton;
   bindNamedButtonTap(
     testLevelButtonNode,
     "__testLevelTapBound",
     "__onTestLevel",
     onTestLevel
+  );
+}
+
+function bindLocalEditedLevelButton(levelView, onLocalEditedLevel, showTestLevelButton) {
+  if (typeof onLocalEditedLevel !== "function") {
+    throw new Error("LevelSelectView requires onLocalEditedLevel.");
+  }
+  if (typeof showTestLevelButton !== "boolean") {
+    throw new Error("LevelSelectView local edited level button requires boolean showTestLevelButton.");
+  }
+  var testLevelButtonNode = findChildByNameRecursive(levelView, "test_btn");
+  if (!testLevelButtonNode || !testLevelButtonNode.isValid || !testLevelButtonNode.parent) {
+    throw new Error("LevelSelectView local edited level button requires test_btn parent.");
+  }
+  var localButtonNode = testLevelButtonNode.parent.getChildByName("local_level_test_btn");
+  if (!localButtonNode) {
+    localButtonNode = cc.instantiate(testLevelButtonNode);
+    if (!localButtonNode || !localButtonNode.isValid) {
+      throw new Error("LevelSelectView failed to clone local edited level button.");
+    }
+    localButtonNode.name = "local_level_test_btn";
+    localButtonNode.parent = testLevelButtonNode.parent;
+    localButtonNode.setPosition(testLevelButtonNode.x + 145, testLevelButtonNode.y);
+    var iconNode = localButtonNode.getChildByName("icon");
+    if (!iconNode || !iconNode.isValid) {
+      throw new Error("LevelView/local_level_test_btn requires icon.");
+    }
+    var label = iconNode.getComponent(cc.Label);
+    if (!label) {
+      throw new Error("LevelView/local_level_test_btn/icon requires cc.Label.");
+    }
+    label.string = "本地";
+  }
+  localButtonNode.active = showTestLevelButton;
+  bindNamedButtonTap(
+    localButtonNode,
+    "__localEditedLevelTapBound",
+    "__onLocalEditedLevel",
+    onLocalEditedLevel
   );
 }
 
@@ -1550,6 +1593,14 @@ function renderLevelSelectContent(options) {
     throw new Error("LevelSelectView requires onTestLevel.");
   }
   var onTestLevel = options.onTestLevel;
+  if (typeof options.onLocalEditedLevel !== "function") {
+    throw new Error("LevelSelectView requires onLocalEditedLevel.");
+  }
+  var onLocalEditedLevel = options.onLocalEditedLevel;
+  if (typeof options.showTestLevelButton !== "boolean") {
+    throw new Error("LevelSelectView requires boolean showTestLevelButton.");
+  }
+  var showTestLevelButton = options.showTestLevelButton;
   if (typeof options.onBackToCurrentLevel !== "function") {
     throw new Error("LevelSelectView requires onBackToCurrentLevel.");
   }
@@ -1601,7 +1652,8 @@ function renderLevelSelectContent(options) {
   });
   bindQuickStartButton(levelView, onQuickStart);
   bindRandomChallengeButton(levelView, onRandomChallenge);
-  bindTestLevelButton(levelView, onTestLevel);
+  bindLocalEditedLevelButton(levelView, onLocalEditedLevel, showTestLevelButton);
+  bindTestLevelButton(levelView, onTestLevel, showTestLevelButton);
   var backToCurrentLevelButtonNode = levelView.getChildByName("back_cur_level");
   if (!backToCurrentLevelButtonNode || !backToCurrentLevelButtonNode.isValid) {
     throw new Error("LevelView/back_cur_level is required.");

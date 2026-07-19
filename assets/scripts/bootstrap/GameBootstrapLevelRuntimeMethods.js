@@ -33,6 +33,16 @@ module.exports = {
       return;
     }
     if (this._currentRunContext && this._currentRunContext.mode === "test") {
+      if (this._currentRunContext.testSource === "local") {
+        if (typeof this._startLocalEditedLevelEntry !== "function") {
+          throw new Error("Local edited level retry requires _startLocalEditedLevelEntry.");
+        }
+        this._startLocalEditedLevelEntry(this._currentRunContext.levelId);
+        return;
+      }
+      if (this._currentRunContext.testSource !== "bundled") {
+        throw new Error("Test level retry requires a supported testSource.");
+      }
       if (typeof this._startTestLevelEntry !== "function") {
         throw new Error("Test level retry requires _startTestLevelEntry.");
       }

@@ -144,11 +144,14 @@ function resolveCollectedDropAudioGlowStacks(collectedDrops) {
 }
 
 var RAINBOW_TIE_BREAK_ORDER = {
-  R: 5,
-  G: 4,
-  B: 3,
-  Y: 2,
-  P: 1
+  R: 8,
+  G: 7,
+  B: 6,
+  Y: 5,
+  P: 4,
+  K: 3,
+  O: 2,
+  W: 1
 };
 
 // 普通匹配消除按固定每球基础分计分；连击增量在结算链路中叠加。
@@ -3397,6 +3400,7 @@ GameManager.prototype.update = function (dt) {
   var viewportUpdated = viewportWasMoving || viewportFinished;
   var fallingUpdated = !!(fallingStep && fallingStep.updated);
   var collectedDrops = fallingStep && Array.isArray(fallingStep.collected) ? fallingStep.collected : [];
+  var cleanupScoredDrops = fallingStep && Array.isArray(fallingStep.cleanupScored) ? fallingStep.cleanupScored : [];
   var fairyHits = fallingStep && Array.isArray(fallingStep.fairyHits) ? fallingStep.fairyHits : [];
   var fairySplits = fallingStep && Array.isArray(fallingStep.splits) ? fallingStep.splits : [];
   var runtimeEvents = this._drainRuntimeEvents();
@@ -3405,10 +3409,14 @@ GameManager.prototype.update = function (dt) {
     if (!bounceEvent || !Number.isInteger(bounceEvent.bounceCount) || bounceEvent.bounceCount < 1) {
       throw new Error("FallingMarbleSystem bounce event requires positive integer bounceCount.");
     }
+    if (!Number.isInteger(bounceEvent.jarIndex) || bounceEvent.jarIndex < 0) {
+      throw new Error("FallingMarbleSystem bounce event requires non-negative integer jarIndex.");
+    }
     var glowStacks = requireDropGlowStacks(bounceEvent.glowStacks, "FallingMarbleSystem bounce event");
     this._pushRuntimeEvent("jar_rim_bounce", {
       bounceCount: bounceEvent.bounceCount,
-      glowStacks: glowStacks
+      glowStacks: glowStacks,
+      jarIndex: bounceEvent.jarIndex
     });
   }, this);
   fairyHits.forEach(function (hit) {
@@ -3454,6 +3462,9 @@ GameManager.prototype.update = function (dt) {
         };
       }));
     }
+  }
+  if (cleanupScoredDrops.length) {
+    this._applyJarCollectionScore(cleanupScoredDrops);
   }
   runtimeEvents = runtimeEvents.concat(this._drainRuntimeEvents());
   var scoreBoostChanged = this._updateJarScoreBoost(dt);

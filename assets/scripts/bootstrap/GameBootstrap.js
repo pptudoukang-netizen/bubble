@@ -242,8 +242,8 @@ cc.Class({
       tooltip: "胜利音效资源路径。"
     },
     jarBounceSfxResources: {
-      default: "sound/piano1,sound/piano2,sound/piano3,sound/piano4,sound/piano5,sound/piano6,sound/piano7",
-      tooltip: "掉落玻璃球与缸沿碰撞时随机播放的音效资源列表（piano1-7），使用英文逗号分隔。"
+      default: "sound/pao1,sound/pao2,sound/pao3,sound/pao4,sound/pao5",
+      tooltip: "掉落球与第1-5个缸沿碰撞时固定对应的音效资源列表（pao1-5），使用英文逗号分隔。"
     },
     jarCollectBottomSfxResource: {
       default: "sound/score",
@@ -382,7 +382,7 @@ cc.Class({
   _playGameplayBackgroundMusic: GameBootstrapAudioMethods._playGameplayBackgroundMusic,
   _playSfx: GameBootstrapAudioMethods._playSfx,
   _runGameEntryCountdown: GameBootstrapAudioMethods._runGameEntryCountdown,
-  _resolveJarBouncePianoPath: GameBootstrapAudioMethods._resolveJarBouncePianoPath,
+  _resolveJarBouncePath: GameBootstrapAudioMethods._resolveJarBouncePath,
   _canPlayJarBounceSfx: GameBootstrapAudioMethods._canPlayJarBounceSfx,
   _triggerShortVibration: GameBootstrapAudioMethods._triggerShortVibration,
   _playRuntimeAudioEvents: GameBootstrapAudioMethods._playRuntimeAudioEvents,
@@ -811,6 +811,9 @@ cc.Class({
   _onLevelSelectTap: GameBootstrapUiFlowMethods._onLevelSelectTap,
   _startTestLevelEntry: GameBootstrapUiFlowMethods._startTestLevelEntry,
   _onLevelSelectTestTap: GameBootstrapUiFlowMethods._onLevelSelectTestTap,
+  _openMapEditorScene: GameBootstrapUiFlowMethods._openMapEditorScene,
+  _startLocalEditedLevelEntry: GameBootstrapUiFlowMethods._startLocalEditedLevelEntry,
+  _onLevelSelectLocalEditedLevelTap: GameBootstrapUiFlowMethods._onLevelSelectLocalEditedLevelTap,
   _resolveHighestUnlockedLevelId: GameBootstrapUiFlowMethods._resolveHighestUnlockedLevelId,
   _resolveLatestAccessibleLevelId: GameBootstrapUiFlowMethods._resolveLatestAccessibleLevelId,
   _resolveCurrentMapLevelId: GameBootstrapUiFlowMethods._resolveCurrentMapLevelId,

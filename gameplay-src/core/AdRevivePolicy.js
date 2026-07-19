@@ -8,7 +8,10 @@ var COLOR_DISPLAY_NAMES = {
   G: "绿球",
   B: "蓝球",
   Y: "黄球",
-  P: "紫球"
+  P: "紫球",
+  K: "黑球",
+  O: "橙球",
+  W: "白球"
 };
 
 function requireObject(value, fieldName) {

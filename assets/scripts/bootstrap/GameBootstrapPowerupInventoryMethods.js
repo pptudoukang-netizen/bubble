@@ -56,6 +56,9 @@ var START_GAME_OBJECTIVE_ICON_PATHS = {
   B: "ui/image/preview_balls/blue_ball",
   Y: "ui/image/preview_balls/yellow_ball",
   P: "ui/image/preview_balls/purple_ball",
+  K: "ui/image/preview_balls/black_ball",
+  O: "ui/image/preview_balls/orange_ball",
+  W: "ui/image/preview_balls/white_ball",
   RAINBOW: "ui/image/preview_balls/rainbow_ball",
   ICE_SNOWBALL: "ui/image/preview_balls/ice_ball"
 };

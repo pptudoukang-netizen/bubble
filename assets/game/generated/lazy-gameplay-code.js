@@ -43,7 +43,7 @@
     return null;
   }
   var previousRequire = resolvePreviousRequire();
-  var gameplayCodeHash = "f7714078a89e98db3ac43d7ca42e3f5519b15b0dcda0a131df3b8da86fb97a4e";
+  var gameplayCodeHash = "ef63172b4721bbcd55495f45e0fda7f7ca2cdc7760911813953fc8742ee96bb1";
   var lazyRequire = (function (modules, cache, entries) {
     function load(moduleId, jumped) {
       if (!cache[moduleId]) {
@@ -83,7 +83,10 @@ var COLOR_DISPLAY_NAMES = {
   G: "绿球",
   B: "蓝球",
   Y: "黄球",
-  P: "紫球"
+  P: "紫球",
+  K: "黑球",
+  O: "橙球",
+  W: "白球"
 };
 
 function requireObject(value, fieldName) {
@@ -4093,6 +4096,7 @@ function createEmptyUpdateResult() {
     updated: false,
     surplusUpdated: false,
     collected: [],
+    cleanupScored: [],
     missed: [],
     bounced: 0,
     bounceEvents: [],
@@ -4327,6 +4331,10 @@ FallingMarbleSystem.prototype._buildJarZones = function () {
   // 需求：左右边缘碰撞区各 40（从边界向内）。
   var outerHalfWidth = mouthHalfWidth;
   var innerHalfWidth = Math.max(0, mouthHalfWidth - edgeThickness);
+  var collectHalfWidth = innerHalfWidth - BoardLayout.bubbleRadius;
+  if (!isFinite(collectHalfWidth) || collectHalfWidth <= 0) {
+    throw new Error("Jar mouth must be wide enough to fully contain one falling ball.");
+  }
   var jarHeight = jarLayout.renderHeight;
   var baseJarCenterY = getJarRenderCenterY();
 
@@ -4341,6 +4349,7 @@ FallingMarbleSystem.prototype._buildJarZones = function () {
       x: jarPositions[index] || 0,
       mouthY: mouthY,
       bottomY: bottomY,
+      collectHalfWidth: collectHalfWidth,
       innerHalfWidth: innerHalfWidth,
       outerHalfWidth: outerHalfWidth,
       // Compatibility alias for existing renderer references.
@@ -4350,6 +4359,22 @@ FallingMarbleSystem.prototype._buildJarZones = function () {
       rimBounce: this.jarRules.rimBounce,
       sameColorBonus: this.jarRules.sameColorBonus
     });
+  }
+
+  for (var zoneIndex = 0; zoneIndex < zones.length; zoneIndex += 1) {
+    var previousZone = zoneIndex > 0 ? zones[zoneIndex - 1] : null;
+    var nextZone = zoneIndex + 1 < zones.length ? zones[zoneIndex + 1] : null;
+    var collisionLeft = previousZone
+      ? (previousZone.x + zones[zoneIndex].x) * 0.5
+      : BoardLayout.boardLeft;
+    var collisionRight = nextZone
+      ? (zones[zoneIndex].x + nextZone.x) * 0.5
+      : BoardLayout.boardRight;
+    if (!isFinite(collisionLeft) || !isFinite(collisionRight) || collisionLeft >= collisionRight) {
+      throw new Error("Jar collision partition must have positive finite width at index " + zoneIndex + ".");
+    }
+    zones[zoneIndex].collisionLeft = collisionLeft;
+    zones[zoneIndex].collisionRight = collisionRight;
   }
 
   return zones;
@@ -4970,6 +4995,31 @@ FallingMarbleSystem.prototype._findNearestJarZone = function (x) {
   return nearest;
 };
 
+FallingMarbleSystem.prototype._findJarCollisionZone = function (x) {
+  if (typeof x !== "number" || !isFinite(x)) {
+    throw new Error("Jar collision lookup requires finite x.");
+  }
+  if (x < this._dropLeftLimit || x > this._dropRightLimit) {
+    return null;
+  }
+  if (!this.jarZones || !this.jarZones.length) {
+    return null;
+  }
+
+  for (var i = 0; i < this.jarZones.length; i += 1) {
+    var zone = this.jarZones[i];
+    var includesRightBoundary = i === this.jarZones.length - 1;
+    if (
+      x >= zone.collisionLeft &&
+      (x < zone.collisionRight || (includesRightBoundary && x <= zone.collisionRight))
+    ) {
+      return zone;
+    }
+  }
+
+  throw new Error("Jar collision partitions must continuously cover the board width.");
+};
+
 FallingMarbleSystem.prototype._consumeDropInteraction = function (result, interaction) {
   if (!interaction) {
     return;
@@ -4982,15 +5032,23 @@ FallingMarbleSystem.prototype._consumeDropInteraction = function (result, intera
     if (!Number.isInteger(interaction.glowStacks) || interaction.glowStacks < 0) {
       throw new Error("FallingMarbleSystem bounced interaction requires non-negative integer glowStacks.");
     }
+    if (!Number.isInteger(interaction.jarIndex) || interaction.jarIndex < 0 || interaction.jarIndex >= this.jarCount) {
+      throw new Error("FallingMarbleSystem bounced interaction requires valid jarIndex.");
+    }
     result.bounced += 1;
     result.bounceEvents.push({
       bounceCount: interaction.bounceCount,
-      glowStacks: interaction.glowStacks
+      glowStacks: interaction.glowStacks,
+      jarIndex: interaction.jarIndex
     });
   }
 
   if (interaction.collected) {
     result.collected.push(interaction.collected);
+  }
+
+  if (interaction.cleanupScored) {
+    result.cleanupScored.push(interaction.cleanupScored);
   }
 
   if (interaction.missed) {
@@ -4999,15 +5057,24 @@ FallingMarbleSystem.prototype._consumeDropInteraction = function (result, intera
 };
 
 FallingMarbleSystem.prototype._forceDropResolution = function (drop, collectPreferred) {
-  var nearestZone = this._findNearestJarZone(drop.position ? drop.position.x : 0);
-  if (collectPreferred && nearestZone) {
-    drop.inJar = true;
-    drop.jarIndex = nearestZone.index;
-    drop.jarColor = nearestZone.color || null;
-    drop.position.x = nearestZone.x;
+  var inJarZone = drop.inJar === true ? this._getJarZoneByIndex(drop.jarIndex) : null;
+  if (collectPreferred && inJarZone) {
     drop.active = false;
     return {
-      collected: this._createCollectedEvent(drop, nearestZone)
+      collected: this._createCollectedEvent(drop, inJarZone)
+    };
+  }
+
+  var nearestZone = collectPreferred && drop.position
+    ? this._findNearestJarZone(drop.position.x)
+    : null;
+  if (nearestZone) {
+    var cleanupScored = this._createCollectedEvent(drop, nearestZone);
+    cleanupScored.scoreOnly = true;
+    cleanupScored.reason = "outside_jar_cleanup";
+    drop.active = false;
+    return {
+      cleanupScored: cleanupScored
     };
   }
 
@@ -5319,61 +5386,49 @@ FallingMarbleSystem.prototype._processJarInteraction = function (drop) {
     y: drop.position.y - BoardLayout.bubbleRadius
   };
 
-  for (var i = 0; i < this.jarZones.length; i += 1) {
-    var zone = this.jarZones[i];
-    var dx = bottomPoint.x - zone.x;
-    var absDx = Math.abs(dx);
+  var zone = this._findJarCollisionZone(bottomPoint.x);
+  if (!zone) {
+    return null;
+  }
+  var dx = bottomPoint.x - zone.x;
+  var absDx = Math.abs(dx);
 
-    if (
-      absDx <= zone.innerHalfWidth &&
-      bottomPoint.y <= zone.mouthY + zone.contactBand &&
-      drop.position.y >= zone.bottomY &&
-      drop.velocity.y <= 0
-    ) {
-      drop.inJar = true;
-      drop.jarIndex = zone.index;
-      drop.jarColor = zone.color || null;
-      drop.velocity.x *= 0.35;
-      drop.velocity.y = Math.min(drop.velocity.y, -120);
-      return {
-        inJar: true
-      };
+  if (
+    absDx <= zone.collectHalfWidth &&
+    bottomPoint.y <= zone.mouthY + zone.contactBand &&
+    drop.position.y >= zone.bottomY &&
+    drop.velocity.y <= 0
+  ) {
+    drop.inJar = true;
+    drop.jarIndex = zone.index;
+    drop.jarColor = zone.color || null;
+    drop.velocity.x *= 0.35;
+    drop.velocity.y = Math.min(drop.velocity.y, -120);
+    return {
+      inJar: true
+    };
+  }
+
+  if (
+    drop.velocity.y < 0 &&
+    bottomPoint.y <= zone.mouthY + zone.contactBand &&
+    bottomPoint.y >= zone.mouthY - zone.edgeThickness * 1.4
+  ) {
+    var side = dx >= 0 ? 1 : -1;
+    var outerEdgeThreshold = zone.innerHalfWidth + zone.edgeThickness * 0.5;
+    var edgeType = absDx >= outerEdgeThreshold ? "outer" : "inner";
+    if ((drop.rimBounceCount || 0) >= this.maxRimBounces) {
+      edgeType = "inner";
     }
 
-    if (
-      drop.velocity.y < -45 &&
-      bottomPoint.y <= zone.mouthY + zone.contactBand &&
-      bottomPoint.y >= zone.mouthY - zone.edgeThickness * 1.4 &&
-      absDx <= zone.outerHalfWidth &&
-      absDx >= zone.innerHalfWidth
-    ) {
-      var side = dx >= 0 ? 1 : -1;
-      var outerEdgeThreshold = zone.innerHalfWidth + zone.edgeThickness * 0.5;
-      var edgeType = absDx >= outerEdgeThreshold ? "outer" : "inner";
-      if ((drop.rimBounceCount || 0) >= this.maxRimBounces) {
-        drop.rimBounceCount = (drop.rimBounceCount || 0) + 1;
-        drop.inJar = true;
-        drop.jarIndex = zone.index;
-        drop.jarColor = zone.color || null;
-        drop.velocity.x *= 0.2;
-        drop.velocity.y = Math.min(drop.velocity.y, -150);
-        return {
-          bounced: true,
-          bounceCount: drop.rimBounceCount,
-          glowStacks: drop.glowStacks,
-          edgeType: edgeType,
-          inJar: true
-        };
-      }
-
-      this._applyRimArcBounce(drop, zone, side, edgeType, bottomPoint);
-      return {
-        bounced: true,
-        bounceCount: drop.rimBounceCount,
-        glowStacks: drop.glowStacks,
-        edgeType: edgeType
-      };
-    }
+    this._applyRimArcBounce(drop, zone, side, edgeType, bottomPoint);
+    return {
+      bounced: true,
+      bounceCount: drop.rimBounceCount,
+      glowStacks: drop.glowStacks,
+      jarIndex: zone.index,
+      edgeType: edgeType
+    };
   }
 
   return null;
@@ -5738,11 +5793,14 @@ function resolveCollectedDropAudioGlowStacks(collectedDrops) {
 }
 
 var RAINBOW_TIE_BREAK_ORDER = {
-  R: 5,
-  G: 4,
-  B: 3,
-  Y: 2,
-  P: 1
+  R: 8,
+  G: 7,
+  B: 6,
+  Y: 5,
+  P: 4,
+  K: 3,
+  O: 2,
+  W: 1
 };
 
 // 普通匹配消除按固定每球基础分计分；连击增量在结算链路中叠加。
@@ -8991,6 +9049,7 @@ GameManager.prototype.update = function (dt) {
   var viewportUpdated = viewportWasMoving || viewportFinished;
   var fallingUpdated = !!(fallingStep && fallingStep.updated);
   var collectedDrops = fallingStep && Array.isArray(fallingStep.collected) ? fallingStep.collected : [];
+  var cleanupScoredDrops = fallingStep && Array.isArray(fallingStep.cleanupScored) ? fallingStep.cleanupScored : [];
   var fairyHits = fallingStep && Array.isArray(fallingStep.fairyHits) ? fallingStep.fairyHits : [];
   var fairySplits = fallingStep && Array.isArray(fallingStep.splits) ? fallingStep.splits : [];
   var runtimeEvents = this._drainRuntimeEvents();
@@ -8999,10 +9058,14 @@ GameManager.prototype.update = function (dt) {
     if (!bounceEvent || !Number.isInteger(bounceEvent.bounceCount) || bounceEvent.bounceCount < 1) {
       throw new Error("FallingMarbleSystem bounce event requires positive integer bounceCount.");
     }
+    if (!Number.isInteger(bounceEvent.jarIndex) || bounceEvent.jarIndex < 0) {
+      throw new Error("FallingMarbleSystem bounce event requires non-negative integer jarIndex.");
+    }
     var glowStacks = requireDropGlowStacks(bounceEvent.glowStacks, "FallingMarbleSystem bounce event");
     this._pushRuntimeEvent("jar_rim_bounce", {
       bounceCount: bounceEvent.bounceCount,
-      glowStacks: glowStacks
+      glowStacks: glowStacks,
+      jarIndex: bounceEvent.jarIndex
     });
   }, this);
   fairyHits.forEach(function (hit) {
@@ -9048,6 +9111,9 @@ GameManager.prototype.update = function (dt) {
         };
       }));
     }
+  }
+  if (cleanupScoredDrops.length) {
+    this._applyJarCollectionScore(cleanupScoredDrops);
   }
   runtimeEvents = runtimeEvents.concat(this._drainRuntimeEvents());
   var scoreBoostChanged = this._updateJarScoreBoost(dt);
@@ -10108,7 +10174,7 @@ function createGameManagerShotResolutionMethods(deps) {
         Array.prototype.push.apply(scoredDropEntries, stoneDropEntries);
       }
       var sameColorCount = scoredDrops.reduce(function (count, drop) {
-        return count + (drop.sameColor ? 1 : 0);
+        return count + (drop.sameColor && drop.scoreOnly !== true ? 1 : 0);
       }, 0);
       var bonusGained = scoredDrops.reduce(function (sum, drop) {
         var baseScore = JarScoreConfig.getBaseScoreForJarIndex(jarCount, drop.jarIndex);
@@ -12787,6 +12853,9 @@ var BALL_RESOURCES = {
   B: "game/image/ball/blue_ball",
   Y: "game/image/ball/yellow_ball",
   P: "game/image/ball/purple_ball",
+  K: "game/image/ball/black_ball",
+  O: "game/image/ball/orange_ball",
+  W: "game/image/ball/white_ball",
   RAINBOW: "game/image/ball/rainbow_ball",
   BLAST: "game/image/ball/bomb_ball",
   STONE: "game/image/ball/stone_ball",
@@ -12927,7 +12996,10 @@ var GUIDE_DOT_TINTS = {
   G: { r: 78, g: 214, b: 100 },
   B: { r: 72, g: 150, b: 255 },
   Y: { r: 255, g: 211, b: 62 },
-  P: { r: 184, g: 96, b: 255 }
+  P: { r: 184, g: 96, b: 255 },
+  K: { r: 48, g: 48, b: 48 },
+  O: { r: 255, g: 145, b: 45 },
+  W: { r: 245, g: 245, b: 245 }
 };
 var BARRIER_HAMMER_HINT_SIZE = new cc.Size(46, 46);
 var BARRIER_HAMMER_HINT_OFFSET_X = 16;
@@ -23707,6 +23779,7 @@ function attachLevelRendererSceneShooterMethods(LevelRenderer, deps) {
     "ShooterBase",
     "NextBallDock",
     "NextBallAnchor",
+    "TurretNumBg",
     "Surplus"
   ];
 
@@ -24030,6 +24103,13 @@ LevelRenderer.prototype._renderShooter = function (shooterSnapshot, activeProjec
     shotsValue = shooterSnapshot.surplusRemainingShots;
   }
   var surplusNode = layoutNodes.Surplus;
+  var turretNumBgSprite = layoutNodes.TurretNumBg.getComponent(cc.Sprite);
+  if (!turretNumBgSprite) {
+    throw new Error("ShooterPanel TurretNumBg requires cc.Sprite.");
+  }
+  if (!turretNumBgSprite.spriteFrame) {
+    throw new Error("ShooterPanel TurretNumBg requires SpriteFrame.");
+  }
   var surplusLabel = surplusNode.getComponent(cc.Label);
   if (!surplusLabel) {
     throw new Error("ShooterPanel Surplus requires cc.Label.");

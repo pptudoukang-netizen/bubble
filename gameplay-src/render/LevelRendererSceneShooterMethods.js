@@ -46,6 +46,7 @@ function attachLevelRendererSceneShooterMethods(LevelRenderer, deps) {
     "ShooterBase",
     "NextBallDock",
     "NextBallAnchor",
+    "TurretNumBg",
     "Surplus"
   ];
 
@@ -369,6 +370,13 @@ LevelRenderer.prototype._renderShooter = function (shooterSnapshot, activeProjec
     shotsValue = shooterSnapshot.surplusRemainingShots;
   }
   var surplusNode = layoutNodes.Surplus;
+  var turretNumBgSprite = layoutNodes.TurretNumBg.getComponent(cc.Sprite);
+  if (!turretNumBgSprite) {
+    throw new Error("ShooterPanel TurretNumBg requires cc.Sprite.");
+  }
+  if (!turretNumBgSprite.spriteFrame) {
+    throw new Error("ShooterPanel TurretNumBg requires SpriteFrame.");
+  }
   var surplusLabel = surplusNode.getComponent(cc.Label);
   if (!surplusLabel) {
     throw new Error("ShooterPanel Surplus requires cc.Label.");

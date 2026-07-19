@@ -1,0 +1,8 @@
+{
+  "name": "level-editor-drafts",
+  "version": "1.0.0",
+  "main": "index.js",
+  "dependencies": {
+    "wx-server-sdk": "latest"
+  }
+}

@@ -11,13 +11,13 @@
 - `assets/`：Cocos 资源、场景、脚本、预制体、图片、音频等主体内容。
 - `assets/scens/boot.fire`：启动场景，只保留 Camera、Canvas 与 LoadingView 静态节点，不挂载任何业务脚本组件；这是构建设置中的首场景。
 - `assets/scens/game.fire`：完整业务主场景，保留 `GameBootstrap` 及其全部 Inspector 配置；`core` 分包执行完成后才由 `BootLoader` 预加载并切入。
-- `assets/scens/editor.fire`：关卡地图人工绘制编辑器场景，挂载 `MapEditorController`，用于在蜂窝棋盘上绘制 `layout` 与 `specialEntities` 并导出 JSON。
+- `assets/game/scens/editor.fire`：位于 `game` Asset Bundle 的关卡底图编辑场景，挂载 `MapEditorController`；只允许由 `LevelView/test_btn` 加载并切入，复用 `game` 分包内的球与道具图片。
 - `assets/boot/BootLoader.js`：首包内唯一的业务启动插件；`boot.fire` 首帧绘制后下载并加载 `core`，确认业务代码执行标记后预加载并切换到 `game.fire`。该文件禁止同步 `require` 业务模块。
 - `assets/scripts/`：`core` Asset Bundle（微信 `subpackage`），包含完整业务启动、选关、UI、服务、存储、共享配置和工具；不再进入内置 `main` 分包。
 - `gameplay-src/`：局内玩法内核源码，不直接交给 Cocos 编译；`tools/build-wechat-gameplay-code.js` 将该目录合并成唯一生成资产 `assets/game/generated/lazy-gameplay-code.js`，由 `game` Asset Bundle 编入微信 `subpackages/game/game.js`。
 - `assets/map/`：地图分包资源，包含本地关卡配置、远程关卡 bootstrap manifest、提示文案、`LevelView`、选关大背景、`image/level_view/` 选关专用图片、顶部金币/体力图标、无限浮岛选关地图配置、浮岛预制体、地标预制体、传送阵和主角图片；选关销毁后这些资源可随 `map` 一起释放。
 - `assets/ui/`：局内与选关共用、按会话生命周期持有的公共 UI 分包，包含弹窗预制体与 UI 图片；返回选关后的 `game`/`animation` 空闲释放不得清理 `ui` prefab 或 `ui/` SpriteFrame。`image/props/` 保存 UI 生命周期独立使用的金币、体力和道具图副本，`image/preview_balls/` 保存选关目标与道具说明使用的球图标，避免返回选关后 `game` bundle 延迟释放造成黑块或失效 SpriteFrame；`image/commone/` 存放多个弹窗共用图片，`fnt/` 保存 UI 自有字体。
-- `assets/game/`：局内资源与玩法代码分包（微信 `subpackage`），包含 `GameView`、球/罐子/道具图片、局内 HUD 图片与字体、射手 hero 动画、局内 prefab、Shader effect 与生成的 `generated/lazy-gameplay-code.js`；进入局内前由 `BundleLoader.ensureGameplayBundleLoaded()` 加载并校验玩法代码标记。
+- `assets/game/`：局内资源、关卡底图编辑场景与玩法代码分包（微信 `subpackage`），包含 `GameView`、`scens/editor.fire`、球/罐子/道具图片、编辑器蜂窝底图、局内 HUD 图片与字体、射手 hero 动画、局内 prefab、Shader effect 与生成的 `generated/lazy-gameplay-code.js`；进入局内或关卡编辑器前由 `BundleLoader.ensureGameplayBundleLoaded()` 加载并校验玩法代码标记。
 - `assets/audio/`：音频资源分包（微信 `subpackage`），全部 BGM/SFX 位于 `assets/audio/sound/`，首次播放对应音频时按需加载。
 - `assets/animation/`：显式命名为 `animation` 的动画资源分包（微信 `subpackage`），包含爆炸、烟花和局内固定精灵红/黄/绿动画 prefab；射手 hero 动画已归入 `game`，禁止 `game` prefab 通过 UUID 反向依赖该分包。
 - `assets/image/`：非 map/game/ui 分包资源；选关专用图片已归入 `assets/map/`，局内专用图片已归入 `assets/game/`，弹窗专用图片已归入 `assets/ui/`。
@@ -88,7 +88,7 @@
 
 应用编排层。它连接 UI、玩法内核、渲染、服务、存储、广告、微信能力和音频。修改业务流程时通常先从这里找到真实调用链。
 
-- `LevelSelectView.js`：选关页顶层 UI 渲染入口，负责顶部状态和入口按钮绑定（含 `quick_start_btn` 快速开始、`test_btn` 直接加载 `level_test` 测试关、`back_cur_level` 回到当前关卡位置），并调用浮岛地图渲染器。
+- `LevelSelectView.js`：选关页顶层 UI 渲染入口，负责顶部状态和入口按钮绑定；`test_btn` 进入关卡底图编辑场景，运行时从其同结构克隆 `local_level_test_btn` 展示本地草稿关卡列表，`quick_start_btn` 快速开始，`back_cur_level` 回到当前关卡位置。
 - `LevelSelectFloatingMap.js`：按 `assets/map/config/floating_map.json` 渲染 1000 关无限上滚动浮岛地图；启动时仅预加载当前焦点关卡视口所需 island prefab，滚动时按需加载其余 prefab。
 
 ### core
@@ -155,6 +155,7 @@
 - `LevelPackManifest.js`：远程关卡 bootstrap manifest、远程完整 manifest、包清单和包定位的严格校验，并要求远程包声明 `compact-schema-v1` 格式。
 - `LevelPackCompactCodec.js`：远程关卡包 `compact-schema-v1` 编解码器；生成器写入压缩格式，运行时和离线工具读取后先展开为完整关卡结构。
 - `RemoteLevelPackLoader.js`：先读取本地 bootstrap manifest，再使用 `wx.cloud.getTempFileURL` 下载远程完整 manifest；选关页首帧后按最高解锁关优先、最多 2 路并发静默下载全部远端 compact 包到 `USER_DATA_PATH`，每包按 manifest 执行 SHA-256 完整性校验；实际读取单关时展开对应包并复用 `LevelConfigLoader` 的规范化校验。
+- `LocalEditedLevelStore.js`：关卡编辑器本地草稿的权威存储层；微信使用 `USER_DATA_PATH/bubble_level_editor`，原生使用 writable path，浏览器/编辑器预览使用命名空间 localStorage。索引与单关 JSON 每次读写都经过 `LevelConfigLoader` 严格校验，不覆盖 `assets/map/config/levels` 或远端关卡包。
 - `BoardLayout.js`：棋盘与底部缸布局参数；棋盘采用 11/10 交错列，5 个不同颜色缸按实时屏幕宽度等比缩放，缸口保持在屏幕内且互不重叠，缸体允许相邻叠加。
 - `BoardViewportConfig.js`、`FairyAssistConfig.js`、`FallingRulesDefaults.js`、`JarScoreConfig.js`、`SpecialAnimationTiming.js`：局内玩法专用配置，源码位于 `gameplay-src/config`，随局内玩法延迟包加载。
 - `AimTuningProfiles.js`：瞄准调参配置。
@@ -174,6 +175,7 @@
 - 微信能力：`WechatShareService.js`、`FriendGiftService.js`、`GameCircleButtonAdapter.js`、`WorldLeaderboardService.js`
 - 玩家云端档案：`PlayerCloudProfileService.js` 通过 `playerProfile` 微信云函数同步本地玩家状态到云数据库 `player_profiles`，同步内容包含关卡进度、资源、背包、签到、商店、游戏圈福利与关卡尝试统计。本地写入经 `StrictStorage` 观察者合并上传（默认 5s debounce）；`Store.load()` 仅在 normalize 后数据变化时写回；选关页体力倒计时 ticker 只读内存状态，仅在自然恢复体力时写 storage；云端拉取后刷新选关 UI 在 `suspendWriteObserver` 内执行以避免冗余上传。
 - 世界排行榜：玩家普通关卡过关后，`WorldLeaderboardService.js` 立即用本地最佳成绩和已过关数调用 `worldLeaderboard` 微信云函数写入云数据库 `world_leaderboard`。未授权昵称头像时数据库中的 `nickname` 与 `avatarUrl` 保持空字符串；用户后续授权后，排行榜入口会保存 `bubble_world_leaderboard_profile_v1` 并再次上报覆盖云端资料。排行榜只拉取前 100 名；展示时空头像使用默认头像，空昵称显示“微信用户”。
+- 关卡编辑器云同步：`LevelEditorCloudSyncService.js` 将本地草稿分批调用 `levelEditorDrafts` 云函数，写入独立集合 `level_editor_drafts`；该链路不上传、不修改 `level-packs/` 静态文件、远端 manifest 或线上正式关卡版本。
 - 游戏圈福利：`GameCircleWelfareService.js`
 - 埋点：`TelemetryService.js`
 
@@ -216,10 +218,11 @@
 
 路径：`assets/scripts/editor`
 
-- `MapEditorController.js`：`editor` 场景运行时脚本。绑定 `checkerboard`/`ball_layot`/`split_ball_layot`/`prop_layot`/`select_map` 与操作按钮；支持拖拽 `levelDataFolder` 或配置 `levelDataResourcePath` 加载已有 `level_XXX.json`，经虚拟滚动列表选关并重建棋盘，导出时合并回原始关卡字段。
-- `MapEditorLevelCatalog.js`：扫描并加载关卡 JSON。`assets/map/config/levels` 通过 `BundleLoader.loadResDir("config/levels")` 从 `map` 分包读取；`assets` 根目录下其它文件夹（如 `assets/levels`）在编辑器预览中通过 `Editor.assetdb` 读写。
-- `MapEditorLevelPicker.js`：有界虚拟 ScrollView 关卡选择弹层（顶部最小关、底部最大关）。
-- `MapEditorBoardImport.js`：关卡 `layout`/`specialEntities` 导入为编辑器格子状态。
+- `MapEditorController.js`：`game/scens/editor` 场景运行时脚本。绑定棋盘、普通球、分裂球和特殊球工具；支持当前正式配置中的冰球、爆破球、彩虹球、石球、锁球/钥匙、燃烧瓶、分裂球、漩涡、藤蔓魔灵和左右虫洞。保存按钮把合并并严格校验后的整关配置写入本地草稿，云同步按钮只上传本地草稿，返回按钮重新进入 `game.fire`/LevelView。
+- `MapEditorLevelCatalog.js`：复用 `LevelManager`、`RemoteLevelPackLoader` 和线上远端 manifest，展示当前线上 1-1000 关列表并按原正式加载链读取关卡，不再扫描或改写工程内 JSON 文件夹。
+- `MapEditorLevelPicker.js`：有界虚拟 ScrollView 关卡选择弹层（顶部最小关、底部最大关）；静态背景与虚拟行背景使用独立 Sprite 代理渲染层，原 Sprite 禁用，逻辑/触摸节点保持原层级。
+- `MapEditorBoardImport.js`：把当前完整 `layout`/`specialEntities` 合同导入为编辑器格子状态；`validate:level-editor` 会验证现有 1000 关全部可导入。
+- `settings/project.json` 必须保留引擎 `EditBox` 模块；编辑场景的 `checkerboard_row` 依赖该组件，禁止再次加入 `excluded-modules`。
 
 ## 主要运行链路
 
@@ -254,7 +257,8 @@
 8. `gameManager.startLevel(levelConfig)` 生成运行时状态。
 9. `levelRenderer.renderLevel(levelConfig, snapshot)` 渲染局内场景。
 10. 隐藏选关页后保持 `isRestarting` 门控，`levelRenderer.playGameEntryCountdown()` 依次播放 3、2、1、GO；动画结束才恢复玩法 update、触摸和局内按钮，并继续特殊球介绍或新手引导。
-11. `LevelView/test_btn` 不进入 `StartGameView`，直接通过本地 `LevelConfigLoader` 加载并严格校验 `config/levels/level_test` 后进入局内；测试关不消耗体力，不记录普通关进度或发放通关奖励，重试仍重新进入 `level_test`。
+11. `LevelView/test_btn` 先加载 `game` 分包，再通过 `gameBundle.loadScene("scens/editor")` 切入关卡底图编辑器；编辑器从线上 manifest 显示关卡列表，修改后只保存本地草稿或同步到独立云端草稿集合。
+12. `LevelView/local_level_test_btn` 读取本地草稿索引并显示关卡列表；选中后以 `testSource: "local"` 进入现有测试模式，不扣体力、不记录普通关进度、不发放通关奖励，重试继续加载同一份本地草稿。
 
 ### 局内交互
 
@@ -309,6 +313,7 @@
 - `cloudfunctions/`：实际云函数源码。
 - `cloudfunctions/playerProfile`：玩家信息云端存储函数，按当前微信 `OPENID` 读写 `player_profiles` 云数据库集合。
 - `cloudfunctions/worldLeaderboard`：世界排行榜云函数，按当前微信 `OPENID` 写入并读取 `world_leaderboard` 云数据库集合。
+- `cloudfunctions/levelEditorDrafts`：关卡编辑器草稿同步云函数，按当前微信 `OPENID + levelId` 写入独立 `level_editor_drafts` 集合；禁止访问或修改线上静态关卡包。
 - `build-templates/wechatgame/cloudfunctions/`：构建模板中的云函数。
 - `tools/wechat-minigame-loading-patch.js`：微信官方封面图插件 `MinigameLoading` 构建后装配脚本，写入 `game.json` 插件声明、修补 `game.js`/`main.js` 启动与销毁逻辑，并复制 `images/loading_bg.jpg`。
 - `tools/build-wechat-gameplay-code.js`：微信小游戏局内玩法源码打包脚本；从 `gameplay-src` 生成 `assets/game/generated/lazy-gameplay-code.js`，构建后校验其 sha256 源码哈希存在于 `subpackages/game/game.js`，同时拒绝旧 `main.js` 同步 require 和 JS/JSON 双份发布。
@@ -324,6 +329,7 @@
 - `npm run validate:stamina`
 - `npm run validate:levels`
 - `npm run validate:level-sync`
+- `npm run validate:level-editor`
 - `npm run validate:aim`
 - `npm run validate:shots`
 - `npm run validate:fairy-gameplay`

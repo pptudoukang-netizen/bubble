@@ -1,11 +1,10 @@
 "use strict";
 
-var Shared = require("./GameBootstrapShared");
 var BubbleBreakSfxPolicy = require("../audio/BubbleBreakSfxPolicy");
 
 var JAR_BOUNCE_SFX_MIN_INTERVAL_MS = 80;
 var JAR_BOUNCE_SFX_MAX_PER_FRAME = 2;
-var JAR_BOUNCE_PIANO_SLOT_COUNT = 7;
+var JAR_BOUNCE_SFX_SLOT_COUNT = 5;
 
 module.exports = {
   _buildAudioConfig: function () {
@@ -133,19 +132,23 @@ module.exports = {
     return this.levelRenderer.playGameEntryCountdown();
   },
 
-  _resolveJarBouncePianoPath: function () {
-    var pianoPaths = this._parseAudioResourceList(this.jarBounceSfxResources);
-    if (pianoPaths.length < JAR_BOUNCE_PIANO_SLOT_COUNT) {
+  _resolveJarBouncePath: function (jarIndex) {
+    if (!Number.isInteger(jarIndex) || jarIndex < 0 || jarIndex >= JAR_BOUNCE_SFX_SLOT_COUNT) {
+      throw new Error("Jar bounce sfx requires jarIndex from 0 to " + (JAR_BOUNCE_SFX_SLOT_COUNT - 1) + ".");
+    }
+
+    var bouncePaths = this._parseAudioResourceList(this.jarBounceSfxResources);
+    if (bouncePaths.length !== JAR_BOUNCE_SFX_SLOT_COUNT) {
       throw new Error(
-        "Jar bounce sfx resources must include at least " +
-        JAR_BOUNCE_PIANO_SLOT_COUNT +
-        " entries (piano1-" +
-        JAR_BOUNCE_PIANO_SLOT_COUNT +
+        "Jar bounce sfx resources must include exactly " +
+        JAR_BOUNCE_SFX_SLOT_COUNT +
+        " entries (pao1-pao" +
+        JAR_BOUNCE_SFX_SLOT_COUNT +
         ")."
       );
     }
 
-    return pianoPaths[Math.floor(Math.random() * JAR_BOUNCE_PIANO_SLOT_COUNT)];
+    return bouncePaths[jarIndex];
   },
 
   _canPlayJarBounceSfx: function (now, playedThisFrame) {
@@ -224,11 +227,14 @@ module.exports = {
         if (!Number.isInteger(event.bounceCount) || event.bounceCount < 1) {
           throw new Error("jar_rim_bounce runtime event requires positive integer bounceCount.");
         }
+        if (!Number.isInteger(event.jarIndex) || event.jarIndex < 0 || event.jarIndex >= JAR_BOUNCE_SFX_SLOT_COUNT) {
+          throw new Error("jar_rim_bounce runtime event requires jarIndex from 0 to " + (JAR_BOUNCE_SFX_SLOT_COUNT - 1) + ".");
+        }
         if (!this._canPlayJarBounceSfx(now, jarBouncePlayedThisFrame)) {
           return;
         }
         jarBouncePlayedThisFrame += 1;
-        this._playSfx(this._resolveJarBouncePianoPath());
+        this._playSfx(this._resolveJarBouncePath(event.jarIndex));
         return;
       }
 

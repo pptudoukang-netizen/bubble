@@ -7,9 +7,12 @@ var BootstrapButtonFactory = Shared.BootstrapButtonFactory;
 var hideGameCircleWelfareViewNode = Shared.hideGameCircleWelfareViewNode;
 var LevelColorPermutation = require("../config/LevelColorPermutation");
 
-function resolveLevelEntryMode(options) {
+function normalizeLevelEntryOptions(options) {
   if (options === undefined) {
-    return "campaign";
+    return {
+      mode: "campaign",
+      testSource: null
+    };
   }
   if (!options || typeof options !== "object" || Array.isArray(options)) {
     throw new Error("Level entry options must be an object.");
@@ -17,12 +20,28 @@ function resolveLevelEntryMode(options) {
   if (options.mode !== "campaign" && options.mode !== "test") {
     throw new Error("Level entry mode must be campaign or test.");
   }
-  return options.mode;
+  if (options.mode === "campaign") {
+    if (options.testSource !== undefined) {
+      throw new Error("Campaign level entry must not define testSource.");
+    }
+    return {
+      mode: "campaign",
+      testSource: null
+    };
+  }
+  if (options.testSource !== "bundled" && options.testSource !== "local") {
+    throw new Error("Test level entry testSource must be bundled or local.");
+  }
+  return {
+    mode: "test",
+    testSource: options.testSource
+  };
 }
 
 module.exports = {
   _loadLevelById: function (levelId, successLogPrefix, failStatusMessage, entryOptions) {
-    var entryMode = resolveLevelEntryMode(entryOptions);
+    var normalizedEntryOptions = normalizeLevelEntryOptions(entryOptions);
+    var entryMode = normalizedEntryOptions.mode;
     this._recordCurrentAttemptQuit("start_new_level");
     this._cancelGameplayBundleIdleRelease();
     this._persistRouteEditorIfDirty();
@@ -83,6 +102,7 @@ module.exports = {
           levelId: this._currentLevelId
         };
         if (entryMode === "test") {
+          this._currentRunContext.testSource = normalizedEntryOptions.testSource;
           this._currentLevelEnteredByTestUnlock = true;
         } else {
           this._rememberSelectedLevel(this._currentLevelId);

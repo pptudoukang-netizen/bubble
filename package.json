@@ -4,6 +4,7 @@
     "validate:levels": "node tools/validate-level-content.js",
     "validate:level-sync": "node tools/validate-level-sync.js",
     "validate:remote-level-preload": "node tools/validate-remote-level-background-preload.js",
+    "validate:level-editor": "node tools/validate-level-editor-integration.js",
     "validate:random-challenge": "node tools/validate-random-challenge.js",
     "validate:aim": "node tools/validate-aim-profiles.js",
     "simulate:levels": "node tools/simulate-level-clearance.js",
@@ -28,7 +29,7 @@
     "generate:floating-map": "node tools/generate-floating-map-config.js --target 1000",
     "clean:wechat-cloudfunctions": "node tools/clean-wechat-build-cloudfunctions.js",
     "build:wechat-gameplay-code": "node tools/build-wechat-gameplay-code.js",
-    "validate": "npm run validate:stamina && npm run validate:levels && npm run validate:level-sync && npm run validate:remote-level-preload && npm run validate:random-challenge && npm run validate:aim && npm run validate:fairy-gameplay && npm run validate:swirl && npm run validate:wormhole && npm run validate:vine-spirit && npm run validate:gameplay-bundle && npm run validate:bundle-boundaries && npm run validate:ui-resource-lifecycle && npm run validate:boot && npm run validate:shots && npm run validate:release",
+    "validate": "npm run validate:stamina && npm run validate:levels && npm run validate:level-sync && npm run validate:remote-level-preload && npm run validate:level-editor && npm run validate:random-challenge && npm run validate:aim && npm run validate:fairy-gameplay && npm run validate:swirl && npm run validate:wormhole && npm run validate:vine-spirit && npm run validate:gameplay-bundle && npm run validate:bundle-boundaries && npm run validate:ui-resource-lifecycle && npm run validate:boot && npm run validate:shots && npm run validate:release",
     "chatgpt:images": "node tools/chatgpt-web-image-regenerator.js"
   },
   "devDependencies": {
