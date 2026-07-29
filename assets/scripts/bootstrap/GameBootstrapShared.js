@@ -7,6 +7,7 @@ var PoolManager = require("../utils/PoolManager");
 var LevelProgressStore = require("../utils/LevelProgressStore");
 var LevelAttemptStatsStore = require("../utils/LevelAttemptStatsStore");
 var PlayerResourceStore = require("../utils/PlayerResourceStore");
+var AssistSpiritStore = require("../utils/AssistSpiritStore");
 var DailyTaskStore = require("../utils/DailyTaskStore");
 var StaminaRecoveryStore = require("../utils/StaminaRecoveryStore");
 var InventoryStore = require("../utils/InventoryStore");
@@ -43,6 +44,7 @@ var TipsPresenter = require("../ui/TipsPresenter");
 var BackpackViewController = require("../ui/BackpackViewController");
 var DailyTaskViewController = require("../ui/DailyTaskViewController");
 var StartGameViewController = require("../ui/StartGameViewController");
+var SpiritHallViewController = require("../ui/SpiritHallViewController");
 var PopupPanelAnimator = require("../ui/PopupPanelAnimator");
 var StarChestRewardService = require("../services/StarChestRewardService");
 var StarChestService = require("../services/StarChestService");
@@ -129,6 +131,68 @@ function requireNonNegativeInteger(value, fieldName) {
   return value;
 }
 
+function buildBoardOcclusionStartContext(host, levelConfig, runContext) {
+  if (!host || typeof host !== "object") {
+    throw new Error("Board occlusion start context requires bootstrap host.");
+  }
+  if (!levelConfig || !levelConfig.level) {
+    throw new Error("Board occlusion start context requires level config.");
+  }
+  if (!runContext || typeof runContext !== "object" || Array.isArray(runContext)) {
+    throw new Error("Board occlusion start context requires run context.");
+  }
+  if (typeof runContext.mode !== "string" || !runContext.mode) {
+    throw new Error("Board occlusion run context requires mode.");
+  }
+  var levelId = levelConfig.level.levelId;
+  if (!Number.isInteger(levelId) || levelId <= 0) {
+    throw new Error("Board occlusion start context requires positive level id.");
+  }
+
+  var attemptIndex;
+  var seed;
+  if (runContext.mode === "test") {
+    if (!Number.isInteger(host._boardOcclusionTestAttemptIndex) || host._boardOcclusionTestAttemptIndex < 0) {
+      throw new Error("Board occlusion test attempt index is not initialized.");
+    }
+    host._boardOcclusionTestAttemptIndex += 1;
+    attemptIndex = host._boardOcclusionTestAttemptIndex;
+    seed = "test-level:" + levelId + ":attempt:" + attemptIndex;
+  } else {
+    if (
+      !host.levelAttemptStats ||
+      !host.levelAttemptStats.attemptCountByLevel ||
+      typeof host.levelAttemptStats.attemptCountByLevel !== "object" ||
+      Array.isArray(host.levelAttemptStats.attemptCountByLevel)
+    ) {
+      throw new Error("Board occlusion start context requires level attempt statistics.");
+    }
+    var levelKey = String(levelId);
+    var previousCount = Object.prototype.hasOwnProperty.call(
+      host.levelAttemptStats.attemptCountByLevel,
+      levelKey
+    )
+      ? host.levelAttemptStats.attemptCountByLevel[levelKey]
+      : 0;
+    requireNonNegativeInteger(previousCount, "Board occlusion previous attempt count");
+    attemptIndex = previousCount + 1;
+    if (runContext.mode === "random_challenge") {
+      if (typeof runContext.seed !== "string" || !runContext.seed) {
+        throw new Error("Random challenge board occlusion requires run seed.");
+      }
+      seed = runContext.seed;
+    } else {
+      seed = "level:" + levelId + ":attempt:" + attemptIndex;
+    }
+  }
+
+  return {
+    runMode: runContext.mode,
+    attemptIndex: attemptIndex,
+    seed: seed
+  };
+}
+
 module.exports = {
   DebugFlags: DebugFlags,
   Logger: Logger,
@@ -137,6 +201,7 @@ module.exports = {
   LevelProgressStore: LevelProgressStore,
   LevelAttemptStatsStore: LevelAttemptStatsStore,
   PlayerResourceStore: PlayerResourceStore,
+  AssistSpiritStore: AssistSpiritStore,
   DailyTaskStore: DailyTaskStore,
   StaminaRecoveryStore: StaminaRecoveryStore,
   InventoryStore: InventoryStore,
@@ -173,6 +238,7 @@ module.exports = {
   BackpackViewController: BackpackViewController,
   DailyTaskViewController: DailyTaskViewController,
   StartGameViewController: StartGameViewController,
+  SpiritHallViewController: SpiritHallViewController,
   PopupPanelAnimator: PopupPanelAnimator,
   StarChestRewardService: StarChestRewardService,
   StarChestService: StarChestService,
@@ -213,5 +279,6 @@ module.exports = {
   clone: clone,
   assertReleaseSceneFieldDisabled: assertReleaseSceneFieldDisabled,
   assertReleaseRewardedVideoAdUnitId: assertReleaseRewardedVideoAdUnitId,
-  requireNonNegativeInteger: requireNonNegativeInteger
+  requireNonNegativeInteger: requireNonNegativeInteger,
+  buildBoardOcclusionStartContext: buildBoardOcclusionStartContext
 };

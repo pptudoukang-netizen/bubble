@@ -12,6 +12,10 @@ var GameBootstrapGameplayInputMethods = require("./GameBootstrapGameplayInputMet
 var GameBootstrapLevelRuntimeMethods = require("./GameBootstrapLevelRuntimeMethods");
 var GameBootstrapNewUserGuideMethods = require("./GameBootstrapNewUserGuideMethods");
 var GameBootstrapSpecialIntroduceFlowMethods = require("./GameBootstrapSpecialIntroduceFlowMethods");
+var lazySpiritHallMethods = createLazyModuleMethods(
+  "./GameBootstrapSpiritHallMethods",
+  LazyRegistry.SPIRIT_HALL_METHODS
+);
 var lazyPowerupInventoryMethods = createLazyModuleMethods(
   "./GameBootstrapPowerupInventoryMethods",
   LazyRegistry.POWERUP_INVENTORY_METHODS
@@ -285,6 +289,10 @@ cc.Class({
       default: "sound/ice_break",
       tooltip: "冰冻球成功解冻时播放的音效资源路径（Resources 相对路径）。"
     },
+    vinesSfxResource: {
+      default: "sound/vines",
+      tooltip: "藤蔓完成缠绕普通球时播放的音效资源路径（Resources 相对路径）。"
+    },
     usePropsSfxResource: {
       default: "sound/use_props",
       tooltip: "道具球成功装填进炮台时播放的音效资源路径（Resources 相对路径）。"
@@ -523,6 +531,15 @@ cc.Class({
   _decreaseInventorySelectionCount: lazyPowerupInventoryMethods._decreaseInventorySelectionCount,
   _renderInventoryView: lazyPowerupInventoryMethods._renderInventoryView,
   _updateInventoryEntryState: lazyPowerupInventoryMethods._updateInventoryEntryState,
+  _ensureSpiritHallViewPrefab: lazySpiritHallMethods._ensureSpiritHallViewPrefab,
+  _ensureSpiritHallSpriteFrames: lazySpiritHallMethods._ensureSpiritHallSpriteFrames,
+  _refreshAssistSpiritState: lazySpiritHallMethods._refreshAssistSpiritState,
+  _showSpiritHallView: lazySpiritHallMethods._showSpiritHallView,
+  _hideSpiritHallView: lazySpiritHallMethods._hideSpiritHallView,
+  _renderSpiritHallView: lazySpiritHallMethods._renderSpiritHallView,
+  _upgradeSelectedSpirit: lazySpiritHallMethods._upgradeSelectedSpirit,
+  _advanceSelectedSpirit: lazySpiritHallMethods._advanceSelectedSpirit,
+  _equipSelectedSpirit: lazySpiritHallMethods._equipSelectedSpirit,
   _trackTelemetry: lazyTelemetryMethods._trackTelemetry,
   _beginLevelAttemptTracking: lazyTelemetryMethods._beginLevelAttemptTracking,
   _trackRuntimeTelemetryEvent: lazyTelemetryMethods._trackRuntimeTelemetryEvent,

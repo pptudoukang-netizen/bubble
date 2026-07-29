@@ -18,6 +18,9 @@ var BoardViewportSystem = require("../gameplay-src/systems/BoardViewportSystem")
 var BubbleBreakSfxPolicy = require("../assets/scripts/audio/BubbleBreakSfxPolicy");
 var AudioManager = require("../assets/scripts/audio/AudioManager");
 var GameBootstrapAudioMethods = require("../assets/scripts/bootstrap/GameBootstrapAudioMethods");
+var AdRewardCatalog = require("../assets/scripts/services/AdRewardCatalog");
+var AdRevivePolicy = require("../gameplay-src/core/AdRevivePolicy");
+var attachLevelRendererScenePopupMethods = require("../gameplay-src/render/LevelRendererScenePopupMethods");
 var attachLevelRendererSceneHudMethods = require("../gameplay-src/render/LevelRendererSceneHudMethods");
 
 function syncHudBottomLineYForValidation() {
@@ -28,6 +31,115 @@ function syncHudBottomLineYForValidation() {
     throw new Error("Validation requires BoardLayout.bubbleRadius.");
   }
   BoardLayout.hudBottomLineY = BoardLayout.boardStartY + BoardLayout.bubbleRadius;
+}
+
+function runTimedAndShotLimitedReviveCase() {
+  var timedLevelConfig = {
+    level: {
+      playMode: "timed_infinite_shots"
+    }
+  };
+  var timedPlan = AdRevivePolicy.buildRevivePlan(timedLevelConfig, null);
+  if (timedPlan.grantedShots !== 0 || timedPlan.grantedTimeSeconds !== 10 || timedPlan.description !== "+10秒") {
+    throw new Error("Timed revive plan must grant exactly 10 seconds and zero balls.");
+  }
+  var timedPresentation = attachLevelRendererScenePopupMethods.buildLoseRevivePresentation(timedLevelConfig, timedPlan);
+  if (timedPresentation.description !== "+10秒" || timedPresentation.descriptionX !== 0 || timedPresentation.showBall !== false) {
+    throw new Error("Timed LoseView revive presentation must center +10秒 and hide handsel_ball.");
+  }
+  var timedRewardEntry = AdRewardCatalog.resolveLoseRewardEntry("lost_objective");
+  if (!timedRewardEntry || timedRewardEntry.grantMode !== "current_round_revive") {
+    throw new Error("Timed lost_objective must expose a current-round revive entry.");
+  }
+
+  var timedManager = new GameManager();
+  timedManager.currentLevel = timedLevelConfig;
+  timedManager.isTimedInfiniteShots = true;
+  timedManager.state = "lost_objective";
+  timedManager.remainingShots = 0;
+  timedManager.remainingTimeMs = 0;
+  timedManager.timeLimitMs = 90000;
+  timedManager.systems.bubbleGrid = {
+    getCells: function () {
+      return [];
+    }
+  };
+  timedManager.getRuntimeSnapshot = function (events) {
+    return {
+      state: this.state,
+      remainingShots: this.remainingShots,
+      remainingTimeMs: this.remainingTimeMs,
+      runtimeEvents: Array.isArray(events) ? events : []
+    };
+  };
+  var timedResult = timedManager.reviveFromAd();
+  if (timedManager.state !== "running" || timedResult.remainingTimeMs !== 10000) {
+    throw new Error("Timed revive must resume running with exactly 10 seconds remaining.");
+  }
+  if (timedResult.grantedTimeSeconds !== 10 || timedResult.grantedShots !== 0 || timedResult.remainingShots !== 0) {
+    throw new Error("Timed revive result must not grant or report shot supply.");
+  }
+
+  var shotLevelConfig = {
+    level: {
+      playMode: "shot_limited",
+      colors: ["R", "G"],
+      bonusObjectives: [],
+      winConditions: [
+        { type: "collect_color", color: "R", value: 5 }
+      ]
+    }
+  };
+  var shotRuntimeSnapshot = {
+    board: {
+      cells: [
+        { color: "R" }
+      ]
+    },
+    objectives: {
+      progress: 0,
+      target: 5
+    }
+  };
+  var shotPlan = AdRevivePolicy.buildRevivePlan(shotLevelConfig, shotRuntimeSnapshot);
+  var shotPresentation = attachLevelRendererScenePopupMethods.buildLoseRevivePresentation(shotLevelConfig, shotPlan);
+  if (shotPlan.grantedShots !== 10 || shotPlan.grantedTimeSeconds !== 0) {
+    throw new Error("Shot-limited revive plan must grant exactly 10 balls and zero seconds.");
+  }
+  if (shotPresentation.description !== "赠送10球" || shotPresentation.descriptionX !== 32 || shotPresentation.showBall !== true) {
+    throw new Error("Shot-limited LoseView revive presentation must use x=32 and show handsel_ball.");
+  }
+
+  var shotManager = new GameManager();
+  shotManager.currentLevel = shotLevelConfig;
+  shotManager.isTimedInfiniteShots = false;
+  shotManager.state = "out_of_shots";
+  shotManager.remainingShots = 0;
+  shotManager.remainingTimeMs = 0;
+  shotManager.systems.bubbleGrid = {
+    getCells: function () {
+      return shotRuntimeSnapshot.board.cells.slice();
+    }
+  };
+  shotManager.systems.shooterController = {
+    setUpcomingNormalBalls: function (color, count) {
+      return { accepted: color === "R" && count === 2 };
+    },
+    setUpcomingRandomNormalBalls: function () {
+      throw new Error("Shot-limited target objective must not request random revive balls.");
+    }
+  };
+  shotManager._buildPrimaryObjectiveSnapshot = function () {
+    return shotRuntimeSnapshot.objectives;
+  };
+  shotManager._getCachedJarSnapshot = function () {
+    return {};
+  };
+  shotManager.getRuntimeSnapshot = timedManager.getRuntimeSnapshot;
+  var shotResult = shotManager.reviveFromAd();
+  if (shotManager.state !== "running" || shotResult.remainingShots !== 10 || shotResult.grantedTimeSeconds !== 0) {
+    throw new Error("Shot-limited revive must resume running with exactly 10 granted shots.");
+  }
 }
 
 function createGridWithViewport(levelConfig) {
@@ -1883,6 +1995,11 @@ function runMolotovBlastUpdateForcesFullRefreshCase() {
       update: function () {
         return false;
       }
+    },
+    boardOcclusionSystem: {
+      update: function () {
+        return [];
+      }
     }
   };
   manager._updateJarScoreBoost = function () {
@@ -2005,7 +2122,11 @@ function runSnowRemovalKeepsInnerNormalBallCase() {
   };
 
   try {
-    manager.startLevel(levelConfig);
+    manager.startLevel(levelConfig, {
+      runMode: "shot_regression",
+      attemptIndex: 1,
+      seed: "shot-regression-level:" + levelConfig.level.levelId + ":attempt:1"
+    });
     manager.systems.shooterController.skillInventory.snow_removal = 1;
     var beforeCells = manager.systems.bubbleGrid.getCells();
     if (beforeCells.length !== 3) {
@@ -2185,6 +2306,17 @@ function runCollectionRewardDoesNotClearRemainingBoardCase() {
           collectedByColor: { R: 2, B: 0 }
         };
       }
+    },
+    boardOcclusionSystem: {
+      snapshotForRender: function () {
+        return {
+          version: 0,
+          mode: "none",
+          variantId: null,
+          selectionSeed: null,
+          activeZones: []
+        };
+      }
     }
   };
   manager.cachedJarSnapshot = null;
@@ -2314,6 +2446,17 @@ function createAddBallPromptRegressionManager() {
           collectedByColor: { R: 0 }
         };
       }
+    },
+    boardOcclusionSystem: {
+      snapshotForRender: function () {
+        return {
+          version: 0,
+          mode: "none",
+          variantId: null,
+          selectionSeed: null,
+          activeZones: []
+        };
+      }
     }
   };
   return manager;
@@ -2361,7 +2504,11 @@ function runPreciseAimInventoryActivatesGuideCase() {
   };
 
   try {
-    manager.startLevel(levelConfig);
+    manager.startLevel(levelConfig, {
+      runMode: "shot_regression",
+      attemptIndex: 1,
+      seed: "shot-regression-level:" + levelConfig.level.levelId + ":attempt:1"
+    });
 
     var grantResult = manager.grantPowerupInventory("precise_aim", 1);
     if (!grantResult || grantResult.accepted !== true) {
@@ -4347,6 +4494,8 @@ function main() {
   console.log("[OK]", "out_of_shots_add_ball_prompt", "final shot prompts before lose settlement and close continues settlement");
   runAddBallPromptPlusTenCase();
   console.log("[OK]", "add_ball_prompt_plus_ten", "plus ten balls resumes running from add-ball prompt");
+  runTimedAndShotLimitedReviveCase();
+  console.log("[OK]", "timed_and_shot_limited_revive", "timed revive grants 10 seconds with centered text and hidden ball while shot-limited revive keeps 10 balls at x=32");
   runPreciseAimInventoryActivatesGuideCase();
   console.log("[OK]", "precise_aim_inventory_activates_guide", "precise aim inventory activates ricochet guide and consumes one item");
   runCollectedSkillPowerupsEmitInventoryEventsCase();

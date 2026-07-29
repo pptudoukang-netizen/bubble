@@ -20,6 +20,7 @@
 - `assets/game/`：局内资源、关卡底图编辑场景与玩法代码分包（微信 `subpackage`），包含 `GameView`、`scens/editor.fire`、球/罐子/道具图片、编辑器蜂窝底图、局内 HUD 图片与字体、射手 hero 动画、局内 prefab、Shader effect 与生成的 `generated/lazy-gameplay-code.js`；进入局内或关卡编辑器前由 `BundleLoader.ensureGameplayBundleLoaded()` 加载并校验玩法代码标记。
 - `assets/audio/`：音频资源分包（微信 `subpackage`），全部 BGM/SFX 位于 `assets/audio/sound/`，首次播放对应音频时按需加载。
 - `assets/animation/`：显式命名为 `animation` 的动画资源分包（微信 `subpackage`），包含爆炸、烟花和局内固定精灵红/黄/绿动画 prefab；射手 hero 动画已归入 `game`，禁止 `game` prefab 通过 UUID 反向依赖该分包。
+- `assets/spirit_system/`：显式命名为 `spirit_system` 的精灵系统资源分包（微信 `subpackage`），保存精灵大厅背景、角色立绘、UI 图集与 `prefabs/SpiritHallView.prefab`；大厅采用 720×1280 设计分辨率和 Sprite 代理分层，`SpiritHallScreenAdapter` 负责安全区、等比内容缩放、长屏顶部/底部分区延展和背景 cover，重复精灵卡片的源 Sprite 仅保留逻辑/点击职责，独立代理层集中渲染。
 - `assets/image/`：非 map/game/ui 分包资源；选关专用图片已归入 `assets/map/`，局内专用图片已归入 `assets/game/`，弹窗专用图片已归入 `assets/ui/`。
 - `assets/map/config/levels/`：本地内置关卡 JSON 配置，文件名形如 `level_001.json`；当前只内置 `level_001.json` 到 `level_010.json`。
 - `assets/map/config/level_manifest.json`：远程关卡 bootstrap manifest，只内置云环境、关卡边界和远程完整 manifest 的固定云存储 fileID。
@@ -32,6 +33,8 @@
 - `packages/find-image-references/`：Cocos Creator 2.4 编辑器扩展。资源面板右键图片（若编辑器支持）或顶部菜单「扩展 -> 查找图片引用」（需先选中图片）可查找引用，输出所属自动图集，并将引用该图片的预制体、场景、动画与图集引用名称输出到控制台；对预制体/场景会额外打印具体节点路径。
 - `tools/sync-loading-splash-template.js`：将 `assets/loading/loading_bg.jpg` 同步到 Web 构建模板目录。
 - `tools/build-wechat-gameplay-code.js`：局内玩法源码打包工具；`npm run build:wechat-gameplay-code` 在 Cocos 构建前更新唯一 JS 生成资产，编辑器构建完成后由 `packages/build-loading-splash` 校验 `game` 分包中的源码哈希，禁止玩法代码进入主包或以 JSON 再发布一份。
+- `tools/generate-spirit-hall-prefab.js`：精灵大厅预制体的确定性生成与校验入口；严格校验 `spirit_system` 内全部依赖图片和屏幕适配组件的 UUID，生成含 `SafeAreaRoot`、等比 `DesignContent`、背景 cover、四条真实 `cc.ProgressBar` 与 Sprite 代理分层的 `SpiritHallView.prefab`，并以 `--check` 检查生成物、代理/源 Sprite 一一对应和序列化引用完整性。
+- `tools/validate-spirit-hall-screen-adapter.js`：精灵大厅屏幕适配回归校验；覆盖基准 16:9、19.5:9 长屏、带刘海压缩安全区和 20:9 超长屏，验证内容等比缩放、顶部/底部分区延展、代理节点同步与背景 cover。
 - `tools/sync-boot-scene.js`：从 `game.fire` 的 LoadingView 静态节点同步生成不含 `GameBootstrap` 的 `boot.fire`；启动画面节点调整后运行 `npm run sync:boot-scene`。
 - `tools/validate-boot-startup.js` / `tools/verify-wechat-core-bundle.js`：分别校验源工程启动边界，以及 Cocos 构建后 `core`/`main` 脚本归属。
 - `tools/validate-bundle-boundaries.js`：校验 bundle 显式名称、全项目 UUID 唯一性、`map`/`game`/`ui` 序列化资源零跨包依赖，以及动态路径必须显式使用 `game/`、`map/` 或 `ui/` 前缀并能解析到真实资源；运行 `npm run validate:bundle-boundaries`。
@@ -40,6 +43,7 @@
 - `open-data/`：历史微信开放数据域逻辑。当前世界排行榜由主域源码和云函数实现，不再依赖开放数据域读取好友云存储。
 - `tools/`：校验、同步、构建修复、调试辅助脚本。
 - `tools/first-100-level-design.js`：前 100 关权威设计规则；Fail-Fast 读取 `E:\kxppm\decrypted_config\all_levels.json`，只提取前 100 关 `bubbles` 的占位/空位轮廓。母版 11/10 列轮廓通过归一化距离场投影到当前 11/10 列、8～15 行棋盘，并强制顶部满行、逐行连通、当前球数不变和 100 个轮廓唯一；颜色数量、收集目标、冰球目标、特殊球、开局球序列、星级线、奖励和关卡模式全部继续使用当前项目规则。发射数由当前项目真实玩法模拟得到的 100 项逐关校准表控制，优先削减连锁掉落关的过量余球并保留高压关安全线，不读取参考项目发射数；校准表长度或数值非法时直接报错。源文件缺失、行宽或字符非法、投影不连通时直接报错，不导入参考项目玩法，也不使用默认关卡兜底。
+- `tools/campaign-level-mode-policy.js`：1–1000 关玩法模式的权威生成规则；每个 10 的倍数关固定为 90 秒 `timed_infinite_shots` 特殊浮岛关，其余关卡保持 `shot_limited`。主生成器与关卡校验共用该规则，计时关禁止配置发射球上限、开局长序列和“+3 球”。
 - `tools/rebuild-first-100-level-configs.js`：前 100 关定向重建入口；先按当前项目设计规则同步 `LEVEL_CONFIG_TABLE_1_1000.csv` 前 100 行，再只重建本地 1-10、远程包 11-100 和对应 manifest 条目，不改写 101-1000 关远程包。运行命令为 `npm run generate:levels-first100`，重建时会复验当前玩法字段、11/10 列布局、支撑关系以及 100 个占位轮廓的唯一性。
 - `tools/reference-levels-101-300-design.js`、`tools/rebuild-reference-levels-101-300.js`：101–300 关参考轮廓与逐关发射数权威规则。参考项目普通主线只存在 1–200 关，因此 101–200 一一投影同编号轮廓，201–300 使用参考 101–200 的水平镜像投影；目标棋盘仍采用当前项目 11/10 列、15 行、当前球数、颜色目标和特殊球。200 项发射数校准表缺项或数值非法时直接报错。运行 `npm run generate:levels101-300` 只重写 CSV 的 101–300 发射数、两个远程包及对应 manifest 条目，并校验 200 个投影轮廓全部不同、水平重心偏移和左右占位差均不超过 0.20。
 - `tools/clustered-level-layout.js`、`tools/rebuild-relaxed-campaign-level-configs.js`、`tools/redesign-first-100-clustered-levels.js`、`tools/redesign-levels-100-500-aesthetic.js`：1-1000 关颜色聚类与爽感校验规则；前 300 关保留参考占位轮廓，颜色填充和玩法仍走当前规则；101–300 参考轮廓允许来源布局本身的自然收腰边界，但仍强制顶部支撑、全盘连通、颜色聚类和低孤立率。休闲解压版全量重建通过 `npm run redesign:relaxed-campaign` 同步 CSV、本地 1-10、远程 11-1000 compact 包和 manifest；`npm run redesign:levels100-500` 会保留 101–300 参考占位，仅重建其颜色聚类并为 301–500 生成美术轮廓；501-1000 关可通过 `npm run redesign:levels501-1000` 重建远程包布局、对称轮廓、色彩流动和 manifest 摘要。
@@ -65,6 +69,7 @@
 - `GameBootstrapLevelSelectFlowMethods.js`：选关页面、关卡进度、胜利记录、星级，并预加载 `map` 分包浮岛地图资源。
 - `GameBootstrapRouteEditorFlowMethods.js`：加载关卡与路线编辑器流程。
 - `GameBootstrapPowerupInventoryMethods.js`：背包、开局道具、局内技能球和广告补给。
+- `GameBootstrapSpiritHallMethods.js`：精灵大厅懒加载编排；从独立 `spirit_system` Bundle 加载大厅 Prefab 和七个精灵的动态 SpriteFrame，连接选择、金币升级、碎片进阶、出战持久化，并在关闭时释放节点、Prefab、SpriteFrame 引用和整个 Bundle。
 - `GameBootstrapSpecialIntroduceFlowMethods.js`：局内首次说明弹窗编排（`IntroduceView` 特殊球说明、`GeniusTipsView` 固定精灵说明、`SartTipsView` 顶部空槽说明）；使用 `SpecialIntroduceStore` 持久化已读状态，展示期间暂停限时关计时。
 - `GameBootstrapStatusResourceFlowMethods.js`：顶部资源、体力恢复、新手礼、状态文本。
 - `GameBootstrapRankingShopChestFlowMethods.js`：排行榜、商店、购买、星星宝箱。
@@ -88,7 +93,7 @@
 
 应用编排层。它连接 UI、玩法内核、渲染、服务、存储、广告、微信能力和音频。修改业务流程时通常先从这里找到真实调用链。
 
-- `LevelSelectView.js`：选关页顶层 UI 渲染入口，负责顶部状态和入口按钮绑定；`test_btn` 进入关卡底图编辑场景，运行时从其同结构克隆 `local_level_test_btn` 展示本地草稿关卡列表，`quick_start_btn` 快速开始，`back_cur_level` 回到当前关卡位置。
+- `LevelSelectView.js`：选关页顶层 UI 渲染入口，负责顶部状态和入口按钮绑定；`top/top_layer/sign_btn` 是签到入口，`bottom_layer/elven_hall_btn` 打开精灵大厅；`test_btn` 进入关卡底图编辑场景，运行时从其同结构克隆 `local_level_test_btn` 展示本地草稿关卡列表，`quick_start_btn` 快速开始，`back_cur_level` 回到当前关卡位置。
 - `LevelSelectFloatingMap.js`：按 `assets/map/config/floating_map.json` 渲染 1000 关无限上滚动浮岛地图；启动时仅预加载当前焦点关卡视口所需 island prefab，滚动时按需加载其余 prefab。
 
 ### core
@@ -100,7 +105,7 @@
 - 漩涡泡泡由 `GameManager` 在每次发射落位结算后启动：`BubbleGrid.rotateSwirlNeighborsClockwise()` 将中心周围六格严格顺时针轮换一格，`SpecialAnimationTiming.swirlRotation` 统一 60° / 0.4 秒时序；动画结束后 `SupportSystem.findFloatingCells()` 立即重算顶部连接并复用正常掉落链路。
 - 虫洞泡泡由 `GameManager` 在漩涡阶段之后、藤蔓阶段之前处理：`BubbleGrid.shiftWormholeInterior()` 将同一行两个固定虫洞之间的普通球、特殊球与空位按 `moveDirection` 循环移动一格，`SpecialAnimationTiming.wormholeShift` 统一 0.35 秒时序；`WormholeShaderRenderer` 为两个固定端点绑定 `effects/WormholeFlow`，通过引擎时间在 Shader 内叠加中心 UV 漩涡扭曲、快速环形蓝紫流光、星点/边缘呼吸和黑洞吞吸脉动，外圈与节点本身不旋转，结算位移动画也不会中断材质。移动不调用颜色匹配，动画结束后立即重算支撑并让无支撑球进入掉落链路。虫洞自身不可移除、作为永久锚点，且清屏判定会排除虫洞；顶部空槽达到全掉落阈值时仍触发崩塌，只保留两个固定虫洞端点；顶部陆地与渐变层定位忽略虫洞，不能下压到仅剩的虫洞行。
 - 藤蔓魔灵由 `GameManager` 在发射结算链中统一处理：魔灵固定 3 点生命，直接命中、爆炸范围命中或相邻格完成消除时每次结算只受 1 点伤害；爆炸范围命中缠绕球时只解除藤蔓并保留底层普通球。每 3 次真实发射后，存活魔灵按距离选择最近的未缠绕普通球，先预告 0.65 秒再写入归属藤蔓状态。魔灵死亡或因无支撑掉落时，`BubbleGrid` 按 owner id 同步清除其全部藤蔓；缠绕球自身掉落前也会解除藤蔓。
-- `AdRevivePolicy.js`：广告复活策略，统一复活补球、目标色选择和 LoseView 描述文案。
+- `AdRevivePolicy.js`：广告复活策略；普通限球关统一补 10 球并选择目标色，计时关失败复活统一增加 10 秒，LoseView 按模式切换描述、位置与赠球图标。
 - `ProjectileMath.js`：弹道与几何计算。
 - `StarRatingPolicy.js`：星级计算策略；优先使用关卡显式 `starThresholds`，未配置该字段的既有普通关卡继续按 `targetScore` 的统一比例计算。
 
@@ -115,6 +120,7 @@
 - `MatchSystem.js`：同色匹配消除；藤蔓球不进入同色连通组。
 - `SupportSystem.js`：连通/悬空判断；锁定球和虫洞作为锚点；藤蔓魔灵与已缠绕普通球遵循普通支撑关系，无支撑时进入掉落链路。
 - `FairyAssistSystem.js`：管理 `GameView/geniuses` 六个固定协助精灵槽位；只要本次发射产生消除，就按匹配消除数量生成红/黄/绿精灵，未消除时移除最早两只；碰撞中心由 `LevelRenderer.syncFairyAssistCollisionCenters` 从槽位节点转换到棋盘坐标后再参与判定，并维护每精灵最多 7 次碰撞计数与光效层数 snapshot。
+- `BoardOcclusionSystem.js`：管理棋盘云朵/树叶视觉遮挡；普通关按持久化关卡尝试序号在4个预校验变体间循环且连续不重复，随机挑战按Run种子固定。系统独立维护剩余发射次数/秒数、活动区域和渲染版本，不写入`BubbleGrid`，除雪剂可优先清理全部活动遮挡。
 - `FallingMarbleSystem.js`：掉落球运动（默认重力 900）；`maxDynamicMarbles` 当前由 `FallingRulesDefaults.maxDynamicMarbles`（9999，试验值）统一控制，暂忽略关卡 `fallingRules.maxDynamicMarbles: 10`，一次注册的全部掉落球会立即进入物理模拟；固定精灵反弹、红黄绿倍率、绿色精灵单次一分为二；清屏后余球每 0.2s 连续抛射入缸（不等上一颗入缸），炮台每 0.2s 在 15°～165° 间按 15° 步进往返旋转。
 - `JarCollectorSystem.js`：底部罐子收集。
 - `ShooterController.js`：射手和待发球；前 100 关的 `openingShotBalls` 会按配置顺序先进入炮台，序列耗尽后才进入权重随机球；广告复活覆盖炮台时会明确清空未消费的开局序列；`drainRemainingShotBalls` 在剩余球奖励阶段排空炮台队列。
@@ -132,6 +138,7 @@
 - `LevelRendererSceneShared.js`：场景渲染跨域公共节点 helper（`requireChildNode`、Label 写入等）。
 - `LevelRendererSceneScaffoldMethods.js`：`GameView` 脚手架、背景/大陆/渐变层、开局倒计时与 HUD 底线同步。
 - `LevelRendererSceneBoardMethods.js`：棋盘球池、掉落球、调试网格与棋盘格视觉状态。
+- `LevelRendererSceneOcclusionMethods.js`：在`BoardOcclusionLayer`（z=43）按格坐标与视口偏移渲染等比云朵/树叶，并显示剩余“发/秒”；云朵使用透明度呼吸、树叶使用轻摆动作。
 - `LevelRendererSceneShooterMethods.js`：炮台、瞄准辅助线、彩虹选色、路线编辑器与飞行球视觉缓存。
 - `LevelRendererSceneFxMethods.js`：钥匙/分裂/燃烧瓶/冰球等一次性动画、障碍锤提示、震屏与冲击反弹。
 - `LevelRendererSceneHudMethods.js`：HUD 目标、星级进度、连击/分数飘字、定时器与底部道具栏；道具按钮由 `prefabs/game/PropsBtn` 动态实例化到 `GameView/BttomPanel/props_scroll/view/content`。
@@ -151,6 +158,7 @@
 
 - `LevelManager.js`：按关卡 ID 生成 key，1-10 调用本地 `LevelConfigLoader`，11-1000 调用 `RemoteLevelPackLoader`，并缓存关卡配置；`preloadAllRemotePacks(priorityLevelId)` 用于选关页首帧完成后启动全部远端关卡包的后台磁盘缓存。
 - `LevelConfigLoader.js`：本地关卡配置加载、校验、规范化，并向远程包 loader 暴露同一套规范化入口。这里大量使用 Fail-Fast 校验。
+- `BoardOcclusionConfig.js`：动态遮挡Schema、严格校验与正式关卡候选生成策略；1-30关显式`none`，31关起启用，80关起由单区提升为双区。
 - `LevelColorPermutation.js`：普通关卡进入局内前对本次 `levelConfig` 拷贝执行颜色轮换；保持棋盘格局不变，同色球整体换成另一组颜色，不改写原始关卡缓存和收集目标字段。
 - `LevelPackManifest.js`：远程关卡 bootstrap manifest、远程完整 manifest、包清单和包定位的严格校验，并要求远程包声明 `compact-schema-v1` 格式。
 - `LevelPackCompactCodec.js`：远程关卡包 `compact-schema-v1` 编解码器；生成器写入压缩格式，运行时和离线工具读取后先展开为完整关卡结构。
@@ -160,6 +168,7 @@
 - `BoardViewportConfig.js`、`FairyAssistConfig.js`、`FallingRulesDefaults.js`、`JarScoreConfig.js`、`SpecialAnimationTiming.js`：局内玩法专用配置，源码位于 `gameplay-src/config`，随局内玩法延迟包加载。
 - `AimTuningProfiles.js`：瞄准调参配置。
 - `DailyTaskConfig.js`、`DailySignInConfig.js`、`ShopGoodsConfig.js`、`ShopRulesConfig.js`、`StarChestConfig.js`、`GameCircleWelfareConfig.js` 等：业务静态配置。
+- `AssistSpiritConfig.js`：精灵大厅七个精灵的权威静态配置，显式声明能力类型、说明、角色/UI 资源路径、1–20 级触发概率、逐级金币消耗和逐星碎片消耗；米露的普通递球不暴露特殊能力概率。
 - `RuntimeModeConfig.js`：运行模式配置。
 
 ### services
@@ -173,9 +182,9 @@
 - 商店：`ShopConfigService.js`、`ShopStateService.js`、`ShopPurchaseService.js`
 - 星星宝箱：`StarChestService.js`、`StarChestRewardService.js`
 - 微信能力：`WechatShareService.js`、`FriendGiftService.js`、`GameCircleButtonAdapter.js`、`WorldLeaderboardService.js`
-- 玩家云端档案：`PlayerCloudProfileService.js` 通过 `playerProfile` 微信云函数同步本地玩家状态到云数据库 `player_profiles`，同步内容包含关卡进度、资源、背包、签到、商店、游戏圈福利与关卡尝试统计。本地写入经 `StrictStorage` 观察者合并上传（默认 5s debounce）；`Store.load()` 仅在 normalize 后数据变化时写回；选关页体力倒计时 ticker 只读内存状态，仅在自然恢复体力时写 storage；云端拉取后刷新选关 UI 在 `suspendWriteObserver` 内执行以避免冗余上传。
+- 玩家云端档案：`PlayerCloudProfileService.js` 通过 `playerProfile` 微信云函数同步本地玩家状态到云数据库 `player_profiles`，同步内容包含关卡进度、资源、精灵等级/星级/碎片/出战状态、背包、签到、商店、游戏圈福利与关卡尝试统计；旧档案缺少精灵字段时由客户端与云函数使用同一份初始七精灵状态执行显式 schema 迁移。本地写入经 `StrictStorage` 观察者合并上传（默认 5s debounce）；`Store.load()` 仅在 normalize 后数据变化时写回；选关页体力倒计时 ticker 只读内存状态，仅在自然恢复体力时写 storage；云端拉取后刷新选关 UI 在 `suspendWriteObserver` 内执行以避免冗余上传。
 - 世界排行榜：玩家普通关卡过关后，`WorldLeaderboardService.js` 立即用本地最佳成绩和已过关数调用 `worldLeaderboard` 微信云函数写入云数据库 `world_leaderboard`。未授权昵称头像时数据库中的 `nickname` 与 `avatarUrl` 保持空字符串；用户后续授权后，排行榜入口会保存 `bubble_world_leaderboard_profile_v1` 并再次上报覆盖云端资料。排行榜只拉取前 100 名；展示时空头像使用默认头像，空昵称显示“微信用户”。
-- 关卡编辑器云同步：`LevelEditorCloudSyncService.js` 将本地草稿分批调用 `levelEditorDrafts` 云函数，写入独立集合 `level_editor_drafts`；该链路不上传、不修改 `level-packs/` 静态文件、远端 manifest 或线上正式关卡版本。
+- 关卡编辑器云同步：`LevelEditorCloudSyncService.js` 每次只将编辑器当前选中且已保存的单关本地草稿调用 `levelEditorDrafts` 云函数，写入独立集合 `level_editor_drafts`；文档 ID 由当前微信 `OPENID` 哈希与 `levelId` 共同组成，不同玩家上传同一关不会相互覆盖；该链路不上传、不修改 `level-packs/` 静态文件、远端 manifest 或线上正式关卡版本。
 - 游戏圈福利：`GameCircleWelfareService.js`
 - 埋点：`TelemetryService.js`
 
@@ -188,7 +197,7 @@
 - `StrictStorage.js`：严格本地存储读写，不吞 JSON 错误。
 - `BundleLoader.js`：分包/资源加载；生命周期敏感资源使用 `map/`、`game/`、`ui/` 显式前缀，禁止用同一个裸 `image/props/*` 路径跨分包复用。
 - `Logger.js`、`DebugFlags.js`：日志和调试开关。
-- 各种 Store：`LevelProgressStore.js`、`LevelAttemptStatsStore.js`、`PlayerResourceStore.js`、`InventoryStore.js`、`SelectedPowerupsStore.js`、`DailyTaskStore.js`、`SignInStore.js`、`StarChestStore.js`、`ShopStateStore.js`、`StaminaRecoveryStore.js`、`NewGiftStore.js`、`RouteConfigStore.js`、`GameCircleWelfareStore.js`、`LeaderboardStore.js`。
+- 各种 Store：`LevelProgressStore.js`、`LevelAttemptStatsStore.js`、`PlayerResourceStore.js`、`AssistSpiritStore.js`、`InventoryStore.js`、`SelectedPowerupsStore.js`、`DailyTaskStore.js`、`SignInStore.js`、`StarChestStore.js`、`ShopStateStore.js`、`StaminaRecoveryStore.js`、`NewGiftStore.js`、`RouteConfigStore.js`、`GameCircleWelfareStore.js`、`LeaderboardStore.js`；`AssistSpiritStore` 对七精灵完整 roster、等级、星级、碎片和当前出战 ID 做严格持久化校验。
 - `NewUserGuideStore.js`：记录新账号新手引导步骤，未完成引导时阻止签到弹窗自动弹出。
 
 ### ui

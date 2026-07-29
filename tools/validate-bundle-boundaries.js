@@ -14,6 +14,7 @@ var SERIALIZED_EXTENSIONS = {
 var ISOLATED_BUNDLES = {
   game: true,
   map: true,
+  spirit_system: true,
   ui: true
 };
 var EXPECTED_BUNDLES = {
@@ -22,11 +23,12 @@ var EXPECTED_BUNDLES = {
   "assets/game.meta": "game",
   "assets/map.meta": "map",
   "assets/scripts.meta": "core",
+  "assets/spirit_system.meta": "spirit_system",
   "assets/ui.meta": "ui"
 };
 var UUID_PATTERN = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
 var IMPLICIT_RESOURCE_PATTERN = /["']((?:image\/(?:ball|jar|genius|props)\/|effects\/|prefabs\/game\/)[^"']+)["']/g;
-var EXPLICIT_RESOURCE_PATTERN = /["']((?:game|map|ui)\/[^"']+)["']/g;
+var EXPLICIT_RESOURCE_PATTERN = /["']((?:game|map|spirit_system|ui)\/[^"']+)["']/g;
 var RESOURCE_EXTENSIONS = ["", ".anim", ".effect", ".fnt", ".jpg", ".jpeg", ".json", ".png", ".prefab"];
 
 function toProjectPath(absolutePath) {
@@ -47,7 +49,7 @@ function walkFiles(directory, output) {
 
 function resolveOwner(absolutePath) {
   var projectPath = toProjectPath(absolutePath);
-  var bundleRoots = ["animation", "audio", "game", "map", "ui"];
+  var bundleRoots = ["animation", "audio", "game", "map", "spirit_system", "ui"];
   for (var index = 0; index < bundleRoots.length; index += 1) {
     var bundleName = bundleRoots[index];
     if (projectPath.indexOf("assets/" + bundleName + "/") === 0) {
@@ -172,7 +174,7 @@ function validateExplicitResourcePaths() {
   });
   if (violations.length > 0) {
     throw new Error(
-      "Bundle-sensitive resource paths must start with game/, map/, or ui/:\n" + violations.join("\n")
+      "Bundle-sensitive resource paths must start with game/, map/, spirit_system/, or ui/:\n" + violations.join("\n")
     );
   }
 }
@@ -214,7 +216,7 @@ function main() {
   validateExplicitResourceTargets();
   console.log(
     "Bundle boundary validation passed: " +
-    Object.keys(uuidOwners).length + " UUIDs, map/game/ui serialized dependencies are isolated."
+    Object.keys(uuidOwners).length + " UUIDs, map/game/spirit_system/ui serialized dependencies are isolated."
   );
 }
 

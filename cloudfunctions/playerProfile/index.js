@@ -5,12 +5,14 @@ var cloud = require("wx-server-sdk");
 
 var COLLECTION_NAME = "player_profiles";
 var PROFILE_VERSION = 1;
-var DEPLOYMENT_MARKER = "playerProfile_v20260704_game_circle_welfare_v1";
+var DEPLOYMENT_MARKER = "playerProfile_v20260724_assist_spirit_v1";
 var LEVEL_ATTEMPT_STATS_STORAGE_KEY = "bubble_level_attempt_stats_v1";
+var ASSIST_SPIRIT_STORAGE_KEY = "bubble_assist_spirit_state_v1";
 var SUPPORTED_STORAGE_KEYS = {
   bubble_level_progress_v1: "LevelProgressStore",
   bubble_level_attempt_stats_v1: "LevelAttemptStatsStore",
   bubble_player_resources_v1: "PlayerResourceStore",
+  bubble_assist_spirit_state_v1: "AssistSpiritStore",
   bubble_stamina_recovery_state_v1: "StaminaRecoveryStore",
   bubble_daily_task_state_v1: "DailyTaskStore",
   bubble_player_inventory_v1: "InventoryStore",
@@ -99,11 +101,34 @@ function createEmptyLevelAttemptStats() {
   };
 }
 
+function createInitialAssistSpiritState() {
+  var spirits = {};
+  ["milu", "lumi", "noya", "flora", "loco", "kelu", "yumi"].forEach(function (spiritId) {
+    spirits[spiritId] = {
+      owned: true,
+      level: 1,
+      stars: 1,
+      fragments: 0
+    };
+  });
+  return {
+    version: 1,
+    equippedSpiritId: "milu",
+    spirits: spirits
+  };
+}
+
 function createMissingStorageEntry(storageKey) {
   if (storageKey === LEVEL_ATTEMPT_STATS_STORAGE_KEY) {
     return {
       namespace: SUPPORTED_STORAGE_KEYS[storageKey],
       value: createEmptyLevelAttemptStats()
+    };
+  }
+  if (storageKey === ASSIST_SPIRIT_STORAGE_KEY) {
+    return {
+      namespace: SUPPORTED_STORAGE_KEYS[storageKey],
+      value: createInitialAssistSpiritState()
     };
   }
   throw new Error("player profile missing storageKey: " + storageKey);

@@ -360,14 +360,19 @@ module.exports = {
       return;
     }
 
-    var bottomLayerNode = this._levelSelectNode.getChildByName("bottom_layer");
-    if (!bottomLayerNode || !bottomLayerNode.isValid) {
-      throw new Error("LevelView bottom_layer is required for sign-in entry.");
+    var topNode = this._levelSelectNode.getChildByName("top");
+    if (!topNode || !topNode.isValid) {
+      throw new Error("LevelView top is required for sign-in entry.");
     }
 
-    var signButtonNode = bottomLayerNode.getChildByName("sign_btn");
+    var topLayerNode = topNode.getChildByName("top_layer");
+    if (!topLayerNode || !topLayerNode.isValid) {
+      throw new Error("LevelView top/top_layer is required for sign-in entry.");
+    }
+
+    var signButtonNode = topLayerNode.getChildByName("sign_btn");
     if (!signButtonNode || !signButtonNode.isValid) {
-      throw new Error("LevelView bottom_layer requires sign_btn.");
+      throw new Error("LevelView top/top_layer requires sign_btn.");
     }
 
     this._bindNodeTapOnce(signButtonNode, function () {

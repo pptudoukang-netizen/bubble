@@ -1,6 +1,7 @@
 "use strict";
 
 var Shared = require("./GameBootstrapUiFlowShared");
+var BootstrapShared = require("./GameBootstrapShared");
 var Logger = Shared.Logger;
 var RouteEditorState = Shared.RouteEditorState;
 var BootstrapButtonFactory = Shared.BootstrapButtonFactory;
@@ -110,7 +111,10 @@ module.exports = {
         this._prepareRouteEditorForLevel(levelConfig, this._currentLevelId);
         return this.levelRenderer.syncBoardLayoutHudBottomLineAsync().then(function () {
           this._applyBoardTuningFromProperties();
-          var snapshot = this.gameManager.startLevel(levelConfig);
+          var snapshot = this.gameManager.startLevel(
+            levelConfig,
+            BootstrapShared.buildBoardOcclusionStartContext(this, levelConfig, this._currentRunContext)
+          );
           if (typeof this._applySelectedPowerupsToRuntime === "function") {
             snapshot = this._applySelectedPowerupsToRuntime(snapshot);
           }

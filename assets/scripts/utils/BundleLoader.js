@@ -6,10 +6,12 @@ var UI_BUNDLE_NAME = "ui";
 var GAME_BUNDLE_NAME = "game";
 var MAP_BUNDLE_NAME = "map";
 var AUDIO_BUNDLE_NAME = "audio";
+var SPIRIT_SYSTEM_BUNDLE_NAME = "spirit_system";
 var GAME_ASSET_PREFIX = "game/";
 var MAP_ASSET_PREFIX = "map/";
 var UI_ASSET_PREFIX = "ui/";
 var AUDIO_ASSET_PREFIX = "sound/";
+var SPIRIT_SYSTEM_ASSET_PREFIX = "spirit_system/";
 var MAP_CONFIG_PREFIX = "config/";
 var MAP_LEVEL_VIEW_PATH = "prefabs/ui/LevelView";
 var UI_PREFAB_LEGACY_PREFIX = "prefabs/ui/";
@@ -354,6 +356,13 @@ function releaseNamedBundle(bundleName) {
 }
 
 function resolveLoadRoute(path) {
+  if (path.indexOf(SPIRIT_SYSTEM_ASSET_PREFIX) === 0) {
+    return {
+      bundleName: SPIRIT_SYSTEM_BUNDLE_NAME,
+      path: path.slice(SPIRIT_SYSTEM_ASSET_PREFIX.length)
+    };
+  }
+
   if (path.indexOf(GAME_ASSET_PREFIX) === 0) {
     return {
       bundleName: GAME_BUNDLE_NAME,

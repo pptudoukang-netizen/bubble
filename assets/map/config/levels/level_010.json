@@ -59,7 +59,8 @@
             "B",
             "Y"
         ],
-        "shotLimit": 10,
+        "timeLimitSeconds": 90,
+        "requiredStarCount": 1,
         "targetScore": 4350,
         "starThresholds": {
             "star1": 1566,
@@ -81,11 +82,8 @@
             "B": 1,
             "Y": 1.12
         },
-        "openingShotBalls": [
+        "initialShotBalls": [
             "R",
-            "G",
-            "R",
-            "Y",
             "R"
         ],
         "jarRules": {
@@ -102,8 +100,8 @@
         ],
         "bonusObjectives": [
             {
-                "type": "clear_with_shots_remaining",
-                "value": 3
+                "type": "single_turn_drop_count",
+                "value": 6
             }
         ],
         "clearRewardItems": [
@@ -138,14 +136,18 @@
                 "col": 5
             }
         ],
-        "levelType": "normal",
-        "playMode": "shot_limited",
+        "levelType": "special_floating_island",
+        "playMode": "timed_infinite_shots",
         "initialDropSpaceRows": 8,
         "adPowerupRules": {
             "allowed": [
-                "three_line_elimination",
-                "plus_three_balls"
+                "three_line_elimination"
             ]
+        },
+        "boardOcclusionPlan": {
+            "generatorVersion": 1,
+            "mode": "none",
+            "variants": []
         }
     },
     "difficultyScaleMax": 100

@@ -89,9 +89,17 @@ function attachLevelRendererSceneHudMethods(LevelRenderer, deps) {
       }
     });
 
+    if (
+      !runtimeSnapshot.systems ||
+      !runtimeSnapshot.systems.boardOcclusionSystem ||
+      !Array.isArray(runtimeSnapshot.systems.boardOcclusionSystem.activeZones)
+    ) {
+      throw new Error("Bottom panel requires board occlusion snapshot.");
+    }
     return {
       hasIce: hasIce,
-      hasStone: hasStone
+      hasStone: hasStone,
+      hasBoardOcclusion: runtimeSnapshot.systems.boardOcclusionSystem.activeZones.length > 0
     };
   }
 
@@ -1550,12 +1558,9 @@ LevelRenderer.prototype._renderBottomPanel = function (runtimeSnapshot) {
   var pendingBarrierHammer = !!shooterSnapshot.pendingBarrierHammer;
   var pendingRainbowColorSelection = !!shooterSnapshot.pendingRainbowColorSelection;
   var preciseAimActive = shooterSnapshot.ricochetGuideActive === true;
-  if (!this.bottomPanelInitialBoardTargets) {
-    this.bottomPanelInitialBoardTargets = resolveBottomPanelBoardTargets(runtimeSnapshot);
-  }
-  var boardTargets = this.bottomPanelInitialBoardTargets;
+  var boardTargets = resolveBottomPanelBoardTargets(runtimeSnapshot);
   var showBarrierHammer = boardTargets.hasStone || pendingBarrierHammer;
-  var showSnowRemoval = boardTargets.hasIce;
+  var showSnowRemoval = boardTargets.hasIce || boardTargets.hasBoardOcclusion;
   var canUsePowerup = !!shooterSnapshot.canUsePowerups;
   var canUseRainbow = canUsePowerup && !pendingBarrierHammer && rainbowCount > 0;
   var canUsePreciseAim = canUsePowerup && !pendingBarrierHammer && !preciseAimActive && preciseAimCount > 0;

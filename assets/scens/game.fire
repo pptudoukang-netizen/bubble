@@ -1728,6 +1728,7 @@
     "lockOpenSfxResource": "sound/lock_open",
     "fireworksSfxResource": "sound/fireworks",
     "iceBreakSfxResource": "sound/ice_break",
+    "vinesSfxResource": "sound/vines",
     "usePropsSfxResource": "sound/use_props",
     "rewardedVideoAdUnitId": "adunit-a6c99a9ee6bc8015",
     "interstitialAdUnitId": "adunit-a9355409b616c9d3",

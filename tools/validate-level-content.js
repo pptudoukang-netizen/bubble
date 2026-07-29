@@ -8,6 +8,7 @@ var LevelBoardSupportValidator = require("../assets/scripts/config/LevelBoardSup
 var LevelPackCompactCodec = require("../assets/scripts/config/LevelPackCompactCodec");
 var LevelPackIntegrity = require("../assets/scripts/config/LevelPackIntegrity");
 var LevelPackManifest = require("../assets/scripts/config/LevelPackManifest");
+var CampaignLevelModePolicy = require("./campaign-level-mode-policy");
 var ClusteredLevelLayout = require("./clustered-level-layout");
 var FirstHundredLevelDesign = require("./first-100-level-design");
 
@@ -456,6 +457,24 @@ function validateLevelMode(level, issues) {
   }
 }
 
+function validateCampaignLevelModeSchedule(level, issues) {
+  var expected = CampaignLevelModePolicy.getExpectedMode(level.levelId);
+  if (level.levelType !== expected.levelType) {
+    issues.push("campaign levelType must be " + expected.levelType);
+  }
+  if (level.playMode !== expected.playMode) {
+    issues.push("campaign playMode must be " + expected.playMode);
+  }
+  if (expected.playMode === "timed_infinite_shots") {
+    if (level.timeLimitSeconds !== expected.timeLimitSeconds) {
+      issues.push("campaign timeLimitSeconds must be " + expected.timeLimitSeconds);
+    }
+    if (level.requiredStarCount !== expected.requiredStarCount) {
+      issues.push("campaign requiredStarCount must be " + expected.requiredStarCount);
+    }
+  }
+}
+
 function validateInitialDropSpaceRows(level, issues) {
   if (!isPositiveInteger(level.initialDropSpaceRows)) {
     issues.push("initialDropSpaceRows must be a positive integer");
@@ -631,6 +650,7 @@ function validateLevelData(data, expectedLevelId) {
   }
 
   validateLevelMode(level, issues);
+  validateCampaignLevelModeSchedule(level, issues);
   validateInitialDropSpaceRows(level, issues);
 
   if (!isPositiveInteger(level.targetScore)) {

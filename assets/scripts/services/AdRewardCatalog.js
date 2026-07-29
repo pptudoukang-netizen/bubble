@@ -27,6 +27,14 @@ var LOSE_REWARD_ENTRIES = {
     quotaType: "lose_next_round",
     grantMode: "current_round_revive",
     awardTips: "立即复活"
+  },
+  lost_objective: {
+    entryKey: "lose_lost_objective",
+    rewardType: "current_round_revive_lost_objective",
+    rewardValue: "revive",
+    quotaType: "lose_next_round",
+    grantMode: "current_round_revive",
+    awardTips: "立即复活"
   }
 };
 

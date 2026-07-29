@@ -1,6 +1,9 @@
 "use strict";
 
 var bootstrapModuleLoaders = {
+  "./GameBootstrapSpiritHallMethods": function () {
+    return require("./GameBootstrapSpiritHallMethods");
+  },
   "./GameBootstrapSignInAwardFlowMethods": function () {
     return require("./GameBootstrapSignInAwardFlowMethods");
   },

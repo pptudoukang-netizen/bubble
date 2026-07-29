@@ -1268,6 +1268,10 @@ function updateTopStatus(levelView, options) {
     throw new Error("LevelSelectView requires onOpenDailyTasks.");
   }
   var onOpenDailyTasks = options.onOpenDailyTasks;
+  if (typeof options.onOpenSpiritHall !== "function") {
+    throw new Error("LevelSelectView requires onOpenSpiritHall.");
+  }
+  var onOpenSpiritHall = options.onOpenSpiritHall;
   if (typeof options.onHiddenUnlockAllLevels !== "function") {
     throw new Error("LevelSelectView requires onHiddenUnlockAllLevels.");
   }
@@ -1319,6 +1323,12 @@ function updateTopStatus(levelView, options) {
     "__inventoryTapBound",
     "__onOpenInventory",
     onOpenInventory
+  );
+  bindNamedButtonTap(
+    bottomLayerNode ? bottomLayerNode.getChildByName("elven_hall_btn") : null,
+    "__spiritHallTapBound",
+    "__onOpenSpiritHall",
+    onOpenSpiritHall
   );
   bindNamedButtonTap(
     topLayerNode ? topLayerNode.getChildByName("star_box_btn") : null,
@@ -1577,6 +1587,10 @@ function renderLevelSelectContent(options) {
     throw new Error("LevelSelectView requires onOpenDailyTasks.");
   }
   var onOpenDailyTasks = options.onOpenDailyTasks;
+  if (typeof options.onOpenSpiritHall !== "function") {
+    throw new Error("LevelSelectView requires onOpenSpiritHall.");
+  }
+  var onOpenSpiritHall = options.onOpenSpiritHall;
   if (typeof options.onHiddenUnlockAllLevels !== "function") {
     throw new Error("LevelSelectView requires onHiddenUnlockAllLevels.");
   }
@@ -1648,6 +1662,7 @@ function renderLevelSelectContent(options) {
     onOpenStarChest: onOpenStarChest,
     onOpenShop: onOpenShop,
     onOpenDailyTasks: onOpenDailyTasks,
+    onOpenSpiritHall: onOpenSpiritHall,
     onHiddenUnlockAllLevels: onHiddenUnlockAllLevels
   });
   bindQuickStartButton(levelView, onQuickStart);

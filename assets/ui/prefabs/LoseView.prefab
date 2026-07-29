@@ -2559,7 +2559,7 @@
         1,
         1,
         1,
-        1
+        0
       ]
     },
     "_eulerAngles": {
@@ -3388,7 +3388,7 @@
       "__type__": "TypedArray",
       "ctor": "Float64Array",
       "array": [
-        32.158,
+        32,
         -15.184,
         0,
         0,

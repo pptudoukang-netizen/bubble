@@ -63,6 +63,7 @@ LevelRenderer.prototype._mountGameViewScaffold = function () {
 
 LevelRenderer.prototype.prepareForLevelSelectReturn = function () {
   this._ensureLayers();
+  this.lightningChainRenderer.reset("level_select_return");
   if (typeof this._cancelSkillPowerupCollectedFeedback !== "function") {
     throw new Error("Level select return requires collected skill powerup feedback cleanup.");
   }

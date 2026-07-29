@@ -2762,6 +2762,13 @@ function createGameManagerShotResolutionMethods(deps) {
 
       this.activeProjectile = null;
       this.pendingProjectileFinalize = false;
+      var clearedOcclusionZoneIds = this.systems.boardOcclusionSystem.onShotFired();
+      if (clearedOcclusionZoneIds.length) {
+        this._pushRuntimeEvent("board_occlusion_cleared", {
+          reason: "shot_count",
+          zoneIds: clearedOcclusionZoneIds
+        });
+      }
 
       if (postShotSpecialStarted) {
         this.pendingShotPlan = null;

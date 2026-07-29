@@ -5,8 +5,10 @@ var fs = require("fs");
 var path = require("path");
 
 var BoardLayout = require("../assets/scripts/config/BoardLayout");
+var BoardOcclusionConfig = require("../assets/scripts/config/BoardOcclusionConfig");
 var LevelBoardSupportValidator = require("../assets/scripts/config/LevelBoardSupportValidator");
 var LevelPackCompactCodec = require("../assets/scripts/config/LevelPackCompactCodec");
+var CampaignLevelModePolicy = require("./campaign-level-mode-policy");
 var ClusteredLevelLayout = require("./clustered-level-layout");
 var FirstHundredLevelDesign = require("./first-100-level-design");
 var ReferenceLevels101To300Design = require("./reference-levels-101-300-design");
@@ -1328,6 +1330,8 @@ function makeLevel(levelId, placementVariant) {
         firstHundredSpec.specialCounts.wormhole
       : 0
   );
+  var levelMode = CampaignLevelModePolicy.getExpectedMode(levelId);
+  var isTimedLevel = levelMode.playMode === "timed_infinite_shots";
 
   var spawnWeights = {};
   colors.forEach(function (color, index) {
@@ -1392,7 +1396,9 @@ function makeLevel(levelId, placementVariant) {
       ),
       colorCount: colors.length,
       colors: colors,
-      shotLimit: tableRow.shotLimit,
+      shotLimit: isTimedLevel ? undefined : tableRow.shotLimit,
+      timeLimitSeconds: isTimedLevel ? levelMode.timeLimitSeconds : undefined,
+      requiredStarCount: isTimedLevel ? levelMode.requiredStarCount : undefined,
       targetScore: targetScore,
       starThresholds: firstHundredSpec
         ? FirstHundredLevelDesign.buildStarThresholds(targetScore, firstHundredSpec.designBeat)
@@ -1403,8 +1409,12 @@ function makeLevel(levelId, placementVariant) {
       jarCount: jarColors.length,
       jarColors: jarColors,
       spawnWeights: spawnWeights,
-      initialShotBalls: firstHundredSpec ? undefined : [tableRow.target1.color, tableRow.target1.color],
-      openingShotBalls: firstHundredSpec ? firstHundredSpec.openingShotBalls.slice() : undefined,
+      initialShotBalls: firstHundredSpec && !isTimedLevel
+        ? undefined
+        : [tableRow.target1.color, tableRow.target1.color],
+      openingShotBalls: firstHundredSpec && !isTimedLevel
+        ? firstHundredSpec.openingShotBalls.slice()
+        : undefined,
       jarRules: {
         rimBounce: Math.min(0.92, 0.68 + progress * 0.22),
         collectZoneScale: Math.max(0.78, 1.1 - progress * 0.25),
@@ -1412,7 +1422,7 @@ function makeLevel(levelId, placementVariant) {
       },
       winConditions: buildWinConditionsFromTable(tableRow),
       bonusObjectives: [
-        levelId % 3 === 0
+        isTimedLevel || levelId % 3 === 0
           ? { type: "single_turn_drop_count", value: Math.min(18, 6 + Math.floor(progress * 10)) }
           : { type: "clear_with_shots_remaining", value: Math.min(tableRow.shotLimit, 3 + Math.floor(progress * 8)) }
       ],
@@ -1429,15 +1439,18 @@ function makeLevel(levelId, placementVariant) {
         ? firstHundredTuning.difficultyScore
         : Math.min(100, 34 + Math.floor(progress * 66)),
       specialEntities: specialEntities,
-      levelType: "normal",
-      playMode: "shot_limited",
+      levelType: levelMode.levelType,
+      playMode: levelMode.playMode,
       initialDropSpaceRows: 8,
       adPowerupRules: {
-        allowed: ["three_line_elimination", "plus_three_balls"]
+        allowed: isTimedLevel
+          ? ["three_line_elimination"]
+          : ["three_line_elimination", "plus_three_balls"]
       }
     },
     difficultyScaleMax: 100
   };
+  config.level.boardOcclusionPlan = BoardOcclusionConfig.buildCampaignPlan(config.level);
 
   return config;
 }
@@ -1964,9 +1977,7 @@ function validateReferenceLevels101To300Outputs() {
     }
     var level = expandedPack.levels[levelKey].level;
     var tableRow = getTableRow(levelId);
-    if (level.shotLimit !== tableRow.shotLimit || level.levelType !== "normal" || level.playMode !== "shot_limited") {
-      throw new Error("Level " + levelId + " gameplay fields differ from the current project table.");
-    }
+    CampaignLevelModePolicy.assertExpectedLevelMode(level, tableRow.shotLimit);
     var descriptor = FirstHundredLevelDesign.buildReferenceLayoutDescriptor(levelId);
     var expectedSlots = FirstHundredLevelDesign.buildReferenceShapeSlots(
       makeEmptyRows(tableRow.rowCount),

@@ -588,6 +588,9 @@ module.exports = {
     if (!this.playerResourceStore || typeof this.playerResourceStore.load !== "function") {
       throw new Error("Reload player profile requires PlayerResourceStore.load.");
     }
+    if (!this.assistSpiritStore || typeof this.assistSpiritStore.load !== "function") {
+      throw new Error("Reload player profile requires AssistSpiritStore.load.");
+    }
     if (!this.staminaRecoveryStore || typeof this.staminaRecoveryStore.load !== "function") {
       throw new Error("Reload player profile requires StaminaRecoveryStore.load.");
     }
@@ -627,6 +630,7 @@ module.exports = {
     this.levelAttemptStats = this.levelAttemptStatsStore.load();
     this.staminaRecoveryState = this.staminaRecoveryStore.load();
     this.playerResources = this.playerResourceStore.load(now);
+    this.assistSpiritState = this.assistSpiritStore.load();
     this.dailyTaskState = this.dailyTaskStore.load(now);
     this.playerInventory = this.inventoryStore.load();
     this.selectedPowerupsState = this.selectedPowerupsStore.load();

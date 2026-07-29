@@ -1,6 +1,17 @@
 "use strict";
 
 module.exports = {
+  SPIRIT_HALL_METHODS: [
+    "_ensureSpiritHallViewPrefab",
+    "_ensureSpiritHallSpriteFrames",
+    "_refreshAssistSpiritState",
+    "_showSpiritHallView",
+    "_hideSpiritHallView",
+    "_renderSpiritHallView",
+    "_upgradeSelectedSpirit",
+    "_advanceSelectedSpirit",
+    "_equipSelectedSpirit"
+  ],
   SIGN_IN_AWARD_FLOW_METHODS: [
     "_getDailySignInConfig",
     "_refreshSignInState",

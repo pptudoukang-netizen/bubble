@@ -137,6 +137,11 @@
                 "three_line_elimination",
                 "plus_three_balls"
             ]
+        },
+        "boardOcclusionPlan": {
+            "generatorVersion": 1,
+            "mode": "none",
+            "variants": []
         }
     },
     "difficultyScaleMax": 100

@@ -1,0 +1,80 @@
+"use strict";
+
+var TIMED_LEVEL_INTERVAL = 10;
+var TIMED_LEVEL_TIME_LIMIT_SECONDS = 90;
+var TIMED_LEVEL_REQUIRED_STAR_COUNT = 1;
+
+function assertLevelId(levelId) {
+  if (!Number.isInteger(levelId) || levelId <= 0) {
+    throw new Error("Campaign level mode requires a positive integer levelId: " + levelId);
+  }
+}
+
+function isTimedLevelId(levelId) {
+  assertLevelId(levelId);
+  return levelId % TIMED_LEVEL_INTERVAL === 0;
+}
+
+function getExpectedMode(levelId) {
+  if (isTimedLevelId(levelId)) {
+    return {
+      levelType: "special_floating_island",
+      playMode: "timed_infinite_shots",
+      timeLimitSeconds: TIMED_LEVEL_TIME_LIMIT_SECONDS,
+      requiredStarCount: TIMED_LEVEL_REQUIRED_STAR_COUNT
+    };
+  }
+  return {
+    levelType: "normal",
+    playMode: "shot_limited"
+  };
+}
+
+function assertExpectedLevelMode(level, expectedShotLimit) {
+  if (!level || typeof level !== "object" || Array.isArray(level)) {
+    throw new Error("Campaign level mode validation requires a level object.");
+  }
+  var expected = getExpectedMode(level.levelId);
+  if (level.levelType !== expected.levelType) {
+    throw new Error("Level " + level.levelId + " levelType must be " + expected.levelType + ".");
+  }
+  if (level.playMode !== expected.playMode) {
+    throw new Error("Level " + level.levelId + " playMode must be " + expected.playMode + ".");
+  }
+  if (expected.playMode === "timed_infinite_shots") {
+    if (level.shotLimit !== undefined && level.shotLimit !== null) {
+      throw new Error("Level " + level.levelId + " timed mode must not configure shotLimit.");
+    }
+    if (level.timeLimitSeconds !== expected.timeLimitSeconds) {
+      throw new Error(
+        "Level " + level.levelId + " timeLimitSeconds must be " + expected.timeLimitSeconds + "."
+      );
+    }
+    if (level.requiredStarCount !== expected.requiredStarCount) {
+      throw new Error(
+        "Level " + level.levelId + " requiredStarCount must be " + expected.requiredStarCount + "."
+      );
+    }
+    return;
+  }
+  if (!Number.isInteger(expectedShotLimit) || expectedShotLimit <= 0) {
+    throw new Error("Level " + level.levelId + " expected shotLimit must be a positive integer.");
+  }
+  if (level.shotLimit !== expectedShotLimit) {
+    throw new Error(
+      "Level " + level.levelId + " shotLimit mismatch: expected " + expectedShotLimit + ", got " + level.shotLimit + "."
+    );
+  }
+  if (level.timeLimitSeconds !== undefined || level.requiredStarCount !== undefined) {
+    throw new Error("Level " + level.levelId + " shot-limited mode must not configure timed fields.");
+  }
+}
+
+module.exports = {
+  TIMED_LEVEL_INTERVAL: TIMED_LEVEL_INTERVAL,
+  TIMED_LEVEL_TIME_LIMIT_SECONDS: TIMED_LEVEL_TIME_LIMIT_SECONDS,
+  TIMED_LEVEL_REQUIRED_STAR_COUNT: TIMED_LEVEL_REQUIRED_STAR_COUNT,
+  isTimedLevelId: isTimedLevelId,
+  getExpectedMode: getExpectedMode,
+  assertExpectedLevelMode: assertExpectedLevelMode
+};

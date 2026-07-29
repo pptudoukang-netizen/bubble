@@ -1,6 +1,7 @@
 "use strict";
 
 var Shared = require("./GameBootstrapUiFlowShared");
+var BootstrapShared = require("./GameBootstrapShared");
 var DebugFlags = Shared.DebugFlags;
 var Logger = Shared.Logger;
 var BundleLoader = Shared.BundleLoader;
@@ -726,6 +727,7 @@ module.exports = {
       onOpenStarChest: this._openStarChest.bind(this),
       onOpenShop: this._onLevelSelectShopTap.bind(this),
       onOpenDailyTasks: this._onLevelSelectDailyTasksTap.bind(this),
+      onOpenSpiritHall: this._showSpiritHallView.bind(this),
       onHiddenUnlockAllLevels: this._onLevelSelectHiddenUnlockTap.bind(this),
       onLevelSelectTap: this._onLevelSelectTap.bind(this),
       onQuickStart: this._onLevelSelectQuickStartTap.bind(this),
@@ -1424,7 +1426,10 @@ module.exports = {
         this._prepareRouteEditorForLevel(levelConfig, this._currentLevelId);
         return this.levelRenderer.syncBoardLayoutHudBottomLineAsync().then(function () {
           this._applyBoardTuningFromProperties();
-          var snapshot = this.gameManager.startLevel(levelConfig);
+          var snapshot = this.gameManager.startLevel(
+            levelConfig,
+            BootstrapShared.buildBoardOcclusionStartContext(this, levelConfig, this._currentRunContext)
+          );
           if (typeof this._applyPendingNextRoundRewards === "function") {
             snapshot = this._applyPendingNextRoundRewards(snapshot);
           }

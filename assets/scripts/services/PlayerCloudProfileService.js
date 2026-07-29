@@ -2,16 +2,19 @@
 
 var StrictStorage = require("../utils/StrictStorage");
 var LevelAttemptStatsStore = require("../utils/LevelAttemptStatsStore");
+var AssistSpiritStore = require("../utils/AssistSpiritStore");
 
 var PROFILE_VERSION = 1;
-var EXPECTED_DEPLOYMENT_MARKER = "playerProfile_v20260704_game_circle_welfare_v1";
+var EXPECTED_DEPLOYMENT_MARKER = "playerProfile_v20260724_assist_spirit_v1";
 var SYNC_SOURCE_CLOUD = "cloud";
 var SYNC_SOURCE_LOCAL = "local";
 var LEVEL_ATTEMPT_STATS_STORAGE_KEY = LevelAttemptStatsStore.STORAGE_KEY;
+var ASSIST_SPIRIT_STORAGE_KEY = AssistSpiritStore.STORAGE_KEY;
 var STORAGE_ENTRIES = [
   { storageKey: "bubble_level_progress_v1", namespace: "LevelProgressStore" },
   { storageKey: LEVEL_ATTEMPT_STATS_STORAGE_KEY, namespace: LevelAttemptStatsStore.NAMESPACE },
   { storageKey: "bubble_player_resources_v1", namespace: "PlayerResourceStore" },
+  { storageKey: "bubble_assist_spirit_state_v1", namespace: "AssistSpiritStore" },
   { storageKey: "bubble_stamina_recovery_state_v1", namespace: "StaminaRecoveryStore" },
   { storageKey: "bubble_daily_task_state_v1", namespace: "DailyTaskStore" },
   { storageKey: "bubble_player_inventory_v1", namespace: "InventoryStore" },
@@ -156,6 +159,9 @@ function normalizeStorageValue(storageKey, value) {
   if (storageKey === LEVEL_ATTEMPT_STATS_STORAGE_KEY) {
     return LevelAttemptStatsStore.normalizeState(value);
   }
+  if (storageKey === ASSIST_SPIRIT_STORAGE_KEY) {
+    return AssistSpiritStore.normalizeState(value);
+  }
   return value;
 }
 
@@ -164,6 +170,12 @@ function createMissingStorageEntry(storageKey, entryMap) {
     return {
       namespace: entryMap[storageKey].namespace,
       value: LevelAttemptStatsStore.createInitialState()
+    };
+  }
+  if (storageKey === ASSIST_SPIRIT_STORAGE_KEY) {
+    return {
+      namespace: entryMap[storageKey].namespace,
+      value: AssistSpiritStore.createInitialState()
     };
   }
   throw new Error("Player cloud profile missing storageKey: " + storageKey);

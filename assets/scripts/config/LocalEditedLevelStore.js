@@ -395,6 +395,25 @@ LocalEditedLevelStore.prototype.loadLevel = function (levelId) {
   return buildPersistedConfig(parseJson(text, "Local edited level " + normalizedLevelId), normalizedLevelId);
 };
 
+LocalEditedLevelStore.prototype.loadRecord = function (levelId) {
+  var normalizedLevelId = requirePositiveInteger(levelId, "Local edited level id");
+  var index = this._readIndex();
+  var indexEntry = null;
+  index.levels.forEach(function (entry) {
+    if (entry.levelId === normalizedLevelId) {
+      indexEntry = entry;
+    }
+  });
+  if (indexEntry === null) {
+    throw new Error("Local edited level is not saved: " + normalizedLevelId);
+  }
+  return {
+    levelId: normalizedLevelId,
+    updatedAt: indexEntry.updatedAt,
+    config: this.loadLevel(normalizedLevelId)
+  };
+};
+
 LocalEditedLevelStore.prototype.loadAllRecords = function () {
   var index = this._readIndex();
   return index.levels.map(function (entry) {

@@ -8,6 +8,7 @@ var PoolManager = Shared.PoolManager;
 var LevelProgressStore = Shared.LevelProgressStore;
 var LevelAttemptStatsStore = Shared.LevelAttemptStatsStore;
 var PlayerResourceStore = Shared.PlayerResourceStore;
+var AssistSpiritStore = Shared.AssistSpiritStore;
 var DailyTaskStore = Shared.DailyTaskStore;
 var StaminaRecoveryStore = Shared.StaminaRecoveryStore;
 var InventoryStore = Shared.InventoryStore;
@@ -126,6 +127,7 @@ module.exports = {
     this._currentAttemptLevelId = 0;
     this._currentAttemptIndexForLevel = 0;
     this._attemptSequence = 0;
+    this._boardOcclusionTestAttemptIndex = 0;
     this._trackedResultAttemptId = "";
     this._grantedAttemptRewardKeys = {};
     this._pendingNextRoundRewards = [];
@@ -160,6 +162,8 @@ module.exports = {
     this.staminaRecoveryStore = new StaminaRecoveryStore();
     this.staminaRecoveryState = this.staminaRecoveryStore.load();
     this.playerResources = this.playerResourceStore.load();
+    this.assistSpiritStore = new AssistSpiritStore();
+    this.assistSpiritState = this.assistSpiritStore.load();
     if (RuntimeModeConfig.enableInspectorOverrides === true) {
       var inspectorStamina = Math.floor(Number(this.inspectorStaminaValue));
       if (!Number.isInteger(inspectorStamina) || inspectorStamina < 0) {

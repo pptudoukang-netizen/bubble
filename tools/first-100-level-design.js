@@ -2,6 +2,7 @@
 
 var fs = require("fs");
 var BoardLayout = require("../assets/scripts/config/BoardLayout");
+var CampaignLevelModePolicy = require("./campaign-level-mode-policy");
 
 var FIRST_LEVEL_ID = 1;
 var LAST_LEVEL_ID = 100;
@@ -2023,15 +2024,25 @@ function validateGeneratedLevel(level) {
   assertObject(level, "First-100 generated level");
   var spec = buildLevelSpec(level.levelId);
   compareNumber(level.layout.length, spec.rowCount, "layout row count", level.levelId);
-  compareNumber(level.shotLimit, spec.shotLimit, "shotLimit", level.levelId);
+  CampaignLevelModePolicy.assertExpectedLevelMode(level, spec.shotLimit);
   compareNumber(level.dropInterval, spec.tuning.dropInterval, "dropInterval", level.levelId);
   compareNumber(level.difficultyScore, spec.tuning.difficultyScore, "difficultyScore", level.levelId);
   compareNumber(level.jarCount, spec.jarCount, "jarCount", level.levelId);
-  if (level.initialShotBalls !== undefined) {
-    throw new Error("Level " + level.levelId + " must use openingShotBalls instead of initialShotBalls.");
-  }
-  if (JSON.stringify(level.openingShotBalls) !== JSON.stringify(spec.openingShotBalls)) {
-    throw new Error("Level " + level.levelId + " openingShotBalls differ from first-100 design.");
+  if (CampaignLevelModePolicy.isTimedLevelId(level.levelId)) {
+    if (level.openingShotBalls !== undefined) {
+      throw new Error("Level " + level.levelId + " timed mode must not configure openingShotBalls.");
+    }
+    var expectedInitialShotBalls = [spec.targetColor, spec.targetColor];
+    if (JSON.stringify(level.initialShotBalls) !== JSON.stringify(expectedInitialShotBalls)) {
+      throw new Error("Level " + level.levelId + " timed initialShotBalls differ from first-100 design.");
+    }
+  } else {
+    if (level.initialShotBalls !== undefined) {
+      throw new Error("Level " + level.levelId + " must use openingShotBalls instead of initialShotBalls.");
+    }
+    if (JSON.stringify(level.openingShotBalls) !== JSON.stringify(spec.openingShotBalls)) {
+      throw new Error("Level " + level.levelId + " openingShotBalls differ from first-100 design.");
+    }
   }
   var expectedStarThresholds = buildStarThresholds(level.targetScore, spec.designBeat);
   if (JSON.stringify(level.starThresholds) !== JSON.stringify(expectedStarThresholds)) {

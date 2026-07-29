@@ -84,6 +84,13 @@ module.exports = {
     if (typeof this._hideSpecialIntroduceView === "function") {
       this._hideSpecialIntroduceView();
     }
+    if (
+      this._spiritHallViewNode ||
+      this._spiritHallViewPrefab ||
+      this._spiritHallSpriteFrameCache
+    ) {
+      this._hideSpiritHallView();
+    }
   },
 
   _handleViewResize: function () {

@@ -211,6 +211,110 @@ function validateRotationAndDeferredDrop() {
   }
 }
 
+function validateSwirlCenterAndNeighborDropWithoutStaleEliminationHold() {
+  var levelConfig = {
+    coordinateSystem: "odd-r-hex",
+    level: {
+      levelId: 1,
+      code: "SWIRL_CENTER_FLOATING_VALIDATION",
+      initialDropSpaceRows: 8,
+      layout: [
+        "...R......",
+        "...R.....",
+        "..........",
+        ".........",
+        "..........",
+        ".........",
+        "..........",
+        "........."
+      ],
+      specialEntities: [
+        {
+          id: "floating_swirl_center",
+          entityCategory: "reactive_ball",
+          entityType: "swirl",
+          row: 2,
+          col: 4
+        }
+      ]
+    }
+  };
+  var grid = createGrid(levelConfig);
+  var dropped = [];
+  var dropRegisterOptions = [];
+  var manager = new GameManager();
+  manager.systems.bubbleGrid = grid;
+  manager.systems.supportSystem = new SupportSystem();
+  manager.systems.fallingMarbleSystem = {
+    registerDrops: function (cells, passedGrid, options) {
+      if (passedGrid !== grid) {
+        throw new Error("Swirl floating drops must register against the active grid.");
+      }
+      dropped = dropped.concat(clone(cells));
+      dropRegisterOptions.push(clone(options));
+      return clone(cells);
+    },
+    hasActiveDrops: function () {
+      return dropped.length > 0;
+    }
+  };
+  manager.systems.jarCollectorSystem = {
+    collect: function () {
+      return [];
+    }
+  };
+  manager.shotsFired = 1;
+  manager.remainingShots = 2;
+  manager.isTimedInfiniteShots = false;
+  manager.state = "running";
+  var resolution = createResolution();
+  resolution.matched = [{
+    id: "matched_before_swirl",
+    entityCategory: "normal_ball",
+    entityType: null,
+    color: "B",
+    row: 0,
+    col: 0
+  }];
+  var inheritedDropOptions = manager._buildResolutionDropRegisterOptions(
+    resolution,
+    undefined,
+    undefined
+  );
+  if (inheritedDropOptions.holdUntilEliminationPresentationComplete !== true) {
+    throw new Error("Swirl regression fixture must reproduce the stale elimination-presentation hold.");
+  }
+  manager.lastResolution = resolution;
+  var continuationCalled = false;
+  manager._continueAfterSwirlRotation = function (completedResolution) {
+    if (completedResolution !== resolution) {
+      throw new Error("Swirl completion must continue with the same resolution.");
+    }
+    continuationCalled = true;
+  };
+
+  if (!manager._beginSwirlRotationForResolution(resolution)) {
+    throw new Error("Swirl center-floating validation board must start a rotation.");
+  }
+  manager._updatePendingSwirlRotation(SpecialAnimationTiming.swirlRotation.duration);
+
+  var droppedCoordinates = dropped.map(function (cell) {
+    return cell.row + ":" + cell.col;
+  }).sort();
+  if (droppedCoordinates.join(",") !== "1:4,2:4") {
+    throw new Error("Unsupported swirl center and its neighbor must drop immediately after rotation.");
+  }
+  if (dropRegisterOptions.length !== 1 || dropRegisterOptions[0].startDelay !== 0) {
+    throw new Error("Swirl completion must register one immediate floating-drop batch.");
+  }
+  if (dropRegisterOptions[0].holdUntilEliminationPresentationComplete === true) {
+    throw new Error("Swirl floating drops must not wait for an elimination callback that already completed.");
+  }
+  if (!continuationCalled) {
+    throw new Error("Swirl center-floating completion must resume the shot state machine.");
+  }
+}
+
 function validateFloatingNodesOverridePendingShatterRetention() {
   function FakeLevelRenderer() {}
   attachLevelRendererSceneBoardMethods(FakeLevelRenderer, {
@@ -273,5 +377,6 @@ function validateFloatingNodesOverridePendingShatterRetention() {
 
 validateConfigAndCompactCodec();
 validateRotationAndDeferredDrop();
+validateSwirlCenterAndNeighborDropWithoutStaleEliminationHold();
 validateFloatingNodesOverridePendingShatterRetention();
 console.log("[OK] swirl_bubble config, clockwise rotation, full-chain support drop and board-node recycling");

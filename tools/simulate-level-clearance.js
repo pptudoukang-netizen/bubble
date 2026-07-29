@@ -757,13 +757,17 @@ function runSingleAttempt(entry, options, attemptIndex, attemptSeed, choiceOverr
   var manager = new GameManager();
   var levelConfig = clone(entry.data);
   syncHudBottomLineYForSimulation();
-  manager.startLevel(levelConfig);
+  manager.startLevel(levelConfig, {
+    runMode: "simulation",
+    attemptIndex: 1,
+    seed: "simulation-level:" + levelConfig.level.levelId + ":attempt:1"
+  });
   manager.systems.boardViewportSystem.finishIntroImmediately();
   syncFairyCollisionCentersForSimulation(manager);
   var snapshot = settleManager(manager);
   var shotLog = [];
 
-  while (manager.state === "running" && manager.remainingShots > 0) {
+  while (manager.state === "running" && (manager.isTimedInfiniteShots || manager.remainingShots > 0)) {
     var candidates;
     try {
       candidates = chooseAimCandidates(manager, levelConfig, options.angleStepDeg);
@@ -771,6 +775,7 @@ function runSingleAttempt(entry, options, attemptIndex, attemptSeed, choiceOverr
       error.partialShotLog = shotLog.slice();
       error.partialShotsFired = manager.shotsFired;
       error.partialRemainingShots = manager.remainingShots;
+      error.partialRemainingTimeMs = manager.isTimedInfiniteShots ? manager.remainingTimeMs : null;
       error.partialScore = manager.score;
       error.partialBoardCells = manager.systems.bubbleGrid.getCells().length;
       throw error;
@@ -841,9 +846,14 @@ function runSingleAttempt(entry, options, attemptIndex, attemptSeed, choiceOverr
     choiceOverrides: Array.isArray(choiceOverrides) ? choiceOverrides.slice() : [],
     passed: passed,
     state: manager.state,
-    shotLimit: levelConfig.level.shotLimit,
+    timedLevel: manager.isTimedInfiniteShots,
+    shotLimit: manager.isTimedInfiniteShots ? null : levelConfig.level.shotLimit,
+    timeLimitMs: manager.isTimedInfiniteShots ? manager.timeLimitMs : null,
+    remainingTimeMs: manager.isTimedInfiniteShots ? manager.remainingTimeMs : null,
     shotsFired: manager.shotsFired,
-    clearRemainingShots: Math.max(0, levelConfig.level.shotLimit - manager.shotsFired),
+    clearRemainingShots: manager.isTimedInfiniteShots
+      ? null
+      : Math.max(0, levelConfig.level.shotLimit - manager.shotsFired),
     runtimeRemainingShots: manager.remainingShots,
     score: manager.score,
     boardCells: manager.systems.bubbleGrid.getCells().length,
@@ -872,8 +882,12 @@ function compareAttemptResults(left, right) {
   if (left.passed !== right.passed) {
     return left.passed ? 1 : -1;
   }
-  if (left.passed && left.clearRemainingShots !== right.clearRemainingShots) {
-    return left.clearRemainingShots - right.clearRemainingShots;
+  if (left.passed) {
+    var leftRemaining = left.timedLevel ? left.remainingTimeMs : left.clearRemainingShots;
+    var rightRemaining = right.timedLevel ? right.remainingTimeMs : right.clearRemainingShots;
+    if (leftRemaining !== rightRemaining) {
+      return leftRemaining - rightRemaining;
+    }
   }
   if (left.score !== right.score) {
     return left.score - right.score;
@@ -915,9 +929,14 @@ function buildSimulatorErrorResult(entry, attemptIndex, seed, error) {
     passed: false,
     simulatorError: true,
     state: "simulator_error",
-    shotLimit: entry.data.level.shotLimit,
+    timedLevel: entry.data.level.playMode === "timed_infinite_shots",
+    shotLimit: entry.data.level.playMode === "timed_infinite_shots" ? null : entry.data.level.shotLimit,
+    timeLimitMs: entry.data.level.playMode === "timed_infinite_shots"
+      ? entry.data.level.timeLimitSeconds * 1000
+      : null,
+    remainingTimeMs: Number.isFinite(error.partialRemainingTimeMs) ? error.partialRemainingTimeMs : null,
     shotsFired: 0,
-    clearRemainingShots: 0,
+    clearRemainingShots: entry.data.level.playMode === "timed_infinite_shots" ? null : 0,
     runtimeRemainingShots: Number.isInteger(error.partialRemainingShots) ? error.partialRemainingShots : 0,
     score: Number.isFinite(error.partialScore) ? error.partialScore : 0,
     boardCells: Number.isInteger(error.partialBoardCells) ? error.partialBoardCells : 0,
@@ -926,7 +945,9 @@ function buildSimulatorErrorResult(entry, attemptIndex, seed, error) {
   };
   if (Number.isInteger(error.partialShotsFired)) {
     result.shotsFired = error.partialShotsFired;
-    result.clearRemainingShots = Math.max(0, entry.data.level.shotLimit - error.partialShotsFired);
+    if (!result.timedLevel) {
+      result.clearRemainingShots = Math.max(0, entry.data.level.shotLimit - error.partialShotsFired);
+    }
   }
   return result;
 }
@@ -998,7 +1019,9 @@ function summarize(results) {
   var simulatorErrors = results.filter(function (result) {
     return result.simulatorError === true;
   });
-  var remainingValues = passed.map(function (result) {
+  var remainingValues = passed.filter(function (result) {
+    return !result.timedLevel;
+  }).map(function (result) {
     return result.clearRemainingShots;
   }).sort(function (a, b) {
     return a - b;
@@ -1048,6 +1071,9 @@ function formatPercent(value) {
 
 function printResult(result, verbose) {
   var status = result.simulatorError ? "SIM_ERROR" : (result.passed ? "PASS" : "FAIL");
+  var supplyText = result.timedLevel
+    ? "time=" + Math.ceil(result.remainingTimeMs / 1000) + "s/" + Math.ceil(result.timeLimitMs / 1000) + "s"
+    : "shots=" + result.shotsFired + "/" + result.shotLimit;
   console.log(
     "[" + status + "]",
     "L" + String(result.levelId).padStart(3, "0"),
@@ -1055,7 +1081,7 @@ function printResult(result, verbose) {
     "attempt=" + result.attempt,
     "seed=" + result.seed,
     "state=" + result.state,
-    "shots=" + result.shotsFired + "/" + result.shotLimit,
+    supplyText,
     "clearRemaining=" + result.clearRemainingShots,
     "runtimeRemaining=" + result.runtimeRemainingShots,
     "score=" + result.score,

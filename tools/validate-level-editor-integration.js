@@ -37,7 +37,10 @@ function assertSourceContract() {
   var controllerSource = read("assets/scripts/editor/MapEditorController.js");
   assert(controllerSource.indexOf("new MapEditorLevelCatalog()") >= 0, "Map editor must use the online level catalog.");
   assert(controllerSource.indexOf("saveLevel(normalizedConfig)") >= 0, "Map editor save must write the local edited level store.");
-  assert(controllerSource.indexOf("syncLevels(records)") >= 0, "Map editor must sync local drafts to cloud.");
+  assert(controllerSource.indexOf("loadRecord(levelId)") >= 0, "Map editor must load only the current local draft for cloud sync.");
+  assert(controllerSource.indexOf("syncLevel(record)") >= 0, "Map editor must sync only the current local draft to cloud.");
+  assert.strictEqual(controllerSource.indexOf("loadAllRecords()"), -1, "Map editor cloud sync must not load every local draft.");
+  assert.strictEqual(controllerSource.indexOf("syncLevels("), -1, "Map editor cloud sync must not use the former batch API.");
   assert.strictEqual(controllerSource.indexOf("_writeExportFile"), -1, "Map editor must not retain the old file export path.");
   assert.strictEqual(controllerSource.indexOf("_installExtendedSpecialPalette"), -1, "Editor special tools must come from serialized scene nodes.");
   assert(controllerSource.indexOf("hasLevel(levelId)") >= 0, "Map editor must check the local draft before loading an editable level.");
@@ -737,6 +740,10 @@ function assertLocalStore() {
   assert.strictEqual(store.hasLevel(1), true, "Saved local level must be reported as present.");
   assert.deepStrictEqual(store.listLevelIds(), [1], "Local edited level index must list the saved level.");
   assert.strictEqual(store.loadLevel(1).level.levelId, 1, "Local edited level must load through strict normalization.");
+  var savedRecord = store.loadRecord(1);
+  assert.strictEqual(savedRecord.levelId, 1, "Local edited level record must preserve levelId.");
+  assert.strictEqual(savedRecord.updatedAt, 123, "Local edited level record must preserve updatedAt.");
+  assert.strictEqual(savedRecord.config.level.levelId, 1, "Local edited level record must contain the saved config.");
   assert.strictEqual(store.loadAllRecords()[0].updatedAt, 123, "Local edited level sync record must preserve updatedAt.");
   var clearResult = store.clearAll();
   assert.strictEqual(clearResult.removedCount, 1, "Local edited level clear must report the removed draft count.");
@@ -780,6 +787,12 @@ function assertCloudDraftIsolation() {
   assert.strictEqual(cloudSource, templateSource, "Level editor cloud function source and build template must match.");
   assert(cloudSource.indexOf('COLLECTION_NAME = "level_editor_drafts"') >= 0, "Cloud sync must use the isolated level_editor_drafts collection.");
   assert.strictEqual(cloudSource.indexOf("level-packs"), -1, "Cloud sync must not write online level packs.");
+  assert(clientSource.indexOf("syncLevel = function (record)") >= 0, "Cloud sync client must expose the single-level sync entry.");
+  assert.strictEqual(clientSource.indexOf("syncLevels = function"), -1, "Cloud sync client must not expose the former batch entry.");
+  assert(clientSource.indexOf("levels: [normalized]") >= 0, "Cloud sync client must send exactly one level per request.");
+  assert(cloudSource.indexOf("buildOwnerKey(openid)") >= 0, "Cloud draft ids must include the current player's OPENID hash.");
+  assert(cloudSource.indexOf('return "level_editor_draft_" + ownerKey + "_" + levelId;') >= 0, "Cloud draft ids must combine player ownerKey and levelId.");
+  assert(cloudSource.indexOf("collection.doc(recordId).set") >= 0, "Cloud drafts must write through the player-scoped document id.");
   assert(clientSource.indexOf("levelEditorDrafts_v20260718_v1") >= 0, "Client must verify the cloud function deployment marker.");
   assert(cloudSource.indexOf("levelEditorDrafts_v20260718_v1") >= 0, "Cloud function must expose the expected deployment marker.");
 }

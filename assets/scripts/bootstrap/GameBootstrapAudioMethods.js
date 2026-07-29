@@ -26,6 +26,7 @@ module.exports = {
         lockOpen: this.lockOpenSfxResource,
         fireworks: this.fireworksSfxResource,
         iceBreak: this.iceBreakSfxResource,
+        vines: this.vinesSfxResource,
         useProps: this.usePropsSfxResource
       }
     };
@@ -301,6 +302,14 @@ module.exports = {
           throw new Error("ice_thawed runtime event requires positive integer count.");
         }
         this._playSfx("iceBreak");
+        return;
+      }
+
+      if (event.type === "vine_entangled") {
+        if (!Number.isInteger(event.count) || event.count < 1) {
+          throw new Error("vine_entangled runtime event requires positive integer count.");
+        }
+        this._playSfx("vines");
         return;
       }
 

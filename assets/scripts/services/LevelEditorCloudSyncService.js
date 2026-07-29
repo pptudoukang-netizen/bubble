@@ -2,7 +2,6 @@
 
 var EXPECTED_DEPLOYMENT_MARKER = "levelEditorDrafts_v20260718_v1";
 var DEFAULT_FUNCTION_NAME = "levelEditorDrafts";
-var SYNC_BATCH_SIZE = 20;
 
 function assertObject(value, fieldName) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -130,63 +129,26 @@ LevelEditorCloudSyncService.prototype._requireCloud = function () {
   return this.platform.cloud;
 };
 
-LevelEditorCloudSyncService.prototype._syncBatch = function (batch) {
-  if (!Array.isArray(batch) || batch.length === 0 || batch.length > SYNC_BATCH_SIZE) {
-    throw new Error("Level editor cloud sync batch size must be 1-" + SYNC_BATCH_SIZE + ".");
-  }
+LevelEditorCloudSyncService.prototype.syncLevel = function (record) {
+  var normalized = normalizeRecord(record, 0);
   return this._requireCloud().callFunction({
     name: this.functionName,
     data: {
       action: "sync",
-      levels: batch
+      levels: [normalized]
     }
   }).then(function (response) {
-    return normalizeResponse(response, this.functionName);
+    var result = normalizeResponse(response, this.functionName);
+    if (result.syncedCount !== 1) {
+      throw new Error("Level editor cloud sync count mismatch.");
+    }
+    return result;
   }.bind(this)).catch(function (error) {
     throw new Error("Level editor cloud sync failed: " + describeError(error));
   });
 };
 
-LevelEditorCloudSyncService.prototype.syncLevels = function (records) {
-  if (!Array.isArray(records) || records.length === 0) {
-    throw new Error("Level editor cloud sync requires at least one local level.");
-  }
-  var normalized = records.map(normalizeRecord);
-  var seen = {};
-  normalized.forEach(function (record) {
-    if (seen[record.levelId]) {
-      throw new Error("Level editor cloud sync contains duplicate levelId: " + record.levelId);
-    }
-    seen[record.levelId] = true;
-  });
-
-  var batches = [];
-  for (var index = 0; index < normalized.length; index += SYNC_BATCH_SIZE) {
-    batches.push(normalized.slice(index, index + SYNC_BATCH_SIZE));
-  }
-
-  var totalSyncedCount = 0;
-  var latestSyncedAt = 0;
-  return batches.reduce(function (promise, batch) {
-    return promise.then(function () {
-      return this._syncBatch(batch).then(function (result) {
-        if (result.syncedCount !== batch.length) {
-          throw new Error("Level editor cloud sync count mismatch.");
-        }
-        totalSyncedCount += result.syncedCount;
-        latestSyncedAt = Math.max(latestSyncedAt, result.syncedAt);
-      });
-    }.bind(this));
-  }.bind(this), Promise.resolve()).then(function () {
-    return {
-      syncedCount: totalSyncedCount,
-      syncedAt: latestSyncedAt
-    };
-  });
-};
-
 LevelEditorCloudSyncService.EXPECTED_DEPLOYMENT_MARKER = EXPECTED_DEPLOYMENT_MARKER;
 LevelEditorCloudSyncService.DEFAULT_FUNCTION_NAME = DEFAULT_FUNCTION_NAME;
-LevelEditorCloudSyncService.SYNC_BATCH_SIZE = SYNC_BATCH_SIZE;
 
 module.exports = LevelEditorCloudSyncService;

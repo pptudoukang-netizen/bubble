@@ -4,6 +4,7 @@ var Logger = require("../utils/Logger");
 var BundleLoader = require("../utils/BundleLoader");
 var AimTuningProfiles = require("./AimTuningProfiles");
 var BoardLayout = require("./BoardLayout");
+var BoardOcclusionConfig = require("./BoardOcclusionConfig");
 var LevelBoardSupportValidator = require("./LevelBoardSupportValidator");
 
 var SPECIAL_ENTITY_TYPES = {
@@ -815,6 +816,11 @@ function normalizeLevelConfig(rawConfig, levelKey) {
   config.level.winConditions = normalizeObjectiveList(config.level.winConditions, WIN_CONDITION_TYPES, "winConditions", config.level, levelKey);
   config.level.bonusObjectives = normalizeObjectiveList(config.level.bonusObjectives, BONUS_OBJECTIVE_TYPES, "bonusObjectives", config.level, levelKey);
   config.level.specialEntities = normalizeSpecialEntities(config.level, levelKey);
+  config.level.boardOcclusionPlan = BoardOcclusionConfig.normalizePlan(
+    config.level.boardOcclusionPlan,
+    config.level,
+    levelKey
+  );
   validateOccupiedLayoutRows(config.level.layout, config.level.specialEntities, levelKey);
   LevelBoardSupportValidator.assertInitialBoardSupported(config.level, levelKey);
   validateIceSnowballObjectives(config.level, levelKey);

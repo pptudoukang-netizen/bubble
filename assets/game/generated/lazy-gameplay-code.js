@@ -43,7 +43,7 @@
     return null;
   }
   var previousRequire = resolvePreviousRequire();
-  var gameplayCodeHash = "ef63172b4721bbcd55495f45e0fda7f7ca2cdc7760911813953fc8742ee96bb1";
+  var gameplayCodeHash = "91cd111e6ab0db3a1dc62ceea09e86d6d56cc1bf75f964ca2eca2bcab28fb7ab";
   var lazyRequire = (function (modules, cache, entries) {
     function load(moduleId, jumped) {
       if (!cache[moduleId]) {
@@ -76,6 +76,7 @@
 "use strict";
 
 var AD_REVIVE_GRANTED_SHOTS = 10;
+var AD_REVIVE_GRANTED_TIME_SECONDS = 10;
 var AD_REVIVE_TARGET_COLOR_BALLS = 2;
 
 var COLOR_DISPLAY_NAMES = {
@@ -241,10 +242,25 @@ function resolveReviveTargetColor(levelConfig, runtimeSnapshot) {
 }
 
 function buildRevivePlan(levelConfig, runtimeSnapshot) {
+  var level = requireLevel(levelConfig);
+  if (level.playMode === "timed_infinite_shots") {
+    return {
+      grantedShots: 0,
+      grantedTimeSeconds: AD_REVIVE_GRANTED_TIME_SECONDS,
+      targetColor: null,
+      targetColorBallCount: 0,
+      randomBallCount: 0,
+      description: "+" + AD_REVIVE_GRANTED_TIME_SECONDS + "秒"
+    };
+  }
+  if (level.playMode !== "shot_limited") {
+    throw new Error("Ad revive level.playMode is unsupported: " + level.playMode);
+  }
   var objectiveCompleted = isObjectiveCompleted(runtimeSnapshot);
   var targetColor = objectiveCompleted ? null : resolveReviveTargetColor(levelConfig, runtimeSnapshot);
   return {
     grantedShots: AD_REVIVE_GRANTED_SHOTS,
+    grantedTimeSeconds: 0,
     targetColor: targetColor,
     targetColorBallCount: objectiveCompleted ? 0 : AD_REVIVE_TARGET_COLOR_BALLS,
     randomBallCount: objectiveCompleted ? AD_REVIVE_TARGET_COLOR_BALLS : 0,
@@ -269,6 +285,7 @@ function buildReviveDescription(levelConfig, runtimeSnapshot) {
 
 module.exports = {
   AD_REVIVE_GRANTED_SHOTS: AD_REVIVE_GRANTED_SHOTS,
+  AD_REVIVE_GRANTED_TIME_SECONDS: AD_REVIVE_GRANTED_TIME_SECONDS,
   AD_REVIVE_TARGET_COLOR_BALLS: AD_REVIVE_TARGET_COLOR_BALLS,
   buildRevivePlan: buildRevivePlan,
   buildReviveDescription: buildReviveDescription,
@@ -308,6 +325,209 @@ BaseSystem.prototype.snapshot = function () {
 module.exports = BaseSystem;
 
 },{}],
+"BoardOcclusionSystem":[function(require,module,exports){
+"use strict";
+
+var BaseSystem = require("./BaseSystem");
+var BoardOcclusionConfig = require("../../assets/scripts/config/BoardOcclusionConfig");
+
+function clone(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function requireObject(value, description) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(description + " must be an object.");
+  }
+  return value;
+}
+
+function BoardOcclusionSystem() {
+  BaseSystem.call(this, "BoardOcclusionSystem");
+  this.plan = BoardOcclusionConfig.createNonePlan();
+  this.variantId = null;
+  this.selectionSeed = null;
+  this.activeZones = [];
+  this.version = 0;
+}
+
+BoardOcclusionSystem.prototype = Object.create(BaseSystem.prototype);
+BoardOcclusionSystem.prototype.constructor = BoardOcclusionSystem;
+
+BoardOcclusionSystem.prototype.configureLevel = function (levelConfig) {
+  BaseSystem.prototype.configureLevel.call(this, levelConfig);
+  if (!levelConfig || !levelConfig.level) {
+    throw new Error("BoardOcclusionSystem requires level config.");
+  }
+  this.plan = BoardOcclusionConfig.normalizePlan(
+    levelConfig.level.boardOcclusionPlan,
+    levelConfig.level,
+    levelConfig.meta && levelConfig.meta.resourceKey ? levelConfig.meta.resourceKey : levelConfig.level.code
+  );
+  this.variantId = null;
+  this.selectionSeed = null;
+  this.activeZones = [];
+  this.version += 1;
+  return this;
+};
+
+BoardOcclusionSystem.prototype.startRun = function (startContext) {
+  requireObject(startContext, "Board occlusion startContext");
+  if (typeof startContext.seed !== "string" || !startContext.seed) {
+    throw new Error("Board occlusion startContext.seed must be a non-empty string.");
+  }
+  if (!Number.isInteger(startContext.attemptIndex) || startContext.attemptIndex <= 0) {
+    throw new Error("Board occlusion startContext.attemptIndex must be a positive integer.");
+  }
+  if (typeof startContext.runMode !== "string" || !startContext.runMode) {
+    throw new Error("Board occlusion startContext.runMode must be a non-empty string.");
+  }
+
+  this.selectionSeed = startContext.seed;
+  if (this.plan.mode === BoardOcclusionConfig.MODE_NONE) {
+    this.variantId = null;
+    this.activeZones = [];
+    this.version += 1;
+    return this.snapshotForRender();
+  }
+
+  var variantIndex;
+  if (this.plan.mode === BoardOcclusionConfig.MODE_PER_ATTEMPT) {
+    var baseOffset = BoardOcclusionConfig.hashString(
+      this.selectionSeed.split(":attempt:")[0] + ":" + this.plan.generatorVersion
+    ) % this.plan.variants.length;
+    variantIndex = (baseOffset + startContext.attemptIndex - 1) % this.plan.variants.length;
+  } else if (this.plan.mode === BoardOcclusionConfig.MODE_PER_RUN) {
+    variantIndex = BoardOcclusionConfig.hashString(
+      this.selectionSeed + ":" + this.plan.generatorVersion
+    ) % this.plan.variants.length;
+  } else {
+    throw new Error("Unsupported board occlusion mode at run start: " + this.plan.mode);
+  }
+
+  var variant = this.plan.variants[variantIndex];
+  if (!variant) {
+    throw new Error("Board occlusion selected variant is missing at index " + variantIndex + ".");
+  }
+  this.variantId = variant.id;
+  this.activeZones = variant.zones.map(function (zone) {
+    var runtimeZone = clone(zone);
+    runtimeZone.remainingShots = zone.clearRule.kind === "item_or_shots"
+      ? zone.clearRule.shots
+      : null;
+    runtimeZone.remainingTimeMs = zone.clearRule.kind === "item_or_seconds"
+      ? zone.clearRule.seconds * 1000
+      : null;
+    return runtimeZone;
+  });
+  this.version += 1;
+  return this.snapshotForRender();
+};
+
+BoardOcclusionSystem.prototype.hasActiveZones = function () {
+  return this.activeZones.length > 0;
+};
+
+BoardOcclusionSystem.prototype._removeExpiredZones = function () {
+  var removed = [];
+  this.activeZones = this.activeZones.filter(function (zone) {
+    var expiredByShots = zone.remainingShots !== null && zone.remainingShots <= 0;
+    var expiredByTime = zone.remainingTimeMs !== null && zone.remainingTimeMs <= 0;
+    if (expiredByShots || expiredByTime) {
+      removed.push(zone.id);
+      return false;
+    }
+    return true;
+  });
+  if (removed.length) {
+    this.version += 1;
+  }
+  return removed;
+};
+
+BoardOcclusionSystem.prototype.onShotFired = function () {
+  var changed = false;
+  this.activeZones.forEach(function (zone) {
+    if (zone.remainingShots !== null) {
+      zone.remainingShots -= 1;
+      changed = true;
+    }
+  });
+  if (changed) {
+    this.version += 1;
+  }
+  return this._removeExpiredZones();
+};
+
+BoardOcclusionSystem.prototype.update = function (dt, paused) {
+  if (typeof dt !== "number" || !isFinite(dt) || dt < 0) {
+    throw new Error("BoardOcclusionSystem.update dt must be a non-negative finite number.");
+  }
+  if (typeof paused !== "boolean") {
+    throw new Error("BoardOcclusionSystem.update paused must be boolean.");
+  }
+  if (paused || dt === 0 || !this.activeZones.length) {
+    return [];
+  }
+  var changedBucket = false;
+  this.activeZones.forEach(function (zone) {
+    if (zone.remainingTimeMs === null) {
+      return;
+    }
+    var previousBucket = Math.ceil(zone.remainingTimeMs / 1000);
+    zone.remainingTimeMs = Math.max(0, zone.remainingTimeMs - dt * 1000);
+    var nextBucket = Math.ceil(zone.remainingTimeMs / 1000);
+    if (previousBucket !== nextBucket) {
+      changedBucket = true;
+    }
+  });
+  if (changedBucket) {
+    this.version += 1;
+  }
+  return this._removeExpiredZones();
+};
+
+BoardOcclusionSystem.prototype.clearAllWithItem = function () {
+  if (!this.activeZones.length) {
+    return [];
+  }
+  var removed = this.activeZones.map(function (zone) {
+    return zone.id;
+  });
+  this.activeZones = [];
+  this.version += 1;
+  return removed;
+};
+
+BoardOcclusionSystem.prototype.snapshotForRender = function () {
+  return {
+    version: this.version,
+    mode: this.plan.mode,
+    variantId: this.variantId,
+    selectionSeed: this.selectionSeed,
+    activeZones: this.activeZones.map(function (zone) {
+      return {
+        id: zone.id,
+        visualType: zone.visualType,
+        cells: clone(zone.cells),
+        clearRule: clone(zone.clearRule),
+        remainingShots: zone.remainingShots,
+        remainingTimeMs: zone.remainingTimeMs
+      };
+    })
+  };
+};
+
+BoardOcclusionSystem.prototype.snapshot = function () {
+  var snapshot = BaseSystem.prototype.snapshot.call(this);
+  snapshot.plan = clone(this.plan);
+  snapshot.runtime = this.snapshotForRender();
+  return snapshot;
+};
+
+module.exports = BoardOcclusionSystem;
+
+},{"./BaseSystem":"BaseSystem","../../assets/scripts/config/BoardOcclusionConfig":"BoardOcclusionConfig"}],
 "BoardViewportConfig":[function(require,module,exports){
 "use strict";
 
@@ -5662,6 +5882,7 @@ var FairyAssistSystem = require("../systems/FairyAssistSystem");
 var BoardViewportSystem = require("../systems/BoardViewportSystem");
 var FallingMarbleSystem = require("../systems/FallingMarbleSystem");
 var JarCollectorSystem = require("../systems/JarCollectorSystem");
+var BoardOcclusionSystem = require("../systems/BoardOcclusionSystem");
 var ProjectileMath = require("./ProjectileMath");
 var AdRevivePolicy = require("./AdRevivePolicy");
 var StarRatingPolicy = require("../../assets/scripts/core/StarRatingPolicy");
@@ -5676,7 +5897,8 @@ var measurePathDistance = ProjectileMath.measurePathDistance;
 var buildAimGuidePath = ProjectileMath.buildAimGuidePath;
 var AD_REVIVE_ALLOWED_STATES = {
   out_of_shots: true,
-  lost_danger: true
+  lost_danger: true,
+  lost_objective: true
 };
 var ADD_BALL_PROMPT_STATE = "out_of_shots_add_ball_prompt";
 var COLLECTION_OBJECTIVE_TYPES = {
@@ -6408,7 +6630,8 @@ function GameManager(options) {
     supportSystem: new SupportSystem(),
     fairyAssistSystem: new FairyAssistSystem(),
     fallingMarbleSystem: new FallingMarbleSystem(),
-    jarCollectorSystem: new JarCollectorSystem()
+    jarCollectorSystem: new JarCollectorSystem(),
+    boardOcclusionSystem: new BoardOcclusionSystem()
   };
   this.systems.bubbleGrid.attachBoardViewport(this.systems.boardViewportSystem);
   this.systems.fallingMarbleSystem.attachFairyAssistSystem(this.systems.fairyAssistSystem);
@@ -6430,10 +6653,13 @@ GameManager.prototype.bootstrap = function () {
   return this;
 };
 
-GameManager.prototype.startLevel = function (levelConfig) {
+GameManager.prototype.startLevel = function (levelConfig, startContext) {
   this.currentLevel = levelConfig;
   if (!levelConfig || !levelConfig.level) {
     throw new Error("GameManager.startLevel requires level config.");
+  }
+  if (!startContext || typeof startContext !== "object" || Array.isArray(startContext)) {
+    throw new Error("GameManager.startLevel requires explicit startContext.");
   }
   var level = levelConfig.level;
   this.isTimedInfiniteShots = level.playMode === "timed_infinite_shots";
@@ -6510,6 +6736,7 @@ GameManager.prototype.startLevel = function (levelConfig) {
   Object.keys(this.systems).forEach(function (key) {
     this.systems[key].configureLevel(levelConfig);
   }, this);
+  this.systems.boardOcclusionSystem.startRun(startContext);
 
   this._rebuildCachedAdRunPowerupAllowed();
   this._aimGuidePathCacheKey = "";
@@ -7092,6 +7319,9 @@ GameManager.prototype._updatePendingVineCast = function (dt) {
     }
     cast.completed = true;
   });
+  this._pushRuntimeEvent("vine_entangled", {
+    count: resolution.vineCasts.length
+  });
   this.pendingVineCastResolution = null;
   this._continueAfterVineCast(resolution);
   return true;
@@ -7129,7 +7359,9 @@ GameManager.prototype._updatePendingSwirlRotation = function (dt) {
     this._appendUniqueCells(resolution.floating, removedFloating);
     this._collectRemovedKeysAndResolveUnlocks(removedFloating, grid, resolution);
     this._cancelPendingSplitterSpawnsForDroppedCells(removedFloating);
-    this._registerResolutionDrops(removedFloating, grid, resolution);
+    this._registerResolutionDrops(removedFloating, grid, resolution, undefined, {
+      skipEliminationPresentationHold: true
+    });
     this.systems.jarCollectorSystem.collect([]);
   }
   this._appendUniqueCells(resolution.collected, newlyFloating);
@@ -8359,29 +8591,44 @@ GameManager.prototype.reviveFromAd = function () {
   if (!this.systems || !this.systems.bubbleGrid) {
     throw new Error("Ad revive requires BubbleGrid.");
   }
-  if (!this.systems.shooterController || typeof this.systems.shooterController.setUpcomingNormalBalls !== "function") {
-    throw new Error("Ad revive requires ShooterController.setUpcomingNormalBalls.");
-  }
-  if (typeof this.systems.shooterController.setUpcomingRandomNormalBalls !== "function") {
-    throw new Error("Ad revive requires ShooterController.setUpcomingRandomNormalBalls.");
-  }
-
-  var revivePlan = AdRevivePolicy.buildRevivePlan(this.currentLevel, {
-    board: {
-      cells: this.systems.bubbleGrid.getCells()
-    },
-    objectives: this._buildPrimaryObjectiveSnapshot(this._getCachedJarSnapshot())
-  });
+  var reviveRuntimeSnapshot = this.isTimedInfiniteShots
+    ? null
+    : {
+      board: {
+        cells: this.systems.bubbleGrid.getCells()
+      },
+      objectives: this._buildPrimaryObjectiveSnapshot(this._getCachedJarSnapshot())
+    };
+  var revivePlan = AdRevivePolicy.buildRevivePlan(this.currentLevel, reviveRuntimeSnapshot);
   var previousRemainingShots = this.remainingShots;
-  this.remainingShots = previousRemainingShots + revivePlan.grantedShots;
-  var queueResult = revivePlan.targetColorBallCount > 0
-    ? this.systems.shooterController.setUpcomingNormalBalls(
-      revivePlan.targetColor,
-      revivePlan.targetColorBallCount
-    )
-    : this.systems.shooterController.setUpcomingRandomNormalBalls(revivePlan.randomBallCount);
-  if (!queueResult || queueResult.accepted !== true) {
-    throw new Error("Ad revive failed to assign supply balls.");
+  var previousRemainingTimeMs = this.remainingTimeMs;
+  if (this.isTimedInfiniteShots) {
+    if (revivePlan.grantedShots !== 0 || !Number.isInteger(revivePlan.grantedTimeSeconds) || revivePlan.grantedTimeSeconds <= 0) {
+      throw new Error("Timed ad revive requires positive grantedTimeSeconds and zero grantedShots.");
+    }
+    this.remainingTimeMs = previousRemainingTimeMs + revivePlan.grantedTimeSeconds * 1000;
+    this._lastTimerRenderBucket = Math.ceil(this.remainingTimeMs / TIMED_LEVEL_RENDER_BUCKET_MS);
+    this.timerPaused = false;
+  } else {
+    if (!Number.isInteger(revivePlan.grantedShots) || revivePlan.grantedShots <= 0 || revivePlan.grantedTimeSeconds !== 0) {
+      throw new Error("Shot-limited ad revive requires positive grantedShots and zero grantedTimeSeconds.");
+    }
+    if (!this.systems.shooterController || typeof this.systems.shooterController.setUpcomingNormalBalls !== "function") {
+      throw new Error("Ad revive requires ShooterController.setUpcomingNormalBalls.");
+    }
+    if (typeof this.systems.shooterController.setUpcomingRandomNormalBalls !== "function") {
+      throw new Error("Ad revive requires ShooterController.setUpcomingRandomNormalBalls.");
+    }
+    this.remainingShots = previousRemainingShots + revivePlan.grantedShots;
+    var queueResult = revivePlan.targetColorBallCount > 0
+      ? this.systems.shooterController.setUpcomingNormalBalls(
+        revivePlan.targetColor,
+        revivePlan.targetColorBallCount
+      )
+      : this.systems.shooterController.setUpcomingRandomNormalBalls(revivePlan.randomBallCount);
+    if (!queueResult || queueResult.accepted !== true) {
+      throw new Error("Ad revive failed to assign supply balls.");
+    }
   }
 
   this.state = "running";
@@ -8393,12 +8640,12 @@ GameManager.prototype.reviveFromAd = function () {
     previous_remaining_shots: previousRemainingShots,
     remaining_shots: this.remainingShots,
     granted_shots: revivePlan.grantedShots,
+    previous_remaining_time_ms: previousRemainingTimeMs,
+    remaining_time_ms: this.remainingTimeMs,
+    granted_time_seconds: revivePlan.grantedTimeSeconds,
     target_color: revivePlan.targetColor,
     target_color_ball_count: revivePlan.targetColorBallCount,
-    random_ball_count: revivePlan.randomBallCount,
-    danger_space_shift_rows: gridSpaceResult.shiftRows,
-    danger_space_removed_cells: gridSpaceResult.removedCells.length,
-    danger_space_rows: gridSpaceResult.spaceRows
+    random_ball_count: revivePlan.randomBallCount
   });
 
   return {
@@ -8406,12 +8653,12 @@ GameManager.prototype.reviveFromAd = function () {
     previousRemainingShots: previousRemainingShots,
     remainingShots: this.remainingShots,
     grantedShots: revivePlan.grantedShots,
+    previousRemainingTimeMs: previousRemainingTimeMs,
+    remainingTimeMs: this.remainingTimeMs,
+    grantedTimeSeconds: revivePlan.grantedTimeSeconds,
     targetColor: revivePlan.targetColor,
     targetColorBallCount: revivePlan.targetColorBallCount,
     randomBallCount: revivePlan.randomBallCount,
-    dangerSpaceShiftRows: gridSpaceResult.shiftRows,
-    dangerSpaceRemovedCells: gridSpaceResult.removedCells,
-    dangerSpaceRows: gridSpaceResult.spaceRows,
     snapshot: this.getRuntimeSnapshot(this._drainRuntimeEvents())
   };
 };
@@ -8566,6 +8813,29 @@ GameManager.prototype.previewSnowRemoval = function () {
     };
   }
 
+  var boardOcclusionSystem = this.systems.boardOcclusionSystem;
+  if (!boardOcclusionSystem || typeof boardOcclusionSystem.snapshotForRender !== "function") {
+    throw new Error("Snow removal requires BoardOcclusionSystem.");
+  }
+  var occlusionSnapshot = boardOcclusionSystem.snapshotForRender();
+  if (!Array.isArray(occlusionSnapshot.activeZones)) {
+    throw new Error("Board occlusion snapshot requires activeZones array.");
+  }
+  if (occlusionSnapshot.activeZones.length > 0) {
+    return {
+      accepted: true,
+      targetKind: "board_occlusion",
+      targets: occlusionSnapshot.activeZones.map(function (zone) {
+        if (!zone || typeof zone.id !== "string" || !zone.id) {
+          throw new Error("Board occlusion removal preview requires zone ids.");
+        }
+        return zone.id;
+      }),
+      clearCount: occlusionSnapshot.activeZones.length,
+      snapshot: this.getRuntimeSnapshot()
+    };
+  }
+
   var grid = this.systems.bubbleGrid;
   var snowCells = grid.getCells().filter(function (cell) {
     return isIceBall(cell);
@@ -8588,6 +8858,7 @@ GameManager.prototype.previewSnowRemoval = function () {
 
   return {
     accepted: true,
+    targetKind: "ice",
     targets: targets,
     clearCount: targets.length,
     snapshot: this.getRuntimeSnapshot()
@@ -8606,6 +8877,55 @@ GameManager.prototype.useSnowRemoval = function (expectedTargets) {
   var preview = this.previewSnowRemoval();
   if (!preview.accepted) {
     return preview;
+  }
+  if (preview.targetKind === "board_occlusion") {
+    if (Array.isArray(expectedTargets)) {
+      var expectedOcclusionKey = expectedTargets.slice().sort().join("|");
+      var actualOcclusionKey = preview.targets.slice().sort().join("|");
+      if (expectedOcclusionKey !== actualOcclusionKey) {
+        throw new Error("Board occlusion removal targets changed before resolution.");
+      }
+    }
+    var occlusionConsumeResult = this.systems.shooterController.consumeSnowRemoval();
+    if (!occlusionConsumeResult || !occlusionConsumeResult.accepted) {
+      return {
+        accepted: false,
+        reason: occlusionConsumeResult && occlusionConsumeResult.reason
+          ? occlusionConsumeResult.reason
+          : "inventory_empty",
+        snapshot: this.getRuntimeSnapshot()
+      };
+    }
+    var removedZoneIds = this.systems.boardOcclusionSystem.clearAllWithItem();
+    if (removedZoneIds.length !== preview.targets.length) {
+      throw new Error("Board occlusion removal count changed before resolution.");
+    }
+    this.pendingShotPlan = null;
+    this.isAiming = false;
+    this._pushRuntimeEvent("board_occlusion_cleared", {
+      reason: "snow_removal",
+      zoneIds: removedZoneIds
+    });
+    this._pushRuntimeEvent("powerup_snow_removal", {
+      target_kind: "board_occlusion",
+      targets: removedZoneIds.slice(),
+      removed: removedZoneIds.length,
+      floating: 0,
+      ice_collected: 0
+    });
+    return {
+      accepted: true,
+      targetKind: "board_occlusion",
+      targets: removedZoneIds,
+      removed: removedZoneIds.length,
+      thawed: 0,
+      floating: 0,
+      remaining: occlusionConsumeResult.remaining,
+      snapshot: this.getRuntimeSnapshot(this._drainRuntimeEvents())
+    };
+  }
+  if (preview.targetKind !== "ice") {
+    throw new Error("Unsupported snow removal targetKind: " + preview.targetKind);
   }
   if (Array.isArray(expectedTargets)) {
     var expectedKey = buildSnowRemovalTargetKey(expectedTargets);
@@ -8949,6 +9269,16 @@ GameManager.prototype.update = function (dt) {
   }
   this.boardAdvanceUpdateSerial += 1;
   this.boardAdvancedThisFrame = false;
+  var timedOutOcclusionZoneIds = this.systems.boardOcclusionSystem.update(
+    safeDt,
+    this.state !== "running" || this.timerPaused
+  );
+  if (timedOutOcclusionZoneIds.length) {
+    this._pushRuntimeEvent("board_occlusion_cleared", {
+      reason: "countdown",
+      zoneIds: timedOutOcclusionZoneIds
+    });
+  }
   var timerChanged = false;
   if (this.state === "running" && this.isTimedInfiniteShots && !this.timerPaused) {
     var previousRemainingTimeMs = this.remainingTimeMs;
@@ -9457,7 +9787,8 @@ GameManager.prototype.getRuntimeSnapshot = function (runtimeEvents, renderOption
     // Renderer currently relies on falling snapshot (active drops + jar zones).
     fallingMarbleSystem: typeof fallingSystem.snapshotForRender === "function"
       ? fallingSystem.snapshotForRender()
-      : fallingSystem.snapshot()
+      : fallingSystem.snapshot(),
+    boardOcclusionSystem: this.systems.boardOcclusionSystem.snapshotForRender()
   };
   var jarsSnapshot = this._getCachedJarSnapshot();
   var objectiveSnapshot = this._buildPrimaryObjectiveSnapshot(jarsSnapshot);
@@ -9600,7 +9931,7 @@ module.exports = GameManager;
 
 
 
-},{"../../assets/scripts/utils/Logger":"Logger","../../assets/scripts/config/BoardLayout":"BoardLayout","../config/FairyAssistConfig":"FairyAssistConfig","../config/SpecialAnimationTiming":"SpecialAnimationTiming","../systems/ShooterController":"ShooterController","../systems/TrajectoryPredictor":"TrajectoryPredictor","../systems/BubbleGrid":"BubbleGrid","../systems/MatchSystem":"MatchSystem","../systems/SupportSystem":"SupportSystem","../systems/FairyAssistSystem":"FairyAssistSystem","../systems/BoardViewportSystem":"BoardViewportSystem","../systems/FallingMarbleSystem":"FallingMarbleSystem","../systems/JarCollectorSystem":"JarCollectorSystem","./ProjectileMath":"ProjectileMath","./AdRevivePolicy":"AdRevivePolicy","../../assets/scripts/core/StarRatingPolicy":"StarRatingPolicy","./GameManagerShotResolutionMethods":"GameManagerShotResolutionMethods"}],
+},{"../../assets/scripts/utils/Logger":"Logger","../../assets/scripts/config/BoardLayout":"BoardLayout","../config/FairyAssistConfig":"FairyAssistConfig","../config/SpecialAnimationTiming":"SpecialAnimationTiming","../systems/ShooterController":"ShooterController","../systems/TrajectoryPredictor":"TrajectoryPredictor","../systems/BubbleGrid":"BubbleGrid","../systems/MatchSystem":"MatchSystem","../systems/SupportSystem":"SupportSystem","../systems/FairyAssistSystem":"FairyAssistSystem","../systems/BoardViewportSystem":"BoardViewportSystem","../systems/FallingMarbleSystem":"FallingMarbleSystem","../systems/JarCollectorSystem":"JarCollectorSystem","../systems/BoardOcclusionSystem":"BoardOcclusionSystem","./ProjectileMath":"ProjectileMath","./AdRevivePolicy":"AdRevivePolicy","../../assets/scripts/core/StarRatingPolicy":"StarRatingPolicy","./GameManagerShotResolutionMethods":"GameManagerShotResolutionMethods"}],
 "GameManagerShotResolutionMethods":[function(require,module,exports){
 "use strict";
 
@@ -12366,6 +12697,13 @@ function createGameManagerShotResolutionMethods(deps) {
 
       this.activeProjectile = null;
       this.pendingProjectileFinalize = false;
+      var clearedOcclusionZoneIds = this.systems.boardOcclusionSystem.onShotFired();
+      if (clearedOcclusionZoneIds.length) {
+        this._pushRuntimeEvent("board_occlusion_cleared", {
+          reason: "shot_count",
+          zoneIds: clearedOcclusionZoneIds
+        });
+      }
 
       if (postShotSpecialStarted) {
         this.pendingShotPlan = null;
@@ -12835,6 +13173,7 @@ var RenderNodeHelpers = require("../../assets/scripts/render/RenderNodeHelpers")
 var SpriteProxyLayerHelper = require("../../assets/scripts/utils/SpriteProxyLayerHelper");
 var BubbleShatterRenderer = require("./BubbleShatterRenderer");
 var WormholeShaderRenderer = require("./WormholeShaderRenderer");
+var LightningChainRenderer = require("./LightningChainRenderer");
 var PropDescriptionViewController = require("../../assets/scripts/ui/PropDescriptionViewController");
 var attachLevelRendererSceneMethods = require("./LevelRendererSceneMethods");
 var attachLevelRendererFairyMethods = require("./LevelRendererFairyMethods");
@@ -12877,6 +13216,12 @@ var BALL_RESOURCES = {
   LIGHT: "game/image/ball/light_ball",
   SNOW_REMOVAL_TOOLS: "game/image/ball/snow_removal_tools"
 };
+
+var BOARD_OCCLUSION_RESOURCES = {
+  cloud: "game/image/props/cloud",
+  leaves: "game/image/props/leaves"
+};
+var BOARD_OCCLUSION_CLOCK_RESOURCE = "game/image/props/clock";
 
 var WORMHOLE_DIRECTION_ARROW_RESOURCE = "game/image/ball/arrow";
 var WORMHOLE_DIRECTION_ARROW_SIZE = new cc.Size(42, 42);
@@ -13539,6 +13884,13 @@ function buildBottomPanelRenderKey(runtimeSnapshot) {
   }
   var adRunPowerups = runtimeSnapshot.adRunPowerups ? runtimeSnapshot.adRunPowerups : {};
   var adRunPowerupAllowed = runtimeSnapshot.adRunPowerupAllowed ? runtimeSnapshot.adRunPowerupAllowed : {};
+  if (!runtimeSnapshot.systems || !runtimeSnapshot.systems.boardOcclusionSystem) {
+    throw new Error("Bottom panel render key requires board occlusion snapshot.");
+  }
+  var boardOcclusionVersion = runtimeSnapshot.systems.boardOcclusionSystem.version;
+  if (!Number.isInteger(boardOcclusionVersion) || boardOcclusionVersion < 0) {
+    throw new Error("Bottom panel render key requires non-negative board occlusion version.");
+  }
   return [
     runtimeSnapshot.state || "",
     shooter.canUsePowerups ? 1 : 0,
@@ -13555,7 +13907,8 @@ function buildBottomPanelRenderKey(runtimeSnapshot) {
     Math.max(0, Math.floor(Number(adRunPowerups.three_line_elimination) || 0)),
     Math.max(0, Math.floor(Number(adRunPowerups.plus_three_balls) || 0)),
     adRunPowerupAllowed.three_line_elimination === true ? 1 : 0,
-    adRunPowerupAllowed.plus_three_balls === true ? 1 : 0
+    adRunPowerupAllowed.plus_three_balls === true ? 1 : 0,
+    boardOcclusionVersion
   ].join("|");
 }
 
@@ -13915,12 +14268,14 @@ function LevelRenderer(rootNode) {
     bubbleHeight: BOARD_BUBBLE_SIZE.height
   });
   this.wormholeShaderRenderer = new WormholeShaderRenderer();
+  this.lightningChainRenderer = new LightningChainRenderer();
   this._sharedWarmupPromise = null;
   this.currentLevelConfig = null;
   this.lastRuntimeSnapshot = null;
   this.displayedIceSnowballCollectedTotal = 0;
   this.lastBoardVersion = -1;
   this.lastBoardViewportOffsetY = null;
+  this.lastBoardOcclusionRenderKey = "";
   this.whiteMaskFrames = {};
   this.whiteMaskTextures = [];
   this.lastHudRenderKey = "";
@@ -14115,6 +14470,99 @@ LevelRenderer.prototype.warmupSharedAssets = function () {
   }.bind(this));
 
   return this._sharedWarmupPromise;
+};
+
+LevelRenderer.prototype.preloadLightningChainEffect = function () {
+  return BundleLoader.ensureGameplayBundleLoaded().then(function () {
+    return this._preloadSprites(LightningChainRenderer.RESOURCE_PATHS);
+  }.bind(this));
+};
+
+LevelRenderer.prototype.playLightningChainEffect = function (config) {
+  if (!config || typeof config !== "object" || Array.isArray(config)) {
+    throw new Error("Board lightning chain config is required.");
+  }
+  if (!this.layers || !this.layers.shatter || !this.layers.shatter.isValid) {
+    throw new Error("Board lightning chain requires rendered gameplay layers.");
+  }
+  if (!this.lastRuntimeSnapshot || !this.lastRuntimeSnapshot.board) {
+    throw new Error("Board lightning chain requires current board snapshot.");
+  }
+  if (!Array.isArray(config.hitPoints) || config.hitPoints.length === 0) {
+    throw new Error("Board lightning chain requires at least one hit point.");
+  }
+
+  var boardSnapshot = this.lastRuntimeSnapshot.board;
+  if (!Array.isArray(boardSnapshot.cells)) {
+    throw new Error("Board lightning chain requires board.cells.");
+  }
+  if (!Number.isInteger(boardSnapshot.maxColumns) || boardSnapshot.maxColumns <= 0) {
+    throw new Error("Board lightning chain requires positive board.maxColumns.");
+  }
+  if (
+    typeof boardSnapshot.viewportOffsetY !== "number" ||
+    !isFinite(boardSnapshot.viewportOffsetY)
+  ) {
+    throw new Error("Board lightning chain requires finite board.viewportOffsetY.");
+  }
+
+  var resolvedHitPoints = config.hitPoints.map(function (hitPoint, index) {
+    if (!hitPoint || typeof hitPoint !== "object" || Array.isArray(hitPoint)) {
+      throw new Error("Board lightning chain hit point " + index + " must be an object.");
+    }
+    if (
+      (typeof hitPoint.id !== "string" && typeof hitPoint.id !== "number") ||
+      String(hitPoint.id).length === 0
+    ) {
+      throw new Error("Board lightning chain hit point " + index + " requires bubble id.");
+    }
+    if (!Number.isInteger(hitPoint.row) || !Number.isInteger(hitPoint.col)) {
+      throw new Error("Board lightning chain hit point " + index + " requires integer row and col.");
+    }
+
+    var normalizedId = String(hitPoint.id);
+    var boardCell = null;
+    for (var cellIndex = 0; cellIndex < boardSnapshot.cells.length; cellIndex += 1) {
+      var candidate = boardSnapshot.cells[cellIndex];
+      if (
+        candidate &&
+        (typeof candidate.id === "string" || typeof candidate.id === "number") &&
+        String(candidate.id) === normalizedId
+      ) {
+        boardCell = candidate;
+        break;
+      }
+    }
+    if (!boardCell) {
+      throw new Error("Board lightning chain target is not present on the board: " + normalizedId);
+    }
+    if (boardCell.row !== hitPoint.row || boardCell.col !== hitPoint.col) {
+      throw new Error("Board lightning chain target coordinates do not match bubble: " + normalizedId);
+    }
+
+    var position = BoardLayout.getCellPosition(
+      hitPoint.row,
+      hitPoint.col,
+      boardSnapshot.maxColumns,
+      boardSnapshot.viewportOffsetY
+    );
+    return {
+      id: normalizedId,
+      x: position.x,
+      y: position.y
+    };
+  });
+
+  return this.lightningChainRenderer.play(
+    this.layers.shatter,
+    this.spriteFrameCache,
+    {
+      chainId: config.chainId,
+      origin: config.origin,
+      hitPoints: resolvedHitPoints,
+      onHit: config.onHit
+    }
+  );
 };
 
 LevelRenderer.prototype.setWinActionHandlers = function (handlers) {
@@ -14393,6 +14841,7 @@ LevelRenderer.prototype._notifyActiveResultViewsHidden = function () {
 };
 
 LevelRenderer.prototype.renderLevel = function (levelConfig, runtimeSnapshot) {
+  this.lightningChainRenderer.reset("render_level");
   if (typeof this._stopBoardClearFireworks === "function") {
     this._stopBoardClearFireworks("render_level");
   }
@@ -14406,6 +14855,7 @@ LevelRenderer.prototype.renderLevel = function (levelConfig, runtimeSnapshot) {
   this.displayedIceSnowballCollectedTotal = 0;
   this.lastBoardVersion = -1;
   this.lastBoardViewportOffsetY = null;
+  this.lastBoardOcclusionRenderKey = "";
   this.lastHudRenderKey = "";
   this.lastHudStarRating = null;
   this.hudStarDisplayedRating = null;
@@ -14469,6 +14919,7 @@ LevelRenderer.prototype.renderLevel = function (levelConfig, runtimeSnapshot) {
   }.bind(this)).then(function () {
     clearChildren(this.layers.background);
     clearChildren(this.layers.board);
+    clearChildren(this.layers.boardOcclusion);
     this.wormholeDirectionGuideRoot = null;
     this.lastWormholeDirectionGuideKey = "";
     this.boardBubbleNodes = {};
@@ -14515,6 +14966,7 @@ LevelRenderer.prototype.renderLevel = function (levelConfig, runtimeSnapshot) {
     this._renderBottomPanel(runtimeSnapshot);
     this._queueSkillPowerupCollectedFeedback(runtimeSnapshot);
     this._renderBoard(runtimeSnapshot.board);
+    this._renderBoardOcclusions(runtimeSnapshot);
     this._syncBarrierHammerStoneHints(runtimeSnapshot);
     this._renderMainland(runtimeSnapshot.board);
     this._renderJianbian(runtimeSnapshot.board);
@@ -14643,6 +15095,7 @@ LevelRenderer.prototype._refreshRuntimeFull = function (levelConfig, runtimeSnap
     this._renderMainland(runtimeSnapshot.board);
     this._renderJianbian(runtimeSnapshot.board);
   }
+  this._renderBoardOcclusions(runtimeSnapshot);
   this._playSwirlRotationAnimation(runtimeSnapshot);
   this._playWormholeShiftAnimation(runtimeSnapshot);
   this._syncBarrierHammerStoneHints(runtimeSnapshot);
@@ -14746,6 +15199,7 @@ LevelRenderer.prototype.setGameplayLayersVisible = function (visible) {
   }
 
   if (!visible) {
+    this.lightningChainRenderer.reset("hide_gameplay_layers");
     this._notifyActiveResultViewsHidden();
     if (typeof this._stopBoardClearFireworks === "function") {
       this._stopBoardClearFireworks("hide_gameplay_layers");
@@ -14769,6 +15223,7 @@ LevelRenderer.prototype._ensureLayers = function () {
     shooter: this._getOrCreateLayer("ShooterLayer", 25),
     overlay: this._getOrCreateLayer("OverlayLayer", 30),
     board: this._getOrCreateLayer("BoardLayer", 40),
+    boardOcclusion: this._getOrCreateLayer("BoardOcclusionLayer", 43),
     shatter: this._getOrCreateLayer("BubbleShatterLayer", 44),
     // 掉落球前置到固定球前方，提升层次与动效可见度。
     falling: this._getOrCreateLayer("FallingLayer", 45),
@@ -14861,6 +15316,34 @@ LevelRenderer.prototype._collectSpritePaths = function (levelConfig, runtimeSnap
       }
     });
   }
+  if (!level.boardOcclusionPlan || !Array.isArray(level.boardOcclusionPlan.variants)) {
+    throw new Error("LevelRenderer sprite collection requires level.boardOcclusionPlan.");
+  }
+  level.boardOcclusionPlan.variants.forEach(function (variant, variantIndex) {
+    if (!variant || !Array.isArray(variant.zones)) {
+      throw new Error("Board occlusion variant requires zones: " + variantIndex);
+    }
+    variant.zones.forEach(function (zone, zoneIndex) {
+      if (!zone || !BOARD_OCCLUSION_RESOURCES[zone.visualType]) {
+        throw new Error("Unsupported board occlusion visual type at " + variantIndex + ":" + zoneIndex);
+      }
+      if (!zone.clearRule || typeof zone.clearRule.kind !== "string") {
+        throw new Error("Board occlusion zone requires clearRule at " + variantIndex + ":" + zoneIndex);
+      }
+      pushUniqueSpritePath(
+        paths,
+        BOARD_OCCLUSION_RESOURCES[zone.visualType],
+        "board occlusion " + zone.visualType
+      );
+      if (zone.clearRule.kind === "item_or_seconds") {
+        pushUniqueSpritePath(
+          paths,
+          BOARD_OCCLUSION_CLOCK_RESOURCE,
+          "board occlusion countdown clock"
+        );
+      }
+    });
+  });
 
   collectRuntimeBoardSpritePaths(paths, runtimeSnapshot);
 
@@ -14948,6 +15431,7 @@ LevelRenderer.prototype.releaseLevelSpecificSpriteCache = function () {
 };
 
 LevelRenderer.prototype.releaseAfterGameplayBundleUnload = function () {
+  this.lightningChainRenderer.reset("gameplay_bundle_unload");
   if (typeof this._releaseJarFractionNodesBeforeGameplayBundleUnload !== "function") {
     throw new Error("LevelRenderer requires jar fraction bundle release cleanup.");
   }
@@ -15051,6 +15535,9 @@ LevelRenderer.prototype._collectCommonSpritePaths = function () {
     COMMENT_ANIMATION_RESOURCES.excellent,
     COMMENT_ANIMATION_RESOURCES.unbelievable
   ];
+  LightningChainRenderer.RESOURCE_PATHS.forEach(function (path) {
+    paths.push(path);
+  });
   PropDescriptionConfig.getAllIconPaths().forEach(function (path) {
     paths.push(path);
   });
@@ -15275,6 +15762,8 @@ var LEVEL_RENDERER_SCENE_DEPS = {
   FairyAssistConfig: FairyAssistConfig,
   ICE_OVERLAY_OPACITY: ICE_OVERLAY_OPACITY,
   BOARD_BUBBLE_SIZE: BOARD_BUBBLE_SIZE,
+  BOARD_OCCLUSION_RESOURCES: BOARD_OCCLUSION_RESOURCES,
+  BOARD_OCCLUSION_CLOCK_RESOURCE: BOARD_OCCLUSION_CLOCK_RESOURCE,
   VINE_VISUAL_SIZE: VINE_VISUAL_SIZE,
   NEXT_SHOT_BUBBLE_SIZE: NEXT_SHOT_BUBBLE_SIZE,
   JAR_RENDER_SIZE: JAR_RENDER_SIZE,
@@ -15521,7 +16010,7 @@ LevelRenderer.prototype._applyJarMaskVisual = function (node, colorCode) {
 module.exports = LevelRenderer;
 
 
-},{"../../assets/scripts/utils/Logger":"Logger","../../assets/scripts/utils/DebugFlags":"DebugFlags","../../assets/scripts/utils/BundleLoader":"BundleLoader","./PrefabFactory":"PrefabFactory","../../assets/scripts/config/BoardLayout":"BoardLayout","../config/SpecialAnimationTiming":"SpecialAnimationTiming","../config/FairyAssistConfig":"FairyAssistConfig","../config/JarScoreConfig":"JarScoreConfig","../../assets/scripts/config/PropDescriptionConfig":"PropDescriptionConfig","../../assets/scripts/config/RuntimeRefreshScope":"RuntimeRefreshScope","../../assets/scripts/core/StarRatingPolicy":"StarRatingPolicy","../core/AdRevivePolicy":"AdRevivePolicy","../../assets/scripts/services/AdRewardCatalog":"AdRewardCatalog","../../assets/scripts/render/RenderNodeHelpers":"RenderNodeHelpers","../../assets/scripts/utils/SpriteProxyLayerHelper":"SpriteProxyLayerHelper","./BubbleShatterRenderer":"BubbleShatterRenderer","./WormholeShaderRenderer":"WormholeShaderRenderer","../../assets/scripts/ui/PropDescriptionViewController":"PropDescriptionViewController","./LevelRendererSceneMethods":"LevelRendererSceneMethods","./LevelRendererFairyMethods":"LevelRendererFairyMethods"}],
+},{"../../assets/scripts/utils/Logger":"Logger","../../assets/scripts/utils/DebugFlags":"DebugFlags","../../assets/scripts/utils/BundleLoader":"BundleLoader","./PrefabFactory":"PrefabFactory","../../assets/scripts/config/BoardLayout":"BoardLayout","../config/SpecialAnimationTiming":"SpecialAnimationTiming","../config/FairyAssistConfig":"FairyAssistConfig","../config/JarScoreConfig":"JarScoreConfig","../../assets/scripts/config/PropDescriptionConfig":"PropDescriptionConfig","../../assets/scripts/config/RuntimeRefreshScope":"RuntimeRefreshScope","../../assets/scripts/core/StarRatingPolicy":"StarRatingPolicy","../core/AdRevivePolicy":"AdRevivePolicy","../../assets/scripts/services/AdRewardCatalog":"AdRewardCatalog","../../assets/scripts/render/RenderNodeHelpers":"RenderNodeHelpers","../../assets/scripts/utils/SpriteProxyLayerHelper":"SpriteProxyLayerHelper","./BubbleShatterRenderer":"BubbleShatterRenderer","./WormholeShaderRenderer":"WormholeShaderRenderer","./LightningChainRenderer":"LightningChainRenderer","../../assets/scripts/ui/PropDescriptionViewController":"PropDescriptionViewController","./LevelRendererSceneMethods":"LevelRendererSceneMethods","./LevelRendererFairyMethods":"LevelRendererFairyMethods"}],
 "LevelRendererFairyMethods":[function(require,module,exports){
 "use strict";
 
@@ -19133,9 +19622,17 @@ function attachLevelRendererSceneHudMethods(LevelRenderer, deps) {
       }
     });
 
+    if (
+      !runtimeSnapshot.systems ||
+      !runtimeSnapshot.systems.boardOcclusionSystem ||
+      !Array.isArray(runtimeSnapshot.systems.boardOcclusionSystem.activeZones)
+    ) {
+      throw new Error("Bottom panel requires board occlusion snapshot.");
+    }
     return {
       hasIce: hasIce,
-      hasStone: hasStone
+      hasStone: hasStone,
+      hasBoardOcclusion: runtimeSnapshot.systems.boardOcclusionSystem.activeZones.length > 0
     };
   }
 
@@ -20594,12 +21091,9 @@ LevelRenderer.prototype._renderBottomPanel = function (runtimeSnapshot) {
   var pendingBarrierHammer = !!shooterSnapshot.pendingBarrierHammer;
   var pendingRainbowColorSelection = !!shooterSnapshot.pendingRainbowColorSelection;
   var preciseAimActive = shooterSnapshot.ricochetGuideActive === true;
-  if (!this.bottomPanelInitialBoardTargets) {
-    this.bottomPanelInitialBoardTargets = resolveBottomPanelBoardTargets(runtimeSnapshot);
-  }
-  var boardTargets = this.bottomPanelInitialBoardTargets;
+  var boardTargets = resolveBottomPanelBoardTargets(runtimeSnapshot);
   var showBarrierHammer = boardTargets.hasStone || pendingBarrierHammer;
-  var showSnowRemoval = boardTargets.hasIce;
+  var showSnowRemoval = boardTargets.hasIce || boardTargets.hasBoardOcclusion;
   var canUsePowerup = !!shooterSnapshot.canUsePowerups;
   var canUseRainbow = canUsePowerup && !pendingBarrierHammer && rainbowCount > 0;
   var canUsePreciseAim = canUsePowerup && !pendingBarrierHammer && !preciseAimActive && preciseAimCount > 0;
@@ -22111,10 +22605,12 @@ var attachLevelRendererSceneFxMethods = require("./LevelRendererSceneFxMethods")
 var attachLevelRendererSceneHudMethods = require("./LevelRendererSceneHudMethods");
 var attachLevelRendererSceneJarMethods = require("./LevelRendererSceneJarMethods");
 var attachLevelRendererScenePopupMethods = require("./LevelRendererScenePopupMethods");
+var attachLevelRendererSceneOcclusionMethods = require("./LevelRendererSceneOcclusionMethods");
 
 function attachLevelRendererSceneMethods(LevelRenderer, deps) {
   attachLevelRendererSceneScaffoldMethods(LevelRenderer, deps);
   attachLevelRendererSceneBoardMethods(LevelRenderer, deps);
+  attachLevelRendererSceneOcclusionMethods(LevelRenderer, deps);
   attachLevelRendererSceneShooterMethods(LevelRenderer, deps);
   attachLevelRendererSceneFxMethods(LevelRenderer, deps);
   attachLevelRendererSceneHudMethods(LevelRenderer, deps);
@@ -22124,11 +22620,252 @@ function attachLevelRendererSceneMethods(LevelRenderer, deps) {
 
 module.exports = attachLevelRendererSceneMethods;
 
-},{"./LevelRendererSceneScaffoldMethods":"LevelRendererSceneScaffoldMethods","./LevelRendererSceneBoardMethods":"LevelRendererSceneBoardMethods","./LevelRendererSceneShooterMethods":"LevelRendererSceneShooterMethods","./LevelRendererSceneFxMethods":"LevelRendererSceneFxMethods","./LevelRendererSceneHudMethods":"LevelRendererSceneHudMethods","./LevelRendererSceneJarMethods":"LevelRendererSceneJarMethods","./LevelRendererScenePopupMethods":"LevelRendererScenePopupMethods"}],
+},{"./LevelRendererSceneScaffoldMethods":"LevelRendererSceneScaffoldMethods","./LevelRendererSceneBoardMethods":"LevelRendererSceneBoardMethods","./LevelRendererSceneShooterMethods":"LevelRendererSceneShooterMethods","./LevelRendererSceneFxMethods":"LevelRendererSceneFxMethods","./LevelRendererSceneHudMethods":"LevelRendererSceneHudMethods","./LevelRendererSceneJarMethods":"LevelRendererSceneJarMethods","./LevelRendererScenePopupMethods":"LevelRendererScenePopupMethods","./LevelRendererSceneOcclusionMethods":"LevelRendererSceneOcclusionMethods"}],
+"LevelRendererSceneOcclusionMethods":[function(require,module,exports){
+"use strict";
+
+function attachLevelRendererSceneOcclusionMethods(LevelRenderer, deps) {
+  var BoardLayout = deps.BoardLayout;
+  var BOARD_BUBBLE_SIZE = deps.BOARD_BUBBLE_SIZE;
+  var BOARD_OCCLUSION_RESOURCES = deps.BOARD_OCCLUSION_RESOURCES;
+  var BOARD_OCCLUSION_CLOCK_RESOURCE = deps.BOARD_OCCLUSION_CLOCK_RESOURCE;
+  var ensureSprite = deps.ensureSprite;
+  var ensureLabel = deps.ensureLabel;
+
+  function requireFinite(value, description) {
+    if (typeof value !== "number" || !isFinite(value)) {
+      throw new Error(description + " must be finite.");
+    }
+    return value;
+  }
+
+  function resolveZoneBounds(zone, boardSnapshot) {
+    if (!Array.isArray(zone.cells) || !zone.cells.length) {
+      throw new Error("Board occlusion render zone requires cells.");
+    }
+    var positions = zone.cells.map(function (cell) {
+      if (!cell || !Number.isInteger(cell.row) || !Number.isInteger(cell.col)) {
+        throw new Error("Board occlusion render cell requires integer coordinates.");
+      }
+      return BoardLayout.getCellPosition(
+        cell.row,
+        cell.col,
+        boardSnapshot.maxColumns,
+        boardSnapshot.viewportOffsetY
+      );
+    });
+    var minX = Math.min.apply(null, positions.map(function (point) { return point.x; }));
+    var maxX = Math.max.apply(null, positions.map(function (point) { return point.x; }));
+    var minY = Math.min.apply(null, positions.map(function (point) { return point.y; }));
+    var maxY = Math.max.apply(null, positions.map(function (point) { return point.y; }));
+    return {
+      centerX: (minX + maxX) * 0.5,
+      centerY: (minY + maxY) * 0.5,
+      width: Math.max(BOARD_BUBBLE_SIZE.width * 1.45, maxX - minX + BOARD_BUBBLE_SIZE.width * 1.45),
+      height: Math.max(BOARD_BUBBLE_SIZE.height * 1.45, maxY - minY + BOARD_BUBBLE_SIZE.height * 1.45)
+    };
+  }
+
+  function configureCountdownClock(rootNode, spriteFrame, y) {
+    if (!spriteFrame || typeof spriteFrame.getOriginalSize !== "function") {
+      throw new Error("Board occlusion countdown clock requires a valid SpriteFrame.");
+    }
+    var originalSize = spriteFrame.getOriginalSize();
+    if (!originalSize || originalSize.width <= 0 || originalSize.height <= 0) {
+      throw new Error("Board occlusion countdown clock original size is invalid.");
+    }
+    if (!cc.Sprite.SizeMode || cc.Sprite.SizeMode.RAW === undefined) {
+      throw new Error("Board occlusion countdown clock requires cc.Sprite.SizeMode.RAW.");
+    }
+    var clockNode = new cc.Node("CountdownClock");
+    clockNode.parent = rootNode;
+    clockNode.setPosition(-38, y);
+    clockNode.setContentSize(originalSize);
+    var clockSprite = ensureSprite(clockNode, spriteFrame);
+    clockSprite.trim = false;
+    clockSprite.sizeMode = cc.Sprite.SizeMode.RAW;
+    clockNode.setScale(26 / Math.max(originalSize.width, originalSize.height));
+  }
+
+  function configureCountdownLabel(rootNode, zone, bounds, clockSpriteFrame) {
+    var countdownY = -bounds.height * 0.5 + 22;
+    var labelNode = new cc.Node("Countdown");
+    labelNode.parent = rootNode;
+    labelNode.setPosition(0, countdownY);
+    labelNode.setContentSize(120, 34);
+    var label = ensureLabel(labelNode, "", 25, 29, cc.Label.HorizontalAlign.CENTER);
+    labelNode.color = cc.color(255, 249, 212);
+    var outline = labelNode.getComponent(cc.LabelOutline);
+    if (!outline) {
+      outline = labelNode.addComponent(cc.LabelOutline);
+    }
+    outline.color = cc.color(66, 74, 63);
+    outline.width = 3;
+
+    if (zone.remainingShots !== null) {
+      if (!Number.isInteger(zone.remainingShots) || zone.remainingShots <= 0) {
+        throw new Error("Board occlusion remainingShots must be a positive integer while active.");
+      }
+      label.string = zone.remainingShots + " 发";
+      return;
+    }
+    if (zone.remainingTimeMs !== null) {
+      requireFinite(zone.remainingTimeMs, "Board occlusion remainingTimeMs");
+      if (zone.remainingTimeMs <= 0) {
+        throw new Error("Board occlusion remainingTimeMs must be positive while active.");
+      }
+      if (!clockSpriteFrame) {
+        throw new Error("Board occlusion timed zone clock was not preloaded: " + BOARD_OCCLUSION_CLOCK_RESOURCE);
+      }
+      configureCountdownClock(rootNode, clockSpriteFrame, countdownY);
+      labelNode.setPosition(18, countdownY);
+      labelNode.setContentSize(82, 34);
+      label.string = Math.ceil(zone.remainingTimeMs / 1000) + " 秒";
+      return;
+    }
+    label.string = "道具清理";
+  }
+
+  function configureOcclusionMotion(imageNode, visualType) {
+    imageNode.stopAllActions();
+    if (visualType === "cloud") {
+      imageNode.opacity = 228;
+      imageNode.runAction(cc.repeatForever(cc.sequence(
+        cc.fadeTo(1.25, 250),
+        cc.fadeTo(1.25, 218)
+      )));
+      return;
+    }
+    if (visualType === "leaves") {
+      imageNode.opacity = 255;
+      imageNode.angle = -2;
+      imageNode.runAction(cc.repeatForever(cc.sequence(
+        cc.rotateTo(1.15, 2.5),
+        cc.rotateTo(1.15, -2)
+      )));
+      return;
+    }
+    throw new Error("Unsupported board occlusion visual type: " + visualType);
+  }
+
+  LevelRenderer.prototype._renderBoardOcclusions = function (runtimeSnapshot) {
+    if (!runtimeSnapshot || !runtimeSnapshot.board) {
+      throw new Error("Board occlusion rendering requires runtime board snapshot.");
+    }
+    if (!runtimeSnapshot.systems || !runtimeSnapshot.systems.boardOcclusionSystem) {
+      throw new Error("Board occlusion rendering requires system snapshot.");
+    }
+    if (!this.layers || !this.layers.boardOcclusion || !this.layers.boardOcclusion.isValid) {
+      throw new Error("Board occlusion rendering requires BoardOcclusionLayer.");
+    }
+    var snapshot = runtimeSnapshot.systems.boardOcclusionSystem;
+    if (!Number.isInteger(snapshot.version) || snapshot.version < 0) {
+      throw new Error("Board occlusion render version must be a non-negative integer.");
+    }
+    if (!Array.isArray(snapshot.activeZones)) {
+      throw new Error("Board occlusion render activeZones must be an array.");
+    }
+    var renderKey = [
+      snapshot.version,
+      runtimeSnapshot.board.maxColumns,
+      runtimeSnapshot.board.viewportOffsetY
+    ].join("|");
+    if (renderKey === this.lastBoardOcclusionRenderKey) {
+      return;
+    }
+
+    this.layers.boardOcclusion.children.slice().forEach(function (child) {
+      if (!child || !child.isValid || typeof child.destroy !== "function") {
+        throw new Error("Board occlusion cleanup requires valid destroyable children.");
+      }
+      child.stopAllActions();
+      child.destroy();
+    });
+    snapshot.activeZones.forEach(function (zone, zoneIndex) {
+      if (!zone || typeof zone.id !== "string" || !zone.id) {
+        throw new Error("Board occlusion render zone requires id.");
+      }
+      var spritePath = BOARD_OCCLUSION_RESOURCES[zone.visualType];
+      if (!spritePath) {
+        throw new Error("Board occlusion resource missing for type: " + zone.visualType);
+      }
+      var spriteFrame = this.spriteFrameCache[spritePath];
+      if (!spriteFrame) {
+        throw new Error("Board occlusion sprite was not preloaded: " + spritePath);
+      }
+      if (typeof spriteFrame.getOriginalSize !== "function") {
+        throw new Error("Board occlusion spriteFrame requires getOriginalSize: " + spritePath);
+      }
+      var originalSize = spriteFrame.getOriginalSize();
+      if (!originalSize || originalSize.width <= 0 || originalSize.height <= 0) {
+        throw new Error("Board occlusion sprite original size is invalid: " + spritePath);
+      }
+
+      var bounds = resolveZoneBounds(zone, runtimeSnapshot.board);
+      var rootNode = new cc.Node("BoardOcclusion_" + zoneIndex + "_" + zone.id);
+      rootNode.parent = this.layers.boardOcclusion;
+      rootNode.setPosition(bounds.centerX, bounds.centerY);
+      rootNode.setContentSize(bounds.width, bounds.height);
+
+      var imageNode = new cc.Node("Visual");
+      imageNode.parent = rootNode;
+      imageNode.setPosition(0, 0);
+      imageNode.setContentSize(originalSize);
+      var sprite = ensureSprite(imageNode, spriteFrame);
+      if (!cc.Sprite.SizeMode || cc.Sprite.SizeMode.RAW === undefined) {
+        throw new Error("Board occlusion rendering requires cc.Sprite.SizeMode.RAW.");
+      }
+      sprite.trim = false;
+      sprite.sizeMode = cc.Sprite.SizeMode.RAW;
+      var coverScale = Math.max(bounds.width / originalSize.width, bounds.height / originalSize.height);
+      imageNode.setScale(coverScale);
+      configureOcclusionMotion(imageNode, zone.visualType);
+      var clockSpriteFrame = zone.remainingTimeMs !== null
+        ? this.spriteFrameCache[BOARD_OCCLUSION_CLOCK_RESOURCE]
+        : null;
+      configureCountdownLabel(rootNode, zone, bounds, clockSpriteFrame);
+    }, this);
+    this.lastBoardOcclusionRenderKey = renderKey;
+  };
+}
+
+module.exports = attachLevelRendererSceneOcclusionMethods;
+
+},{}],
 "LevelRendererScenePopupMethods":[function(require,module,exports){
 "use strict";
 
 var SceneShared = require("./LevelRendererSceneShared");
+
+function buildLoseRevivePresentation(levelConfig, revivePlan) {
+  if (!levelConfig || !levelConfig.level || typeof levelConfig.level.playMode !== "string") {
+    throw new Error("LoseView revive presentation requires level.playMode.");
+  }
+  if (!revivePlan || typeof revivePlan !== "object" || Array.isArray(revivePlan)) {
+    throw new Error("LoseView revive presentation requires revive plan.");
+  }
+  if (levelConfig.level.playMode === "timed_infinite_shots") {
+    if (revivePlan.grantedShots !== 0 || !Number.isInteger(revivePlan.grantedTimeSeconds) || revivePlan.grantedTimeSeconds <= 0) {
+      throw new Error("Timed LoseView revive presentation requires positive grantedTimeSeconds and zero grantedShots.");
+    }
+    return {
+      description: "+" + revivePlan.grantedTimeSeconds + "秒",
+      descriptionX: 0,
+      showBall: false
+    };
+  }
+  if (levelConfig.level.playMode !== "shot_limited") {
+    throw new Error("LoseView revive presentation level.playMode is unsupported: " + levelConfig.level.playMode);
+  }
+  if (!Number.isInteger(revivePlan.grantedShots) || revivePlan.grantedShots <= 0 || revivePlan.grantedTimeSeconds !== 0) {
+    throw new Error("Shot-limited LoseView revive presentation requires positive grantedShots and zero grantedTimeSeconds.");
+  }
+  return {
+    description: "赠送" + revivePlan.grantedShots + "球",
+    descriptionX: 32,
+    showBall: true
+  };
+}
 
 function attachLevelRendererScenePopupMethods(LevelRenderer, deps) {
   var requireChildNode = SceneShared.requireChildNode;
@@ -22262,12 +22999,18 @@ function attachLevelRendererScenePopupMethods(LevelRenderer, deps) {
       throw new Error("LoseView requires buildAdRevivePlan.");
     }
     var revivePlan = buildAdRevivePlan(levelConfig, runtimeSnapshot);
+    var presentation = buildLoseRevivePresentation(levelConfig, revivePlan);
     var ballNode = requireChildNode(getNode, "handsel_ball", "LoseView/get");
     var desNode = requireChildNode(getNode, "handsel_des", "LoseView/get");
-    if (!Number.isInteger(revivePlan.grantedShots) || revivePlan.grantedShots <= 0) {
-      throw new Error("LoseView revive plan requires positive integer grantedShots.");
+    if (typeof desNode.setPosition !== "function" || typeof desNode.y !== "number") {
+      throw new Error("LoseView/get/handsel_des position is invalid.");
     }
-    setRequiredLabelString(desNode, "赠送" + revivePlan.grantedShots + "球", "LoseView/get/handsel_des");
+    desNode.setPosition(presentation.descriptionX, desNode.y);
+    setRequiredLabelString(desNode, presentation.description, "LoseView/get/handsel_des");
+    ballNode.active = presentation.showBall;
+    if (!presentation.showBall) {
+      return;
+    }
 
     var iconCode = revivePlan.targetColor ? revivePlan.targetColor : "RAINBOW";
     var spritePath = BALL_RESOURCES[iconCode];
@@ -22278,7 +23021,6 @@ function attachLevelRendererScenePopupMethods(LevelRenderer, deps) {
     if (!spriteFrame) {
       throw new Error("LoseView revive gain sprite is not preloaded: " + spritePath);
     }
-    ballNode.active = true;
     ensureSprite(ballNode, spriteFrame);
   }
 
@@ -23167,6 +23909,7 @@ LevelRenderer.prototype._renderResultPopup = function (runtimeSnapshot) {
 }
 
 module.exports = attachLevelRendererScenePopupMethods;
+module.exports.buildLoseRevivePresentation = buildLoseRevivePresentation;
 
 },{"./LevelRendererSceneShared":"LevelRendererSceneShared"}],
 "LevelRendererSceneScaffoldMethods":[function(require,module,exports){
@@ -23235,6 +23978,7 @@ LevelRenderer.prototype._mountGameViewScaffold = function () {
 
 LevelRenderer.prototype.prepareForLevelSelectReturn = function () {
   this._ensureLayers();
+  this.lightningChainRenderer.reset("level_select_return");
   if (typeof this._cancelSkillPowerupCollectedFeedback !== "function") {
     throw new Error("Level select return requires collected skill powerup feedback cleanup.");
   }
@@ -24691,6 +25435,562 @@ LevelRenderer.prototype.renderRouteEditor = function (editorState) {
 module.exports = attachLevelRendererSceneShooterMethods;
 
 },{"./LevelRendererSceneShared":"LevelRendererSceneShared"}],
+"LightningChainRenderer":[function(require,module,exports){
+"use strict";
+
+var RESOURCE_PATHS = {
+  arcPrimary: "game/image/skill/lightning/lightning_arc_long_01",
+  arcSecondary: "game/image/skill/lightning/lightning_arc_long_02",
+  ring: "game/image/skill/lightning/lightning_ring",
+  sparkBurst: "game/image/skill/lightning/blue_spark_burst",
+  starburst: "game/image/skill/lightning/blue_starburst",
+  boltPrimary: "game/image/skill/lightning/blue_lightning_bolt_01",
+  boltSecondary: "game/image/skill/lightning/blue_lightning_bolt_02",
+  starGlowLarge: "game/image/skill/lightning/purple_star_glow_large",
+  starGlowSmall: "game/image/skill/lightning/purple_star_glow_small"
+};
+
+var RESOURCE_KEYS = Object.keys(RESOURCE_PATHS);
+var SEGMENT_HEIGHT = 56;
+var SEGMENT_ENDPOINT_OVERLAP = 14;
+var SEGMENT_FADE_IN_DURATION = 0.035;
+var SEGMENT_FRAME_DURATION = 0.055;
+var SEGMENT_FADE_OUT_DURATION = 0.11;
+var HIT_STAGGER_DURATION = 0.085;
+var FINAL_HOLD_DURATION = 0.32;
+var RING_WIDTH = 118;
+var RING_HEIGHT = 107;
+var SPARK_BURST_WIDTH = 74;
+var SPARK_BURST_HEIGHT = 76;
+var STARBURST_WIDTH = 59;
+var STARBURST_HEIGHT = 64;
+var STAR_GLOW_LARGE_WIDTH = 70;
+var STAR_GLOW_LARGE_HEIGHT = 70;
+var STAR_GLOW_SMALL_WIDTH = 47;
+var STAR_GLOW_SMALL_HEIGHT = 48;
+var BOLT_PRIMARY_WIDTH = 44;
+var BOLT_PRIMARY_HEIGHT = 58;
+var BOLT_SECONDARY_WIDTH = 57;
+var BOLT_SECONDARY_HEIGHT = 58;
+var EFFECT_Z_INDEX = 700;
+var MIN_SEGMENT_LENGTH = 1;
+
+function requireFinitePoint(point, ownerName) {
+  if (
+    !point ||
+    typeof point !== "object" ||
+    Array.isArray(point) ||
+    typeof point.x !== "number" ||
+    typeof point.y !== "number" ||
+    !isFinite(point.x) ||
+    !isFinite(point.y)
+  ) {
+    throw new Error(ownerName + " must contain finite x and y.");
+  }
+  return point;
+}
+
+function requireChainId(chainId) {
+  if (
+    (typeof chainId !== "string" && typeof chainId !== "number") ||
+    String(chainId).length === 0
+  ) {
+    throw new Error("Lightning chain id must be a non-empty string or number.");
+  }
+  return String(chainId);
+}
+
+function requireHitPoint(hitPoint, index, usedIds) {
+  requireFinitePoint(hitPoint, "Lightning chain hit point " + index);
+  if (
+    (typeof hitPoint.id !== "string" && typeof hitPoint.id !== "number") ||
+    String(hitPoint.id).length === 0
+  ) {
+    throw new Error("Lightning chain hit point " + index + " requires id.");
+  }
+
+  var normalizedId = String(hitPoint.id);
+  if (usedIds[normalizedId]) {
+    throw new Error("Lightning chain hit point id must be unique: " + normalizedId);
+  }
+  usedIds[normalizedId] = true;
+
+  return {
+    id: normalizedId,
+    x: hitPoint.x,
+    y: hitPoint.y
+  };
+}
+
+function validatePlayConfig(config) {
+  if (!config || typeof config !== "object" || Array.isArray(config)) {
+    throw new Error("Lightning chain play config is required.");
+  }
+
+  var chainId = requireChainId(config.chainId);
+  var origin = requireFinitePoint(config.origin, "Lightning chain origin");
+  if (!Array.isArray(config.hitPoints) || config.hitPoints.length === 0) {
+    throw new Error("Lightning chain requires at least one hit point.");
+  }
+  if (config.onHit !== undefined && typeof config.onHit !== "function") {
+    throw new Error("Lightning chain onHit must be a function when provided.");
+  }
+
+  var usedIds = {};
+  var hitPoints = config.hitPoints.map(function (hitPoint, index) {
+    return requireHitPoint(hitPoint, index, usedIds);
+  });
+
+  var previousPoint = origin;
+  hitPoints.forEach(function (hitPoint, index) {
+    resolveSegmentGeometry(previousPoint, hitPoint, index);
+    previousPoint = hitPoint;
+  });
+
+  return {
+    chainId: chainId,
+    origin: {
+      x: origin.x,
+      y: origin.y
+    },
+    hitPoints: hitPoints,
+    onHit: config.onHit
+  };
+}
+
+function resolveSegmentGeometry(startPoint, endPoint, index) {
+  requireFinitePoint(startPoint, "Lightning chain segment " + index + " start");
+  requireFinitePoint(endPoint, "Lightning chain segment " + index + " end");
+
+  var dx = endPoint.x - startPoint.x;
+  var dy = endPoint.y - startPoint.y;
+  var distance = Math.sqrt(dx * dx + dy * dy);
+  if (!isFinite(distance) || distance < MIN_SEGMENT_LENGTH) {
+    throw new Error("Lightning chain segment " + index + " length must be at least " + MIN_SEGMENT_LENGTH + ".");
+  }
+
+  return {
+    x: startPoint.x,
+    y: startPoint.y,
+    width: distance + SEGMENT_ENDPOINT_OVERLAP,
+    height: SEGMENT_HEIGHT,
+    angle: Math.atan2(dy, dx) * 180 / Math.PI
+  };
+}
+
+function requireActionApis() {
+  [
+    "sequence",
+    "spawn",
+    "callFunc",
+    "delayTime",
+    "fadeTo",
+    "scaleTo",
+    "rotateBy"
+  ].forEach(function (apiName) {
+    if (typeof cc[apiName] !== "function") {
+      throw new Error("Lightning chain effect requires cc." + apiName + ".");
+    }
+  });
+}
+
+function requireLayer(layer) {
+  if (!layer || !layer.isValid) {
+    throw new Error("Lightning chain effect requires a valid render layer.");
+  }
+  return layer;
+}
+
+function requireSpriteFrames(spriteFrameCache) {
+  if (!spriteFrameCache || typeof spriteFrameCache !== "object" || Array.isArray(spriteFrameCache)) {
+    throw new Error("Lightning chain effect requires SpriteFrame cache.");
+  }
+
+  var spriteFrames = {};
+  RESOURCE_KEYS.forEach(function (key) {
+    var path = RESOURCE_PATHS[key];
+    var spriteFrame = spriteFrameCache[path];
+    if (!spriteFrame) {
+      throw new Error("Lightning chain SpriteFrame is not preloaded: " + path);
+    }
+    if (typeof cc.isValid === "function" && !cc.isValid(spriteFrame)) {
+      throw new Error("Lightning chain SpriteFrame is invalid: " + path);
+    }
+    spriteFrames[key] = spriteFrame;
+  });
+  return spriteFrames;
+}
+
+function createSpriteNode(parent, name, spriteFrame, width, height, zIndex) {
+  if (typeof width !== "number" || !isFinite(width) || width <= 0) {
+    throw new Error(name + " width must be positive.");
+  }
+  if (typeof height !== "number" || !isFinite(height) || height <= 0) {
+    throw new Error(name + " height must be positive.");
+  }
+
+  var node = new cc.Node(name);
+  node.parent = parent;
+  node.setContentSize(width, height);
+  node.zIndex = zIndex;
+  var sprite = node.addComponent(cc.Sprite);
+  sprite.spriteFrame = spriteFrame;
+  sprite.sizeMode = cc.Sprite.SizeMode.CUSTOM;
+  return {
+    node: node,
+    sprite: sprite
+  };
+}
+
+function createSegmentNode(root, spriteFrames, startPoint, endPoint, index) {
+  var geometry = resolveSegmentGeometry(startPoint, endPoint, index);
+  var entry = createSpriteNode(
+    root,
+    "LightningSegment_" + index,
+    spriteFrames.arcPrimary,
+    geometry.width,
+    geometry.height,
+    index * 10
+  );
+  entry.node.anchorX = 0;
+  entry.node.anchorY = 0.5;
+  entry.node.setPosition(geometry.x, geometry.y);
+  entry.node.angle = geometry.angle;
+  entry.node.opacity = 0;
+  entry.node.active = false;
+  return entry;
+}
+
+function createCenteredSprite(root, name, spriteFrame, width, height, zIndex, point) {
+  var entry = createSpriteNode(root, name, spriteFrame, width, height, zIndex);
+  entry.node.setPosition(point.x, point.y);
+  entry.node.opacity = 0;
+  entry.node.active = false;
+  return entry;
+}
+
+function createImpactNodes(root, spriteFrames, point, index) {
+  var zIndex = index * 10 + 2;
+  var ring = createCenteredSprite(
+    root,
+    "LightningRing_" + index,
+    spriteFrames.ring,
+    RING_WIDTH,
+    RING_HEIGHT,
+    zIndex,
+    point
+  );
+  var sparkBurst = createCenteredSprite(
+    root,
+    "LightningSparkBurst_" + index,
+    spriteFrames.sparkBurst,
+    SPARK_BURST_WIDTH,
+    SPARK_BURST_HEIGHT,
+    zIndex + 1,
+    point
+  );
+  var starburst = createCenteredSprite(
+    root,
+    "LightningStarburst_" + index,
+    spriteFrames.starburst,
+    STARBURST_WIDTH,
+    STARBURST_HEIGHT,
+    zIndex + 2,
+    point
+  );
+  var starGlowLarge = createCenteredSprite(
+    root,
+    "LightningStarGlowLarge_" + index,
+    spriteFrames.starGlowLarge,
+    STAR_GLOW_LARGE_WIDTH,
+    STAR_GLOW_LARGE_HEIGHT,
+    zIndex + 3,
+    point
+  );
+  var starGlowSmall = createCenteredSprite(
+    root,
+    "LightningStarGlowSmall_" + index,
+    spriteFrames.starGlowSmall,
+    STAR_GLOW_SMALL_WIDTH,
+    STAR_GLOW_SMALL_HEIGHT,
+    zIndex + 4,
+    point
+  );
+  var boltPrimary = createCenteredSprite(
+    root,
+    "LightningBoltPrimary_" + index,
+    spriteFrames.boltPrimary,
+    BOLT_PRIMARY_WIDTH,
+    BOLT_PRIMARY_HEIGHT,
+    zIndex + 5,
+    point
+  );
+  var boltSecondary = createCenteredSprite(
+    root,
+    "LightningBoltSecondary_" + index,
+    spriteFrames.boltSecondary,
+    BOLT_SECONDARY_WIDTH,
+    BOLT_SECONDARY_HEIGHT,
+    zIndex + 6,
+    point
+  );
+
+  boltPrimary.node.angle = -38;
+  boltSecondary.node.angle = 42;
+
+  return {
+    ring: ring,
+    sparkBurst: sparkBurst,
+    starburst: starburst,
+    starGlowLarge: starGlowLarge,
+    starGlowSmall: starGlowSmall,
+    boltPrimary: boltPrimary,
+    boltSecondary: boltSecondary
+  };
+}
+
+function requireActiveNode(node, ownerName) {
+  if (!node || !node.isValid) {
+    throw new Error(ownerName + " was destroyed during lightning chain playback.");
+  }
+}
+
+function playSegment(entry, spriteFrames) {
+  requireActiveNode(entry.node, "Lightning segment");
+  entry.node.active = true;
+  entry.node.opacity = 0;
+  entry.sprite.spriteFrame = spriteFrames.arcPrimary;
+  entry.node.runAction(cc.sequence(
+    cc.fadeTo(SEGMENT_FADE_IN_DURATION, 255),
+    cc.delayTime(SEGMENT_FRAME_DURATION),
+    cc.callFunc(function () {
+      requireActiveNode(entry.node, "Lightning segment");
+      entry.sprite.spriteFrame = spriteFrames.arcSecondary;
+    }),
+    cc.delayTime(SEGMENT_FRAME_DURATION),
+    cc.callFunc(function () {
+      requireActiveNode(entry.node, "Lightning segment");
+      entry.sprite.spriteFrame = spriteFrames.arcPrimary;
+    }),
+    cc.fadeTo(SEGMENT_FADE_OUT_DURATION, 0)
+  ));
+}
+
+function playImpact(entry) {
+  var impactNodes = [
+    entry.ring.node,
+    entry.sparkBurst.node,
+    entry.starburst.node,
+    entry.starGlowLarge.node,
+    entry.starGlowSmall.node,
+    entry.boltPrimary.node,
+    entry.boltSecondary.node
+  ];
+  impactNodes.forEach(function (node) {
+    requireActiveNode(node, "Lightning impact");
+    node.active = true;
+    node.opacity = 0;
+    node.setScale(0.42);
+  });
+
+  entry.ring.node.runAction(cc.sequence(
+    cc.spawn(
+      cc.fadeTo(0.045, 255),
+      cc.scaleTo(0.11, 1)
+    ),
+    cc.spawn(
+      cc.fadeTo(0.18, 0),
+      cc.scaleTo(0.18, 1.34),
+      cc.rotateBy(0.18, 34)
+    )
+  ));
+  entry.sparkBurst.node.runAction(cc.sequence(
+    cc.spawn(
+      cc.fadeTo(0.035, 255),
+      cc.scaleTo(0.08, 1.08)
+    ),
+    cc.spawn(
+      cc.fadeTo(0.16, 0),
+      cc.scaleTo(0.16, 1.5)
+    )
+  ));
+  entry.starburst.node.runAction(cc.sequence(
+    cc.spawn(
+      cc.fadeTo(0.03, 255),
+      cc.scaleTo(0.07, 1)
+    ),
+    cc.spawn(
+      cc.fadeTo(0.15, 0),
+      cc.scaleTo(0.15, 1.42),
+      cc.rotateBy(0.15, -28)
+    )
+  ));
+  entry.starGlowLarge.node.runAction(cc.sequence(
+    cc.spawn(
+      cc.fadeTo(0.045, 230),
+      cc.scaleTo(0.09, 1)
+    ),
+    cc.spawn(
+      cc.fadeTo(0.16, 0),
+      cc.scaleTo(0.16, 1.36)
+    )
+  ));
+  entry.starGlowSmall.node.runAction(cc.sequence(
+    cc.delayTime(0.035),
+    cc.spawn(
+      cc.fadeTo(0.035, 255),
+      cc.scaleTo(0.07, 1.1)
+    ),
+    cc.spawn(
+      cc.fadeTo(0.13, 0),
+      cc.scaleTo(0.13, 1.55)
+    )
+  ));
+  entry.boltPrimary.node.runAction(cc.sequence(
+    cc.spawn(
+      cc.fadeTo(0.025, 255),
+      cc.scaleTo(0.06, 1.05)
+    ),
+    cc.spawn(
+      cc.fadeTo(0.13, 0),
+      cc.scaleTo(0.13, 1.34)
+    )
+  ));
+  entry.boltSecondary.node.runAction(cc.sequence(
+    cc.delayTime(0.025),
+    cc.spawn(
+      cc.fadeTo(0.025, 255),
+      cc.scaleTo(0.06, 1.05)
+    ),
+    cc.spawn(
+      cc.fadeTo(0.12, 0),
+      cc.scaleTo(0.12, 1.3)
+    )
+  ));
+}
+
+function LightningChainRenderer() {
+  this.activeRoot = null;
+  this.activeState = null;
+  this.serial = 0;
+}
+
+LightningChainRenderer.prototype.isPlaying = function () {
+  return this.activeState !== null;
+};
+
+LightningChainRenderer.prototype.play = function (layer, spriteFrameCache, config) {
+  requireActionApis();
+  requireLayer(layer);
+  var spriteFrames = requireSpriteFrames(spriteFrameCache);
+  var normalizedConfig = validatePlayConfig(config);
+
+  if (this.activeState !== null || (this.activeRoot && this.activeRoot.isValid)) {
+    throw new Error("Lightning chain effect is already playing.");
+  }
+
+  this.serial += 1;
+  var root = new cc.Node("LightningChainFx_" + normalizedConfig.chainId + "_" + this.serial);
+  root.parent = layer;
+  root.setPosition(0, 0);
+  root.zIndex = EFFECT_Z_INDEX;
+  this.activeRoot = root;
+
+  var segments = [];
+  var impacts = [];
+  var previousPoint = normalizedConfig.origin;
+  normalizedConfig.hitPoints.forEach(function (hitPoint, index) {
+    segments.push(createSegmentNode(root, spriteFrames, previousPoint, hitPoint, index));
+    impacts.push(createImpactNodes(root, spriteFrames, hitPoint, index));
+    previousPoint = hitPoint;
+  });
+
+  return new Promise(function (resolve) {
+    var state = {
+      chainId: normalizedConfig.chainId,
+      root: root,
+      resolve: resolve,
+      completedHitIds: []
+    };
+    this.activeState = state;
+    var timeline = [];
+
+    normalizedConfig.hitPoints.forEach(function (hitPoint, index) {
+      if (index > 0) {
+        timeline.push(cc.delayTime(HIT_STAGGER_DURATION));
+      }
+      timeline.push(cc.callFunc(function () {
+        if (this.activeState !== state) {
+          throw new Error("Lightning chain active state changed during playback.");
+        }
+        requireActiveNode(root, "Lightning chain root");
+        playSegment(segments[index], spriteFrames);
+        playImpact(impacts[index]);
+        state.completedHitIds.push(hitPoint.id);
+        if (normalizedConfig.onHit) {
+          normalizedConfig.onHit(hitPoint, index);
+        }
+      }.bind(this)));
+    }, this);
+
+    timeline.push(cc.delayTime(FINAL_HOLD_DURATION));
+    timeline.push(cc.callFunc(function () {
+      this._finishActiveState(state, false, "completed");
+    }.bind(this)));
+    root.runAction(cc.sequence.apply(null, timeline));
+  }.bind(this));
+};
+
+LightningChainRenderer.prototype._finishActiveState = function (state, cancelled, reason) {
+  if (this.activeState !== state) {
+    throw new Error("Lightning chain finish state does not match active state.");
+  }
+
+  var root = state.root;
+  if (root && root.isValid) {
+    root.stopAllActions();
+    root.children.slice().forEach(function (child) {
+      if (child && child.isValid) {
+        child.stopAllActions();
+      }
+    });
+    root.removeFromParent(false);
+    root.destroy();
+  }
+
+  this.activeRoot = null;
+  this.activeState = null;
+  state.resolve({
+    chainId: state.chainId,
+    cancelled: cancelled,
+    reason: reason,
+    completedHitIds: state.completedHitIds.slice()
+  });
+};
+
+LightningChainRenderer.prototype.reset = function (reason) {
+  if (typeof reason !== "string" || reason.length === 0) {
+    throw new Error("Lightning chain reset reason is required.");
+  }
+  if (this.activeState === null) {
+    if (this.activeRoot && this.activeRoot.isValid) {
+      throw new Error("Lightning chain root cannot exist without active state.");
+    }
+    this.activeRoot = null;
+    return;
+  }
+  this._finishActiveState(this.activeState, true, reason);
+};
+
+LightningChainRenderer.RESOURCE_PATHS = RESOURCE_KEYS.map(function (key) {
+  return RESOURCE_PATHS[key];
+});
+LightningChainRenderer.validatePlayConfig = validatePlayConfig;
+LightningChainRenderer.resolveSegmentGeometry = resolveSegmentGeometry;
+
+module.exports = LightningChainRenderer;
+
+},{}],
 "MatchSystem":[function(require,module,exports){
 "use strict";
 

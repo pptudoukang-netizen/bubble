@@ -1,6 +1,7 @@
 "use strict";
 
 var BoardLayout = require("./BoardLayout");
+var BoardOcclusionConfig = require("./BoardOcclusionConfig");
 var LevelBoardSupportValidator = require("./LevelBoardSupportValidator");
 var RandomChallengeRules = require("./RandomChallengeRules");
 
@@ -357,6 +358,10 @@ function buildConfig(options) {
     config.layoutNotes.legend[color] = color;
   });
   config.layoutNotes.legend["."] = "empty";
+  config.level.boardOcclusionPlan = BoardOcclusionConfig.createPlanForLevel(config.level, {
+    enabled: true,
+    mode: BoardOcclusionConfig.MODE_PER_RUN
+  });
   LevelBoardSupportValidator.assertInitialBoardSupported(config.level, RandomChallengeRules.LEVEL_KEY);
 
   return config;

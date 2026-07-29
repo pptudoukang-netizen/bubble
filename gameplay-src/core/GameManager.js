@@ -13,6 +13,7 @@ var FairyAssistSystem = require("../systems/FairyAssistSystem");
 var BoardViewportSystem = require("../systems/BoardViewportSystem");
 var FallingMarbleSystem = require("../systems/FallingMarbleSystem");
 var JarCollectorSystem = require("../systems/JarCollectorSystem");
+var BoardOcclusionSystem = require("../systems/BoardOcclusionSystem");
 var ProjectileMath = require("./ProjectileMath");
 var AdRevivePolicy = require("./AdRevivePolicy");
 var StarRatingPolicy = require("../../assets/scripts/core/StarRatingPolicy");
@@ -27,7 +28,8 @@ var measurePathDistance = ProjectileMath.measurePathDistance;
 var buildAimGuidePath = ProjectileMath.buildAimGuidePath;
 var AD_REVIVE_ALLOWED_STATES = {
   out_of_shots: true,
-  lost_danger: true
+  lost_danger: true,
+  lost_objective: true
 };
 var ADD_BALL_PROMPT_STATE = "out_of_shots_add_ball_prompt";
 var COLLECTION_OBJECTIVE_TYPES = {
@@ -759,7 +761,8 @@ function GameManager(options) {
     supportSystem: new SupportSystem(),
     fairyAssistSystem: new FairyAssistSystem(),
     fallingMarbleSystem: new FallingMarbleSystem(),
-    jarCollectorSystem: new JarCollectorSystem()
+    jarCollectorSystem: new JarCollectorSystem(),
+    boardOcclusionSystem: new BoardOcclusionSystem()
   };
   this.systems.bubbleGrid.attachBoardViewport(this.systems.boardViewportSystem);
   this.systems.fallingMarbleSystem.attachFairyAssistSystem(this.systems.fairyAssistSystem);
@@ -781,10 +784,13 @@ GameManager.prototype.bootstrap = function () {
   return this;
 };
 
-GameManager.prototype.startLevel = function (levelConfig) {
+GameManager.prototype.startLevel = function (levelConfig, startContext) {
   this.currentLevel = levelConfig;
   if (!levelConfig || !levelConfig.level) {
     throw new Error("GameManager.startLevel requires level config.");
+  }
+  if (!startContext || typeof startContext !== "object" || Array.isArray(startContext)) {
+    throw new Error("GameManager.startLevel requires explicit startContext.");
   }
   var level = levelConfig.level;
   this.isTimedInfiniteShots = level.playMode === "timed_infinite_shots";
@@ -861,6 +867,7 @@ GameManager.prototype.startLevel = function (levelConfig) {
   Object.keys(this.systems).forEach(function (key) {
     this.systems[key].configureLevel(levelConfig);
   }, this);
+  this.systems.boardOcclusionSystem.startRun(startContext);
 
   this._rebuildCachedAdRunPowerupAllowed();
   this._aimGuidePathCacheKey = "";
@@ -1443,6 +1450,9 @@ GameManager.prototype._updatePendingVineCast = function (dt) {
     }
     cast.completed = true;
   });
+  this._pushRuntimeEvent("vine_entangled", {
+    count: resolution.vineCasts.length
+  });
   this.pendingVineCastResolution = null;
   this._continueAfterVineCast(resolution);
   return true;
@@ -1480,7 +1490,9 @@ GameManager.prototype._updatePendingSwirlRotation = function (dt) {
     this._appendUniqueCells(resolution.floating, removedFloating);
     this._collectRemovedKeysAndResolveUnlocks(removedFloating, grid, resolution);
     this._cancelPendingSplitterSpawnsForDroppedCells(removedFloating);
-    this._registerResolutionDrops(removedFloating, grid, resolution);
+    this._registerResolutionDrops(removedFloating, grid, resolution, undefined, {
+      skipEliminationPresentationHold: true
+    });
     this.systems.jarCollectorSystem.collect([]);
   }
   this._appendUniqueCells(resolution.collected, newlyFloating);
@@ -2710,29 +2722,44 @@ GameManager.prototype.reviveFromAd = function () {
   if (!this.systems || !this.systems.bubbleGrid) {
     throw new Error("Ad revive requires BubbleGrid.");
   }
-  if (!this.systems.shooterController || typeof this.systems.shooterController.setUpcomingNormalBalls !== "function") {
-    throw new Error("Ad revive requires ShooterController.setUpcomingNormalBalls.");
-  }
-  if (typeof this.systems.shooterController.setUpcomingRandomNormalBalls !== "function") {
-    throw new Error("Ad revive requires ShooterController.setUpcomingRandomNormalBalls.");
-  }
-
-  var revivePlan = AdRevivePolicy.buildRevivePlan(this.currentLevel, {
-    board: {
-      cells: this.systems.bubbleGrid.getCells()
-    },
-    objectives: this._buildPrimaryObjectiveSnapshot(this._getCachedJarSnapshot())
-  });
+  var reviveRuntimeSnapshot = this.isTimedInfiniteShots
+    ? null
+    : {
+      board: {
+        cells: this.systems.bubbleGrid.getCells()
+      },
+      objectives: this._buildPrimaryObjectiveSnapshot(this._getCachedJarSnapshot())
+    };
+  var revivePlan = AdRevivePolicy.buildRevivePlan(this.currentLevel, reviveRuntimeSnapshot);
   var previousRemainingShots = this.remainingShots;
-  this.remainingShots = previousRemainingShots + revivePlan.grantedShots;
-  var queueResult = revivePlan.targetColorBallCount > 0
-    ? this.systems.shooterController.setUpcomingNormalBalls(
-      revivePlan.targetColor,
-      revivePlan.targetColorBallCount
-    )
-    : this.systems.shooterController.setUpcomingRandomNormalBalls(revivePlan.randomBallCount);
-  if (!queueResult || queueResult.accepted !== true) {
-    throw new Error("Ad revive failed to assign supply balls.");
+  var previousRemainingTimeMs = this.remainingTimeMs;
+  if (this.isTimedInfiniteShots) {
+    if (revivePlan.grantedShots !== 0 || !Number.isInteger(revivePlan.grantedTimeSeconds) || revivePlan.grantedTimeSeconds <= 0) {
+      throw new Error("Timed ad revive requires positive grantedTimeSeconds and zero grantedShots.");
+    }
+    this.remainingTimeMs = previousRemainingTimeMs + revivePlan.grantedTimeSeconds * 1000;
+    this._lastTimerRenderBucket = Math.ceil(this.remainingTimeMs / TIMED_LEVEL_RENDER_BUCKET_MS);
+    this.timerPaused = false;
+  } else {
+    if (!Number.isInteger(revivePlan.grantedShots) || revivePlan.grantedShots <= 0 || revivePlan.grantedTimeSeconds !== 0) {
+      throw new Error("Shot-limited ad revive requires positive grantedShots and zero grantedTimeSeconds.");
+    }
+    if (!this.systems.shooterController || typeof this.systems.shooterController.setUpcomingNormalBalls !== "function") {
+      throw new Error("Ad revive requires ShooterController.setUpcomingNormalBalls.");
+    }
+    if (typeof this.systems.shooterController.setUpcomingRandomNormalBalls !== "function") {
+      throw new Error("Ad revive requires ShooterController.setUpcomingRandomNormalBalls.");
+    }
+    this.remainingShots = previousRemainingShots + revivePlan.grantedShots;
+    var queueResult = revivePlan.targetColorBallCount > 0
+      ? this.systems.shooterController.setUpcomingNormalBalls(
+        revivePlan.targetColor,
+        revivePlan.targetColorBallCount
+      )
+      : this.systems.shooterController.setUpcomingRandomNormalBalls(revivePlan.randomBallCount);
+    if (!queueResult || queueResult.accepted !== true) {
+      throw new Error("Ad revive failed to assign supply balls.");
+    }
   }
 
   this.state = "running";
@@ -2744,12 +2771,12 @@ GameManager.prototype.reviveFromAd = function () {
     previous_remaining_shots: previousRemainingShots,
     remaining_shots: this.remainingShots,
     granted_shots: revivePlan.grantedShots,
+    previous_remaining_time_ms: previousRemainingTimeMs,
+    remaining_time_ms: this.remainingTimeMs,
+    granted_time_seconds: revivePlan.grantedTimeSeconds,
     target_color: revivePlan.targetColor,
     target_color_ball_count: revivePlan.targetColorBallCount,
-    random_ball_count: revivePlan.randomBallCount,
-    danger_space_shift_rows: gridSpaceResult.shiftRows,
-    danger_space_removed_cells: gridSpaceResult.removedCells.length,
-    danger_space_rows: gridSpaceResult.spaceRows
+    random_ball_count: revivePlan.randomBallCount
   });
 
   return {
@@ -2757,12 +2784,12 @@ GameManager.prototype.reviveFromAd = function () {
     previousRemainingShots: previousRemainingShots,
     remainingShots: this.remainingShots,
     grantedShots: revivePlan.grantedShots,
+    previousRemainingTimeMs: previousRemainingTimeMs,
+    remainingTimeMs: this.remainingTimeMs,
+    grantedTimeSeconds: revivePlan.grantedTimeSeconds,
     targetColor: revivePlan.targetColor,
     targetColorBallCount: revivePlan.targetColorBallCount,
     randomBallCount: revivePlan.randomBallCount,
-    dangerSpaceShiftRows: gridSpaceResult.shiftRows,
-    dangerSpaceRemovedCells: gridSpaceResult.removedCells,
-    dangerSpaceRows: gridSpaceResult.spaceRows,
     snapshot: this.getRuntimeSnapshot(this._drainRuntimeEvents())
   };
 };
@@ -2917,6 +2944,29 @@ GameManager.prototype.previewSnowRemoval = function () {
     };
   }
 
+  var boardOcclusionSystem = this.systems.boardOcclusionSystem;
+  if (!boardOcclusionSystem || typeof boardOcclusionSystem.snapshotForRender !== "function") {
+    throw new Error("Snow removal requires BoardOcclusionSystem.");
+  }
+  var occlusionSnapshot = boardOcclusionSystem.snapshotForRender();
+  if (!Array.isArray(occlusionSnapshot.activeZones)) {
+    throw new Error("Board occlusion snapshot requires activeZones array.");
+  }
+  if (occlusionSnapshot.activeZones.length > 0) {
+    return {
+      accepted: true,
+      targetKind: "board_occlusion",
+      targets: occlusionSnapshot.activeZones.map(function (zone) {
+        if (!zone || typeof zone.id !== "string" || !zone.id) {
+          throw new Error("Board occlusion removal preview requires zone ids.");
+        }
+        return zone.id;
+      }),
+      clearCount: occlusionSnapshot.activeZones.length,
+      snapshot: this.getRuntimeSnapshot()
+    };
+  }
+
   var grid = this.systems.bubbleGrid;
   var snowCells = grid.getCells().filter(function (cell) {
     return isIceBall(cell);
@@ -2939,6 +2989,7 @@ GameManager.prototype.previewSnowRemoval = function () {
 
   return {
     accepted: true,
+    targetKind: "ice",
     targets: targets,
     clearCount: targets.length,
     snapshot: this.getRuntimeSnapshot()
@@ -2957,6 +3008,55 @@ GameManager.prototype.useSnowRemoval = function (expectedTargets) {
   var preview = this.previewSnowRemoval();
   if (!preview.accepted) {
     return preview;
+  }
+  if (preview.targetKind === "board_occlusion") {
+    if (Array.isArray(expectedTargets)) {
+      var expectedOcclusionKey = expectedTargets.slice().sort().join("|");
+      var actualOcclusionKey = preview.targets.slice().sort().join("|");
+      if (expectedOcclusionKey !== actualOcclusionKey) {
+        throw new Error("Board occlusion removal targets changed before resolution.");
+      }
+    }
+    var occlusionConsumeResult = this.systems.shooterController.consumeSnowRemoval();
+    if (!occlusionConsumeResult || !occlusionConsumeResult.accepted) {
+      return {
+        accepted: false,
+        reason: occlusionConsumeResult && occlusionConsumeResult.reason
+          ? occlusionConsumeResult.reason
+          : "inventory_empty",
+        snapshot: this.getRuntimeSnapshot()
+      };
+    }
+    var removedZoneIds = this.systems.boardOcclusionSystem.clearAllWithItem();
+    if (removedZoneIds.length !== preview.targets.length) {
+      throw new Error("Board occlusion removal count changed before resolution.");
+    }
+    this.pendingShotPlan = null;
+    this.isAiming = false;
+    this._pushRuntimeEvent("board_occlusion_cleared", {
+      reason: "snow_removal",
+      zoneIds: removedZoneIds
+    });
+    this._pushRuntimeEvent("powerup_snow_removal", {
+      target_kind: "board_occlusion",
+      targets: removedZoneIds.slice(),
+      removed: removedZoneIds.length,
+      floating: 0,
+      ice_collected: 0
+    });
+    return {
+      accepted: true,
+      targetKind: "board_occlusion",
+      targets: removedZoneIds,
+      removed: removedZoneIds.length,
+      thawed: 0,
+      floating: 0,
+      remaining: occlusionConsumeResult.remaining,
+      snapshot: this.getRuntimeSnapshot(this._drainRuntimeEvents())
+    };
+  }
+  if (preview.targetKind !== "ice") {
+    throw new Error("Unsupported snow removal targetKind: " + preview.targetKind);
   }
   if (Array.isArray(expectedTargets)) {
     var expectedKey = buildSnowRemovalTargetKey(expectedTargets);
@@ -3300,6 +3400,16 @@ GameManager.prototype.update = function (dt) {
   }
   this.boardAdvanceUpdateSerial += 1;
   this.boardAdvancedThisFrame = false;
+  var timedOutOcclusionZoneIds = this.systems.boardOcclusionSystem.update(
+    safeDt,
+    this.state !== "running" || this.timerPaused
+  );
+  if (timedOutOcclusionZoneIds.length) {
+    this._pushRuntimeEvent("board_occlusion_cleared", {
+      reason: "countdown",
+      zoneIds: timedOutOcclusionZoneIds
+    });
+  }
   var timerChanged = false;
   if (this.state === "running" && this.isTimedInfiniteShots && !this.timerPaused) {
     var previousRemainingTimeMs = this.remainingTimeMs;
@@ -3808,7 +3918,8 @@ GameManager.prototype.getRuntimeSnapshot = function (runtimeEvents, renderOption
     // Renderer currently relies on falling snapshot (active drops + jar zones).
     fallingMarbleSystem: typeof fallingSystem.snapshotForRender === "function"
       ? fallingSystem.snapshotForRender()
-      : fallingSystem.snapshot()
+      : fallingSystem.snapshot(),
+    boardOcclusionSystem: this.systems.boardOcclusionSystem.snapshotForRender()
   };
   var jarsSnapshot = this._getCachedJarSnapshot();
   var objectiveSnapshot = this._buildPrimaryObjectiveSnapshot(jarsSnapshot);

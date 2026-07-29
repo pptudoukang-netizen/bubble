@@ -2,6 +2,36 @@
 
 var SceneShared = require("./LevelRendererSceneShared");
 
+function buildLoseRevivePresentation(levelConfig, revivePlan) {
+  if (!levelConfig || !levelConfig.level || typeof levelConfig.level.playMode !== "string") {
+    throw new Error("LoseView revive presentation requires level.playMode.");
+  }
+  if (!revivePlan || typeof revivePlan !== "object" || Array.isArray(revivePlan)) {
+    throw new Error("LoseView revive presentation requires revive plan.");
+  }
+  if (levelConfig.level.playMode === "timed_infinite_shots") {
+    if (revivePlan.grantedShots !== 0 || !Number.isInteger(revivePlan.grantedTimeSeconds) || revivePlan.grantedTimeSeconds <= 0) {
+      throw new Error("Timed LoseView revive presentation requires positive grantedTimeSeconds and zero grantedShots.");
+    }
+    return {
+      description: "+" + revivePlan.grantedTimeSeconds + "秒",
+      descriptionX: 0,
+      showBall: false
+    };
+  }
+  if (levelConfig.level.playMode !== "shot_limited") {
+    throw new Error("LoseView revive presentation level.playMode is unsupported: " + levelConfig.level.playMode);
+  }
+  if (!Number.isInteger(revivePlan.grantedShots) || revivePlan.grantedShots <= 0 || revivePlan.grantedTimeSeconds !== 0) {
+    throw new Error("Shot-limited LoseView revive presentation requires positive grantedShots and zero grantedTimeSeconds.");
+  }
+  return {
+    description: "赠送" + revivePlan.grantedShots + "球",
+    descriptionX: 32,
+    showBall: true
+  };
+}
+
 function attachLevelRendererScenePopupMethods(LevelRenderer, deps) {
   var requireChildNode = SceneShared.requireChildNode;
   var setRequiredLabelString = SceneShared.setRequiredLabelString;
@@ -134,12 +164,18 @@ function attachLevelRendererScenePopupMethods(LevelRenderer, deps) {
       throw new Error("LoseView requires buildAdRevivePlan.");
     }
     var revivePlan = buildAdRevivePlan(levelConfig, runtimeSnapshot);
+    var presentation = buildLoseRevivePresentation(levelConfig, revivePlan);
     var ballNode = requireChildNode(getNode, "handsel_ball", "LoseView/get");
     var desNode = requireChildNode(getNode, "handsel_des", "LoseView/get");
-    if (!Number.isInteger(revivePlan.grantedShots) || revivePlan.grantedShots <= 0) {
-      throw new Error("LoseView revive plan requires positive integer grantedShots.");
+    if (typeof desNode.setPosition !== "function" || typeof desNode.y !== "number") {
+      throw new Error("LoseView/get/handsel_des position is invalid.");
     }
-    setRequiredLabelString(desNode, "赠送" + revivePlan.grantedShots + "球", "LoseView/get/handsel_des");
+    desNode.setPosition(presentation.descriptionX, desNode.y);
+    setRequiredLabelString(desNode, presentation.description, "LoseView/get/handsel_des");
+    ballNode.active = presentation.showBall;
+    if (!presentation.showBall) {
+      return;
+    }
 
     var iconCode = revivePlan.targetColor ? revivePlan.targetColor : "RAINBOW";
     var spritePath = BALL_RESOURCES[iconCode];
@@ -150,7 +186,6 @@ function attachLevelRendererScenePopupMethods(LevelRenderer, deps) {
     if (!spriteFrame) {
       throw new Error("LoseView revive gain sprite is not preloaded: " + spritePath);
     }
-    ballNode.active = true;
     ensureSprite(ballNode, spriteFrame);
   }
 
@@ -1039,3 +1074,4 @@ LevelRenderer.prototype._renderResultPopup = function (runtimeSnapshot) {
 }
 
 module.exports = attachLevelRendererScenePopupMethods;
+module.exports.buildLoseRevivePresentation = buildLoseRevivePresentation;

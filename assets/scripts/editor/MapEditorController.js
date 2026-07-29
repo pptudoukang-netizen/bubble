@@ -1169,13 +1169,23 @@ var MapEditorController = cc.Class({
     if (this._isCloudSyncing) {
       throw new Error("云端草稿同步任务已经在进行中。");
     }
-    var records = this._localEditedLevelStore.loadAllRecords();
-    if (records.length === 0) {
-      throw new Error("同步云端前至少需要保存一个本地关卡。");
+    var levelId = this._currentLevelId;
+    if (!Number.isInteger(levelId) || levelId <= 0) {
+      throw new Error("同步云端前必须先选择一个关卡。");
+    }
+    if (!this._localEditedLevelStore.hasLevel(levelId)) {
+      throw new Error("同步云端前必须先保存当前第 " + levelId + " 关到本地。");
+    }
+    if (typeof this._localEditedLevelStore.loadRecord !== "function") {
+      throw new Error("MapEditor 本地草稿存储缺少 loadRecord 接口。");
+    }
+    var record = this._localEditedLevelStore.loadRecord(levelId);
+    if (!record || record.levelId !== levelId) {
+      throw new Error("MapEditor 当前关卡本地同步记录非法。");
     }
     this._isCloudSyncing = true;
     requireComponent(this._syncCloudButtonNode, cc.Button).interactable = false;
-    this._setStatusText("正在同步 " + records.length + " 个本地关卡到云端草稿库...");
+    this._setStatusText("正在同步第 " + levelId + " 关到云端草稿库...");
     return this._ensureLevelCatalog().loadCloudEnvId().then(function (cloudEnvId) {
       if (!this._cloudSyncService) {
         this._cloudSyncService = new LevelEditorCloudSyncService({
@@ -1185,11 +1195,11 @@ var MapEditorController = cc.Class({
       if (this._cloudSyncService.cloudEnvId !== cloudEnvId) {
         throw new Error("编辑器云同步环境与线上关卡环境不一致。");
       }
-      return this._cloudSyncService.syncLevels(records);
+      return this._cloudSyncService.syncLevel(record);
     }.bind(this)).then(function (result) {
       this._isCloudSyncing = false;
       requireComponent(this._syncCloudButtonNode, cc.Button).interactable = true;
-      this._setStatusText("云端草稿同步完成，共 " + result.syncedCount + " 关");
+      this._setStatusText("第 " + levelId + " 关云端草稿同步完成");
       cc.log("[MapEditor] 云端草稿同步完成", result);
       return result;
     }.bind(this)).catch(function (error) {

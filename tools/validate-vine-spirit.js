@@ -11,6 +11,7 @@ var GameManager = require("../gameplay-src/core/GameManager");
 var BubbleGrid = require("../gameplay-src/systems/BubbleGrid");
 var BoardViewportSystem = require("../gameplay-src/systems/BoardViewportSystem");
 var MatchSystem = require("../gameplay-src/systems/MatchSystem");
+var GameBootstrapAudioMethods = require("../assets/scripts/bootstrap/GameBootstrapAudioMethods");
 var SupportSystem = require("../gameplay-src/systems/SupportSystem");
 
 function readJson(filePath) {
@@ -387,18 +388,60 @@ function validateThirdShotPreviewAndCast() {
   var previewCell = grid.getCell(cast.targetRow, cast.targetCol);
   assert(previewCell.vinePreviewOwnerId === "vine_spirit_validation", "Vine target must expose preview ownership.");
   assert(!previewCell.vineOwnerId, "Preview target must not be active before the warning completes.");
+  assert(
+    !manager.pendingRuntimeEvents.some(function (event) { return event.type === "vine_entangled"; }),
+    "Vine preview must not emit the entanglement audio event."
+  );
 
   manager._updatePendingVineCast(SpecialAnimationTiming.vineCast.previewDuration * 0.5);
   assert(!continued, "Vine cast must remain pending during the warning.");
+  assert(
+    !manager.pendingRuntimeEvents.some(function (event) { return event.type === "vine_entangled"; }),
+    "Incomplete vine warning must not emit the entanglement audio event."
+  );
   manager._updatePendingVineCast(SpecialAnimationTiming.vineCast.previewDuration * 0.5);
   var entangled = grid.getCell(cast.targetRow, cast.targetCol);
   assert(entangled.vineOwnerId === "vine_spirit_validation", "Warning completion must activate the vine.");
   assert(!entangled.vinePreviewOwnerId, "Warning completion must clear preview ownership.");
   assert(cast.completed === true && continued, "Completed vine cast must resume the shot state machine.");
+  var vineAudioEvents = manager.pendingRuntimeEvents.filter(function (event) {
+    return event.type === "vine_entangled";
+  });
+  assert(
+    vineAudioEvents.length === 1 && vineAudioEvents[0].count === 1,
+    "Completed vine cast must emit one vine_entangled audio event with the entangled count."
+  );
 
   var nonThirdResolution = createVineResolution();
   manager.shotsFired = 4;
   assert(!manager._beginVineCastForResolution(nonThirdResolution), "Non-third shots must not start a vine cast.");
+}
+
+function validateVineEntanglementAudioRouting() {
+  var audioConfig = GameBootstrapAudioMethods._buildAudioConfig.call({
+    _getGameplayBgmPath: function () {
+      return "sound/game_bg1";
+    },
+    _parseAudioResourceList: function () {
+      return [];
+    },
+    vinesSfxResource: "sound/vines"
+  });
+  assert(audioConfig.sfxMap.vines === "sound/vines", "Vine sfx config must map vines to sound/vines.");
+
+  var playedSfx = [];
+  GameBootstrapAudioMethods._playRuntimeAudioEvents.call({
+    _trackRuntimeTelemetryEvent: function () {},
+    _playSfx: function (key) {
+      playedSfx.push(key);
+    }
+  }, {
+    runtimeEvents: [{
+      type: "vine_entangled",
+      count: 2
+    }]
+  });
+  assert(playedSfx.length === 1 && playedSfx[0] === "vines", "vine_entangled must play the vines sfx once.");
 }
 
 validateConfigAndCompactCodec();
@@ -407,4 +450,5 @@ validateDamageReleaseAndDeathCleanup();
 validateExplosionInteractions();
 validateTopAnchorCollapseDropsVineEntities();
 validateThirdShotPreviewAndCast();
-console.log("[OK] vine_spirit config, codec, health, direct/adjacent/explosion damage, unsupported and top-collapse drops, vine release, third-shot preview and death cleanup");
+validateVineEntanglementAudioRouting();
+console.log("[OK] vine_spirit config, codec, health, direct/adjacent/explosion damage, unsupported and top-collapse drops, vine release, third-shot preview, entanglement audio and death cleanup");

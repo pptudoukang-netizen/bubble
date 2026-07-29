@@ -1,6 +1,7 @@
 "use strict";
 
 var AD_REVIVE_GRANTED_SHOTS = 10;
+var AD_REVIVE_GRANTED_TIME_SECONDS = 10;
 var AD_REVIVE_TARGET_COLOR_BALLS = 2;
 
 var COLOR_DISPLAY_NAMES = {
@@ -166,10 +167,25 @@ function resolveReviveTargetColor(levelConfig, runtimeSnapshot) {
 }
 
 function buildRevivePlan(levelConfig, runtimeSnapshot) {
+  var level = requireLevel(levelConfig);
+  if (level.playMode === "timed_infinite_shots") {
+    return {
+      grantedShots: 0,
+      grantedTimeSeconds: AD_REVIVE_GRANTED_TIME_SECONDS,
+      targetColor: null,
+      targetColorBallCount: 0,
+      randomBallCount: 0,
+      description: "+" + AD_REVIVE_GRANTED_TIME_SECONDS + "秒"
+    };
+  }
+  if (level.playMode !== "shot_limited") {
+    throw new Error("Ad revive level.playMode is unsupported: " + level.playMode);
+  }
   var objectiveCompleted = isObjectiveCompleted(runtimeSnapshot);
   var targetColor = objectiveCompleted ? null : resolveReviveTargetColor(levelConfig, runtimeSnapshot);
   return {
     grantedShots: AD_REVIVE_GRANTED_SHOTS,
+    grantedTimeSeconds: 0,
     targetColor: targetColor,
     targetColorBallCount: objectiveCompleted ? 0 : AD_REVIVE_TARGET_COLOR_BALLS,
     randomBallCount: objectiveCompleted ? AD_REVIVE_TARGET_COLOR_BALLS : 0,
@@ -194,6 +210,7 @@ function buildReviveDescription(levelConfig, runtimeSnapshot) {
 
 module.exports = {
   AD_REVIVE_GRANTED_SHOTS: AD_REVIVE_GRANTED_SHOTS,
+  AD_REVIVE_GRANTED_TIME_SECONDS: AD_REVIVE_GRANTED_TIME_SECONDS,
   AD_REVIVE_TARGET_COLOR_BALLS: AD_REVIVE_TARGET_COLOR_BALLS,
   buildRevivePlan: buildRevivePlan,
   buildReviveDescription: buildReviveDescription,
