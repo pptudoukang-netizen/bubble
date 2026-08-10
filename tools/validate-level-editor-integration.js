@@ -220,9 +220,13 @@ function assertSplitterObjectiveAlignment() {
     var collectColorConditions = merged.level.winConditions.filter(function (objective) {
       return objective.type === "collect_color";
     });
+    var sourceCollectColorConditions = sourceConfig.level.winConditions.filter(function (objective) {
+      return objective.type === "collect_color";
+    });
+    assert.strictEqual(sourceCollectColorConditions.length, 1, "Editor splitter regression source must contain exactly one collect_color objective.");
     assert.strictEqual(collectColorConditions.length, 1, "Editor splitter save must preserve exactly one collect_color objective.");
     assert.strictEqual(collectColorConditions[0].color, "R", "Editor splitter save must align collect_color with splitColor.");
-    assert.strictEqual(collectColorConditions[0].value, 23, "Editor splitter save must preserve the configured collect target value.");
+    assert.strictEqual(collectColorConditions[0].value, sourceCollectColorConditions[0].value, "Editor splitter save must preserve the configured collect target value.");
     var LevelConfigLoader = require(path.join(PROJECT_ROOT, "assets/scripts/config/LevelConfigLoader"));
     LevelConfigLoader.normalizeLevelConfig(merged, "level_001");
 

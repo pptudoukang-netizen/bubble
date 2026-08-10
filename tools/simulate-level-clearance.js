@@ -71,6 +71,7 @@ function parseArgs(argv) {
   var options = {
     from: 1,
     to: 1000,
+    levelIds: null,
     limit: null,
     angleStepDeg: DEFAULT_ANGLE_STEP_DEG,
     seed: 20260709,
@@ -80,7 +81,8 @@ function parseArgs(argv) {
     continueOnError: false,
     requirePass: false,
     onlyFailures: false,
-    verbose: false
+    verbose: false,
+    reportPath: null
   };
 
   for (var index = 0; index < argv.length; index += 1) {
@@ -94,6 +96,17 @@ function parseArgs(argv) {
     } else if (arg === "--limit") {
       index += 1;
       options.limit = parsePositiveInteger(argv[index], "--limit");
+    } else if (arg === "--levels") {
+      index += 1;
+      if (typeof argv[index] !== "string" || !argv[index].trim()) {
+        throw new Error("--levels must be followed by comma-separated positive level IDs.");
+      }
+      options.levelIds = argv[index].split(",").map(function (value) {
+        return parsePositiveInteger(value.trim(), "--levels entry");
+      });
+      if (new Set(options.levelIds).size !== options.levelIds.length) {
+        throw new Error("--levels must not contain duplicate level IDs.");
+      }
     } else if (arg === "--angle-step") {
       index += 1;
       options.angleStepDeg = parsePositiveNumber(argv[index], "--angle-step");
@@ -117,6 +130,12 @@ function parseArgs(argv) {
       options.onlyFailures = true;
     } else if (arg === "--verbose") {
       options.verbose = true;
+    } else if (arg === "--report") {
+      index += 1;
+      if (typeof argv[index] !== "string" || !argv[index].trim()) {
+        throw new Error("--report must be followed by a non-empty CSV path.");
+      }
+      options.reportPath = argv[index];
     } else {
       throw new Error("Unknown argument: " + arg);
     }
@@ -211,13 +230,27 @@ function listRemotePackEntries() {
 }
 
 function listLevelEntries(options) {
+  var selectedLevelIds = options.levelIds === null ? null : new Set(options.levelIds);
   var allEntries = listLocalLevelEntries().concat(listRemotePackEntries())
     .filter(function (entry) {
+      if (selectedLevelIds !== null) {
+        return selectedLevelIds.has(entry.levelId);
+      }
       return entry.levelId >= options.from && entry.levelId <= options.to;
     })
     .sort(function (a, b) {
       return a.levelId - b.levelId;
     });
+
+  if (selectedLevelIds !== null && allEntries.length !== selectedLevelIds.size) {
+    var loadedLevelIds = new Set(allEntries.map(function (entry) {
+      return entry.levelId;
+    }));
+    var missingLevelIds = options.levelIds.filter(function (levelId) {
+      return !loadedLevelIds.has(levelId);
+    });
+    throw new Error("Requested simulation levels were not found: " + missingLevelIds.join(","));
+  }
 
   if (options.limit !== null) {
     return allEntries.slice(0, options.limit);
@@ -757,6 +790,7 @@ function runSingleAttempt(entry, options, attemptIndex, attemptSeed, choiceOverr
   var manager = new GameManager();
   var levelConfig = clone(entry.data);
   syncHudBottomLineYForSimulation();
+  manager.setEquippedAssistSpirit("milu", 1);
   manager.startLevel(levelConfig, {
     runMode: "simulation",
     attemptIndex: 1,
@@ -840,6 +874,8 @@ function runSingleAttempt(entry, options, attemptIndex, attemptSeed, choiceOverr
   return {
     levelId: entry.levelId,
     code: levelConfig.level.code,
+    levelType: levelConfig.level.levelType,
+    playMode: levelConfig.level.playMode,
     sourceName: entry.sourceName,
     attempt: attemptIndex + 1,
     seed: attemptSeed,
@@ -923,6 +959,8 @@ function buildSimulatorErrorResult(entry, attemptIndex, seed, error) {
   var result = {
     levelId: entry.levelId,
     code: entry.data.level.code,
+    levelType: entry.data.level.levelType,
+    playMode: entry.data.level.playMode,
     sourceName: entry.sourceName,
     attempt: attemptIndex + 1,
     seed: seed,
@@ -1069,6 +1107,68 @@ function formatPercent(value) {
   return (value * 100).toFixed(2) + "%";
 }
 
+function encodeCsvCell(value) {
+  if (value === null || typeof value === "undefined") {
+    return "";
+  }
+  var text = String(value);
+  if (/[",\r\n]/.test(text)) {
+    return '"' + text.replace(/"/g, '""') + '"';
+  }
+  return text;
+}
+
+function writeCsvReport(reportPath, results) {
+  var resolvedPath = path.resolve(process.cwd(), reportPath);
+  if (path.extname(resolvedPath).toLowerCase() !== ".csv") {
+    throw new Error("Simulation report path must use the .csv extension: " + resolvedPath);
+  }
+  var header = [
+    "levelId",
+    "code",
+    "levelType",
+    "playMode",
+    "passed",
+    "simulatorError",
+    "attempt",
+    "seed",
+    "state",
+    "shotLimit",
+    "shotsFired",
+    "clearRemainingShots",
+    "timeLimitSeconds",
+    "remainingTimeSeconds",
+    "score",
+    "boardCells",
+    "sourceName",
+    "errorMessage"
+  ];
+  var rows = results.map(function (result) {
+    return [
+      result.levelId,
+      result.code,
+      result.levelType,
+      result.playMode,
+      result.passed,
+      result.simulatorError === true,
+      result.attempt,
+      result.seed,
+      result.state,
+      result.shotLimit,
+      result.shotsFired,
+      result.clearRemainingShots,
+      result.timeLimitMs === null ? null : result.timeLimitMs / 1000,
+      result.remainingTimeMs === null ? null : Number((result.remainingTimeMs / 1000).toFixed(2)),
+      result.score,
+      result.boardCells,
+      result.sourceName,
+      typeof result.errorMessage === "string" ? result.errorMessage : null
+    ].map(encodeCsvCell).join(",");
+  });
+  fs.writeFileSync(resolvedPath, [header.join(",")].concat(rows).join("\n") + "\n", "utf8");
+  return resolvedPath;
+}
+
 function printResult(result, verbose) {
   var status = result.simulatorError ? "SIM_ERROR" : (result.passed ? "PASS" : "FAIL");
   var supplyText = result.timedLevel
@@ -1152,6 +1252,10 @@ function main() {
   }).join("/"));
   if (summary.failedLevels.length) {
     console.log("failedLevels(first20):", JSON.stringify(summary.failedLevels));
+  }
+
+  if (options.reportPath !== null) {
+    console.log("report:", writeCsvReport(options.reportPath, results));
   }
 
   if (options.requirePass && summary.failed > 0) {

@@ -33,6 +33,20 @@ module.exports = {
       return;
     }
     if (this._currentRunContext && this._currentRunContext.mode === "test") {
+      if (this._currentRunContext.testSource === "board_occlusion") {
+        if (typeof this._startBoardOcclusionTestLevelEntry !== "function") {
+          throw new Error("Board occlusion test retry requires _startBoardOcclusionTestLevelEntry.");
+        }
+        this._startBoardOcclusionTestLevelEntry();
+        return;
+      }
+      if (this._currentRunContext.testSource === "trapped_sprite") {
+        if (typeof this._startTrappedSpriteTestLevelEntry !== "function") {
+          throw new Error("Trapped sprite test retry requires _startTrappedSpriteTestLevelEntry.");
+        }
+        this._startTrappedSpriteTestLevelEntry();
+        return;
+      }
       if (this._currentRunContext.testSource === "local") {
         if (typeof this._startLocalEditedLevelEntry !== "function") {
           throw new Error("Local edited level retry requires _startLocalEditedLevelEntry.");

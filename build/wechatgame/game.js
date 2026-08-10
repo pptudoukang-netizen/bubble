@@ -71,7 +71,7 @@ if (compareVersion(wx.getSystemInfoSync().SDKVersion, "2.1.0") > -1) {
     designWidth: 720,
     designHeight: 1280,
     contextType: "webgl",
-    scaleMode: GameGlobal.LoadingManager.ScaleMode.NO_BORDER,
+    scaleMode: GameGlobal.LoadingManager.ScaleMode.EXACT_FIT,
     contextAttributes: {
       alpha: false,
       antialias: false,

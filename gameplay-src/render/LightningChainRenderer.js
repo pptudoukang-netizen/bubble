@@ -14,7 +14,6 @@ var RESOURCE_PATHS = {
 
 var RESOURCE_KEYS = Object.keys(RESOURCE_PATHS);
 var SEGMENT_HEIGHT = 56;
-var SEGMENT_ENDPOINT_OVERLAP = 14;
 var SEGMENT_FADE_IN_DURATION = 0.035;
 var SEGMENT_FRAME_DURATION = 0.055;
 var SEGMENT_FADE_OUT_DURATION = 0.11;
@@ -90,9 +89,8 @@ function validatePlayConfig(config) {
   }
 
   var chainId = requireChainId(config.chainId);
-  var origin = requireFinitePoint(config.origin, "Lightning chain origin");
-  if (!Array.isArray(config.hitPoints) || config.hitPoints.length === 0) {
-    throw new Error("Lightning chain requires at least one hit point.");
+  if (!Array.isArray(config.hitPoints) || config.hitPoints.length < 2) {
+    throw new Error("Lightning chain requires at least two hit points.");
   }
   if (config.onHit !== undefined && typeof config.onHit !== "function") {
     throw new Error("Lightning chain onHit must be a function when provided.");
@@ -103,18 +101,12 @@ function validatePlayConfig(config) {
     return requireHitPoint(hitPoint, index, usedIds);
   });
 
-  var previousPoint = origin;
-  hitPoints.forEach(function (hitPoint, index) {
-    resolveSegmentGeometry(previousPoint, hitPoint, index);
-    previousPoint = hitPoint;
-  });
+  for (var segmentIndex = 0; segmentIndex < hitPoints.length - 1; segmentIndex += 1) {
+    resolveSegmentGeometry(hitPoints[segmentIndex], hitPoints[segmentIndex + 1], segmentIndex);
+  }
 
   return {
     chainId: chainId,
-    origin: {
-      x: origin.x,
-      y: origin.y
-    },
     hitPoints: hitPoints,
     onHit: config.onHit
   };
@@ -134,7 +126,7 @@ function resolveSegmentGeometry(startPoint, endPoint, index) {
   return {
     x: startPoint.x,
     y: startPoint.y,
-    width: distance + SEGMENT_ENDPOINT_OVERLAP,
+    width: distance,
     height: SEGMENT_HEIGHT,
     angle: Math.atan2(dy, dx) * 180 / Math.PI
   };
@@ -460,11 +452,11 @@ LightningChainRenderer.prototype.play = function (layer, spriteFrameCache, confi
 
   var segments = [];
   var impacts = [];
-  var previousPoint = normalizedConfig.origin;
   normalizedConfig.hitPoints.forEach(function (hitPoint, index) {
-    segments.push(createSegmentNode(root, spriteFrames, previousPoint, hitPoint, index));
     impacts.push(createImpactNodes(root, spriteFrames, hitPoint, index));
-    previousPoint = hitPoint;
+    if (index < normalizedConfig.hitPoints.length - 1) {
+      segments.push(createSegmentNode(root, spriteFrames, hitPoint, normalizedConfig.hitPoints[index + 1], index));
+    }
   });
 
   return new Promise(function (resolve) {
@@ -477,21 +469,33 @@ LightningChainRenderer.prototype.play = function (layer, spriteFrameCache, confi
     this.activeState = state;
     var timeline = [];
 
-    normalizedConfig.hitPoints.forEach(function (hitPoint, index) {
-      if (index > 0) {
-        timeline.push(cc.delayTime(HIT_STAGGER_DURATION));
+    var playHit = function (hitPoint, index) {
+      playImpact(impacts[index]);
+      state.completedHitIds.push(hitPoint.id);
+      if (normalizedConfig.onHit) {
+        normalizedConfig.onHit(hitPoint, index);
       }
+    };
+
+    timeline.push(cc.callFunc(function () {
+      if (this.activeState !== state) {
+        throw new Error("Lightning chain active state changed during playback.");
+      }
+      requireActiveNode(root, "Lightning chain root");
+      playHit(normalizedConfig.hitPoints[0], 0);
+    }.bind(this)));
+
+    segments.forEach(function (segment, segmentIndex) {
+      var hitPointIndex = segmentIndex + 1;
+      var hitPoint = normalizedConfig.hitPoints[hitPointIndex];
+      timeline.push(cc.delayTime(HIT_STAGGER_DURATION));
       timeline.push(cc.callFunc(function () {
         if (this.activeState !== state) {
           throw new Error("Lightning chain active state changed during playback.");
         }
         requireActiveNode(root, "Lightning chain root");
-        playSegment(segments[index], spriteFrames);
-        playImpact(impacts[index]);
-        state.completedHitIds.push(hitPoint.id);
-        if (normalizedConfig.onHit) {
-          normalizedConfig.onHit(hitPoint, index);
-        }
+        playSegment(segment, spriteFrames);
+        playHit(hitPoint, hitPointIndex);
       }.bind(this)));
     }, this);
 

@@ -5,6 +5,7 @@ var fs = require("fs");
 var path = require("path");
 
 var BoardLayout = require("../assets/scripts/config/BoardLayout");
+var CampaignLevelGenerationConfig = require("./campaign-level-generation-config");
 var FirstHundredLevelDesign = require("./first-100-level-design");
 var ReferenceLevels101To300Design = require("./reference-levels-101-300-design");
 
@@ -12,12 +13,13 @@ var PROJECT_ROOT = path.resolve(__dirname, "..");
 var TABLE_PATH = path.join(PROJECT_ROOT, "LEVEL_CONFIG_TABLE_1_1000.csv");
 var GENERATOR_PATH = path.join(__dirname, "generate-1000-level-configs.js");
 var TARGET_LEVEL_COUNT = 1000;
-var COLORS = ["B", "R", "G", "Y", "P"];
+var COLORS = CampaignLevelGenerationConfig.NORMAL_BALL_COLORS.slice();
+var SPLITTER_COLORS = CampaignLevelGenerationConfig.BASE_SPECIAL_COLORS.slice();
 var SHOT_LIMIT_ADJUSTMENTS = {
   715: 1
 };
 var EXPECTED_HEADERS = [
-  "关卡", "蓝球", "红球", "绿球", "黄球", "紫球", "总行数",
+  "关卡", "蓝球", "红球", "绿球", "黄球", "紫球", "橙球", "黑球", "白球", "总行数",
   "石头", "雪块", "炸弹", "彩虹球", "燃烧瓶",
   "蓝分裂球", "红分裂球", "绿分裂球", "黄分裂球", "紫分裂球",
   "钥匙", "锁定球", "收集目标1", "收集目标2", "发射球数量", "通关率"
@@ -71,6 +73,9 @@ function buildFirstHundredCells(spec) {
     spec.colorCounts.G,
     spec.colorCounts.Y,
     spec.colorCounts.P,
+    spec.colorCounts.O,
+    spec.colorCounts.K,
+    spec.colorCounts.W,
     spec.rowCount,
     spec.specialCounts.stone,
     spec.specialCounts.ice,
@@ -103,10 +108,7 @@ function getRowCount(levelId) {
 }
 
 function getActiveColors(levelId) {
-  if (levelId <= 160) {
-    return COLORS.slice(0, 4);
-  }
-  return COLORS.slice();
+  return CampaignLevelGenerationConfig.getActiveNormalBallColors(levelId);
 }
 
 function getRowCapacity(rowCount) {
@@ -118,47 +120,15 @@ function getRowCapacity(rowCount) {
 }
 
 function getFillRatio(levelId) {
-  if (levelId <= 200) {
-    return 0.66;
-  }
-  if (levelId <= 300) {
-    return 0.67;
-  }
-  if (levelId <= 500) {
-    return 0.68;
-  }
-  if (levelId <= 700) {
-    return 0.69;
-  }
-  return 0.7;
-}
-
-function getIceRatio(levelId) {
-  var phase = getPhase(levelId);
-  var wave = (phase - 1) / 9;
-  if (levelId <= 200) {
-    return 0.12 + wave * 0.03;
-  }
-  if (levelId <= 300) {
-    return 0.14 + wave * 0.04;
-  }
-  if (levelId <= 500) {
-    return 0.16 + wave * 0.05;
-  }
-  if (levelId <= 700) {
-    return 0.18 + wave * 0.04;
-  }
-  return 0.2 + wave * 0.04;
+  return CampaignLevelGenerationConfig.getNormalBallOccupancyTarget(levelId);
 }
 
 function makeEmptySplitterCounts() {
-  return {
-    B: 0,
-    R: 0,
-    G: 0,
-    Y: 0,
-    P: 0
-  };
+  var counts = {};
+  SPLITTER_COLORS.forEach(function (color) {
+    counts[color] = 0;
+  });
+  return counts;
 }
 
 function getChapter(levelId) {
@@ -254,7 +224,7 @@ function buildSpecialCounts(levelId, targetColor) {
 }
 
 function countSplitters(splitterCounts) {
-  return COLORS.reduce(function (sum, color) {
+  return SPLITTER_COLORS.reduce(function (sum, color) {
     return sum + splitterCounts[color];
   }, 0);
 }
@@ -265,13 +235,10 @@ function countNonIceSpecials(counts) {
 }
 
 function distributeColorCounts(levelId, activeColors, targetColor, normalCount) {
-  var counts = {
-    B: 0,
-    R: 0,
-    G: 0,
-    Y: 0,
-    P: 0
-  };
+  var counts = {};
+  COLORS.forEach(function (color) {
+    counts[color] = 0;
+  });
   var targetRatio = levelId <= 200 ? 0.38 : (levelId <= 500 ? 0.36 : 0.34);
   var targetCount = Math.max(10, Math.round(normalCount * targetRatio));
   var otherColors = activeColors.filter(function (color) {
@@ -304,26 +271,46 @@ function distributeColorCounts(levelId, activeColors, targetColor, normalCount) 
 function buildRelaxedSpec(levelId) {
   var rowCount = getRowCount(levelId);
   var activeColors = getActiveColors(levelId);
-  var targetColor = activeColors[(levelId - 1) % activeColors.length];
+  var targetColor = CampaignLevelGenerationConfig.getCollectibleTargetColor(levelId, activeColors);
+  var gameplayPlan = CampaignLevelGenerationConfig.getLevelPlan(levelId);
   var specialCounts = buildSpecialCounts(levelId, targetColor);
   var capacity = getRowCapacity(rowCount);
-  var occupiedTarget = Math.round(capacity * getFillRatio(levelId));
-  var iceTarget = Math.round(occupiedTarget * getIceRatio(levelId));
+  var normalBallOccupancyTarget = getFillRatio(levelId);
+  specialCounts.ice = CampaignLevelGenerationConfig.getIceBallCount(levelId, capacity);
+  if (gameplayPlan.trappedSpriteRescue) {
+    specialCounts = CampaignLevelGenerationConfig.buildTrappedSpriteRescueBaseSpecialCounts(specialCounts);
+  }
   var nonIceSpecials = countNonIceSpecials(specialCounts);
-  var maxIce = Math.max(3, Math.floor((occupiedTarget - nonIceSpecials) * 0.24));
-  specialCounts.ice = Math.max(3, Math.min(maxIce, iceTarget));
-  var normalCount = occupiedTarget - specialCounts.ice - nonIceSpecials;
+  var reactiveSpecialSlotCount = gameplayPlan.reactiveSpecialCounts.swirl +
+    gameplayPlan.reactiveSpecialCounts.vine_spirit +
+    gameplayPlan.reactiveSpecialCounts.wormhole;
+  var specialSlotCount = specialCounts.ice + nonIceSpecials + reactiveSpecialSlotCount;
+  var excludedGameplaySlotCount = specialSlotCount + (gameplayPlan.trappedSpriteRescue ? 1 : 0);
+  var normalCount = Math.ceil((capacity - excludedGameplaySlotCount) * normalBallOccupancyTarget);
   if (normalCount < activeColors.length * 8) {
     throw new Error("Level " + levelId + " relaxed design leaves too few normal balls.");
+  }
+  if (normalCount + excludedGameplaySlotCount > capacity) {
+    throw new Error("Level " + levelId + " relaxed design exceeds board capacity.");
   }
   var colorCounts = distributeColorCounts(levelId, activeColors, targetColor, normalCount);
   var splitterCount = specialCounts.splitters[targetColor];
   var shotLimit;
-  if (levelId >= ReferenceLevels101To300Design.FIRST_LEVEL_ID &&
+  if (!gameplayPlan.trappedSpriteRescue &&
+    levelId >= ReferenceLevels101To300Design.FIRST_LEVEL_ID &&
     levelId <= ReferenceLevels101To300Design.LAST_LEVEL_ID) {
     shotLimit = ReferenceLevels101To300Design.getShotLimit(levelId);
+  } else if (gameplayPlan.trappedSpriteRescue) {
+    shotLimit = CampaignLevelGenerationConfig.buildTrappedSpriteRescueShotLimit({
+      levelId: levelId,
+      normalBallCount: normalCount,
+      rowCount: rowCount,
+      iceCount: specialCounts.ice,
+      baseSpecialCount: specialCounts.stone + specialCounts.blast + specialCounts.rainbow,
+      reactiveSpecialCounts: gameplayPlan.reactiveSpecialCounts
+    });
   } else {
-    shotLimit = Math.ceil(occupiedTarget * 0.25 + rowCount * 0.65 + nonIceSpecials * 0.5);
+    shotLimit = Math.ceil((normalCount + specialSlotCount) * 0.25 + rowCount * 0.65 + nonIceSpecials * 0.5);
     if (getPhase(levelId) >= 7) {
       shotLimit += 1;
     }
@@ -333,7 +320,10 @@ function buildRelaxedSpec(levelId) {
     if (Object.prototype.hasOwnProperty.call(SHOT_LIMIT_ADJUSTMENTS, levelId)) {
       shotLimit += SHOT_LIMIT_ADJUSTMENTS[levelId];
     }
-    shotLimit = Math.max(28, Math.min(46, shotLimit));
+    shotLimit = CampaignLevelGenerationConfig.applyClearanceRebalanceShotLimit(
+      levelId,
+      Math.max(28, Math.min(46, shotLimit))
+    );
   }
   var passRate = Math.max(42, 78 - Math.floor((levelId - 101) / 100) * 4 - (getPhase(levelId) - 1) * 1.8);
 
@@ -363,6 +353,9 @@ function buildRelaxedCells(spec) {
     spec.colorCounts.G,
     spec.colorCounts.Y,
     spec.colorCounts.P,
+    spec.colorCounts.O,
+    spec.colorCounts.K,
+    spec.colorCounts.W,
     spec.rowCount,
     spec.specialCounts.stone,
     spec.specialCounts.ice,

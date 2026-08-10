@@ -1,0 +1,38 @@
+{
+  "ver": "2.3.7",
+  "uuid": "51ba3408-25e6-4d38-a722-b3fd58883a54",
+  "importer": "texture",
+  "type": "sprite",
+  "wrapMode": "clamp",
+  "filterMode": "bilinear",
+  "premultiplyAlpha": false,
+  "genMipmaps": false,
+  "packable": true,
+  "width": 89,
+  "height": 92,
+  "platformSettings": {},
+  "subMetas": {
+    "crystal_shop_item": {
+      "ver": "1.0.6",
+      "uuid": "b050f77a-faef-40da-b63d-e1f493649203",
+      "importer": "sprite-frame",
+      "rawTextureUuid": "51ba3408-25e6-4d38-a722-b3fd58883a54",
+      "trimType": "auto",
+      "trimThreshold": 1,
+      "rotated": false,
+      "offsetX": 0,
+      "offsetY": 0,
+      "trimX": 0,
+      "trimY": 0,
+      "width": 89,
+      "height": 92,
+      "rawWidth": 89,
+      "rawHeight": 92,
+      "borderTop": 0,
+      "borderBottom": 0,
+      "borderLeft": 0,
+      "borderRight": 0,
+      "subMetas": {}
+    }
+  }
+}

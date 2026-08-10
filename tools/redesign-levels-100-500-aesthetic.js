@@ -132,6 +132,7 @@ function redesignLevel(config, levelId) {
     colorCounts: colorCounts,
     targetColor: resolveTargetColor(level),
     specialEntities: level.specialEntities,
+    requiredNormalSlots: [],
     preserveOccupiedSlots: preserveOccupiedSlots
   });
   level.layout = result.rows;

@@ -6,9 +6,9 @@
         "description": "Top-to-bottom rows. Each character represents one grid cell.",
         "legend": {
             ".": "empty",
+            "B": "blue",
             "R": "red",
             "G": "green",
-            "B": "blue",
             "Y": "yellow"
         },
         "pattern": "kxppm_layout_009",
@@ -55,17 +55,17 @@
         ],
         "colorCount": 4,
         "colors": [
+            "B",
             "R",
             "G",
-            "B",
             "Y"
         ],
-        "shotLimit": 23,
-        "targetScore": 4850,
+        "shotLimit": 21,
+        "targetScore": 8100,
         "starThresholds": {
-            "star1": 1746,
-            "star2": 3201,
-            "star3": 4365
+            "star1": 4212,
+            "star2": 5832,
+            "star3": 7290
         },
         "dropInterval": 7,
         "jarCount": 5,
@@ -77,9 +77,9 @@
             "P"
         ],
         "spawnWeights": {
-            "R": 1,
-            "G": 1.12,
             "B": 2.4,
+            "R": 1.12,
+            "G": 1.24,
             "Y": 1
         },
         "openingShotBalls": [
@@ -98,7 +98,7 @@
             {
                 "type": "collect_color",
                 "color": "B",
-                "value": 25
+                "value": 28
             }
         ],
         "bonusObjectives": [
@@ -114,16 +114,16 @@
             }
         ],
         "layout": [
-            "GGBBBBYBBBB",
-            ".BRRRYY.B.",
-            ".B.GY...RB.",
-            "BBYYYYRRBB",
-            "..YY.R.....",
-            ".BB..GGG..",
-            ".BBR.GYRR..",
-            ".....YY...",
-            ".GGG..YRRR.",
-            "BBBBBGGGGR"
+            "GGRRRYYYGGG",
+            ".GYYYBB.R.",
+            ".GGBBB..RR.",
+            "GYYGGGBBBB",
+            "..BY.R.....",
+            ".BB..RRB..",
+            ".RRRYYBBBBB",
+            "...Y.YB..B",
+            ".BYY..BBBB.",
+            "BBBRRRRGGG"
         ],
         "designNotes": "Gameplay is generated from the current LEVEL_CONFIG_TABLE_1_1000.csv rules; only the occupancy silhouette is projected from E:\\kxppm\\decrypted_config\\all_levels.json level 9 into current level 9 on the current 11/10-column board.",
         "difficultyScore": 47,

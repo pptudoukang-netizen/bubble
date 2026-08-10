@@ -29,7 +29,7 @@
   "preview-port": 7456,
   "design-resolution-width": 720,
   "design-resolution-height": 1559,
-  "fit-width": true,
+  "fit-width": false,
   "fit-height": true,
   "use-project-simulator-setting": false,
   "simulator-orientation": false,
@@ -49,7 +49,7 @@
       "enable": false
     }
   },
-  "last-module-event-record-time": 1784727978810,
+  "last-module-event-record-time": 1786270814554,
   "migrate-history": [
     "cloud-function"
   ],

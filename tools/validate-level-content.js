@@ -8,16 +8,18 @@ var LevelBoardSupportValidator = require("../assets/scripts/config/LevelBoardSup
 var LevelPackCompactCodec = require("../assets/scripts/config/LevelPackCompactCodec");
 var LevelPackIntegrity = require("../assets/scripts/config/LevelPackIntegrity");
 var LevelPackManifest = require("../assets/scripts/config/LevelPackManifest");
+var AssistSpiritConfig = require("../assets/scripts/config/AssistSpiritConfig");
 var CampaignLevelModePolicy = require("./campaign-level-mode-policy");
+var CampaignLevelGenerationConfig = require("./campaign-level-generation-config");
 var ClusteredLevelLayout = require("./clustered-level-layout");
 var FirstHundredLevelDesign = require("./first-100-level-design");
 
 var LEVEL_DIR = path.resolve(__dirname, "../assets/map/config/levels");
 var REMOTE_PACK_DIR = path.resolve(__dirname, "../remote-level-packs");
 var MANIFEST_PATH = path.resolve(REMOTE_PACK_DIR, "level_manifest.json");
-var ALLOWED_COLORS = ["R", "G", "B", "Y", "P", "K", "O", "W"];
-var ALLOWED_SPLITTER_COLORS = ["R", "G", "B", "Y", "P"];
-var FIXED_JAR_COLORS = ["R", "G", "B", "Y", "P"];
+var ALLOWED_COLORS = CampaignLevelGenerationConfig.NORMAL_BALL_COLORS.slice();
+var ALLOWED_SPLITTER_COLORS = CampaignLevelGenerationConfig.BASE_SPECIAL_COLORS.slice();
+var FIXED_JAR_COLORS = CampaignLevelGenerationConfig.BASE_SPECIAL_COLORS.slice();
 var FIXED_JAR_COUNT = FIXED_JAR_COLORS.length;
 var ALLOWED_DIFFICULTY = ["tutorial", "easy", "normal", "hard", "expert", "advanced"];
 var ALLOWED_WIN_TYPES = ["clear_all", "collect_any", "collect_color", "collect_ice_snowball"];
@@ -284,22 +286,29 @@ function validateSpecialEntities(level, normalizedLayoutRows, issues) {
 
   var wormholes = level.specialEntities.filter(function (entity) {
     return entity && entity.entityCategory === "reactive_ball" && entity.entityType === "wormhole";
-  }).sort(function (left, right) {
-    return left.col - right.col;
   });
-  if (wormholes.length !== 0 && wormholes.length !== 2) {
-    issues.push("level must contain exactly two wormholes when wormhole is configured");
-  } else if (wormholes.length === 2) {
-    if (wormholes[0].row !== wormholes[1].row) {
-      issues.push("wormholes must be placed on the same row");
+  var wormholesByRow = {};
+  wormholes.forEach(function (wormhole) {
+    if (!wormholesByRow[wormhole.row]) {
+      wormholesByRow[wormhole.row] = [];
     }
-    if (wormholes[1].col - wormholes[0].col < 2) {
-      issues.push("wormholes must contain at least one interior slot");
+    wormholesByRow[wormhole.row].push(wormhole);
+  });
+  Object.keys(wormholesByRow).forEach(function (rowKey) {
+    var pair = wormholesByRow[rowKey].sort(function (left, right) {
+      return left.col - right.col;
+    });
+    if (pair.length !== 2) {
+      issues.push("wormhole row " + rowKey + " must contain exactly two endpoints");
+      return;
     }
-    if (wormholes[0].moveDirection !== wormholes[1].moveDirection) {
-      issues.push("wormhole pair moveDirection must match");
+    if (pair[1].col - pair[0].col < 2) {
+      issues.push("wormhole row " + rowKey + " must contain at least one interior slot");
     }
-  }
+    if (pair[0].moveDirection !== pair[1].moveDirection) {
+      issues.push("wormhole pair moveDirection must match on row " + rowKey);
+    }
+  });
 }
 
 function validateClearRewardItems(level, expectedLevelId, issues) {
@@ -420,7 +429,7 @@ function validateLevelMode(level, issues) {
   }
   var levelType = level.levelType;
   var playMode = level.playMode;
-  if (["normal", "special_floating_island"].indexOf(levelType) === -1) {
+  if (["normal", "special_floating_island", "trapped_sprite_rescue"].indexOf(levelType) === -1) {
     issues.push("levelType unsupported: " + levelType);
   }
   if (["shot_limited", "timed_infinite_shots"].indexOf(playMode) === -1) {
@@ -428,6 +437,9 @@ function validateLevelMode(level, issues) {
   }
   if (levelType === "special_floating_island" && playMode !== "timed_infinite_shots") {
     issues.push("special_floating_island must use timed_infinite_shots");
+  }
+  if (levelType === "trapped_sprite_rescue" && playMode !== "shot_limited") {
+    issues.push("trapped_sprite_rescue must use shot_limited");
   }
   if (playMode === "timed_infinite_shots") {
     if (levelType !== "special_floating_island") {
@@ -457,6 +469,132 @@ function validateLevelMode(level, issues) {
   }
 }
 
+function validateTimeBonusBalls(level, normalizedLayoutRows, expectedLevelId, issues) {
+  if (level.playMode !== "timed_infinite_shots") {
+    if (level.timeBonusBalls !== undefined) {
+      issues.push("timeBonusBalls is only valid for timed_infinite_shots");
+    }
+    return;
+  }
+  if (!Array.isArray(level.timeBonusBalls)) {
+    issues.push("timed_infinite_shots requires timeBonusBalls array");
+    return;
+  }
+  var expectedCount = CampaignLevelGenerationConfig.getTimedLevelTimeBonusBallCount(expectedLevelId);
+  if (level.timeBonusBalls.length !== expectedCount) {
+    issues.push("timeBonusBalls count must be " + expectedCount);
+  }
+  var usedCoordinates = {};
+  level.timeBonusBalls.forEach(function (entry, index) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      issues.push("timeBonusBalls[" + index + "] must be object");
+      return;
+    }
+    if (entry.bonusSeconds !== CampaignLevelGenerationConfig.TIMED_LEVEL_TIME_BONUS_SECONDS) {
+      issues.push("timeBonusBalls[" + index + "].bonusSeconds must be " + CampaignLevelGenerationConfig.TIMED_LEVEL_TIME_BONUS_SECONDS);
+    }
+    if (!Number.isInteger(entry.row) || !Number.isInteger(entry.col) ||
+        entry.row < 0 || entry.row >= normalizedLayoutRows.length ||
+        !normalizedLayoutRows[entry.row] || entry.col < 0 || entry.col >= normalizedLayoutRows[entry.row].length) {
+      issues.push("timeBonusBalls[" + index + "] coordinate is out of range");
+      return;
+    }
+    if (normalizedLayoutRows[entry.row].charAt(entry.col) === ".") {
+      issues.push("timeBonusBalls[" + index + "] must target normal layout ball");
+    }
+    var coordinateKey = entry.row + ":" + entry.col;
+    if (usedCoordinates[coordinateKey]) {
+      issues.push("timeBonusBalls contains duplicate coordinate " + coordinateKey);
+    }
+    usedCoordinates[coordinateKey] = true;
+  });
+}
+
+function validateTrappedSpriteRescue(level, issues) {
+  var rescue = level.trappedSpriteRescue;
+  if (level.levelType !== "trapped_sprite_rescue") {
+    if (rescue !== undefined) {
+      issues.push("trappedSpriteRescue is only valid for trapped_sprite_rescue");
+    }
+    return;
+  }
+  if (!rescue || typeof rescue !== "object" || Array.isArray(rescue)) {
+    issues.push("trapped_sprite_rescue requires trappedSpriteRescue object");
+    return;
+  }
+  if (Object.prototype.hasOwnProperty.call(rescue, "spriteId")) {
+    issues.push("trappedSpriteRescue.spriteId is obsolete; use spiritId");
+  }
+  try {
+    AssistSpiritConfig.getSpirit(rescue.spiritId);
+  } catch (error) {
+    issues.push("trappedSpriteRescue.spiritId is invalid: " + error.message);
+  }
+  var anchor = rescue.anchorCell;
+  if (!anchor || !Number.isInteger(anchor.row) || !Number.isInteger(anchor.col) ||
+      !Array.isArray(level.layout) || anchor.row < 0 || anchor.row >= level.layout.length ||
+      anchor.col < 0 || anchor.col >= getExpectedRowColumns(anchor.row, BoardLayout.defaultColumns)) {
+    issues.push("trappedSpriteRescue.anchorCell must be a valid board coordinate");
+  } else if (typeof level.layout[anchor.row] !== "string" || level.layout[anchor.row].charAt(anchor.col) !== ".") {
+    issues.push("trappedSpriteRescue.anchorCell must remain empty");
+  }
+  if (!rescue.worldCenter || typeof rescue.worldCenter !== "object" || Array.isArray(rescue.worldCenter) ||
+      typeof rescue.worldCenter.x !== "number" || !isFinite(rescue.worldCenter.x) ||
+      typeof rescue.worldCenter.y !== "number" || !isFinite(rescue.worldCenter.y)) {
+    issues.push("trappedSpriteRescue.worldCenter must contain finite x/y");
+  }
+  if (typeof rescue.renderScale !== "number" || !isFinite(rescue.renderScale) ||
+      rescue.renderScale < 0.5 || rescue.renderScale > 3) {
+    issues.push("trappedSpriteRescue.renderScale must be in [0.5, 3]");
+  }
+  if (!rescue.rotation || typeof rescue.rotation !== "object" || Array.isArray(rescue.rotation)) {
+    issues.push("trappedSpriteRescue.rotation must be object");
+  } else {
+    [
+      "projectileImpulse", "torqueScale", "coreInertia", "maxAngularSpeedDeg",
+      "angularDamping", "stopAngularSpeedDeg", "maxStepAngleDeg", "maxDurationSec"
+    ].forEach(function (fieldName) {
+      if (typeof rescue.rotation[fieldName] !== "number" || !isFinite(rescue.rotation[fieldName]) ||
+          rescue.rotation[fieldName] <= 0) {
+        issues.push("trappedSpriteRescue.rotation." + fieldName + " must be positive");
+      }
+    });
+    if (typeof rescue.rotation.tangentialDeadZone !== "number" ||
+        rescue.rotation.tangentialDeadZone < 0 || rescue.rotation.tangentialDeadZone > 0.95) {
+      issues.push("trappedSpriteRescue.rotation.tangentialDeadZone must be in [0, 0.95]");
+    }
+  }
+  var allowedRescueSpecialEntityKeys = {
+    "skill_ball:rainbow": true,
+    "skill_ball:blast": true,
+    "obstacle_ball:stone": true,
+    "obstacle_ball:ice": true,
+    "reactive_ball:swirl": true,
+    "reactive_ball:vine_spirit": true
+  };
+  if (!Array.isArray(level.specialEntities)) {
+    issues.push("trapped_sprite_rescue specialEntities must be an array");
+  } else {
+    level.specialEntities.forEach(function (entity, index) {
+      var entityKey = entity && entity.entityCategory + ":" + entity.entityType;
+      if (!entity || allowedRescueSpecialEntityKeys[entityKey] !== true) {
+        issues.push("trapped_sprite_rescue specialEntities[" + index + "] is incompatible: " + entityKey);
+        return;
+      }
+      if (entity.row === TOP_BOARD_ROW_INDEX) {
+        issues.push("trapped_sprite_rescue special entity must not occupy the top row");
+      }
+      if (anchor && entity.row === anchor.row && entity.col === anchor.col) {
+        issues.push("trapped_sprite_rescue anchorCell overlaps a special entity");
+      }
+    });
+  }
+  if (Array.isArray(level.layout) && typeof level.layout[TOP_BOARD_ROW_INDEX] === "string" &&
+      level.layout[TOP_BOARD_ROW_INDEX].split("").some(function (cellCode) { return cellCode !== "."; })) {
+    issues.push("trapped_sprite_rescue top row must be empty");
+  }
+}
+
 function validateCampaignLevelModeSchedule(level, issues) {
   var expected = CampaignLevelModePolicy.getExpectedMode(level.levelId);
   if (level.levelType !== expected.levelType) {
@@ -476,6 +614,12 @@ function validateCampaignLevelModeSchedule(level, issues) {
 }
 
 function validateInitialDropSpaceRows(level, issues) {
+  if (level.levelType === "trapped_sprite_rescue") {
+    if (level.initialDropSpaceRows !== undefined) {
+      issues.push("trapped_sprite_rescue must not configure initialDropSpaceRows");
+    }
+    return;
+  }
   if (!isPositiveInteger(level.initialDropSpaceRows)) {
     issues.push("initialDropSpaceRows must be a positive integer");
     return;
@@ -498,6 +642,9 @@ function validateAdPowerupRules(level, issues) {
   if (!Array.isArray(rules.allowed)) {
     issues.push("adPowerupRules.allowed must be array");
     return;
+  }
+  if (level.levelType === "trapped_sprite_rescue" && rules.allowed.length !== 0) {
+    issues.push("trapped_sprite_rescue adPowerupRules.allowed must be empty");
   }
   var seen = {};
   rules.allowed.forEach(function (powerupType) {
@@ -578,6 +725,7 @@ function validateOpeningShotBalls(level, issues) {
 
 function validateStarThresholds(level, issues) {
   if (level.starThresholds === undefined) {
+    issues.push("formal campaign level requires explicit starThresholds");
     return;
   }
   var thresholds = level.starThresholds;
@@ -600,6 +748,136 @@ function validateStarThresholds(level, issues) {
   if (isPositiveInteger(level.targetScore) && thresholds.star3 > level.targetScore) {
     issues.push("starThresholds.star3 must not exceed targetScore");
   }
+}
+
+function validateCampaignScoreDesign(level, normalizedLayoutRows, expectedLevelId, designBeat, issues) {
+  if (!Array.isArray(normalizedLayoutRows) || !Array.isArray(level.specialEntities) || !Array.isArray(level.winConditions)) {
+    return;
+  }
+  var normalBallCount = normalizedLayoutRows.reduce(function (sum, row) {
+    return sum + row.split("").filter(function (cell) { return cell !== "."; }).length;
+  }, 0);
+  var iceCount = 0;
+  var baseSpecialCount = 0;
+  var reactiveCounts = { swirl: 0, vine_spirit: 0, wormholePairs: 0 };
+  var wormholeCount = 0;
+  level.specialEntities.forEach(function (entity) {
+    if (entity.entityType === "ice") {
+      iceCount += 1;
+    } else if (entity.entityType === "swirl") {
+      reactiveCounts.swirl += 1;
+    } else if (entity.entityType === "vine_spirit") {
+      reactiveCounts.vine_spirit += 1;
+    } else if (entity.entityType === "wormhole") {
+      wormholeCount += 1;
+    } else {
+      baseSpecialCount += 1;
+    }
+  });
+  if (wormholeCount % 2 !== 0) {
+    return;
+  }
+  reactiveCounts.wormholePairs = wormholeCount / 2;
+  var collectColor = level.winConditions.filter(function (condition) {
+    return condition && condition.type === "collect_color";
+  });
+  var clearAll = level.winConditions.filter(function (condition) {
+    return condition && condition.type === "clear_all";
+  });
+  var primaryObjectiveValue;
+  if (collectColor.length === 1) {
+    primaryObjectiveValue = collectColor[0].value;
+  } else if (clearAll.length === 1) {
+    primaryObjectiveValue = normalBallCount;
+  } else {
+    return;
+  }
+  var iceObjectives = level.winConditions.filter(function (condition) {
+    return condition && condition.type === "collect_ice_snowball";
+  });
+  var expected = CampaignLevelGenerationConfig.buildCampaignScoreDesign({
+    levelId: expectedLevelId,
+    normalBallCount: normalBallCount,
+    iceCount: iceCount,
+    baseSpecialCount: baseSpecialCount,
+    reactiveSpecialCounts: reactiveCounts,
+    primaryObjectiveValue: primaryObjectiveValue,
+    secondaryObjectiveValue: iceObjectives.length === 1 ? iceObjectives[0].value : 0,
+    shotLimit: level.playMode === "shot_limited" ? level.shotLimit : undefined,
+    timeLimitSeconds: level.playMode === "timed_infinite_shots" ? level.timeLimitSeconds : undefined,
+    designBeat: designBeat
+  });
+  if (level.targetScore !== expected.targetScore) {
+    issues.push("targetScore does not match campaign score design: expected " + expected.targetScore + ", got " + level.targetScore);
+  }
+  if (JSON.stringify(level.starThresholds) !== JSON.stringify(expected.starThresholds)) {
+    issues.push("starThresholds do not match campaign score design");
+  }
+}
+
+function validateCampaignMechanicPlan(level, normalizedLayoutRows, expectedLevelId, issues) {
+  if (!Array.isArray(normalizedLayoutRows) || !Array.isArray(level.specialEntities)) {
+    return;
+  }
+  var expectedReactive = CampaignLevelGenerationConfig.getReactiveSpecialCounts(expectedLevelId);
+  var actual = { swirl: 0, vine_spirit: 0, wormhole: 0, ice: 0 };
+  var specialByCell = {};
+  level.specialEntities.forEach(function (entity) {
+    specialByCell[entity.row + ":" + entity.col] = entity;
+    if (Object.prototype.hasOwnProperty.call(actual, entity.entityType)) {
+      actual[entity.entityType] += 1;
+    }
+  });
+  ["swirl", "vine_spirit", "wormhole"].forEach(function (entityType) {
+    if (actual[entityType] !== expectedReactive[entityType]) {
+      issues.push(entityType + " count does not match campaign plan: expected " + expectedReactive[entityType] + ", got " + actual[entityType]);
+    }
+  });
+  var boardCapacity = normalizedLayoutRows.reduce(function (sum, row) {
+    return sum + row.length;
+  }, 0);
+  var expectedIce = CampaignLevelGenerationConfig.getIceBallCount(expectedLevelId, boardCapacity);
+  if (actual.ice !== expectedIce) {
+    issues.push("ice count does not match campaign plan: expected " + expectedIce + ", got " + actual.ice);
+  }
+  level.specialEntities.filter(function (entity) {
+    return entity.entityType === "swirl";
+  }).forEach(function (swirl) {
+    getHexNeighborCoordinates(swirl.row, swirl.col).forEach(function (neighbor) {
+      var key = neighbor.row + ":" + neighbor.col;
+      if (neighbor.row < 0 || neighbor.row >= normalizedLayoutRows.length ||
+          neighbor.col < 0 || neighbor.col >= normalizedLayoutRows[neighbor.row].length) {
+        issues.push("generated swirl track extends outside layout at " + key);
+        return;
+      }
+      if (specialByCell[key] || normalizedLayoutRows[neighbor.row].charAt(neighbor.col) === ".") {
+        issues.push("generated swirl track must contain only ordinary balls at " + key);
+      }
+    });
+  });
+  var wormholesByRow = {};
+  level.specialEntities.filter(function (entity) {
+    return entity.entityType === "wormhole";
+  }).forEach(function (wormhole) {
+    if (!wormholesByRow[wormhole.row]) {
+      wormholesByRow[wormhole.row] = [];
+    }
+    wormholesByRow[wormhole.row].push(wormhole);
+  });
+  Object.keys(wormholesByRow).forEach(function (rowKey) {
+    var pair = wormholesByRow[rowKey].sort(function (left, right) {
+      return left.col - right.col;
+    });
+    if (pair.length !== 2) {
+      return;
+    }
+    for (var col = pair[0].col + 1; col < pair[1].col; col += 1) {
+      var key = pair[0].row + ":" + col;
+      if (specialByCell[key] || normalizedLayoutRows[pair[0].row].charAt(col) === ".") {
+        issues.push("generated wormhole interior must contain only ordinary balls at " + key);
+      }
+    }
+  });
 }
 
 function validateLevelData(data, expectedLevelId) {
@@ -634,15 +912,30 @@ function validateLevelData(data, expectedLevelId) {
   if (!Array.isArray(level.colors) || !level.colors.length) {
     issues.push("level.colors must be a non-empty array");
   } else {
-    if (!hasUniqueItems(level.colors)) {
+    var hasUniqueColors = hasUniqueItems(level.colors);
+    if (!hasUniqueColors) {
       issues.push("level.colors must not contain duplicates");
     }
-
+    if (level.colors.length > CampaignLevelGenerationConfig.MAX_ACTIVE_COLOR_COUNT) {
+      issues.push(
+        "level.colors must contain at most " + CampaignLevelGenerationConfig.MAX_ACTIVE_COLOR_COUNT + " active colors"
+      );
+    }
+    var hasSupportedColors = true;
     level.colors.forEach(function (color) {
       if (ALLOWED_COLORS.indexOf(color) === -1) {
+        hasSupportedColors = false;
         issues.push("unsupported color in level.colors: " + color);
       }
     });
+    if (hasUniqueColors && hasSupportedColors &&
+        level.colors.length <= CampaignLevelGenerationConfig.MAX_ACTIVE_COLOR_COUNT) {
+      try {
+        CampaignLevelGenerationConfig.assertActiveNormalBallColors(expectedLevelId, level.colors);
+      } catch (colorScheduleError) {
+        issues.push(colorScheduleError.message);
+      }
+    }
   }
 
   if (!isPositiveInteger(level.colorCount) || level.colorCount !== level.colors.length) {
@@ -651,6 +944,7 @@ function validateLevelData(data, expectedLevelId) {
 
   validateLevelMode(level, issues);
   validateCampaignLevelModeSchedule(level, issues);
+  validateTrappedSpriteRescue(level, issues);
   validateInitialDropSpaceRows(level, issues);
 
   if (!isPositiveInteger(level.targetScore)) {
@@ -658,7 +952,11 @@ function validateLevelData(data, expectedLevelId) {
   }
   validateStarThresholds(level, issues);
 
-  if (!isPositiveInteger(level.dropInterval)) {
+  if (level.levelType === "trapped_sprite_rescue") {
+    if (level.dropInterval !== undefined) {
+      issues.push("trapped_sprite_rescue must not configure dropInterval");
+    }
+  } else if (!isPositiveInteger(level.dropInterval)) {
     issues.push("dropInterval must be a positive integer");
   }
 
@@ -756,7 +1054,7 @@ function validateLevelData(data, expectedLevelId) {
       normalizedLayoutRows[rowIndex] = normalizedRow;
     });
 
-    if (normalizedLayoutRows.length) {
+    if (normalizedLayoutRows.length && level.levelType !== "trapped_sprite_rescue") {
       var topRow = normalizedLayoutRows[0];
       var topOccupiedCount = topRow.split("").filter(function (cellCode) {
         return cellCode !== ".";
@@ -772,6 +1070,23 @@ function validateLevelData(data, expectedLevelId) {
     }
 
     validateSpecialEntities(level, normalizedLayoutRows, issues);
+    validateTimeBonusBalls(level, normalizedLayoutRows, expectedLevelId, issues);
+    validateCampaignMechanicPlan(level, normalizedLayoutRows, expectedLevelId, issues);
+    try {
+      validateCampaignScoreDesign(
+        level,
+        normalizedLayoutRows,
+        expectedLevelId,
+        CampaignLevelGenerationConfig.isTrappedSpriteRescueLevelId(expectedLevelId)
+          ? "rescue"
+          : (expectedLevelId <= FirstHundredLevelDesign.LAST_LEVEL_ID
+            ? FirstHundredLevelDesign.buildLevelSpec(expectedLevelId).designBeat
+            : CampaignLevelGenerationConfig.getScoreDesignBeat(expectedLevelId)),
+        issues
+      );
+    } catch (scoreDesignError) {
+      issues.push(scoreDesignError.message);
+    }
     var occupiedRowCount = countOccupiedLayoutRows(normalizedLayoutRows, level.specialEntities);
     if (occupiedRowCount < MIN_OCCUPIED_LAYOUT_ROWS) {
       issues.push(
@@ -783,7 +1098,9 @@ function validateLevelData(data, expectedLevelId) {
       try {
         LevelBoardSupportValidator.findUnsupportedInitialCells({
           layout: normalizedLayoutRows,
-          specialEntities: level.specialEntities
+          specialEntities: level.specialEntities,
+          levelType: level.levelType,
+          trappedSpriteRescue: level.trappedSpriteRescue
         }, "level_" + String(expectedLevelId).padStart(3, "0")).forEach(function (cell) {
           issues.push("initial board cell has no support at " + cell.row + ":" + cell.col);
         });
@@ -791,11 +1108,25 @@ function validateLevelData(data, expectedLevelId) {
         issues.push(supportError.message);
       }
     }
+    if (Array.isArray(level.specialEntities)) {
+      try {
+        LevelBoardSupportValidator.assertGeneratedBoardRules({
+          layout: normalizedLayoutRows,
+          specialEntities: level.specialEntities,
+          levelType: level.levelType,
+          trappedSpriteRescue: level.trappedSpriteRescue
+        }, "level_" + String(expectedLevelId).padStart(3, "0"));
+      } catch (generationRuleError) {
+        issues.push(generationRuleError.message);
+      }
+    }
   }
 
   validateObjectives(level.winConditions, "win", level, issues);
   validateObjectives(level.bonusObjectives, "bonus", level, issues);
-  if (expectedLevelId > FirstHundredLevelDesign.LAST_LEVEL_ID && ClusteredLevelLayout.shouldRedesign(expectedLevelId)) {
+  if (level.levelType !== "trapped_sprite_rescue" &&
+      expectedLevelId > FirstHundredLevelDesign.LAST_LEVEL_ID &&
+      ClusteredLevelLayout.shouldRedesign(expectedLevelId)) {
     try {
       var clusteredMetrics = ClusteredLevelLayout.validateClusteredLevel(level);
       var requiredGroupedRatio = expectedLevelId <= 40 ? 0.7 : 0.55;
@@ -820,6 +1151,27 @@ function validateLevelData(data, expectedLevelId) {
       FirstHundredLevelDesign.validateGeneratedLevel(level);
     } catch (error) {
       issues.push(error.message);
+    }
+  }
+  var cascadeBalancePolicy = CampaignLevelGenerationConfig.getClearanceRebalanceCascadePolicy(expectedLevelId);
+  if (cascadeBalancePolicy !== null && Array.isArray(normalizedLayoutRows) && Array.isArray(level.specialEntities)) {
+    try {
+      var cascadeRisk = ClusteredLevelLayout.analyzeCascadeRisk({
+        levelId: expectedLevelId,
+        rows: normalizedLayoutRows,
+        specialEntities: level.specialEntities,
+        levelType: level.levelType,
+        trappedSpriteRescue: level.trappedSpriteRescue
+      });
+      if (cascadeRisk.maximumImmediateImpactRatio > cascadeBalancePolicy.maximumImmediateImpactRatio) {
+        issues.push(
+          "immediate cascade impact ratio must be <= " +
+          Math.round(cascadeBalancePolicy.maximumImmediateImpactRatio * 100) +
+          "%, got " + Math.round(cascadeRisk.maximumImmediateImpactRatio * 100) + "%"
+        );
+      }
+    } catch (cascadeError) {
+      issues.push(cascadeError.message);
     }
   }
   validateSplitterObjectives(level, issues);
@@ -983,6 +1335,25 @@ function listAllLevelEntries() {
   });
 }
 
+function validateTrappedSpriteRescueSchedule(entries) {
+  var actualLevelIds = entries.filter(function (entry) {
+    return entry.data && entry.data.level && entry.data.level.levelType === "trapped_sprite_rescue";
+  }).map(function (entry) {
+    return entry.levelId;
+  });
+  var expectedLevelIds = CampaignLevelGenerationConfig.TRAPPED_SPRITE_RESCUE_LEVEL_IDS;
+  if (actualLevelIds.length !== 50) {
+    return ["trapped sprite rescue schedule must contain 50 levels, found " + actualLevelIds.length];
+  }
+  if (JSON.stringify(actualLevelIds) !== JSON.stringify(expectedLevelIds)) {
+    return [
+      "trapped sprite rescue schedule differs from campaign policy: expected " +
+      expectedLevelIds.join(",") + ", got " + actualLevelIds.join(",")
+    ];
+  }
+  return [];
+}
+
 function main() {
   var expectedLevelCount = Number(process.env.LEVEL_EXPECTED_COUNT || 0);
   var entries = listAllLevelEntries();
@@ -1026,6 +1397,10 @@ function main() {
   });
 
   validateCrossLevelSpecialPositions(entries).forEach(function (issue) {
+    failed = true;
+    console.log("[FAIL]", issue);
+  });
+  validateTrappedSpriteRescueSchedule(entries).forEach(function (issue) {
     failed = true;
     console.log("[FAIL]", issue);
   });

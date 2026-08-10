@@ -1,5 +1,10 @@
 "use strict";
 
+var LEVEL_SELECT_GEM_REWARD_AMOUNT = 10;
+var LEVEL_SELECT_GEM_DAILY_LIMIT = 1;
+var ASSIST_SPIRIT_SKILL_CHARGE_AD_DAILY_LIMIT = 3;
+var ASSIST_SPIRIT_SKILL_CHARGE_AD_COOLDOWN_SECONDS = 120;
+
 var POWERUP_DISPLAY_NAMES = {
   precise_aim: "精确瞄准",
   rainbow: "彩虹球",
@@ -96,6 +101,19 @@ function resolveAdRunPowerupRewardEntry(powerupType) {
   };
 }
 
+function resolveAssistSpiritSkillChargeRewardEntry() {
+  return {
+    entryKey: "assist_spirit_skill_charge",
+    rewardType: "assist_spirit_skill_charge",
+    rewardValue: "full_charge",
+    quotaType: "assist_spirit_skill_charge",
+    grantMode: "instant",
+    repeatableWithinAttempt: true,
+    awardTips: "精灵技能已充满",
+    assistSpiritSkillChargeGrant: true
+  };
+}
+
 function resolveStaminaRecoveryEntry() {
   return {
     entryKey: "stamina_recovery",
@@ -108,10 +126,28 @@ function resolveStaminaRecoveryEntry() {
   };
 }
 
+function resolveLevelSelectGemRewardEntry() {
+  return {
+    entryKey: "level_select_gem_reward",
+    rewardType: "level_select_gem_reward",
+    rewardValue: LEVEL_SELECT_GEM_REWARD_AMOUNT,
+    quotaType: "level_select_gem",
+    grantMode: "instant",
+    awardTips: "钻石 +" + LEVEL_SELECT_GEM_REWARD_AMOUNT,
+    gemGrant: LEVEL_SELECT_GEM_REWARD_AMOUNT
+  };
+}
+
 module.exports = {
+  LEVEL_SELECT_GEM_REWARD_AMOUNT: LEVEL_SELECT_GEM_REWARD_AMOUNT,
+  LEVEL_SELECT_GEM_DAILY_LIMIT: LEVEL_SELECT_GEM_DAILY_LIMIT,
+  ASSIST_SPIRIT_SKILL_CHARGE_AD_DAILY_LIMIT: ASSIST_SPIRIT_SKILL_CHARGE_AD_DAILY_LIMIT,
+  ASSIST_SPIRIT_SKILL_CHARGE_AD_COOLDOWN_SECONDS: ASSIST_SPIRIT_SKILL_CHARGE_AD_COOLDOWN_SECONDS,
   resolveLoseRewardEntry: resolveLoseRewardEntry,
   resolveInventoryEmptyRewardEntry: resolveInventoryEmptyRewardEntry,
   resolveAdRunPowerupRewardEntry: resolveAdRunPowerupRewardEntry,
+  resolveAssistSpiritSkillChargeRewardEntry: resolveAssistSpiritSkillChargeRewardEntry,
   resolveStaminaRecoveryEntry: resolveStaminaRecoveryEntry,
+  resolveLevelSelectGemRewardEntry: resolveLevelSelectGemRewardEntry,
   resolvePowerupDisplayName: resolvePowerupDisplayName
 };

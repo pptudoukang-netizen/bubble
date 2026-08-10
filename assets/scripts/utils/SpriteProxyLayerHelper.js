@@ -324,6 +324,20 @@ function syncRecords(records, rootNode) {
   });
 }
 
+function enableRecordAutoSync(rootNode, records) {
+  assertValidNode(rootNode, "SpriteProxyLayerHelper auto sync rootNode");
+  if (!Array.isArray(records)) {
+    throw new Error("SpriteProxyLayerHelper auto sync records must be an array.");
+  }
+  var autoSync = rootNode.getComponent(SpriteProxyAutoSync);
+  if (!autoSync) {
+    autoSync = rootNode.addComponent(SpriteProxyAutoSync);
+  }
+  autoSync.proxyRoot = rootNode;
+  autoSync.records = records;
+  autoSync.enabled = true;
+}
+
 function isDescendantOf(node, ancestorNode) {
   assertValidNode(node, "SpriteProxyLayerHelper descendant node");
   assertValidNode(ancestorNode, "SpriteProxyLayerHelper ancestor node");
@@ -551,6 +565,7 @@ module.exports = {
   createProxyLayers: createProxyLayers,
   createRecord: createRecord,
   destroyProxyRoot: destroyProxyRoot,
+  enableRecordAutoSync: enableRecordAutoSync,
   hasAutoProxyTree: hasAutoProxyTree,
   requireNodeSize: requireNodeSize,
   requireSprite: requireSprite,

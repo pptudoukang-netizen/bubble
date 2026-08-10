@@ -6,7 +6,7 @@ var LevelConfigLoader = require("./LevelConfigLoader");
 var LevelPackManifest = require("./LevelPackManifest");
 var LevelPackCompactCodec = require("./LevelPackCompactCodec");
 var LevelPackIntegrity = require("./LevelPackIntegrity");
-var BACKGROUND_PRELOAD_CONCURRENCY = 2;
+var BACKGROUND_PRELOAD_CONCURRENCY = 1;
 
 function resolvePlatform(platform) {
   if (platform) {

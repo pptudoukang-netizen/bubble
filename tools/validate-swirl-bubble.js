@@ -83,6 +83,7 @@ function validateConfigAndCompactCodec() {
   var levelPath = path.resolve(__dirname, "../assets/map/config/levels/level_001.json");
   var raw = readJson(levelPath);
   raw.level.layout[4] = replaceCharacter(raw.level.layout[4], 4, ".");
+  raw.level.layout[6] = replaceCharacter(raw.level.layout[6], 7, "B");
   raw.level.specialEntities.push({
     id: "swirl_validation",
     entityCategory: "reactive_ball",

@@ -105,6 +105,62 @@ function attachLevelRendererSceneFxMethods(LevelRenderer, deps) {
     return point;
   }
 
+  function resolveBoardCellWorldPosition(runtimeSnapshot, row, col, ownerName) {
+    if (!runtimeSnapshot || !runtimeSnapshot.board) {
+      throw new Error(ownerName + " requires runtime board snapshot.");
+    }
+    if (!Number.isInteger(row) || !Number.isInteger(col)) {
+      throw new Error(ownerName + " requires integer board coordinates.");
+    }
+    var boardSnapshot = runtimeSnapshot.board;
+    if (!Number.isInteger(boardSnapshot.maxColumns) || boardSnapshot.maxColumns <= 0) {
+      throw new Error(ownerName + " requires positive board maxColumns.");
+    }
+    if (typeof boardSnapshot.viewportOffsetY !== "number" || !isFinite(boardSnapshot.viewportOffsetY)) {
+      throw new Error(ownerName + " requires finite board viewportOffsetY.");
+    }
+
+    var rescueSnapshot = runtimeSnapshot.systems && runtimeSnapshot.systems.trappedSpriteRescueSystem;
+    var rescueActive = !!(rescueSnapshot && rescueSnapshot.active === true);
+    if (boardSnapshot.trappedSpriteRescueActive === true && !rescueActive) {
+      throw new Error(ownerName + " rescue board requires trapped sprite system snapshot.");
+    }
+    if (!rescueActive) {
+      return requireFinitePoint(BoardLayout.getCellPosition(
+        row,
+        col,
+        boardSnapshot.maxColumns,
+        boardSnapshot.viewportOffsetY
+      ), ownerName);
+    }
+    if (
+      !rescueSnapshot.anchorCell ||
+      !Number.isInteger(rescueSnapshot.anchorCell.row) ||
+      !Number.isInteger(rescueSnapshot.anchorCell.col)
+    ) {
+      throw new Error(ownerName + " rescue transform requires anchorCell.");
+    }
+    var worldCenter = requireFinitePoint(rescueSnapshot.worldCenter, ownerName + " rescue center");
+    if (typeof rescueSnapshot.angleRad !== "number" || !isFinite(rescueSnapshot.angleRad)) {
+      throw new Error(ownerName + " rescue transform requires finite angleRad.");
+    }
+    var anchorLocal = BoardLayout.getCellPosition(
+      rescueSnapshot.anchorCell.row,
+      rescueSnapshot.anchorCell.col,
+      boardSnapshot.maxColumns,
+      0
+    );
+    var cellLocal = BoardLayout.getCellPosition(row, col, boardSnapshot.maxColumns, 0);
+    var localX = cellLocal.x - anchorLocal.x;
+    var localY = cellLocal.y - anchorLocal.y;
+    var cosine = Math.cos(rescueSnapshot.angleRad);
+    var sine = Math.sin(rescueSnapshot.angleRad);
+    return requireFinitePoint({
+      x: worldCenter.x + localX * cosine - localY * sine,
+      y: worldCenter.y + localX * sine + localY * cosine
+    }, ownerName);
+  }
+
   function requirePositiveFiniteNumber(value, ownerName) {
     if (typeof value !== "number" || !isFinite(value) || value <= 0) {
       throw new Error(ownerName + " must be a positive finite number.");
@@ -1068,17 +1124,17 @@ LevelRenderer.prototype._playSwirlRotationAnimation = function (runtimeSnapshot)
       if (!bubbleNode || !bubbleNode.isValid) {
         throw new Error("Swirl animation target bubble node missing: " + move.targetCellId);
       }
-      var startPosition = BoardLayout.getCellPosition(
+      var startPosition = resolveBoardCellWorldPosition(
+        runtimeSnapshot,
         move.fromRow,
         move.fromCol,
-        boardSnapshot.maxColumns,
-        boardSnapshot.viewportOffsetY
+        "Swirl animation start"
       );
-      var targetPosition = BoardLayout.getCellPosition(
+      var targetPosition = resolveBoardCellWorldPosition(
+        runtimeSnapshot,
         move.toRow,
         move.toCol,
-        boardSnapshot.maxColumns,
-        boardSnapshot.viewportOffsetY
+        "Swirl animation target"
       );
       bubbleNode.stopAllActions();
       bubbleNode.setPosition(startPosition.x, startPosition.y);
@@ -1227,44 +1283,44 @@ LevelRenderer.prototype._syncWormholeDirectionGuide = function (boardSnapshot) {
 
   var wormholes = boardSnapshot.cells.filter(function (cell) {
     return !!(cell && cell.entityCategory === "reactive_ball" && cell.entityType === "wormhole");
-  }).sort(function (left, right) {
-    return left.col - right.col;
   });
 
   if (!wormholes.length) {
     this._destroyWormholeDirectionGuide();
     return;
   }
-  if (wormholes.length !== 2) {
-    throw new Error("Wormhole direction guide requires exactly two wormholes.");
-  }
+  var wormholesByRow = {};
+  wormholes.forEach(function (wormhole) {
+    if (!Number.isInteger(wormhole.row) || !Number.isInteger(wormhole.col)) {
+      throw new Error("Wormhole direction guide requires integer endpoint coordinates.");
+    }
+    if (!wormholesByRow[wormhole.row]) {
+      wormholesByRow[wormhole.row] = [];
+    }
+    wormholesByRow[wormhole.row].push(wormhole);
+  });
+  var pairs = Object.keys(wormholesByRow).map(function (rowKey) {
+    var pair = wormholesByRow[rowKey].sort(function (left, right) {
+      return left.col - right.col;
+    });
+    if (pair.length !== 2) {
+      throw new Error("Wormhole direction guide row " + rowKey + " requires exactly two endpoints.");
+    }
+    if (pair[1].col - pair[0].col < 2) {
+      throw new Error("Wormhole direction guide row " + rowKey + " requires at least one interior slot.");
+    }
+    if ((pair[0].moveDirection !== "left" && pair[0].moveDirection !== "right") ||
+        pair[0].moveDirection !== pair[1].moveDirection) {
+      throw new Error("Wormhole direction guide row " + rowKey + " requires matching left/right moveDirection.");
+    }
+    return pair;
+  }).sort(function (left, right) {
+    return left[0].row - right[0].row;
+  });
 
-  var leftWormhole = wormholes[0];
-  var rightWormhole = wormholes[1];
-  if (!Number.isInteger(leftWormhole.row) || !Number.isInteger(leftWormhole.col) ||
-      !Number.isInteger(rightWormhole.row) || !Number.isInteger(rightWormhole.col)) {
-    throw new Error("Wormhole direction guide requires integer endpoint coordinates.");
-  }
-  if (leftWormhole.row !== rightWormhole.row) {
-    throw new Error("Wormhole direction guide endpoints must share one row.");
-  }
-  if (rightWormhole.col - leftWormhole.col < 2) {
-    throw new Error("Wormhole direction guide requires at least one interior slot.");
-  }
-  if ((leftWormhole.moveDirection !== "left" && leftWormhole.moveDirection !== "right") ||
-      leftWormhole.moveDirection !== rightWormhole.moveDirection) {
-    throw new Error("Wormhole direction guide requires matching left/right moveDirection.");
-  }
-
-  var direction = leftWormhole.moveDirection;
-  var guideKey = [
-    leftWormhole.row,
-    leftWormhole.col,
-    rightWormhole.col,
-    direction,
-    boardSnapshot.maxColumns,
-    boardSnapshot.viewportOffsetY
-  ].join("|");
+  var guideKey = pairs.map(function (pair) {
+    return [pair[0].row, pair[0].col, pair[1].col, pair[0].moveDirection].join(":");
+  }).concat([boardSnapshot.maxColumns, boardSnapshot.viewportOffsetY]).join("|");
   if (this.lastWormholeDirectionGuideKey === guideKey) {
     if (!this.wormholeDirectionGuideRoot || !this.wormholeDirectionGuideRoot.isValid) {
       throw new Error("Wormhole direction guide key requires a valid guide root.");
@@ -1317,22 +1373,26 @@ LevelRenderer.prototype._syncWormholeDirectionGuide = function (boardSnapshot) {
   this.wormholeDirectionGuideRoot = guideRoot;
   this.lastWormholeDirectionGuideKey = guideKey;
 
-  var interiorSlotCount = rightWormhole.col - leftWormhole.col - 1;
-  var directionSign = direction === "right" ? 1 : -1;
-  for (var slotIndex = 0; slotIndex < interiorSlotCount; slotIndex += 1) {
-    var col = leftWormhole.col + 1 + slotIndex;
-    var position = BoardLayout.getCellPosition(
-      leftWormhole.row,
-      col,
-      boardSnapshot.maxColumns,
-      boardSnapshot.viewportOffsetY
-    );
+  pairs.forEach(function (pair, pairIndex) {
+    var leftWormhole = pair[0];
+    var rightWormhole = pair[1];
+    var direction = leftWormhole.moveDirection;
+    var interiorSlotCount = rightWormhole.col - leftWormhole.col - 1;
+    var directionSign = direction === "right" ? 1 : -1;
+    for (var slotIndex = 0; slotIndex < interiorSlotCount; slotIndex += 1) {
+      var col = leftWormhole.col + 1 + slotIndex;
+      var position = BoardLayout.getCellPosition(
+        leftWormhole.row,
+        col,
+        boardSnapshot.maxColumns,
+        boardSnapshot.viewportOffsetY
+      );
     if (!position || typeof position.x !== "number" || !isFinite(position.x) ||
         typeof position.y !== "number" || !isFinite(position.y)) {
       throw new Error("Wormhole direction guide received invalid cell position.");
     }
 
-    var arrowNode = new cc.Node("DirectionArrow_" + slotIndex);
+      var arrowNode = new cc.Node("DirectionArrow_" + pairIndex + "_" + slotIndex);
     arrowNode.parent = guideRoot;
     arrowNode.setContentSize(WORMHOLE_DIRECTION_ARROW_SIZE);
     arrowNode.setPosition(position.x, position.y);
@@ -1347,7 +1407,7 @@ LevelRenderer.prototype._syncWormholeDirectionGuide = function (boardSnapshot) {
       WORMHOLE_DIRECTION_ARROW_CYCLE_PAUSE;
     var baseX = position.x;
     var baseY = position.y;
-    arrowNode.runAction(cc.repeatForever(cc.sequence(
+      arrowNode.runAction(cc.repeatForever(cc.sequence(
       cc.callFunc(function (node, data) {
         if (!node || !node.isValid) {
           throw new Error("Wormhole direction arrow was destroyed during animation.");
@@ -1368,8 +1428,9 @@ LevelRenderer.prototype._syncWormholeDirectionGuide = function (boardSnapshot) {
         cc.scaleTo(WORMHOLE_DIRECTION_ARROW_FADE_OUT_DURATION, 0.82)
       ),
       cc.delayTime(trailingDelay)
-    )));
-  }
+      )));
+    }
+  });
 };
 
 LevelRenderer.prototype._playMolotovBlastAnimation = function (runtimeSnapshot) {
@@ -1449,12 +1510,12 @@ LevelRenderer.prototype._playBlastExplosionAnimation = function (runtimeSnapshot
     }
     this.blastExplosionAnimatedIds[normalizedId] = true;
 
-    var explosionPosition = requireFinitePoint(BoardLayout.getCellPosition(
+    var explosionPosition = resolveBoardCellWorldPosition(
+      runtimeSnapshot,
       explosion.row,
       explosion.col,
-      boardSnapshot.maxColumns,
-      boardSnapshot.viewportOffsetY
-    ), "Blast explosion");
+      "Blast explosion"
+    );
     playExplosionAnimationAt(this, "BlastExplosionFx_" + normalizedId, explosionPosition, "Blast explosion animation", null);
   }, this);
 };
@@ -1765,11 +1826,11 @@ LevelRenderer.prototype._playIceThawShake = function (runtimeSnapshot) {
       ) {
         throw new Error("Ice thaw animation requires board position when bubble node is missing.");
       }
-      var cellPosition = BoardLayout.getCellPosition(
+      var cellPosition = resolveBoardCellWorldPosition(
+        runtimeSnapshot,
         cell.row,
         cell.col,
-        boardSnapshot.maxColumns,
-        boardSnapshot.viewportOffsetY
+        "Ice thaw animation"
       );
       baseX = cellPosition.x;
       baseY = cellPosition.y;

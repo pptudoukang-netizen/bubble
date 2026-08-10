@@ -4,6 +4,7 @@ var SpecialAnimationTiming = require("../config/SpecialAnimationTiming");
 var BoardViewportSystem = require("../systems/BoardViewportSystem");
 var EliminationSequenceBuilder = require("./EliminationSequenceBuilder");
 var JarScoreConfig = require("../config/JarScoreConfig");
+var AssistSpiritConfig = require("../../assets/scripts/config/AssistSpiritConfig");
 
 function createGameManagerShotResolutionMethods(deps) {
   var Logger = deps.Logger;
@@ -670,6 +671,9 @@ function createGameManagerShotResolutionMethods(deps) {
     },
 
     _scheduleBoardViewportSettle: function (resolution) {
+      if (this.systems.trappedSpriteRescueSystem.isActive()) {
+        return false;
+      }
       var viewport = this.systems.boardViewportSystem;
       var grid = this.systems.bubbleGrid;
       if (!viewport || !grid) {
@@ -698,17 +702,28 @@ function createGameManagerShotResolutionMethods(deps) {
     },
 
     _tryTopAnchorCollapse: function () {
+      if (this.systems.trappedSpriteRescueSystem.isActive()) {
+        return false;
+      }
       if (this.state !== "running" && this.state !== "out_of_shots_pending") {
         return false;
       }
       var grid = this.systems.bubbleGrid;
       var cells = grid.getCells();
-      var wormholeCount = cells.filter(function (cell) {
+      var wormholesByRow = {};
+      cells.filter(function (cell) {
         return cell && cell.entityCategory === "reactive_ball" && cell.entityType === "wormhole";
-      }).length;
-      if (wormholeCount !== 0 && wormholeCount !== 2) {
-        throw new Error("Top anchor collapse requires exactly two live wormholes.");
-      }
+      }).forEach(function (wormhole) {
+        if (!wormholesByRow[wormhole.row]) {
+          wormholesByRow[wormhole.row] = [];
+        }
+        wormholesByRow[wormhole.row].push(wormhole);
+      });
+      Object.keys(wormholesByRow).forEach(function (rowKey) {
+        if (wormholesByRow[rowKey].length !== 2) {
+          throw new Error("Top anchor collapse requires exactly two live wormholes on row " + rowKey + ".");
+        }
+      });
       if (!cells.length) {
         return false;
       }
@@ -746,6 +761,9 @@ function createGameManagerShotResolutionMethods(deps) {
     },
 
     _ensureMinimumVisibleBoardRows: function (resolution) {
+      if (this.systems.trappedSpriteRescueSystem.isActive()) {
+        return false;
+      }
       if (this._tryTopAnchorCollapse()) {
         return true;
       }
@@ -1413,6 +1431,13 @@ function createGameManagerShotResolutionMethods(deps) {
       ) {
         throw new Error("Resolution drop registration timingOptions must be an object when provided.");
       }
+      if (
+        timingOptions &&
+        Object.prototype.hasOwnProperty.call(timingOptions, "skipAssistSpiritSkillCharge") &&
+        typeof timingOptions.skipAssistSpiritSkillCharge !== "boolean"
+      ) {
+        throw new Error("Resolution drop registration timingOptions.skipAssistSpiritSkillCharge must be boolean.");
+      }
 
       var matchedCellsForDelay = timingOptions && timingOptions.matchedCellsForDelay;
       if (
@@ -1489,6 +1514,10 @@ function createGameManagerShotResolutionMethods(deps) {
       });
       if (!pendingCells.length) {
         return;
+      }
+
+      if (!timingOptions || timingOptions.skipAssistSpiritSkillCharge !== true) {
+        this._collectAssistSpiritSkillCharge(pendingCells, "floating_drop");
       }
 
       var prepared = this._prepareResolutionDropCells(pendingCells, resolution);
@@ -1675,7 +1704,7 @@ function createGameManagerShotResolutionMethods(deps) {
         blastCells.push(occupiedCell);
       });
 
-      this._resolveVinesHitByExplosion(blastCells, grid, resolution);
+      this._resolveVineSpiritsHitByExplosion(blastCells, grid, resolution);
       var removableBlastCells = blastCells.filter(function (cell) {
         return !isVineEntangledBall(cell) && !isVineSpiritBall(cell);
       });
@@ -2169,7 +2198,7 @@ function createGameManagerShotResolutionMethods(deps) {
       return removedKeys;
     },
 
-    _releaseVineOnce: function (cell, grid, resolution, sourceType) {
+    _releaseVineAfterAdjacentEliminationOnce: function (cell, grid, resolution) {
       if (!isVineEntangledBall(cell)) {
         throw new Error("Vine release requires an entangled normal ball.");
       }
@@ -2178,9 +2207,6 @@ function createGameManagerShotResolutionMethods(deps) {
       }
       if (!resolution || !Array.isArray(resolution.releasedVines)) {
         throw new Error("Vine release requires resolution.releasedVines.");
-      }
-      if (sourceType !== "direct_hit" && sourceType !== "adjacent_elimination" && sourceType !== "explosion") {
-        throw new Error("Vine release sourceType is invalid: " + sourceType);
       }
       var alreadyReleased = resolution.releasedVines.some(function (entry) {
         return entry && entry.cellId === cell.id;
@@ -2198,7 +2224,7 @@ function createGameManagerShotResolutionMethods(deps) {
         ownerId: released.vineOwnerId,
         row: released.row,
         col: released.col,
-        sourceType: sourceType
+        sourceType: "adjacent_elimination"
       };
       resolution.releasedVines.push(entry);
       return entry;
@@ -2272,37 +2298,30 @@ function createGameManagerShotResolutionMethods(deps) {
         });
       });
       Object.keys(entangledById).sort().forEach(function (cellId) {
-        this._releaseVineOnce(entangledById[cellId], grid, resolution, "adjacent_elimination");
+        this._releaseVineAfterAdjacentEliminationOnce(entangledById[cellId], grid, resolution);
       }, this);
       Object.keys(spiritsById).sort().forEach(function (spiritId) {
         this._damageVineSpiritOnce(spiritsById[spiritId], grid, resolution, "adjacent_elimination");
       }, this);
     },
 
-    _resolveVinesHitByExplosion: function (affectedCells, grid, resolution) {
+    _resolveVineSpiritsHitByExplosion: function (affectedCells, grid, resolution) {
       if (!Array.isArray(affectedCells)) {
         throw new Error("Vine explosion resolution requires affectedCells array.");
       }
       if (!grid || typeof grid.getCell !== "function") {
         throw new Error("Vine explosion resolution requires bubble grid.");
       }
-      var entangledById = {};
       var spiritsById = {};
       affectedCells.forEach(function (affectedCell) {
         if (!affectedCell || !Number.isInteger(affectedCell.row) || !Number.isInteger(affectedCell.col)) {
           throw new Error("Vine explosion resolution requires affected cell coordinates.");
         }
         var liveCell = grid.getCell(affectedCell.row, affectedCell.col);
-        if (isVineEntangledBall(liveCell)) {
-          entangledById[liveCell.id] = liveCell;
-        }
         if (isVineSpiritBall(liveCell)) {
           spiritsById[liveCell.id] = liveCell;
         }
       });
-      Object.keys(entangledById).sort().forEach(function (cellId) {
-        this._releaseVineOnce(entangledById[cellId], grid, resolution, "explosion");
-      }, this);
       Object.keys(spiritsById).sort().forEach(function (spiritId) {
         this._damageVineSpiritOnce(spiritsById[spiritId], grid, resolution, "explosion");
       }, this);
@@ -2318,7 +2337,6 @@ function createGameManagerShotResolutionMethods(deps) {
       }
       var liveCell = grid.getCell(collided.row, collided.col);
       if (liveCell && isVineEntangledBall(liveCell)) {
-        this._releaseVineOnce(liveCell, grid, resolution, "direct_hit");
         return;
       }
       if (liveCell && isVineSpiritBall(liveCell)) {
@@ -2623,7 +2641,7 @@ function createGameManagerShotResolutionMethods(deps) {
         }
       });
 
-      this._resolveVinesHitByExplosion(blastCells, grid, resolution);
+      this._resolveVineSpiritsHitByExplosion(blastCells, grid, resolution);
       var removableBlastCells = blastCells.filter(function (cell) {
         return !isVineEntangledBall(cell) && !isVineSpiritBall(cell);
       });
@@ -2708,6 +2726,35 @@ function createGameManagerShotResolutionMethods(deps) {
       var projectile = this.activeProjectile;
       var grid = this.systems.bubbleGrid;
       var targetCell = projectile.targetCell;
+      var trappedSpriteRescueSystem = this.systems.trappedSpriteRescueSystem;
+
+      if (
+        projectile.shotPlan &&
+        projectile.shotPlan.hitType === "miss" &&
+        trappedSpriteRescueSystem.isActive()
+      ) {
+        this.lastResolution = createEmptyResolution();
+        this.lastResolution.shotMissed = true;
+        this._resetComboStreak();
+        if (typeof this._pushRuntimeEvent === "function") {
+          this._pushRuntimeEvent("shot_missed_board");
+          this._pushRuntimeEvent("shot_no_elimination");
+        }
+        this.activeProjectile = null;
+        this.pendingProjectileFinalize = false;
+        this.pendingShotPlan = null;
+        var missClearedOcclusionZoneIds = this.systems.boardOcclusionSystem.onShotFired();
+        if (missClearedOcclusionZoneIds.length) {
+          this._pushRuntimeEvent("board_occlusion_cleared", {
+            reason: "shot_count",
+            zoneIds: missClearedOcclusionZoneIds
+          });
+        }
+        if (!this.isTimedInfiniteShots && this.remainingShots <= 0) {
+          this._showOutOfShotsAddBallPrompt();
+        }
+        return;
+      }
 
       if (!targetCell || grid.hasCell(targetCell.row, targetCell.col)) {
         var fallbackPoint = projectile.shotPlan && projectile.shotPlan.hitPoint
@@ -2720,6 +2767,9 @@ function createGameManagerShotResolutionMethods(deps) {
           this.systems.shooterController.getAimState().direction,
           projectile.position
         );
+      }
+      if (!targetCell) {
+        throw new Error("Planned shot could not resolve an attachment cell.");
       }
 
       var firedBall = projectile.ball || {
@@ -2738,14 +2788,43 @@ function createGameManagerShotResolutionMethods(deps) {
         var attachedBubble = grid.addBubble(targetCell, attachedColor);
         this.lastResolution = this._resolveAttachment(attachedBubble);
       }
+      if (trappedSpriteRescueSystem.isActive()) {
+        if (
+          !projectile.shotPlan ||
+          !projectile.shotPlan.impactDirection
+        ) {
+          throw new Error("Trapped sprite impact requires shotPlan.impactDirection.");
+        }
+        this.lastResolution.trappedSpriteRotation =
+          trappedSpriteRescueSystem.beginImpactRotation(
+            grid.getCellPosition(targetCell.row, targetCell.col),
+            projectile.shotPlan.impactDirection,
+            grid.getCells(),
+            grid
+          );
+        if (this.lastResolution.trappedSpriteRotation.started) {
+          this.lastResolution.impact = null;
+        }
+      }
       this._resolveDirectVineImpact(projectile, grid, this.lastResolution);
       if (!this.molotovResolutionPending) {
         this._resolveFairyAssistsAfterResolution(this.lastResolution);
       }
-      var swirlRotationStarted = !this.molotovResolutionPending && this._beginSwirlRotationForResolution(this.lastResolution);
-      var wormholeShiftStarted = !this.molotovResolutionPending && !swirlRotationStarted && this._beginWormholeShiftForResolution(this.lastResolution);
-      var vineCastStarted = !this.molotovResolutionPending && !swirlRotationStarted && !wormholeShiftStarted && this._beginVineCastForResolution(this.lastResolution);
-      var postShotSpecialStarted = swirlRotationStarted || wormholeShiftStarted || vineCastStarted;
+      var trappedSpriteRotationStarted = !!(
+        this.lastResolution.trappedSpriteRotation &&
+        this.lastResolution.trappedSpriteRotation.started
+      );
+      var swirlRotationStarted = false;
+      var wormholeShiftStarted = false;
+      var vineCastStarted = false;
+      if (trappedSpriteRotationStarted) {
+        this._deferTrappedSpritePostImpactResolution(this.lastResolution);
+      } else {
+        swirlRotationStarted = !this.molotovResolutionPending && this._beginSwirlRotationForResolution(this.lastResolution);
+        wormholeShiftStarted = !this.molotovResolutionPending && !swirlRotationStarted && this._beginWormholeShiftForResolution(this.lastResolution);
+        vineCastStarted = !this.molotovResolutionPending && !swirlRotationStarted && !wormholeShiftStarted && this._beginVineCastForResolution(this.lastResolution);
+      }
+      var postShotSpecialStarted = trappedSpriteRotationStarted || swirlRotationStarted || wormholeShiftStarted || vineCastStarted;
       var deferredBoardShift = postShotSpecialStarted ? true : this._applyPostImpactBoardShiftPolicy(this.lastResolution);
 
       var noEliminationTriggered = !(
@@ -2754,9 +2833,21 @@ function createGameManagerShotResolutionMethods(deps) {
         this.lastResolution.matched.length > 0
       );
       if (noEliminationTriggered) {
+        if (
+          !projectile.shotPlan ||
+          !Number.isInteger(projectile.shotPlan.wallBounceCount) ||
+          projectile.shotPlan.wallBounceCount < 0
+        ) {
+          throw new Error("Finalized projectile requires a non-negative integer shotPlan.wallBounceCount.");
+        }
         this._resetComboStreak();
         if (typeof this._pushRuntimeEvent === "function") {
           this._pushRuntimeEvent("shot_no_elimination");
+          if (projectile.shotPlan.wallBounceCount > 0) {
+            this._pushRuntimeEvent("shot_wall_bounce_no_elimination", {
+              wallBounceCount: projectile.shotPlan.wallBounceCount
+            });
+          }
         }
       }
 
@@ -2830,8 +2921,17 @@ function createGameManagerShotResolutionMethods(deps) {
       var matchedCells = this.systems.matchSystem.findMatchGroup(grid, attachedBubble);
 
       if (!matchedCells.length) {
-        this.systems.supportSystem.clearFloatingCells();
-        this.systems.fallingMarbleSystem.registerDrops([], grid);
+        if (this.systems.trappedSpriteRescueSystem.isActive()) {
+          var unsupportedCells = this.systems.supportSystem.findFloatingCells(grid);
+          var unsupportedRemoved = grid.removeFloatingCells(unsupportedCells);
+          this._appendUniqueCells(resolution.floating, unsupportedRemoved);
+          resolution.collected = unsupportedRemoved.slice();
+          this._registerResolutionDrops(unsupportedRemoved, grid, resolution);
+          this._applyResolutionDropScore(resolution, "matchedDrop");
+        } else {
+          this.systems.supportSystem.clearFloatingCells();
+          this.systems.fallingMarbleSystem.registerDrops([], grid);
+        }
         this.systems.jarCollectorSystem.collect([]);
         resolution.boardCleared = this._isBoardCleared(grid);
         return resolution;
@@ -2936,10 +3036,32 @@ function createGameManagerShotResolutionMethods(deps) {
       return true;
     },
 
+    _emitTrappedSpriteRescueEvent: function () {
+      var trappedSpriteRescueSystem = this.systems.trappedSpriteRescueSystem;
+      if (!trappedSpriteRescueSystem.isActive() || this.trappedSpriteRescueEventEmitted) {
+        return false;
+      }
+      var trappedSpriteSnapshot = trappedSpriteRescueSystem.snapshotForRender();
+      if (
+        !trappedSpriteSnapshot.active ||
+        typeof trappedSpriteSnapshot.spiritId !== "string"
+      ) {
+        throw new Error("Trapped sprite rescue completion requires spiritId.");
+      }
+      AssistSpiritConfig.getSpirit(trappedSpriteSnapshot.spiritId);
+      this._pushRuntimeEvent("trapped_sprite_rescued", {
+        spiritId: trappedSpriteSnapshot.spiritId
+      });
+      this.trappedSpriteRescueEventEmitted = true;
+      return true;
+    },
+
     _resolveBoardClearedOutcome: function () {
+      this._emitTrappedSpriteRescueEvent();
+
       // 清屏后若仍有掉落中的玻璃球，先进入等待态；
       // 等掉落完成并计分后，再决定本局最终胜负。
-      if (this.systems.fallingMarbleSystem.hasActiveDrops() || this._hasPendingSplitterSpawns() || this._hasPendingMolotovBlasts() || this._hasPendingSwirlRotation() || this._hasPendingWormholeShift() || this._hasPendingVineCast()) {
+      if (this.systems.fallingMarbleSystem.hasActiveDrops() || this._hasPendingSplitterSpawns() || this._hasPendingMolotovBlasts() || this._hasPendingSwirlRotation() || this._hasPendingWormholeShift() || this._hasPendingVineCast() || this._hasPendingTrappedSpritePostImpactResolution() || this.systems.trappedSpriteRescueSystem.isRotating()) {
         this.state = "won_pending";
         return;
       }
@@ -2993,7 +3115,18 @@ function createGameManagerShotResolutionMethods(deps) {
       this.isAiming = false;
       this.pendingShotPlan = null;
       this.surplusShotAimRecentered = false;
-      fallingMarbleSystem.registerSurplusShotsFromOrigin(drainedBalls, origin, this.levelRandomSeed);
+      var initialSurplusDrops = fallingMarbleSystem.registerSurplusShotsFromOrigin(
+        drainedBalls,
+        origin,
+        this.levelRandomSeed
+      );
+      if (
+        !Array.isArray(initialSurplusDrops) ||
+        initialSurplusDrops.length !== 1 ||
+        initialSurplusDrops[0].dropKind !== "surplus_shot"
+      ) {
+        throw new Error("Surplus shot bonus must launch exactly one surplus shot immediately.");
+      }
       this.state = "won_surplus_shots_pending";
       if (!fallingMarbleSystem.hasPendingSurplusShots()) {
         this.surplusShotAimRecentered = true;
@@ -3001,6 +3134,7 @@ function createGameManagerShotResolutionMethods(deps) {
       }
 
       if (typeof this._pushRuntimeEvent === "function") {
+        this._pushRuntimeEvent("surplus_shot_launched", {});
         this._pushRuntimeEvent("surplus_shots_started", {
           count: drainedBalls.length
         });

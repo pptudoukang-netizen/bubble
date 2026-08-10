@@ -6,7 +6,7 @@ var RUNTIME_REFRESH_SCOPE = require("../config/RuntimeRefreshScope");
 
 module.exports = {
   update: function (dt) {
-    if (this.isSelectingLevel || this.isGameplayPaused) {
+    if (this.isSelectingLevel || this.isGameplayPaused || this._assistSpiritSkillInProgress === true) {
       return;
     }
 
@@ -52,7 +52,7 @@ module.exports = {
   },
 
   lateUpdate: function (dt) {
-    if (this.isSelectingLevel || this.isGameplayPaused || this.isRestarting) {
+    if (this.isSelectingLevel || this.isGameplayPaused || this.isRestarting || this._assistSpiritSkillInProgress === true) {
       return;
     }
     if (!this.currentLevelConfig || !this.gameManager || !this.levelRenderer) {
@@ -111,6 +111,9 @@ module.exports = {
   },
 
   _isShooterHandoffInputLocked: function () {
+    if (this._assistSpiritSkillInProgress === true) {
+      return true;
+    }
     if (!this.levelRenderer || typeof this.levelRenderer.isShooterHandoffInProgress !== "function") {
       throw new Error("GameBootstrap shot input requires LevelRenderer.isShooterHandoffInProgress.");
     }
@@ -270,12 +273,21 @@ module.exports = {
         y: touchLocation.y
       };
     }
-    var shotsBeforeFire = Math.max(0, Number(this.gameManager.remainingShots) || 0);
+    var shotsFiredBeforeFire = this.gameManager.shotsFired;
+    if (!Number.isInteger(shotsFiredBeforeFire) || shotsFiredBeforeFire < 0) {
+      throw new Error("GameBootstrap fire input requires non-negative GameManager.shotsFired.");
+    }
     var snapshot = this.gameManager.fireShot();
+    if (!snapshot || !Number.isInteger(snapshot.shotsFired)) {
+      throw new Error("GameBootstrap fire input requires runtime snapshot.shotsFired.");
+    }
+    if (snapshot.shotsFired < shotsFiredBeforeFire || snapshot.shotsFired > shotsFiredBeforeFire + 1) {
+      throw new Error("GameBootstrap fire input received invalid shotsFired transition.");
+    }
     this._lastAimRefreshPoint = null;
     this._lastAimRefreshScreenPoint = null;
     this._lastAimPlanRefreshTime = 0;
-    if (snapshot && Math.max(0, Number(snapshot.remainingShots) || 0) < shotsBeforeFire) {
+    if (snapshot.shotsFired === shotsFiredBeforeFire + 1) {
       this._playSfx("shot");
       this._completeNewUserGuide();
       this._completeActiveSkillPowerupFireGuide();

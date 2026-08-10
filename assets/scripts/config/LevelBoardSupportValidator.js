@@ -3,6 +3,8 @@
 var BoardLayout = require("./BoardLayout");
 
 var TOP_BOARD_ROW_INDEX = 0;
+var MAX_TOP_ROW_SAME_COLOR_RUN = 3;
+var MIN_NORMAL_BALL_OCCUPANCY_RATIO = 0.7;
 
 function keyFor(row, col) {
   return row + ":" + col;
@@ -132,8 +134,30 @@ function findUnsupportedInitialCells(levelConfig, levelKey) {
   var queue = [];
   var queueIndex = 0;
 
+  var rescueAnchor = null;
+  if (levelConfig.levelType === "trapped_sprite_rescue") {
+    if (
+      !levelConfig.trappedSpriteRescue ||
+      !levelConfig.trappedSpriteRescue.anchorCell
+    ) {
+      throw new Error("trapped_sprite_rescue requires anchorCell before support validation: " + levelKey);
+    }
+    rescueAnchor = levelConfig.trappedSpriteRescue.anchorCell;
+  }
+
   cells.forEach(function (cell) {
-    if (cell.row === TOP_BOARD_ROW_INDEX || cell.fixedAnchor === true) {
+    var touchesRescueAnchor = rescueAnchor && getNeighborCoordinates(
+      levelConfig.layout,
+      rescueAnchor.row,
+      rescueAnchor.col
+    ).some(function (neighbor) {
+      return neighbor.row === cell.row && neighbor.col === cell.col;
+    });
+    if (
+      (rescueAnchor === null && cell.row === TOP_BOARD_ROW_INDEX) ||
+      cell.fixedAnchor === true ||
+      touchesRescueAnchor
+    ) {
       queue.push(cell);
     }
   });
@@ -179,7 +203,129 @@ function assertInitialBoardSupported(levelConfig, levelKey) {
   }
 }
 
+function analyzeGeneratedBoardRules(levelConfig, levelKey) {
+  if (!levelConfig || typeof levelConfig !== "object" || Array.isArray(levelConfig)) {
+    throw new Error("level config is required for generated board rule validation: " + levelKey);
+  }
+  if (!Array.isArray(levelConfig.layout) || levelConfig.layout.length === 0) {
+    throw new Error("level.layout is required for generated board rule validation: " + levelKey);
+  }
+  if (!Array.isArray(levelConfig.specialEntities)) {
+    throw new Error("level.specialEntities must be normalized before generated board rule validation: " + levelKey);
+  }
+
+  var boardCapacity = 0;
+  var normalBallCount = 0;
+  levelConfig.layout.forEach(function (rowString, rowIndex) {
+    if (typeof rowString !== "string") {
+      throw new Error("level.layout row must be a string for generated board rule validation: " + levelKey);
+    }
+    var expectedColumns = BoardLayout.getRowColumnCount(rowIndex, BoardLayout.defaultColumns);
+    if (rowString.length !== expectedColumns) {
+      throw new Error("level.layout row length must be normalized before generated board rule validation: " + levelKey);
+    }
+    boardCapacity += expectedColumns;
+    rowString.split("").forEach(function (cellCode) {
+      if (cellCode !== ".") {
+        normalBallCount += 1;
+      }
+    });
+  });
+
+  var excludedCellMap = {};
+  levelConfig.specialEntities.forEach(function (entity, index) {
+    if (!entity || typeof entity !== "object" || Array.isArray(entity)) {
+      throw new Error("specialEntities[" + index + "] must be normalized before generated board rule validation: " + levelKey);
+    }
+    if (!Number.isInteger(entity.row) || !Number.isInteger(entity.col) || !isValidCell(levelConfig.layout, entity.row, entity.col)) {
+      throw new Error("specialEntities[" + index + "] row/col invalid for generated board rule validation: " + levelKey);
+    }
+    if (levelConfig.layout[entity.row].charAt(entity.col) !== ".") {
+      throw new Error("specialEntities[" + index + "] overlaps a normal ball for generated board rule validation: " + levelKey);
+    }
+    var entityKey = keyFor(entity.row, entity.col);
+    if (excludedCellMap[entityKey]) {
+      throw new Error("duplicate excluded generated board cell `" + entityKey + "`: " + levelKey);
+    }
+    excludedCellMap[entityKey] = true;
+  });
+
+  if (levelConfig.levelType === "trapped_sprite_rescue") {
+    if (!levelConfig.trappedSpriteRescue || !levelConfig.trappedSpriteRescue.anchorCell) {
+      throw new Error("trapped_sprite_rescue requires anchorCell before generated board rule validation: " + levelKey);
+    }
+    var anchor = levelConfig.trappedSpriteRescue.anchorCell;
+    if (!Number.isInteger(anchor.row) || !Number.isInteger(anchor.col) || !isValidCell(levelConfig.layout, anchor.row, anchor.col)) {
+      throw new Error("trapped_sprite_rescue anchorCell is invalid for generated board rule validation: " + levelKey);
+    }
+    if (levelConfig.layout[anchor.row].charAt(anchor.col) !== ".") {
+      throw new Error("trapped_sprite_rescue anchorCell overlaps a normal ball for generated board rule validation: " + levelKey);
+    }
+    var anchorKey = keyFor(anchor.row, anchor.col);
+    if (excludedCellMap[anchorKey]) {
+      throw new Error("trapped_sprite_rescue anchorCell overlaps a special entity: " + levelKey);
+    }
+    excludedCellMap[anchorKey] = true;
+  }
+
+  var topRowSameColorRun = 0;
+  var currentTopColor = null;
+  var currentTopRun = 0;
+  levelConfig.layout[TOP_BOARD_ROW_INDEX].split("").forEach(function (cellCode) {
+    if (cellCode === ".") {
+      currentTopColor = null;
+      currentTopRun = 0;
+      return;
+    }
+    if (cellCode === currentTopColor) {
+      currentTopRun += 1;
+    } else {
+      currentTopColor = cellCode;
+      currentTopRun = 1;
+    }
+    topRowSameColorRun = Math.max(topRowSameColorRun, currentTopRun);
+  });
+
+  var excludedCellCount = Object.keys(excludedCellMap).length;
+  var normalBallSlotCount = boardCapacity - excludedCellCount;
+  if (normalBallSlotCount <= 0) {
+    throw new Error("generated board has no ordinary-ball slots: " + levelKey);
+  }
+  return {
+    boardCapacity: boardCapacity,
+    excludedCellCount: excludedCellCount,
+    normalBallCount: normalBallCount,
+    normalBallSlotCount: normalBallSlotCount,
+    normalBallOccupancyRatio: normalBallCount / normalBallSlotCount,
+    topRowSameColorRun: topRowSameColorRun
+  };
+}
+
+function assertGeneratedBoardRules(levelConfig, levelKey) {
+  var metrics = analyzeGeneratedBoardRules(levelConfig, levelKey);
+  if (metrics.topRowSameColorRun > MAX_TOP_ROW_SAME_COLOR_RUN) {
+    throw new Error(
+      "level top row same-color run must be <= " + MAX_TOP_ROW_SAME_COLOR_RUN +
+      ", got " + metrics.topRowSameColorRun + ": " + levelKey
+    );
+  }
+  if (metrics.normalBallOccupancyRatio + Number.EPSILON < MIN_NORMAL_BALL_OCCUPANCY_RATIO) {
+    throw new Error(
+      "level normal-ball occupancy must be >= " +
+      Math.round(MIN_NORMAL_BALL_OCCUPANCY_RATIO * 100) + "% after excluding " +
+      metrics.excludedCellCount + " special gameplay slots, got " +
+      metrics.normalBallCount + "/" + metrics.normalBallSlotCount + " (" +
+      (metrics.normalBallOccupancyRatio * 100).toFixed(2) + "%): " + levelKey
+    );
+  }
+  return metrics;
+}
+
 module.exports = {
+  MAX_TOP_ROW_SAME_COLOR_RUN: MAX_TOP_ROW_SAME_COLOR_RUN,
+  MIN_NORMAL_BALL_OCCUPANCY_RATIO: MIN_NORMAL_BALL_OCCUPANCY_RATIO,
   findUnsupportedInitialCells: findUnsupportedInitialCells,
-  assertInitialBoardSupported: assertInitialBoardSupported
+  assertInitialBoardSupported: assertInitialBoardSupported,
+  analyzeGeneratedBoardRules: analyzeGeneratedBoardRules,
+  assertGeneratedBoardRules: assertGeneratedBoardRules
 };

@@ -29,6 +29,13 @@ function assertStartupSchedulingContract() {
   var scheduleCalls = startupSource.match(/this\._scheduleBackgroundRemoteLevelPackPreload\(\);/g);
   assert(Array.isArray(scheduleCalls), "Startup flow must schedule background remote level pack preload.");
   assert.strictEqual(scheduleCalls.length, 2, "Both startup loading branches must schedule background remote level pack preload.");
+  var renderedFrameWaitCalls = startupSource.match(/this\._waitForNextRenderedFrame\(\)/g);
+  assert(Array.isArray(renderedFrameWaitCalls), "Startup flow must wait for level-select frames before background work.");
+  assert.strictEqual(
+    renderedFrameWaitCalls.length,
+    8,
+    "Both startup branches must leave three rendered level-select frames before background work starts."
+  );
 
   var startGameSource = fs.readFileSync(START_GAME_METHODS_PATH, "utf8");
   assert.strictEqual(
@@ -107,7 +114,7 @@ function assertRemoteLoaderBackgroundPreload() {
 
   return firstPromise.then(function (result) {
     assert.strictEqual(startedPackIds[0], "p401", "Highest unlocked level pack must preload first.");
-    assert.strictEqual(maxActiveCount, 2, "Background remote pack preload concurrency must remain bounded at 2.");
+    assert.strictEqual(maxActiveCount, 1, "Background remote pack preload must serialize pack downloads.");
     assert.strictEqual(new Set(startedPackIds).size, packInfos.length, "Background preload must fetch every remote pack once.");
     assert.strictEqual(result.preloaded, true, "Background remote pack preload must report completion.");
     assert.strictEqual(result.priorityPackId, "p401", "Background preload result must identify the priority pack.");

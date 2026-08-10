@@ -84,6 +84,8 @@ function ShooterController() {
   this.currentBall = null;
   this.nextBall = null;
   this.authoredOpeningQueue = [];
+  this.lastRandomColor = null;
+  this.consecutiveRandomColorCount = 0;
   this.currentColor = null;
   this.nextColor = null;
   this.queueAdvanceRevision = 0;
@@ -112,22 +114,21 @@ ShooterController.prototype.configureLevel = function (levelConfig) {
   this.currentBall = null;
   this.nextBall = null;
   this.authoredOpeningQueue = [];
+  this.lastRandomColor = null;
+  this.consecutiveRandomColorCount = 0;
   if (levelConfig.level.openingShotBalls !== undefined && levelConfig.level.initialShotBalls !== undefined) {
     throw new Error("ShooterController openingShotBalls and initialShotBalls cannot both be configured.");
   }
   if (levelConfig.level.openingShotBalls !== undefined) {
     this._applyOpeningShotBalls(levelConfig.level.openingShotBalls);
   }
+  if (Array.isArray(levelConfig.level.initialShotBalls)) {
+    this._applyInitialShotBalls(levelConfig.level.initialShotBalls);
+  }
   this._syncQueueForRemainingShots(
     levelConfig.level.playMode === "timed_infinite_shots" ? 2 : this.shotLimit
   );
   this.queueAdvanceRevision = 0;
-  if (Array.isArray(levelConfig.level.initialShotBalls)) {
-    this._applyInitialShotBalls(levelConfig.level.initialShotBalls);
-    this._syncQueueForRemainingShots(
-      levelConfig.level.playMode === "timed_infinite_shots" ? 2 : this.shotLimit
-    );
-  }
   this._syncLegacyColorFields();
   this.aimDirection = { x: 0, y: 1 };
   var configuredMaxAimAngle = levelConfig.level && typeof levelConfig.level.aimMaxAngleDeg === "number"
@@ -413,6 +414,25 @@ ShooterController.prototype.equipSkillBall = function (entityType) {
   };
 };
 
+ShooterController.prototype.convertCurrentNormalBallToSkillBall = function (entityType) {
+  if (entityType !== "blast") {
+    throw new Error("ShooterController produced ball type is unsupported: " + entityType);
+  }
+  if (!this.currentBall || this.currentBall.ballCategory !== "normal") {
+    throw new Error("ShooterController produced ball conversion requires a current normal ball.");
+  }
+
+  var replacedBall = clone(this.currentBall);
+  this.currentBall = createSkillBall(entityType);
+  this._syncLegacyColorFields();
+  return {
+    accepted: true,
+    entityType: entityType,
+    replacedBall: replacedBall,
+    currentBall: clone(this.currentBall)
+  };
+};
+
 ShooterController.prototype.resolveCurrentRainbowColor = function (colorCode) {
   if (this.availableColors.indexOf(colorCode) === -1) {
     return {
@@ -583,22 +603,39 @@ ShooterController.prototype._pickColor = function () {
     return null;
   }
 
-  var totalWeight = this.availableColors.reduce(function (sum, colorCode) {
+  var candidateColors = this.consecutiveRandomColorCount >= 2
+    ? this.availableColors.filter(function (colorCode) {
+      return colorCode !== this.lastRandomColor;
+    }.bind(this))
+    : this.availableColors;
+  if (!candidateColors.length) {
+    throw new Error("ShooterController cannot generate a third consecutive random color without another available color.");
+  }
+
+  var totalWeight = candidateColors.reduce(function (sum, colorCode) {
     return sum + (this.spawnWeights[colorCode] || 1);
   }.bind(this), 0);
 
   var threshold = Math.random() * totalWeight;
   var running = 0;
 
-  for (var i = 0; i < this.availableColors.length; i += 1) {
-    var colorCode = this.availableColors[i];
+  var selectedColor = candidateColors[candidateColors.length - 1];
+  for (var i = 0; i < candidateColors.length; i += 1) {
+    var colorCode = candidateColors[i];
     running += this.spawnWeights[colorCode] || 1;
     if (threshold <= running) {
-      return colorCode;
+      selectedColor = colorCode;
+      break;
     }
   }
 
-  return this.availableColors[this.availableColors.length - 1];
+  if (selectedColor === this.lastRandomColor) {
+    this.consecutiveRandomColorCount += 1;
+  } else {
+    this.lastRandomColor = selectedColor;
+    this.consecutiveRandomColorCount = 1;
+  }
+  return selectedColor;
 };
 
 ShooterController.prototype._pickNormalBall = function () {

@@ -8,7 +8,7 @@
   "compressionLevel": 6,
   "allowRotation": true,
   "forceSquared": false,
-  "powerOfTwo": false,
+  "powerOfTwo": true,
   "algorithm": "MaxRects",
   "format": "png",
   "quality": 80,

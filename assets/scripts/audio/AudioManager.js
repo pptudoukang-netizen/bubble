@@ -121,6 +121,12 @@ function AudioManager(options) {
   this.sfxMap = {};
   this.currentBgmPath = "";
   this.currentBgmLoop = true;
+  this.activeBgmPath = "";
+  this._bgmRequestId = 0;
+  this._pendingBgmPath = "";
+  this._pendingBgmLoop = true;
+  this._pendingBgmPromise = null;
+  this._exclusiveSfxPlaybacks = {};
   this._webAudioGestureUnlocked = false;
   this._webAudioUnlockBindingDone = false;
   this._webAudioUnlockHandler = null;
@@ -144,6 +150,7 @@ AudioManager.prototype.snapshot = function () {
   return {
     bgmPath: this.bgmPath,
     currentBgmPath: this.currentBgmPath,
+    activeBgmPath: this.activeBgmPath,
     settings: clone(this.settings),
     sfxKeys: Object.keys(this.sfxMap || {})
   };
@@ -195,6 +202,9 @@ AudioManager.prototype._loadClip = function (resourcePath) {
   }
 
   this.clipLoadPromises[resourcePath] = loadAudioClip(resourcePath).then(function (clip) {
+    if (!clip) {
+      throw new Error("Loaded audio clip is empty: " + resourcePath);
+    }
     this.clipCache[resourcePath] = clip;
     delete this.clipLoadPromises[resourcePath];
     return clip;
@@ -439,26 +449,62 @@ AudioManager.prototype.playBgm = function (resourcePath, options) {
   this.currentBgmLoop = loop;
   this._tryUnlockWebAudio();
 
-  if (!path || !hasAudioEngine() || !this.settings.musicEnabled) {
+  if (!path) {
+    return Promise.reject(new Error("AudioManager.playBgm requires a non-empty resource path."));
+  }
+  if (!hasAudioEngine()) {
+    return Promise.reject(new Error("AudioManager.playBgm requires cc.audioEngine."));
+  }
+  if (!this.settings.musicEnabled) {
     return Promise.resolve(null);
   }
 
-  return this._loadClip(path).then(function (clip) {
-    if (!clip) {
+  if (
+    this._pendingBgmPromise &&
+    this._pendingBgmPath === path &&
+    this._pendingBgmLoop === loop
+  ) {
+    return this._pendingBgmPromise;
+  }
+
+  this._bgmRequestId += 1;
+  var requestId = this._bgmRequestId;
+  var playPromise = this._loadClip(path).then(function (clip) {
+    if (requestId !== this._bgmRequestId) {
+      return null;
+    }
+    if (!this.settings.musicEnabled) {
       return null;
     }
 
     cc.audioEngine.stopMusic();
-    cc.audioEngine.playMusic(clip, loop);
+    var audioId = cc.audioEngine.playMusic(clip, loop);
+    if (typeof audioId !== "number" || !Number.isFinite(audioId) || audioId < 0) {
+      throw new Error("Failed to start background music: " + path);
+    }
     cc.audioEngine.setMusicVolume(this.settings.musicVolume);
+    this.activeBgmPath = path;
     return clip;
-  }.bind(this)).catch(function (error) {
-    Logger.warn(error && error.message ? error.message : error);
-    return null;
-  });
+  }.bind(this));
+
+  this._pendingBgmPath = path;
+  this._pendingBgmLoop = loop;
+  this._pendingBgmPromise = playPromise;
+  var clearPendingBgm = function () {
+    if (this._pendingBgmPromise === playPromise) {
+      this._pendingBgmPath = "";
+      this._pendingBgmPromise = null;
+    }
+  }.bind(this);
+  playPromise.then(clearPendingBgm, clearPendingBgm);
+  return playPromise;
 };
 
 AudioManager.prototype.stopBgm = function () {
+  this._bgmRequestId += 1;
+  this.activeBgmPath = "";
+  this._pendingBgmPath = "";
+  this._pendingBgmPromise = null;
   if (hasAudioEngine()) {
     cc.audioEngine.stopMusic();
   }
@@ -509,6 +555,59 @@ AudioManager.prototype.playSfx = function (keyOrPath, options) {
   });
 };
 
+AudioManager.prototype.playExclusiveSfx = function (channelName, keyOrPath) {
+  var channel = typeof channelName === "string" ? channelName.trim() : "";
+  if (!channel) {
+    return Promise.reject(new Error("Exclusive SFX playback requires a non-empty channel name."));
+  }
+
+  this._tryUnlockWebAudio();
+  if (!hasAudioEngine() || !this.settings.sfxEnabled) {
+    return Promise.resolve(null);
+  }
+  if (typeof cc.audioEngine.setFinishCallback !== "function") {
+    return Promise.reject(new Error("Exclusive SFX playback requires cc.audioEngine.setFinishCallback."));
+  }
+  if (this._exclusiveSfxPlaybacks[channel]) {
+    return Promise.resolve(null);
+  }
+
+  var resourcePath = resolveSfxResourcePath(this.sfxMap, keyOrPath);
+  if (!resourcePath) {
+    return Promise.reject(new Error("Exclusive SFX playback requires a configured audio resource."));
+  }
+
+  var playback = {
+    audioId: null,
+    resourcePath: resourcePath
+  };
+  this._exclusiveSfxPlaybacks[channel] = playback;
+
+  return this._loadClip(resourcePath).then(function (clip) {
+    if (this._exclusiveSfxPlaybacks[channel] !== playback) {
+      return null;
+    }
+
+    cc.audioEngine.setEffectsVolume(this.settings.sfxVolume);
+    var audioId = cc.audioEngine.playEffect(clip, false);
+    if (typeof audioId !== "number" || !Number.isFinite(audioId) || audioId < 0) {
+      throw new Error("Failed to start exclusive SFX: " + resourcePath);
+    }
+    playback.audioId = audioId;
+    cc.audioEngine.setFinishCallback(audioId, function () {
+      if (this._exclusiveSfxPlaybacks[channel] === playback) {
+        delete this._exclusiveSfxPlaybacks[channel];
+      }
+    }.bind(this));
+    return audioId;
+  }.bind(this)).catch(function (error) {
+    if (this._exclusiveSfxPlaybacks[channel] === playback) {
+      delete this._exclusiveSfxPlaybacks[channel];
+    }
+    throw error;
+  }.bind(this));
+};
+
 AudioManager.prototype.playSfxInstances = function (keyOrPath, count, options) {
   if (!Number.isInteger(count) || count < 1) {
     throw new Error("AudioManager.playSfxInstances requires positive integer count.");
@@ -544,6 +643,7 @@ AudioManager.prototype.playSfxInstances = function (keyOrPath, count, options) {
 };
 
 AudioManager.prototype.stopAllSfx = function () {
+  this._exclusiveSfxPlaybacks = {};
   if (hasAudioEngine()) {
     cc.audioEngine.stopAllEffects();
   }

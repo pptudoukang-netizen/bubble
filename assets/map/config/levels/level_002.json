@@ -6,9 +6,9 @@
         "description": "Top-to-bottom rows. Each character represents one grid cell.",
         "legend": {
             ".": "empty",
+            "B": "blue",
             "R": "red",
-            "G": "green",
-            "B": "blue"
+            "G": "green"
         },
         "pattern": "kxppm_layout_002",
         "theme": "flower",
@@ -54,16 +54,16 @@
         ],
         "colorCount": 3,
         "colors": [
+            "B",
             "R",
-            "G",
-            "B"
+            "G"
         ],
-        "shotLimit": 10,
-        "targetScore": 4610,
+        "shotLimit": 15,
+        "targetScore": 7400,
         "starThresholds": {
-            "star1": 1567,
-            "star2": 2904,
-            "star3": 4011
+            "star1": 3700,
+            "star2": 5180,
+            "star3": 6512
         },
         "dropInterval": 8,
         "jarCount": 5,
@@ -75,9 +75,9 @@
             "P"
         ],
         "spawnWeights": {
+            "B": 1.24,
             "R": 2.4,
-            "G": 1,
-            "B": 1.12
+            "G": 1.12
         },
         "openingShotBalls": [
             "R",
@@ -94,7 +94,7 @@
             {
                 "type": "collect_color",
                 "color": "R",
-                "value": 24
+                "value": 28
             }
         ],
         "bonusObjectives": [
@@ -114,16 +114,16 @@
             }
         ],
         "layout": [
-            "GGGGRRRRBBB",
-            ".BBB..RRB.",
-            ".BG.RR..GG.",
-            ".GG.RR.GR.",
-            ".BG..R..RR.",
-            ".BBBGGGGR.",
-            ".BBBBRRRRG.",
-            ".RR....RG.",
-            ".RR.....GG.",
-            ".BB....BB."
+            "BBRRRGGGRRR",
+            ".BRRRBBBG.",
+            ".BBBGGG.GG.",
+            ".GG.RR.BB.",
+            ".BG.BBR.GB.",
+            ".GGGRRRGG.",
+            ".GRRRBBBBR.",
+            ".BBBBRRRR.",
+            ".GG..R..RR.",
+            ".GG....RR."
         ],
         "designNotes": "Gameplay is generated from the current LEVEL_CONFIG_TABLE_1_1000.csv rules; only the occupancy silhouette is projected from E:\\kxppm\\decrypted_config\\all_levels.json level 2 into current level 2 on the current 11/10-column board.",
         "difficultyScore": 26,

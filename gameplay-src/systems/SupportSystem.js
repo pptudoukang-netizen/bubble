@@ -30,6 +30,7 @@ function SupportSystem() {
   BaseSystem.call(this, "SupportSystem");
   this.anchorRows = 1;
   this.lastFloatingCells = [];
+  this.trappedSpriteAnchorCell = null;
 }
 
 SupportSystem.prototype = Object.create(BaseSystem.prototype);
@@ -39,6 +40,19 @@ SupportSystem.prototype.configureLevel = function (levelConfig) {
   BaseSystem.prototype.configureLevel.call(this, levelConfig);
   this.anchorRows = 1;
   this.lastFloatingCells = [];
+  this.trappedSpriteAnchorCell = null;
+  if (levelConfig.level.levelType === "trapped_sprite_rescue") {
+    var rescue = levelConfig.level.trappedSpriteRescue;
+    if (
+      !rescue ||
+      !rescue.anchorCell ||
+      !Number.isInteger(rescue.anchorCell.row) ||
+      !Number.isInteger(rescue.anchorCell.col)
+    ) {
+      throw new Error("SupportSystem requires trapped sprite anchorCell.");
+    }
+    this.trappedSpriteAnchorCell = clone(rescue.anchorCell);
+  }
   return this;
 };
 
@@ -54,7 +68,19 @@ SupportSystem.prototype.findFloatingCells = function (grid) {
 
   for (var seedIndex = 0; seedIndex < cells.length; seedIndex += 1) {
     var seedCell = cells[seedIndex];
-    if (seedCell.row < this.anchorRows || isLockedAnchor(seedCell) || isWormholeAnchor(seedCell)) {
+    var touchesTrappedSprite = this.trappedSpriteAnchorCell &&
+      grid.getNeighborCoordinates(
+        this.trappedSpriteAnchorCell.row,
+        this.trappedSpriteAnchorCell.col
+      ).some(function (neighbor) {
+        return neighbor.row === seedCell.row && neighbor.col === seedCell.col;
+      });
+    if (
+      (this.trappedSpriteAnchorCell === null && seedCell.row < this.anchorRows) ||
+      isLockedAnchor(seedCell) ||
+      isWormholeAnchor(seedCell) ||
+      touchesTrappedSprite
+    ) {
       queue.push({
         row: seedCell.row,
         col: seedCell.col
@@ -105,6 +131,9 @@ SupportSystem.prototype.snapshot = function () {
   var snapshot = BaseSystem.prototype.snapshot.call(this);
   snapshot.anchorRows = this.anchorRows;
   snapshot.lastFloatingCells = clone(this.lastFloatingCells);
+  snapshot.trappedSpriteAnchorCell = this.trappedSpriteAnchorCell
+    ? clone(this.trappedSpriteAnchorCell)
+    : null;
   return snapshot;
 };
 

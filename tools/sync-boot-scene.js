@@ -7,6 +7,9 @@ var PROJECT_ROOT = path.resolve(__dirname, "..");
 var GAME_SCENE_PATH = path.join(PROJECT_ROOT, "assets/scens/game.fire");
 var BOOT_SCENE_PATH = path.join(PROJECT_ROOT, "assets/scens/boot.fire");
 var BOOT_SCENE_META_PATH = BOOT_SCENE_PATH + ".meta";
+var BOOT_LOADER_META_PATH = path.join(PROJECT_ROOT, "assets/boot/BootLoader.js.meta");
+var BOOT_LOADER_COMPONENT_ID = "5039eb1VPRG1JT+bI5uDxg1";
+var BOOT_LOADER_FILE_ID = "FyzzlN3ZBr8vGl6TOMDfM5";
 
 function readJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, "utf8"));
@@ -54,6 +57,10 @@ function main() {
   if (typeof bootMeta.uuid !== "string" || bootMeta.uuid.length === 0) {
     throw new Error("boot.fire.meta must define a UUID.");
   }
+  var bootLoaderMeta = readJson(BOOT_LOADER_META_PATH);
+  if (bootLoaderMeta.uuid !== "5039e6f5-54f4-46d4-94fe-6c8e6e0f1835") {
+    throw new Error("BootLoader.js.meta UUID is invalid.");
+  }
 
   var bootstrapIndex = findSingleIndex(gameScene, function (entry) {
     return entry &&
@@ -94,11 +101,31 @@ function main() {
   }, "boot cc.Scene");
   bootScene[sceneIndex]._id = bootMeta.uuid;
 
+  var remappedCanvasIndex = oldToNew[canvasIndex];
+  var bootCanvas = bootScene[remappedCanvasIndex];
+  var bootLoaderComponentIndex = bootScene.length;
+  bootScene.push({
+    "__type__": BOOT_LOADER_COMPONENT_ID,
+    "_name": "",
+    "_objFlags": 0,
+    "node": {
+      "__id__": remappedCanvasIndex
+    },
+    "_enabled": true,
+    "_id": BOOT_LOADER_FILE_ID
+  });
+  bootCanvas._components.push({
+    "__id__": bootLoaderComponentIndex
+  });
+
   var customComponents = bootScene.filter(function (entry) {
     return entry && typeof entry.__type__ === "string" && entry.__type__.indexOf("cc.") !== 0;
   });
-  if (customComponents.length !== 0) {
-    throw new Error("Boot scene must not contain custom script components.");
+  if (
+    customComponents.length !== 1 ||
+    customComponents[0].__type__ !== BOOT_LOADER_COMPONENT_ID
+  ) {
+    throw new Error("Boot scene must contain only the BootLoader component.");
   }
 
   fs.writeFileSync(BOOT_SCENE_PATH, JSON.stringify(bootScene, null, 2) + "\n", "utf8");
@@ -107,4 +134,3 @@ function main() {
 }
 
 main();
-

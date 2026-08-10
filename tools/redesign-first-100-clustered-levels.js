@@ -85,7 +85,8 @@ function redesignConfig(config, levelId) {
     colors: level.colors,
     colorCounts: collectColorCounts(level),
     targetColor: resolveTargetColor(level),
-    specialEntities: level.specialEntities
+    specialEntities: level.specialEntities,
+    requiredNormalSlots: []
   });
   level.layout = result.rows;
   return result;

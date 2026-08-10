@@ -486,6 +486,10 @@ LevelRenderer.prototype._alignNodeYToTopRowBubbleVisualTop = function (node, loc
 
 LevelRenderer.prototype._renderMainland = function (boardSnapshot) {
   var mainlandNode = this._resolveMainlandNode();
+  if (boardSnapshot.trappedSpriteRescueActive === true) {
+    mainlandNode.active = false;
+    return;
+  }
   var bgNode = mainlandNode.parent;
   if (!bgNode || !bgNode.isValid) {
     throw new Error("Mainland parent bg node is required.");
@@ -515,6 +519,10 @@ LevelRenderer.prototype._renderJianbian = function (boardSnapshot) {
   }
 
   var jianbianNode = this._resolveJianbianNode();
+  if (boardSnapshot.trappedSpriteRescueActive === true) {
+    jianbianNode.active = false;
+    return;
+  }
   this._alignNodeYToTopRowBubbleVisualTop(jianbianNode, gameViewNode, boardSnapshot);
 };
 }

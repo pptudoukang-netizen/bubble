@@ -5,9 +5,12 @@ var DebugFlags = require("../../assets/scripts/utils/DebugFlags");
 var BundleLoader = require("../../assets/scripts/utils/BundleLoader");
 var PrefabFactory = require("./PrefabFactory");
 var BoardLayout = require("../../assets/scripts/config/BoardLayout");
+var AssistSpiritConfig = require("../../assets/scripts/config/AssistSpiritConfig");
 var SpecialAnimationTiming = require("../config/SpecialAnimationTiming");
 var FairyAssistConfig = require("../config/FairyAssistConfig");
 var JarScoreConfig = require("../config/JarScoreConfig");
+var AssistSpiritSkillConfig = require("../config/AssistSpiritSkillConfig");
+var AssistSpiritPresentationConfig = require("../config/AssistSpiritPresentationConfig");
 var PropDescriptionConfig = require("../../assets/scripts/config/PropDescriptionConfig");
 var RUNTIME_REFRESH_SCOPE = require("../../assets/scripts/config/RuntimeRefreshScope");
 var StarRatingPolicy = require("../../assets/scripts/core/StarRatingPolicy");
@@ -21,6 +24,7 @@ var LightningChainRenderer = require("./LightningChainRenderer");
 var PropDescriptionViewController = require("../../assets/scripts/ui/PropDescriptionViewController");
 var attachLevelRendererSceneMethods = require("./LevelRendererSceneMethods");
 var attachLevelRendererFairyMethods = require("./LevelRendererFairyMethods");
+var attachLevelRendererAssistSpiritSkillMethods = require("./LevelRendererAssistSpiritSkillMethods");
 
 var loadSpriteFrame = RenderNodeHelpers.loadSpriteFrame;
 var createSolidWhiteSpriteFrame = RenderNodeHelpers.createSolidWhiteSpriteFrame;
@@ -60,6 +64,19 @@ var BALL_RESOURCES = {
   LIGHT: "game/image/ball/light_ball",
   SNOW_REMOVAL_TOOLS: "game/image/ball/snow_removal_tools"
 };
+var TIME_BONUS_FONT_RESOURCE = "game/fnt/num_b";
+var TRAPPED_SPIRIT_PATH_PREFIX = "game/trapped_spirit/";
+var TRAPPED_SPRITE_LAYER_Z_INDEX = 49;
+
+function buildTrappedSpriteResourcePath(spiritId) {
+  AssistSpiritConfig.getSpirit(spiritId);
+  return TRAPPED_SPIRIT_PATH_PREFIX + spiritId;
+}
+
+function buildSpiritFragmentRewardResourcePath(spiritId) {
+  AssistSpiritConfig.getSpirit(spiritId);
+  return "ui/image/props/" + spiritId + "_fragments";
+}
 
 var BOARD_OCCLUSION_RESOURCES = {
   cloud: "game/image/props/cloud",
@@ -786,6 +803,12 @@ function buildShooterRenderKey(runtimeSnapshot) {
     resolveRuntimeBallKey(shooter.nextBall || shooter.nextColor),
     shooter.queueAdvanceRevision,
     shooter.surplusShotAimRecenterRevision,
+    shooter.assistSpiritId,
+    shooter.assistSpiritSkillCharge,
+    shooter.assistSpiritSkillChargeMax,
+    shooter.assistSpiritSkillCharged === true ? 1 : 0,
+    shooter.assistSpiritSkillAvailable === true ? 1 : 0,
+    shooter.assistSpiritSkillUnavailableReason,
     Math.max(0, Math.floor(Number(shooter.skillInventory && shooter.skillInventory.swap) || 0)),
     trajectory && trajectory.targetCell ? (trajectory.targetCell.row + ":" + trajectory.targetCell.col) : "",
     projectile && projectile.position
@@ -1053,7 +1076,8 @@ function isIceBallLike(ballLike) {
     ballLike &&
     typeof ballLike === "object" &&
     ballLike.entityCategory === "obstacle_ball" &&
-    ballLike.entityType === "ice"
+    ballLike.entityType === "ice" &&
+    ballLike.temporaryThawed !== true
   );
 }
 
@@ -1096,12 +1120,16 @@ function LevelRenderer(rootNode) {
   this.rootNode = rootNode;
   this.spriteFrameCache = {};
   this.spriteFrameLoadPromises = {};
+  this.timeBonusBitmapFont = null;
+  this.timeBonusBitmapFontLoadPromise = null;
   this.fairyPrefabCache = {};
   this.fairyPrefabLoadPromises = {};
   this.fireworksPrefab = null;
   this.fireworksPrefabLoadPromise = null;
   this.explodeAnimationClip = null;
   this.explodeAnimationClipPromise = null;
+  this.assistSpiritAnimationClipCache = {};
+  this.assistSpiritAnimationClipLoadPromises = {};
   this.layers = null;
   this.prefabFactory = new PrefabFactory();
   this.bubbleShatterRenderer = new BubbleShatterRenderer({
@@ -1172,6 +1200,11 @@ function LevelRenderer(rootNode) {
   this.topSlotStarNodes = {};
   this.topSlotStarNodePool = [];
   this.topSlotStarRenderTick = 1;
+  this.trappedSpriteNode = null;
+  this.lastTrappedSpriteRescueEventId = -1;
+  this.trappedSpriteDepartureActive = false;
+  this.trappedSpriteDepartureCompleted = false;
+  this.trappedSpriteDepartureToken = 0;
   this.barrierHammerHintNodes = {};
   this.lastBarrierHammerHintKey = "";
   this.testSlotNodes = {};
@@ -1190,6 +1223,7 @@ function LevelRenderer(rootNode) {
   this.playedBallScoreCellIds = {};
   this.pendingBallScoreCellIds = {};
   this.pendingBallScoreCallbacks = {};
+  this.playedTimeBonusAwardedEvents = [];
   this.winActionHandlers = {
     onNextLevel: null,
     onRetryLevel: null
@@ -1240,6 +1274,7 @@ function LevelRenderer(rootNode) {
     onUseSwap: null,
     onUseBarrierHammer: null,
     onUseSnowRemoval: null,
+    onUseAssistSpiritSkill: null,
     onUseThreeLineElimination: null,
     onUsePlusThreeBalls: null,
     onRecoverAdRunPowerupByAd: null,
@@ -1302,8 +1337,10 @@ LevelRenderer.prototype.warmupSharedAssets = function () {
 
   this._sharedWarmupPromise = Promise.all([
     this._preloadSprites(this._collectCommonSpritePaths()),
+    this._preloadTimeBonusBitmapFont(),
     this._preloadFairyPrefabs(),
     this._preloadExplodeAnimationClip(),
+    this._preloadAssistSpiritAnimationClips(),
     this._preloadFireworksPrefab(),
     this.prefabFactory.preload(this._collectPrefabPaths()),
     this.bubbleShatterRenderer.preload(),
@@ -1332,8 +1369,8 @@ LevelRenderer.prototype.playLightningChainEffect = function (config) {
   if (!this.lastRuntimeSnapshot || !this.lastRuntimeSnapshot.board) {
     throw new Error("Board lightning chain requires current board snapshot.");
   }
-  if (!Array.isArray(config.hitPoints) || config.hitPoints.length === 0) {
-    throw new Error("Board lightning chain requires at least one hit point.");
+  if (!Array.isArray(config.hitPoints) || config.hitPoints.length < 2) {
+    throw new Error("Board lightning chain requires at least two hit points.");
   }
 
   var boardSnapshot = this.lastRuntimeSnapshot.board;
@@ -1402,7 +1439,6 @@ LevelRenderer.prototype.playLightningChainEffect = function (config) {
     this.spriteFrameCache,
     {
       chainId: config.chainId,
-      origin: config.origin,
       hitPoints: resolvedHitPoints,
       onHit: config.onHit
     }
@@ -1490,6 +1526,7 @@ LevelRenderer.prototype.setGameplayActionHandlers = function (handlers) {
     onUseSwap: typeof handlers.onUseSwap === "function" ? handlers.onUseSwap : null,
     onUseBarrierHammer: typeof handlers.onUseBarrierHammer === "function" ? handlers.onUseBarrierHammer : null,
     onUseSnowRemoval: typeof handlers.onUseSnowRemoval === "function" ? handlers.onUseSnowRemoval : null,
+    onUseAssistSpiritSkill: typeof handlers.onUseAssistSpiritSkill === "function" ? handlers.onUseAssistSpiritSkill : null,
     onUseThreeLineElimination: typeof handlers.onUseThreeLineElimination === "function" ? handlers.onUseThreeLineElimination : null,
     onUsePlusThreeBalls: typeof handlers.onUsePlusThreeBalls === "function" ? handlers.onUsePlusThreeBalls : null,
     onRecoverAdRunPowerupByAd: typeof handlers.onRecoverAdRunPowerupByAd === "function" ? handlers.onRecoverAdRunPowerupByAd : null,
@@ -1620,6 +1657,8 @@ LevelRenderer.prototype._invokeGameplayAction = function (action) {
     handler = this.gameplayActionHandlers.onUseBarrierHammer;
   } else if (action === "use_snow_removal") {
     handler = this.gameplayActionHandlers.onUseSnowRemoval;
+  } else if (action === "use_assist_spirit_skill") {
+    handler = this.gameplayActionHandlers.onUseAssistSpiritSkill;
   } else if (action === "use_precise_aim") {
     handler = this.gameplayActionHandlers.onUsePreciseAim;
   } else if (action === "use_three_line_elimination") {
@@ -1763,12 +1802,18 @@ LevelRenderer.prototype.renderLevel = function (levelConfig, runtimeSnapshot) {
   }.bind(this)).then(function () {
     clearChildren(this.layers.background);
     clearChildren(this.layers.board);
+    clearChildren(this.layers.trappedSprite);
     clearChildren(this.layers.boardOcclusion);
     this.wormholeDirectionGuideRoot = null;
     this.lastWormholeDirectionGuideKey = "";
     this.boardBubbleNodes = {};
     this.boardBubbleNodePool = {};
     this.boardCellRenderKeys = {};
+    this.trappedSpriteNode = null;
+    this.lastTrappedSpriteRescueEventId = -1;
+    this.trappedSpriteDepartureActive = false;
+    this.trappedSpriteDepartureCompleted = false;
+    this.trappedSpriteDepartureToken += 1;
     this.topSlotStarNodes = {};
     this.topSlotStarNodePool = [];
     this.barrierHammerHintNodes = {};
@@ -1810,6 +1855,8 @@ LevelRenderer.prototype.renderLevel = function (levelConfig, runtimeSnapshot) {
     this._renderBottomPanel(runtimeSnapshot);
     this._queueSkillPowerupCollectedFeedback(runtimeSnapshot);
     this._renderBoard(runtimeSnapshot.board);
+    this._renderTrappedSpriteRescue(runtimeSnapshot);
+    this._playTrappedSpriteRescueDeparture(runtimeSnapshot);
     this._renderBoardOcclusions(runtimeSnapshot);
     this._syncBarrierHammerStoneHints(runtimeSnapshot);
     this._renderMainland(runtimeSnapshot.board);
@@ -1908,9 +1955,22 @@ LevelRenderer.prototype._refreshRuntimeFalling = function (runtimeSnapshot) {
     this._renderFallingDrops(runtimeSnapshot);
   }
   this._renderFairyAssists(runtimeSnapshot);
+
+  var nextShooterKey = buildShooterRenderKey(runtimeSnapshot);
+  if (nextShooterKey !== this.lastShooterRenderKey) {
+    this._renderShooter(
+      runtimeSnapshot.shooter,
+      runtimeSnapshot.activeProjectile,
+      runtimeSnapshot.remainingShots
+    );
+    if (!runtimeSnapshot.activeProjectile) {
+      this.lastShooterRenderKey = nextShooterKey;
+    }
+  }
 };
 
 LevelRenderer.prototype._refreshRuntimeTimer = function (runtimeSnapshot) {
+  this._refreshBoardOcclusionCountdowns(runtimeSnapshot);
   var nextTimerKey = buildTimerRenderKey(runtimeSnapshot);
   if (nextTimerKey !== this.lastTimerRenderKey) {
     this._renderJarScoreBoostTimer(runtimeSnapshot);
@@ -1933,8 +1993,10 @@ LevelRenderer.prototype._refreshRuntimeFull = function (levelConfig, runtimeSnap
     this.spriteFrameCache
   );
   this._playBallScoreDisplay(runtimeSnapshot);
+  this._playTimeBonusFloatingScoreDisplay(runtimeSnapshot);
   if (boardChanged) {
     this._renderBoard(runtimeSnapshot.board);
+    this._renderTrappedSpriteRescue(runtimeSnapshot);
     this._renderTestGrid(runtimeSnapshot.board);
     this._renderMainland(runtimeSnapshot.board);
     this._renderJianbian(runtimeSnapshot.board);
@@ -1995,6 +2057,7 @@ LevelRenderer.prototype._refreshRuntimeFull = function (levelConfig, runtimeSnap
   this._playSplitterSpawnAnimation(runtimeSnapshot);
   this._playMolotovBlastAnimation(runtimeSnapshot);
   this._playBlastExplosionAnimation(runtimeSnapshot);
+  this._playTrappedSpriteRescueDeparture(runtimeSnapshot);
   this._playCommentAnimation(runtimeSnapshot);
 
   var hasActiveProjectile = !!(runtimeSnapshot.activeProjectile);
@@ -2075,6 +2138,7 @@ LevelRenderer.prototype._ensureLayers = function () {
     jarOcclusion: this._getOrCreateLayer("JarOcclusionLayer", 46),
     testGrid: this._getOrCreateLayer("TestGridLayer", 47),
     routeEditor: this._getOrCreateLayer("RouteEditorLayer", 48),
+    trappedSprite: this._getOrCreateLayer("TrappedSpriteLayer", TRAPPED_SPRITE_LAYER_Z_INDEX),
     hud: this._getOrCreateLayer("HUDLayer", 50),
     comment: this._getOrCreateLayer("CommentLayer", 95),
     modal: this._getOrCreateLayer("ModalLayer", 100)
@@ -2107,6 +2171,24 @@ LevelRenderer.prototype._collectSpritePaths = function (levelConfig, runtimeSnap
   }
 
   var level = levelConfig.level;
+  if (level.levelType === "trapped_sprite_rescue") {
+    if (
+      !level.trappedSpriteRescue ||
+      typeof level.trappedSpriteRescue.spiritId !== "string"
+    ) {
+      throw new Error("Trapped sprite rescue rendering requires level.trappedSpriteRescue.spiritId.");
+    }
+    pushUniqueSpritePath(
+      paths,
+      buildTrappedSpriteResourcePath(level.trappedSpriteRescue.spiritId),
+      "trapped sprite rescue center"
+    );
+    pushUniqueSpritePath(
+      paths,
+      buildSpiritFragmentRewardResourcePath(level.trappedSpriteRescue.spiritId),
+      "trapped sprite rescue fragment reward"
+    );
+  }
   if (!Array.isArray(level.colors)) {
     throw new Error("LevelRenderer sprite collection requires level.colors.");
   }
@@ -2252,6 +2334,182 @@ LevelRenderer.prototype._collectSpritePaths = function (levelConfig, runtimeSnap
   });
 };
 
+LevelRenderer.prototype._renderTrappedSpriteRescue = function (runtimeSnapshot) {
+  if (
+    !runtimeSnapshot ||
+    !runtimeSnapshot.systems ||
+    !runtimeSnapshot.systems.trappedSpriteRescueSystem
+  ) {
+    throw new Error("Trapped sprite rendering requires runtime system snapshot.");
+  }
+  var rescue = runtimeSnapshot.systems.trappedSpriteRescueSystem;
+  if (!rescue.active) {
+    if (this.trappedSpriteNode && this.trappedSpriteNode.isValid) {
+      this.trappedSpriteNode.destroy();
+    }
+    this.trappedSpriteNode = null;
+    return;
+  }
+  if (
+    !rescue.worldCenter ||
+    typeof rescue.worldCenter.x !== "number" ||
+    !isFinite(rescue.worldCenter.x) ||
+    typeof rescue.worldCenter.y !== "number" ||
+    !isFinite(rescue.worldCenter.y)
+  ) {
+    throw new Error("Trapped sprite rendering requires finite worldCenter.");
+  }
+  if (typeof rescue.renderScale !== "number" || !isFinite(rescue.renderScale) || rescue.renderScale <= 0) {
+    throw new Error("Trapped sprite rendering requires positive renderScale.");
+  }
+  var expectedPath = buildTrappedSpriteResourcePath(rescue.spiritId);
+  if (rescue.spriteResourcePath !== expectedPath) {
+    throw new Error("Trapped sprite runtime resource path mismatch.");
+  }
+  var spriteFrame = this.spriteFrameCache[expectedPath];
+  if (!spriteFrame) {
+    throw new Error("Trapped sprite SpriteFrame was not preloaded: " + expectedPath);
+  }
+  var node = this.trappedSpriteNode;
+  if (this.trappedSpriteDepartureActive || this.trappedSpriteDepartureCompleted) {
+    if (!node || !node.isValid) {
+      throw new Error("Trapped sprite departure requires its existing render node.");
+    }
+    return;
+  }
+  if (!node || !node.isValid) {
+    node = new cc.Node("TrappedSpriteCenter");
+    this.trappedSpriteNode = node;
+  }
+  if (node.parent !== this.layers.trappedSprite) {
+    node.parent = this.layers.trappedSprite;
+  }
+  node.active = true;
+  node.opacity = 255;
+  node.zIndex = 0;
+  node.setPosition(rescue.worldCenter.x, rescue.worldCenter.y);
+  // The trapped spirit occupies the same board cell as a normal bubble.
+  var sprite = ensureSprite(node, spriteFrame);
+  sprite.trim = false;
+  sprite.sizeMode = cc.Sprite.SizeMode.CUSTOM;
+  // Binding a SpriteFrame can restore its native dimensions on a newly created Sprite.
+  // Apply the board-cell visual size after that initial binding so the first frame is 65×65 too.
+  node.setScale(1);
+  node.setContentSize(BOARD_BUBBLE_SIZE);
+};
+
+LevelRenderer.prototype._playTrappedSpriteRescueDeparture = function (runtimeSnapshot) {
+  if (!runtimeSnapshot || !Array.isArray(runtimeSnapshot.runtimeEvents)) {
+    throw new Error("Trapped sprite departure requires runtimeEvents array.");
+  }
+
+  var rescueEvent = null;
+  runtimeSnapshot.runtimeEvents.forEach(function (event) {
+    if (!event || event.type !== "trapped_sprite_rescued") {
+      return;
+    }
+    if (!Number.isInteger(event.id) || event.id < 1) {
+      throw new Error("trapped_sprite_rescued render event requires positive integer id.");
+    }
+    if (event.id <= this.lastTrappedSpriteRescueEventId) {
+      return;
+    }
+    if (rescueEvent) {
+      throw new Error("Runtime snapshot must not contain multiple trapped sprite rescue events.");
+    }
+    rescueEvent = event;
+  }, this);
+
+  if (!rescueEvent) {
+    return;
+  }
+  AssistSpiritConfig.getSpirit(rescueEvent.spiritId);
+  if (
+    !runtimeSnapshot.systems ||
+    !runtimeSnapshot.systems.trappedSpriteRescueSystem ||
+    runtimeSnapshot.systems.trappedSpriteRescueSystem.spiritId !== rescueEvent.spiritId
+  ) {
+    throw new Error("Trapped sprite departure event does not match runtime spiritId.");
+  }
+  if (this.trappedSpriteDepartureActive || this.trappedSpriteDepartureCompleted) {
+    throw new Error("Trapped sprite departure must start exactly once.");
+  }
+
+  var node = this.trappedSpriteNode;
+  var layer = this.layers && this.layers.trappedSprite;
+  if (!node || !node.isValid || !layer || !layer.isValid || node.parent !== layer) {
+    throw new Error("Trapped sprite departure requires a valid node in TrappedSpriteLayer.");
+  }
+  if (typeof cc.tween !== "function") {
+    throw new Error("Trapped sprite departure requires cc.tween.");
+  }
+
+  var layerSize = layer.getContentSize();
+  var nodeSize = node.getContentSize();
+  if (
+    !layerSize ||
+    typeof layerSize.height !== "number" ||
+    !isFinite(layerSize.height) ||
+    layerSize.height <= 0 ||
+    !nodeSize ||
+    typeof nodeSize.height !== "number" ||
+    !isFinite(nodeSize.height) ||
+    nodeSize.height <= 0
+  ) {
+    throw new Error("Trapped sprite departure requires positive layer and node heights.");
+  }
+  if (typeof layer.anchorY !== "number" || !isFinite(layer.anchorY)) {
+    throw new Error("TrappedSpriteLayer anchorY must be finite.");
+  }
+
+  var timing = SpecialAnimationTiming.trappedSpriteRescue;
+  if (
+    !timing ||
+    typeof timing.flyOutDuration !== "number" ||
+    !isFinite(timing.flyOutDuration) ||
+    timing.flyOutDuration <= 0 ||
+    typeof timing.exitMargin !== "number" ||
+    !isFinite(timing.exitMargin) ||
+    timing.exitMargin <= 0
+  ) {
+    throw new Error("SpecialAnimationTiming.trappedSpriteRescue must define positive flyOutDuration and exitMargin.");
+  }
+
+  var scaleY = typeof node.scaleY === "number" && isFinite(node.scaleY)
+    ? Math.abs(node.scaleY)
+    : Math.abs(node.scale);
+  if (!isFinite(scaleY) || scaleY <= 0) {
+    throw new Error("Trapped sprite departure requires positive node scale.");
+  }
+  var layerTopY = (1 - layer.anchorY) * layerSize.height;
+  var targetY = layerTopY + nodeSize.height * scaleY * 0.5 + timing.exitMargin;
+
+  this.lastTrappedSpriteRescueEventId = rescueEvent.id;
+  this.trappedSpriteDepartureActive = true;
+  this.trappedSpriteDepartureToken += 1;
+  var departureToken = this.trappedSpriteDepartureToken;
+  node.stopAllActions();
+  cc.tween(node)
+    .to(timing.flyOutDuration, {
+      y: targetY
+    }, {
+      easing: "quadIn"
+    })
+    .call(function () {
+      if (
+        this.trappedSpriteDepartureToken !== departureToken ||
+        this.trappedSpriteNode !== node ||
+        !node.isValid
+      ) {
+        return;
+      }
+      node.active = false;
+      this.trappedSpriteDepartureActive = false;
+      this.trappedSpriteDepartureCompleted = true;
+    }.bind(this))
+    .start();
+};
+
 LevelRenderer.prototype._collectRetainedSpritePaths = function () {
   return this._collectCommonSpritePaths().filter(function (path, index, list) {
     return !!path && list.indexOf(path) === index;
@@ -2288,7 +2546,16 @@ LevelRenderer.prototype.releaseAfterGameplayBundleUnload = function () {
   this.fireworksPrefabLoadPromise = null;
   this.explodeAnimationClip = null;
   this.explodeAnimationClipPromise = null;
+  if (Object.keys(this.assistSpiritAnimationClipLoadPromises).length > 0) {
+    throw new Error("Cannot unload gameplay bundle while assist spirit animation clips are loading.");
+  }
+  this.assistSpiritAnimationClipCache = {};
+  this.assistSpiritAnimationClipLoadPromises = {};
   this._sharedWarmupPromise = null;
+  if (this.timeBonusBitmapFontLoadPromise) {
+    throw new Error("Cannot unload gameplay bundle while time bonus font is loading.");
+  }
+  this.timeBonusBitmapFont = null;
   if (!this.bubbleShatterRenderer || typeof this.bubbleShatterRenderer.releaseAfterGameplayBundleUnload !== "function") {
     throw new Error("LevelRenderer requires BubbleShatterRenderer.releaseAfterGameplayBundleUnload.");
   }
@@ -2380,6 +2647,9 @@ LevelRenderer.prototype._collectCommonSpritePaths = function () {
     COMMENT_ANIMATION_RESOURCES.unbelievable
   ];
   LightningChainRenderer.RESOURCE_PATHS.forEach(function (path) {
+    paths.push(path);
+  });
+  AssistSpiritSkillConfig.getAllSpritePaths().forEach(function (path) {
     paths.push(path);
   });
   PropDescriptionConfig.getAllIconPaths().forEach(function (path) {
@@ -2503,6 +2773,53 @@ LevelRenderer.prototype._preloadExplodeAnimationClip = function () {
   return this.explodeAnimationClipPromise;
 };
 
+LevelRenderer.prototype._preloadAssistSpiritAnimationClips = function () {
+  return Promise.all(AssistSpiritPresentationConfig.getAllClipPaths().map(function (path) {
+    var cachedClip = this.assistSpiritAnimationClipCache[path];
+    if (cachedClip) {
+      if (!cachedClip.isValid) {
+        throw new Error("Cached assist spirit animation clip is invalid: " + path);
+      }
+      return Promise.resolve(cachedClip);
+    }
+    if (this.assistSpiritAnimationClipLoadPromises[path]) {
+      return this.assistSpiritAnimationClipLoadPromises[path];
+    }
+
+    this.assistSpiritAnimationClipLoadPromises[path] = new Promise(function (resolve, reject) {
+      BundleLoader.loadRes(path, cc.AnimationClip, function (error, clip) {
+        if (error) {
+          reject(new Error("Load assist spirit animation clip failed `" + path + "`: " + error.message));
+          return;
+        }
+        if (!clip || !clip.isValid) {
+          reject(new Error("Load assist spirit animation clip returned invalid asset: " + path));
+          return;
+        }
+        var expectedClipName = path.slice(path.lastIndexOf("/") + 1);
+        if (clip.name !== expectedClipName) {
+          reject(new Error(
+            "Assist spirit animation clip name mismatch `" + path + "`: expected `" +
+            expectedClipName + "`, received `" + clip.name + "`."
+          ));
+          return;
+        }
+        if (typeof clip.duration !== "number" || !isFinite(clip.duration) || clip.duration <= 0) {
+          reject(new Error("Assist spirit animation clip duration is invalid: " + path));
+          return;
+        }
+        this.assistSpiritAnimationClipCache[path] = clip;
+        delete this.assistSpiritAnimationClipLoadPromises[path];
+        resolve(clip);
+      }.bind(this));
+    }.bind(this)).catch(function (error) {
+      delete this.assistSpiritAnimationClipLoadPromises[path];
+      throw error;
+    }.bind(this));
+    return this.assistSpiritAnimationClipLoadPromises[path];
+  }, this));
+};
+
 LevelRenderer.prototype._preloadFireworksPrefab = function () {
   if (this.fireworksPrefab) {
     return Promise.resolve(this.fireworksPrefab);
@@ -2569,7 +2886,10 @@ var LEVEL_RENDERER_SCENE_DEPS = {
   DebugFlags: DebugFlags,
   BoardLayout: BoardLayout,
   SpecialAnimationTiming: SpecialAnimationTiming,
+  AssistSpiritSkillConfig: AssistSpiritSkillConfig,
+  AssistSpiritPresentationConfig: AssistSpiritPresentationConfig,
   BALL_RESOURCES: BALL_RESOURCES,
+  TIME_BONUS_FONT_RESOURCE: TIME_BONUS_FONT_RESOURCE,
   WORMHOLE_DIRECTION_ARROW_RESOURCE: WORMHOLE_DIRECTION_ARROW_RESOURCE,
   WORMHOLE_DIRECTION_ARROW_SIZE: WORMHOLE_DIRECTION_ARROW_SIZE,
   WORMHOLE_DIRECTION_ARROW_TRAVEL_DISTANCE: WORMHOLE_DIRECTION_ARROW_TRAVEL_DISTANCE,
@@ -2582,6 +2902,8 @@ var LEVEL_RENDERER_SCENE_DEPS = {
   JAR_MASK_RESOURCES: JAR_MASK_RESOURCES,
   resolveJarScoreSpritePath: resolveJarScoreSpritePath,
   REWARD_ITEM_RESOURCES: REWARD_ITEM_RESOURCES,
+  buildTrappedSpriteResourcePath: buildTrappedSpriteResourcePath,
+  buildSpiritFragmentRewardResourcePath: buildSpiritFragmentRewardResourcePath,
   POWERUP_ICON_RESOURCES: POWERUP_ICON_RESOURCES,
   HUD_STAR_RESOURCES: HUD_STAR_RESOURCES,
   TOP_SLOT_STAR_RESOURCE: TOP_SLOT_STAR_RESOURCE,
@@ -2683,6 +3005,7 @@ var LEVEL_RENDERER_SCENE_DEPS = {
 
 attachLevelRendererSceneMethods(LevelRenderer, LEVEL_RENDERER_SCENE_DEPS);
 attachLevelRendererFairyMethods(LevelRenderer);
+attachLevelRendererAssistSpiritSkillMethods(LevelRenderer);
 
 function resolveCommentAnimationKey(clearedCount) {
   for (var index = 0; index < COMMENT_ANIMATION_TIERS.length; index += 1) {
@@ -2834,6 +3157,34 @@ LevelRenderer.prototype._applyJarVisual = function (node, colorCode) {
   var jarSprite = ensureSprite(spriteTarget, spriteFrame);
   jarSprite.trim = false;
   spriteTarget.setContentSize(JAR_RENDER_SIZE);
+};
+
+LevelRenderer.prototype._preloadTimeBonusBitmapFont = function () {
+  if (this.timeBonusBitmapFont) {
+    return Promise.resolve(this.timeBonusBitmapFont);
+  }
+  if (this.timeBonusBitmapFontLoadPromise) {
+    return this.timeBonusBitmapFontLoadPromise;
+  }
+  if (typeof cc.BitmapFont !== "function") {
+    throw new Error("Time bonus display requires cc.BitmapFont.");
+  }
+  this.timeBonusBitmapFontLoadPromise = new Promise(function (resolve, reject) {
+    BundleLoader.loadRes(TIME_BONUS_FONT_RESOURCE, cc.BitmapFont, function (error, font) {
+      this.timeBonusBitmapFontLoadPromise = null;
+      if (error) {
+        reject(new Error("Load time bonus bitmap font failed `" + TIME_BONUS_FONT_RESOURCE + "`: " + error.message));
+        return;
+      }
+      if (!font) {
+        reject(new Error("Load time bonus bitmap font returned empty asset: " + TIME_BONUS_FONT_RESOURCE));
+        return;
+      }
+      this.timeBonusBitmapFont = font;
+      resolve(font);
+    }.bind(this));
+  }.bind(this));
+  return this.timeBonusBitmapFontLoadPromise;
 };
 
 LevelRenderer.prototype._applyJarMaskVisual = function (node, colorCode) {

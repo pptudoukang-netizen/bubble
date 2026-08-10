@@ -2,6 +2,7 @@
 
 var BaseSystem = require("./BaseSystem");
 var BoardLayout = require("../../assets/scripts/config/BoardLayout");
+var RESCUE_BOUNDARY_BOUNCE_LIMIT = 24;
 
 function normalize(vector) {
   var length = Math.sqrt(vector.x * vector.x + vector.y * vector.y) || 1;
@@ -45,6 +46,9 @@ function pushPathPoint(points, point) {
 }
 
 function buildFallbackPlan(grid, origin, direction) {
+  if (grid.isTrappedSpriteRescueActive()) {
+    throw new Error("Trapped sprite rescue trajectory cannot use the top-attachment fallback.");
+  }
   var impactX = origin.x + direction.x * 1200;
   var targetCell = grid.findAttachmentCell({ x: impactX, y: grid.getTopAttachY() }, null, direction, origin);
   var targetCellPosition = grid.getCellPosition(targetCell.row, targetCell.col);
@@ -61,11 +65,12 @@ function buildFallbackPlan(grid, origin, direction) {
     collidedCell: null,
     targetCell: clone(targetCell),
     targetCellPosition: clone(targetCellPosition),
-    totalDistance: distance(origin, targetCellPosition)
+    totalDistance: distance(origin, targetCellPosition),
+    impactDirection: clone(direction)
   };
 }
 
-function buildPlan(origin, direction, wallPoints, hitType, hitPoint, collidedCell, targetCell, targetCellPosition) {
+function buildPlan(origin, direction, wallPoints, hitType, hitPoint, collidedCell, targetCell, targetCellPosition, impactDirection) {
   var pathPoints = [];
   pushPathPoint(pathPoints, origin);
 
@@ -96,7 +101,8 @@ function buildPlan(origin, direction, wallPoints, hitType, hitPoint, collidedCel
     collidedCell: collidedCell ? clone(collidedCell) : null,
     targetCell: clone(targetCell),
     targetCellPosition: clone(targetCellPosition),
-    totalDistance: totalDistance
+    totalDistance: totalDistance,
+    impactDirection: clone(impactDirection)
   };
 }
 
@@ -172,10 +178,15 @@ TrajectoryPredictor.prototype.predictShotPlan = function (grid, origin, directio
   var currentPoint = clone(origin);
   var currentDirection = normalize(direction);
   var wallPoints = [];
+  var rescueActive = grid.isTrappedSpriteRescueActive();
   var topAttachY = grid.getTopAttachY();
+  var rescueExitY = rayOrigin.y - this.wallEpsilon;
+  var boundaryBounceLimit = rescueActive
+    ? Math.max(this.maxBounces, RESCUE_BOUNDARY_BOUNCE_LIMIT)
+    : this.maxBounces;
   var EPSILON = 0.000001;
 
-  for (var bounce = 0; bounce <= this.maxBounces; bounce += 1) {
+  for (var bounce = 0; bounce <= boundaryBounceLimit; bounce += 1) {
     var distanceToWall = Number.POSITIVE_INFINITY;
 
     if (Math.abs(currentDirection.x) > EPSILON) {
@@ -197,14 +208,26 @@ TrajectoryPredictor.prototype.predictShotPlan = function (grid, origin, directio
     if (collisionInfo) {
       distanceToBubble = collisionInfo.t * probeDistance;
     }
+    var trappedSpriteCollision = rescueActive
+      ? grid.findTrappedSpriteCollisionOnSegment(currentPoint, probeEnd, this.predictionCollisionRadius)
+      : null;
+    var distanceToTrappedSprite = Number.POSITIVE_INFINITY;
+    if (trappedSpriteCollision) {
+      distanceToTrappedSprite = trappedSpriteCollision.t * probeDistance;
+    }
 
-    var slotInfo = grid.findFirstAttachableSlotOnSegment(
-      currentPoint,
-      probeEnd,
-      currentDirection,
-      this.slotProbeRadius,
-      this.slotCaptureTightness
-    );
+    // Rescue boards only use slot probing when a direct bubble collision has
+    // no attachment neighbor.  This preserves ordinary rescue impacts while
+    // still allowing a shot to settle in a real rotated-board gap.
+    var slotInfo = rescueActive
+      ? null
+      : grid.findFirstAttachableSlotOnSegment(
+        currentPoint,
+        probeEnd,
+        currentDirection,
+        this.slotProbeRadius,
+        this.slotCaptureTightness
+      );
     var distanceToSlot = Number.POSITIVE_INFINITY;
     if (slotInfo) {
       distanceToSlot = slotInfo.t * probeDistance;
@@ -218,11 +241,29 @@ TrajectoryPredictor.prototype.predictShotPlan = function (grid, origin, directio
       }
     }
 
+    var distanceToRescueExit = Number.POSITIVE_INFINITY;
+    if (rescueActive && currentDirection.y < -EPSILON) {
+      var projectedRescueExitDistance = (rescueExitY - currentPoint.y) / currentDirection.y;
+      if (projectedRescueExitDistance > EPSILON) {
+        distanceToRescueExit = projectedRescueExitDistance;
+      }
+    }
+
     var preferSlot = this._shouldPreferSlotCandidate(slotInfo, distanceToSlot, distanceToBubble, EPSILON);
     var effectiveSlotDistance = preferSlot ? distanceToSlot : Number.POSITIVE_INFINITY;
-    var minDistance = Math.min(distanceToBubble, effectiveSlotDistance, distanceToTop, distanceToWall);
+    var minDistance = Math.min(
+      distanceToBubble,
+      distanceToTrappedSprite,
+      effectiveSlotDistance,
+      distanceToTop,
+      distanceToRescueExit,
+      distanceToWall
+    );
 
     if (!isFinite(minDistance)) {
+      if (rescueActive) {
+        throw new Error("Trapped sprite rescue trajectory cannot reach a bubble or the cannon exit line.");
+      }
       return buildFallbackPlan(grid, rayOrigin, rayDirection);
     }
 
@@ -235,7 +276,38 @@ TrajectoryPredictor.prototype.predictShotPlan = function (grid, origin, directio
         slotInfo.point,
         null,
         slotInfo.cell,
-        slotInfo.center
+        slotInfo.center,
+        currentDirection
+      );
+    }
+
+    if (
+      distanceToTrappedSprite <= minDistance + EPSILON &&
+      trappedSpriteCollision
+    ) {
+      var trappedSpriteImpactPoint = clone(trappedSpriteCollision.point);
+      var targetFromTrappedSprite = grid.findTrappedSpriteAttachmentCell(
+        trappedSpriteImpactPoint,
+        currentDirection,
+        currentPoint
+      );
+      if (!targetFromTrappedSprite) {
+        throw new Error("Trapped sprite support impact requires an attachment cell.");
+      }
+      var trappedSpriteTargetPosition = grid.getCellPosition(
+        targetFromTrappedSprite.row,
+        targetFromTrappedSprite.col
+      );
+      return buildPlan(
+        rayOrigin,
+        rayDirection,
+        wallPoints,
+        "trapped_sprite",
+        trappedSpriteImpactPoint,
+        null,
+        targetFromTrappedSprite,
+        trappedSpriteTargetPosition,
+        currentDirection
       );
     }
 
@@ -247,9 +319,68 @@ TrajectoryPredictor.prototype.predictShotPlan = function (grid, origin, directio
         currentDirection,
         currentPoint
       );
+      if (!targetFromBubble) {
+        if (rescueActive) {
+          var rescueSlotInfo = grid.findFirstAttachableSlotOnSegment(
+            currentPoint,
+            bubbleImpactPoint,
+            currentDirection,
+            this.slotProbeRadius,
+            this.slotCaptureTightness
+          );
+          if (rescueSlotInfo) {
+            return buildPlan(
+              rayOrigin,
+              rayDirection,
+              wallPoints,
+              "slot",
+              rescueSlotInfo.point,
+              null,
+              rescueSlotInfo.cell,
+              rescueSlotInfo.center,
+              currentDirection
+            );
+          }
+          // A rotated rescue board can expose the outer face of a fully-packed
+          // boundary bubble.  It is a real collision, but has no legal hex
+          // neighbor to receive a new bubble.  Keep that state explicit for
+          // aiming instead of selecting an unrelated cell or throwing while
+          // the cannon sweeps across it.
+          return buildPlan(
+            rayOrigin,
+            rayDirection,
+            wallPoints,
+            "blocked",
+            bubbleImpactPoint,
+            collisionInfo.cell,
+            null,
+            null,
+            currentDirection
+          );
+        }
+        return buildPlan(
+          rayOrigin,
+          rayDirection,
+          wallPoints,
+          "miss",
+          bubbleImpactPoint,
+          collisionInfo.cell,
+          null,
+          bubbleImpactPoint,
+          currentDirection
+        );
+      }
       var bubbleTargetPosition = grid.getCellPosition(targetFromBubble.row, targetFromBubble.col);
 
-      if (currentDirection.y > 0 && targetFromBubble.row > collisionInfo.cell.row) {
+      // Tunnel assistance is only valid on the direct ray.  After a side-wall
+      // reflection it can replace the first physical collision with a later,
+      // higher-row collider, making the final snap jump across an occupied row.
+      if (
+        !rescueActive &&
+        wallPoints.length === 0 &&
+        currentDirection.y > 0 &&
+        targetFromBubble.row > collisionInfo.cell.row
+      ) {
         var tryRadii = [
           this.predictionCollisionRadius,
           this.tunnelAssistRadius,
@@ -317,7 +448,26 @@ TrajectoryPredictor.prototype.predictShotPlan = function (grid, origin, directio
         bubbleImpactPoint,
         collisionInfo.cell,
         targetFromBubble,
-        bubbleTargetPosition
+        bubbleTargetPosition,
+        currentDirection
+      );
+    }
+
+    if (distanceToRescueExit <= minDistance + EPSILON) {
+      var rescueExitPoint = {
+        x: currentPoint.x + currentDirection.x * distanceToRescueExit,
+        y: rescueExitY
+      };
+      return buildPlan(
+        rayOrigin,
+        rayDirection,
+        wallPoints,
+        "miss",
+        rescueExitPoint,
+        null,
+        null,
+        rescueExitPoint,
+        currentDirection
       );
     }
 
@@ -326,6 +476,23 @@ TrajectoryPredictor.prototype.predictShotPlan = function (grid, origin, directio
         x: currentPoint.x + currentDirection.x * distanceToTop,
         y: topAttachY
       };
+      if (rescueActive) {
+        if (bounce >= boundaryBounceLimit) {
+          throw new Error("Trapped sprite rescue trajectory exceeded its boundary bounce limit.");
+        }
+        var hitSideWallAtTop = isFinite(distanceToWall) &&
+          Math.abs(distanceToWall - distanceToTop) <= EPSILON;
+        wallPoints.push(topImpactPoint);
+        currentDirection = {
+          x: hitSideWallAtTop ? -currentDirection.x : currentDirection.x,
+          y: -currentDirection.y
+        };
+        currentPoint = {
+          x: topImpactPoint.x + currentDirection.x * this.wallEpsilon,
+          y: topImpactPoint.y + currentDirection.y * this.wallEpsilon
+        };
+        continue;
+      }
       var targetFromTop = grid.findAttachmentCell(topImpactPoint, null, currentDirection, currentPoint);
       var topTargetPosition = grid.getCellPosition(targetFromTop.row, targetFromTop.col);
 
@@ -337,11 +504,16 @@ TrajectoryPredictor.prototype.predictShotPlan = function (grid, origin, directio
         topImpactPoint,
         null,
         targetFromTop,
-        topTargetPosition
+        topTargetPosition,
+        currentDirection
       );
     }
 
-    if (distanceToWall <= minDistance + EPSILON && isFinite(distanceToWall) && bounce < this.maxBounces) {
+    if (
+      distanceToWall <= minDistance + EPSILON &&
+      isFinite(distanceToWall) &&
+      bounce < boundaryBounceLimit
+    ) {
       var wallPoint = {
         x: currentPoint.x + currentDirection.x * distanceToWall,
         y: currentPoint.y + currentDirection.y * distanceToWall
@@ -359,9 +531,15 @@ TrajectoryPredictor.prototype.predictShotPlan = function (grid, origin, directio
       continue;
     }
 
+    if (rescueActive) {
+      throw new Error("Trapped sprite rescue trajectory exceeded its boundary bounce limit.");
+    }
     return buildFallbackPlan(grid, rayOrigin, rayDirection);
   }
 
+  if (rescueActive) {
+    throw new Error("Trapped sprite rescue trajectory did not resolve within the boundary bounce limit.");
+  }
   return buildFallbackPlan(grid, rayOrigin, rayDirection);
 };
 

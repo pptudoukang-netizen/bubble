@@ -4,6 +4,7 @@ function attachLevelRendererSceneBoardMethods(LevelRenderer, deps) {
   var DebugFlags = deps.DebugFlags;
   var BoardLayout = deps.BoardLayout;
   var BALL_RESOURCES = deps.BALL_RESOURCES;
+  var TIME_BONUS_FONT_RESOURCE = deps.TIME_BONUS_FONT_RESOURCE;
   var TOP_SLOT_STAR_RESOURCE = deps.TOP_SLOT_STAR_RESOURCE;
   var PREFAB_PATHS = deps.PREFAB_PATHS;
   var ICE_OVERLAY_OPACITY = deps.ICE_OVERLAY_OPACITY;
@@ -32,6 +33,11 @@ function attachLevelRendererSceneBoardMethods(LevelRenderer, deps) {
   var VINE_OVERLAY_NODE_NAME = "VinesOverlay";
   var VINE_HEALTH_NODE_NAME = "VineSpiritHealth";
   var VINE_PREVIEW_FADE_DURATION = 0.18;
+  var TIME_BONUS_LABEL_NODE_NAME = "TimeBonus";
+  var TIME_BONUS_LABEL_Z_INDEX = 100;
+  // num_b.fnt declares a baseline of 10 for 61px-tall glyphs, so its visible
+  // glyphs sit below Cocos' geometric label center without this compensation.
+  var TIME_BONUS_LABEL_VERTICAL_OFFSET_RATIO = 0.15;
 
   function requirePositiveSize(size, fieldName) {
     if (
@@ -191,6 +197,7 @@ function attachLevelRendererSceneBoardMethods(LevelRenderer, deps) {
       resolveBallVisualKey(cell),
       lockedColorKey,
       typeof cell.health === "number" ? cell.health : "",
+      Number.isInteger(cell.timeBonusSeconds) ? cell.timeBonusSeconds : "",
       typeof cell.vineOwnerId === "string" ? cell.vineOwnerId : "",
       typeof cell.vinePreviewOwnerId === "string" ? cell.vinePreviewOwnerId : ""
     ].join("|");
@@ -452,6 +459,40 @@ function attachLevelRendererSceneBoardMethods(LevelRenderer, deps) {
     outline.width = 2;
   }
 
+  function syncTimeBonusLabel(renderer, node, cell) {
+    if (!node || !node.isValid) {
+      throw new Error("Time bonus label requires valid board node.");
+    }
+    var labelNode = getOrCreateChild(node, TIME_BONUS_LABEL_NODE_NAME);
+    var hasTimeBonus = !!(
+      cell &&
+      cell.entityCategory === "normal_ball" &&
+      Number.isInteger(cell.timeBonusSeconds) &&
+      cell.timeBonusSeconds > 0
+    );
+    if (!hasTimeBonus) {
+      labelNode.active = false;
+      return;
+    }
+    if (!renderer.timeBonusBitmapFont) {
+      throw new Error("Time bonus label font was not preloaded: " + TIME_BONUS_FONT_RESOURCE);
+    }
+    labelNode.active = true;
+    labelNode.setPosition(0, BOARD_BUBBLE_SIZE.height * TIME_BONUS_LABEL_VERTICAL_OFFSET_RATIO);
+    labelNode.setContentSize(BOARD_BUBBLE_SIZE.width, BOARD_BUBBLE_SIZE.height);
+    labelNode.zIndex = TIME_BONUS_LABEL_Z_INDEX;
+    labelNode.color = cc.color(255, 255, 255, 255);
+    var label = ensureLabel(
+      labelNode,
+      "+" + String(cell.timeBonusSeconds),
+      BOARD_BUBBLE_SIZE.height,
+      BOARD_BUBBLE_SIZE.height
+    );
+    label.useSystemFont = false;
+    label.font = renderer.timeBonusBitmapFont;
+    label.overflow = cc.Label.Overflow.SHRINK;
+  }
+
   function instantiateRequired(prefabFactory, prefabPath, parent, name, ownerName) {
     if (!prefabFactory || typeof prefabFactory.instantiate !== "function") {
       throw new Error(ownerName + " requires prefabFactory.instantiate.");
@@ -501,12 +542,22 @@ LevelRenderer.prototype._renderBoard = function (boardSnapshot) {
   }
 
   boardSnapshot.cells.forEach(function (cell) {
+    if (
+      !cell.position ||
+      typeof cell.position.x !== "number" ||
+      !isFinite(cell.position.x) ||
+      typeof cell.position.y !== "number" ||
+      !isFinite(cell.position.y)
+    ) {
+      throw new Error("Board rendering requires finite cell.position.");
+    }
     var cellId = String(cell.id);
     var renderKey = buildBoardCellRenderKey(cell, boardSnapshot);
     var cachedRenderKey = this.boardCellRenderKeys[cellId];
     var existingNode = this.boardBubbleNodes[cellId];
     if (existingNode && cachedRenderKey === renderKey) {
       existingNode.__boardTick = currentTick;
+      existingNode.setPosition(cell.position.x, cell.position.y);
       if (!existingNode.parent || existingNode.parent !== this.layers.board) {
         existingNode.parent = this.layers.board;
       }
@@ -514,22 +565,23 @@ LevelRenderer.prototype._renderBoard = function (boardSnapshot) {
       this.wormholeShaderRenderer.syncNode(existingNode, cell);
       syncVineOverlay(this, existingNode, cell);
       syncVineSpiritHealth(existingNode, cell);
+      syncTimeBonusLabel(this, existingNode, cell);
       this._applySplitterSpawnHiddenBoardState(existingNode, cell.id);
       this._applyMolotovBlastHiddenBoardState(existingNode, cell.id);
       return;
     }
 
     this.boardCellRenderKeys[cellId] = renderKey;
-    var cellPosition = BoardLayout.getCellPosition(cell.row, cell.col, boardSnapshot.maxColumns, boardSnapshot.viewportOffsetY);
     var bubbleNode = this._acquireBoardBubbleNode(cell);
     bubbleNode.__boardTick = currentTick;
-    bubbleNode.setPosition(cellPosition.x, cellPosition.y);
+    bubbleNode.setPosition(cell.position.x, cell.position.y);
     bubbleNode.setScale(1);
     bubbleNode.opacity = 255;
     this._applyBoardBubbleVisualCached(bubbleNode, cell, BOARD_BUBBLE_SIZE);
     this.wormholeShaderRenderer.syncNode(bubbleNode, cell);
     syncVineOverlay(this, bubbleNode, cell);
     syncVineSpiritHealth(bubbleNode, cell);
+    syncTimeBonusLabel(this, bubbleNode, cell);
     this._applySplitterSpawnHiddenBoardState(bubbleNode, cell.id);
     this._applyMolotovBlastHiddenBoardState(bubbleNode, cell.id);
   }, this);
@@ -547,6 +599,10 @@ LevelRenderer.prototype._renderTopSlotStars = function (boardSnapshot) {
 
   this.topSlotStarRenderTick += 1;
   var currentTick = this.topSlotStarRenderTick;
+  if (boardSnapshot.trappedSpriteRescueActive === true) {
+    this._recycleInactiveTopSlotStarNodes(currentTick);
+    return;
+  }
   var starFrame = requireTopSlotStarFrame(this);
   var occupied = buildTopRowOccupiedMap(boardSnapshot);
   var topRowColumns = BoardLayout.getRowColumnCount(0, boardSnapshot.maxColumns);
@@ -854,6 +910,10 @@ LevelRenderer.prototype._recycleInactiveFallingDropNodes = function (activeTick)
 
 LevelRenderer.prototype._renderTestGrid = function (boardSnapshot) {
   if (!this.layers || !this.layers.testGrid) {
+    return;
+  }
+  if (boardSnapshot.trappedSpriteRescueActive === true) {
+    this.layers.testGrid.active = false;
     return;
   }
 

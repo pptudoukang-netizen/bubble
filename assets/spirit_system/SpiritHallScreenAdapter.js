@@ -7,7 +7,7 @@ var BACKGROUND_HEIGHT = 1560;
 var BACKGROUND_BASE_OFFSET_Y = 40;
 var MAX_VERTICAL_EXTENSION = BACKGROUND_HEIGHT - DESIGN_HEIGHT;
 var TOP_SECTION_NAMES = ["TopBar", "CurrentSpiritCard"];
-var BOTTOM_SECTION_NAMES = ["SpiritRoster", "GrowthActions", "BottomNavigation"];
+var BOTTOM_SECTION_NAMES = ["HeroShowcase", "AbilityDetails", "SpiritRoster", "GrowthActions", "BottomNavigationMount"];
 
 function requireValidNode(node, description) {
   if (!node || !node.isValid) {
@@ -144,7 +144,11 @@ cc.Class({
     this._safeAreaWidget.updateAlignment();
 
     var rootSize = requirePositiveSize(this.node.getContentSize(), "SpiritHallView root");
-    var safeSize = requirePositiveSize(this._safeAreaRoot.getContentSize(), "SpiritHallView safe area");
+    var safeRect = cc.sys.getSafeAreaRect();
+    var safeSize = requirePositiveSize({
+      width: safeRect.width,
+      height: safeRect.height
+    }, "SpiritHallView safe area");
     var contentScale = Math.min(
       1,
       safeSize.width / DESIGN_WIDTH,
@@ -163,6 +167,10 @@ cc.Class({
       Math.max(0, visibleDesignHeight - DESIGN_HEIGHT)
     );
     var halfVerticalExtension = verticalExtension / 2;
+    var bottomNavigationExtension = Math.max(
+      0,
+      visibleDesignHeight - DESIGN_HEIGHT
+    ) / 2;
 
     TOP_SECTION_NAMES.forEach(function (sectionName) {
       this._sectionNodes[sectionName].setPosition(0, halfVerticalExtension);
@@ -170,6 +178,14 @@ cc.Class({
     BOTTOM_SECTION_NAMES.forEach(function (sectionName) {
       this._sectionNodes[sectionName].setPosition(0, -halfVerticalExtension);
     }, this);
+    var bottomScreenOffset = safeRect.y / contentScale;
+    if (!Number.isFinite(bottomScreenOffset) || bottomScreenOffset < 0) {
+      throw new Error("SpiritHallScreenAdapter calculated an invalid bottom screen offset.");
+    }
+    this._sectionNodes.BottomNavigationMount.setPosition(
+      0,
+      -bottomNavigationExtension - bottomScreenOffset
+    );
 
     Object.keys(this._sectionNodes).forEach(function (sectionName) {
       this._syncSectionProxyPositions(this._sectionNodes[sectionName]);

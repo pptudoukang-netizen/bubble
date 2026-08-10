@@ -4,6 +4,8 @@ var Logger = require("../../assets/scripts/utils/Logger");
 var BoardLayout = require("../../assets/scripts/config/BoardLayout");
 var FairyAssistConfig = require("../config/FairyAssistConfig");
 var SpecialAnimationTiming = require("../config/SpecialAnimationTiming");
+var AssistSpiritSkillChargeConfig = require("../config/AssistSpiritSkillChargeConfig");
+var AssistSpiritSkillConfig = require("../config/AssistSpiritSkillConfig");
 var ShooterController = require("../systems/ShooterController");
 var TrajectoryPredictor = require("../systems/TrajectoryPredictor");
 var BubbleGrid = require("../systems/BubbleGrid");
@@ -14,10 +16,12 @@ var BoardViewportSystem = require("../systems/BoardViewportSystem");
 var FallingMarbleSystem = require("../systems/FallingMarbleSystem");
 var JarCollectorSystem = require("../systems/JarCollectorSystem");
 var BoardOcclusionSystem = require("../systems/BoardOcclusionSystem");
+var TrappedSpriteRescueSystem = require("../systems/TrappedSpriteRescueSystem");
 var ProjectileMath = require("./ProjectileMath");
 var AdRevivePolicy = require("./AdRevivePolicy");
 var StarRatingPolicy = require("../../assets/scripts/core/StarRatingPolicy");
 var createGameManagerShotResolutionMethods = require("./GameManagerShotResolutionMethods");
+var createGameManagerAssistSpiritSkillMethods = require("./GameManagerAssistSpiritSkillMethods");
 
 var clone = ProjectileMath.clone;
 var distance = ProjectileMath.distance;
@@ -119,7 +123,9 @@ function createEmptyResolution() {
     topAnchorCollapse: false,
     eliminationSequence: [],
     scoreEvents: [],
-    dangerReached: false
+    dangerReached: false,
+    shotMissed: false,
+    trappedSpriteRotation: null
   };
 }
 
@@ -686,6 +692,15 @@ function GameManager(options) {
   this.comboStreak = 0;
   this.maxComboStreak = 0;
   this.shotsFired = 0;
+  this.equippedAssistSpiritId = null;
+  this.equippedAssistSpiritLevel = null;
+  this.lastAssistSpiritProducedBallEvaluationShot = 0;
+  this.assistSpiritSkillSeed = null;
+  this.assistSpiritSkillResolutionSequence = 0;
+  this.assistSpiritSkillCharge = 0;
+  this.assistSpiritSkillChargeMax = 0;
+  this.assistSpiritSkillChargedCellIds = {};
+  this.assistSpiritSkillChargeSuppressed = false;
   this.dropInterval = 0;
   this.lastFiredColor = null;
   this.lastResolution = createEmptyResolution();
@@ -716,6 +731,7 @@ function GameManager(options) {
   this.impactSequence = 0;
   this.runtimeEventSequence = 0;
   this.pendingRuntimeEvents = [];
+  this.trappedSpriteRescueEventEmitted = false;
   this.surplusShotAimRecenterRevision = 0;
   this.surplusShotAimRecentered = false;
   this.pendingBoardAdvanceSpecialAnimationDelay = 0;
@@ -739,6 +755,7 @@ function GameManager(options) {
   this.pendingWormholeShiftResolution = null;
   this.pendingVineCastRemaining = 0;
   this.pendingVineCastResolution = null;
+  this.pendingTrappedSpritePostImpactResolution = null;
   this.pendingBarrierHammer = false;
   this.pendingRainbowColorSelection = null;
   this.ricochetGuideActive = false;
@@ -746,6 +763,7 @@ function GameManager(options) {
   this.jarScoreBoostMultiplier = 1;
   this.jarScoreBoostRemainingMs = 0;
   this._lastTimerRenderBucket = -1;
+  this.grantedTimeBonusCellIds = {};
   this.scoreRules = cloneScoreRules(BASE_SCORE_RULES);
   this.scoreHeatBand = buildScoreHeatBand(null, {
     difficulty: "normal",
@@ -756,6 +774,7 @@ function GameManager(options) {
     shooterController: new ShooterController(),
     trajectoryPredictor: new TrajectoryPredictor(),
     boardViewportSystem: new BoardViewportSystem(),
+    trappedSpriteRescueSystem: new TrappedSpriteRescueSystem(),
     bubbleGrid: new BubbleGrid(),
     matchSystem: new MatchSystem(),
     supportSystem: new SupportSystem(),
@@ -765,6 +784,10 @@ function GameManager(options) {
     boardOcclusionSystem: new BoardOcclusionSystem()
   };
   this.systems.bubbleGrid.attachBoardViewport(this.systems.boardViewportSystem);
+  this.systems.bubbleGrid.attachTrappedSpriteRescueSystem(this.systems.trappedSpriteRescueSystem);
+  this.systems.bubbleGrid.attachCellRemovalListener(function (removedCells, removalReason) {
+    this._grantTimeBonusForRemovedCells(removedCells, removalReason);
+  }.bind(this));
   this.systems.fallingMarbleSystem.attachFairyAssistSystem(this.systems.fairyAssistSystem);
 }
 
@@ -792,6 +815,9 @@ GameManager.prototype.startLevel = function (levelConfig, startContext) {
   if (!startContext || typeof startContext !== "object" || Array.isArray(startContext)) {
     throw new Error("GameManager.startLevel requires explicit startContext.");
   }
+  if (typeof startContext.seed !== "string" || !startContext.seed) {
+    throw new Error("GameManager.startLevel requires startContext.seed.");
+  }
   var level = levelConfig.level;
   this.isTimedInfiniteShots = level.playMode === "timed_infinite_shots";
   this.timeLimitMs = this.isTimedInfiniteShots ? assertPositiveInteger(level.timeLimitSeconds, "level.timeLimitSeconds") * 1000 : 0;
@@ -806,6 +832,16 @@ GameManager.prototype.startLevel = function (levelConfig, startContext) {
   this.comboStreak = 0;
   this.maxComboStreak = 0;
   this.shotsFired = 0;
+  this.lastAssistSpiritProducedBallEvaluationShot = 0;
+  this.assistSpiritSkillSeed = startContext.seed;
+  this.assistSpiritSkillResolutionSequence = 0;
+  this.assistSpiritSkillCharge = 0;
+  this.assistSpiritSkillChargeMax = this._isGlobalAssistSpiritSkillEquipped()
+    ? AssistSpiritSkillChargeConfig.getMaxCharge(this.equippedAssistSpiritId, this.equippedAssistSpiritLevel)
+    : 0;
+  this.assistSpiritSkillChargedCellIds = {};
+  this.assistSpiritSkillChargeSuppressed = false;
+  this.grantedTimeBonusCellIds = {};
   this.levelRandomSeed = assertPositiveInteger(level.levelId, "level.levelId");
   this.lastFiredColor = null;
   this.lastResolution = createEmptyResolution();
@@ -831,6 +867,7 @@ GameManager.prototype.startLevel = function (levelConfig, startContext) {
   this.impactSequence = 0;
   this.runtimeEventSequence = 0;
   this.pendingRuntimeEvents = [];
+  this.trappedSpriteRescueEventEmitted = false;
   this.surplusShotAimRecenterRevision = 0;
   this.surplusShotAimRecentered = false;
   this.pendingBoardAdvanceSpecialAnimationDelay = 0;
@@ -854,6 +891,7 @@ GameManager.prototype.startLevel = function (levelConfig, startContext) {
   this.pendingWormholeShiftResolution = null;
   this.pendingVineCastRemaining = 0;
   this.pendingVineCastResolution = null;
+  this.pendingTrappedSpritePostImpactResolution = null;
   this.pendingBarrierHammer = false;
   this.pendingRainbowColorSelection = null;
   this.ricochetGuideActive = false;
@@ -986,6 +1024,9 @@ GameManager.prototype._filterImpactEventSurvivors = function (impact, removedCel
 };
 
 GameManager.prototype._applyPostImpactBoardShiftPolicy = function (resolution) {
+  if (this.systems.trappedSpriteRescueSystem.isActive()) {
+    return false;
+  }
   if (!resolution || !resolution.impact) {
     this._ensureMinimumVisibleBoardRows(resolution);
     return false;
@@ -1044,6 +1085,12 @@ GameManager.prototype._markBoardAdvancedThisFrame = function () {
 };
 
 GameManager.prototype._isBoardAdvanceBusy = function () {
+  if (
+    this.systems.trappedSpriteRescueSystem.isRotating() ||
+    this._hasPendingTrappedSpritePostImpactResolution()
+  ) {
+    return true;
+  }
   var viewport = this.systems.boardViewportSystem;
   if (viewport && typeof viewport.isMoving === "function" && viewport.isMoving()) {
     return true;
@@ -1153,6 +1200,76 @@ GameManager.prototype._hasPendingVineCast = function () {
   return this.pendingVineCastRemaining > 0;
 };
 
+GameManager.prototype._hasPendingTrappedSpritePostImpactResolution = function () {
+  if (this.pendingTrappedSpritePostImpactResolution === null) {
+    return false;
+  }
+  if (
+    !this.pendingTrappedSpritePostImpactResolution ||
+    typeof this.pendingTrappedSpritePostImpactResolution !== "object" ||
+    Array.isArray(this.pendingTrappedSpritePostImpactResolution)
+  ) {
+    throw new Error("Pending trapped sprite post-impact resolution must be an object or null.");
+  }
+  if (this.pendingTrappedSpritePostImpactResolution !== this.lastResolution) {
+    throw new Error("Pending trapped sprite post-impact resolution must remain lastResolution.");
+  }
+  if (!this.systems.trappedSpriteRescueSystem.isActive()) {
+    throw new Error("Pending trapped sprite post-impact resolution requires rescue mode.");
+  }
+  return true;
+};
+
+GameManager.prototype._deferTrappedSpritePostImpactResolution = function (resolution) {
+  if (!resolution || typeof resolution !== "object" || Array.isArray(resolution)) {
+    throw new Error("Trapped sprite post-impact deferral requires resolution.");
+  }
+  if (resolution !== this.lastResolution) {
+    throw new Error("Trapped sprite post-impact deferral requires lastResolution.");
+  }
+  if (!this.systems.trappedSpriteRescueSystem.isRotating()) {
+    throw new Error("Trapped sprite post-impact deferral requires active board rotation.");
+  }
+  if (this.pendingTrappedSpritePostImpactResolution !== null) {
+    throw new Error("Trapped sprite post-impact resolution cannot overlap.");
+  }
+  if (resolution.boardCleared) {
+    if (typeof this._emitTrappedSpriteRescueEvent !== "function") {
+      throw new Error("Trapped sprite post-impact deferral requires rescue event emitter.");
+    }
+    // The board is already logically empty. Emit before the rotation and falling-ball
+    // settlement so the departure animation and laughter are not hidden by WinView.
+    this._emitTrappedSpriteRescueEvent();
+  }
+  this.pendingTrappedSpritePostImpactResolution = resolution;
+};
+
+GameManager.prototype._continueAfterTrappedSpriteImpactRotation = function () {
+  if (!this._hasPendingTrappedSpritePostImpactResolution()) {
+    return false;
+  }
+  if (this.systems.trappedSpriteRescueSystem.isRotating()) {
+    return false;
+  }
+  if (this.molotovResolutionPending) {
+    throw new Error("Trapped sprite post-impact continuation cannot overlap molotov resolution.");
+  }
+
+  var resolution = this.pendingTrappedSpritePostImpactResolution;
+  this.pendingTrappedSpritePostImpactResolution = null;
+  if (this._beginSwirlRotationForResolution(resolution)) {
+    return true;
+  }
+  if (this._beginWormholeShiftForResolution(resolution)) {
+    return true;
+  }
+  if (this._beginVineCastForResolution(resolution)) {
+    return true;
+  }
+  this._continueAfterVineCast(resolution);
+  return true;
+};
+
 GameManager.prototype._beginVineCastForResolution = function (resolution) {
   if (!resolution || typeof resolution !== "object" || Array.isArray(resolution)) {
     throw new Error("Vine cast requires resolution.");
@@ -1216,6 +1333,9 @@ GameManager.prototype._beginVineCastForResolution = function (resolution) {
 
   this.pendingVineCastRemaining = VINE_CAST_PREVIEW_DURATION;
   this.pendingVineCastResolution = resolution;
+  this._pushRuntimeEvent("vine_entanglement_started", {
+    count: resolution.vineCasts.length
+  });
   return true;
 };
 
@@ -1287,51 +1407,50 @@ GameManager.prototype._beginWormholeShiftForResolution = function (resolution) {
   if (!wormholes.length) {
     return false;
   }
-  if (wormholes.length !== 2) {
-    throw new Error("Wormhole shift requires exactly two live wormholes.");
-  }
-  if (typeof grid.shiftWormholeInterior !== "function") {
-    throw new Error("Wormhole shift requires BubbleGrid.shiftWormholeInterior.");
+  if (typeof grid.shiftWormholeInteriors !== "function") {
+    throw new Error("Wormhole shift requires BubbleGrid.shiftWormholeInteriors.");
   }
   if (!Array.isArray(resolution.wormholeShifts)) {
     throw new Error("Wormhole shift requires resolution.wormholeShifts.");
   }
-  var shift = grid.shiftWormholeInterior();
-  if (!shift) {
-    throw new Error("BubbleGrid.shiftWormholeInterior must return a shift for a live wormhole pair.");
+  var shifts = grid.shiftWormholeInteriors();
+  if (!Array.isArray(shifts) || !shifts.length) {
+    throw new Error("BubbleGrid.shiftWormholeInteriors must return live pair shifts.");
   }
-  if (!Array.isArray(shift.moves)) {
-    throw new Error("Wormhole shift result requires moves array.");
-  }
-  shift.moves.forEach(function (move) {
-    if (!move || move.entityType !== "splitter") {
-      return;
+  shifts.forEach(function (shift, shiftIndex) {
+    if (!shift || !Array.isArray(shift.moves)) {
+      throw new Error("Wormhole shift result requires moves array.");
     }
-    this.pendingSplitterSpawns.forEach(function (pending) {
-      if (String(pending.id) === move.cellId) {
-        pending.row = move.toRow;
-        pending.col = move.toCol;
+    shift.moves.forEach(function (move) {
+      if (!move || move.entityType !== "splitter") {
+        return;
       }
-    });
-    resolution.reactiveTriggered.forEach(function (triggered) {
-      if (triggered && String(triggered.id) === move.cellId) {
-        triggered.row = move.toRow;
-        triggered.col = move.toCol;
-      }
+      this.pendingSplitterSpawns.forEach(function (pending) {
+        if (String(pending.id) === move.cellId) {
+          pending.row = move.toRow;
+          pending.col = move.toCol;
+        }
+      });
+      resolution.reactiveTriggered.forEach(function (triggered) {
+        if (triggered && String(triggered.id) === move.cellId) {
+          triggered.row = move.toRow;
+          triggered.col = move.toCol;
+        }
+      });
+    }, this);
+    resolution.wormholeShifts.push({
+      id: "wormhole_" + this.shotsFired + "_" + shiftIndex,
+      row: shift.row,
+      leftWormholeId: shift.leftWormholeId,
+      leftCol: shift.leftCol,
+      rightWormholeId: shift.rightWormholeId,
+      rightCol: shift.rightCol,
+      moveDirection: shift.moveDirection,
+      slotCount: shift.slotCount,
+      duration: WORMHOLE_SHIFT_DURATION,
+      moves: shift.moves
     });
   }, this);
-  resolution.wormholeShifts.push({
-    id: "wormhole_" + this.shotsFired,
-    row: shift.row,
-    leftWormholeId: shift.leftWormholeId,
-    leftCol: shift.leftCol,
-    rightWormholeId: shift.rightWormholeId,
-    rightCol: shift.rightCol,
-    moveDirection: shift.moveDirection,
-    slotCount: shift.slotCount,
-    duration: WORMHOLE_SHIFT_DURATION,
-    moves: shift.moves
-  });
   this.pendingWormholeShiftRemaining = WORMHOLE_SHIFT_DURATION;
   this.pendingWormholeShiftResolution = resolution;
   return true;
@@ -1449,9 +1568,6 @@ GameManager.prototype._updatePendingVineCast = function (dt) {
       throw new Error("Vine cast completion failed to entangle its target.");
     }
     cast.completed = true;
-  });
-  this._pushRuntimeEvent("vine_entangled", {
-    count: resolution.vineCasts.length
   });
   this.pendingVineCastResolution = null;
   this._continueAfterVineCast(resolution);
@@ -1849,10 +1965,12 @@ GameManager.prototype.confirmOutOfShotsAddBallPromptClosed = function () {
   return this.getRuntimeSnapshot();
 };
 
-GameManager.prototype._pushBubbleBreakEvent = function (removedCells, eliminationSequence) {
+GameManager.prototype._pushBubbleBreakEvent = function (removedCells, eliminationSequence, chargeSource) {
   if (!Array.isArray(removedCells) || !removedCells.length) {
     return;
   }
+
+  this._collectAssistSpiritSkillCharge(removedCells, chargeSource || "board_elimination");
 
   var shatterDelaysMs = buildBubbleBreakShatterDelaysMs(removedCells, eliminationSequence);
   if (!shatterDelaysMs.length) {
@@ -1863,6 +1981,89 @@ GameManager.prototype._pushBubbleBreakEvent = function (removedCells, eliminatio
     count: shatterDelaysMs.length,
     shatterDelaysMs: shatterDelaysMs
   });
+};
+
+GameManager.prototype._isGlobalAssistSpiritSkillEquipped = function () {
+  if (typeof this.equippedAssistSpiritId !== "string" || !this.equippedAssistSpiritId) {
+    return false;
+  }
+  return !!AssistSpiritSkillConfig.getBySpiritId(this.equippedAssistSpiritId).skillId;
+};
+
+GameManager.prototype._getAssistSpiritSkillChargeSnapshot = function () {
+  if (!this._isGlobalAssistSpiritSkillEquipped()) {
+    return {
+      charge: 0,
+      maxCharge: 0,
+      isCharged: false
+    };
+  }
+  var maxCharge = AssistSpiritSkillChargeConfig.getMaxCharge(
+    this.equippedAssistSpiritId,
+    this.equippedAssistSpiritLevel
+  );
+  if (!Number.isInteger(this.assistSpiritSkillCharge) || this.assistSpiritSkillCharge < 0 || this.assistSpiritSkillCharge > maxCharge) {
+    throw new Error("Assist spirit skill charge is invalid.");
+  }
+  if (this.assistSpiritSkillChargeMax !== maxCharge) {
+    throw new Error("Assist spirit skill charge max is inconsistent with config.");
+  }
+  return {
+    charge: this.assistSpiritSkillCharge,
+    maxCharge: maxCharge,
+    isCharged: this.assistSpiritSkillCharge === maxCharge
+  };
+};
+
+GameManager.prototype._collectAssistSpiritSkillCharge = function (removedCells, source) {
+  if (!Array.isArray(removedCells)) {
+    throw new Error("Assist spirit skill charge collection requires removedCells array.");
+  }
+  if (typeof source !== "string" || !source) {
+    throw new Error("Assist spirit skill charge collection requires source.");
+  }
+  if (!this._isGlobalAssistSpiritSkillEquipped() || source === "assist_spirit_skill" || this.assistSpiritSkillChargeSuppressed === true) {
+    return 0;
+  }
+  if (!this.assistSpiritSkillChargedCellIds || typeof this.assistSpiritSkillChargedCellIds !== "object" || Array.isArray(this.assistSpiritSkillChargedCellIds)) {
+    throw new Error("Assist spirit skill charged cell ids must be an object.");
+  }
+
+  var chargeState = this._getAssistSpiritSkillChargeSnapshot();
+  var gained = 0;
+  removedCells.forEach(function (cell) {
+    if (!cell || (typeof cell.id !== "string" && typeof cell.id !== "number")) {
+      throw new Error("Assist spirit skill charge collection requires removed cell id.");
+    }
+    if (cell.entityCategory !== "normal_ball") {
+      return;
+    }
+    var cellId = String(cell.id);
+    if (this.assistSpiritSkillChargedCellIds[cellId] === true) {
+      return;
+    }
+    this.assistSpiritSkillChargedCellIds[cellId] = true;
+    gained += 1;
+  }, this);
+
+  if (gained <= 0 || chargeState.isCharged) {
+    return 0;
+  }
+  var nextCharge = Math.min(chargeState.maxCharge, chargeState.charge + gained);
+  var appliedGained = nextCharge - chargeState.charge;
+  this.assistSpiritSkillCharge = nextCharge;
+  this._pushRuntimeEvent("assist_spirit_skill_charge_changed", {
+    source: source,
+    gained_count: appliedGained,
+    charge: nextCharge,
+    charge_max: chargeState.maxCharge
+  });
+  if (nextCharge === chargeState.maxCharge) {
+    this._pushRuntimeEvent("assist_spirit_skill_ready", {
+      charge_max: chargeState.maxCharge
+    });
+  }
+  return appliedGained;
 };
 
 GameManager.prototype._pushBombExplosionEvent = function () {
@@ -2284,12 +2485,34 @@ GameManager.prototype.fireShot = function () {
   }
 
   var shotPlan = this.pendingShotPlan;
-  if (!shotPlan || !shotPlan.valid || !shotPlan.targetCell) {
+  var rescueMissAllowed = function (plan) {
+    return !!(
+      plan &&
+      plan.valid &&
+      plan.hitType === "miss" &&
+      this.systems.trappedSpriteRescueSystem.isActive()
+    );
+  }.bind(this);
+  var rescueBlocked = function (plan) {
+    return !!(
+      plan &&
+      plan.valid &&
+      plan.hitType === "blocked" &&
+      this.systems.trappedSpriteRescueSystem.isActive()
+    );
+  }.bind(this);
+  if (rescueBlocked(shotPlan)) {
+    return this.getRuntimeSnapshot();
+  }
+  if (!shotPlan || !shotPlan.valid || (!shotPlan.targetCell && !rescueMissAllowed(shotPlan))) {
     // 发射优先沿用当前幽灵球路线；仅在缺失时才临时重算。
     this._refreshShotPlan(true);
     shotPlan = this.pendingShotPlan;
   }
-  if (!shotPlan || !shotPlan.valid || !shotPlan.targetCell) {
+  if (rescueBlocked(shotPlan)) {
+    return this.getRuntimeSnapshot();
+  }
+  if (!shotPlan || !shotPlan.valid || (!shotPlan.targetCell && !rescueMissAllowed(shotPlan))) {
     Logger.warn("Missing valid shot plan, fire aborted");
     return this.getRuntimeSnapshot();
   }
@@ -2305,6 +2528,7 @@ GameManager.prototype.fireShot = function () {
     this.remainingShots = remainingShotsAfterFire;
   }
   this.shotsFired += 1;
+  this._resolveAssistSpiritProducedBallAfterFire();
   this.lastFiredColor = queueResult.firedColor;
   this.lastResolution = createEmptyResolution();
   this.activeProjectile = buildActiveProjectile(queueResult.firedBall, shotPlan);
@@ -2313,7 +2537,7 @@ GameManager.prototype.fireShot = function () {
   this.isAiming = false;
 
   Logger.info("Shot fired", queueResult.firedColor, "remaining", this.remainingShots, "bounce", shotPlan.wallBounceCount);
-  return this.getRuntimeSnapshot();
+  return this.getRuntimeSnapshot(this._drainRuntimeEvents());
 };
 
 GameManager.prototype.grantPowerupInventory = function (powerupType, count) {
@@ -3377,6 +3601,63 @@ GameManager.prototype.useBarrierHammerAt = function (point) {
   };
 };
 
+GameManager.prototype._grantTimeBonusForRemovedCells = function (removedCells, removalReason) {
+  if (!Array.isArray(removedCells)) {
+    throw new Error("Time bonus grant requires removed cells array.");
+  }
+  if (removalReason !== "elimination" && removalReason !== "floating_drop") {
+    throw new Error("Time bonus grant removal reason is invalid: " + removalReason);
+  }
+  if (!this.isTimedInfiniteShots || this.state !== "running") {
+    return;
+  }
+  if (!this.grantedTimeBonusCellIds || typeof this.grantedTimeBonusCellIds !== "object" || Array.isArray(this.grantedTimeBonusCellIds)) {
+    throw new Error("Time bonus grant state is invalid.");
+  }
+
+  var awardedCells = [];
+  var grantedMilliseconds = 0;
+  removedCells.forEach(function (cell, index) {
+    if (!cell || typeof cell !== "object" || Array.isArray(cell)) {
+      throw new Error("Time bonus removed cell must be an object at index " + index + ".");
+    }
+    if (cell.entityCategory !== "normal_ball" || cell.timeBonusSeconds === null || cell.timeBonusSeconds === undefined) {
+      return;
+    }
+    if (!Number.isInteger(cell.timeBonusSeconds) || cell.timeBonusSeconds !== 5) {
+      throw new Error("Time bonus normal ball must grant exactly 5 seconds: " + cell.id);
+    }
+    if (typeof cell.id !== "string" || !cell.id) {
+      throw new Error("Time bonus normal ball requires string cell id.");
+    }
+    if (this.grantedTimeBonusCellIds[cell.id]) {
+      throw new Error("Time bonus normal ball was granted more than once: " + cell.id);
+    }
+    this.grantedTimeBonusCellIds[cell.id] = true;
+    grantedMilliseconds += cell.timeBonusSeconds * 1000;
+    awardedCells.push({
+      id: cell.id,
+      row: cell.row,
+      col: cell.col,
+      bonusSeconds: cell.timeBonusSeconds
+    });
+  }, this);
+
+  if (!awardedCells.length) {
+    return;
+  }
+  var previousRemainingTimeMs = this.remainingTimeMs;
+  this.remainingTimeMs += grantedMilliseconds;
+  this._lastTimerRenderBucket = Math.ceil(this.remainingTimeMs / TIMED_LEVEL_RENDER_BUCKET_MS);
+  this._pushRuntimeEvent("time_bonus_awarded", {
+    reason: removalReason,
+    previous_remaining_time_ms: previousRemainingTimeMs,
+    granted_time_seconds: grantedMilliseconds / 1000,
+    remaining_time_ms: this.remainingTimeMs,
+    cells: awardedCells
+  });
+};
+
 GameManager.prototype.pauseTimedLevelTimer = function () {
   if (!this.isTimedInfiniteShots) {
     return this.getRuntimeSnapshot();
@@ -3503,7 +3784,27 @@ GameManager.prototype.update = function (dt) {
   var viewportWasMoving = this.systems.boardViewportSystem.isMoving();
   var fallingStep = this.systems.fallingMarbleSystem.update(dt);
   var surplusUpdated = !!(fallingStep && fallingStep.surplusUpdated);
+  var surplusShotLaunchedCount = 0;
+  if (this.state === "won_surplus_shots_pending") {
+    if (
+      !fallingStep ||
+      !Number.isInteger(fallingStep.surplusShotLaunchedCount) ||
+      fallingStep.surplusShotLaunchedCount < 0 ||
+      fallingStep.surplusShotLaunchedCount > 1
+    ) {
+      throw new Error("Surplus shot update requires surplusShotLaunchedCount from 0 to 1.");
+    }
+    surplusShotLaunchedCount = fallingStep.surplusShotLaunchedCount;
+  }
+  for (var surplusLaunchIndex = 0; surplusLaunchIndex < surplusShotLaunchedCount; surplusLaunchIndex += 1) {
+    this._pushRuntimeEvent("surplus_shot_launched", {});
+  }
   var viewportFinished = this.systems.boardViewportSystem.update(dt);
+  var trappedSpriteRotationStep = this.systems.trappedSpriteRescueSystem.update(dt);
+  var trappedSpriteRotationUpdated = trappedSpriteRotationStep.changed === true;
+  if (trappedSpriteRotationStep.changed) {
+    this.systems.bubbleGrid.notifyWorldTransformChanged();
+  }
   if (viewportFinished && typeof this._onBoardViewportMoveFinished === "function") {
     this._onBoardViewportMoveFinished();
   }
@@ -3580,9 +3881,12 @@ GameManager.prototype.update = function (dt) {
   var scoreBoostChanged = this._updateJarScoreBoost(dt);
   runtimeEvents = runtimeEvents.concat(this._drainRuntimeEvents());
 
+  var trappedSpritePostImpactContinued = this._continueAfterTrappedSpriteImpactRotation();
   var boardAdvancedThisFrame = viewportFinished || this._updatePendingBoardAdvance(dt) || this._hasBoardAdvancedThisFrame();
   var swirlRotationWasPending = this._hasPendingSwirlRotation();
-  var swirlRotationCompleted = boardAdvancedThisFrame ? false : this._updatePendingSwirlRotation(dt);
+  var swirlRotationCompleted = boardAdvancedThisFrame || trappedSpritePostImpactContinued
+    ? false
+    : this._updatePendingSwirlRotation(dt);
   var wormholeShiftWasPending = this._hasPendingWormholeShift();
   var wormholeShiftCompleted = boardAdvancedThisFrame || swirlRotationWasPending || this._hasPendingSwirlRotation()
     ? false
@@ -3602,7 +3906,7 @@ GameManager.prototype.update = function (dt) {
   var hasPendingSwirlRotation = this._hasPendingSwirlRotation();
   var hasPendingWormholeShift = this._hasPendingWormholeShift();
   var hasPendingVineCast = this._hasPendingVineCast();
-
+  var hasPendingTrappedSpritePostImpact = this._hasPendingTrappedSpritePostImpactResolution();
   if (
     this.state === "won_surplus_shots_pending" &&
     !this.surplusShotAimRecentered &&
@@ -3654,8 +3958,9 @@ GameManager.prototype.update = function (dt) {
     }
   }
 
-  if (this.state === "won_pending" && !hasProjectile && !hasFallingDrops && !hasPendingSplitterSpawns && !hasPendingMolotovBlasts && !hasPendingSwirlRotation && !hasPendingWormholeShift && !hasPendingVineCast) {
+  if (this.state === "won_pending" && !hasProjectile && !hasFallingDrops && !hasPendingSplitterSpawns && !hasPendingMolotovBlasts && !hasPendingSwirlRotation && !hasPendingWormholeShift && !hasPendingVineCast && !hasPendingTrappedSpritePostImpact && !this.systems.trappedSpriteRescueSystem.isRotating()) {
     this._resolveBoardClearedOutcome();
+    runtimeEvents = runtimeEvents.concat(this._drainRuntimeEvents());
     return this.getRuntimeSnapshot(runtimeEvents);
   }
 
@@ -3668,6 +3973,7 @@ GameManager.prototype.update = function (dt) {
     !hasPendingSwirlRotation &&
     !hasPendingWormholeShift &&
     !hasPendingVineCast &&
+    !hasPendingTrappedSpritePostImpact &&
     !this.systems.fallingMarbleSystem.hasPendingSurplusShots()
   ) {
     if (typeof this._pushRuntimeEvent === "function") {
@@ -3699,8 +4005,10 @@ GameManager.prototype.update = function (dt) {
     !swirlRotationCompleted &&
     !wormholeShiftCompleted &&
     !vineCastCompleted &&
+    !trappedSpritePostImpactContinued &&
     !surplusUpdated &&
     !viewportUpdated &&
+    !trappedSpriteRotationUpdated &&
     !boardAdvancedThisFrame &&
     !runtimeEvents.length &&
     !timerChanged
@@ -3721,8 +4029,10 @@ GameManager.prototype.update = function (dt) {
     swirlRotationCompleted ||
     wormholeShiftCompleted ||
     vineCastCompleted ||
+    trappedSpritePostImpactContinued ||
     surplusUpdated ||
     viewportUpdated ||
+    trappedSpriteRotationUpdated ||
     boardAdvancedThisFrame ||
     runtimeEvents.length ||
     timerChanged
@@ -3739,8 +4049,10 @@ GameManager.prototype.update = function (dt) {
       !swirlRotationCompleted &&
       !wormholeShiftCompleted &&
       !vineCastCompleted &&
+      !trappedSpritePostImpactContinued &&
       !surplusUpdated &&
       !viewportUpdated &&
+      !trappedSpriteRotationUpdated &&
       !boardAdvancedThisFrame &&
       runtimeEvents.length === 0 &&
       !timerChanged
@@ -3758,8 +4070,10 @@ GameManager.prototype.update = function (dt) {
       !swirlRotationCompleted &&
       !wormholeShiftCompleted &&
       !vineCastCompleted &&
+      !trappedSpritePostImpactContinued &&
       !surplusUpdated &&
       !viewportUpdated &&
+      !trappedSpriteRotationUpdated &&
       !boardAdvancedThisFrame &&
       runtimeEvents.length === 0
     ) {
@@ -3774,8 +4088,10 @@ GameManager.prototype.update = function (dt) {
       !swirlRotationCompleted &&
       !wormholeShiftCompleted &&
       !vineCastCompleted &&
+      !trappedSpritePostImpactContinued &&
       !surplusUpdated &&
       !viewportUpdated &&
+      !trappedSpriteRotationUpdated &&
       !boardAdvancedThisFrame &&
       runtimeEvents.length === 0 &&
       !timerChanged
@@ -3811,6 +4127,9 @@ Object.assign(GameManager.prototype, createGameManagerShotResolutionMethods({
   COMBO_BONUS_PER_HIT: COMBO_BONUS_PER_HIT,
   findPrimaryCollectionObjective: findPrimaryCollectionObjective,
   listCollectionRewardObjectives: listCollectionRewardObjectives
+}));
+Object.assign(GameManager.prototype, createGameManagerAssistSpiritSkillMethods({
+  createEmptyResolution: createEmptyResolution
 }));
 
 GameManager.prototype.debugDropBottomRow = function () {
@@ -3911,6 +4230,28 @@ GameManager.prototype.getRuntimeSnapshot = function (runtimeEvents, renderOption
   ) {
     throw new Error("getRuntimeSnapshot renderOptions.refreshScope must be string.");
   }
+  if (
+    !this.systems ||
+    !this.systems.bubbleGrid ||
+    typeof this.systems.bubbleGrid.getCells !== "function" ||
+    !this.systems.boardOcclusionSystem ||
+    typeof this.systems.boardOcclusionSystem.clearZonesWithoutBoardCells !== "function"
+  ) {
+    throw new Error("getRuntimeSnapshot requires board occlusion and bubble grid synchronization.");
+  }
+  var snapshotRuntimeEvents = Array.isArray(runtimeEvents) ? runtimeEvents.slice() : [];
+  var boardEmptyOcclusionZoneIds = this.systems.boardOcclusionSystem.clearZonesWithoutBoardCells(
+    this.systems.bubbleGrid.getCells()
+  );
+  if (boardEmptyOcclusionZoneIds.length) {
+    this.runtimeEventSequence += 1;
+    snapshotRuntimeEvents.push({
+      id: this.runtimeEventSequence,
+      type: "board_occlusion_cleared",
+      reason: "board_empty",
+      zoneIds: boardEmptyOcclusionZoneIds.slice()
+    });
+  }
   var fallingSystem = this.systems.fallingMarbleSystem;
   var fairyAssistSystem = this.systems.fairyAssistSystem;
   var systemSnapshots = {
@@ -3921,6 +4262,7 @@ GameManager.prototype.getRuntimeSnapshot = function (runtimeEvents, renderOption
       : fallingSystem.snapshot(),
     boardOcclusionSystem: this.systems.boardOcclusionSystem.snapshotForRender()
   };
+  systemSnapshots.trappedSpriteRescueSystem = this.systems.trappedSpriteRescueSystem.snapshotForRender();
   var jarsSnapshot = this._getCachedJarSnapshot();
   var objectiveSnapshot = this._buildPrimaryObjectiveSnapshot(jarsSnapshot);
   if (!this._cachedAdRunPowerupAllowed) {
@@ -3930,6 +4272,17 @@ GameManager.prototype.getRuntimeSnapshot = function (runtimeEvents, renderOption
 
   var shooterController = this.systems.shooterController;
   var shooterSnapshot = shooterController.getShooterStateForRender();
+  if (this.equippedAssistSpiritId) {
+    var assistSpiritSkillAvailability = this.getAssistSpiritSkillAvailability();
+    shooterSnapshot.assistSpiritId = assistSpiritSkillAvailability.spiritId;
+    shooterSnapshot.assistSpiritLevel = this.equippedAssistSpiritLevel;
+    shooterSnapshot.assistSpiritSkillAvailable = assistSpiritSkillAvailability.available;
+    shooterSnapshot.assistSpiritSkillUnavailableReason = assistSpiritSkillAvailability.reason;
+    shooterSnapshot.assistSpiritResolvedSkillId = assistSpiritSkillAvailability.skillId || null;
+    shooterSnapshot.assistSpiritSkillCharge = assistSpiritSkillAvailability.charge;
+    shooterSnapshot.assistSpiritSkillChargeMax = assistSpiritSkillAvailability.maxCharge;
+    shooterSnapshot.assistSpiritSkillCharged = assistSpiritSkillAvailability.isCharged === true;
+  }
   shooterSnapshot.ricochetGuideActive = this.ricochetGuideActive === true;
   var topAttachY = this.systems.bubbleGrid && typeof this.systems.bubbleGrid.getTopAttachY === "function"
     ? this.systems.bubbleGrid.getTopAttachY()
@@ -4032,7 +4385,7 @@ GameManager.prototype.getRuntimeSnapshot = function (runtimeEvents, renderOption
       scoreDifficulty: this.scoreHeatBand ? this.scoreHeatBand.difficulty : "normal",
       maxComboStreak: this.maxComboStreak
     },
-    runtimeEvents: Array.isArray(runtimeEvents) ? runtimeEvents.slice() : [],
+    runtimeEvents: snapshotRuntimeEvents,
     systems: systemSnapshots,
     refreshScope: renderOptions.refreshScope || "full"
   };

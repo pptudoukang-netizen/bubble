@@ -11,6 +11,7 @@ var GAME_BOOTSTRAP_PATH = path.join(PROJECT_ROOT, "assets/scripts/bootstrap/Game
 var BUNDLE_LOADER_PATH = path.join(PROJECT_ROOT, "assets/scripts/utils/BundleLoader.js");
 var LEVEL_SELECT_FLOW_PATH = path.join(PROJECT_ROOT, "assets/scripts/bootstrap/GameBootstrapLevelSelectFlowMethods.js");
 var LEVEL_SELECT_VIEW_PATH = path.join(PROJECT_ROOT, "assets/scripts/bootstrap/LevelSelectView.js");
+var LEVEL_SELECT_GEM_REWARDED_VIDEO_AD_UNIT_ID = "adunit-dfa53e016c63a38d";
 var ASSETS_ROOT = path.join(PROJECT_ROOT, "assets");
 var AUDIO_EXTENSIONS = {
   ".m4a": true,
@@ -81,6 +82,13 @@ function assertSceneConfig() {
   }
   if (typeof component.interstitialAdUnitId !== "string" || component.interstitialAdUnitId.trim().length === 0) {
     throw new Error("Release interstitialAdUnitId must be configured in assets/scens/game.fire.");
+  }
+  if (component.levelSelectGemRewardedVideoAdUnitId !== LEVEL_SELECT_GEM_REWARDED_VIDEO_AD_UNIT_ID) {
+    throw new Error(
+      "Release levelSelectGemRewardedVideoAdUnitId must be " +
+      LEVEL_SELECT_GEM_REWARDED_VIDEO_AD_UNIT_ID +
+      "."
+    );
   }
 }
 

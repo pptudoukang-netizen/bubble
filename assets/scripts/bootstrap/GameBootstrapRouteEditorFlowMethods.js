@@ -30,8 +30,13 @@ function normalizeLevelEntryOptions(options) {
       testSource: null
     };
   }
-  if (options.testSource !== "bundled" && options.testSource !== "local") {
-    throw new Error("Test level entry testSource must be bundled or local.");
+  if (
+    options.testSource !== "bundled" &&
+    options.testSource !== "local" &&
+    options.testSource !== "trapped_sprite" &&
+    options.testSource !== "board_occlusion"
+  ) {
+    throw new Error("Test level entry testSource must be bundled, local, trapped_sprite, or board_occlusion.");
   }
   return {
     mode: "test",
@@ -111,10 +116,21 @@ module.exports = {
         this._prepareRouteEditorForLevel(levelConfig, this._currentLevelId);
         return this.levelRenderer.syncBoardLayoutHudBottomLineAsync().then(function () {
           this._applyBoardTuningFromProperties();
+          this._syncEquippedAssistSpiritToGameManager();
           var snapshot = this.gameManager.startLevel(
             levelConfig,
             BootstrapShared.buildBoardOcclusionStartContext(this, levelConfig, this._currentRunContext)
           );
+          if (entryMode === "test" && normalizedEntryOptions.testSource === "board_occlusion") {
+            if (typeof this.gameManager.grantPowerupInventory !== "function") {
+              throw new Error("Board occlusion test requires GameManager.grantPowerupInventory.");
+            }
+            var occlusionTestGrantResult = this.gameManager.grantPowerupInventory("snow_removal", 3);
+            if (!occlusionTestGrantResult || occlusionTestGrantResult.accepted !== true || !occlusionTestGrantResult.snapshot) {
+              throw new Error("Board occlusion test failed to grant three snow_removal items.");
+            }
+            snapshot = occlusionTestGrantResult.snapshot;
+          }
           if (typeof this._applySelectedPowerupsToRuntime === "function") {
             snapshot = this._applySelectedPowerupsToRuntime(snapshot);
           }
@@ -145,21 +161,22 @@ module.exports = {
       this._renderRouteEditor();
       this._refreshRouteEditorButtons();
       this._setStatus(this._formatStatus(levelConfig, snapshot));
-      this._playGameplayBackgroundMusic();
-      Logger.info(successLogPrefix || "Level started", levelConfig.level.code);
-      this._logAssetManagerStats("gameplay");
-      this.levelRenderer.setGameplayInteractionEnabled(false);
-      return this._runGameEntryCountdown().then(function () {
-        this.levelRenderer.setGameplayInteractionEnabled(true);
-        this.isRestarting = false;
-        if (typeof this._applyPendingStartGamePreciseAimActivation === "function") {
-          snapshot = this._applyPendingStartGamePreciseAimActivation(snapshot);
-        }
-        this._setDropTestButtonVisible(true);
-        this._syncSpecialIntroduceForRuntimeSnapshot(snapshot);
-        this._syncGeniusTipsForRuntimeSnapshot(snapshot);
-        this._syncSartTipsForRuntimeSnapshot(snapshot);
-        return this._showNewUserGuideForGameplay();
+      return this._playGameplayBackgroundMusic(levelConfig).then(function () {
+        Logger.info(successLogPrefix || "Level started", levelConfig.level.code);
+        this._logAssetManagerStats("gameplay");
+        this.levelRenderer.setGameplayInteractionEnabled(false);
+        return this._runGameEntryCountdown().then(function () {
+          this.levelRenderer.setGameplayInteractionEnabled(true);
+          this.isRestarting = false;
+          if (typeof this._applyPendingStartGamePreciseAimActivation === "function") {
+            snapshot = this._applyPendingStartGamePreciseAimActivation(snapshot);
+          }
+          this._setDropTestButtonVisible(true);
+          this._syncSpecialIntroduceForRuntimeSnapshot(snapshot);
+          this._syncGeniusTipsForRuntimeSnapshot(snapshot);
+          this._syncSartTipsForRuntimeSnapshot(snapshot);
+          return this._showNewUserGuideForGameplay();
+        }.bind(this));
       }.bind(this));
     }.bind(this)).catch(function (error) {
       this.isRestarting = false;

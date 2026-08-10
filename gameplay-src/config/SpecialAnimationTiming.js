@@ -36,6 +36,11 @@ var fairyAssist = {
   flyOutDistance: 880
 };
 
+var trappedSpriteRescue = {
+  flyOutDuration: 0.65,
+  exitMargin: 80
+};
+
 function requirePositiveNumber(value, fieldName) {
   var numberValue = Number(value);
   if (!isFinite(numberValue) || numberValue <= 0) {
@@ -93,6 +98,7 @@ module.exports = Object.freeze({
   wormholeShift: Object.freeze(wormholeShift),
   vineCast: Object.freeze(vineCast),
   fairyAssist: Object.freeze(fairyAssist),
+  trappedSpriteRescue: Object.freeze(trappedSpriteRescue),
   impactBounce: Object.freeze(impactBounce),
   iceSnowballCollect: Object.freeze(iceSnowballCollect),
   calculateImpactBounceTotalDuration: calculateImpactBounceTotalDuration

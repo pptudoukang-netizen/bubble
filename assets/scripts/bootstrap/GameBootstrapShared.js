@@ -8,6 +8,7 @@ var LevelProgressStore = require("../utils/LevelProgressStore");
 var LevelAttemptStatsStore = require("../utils/LevelAttemptStatsStore");
 var PlayerResourceStore = require("../utils/PlayerResourceStore");
 var AssistSpiritStore = require("../utils/AssistSpiritStore");
+var SpiritShopStore = require("../utils/SpiritShopStore");
 var DailyTaskStore = require("../utils/DailyTaskStore");
 var StaminaRecoveryStore = require("../utils/StaminaRecoveryStore");
 var InventoryStore = require("../utils/InventoryStore");
@@ -30,6 +31,7 @@ var StarChestConfig = require("../config/StarChestConfig");
 var GameCircleWelfareConfig = require("../config/GameCircleWelfareConfig");
 var ShopGoodsConfig = require("../config/ShopGoodsConfig");
 var ShopRulesConfig = require("../config/ShopRulesConfig");
+var SpiritShopConfig = require("../config/SpiritShopConfig");
 var LevelManager = require("../config/LevelManager");
 var RuntimeModeConfig = require("../config/RuntimeModeConfig");
 var StarRatingPolicy = require("../core/StarRatingPolicy");
@@ -45,6 +47,7 @@ var BackpackViewController = require("../ui/BackpackViewController");
 var DailyTaskViewController = require("../ui/DailyTaskViewController");
 var StartGameViewController = require("../ui/StartGameViewController");
 var SpiritHallViewController = require("../ui/SpiritHallViewController");
+var SpiritShopViewController = require("../ui/SpiritShopViewController");
 var PopupPanelAnimator = require("../ui/PopupPanelAnimator");
 var StarChestRewardService = require("../services/StarChestRewardService");
 var StarChestService = require("../services/StarChestService");
@@ -55,6 +58,7 @@ var GameCircleWelfareService = require("../services/GameCircleWelfareService");
 var ShopConfigService = require("../services/ShopConfigService");
 var ShopStateService = require("../services/ShopStateService");
 var ShopPurchaseService = require("../services/ShopPurchaseService");
+var SpiritShopService = require("../services/SpiritShopService");
 var WechatShareService = require("../services/WechatShareService");
 var FriendGiftService = require("../services/FriendGiftService");
 var PlayerCloudProfileService = require("../services/PlayerCloudProfileService");
@@ -202,6 +206,7 @@ module.exports = {
   LevelAttemptStatsStore: LevelAttemptStatsStore,
   PlayerResourceStore: PlayerResourceStore,
   AssistSpiritStore: AssistSpiritStore,
+  SpiritShopStore: SpiritShopStore,
   DailyTaskStore: DailyTaskStore,
   StaminaRecoveryStore: StaminaRecoveryStore,
   InventoryStore: InventoryStore,
@@ -224,6 +229,7 @@ module.exports = {
   GameCircleWelfareConfig: GameCircleWelfareConfig,
   ShopGoodsConfig: ShopGoodsConfig,
   ShopRulesConfig: ShopRulesConfig,
+  SpiritShopConfig: SpiritShopConfig,
   LevelManager: LevelManager,
   RuntimeModeConfig: RuntimeModeConfig,
   StarRatingPolicy: StarRatingPolicy,
@@ -239,6 +245,7 @@ module.exports = {
   DailyTaskViewController: DailyTaskViewController,
   StartGameViewController: StartGameViewController,
   SpiritHallViewController: SpiritHallViewController,
+  SpiritShopViewController: SpiritShopViewController,
   PopupPanelAnimator: PopupPanelAnimator,
   StarChestRewardService: StarChestRewardService,
   StarChestService: StarChestService,
@@ -249,6 +256,7 @@ module.exports = {
   ShopConfigService: ShopConfigService,
   ShopStateService: ShopStateService,
   ShopPurchaseService: ShopPurchaseService,
+  SpiritShopService: SpiritShopService,
   WechatShareService: WechatShareService,
   FriendGiftService: FriendGiftService,
   PlayerCloudProfileService: PlayerCloudProfileService,

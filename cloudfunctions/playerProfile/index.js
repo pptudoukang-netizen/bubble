@@ -5,14 +5,16 @@ var cloud = require("wx-server-sdk");
 
 var COLLECTION_NAME = "player_profiles";
 var PROFILE_VERSION = 1;
-var DEPLOYMENT_MARKER = "playerProfile_v20260724_assist_spirit_v1";
+var DEPLOYMENT_MARKER = "playerProfile_v20260809_assist_spirit_level_only_v5";
 var LEVEL_ATTEMPT_STATS_STORAGE_KEY = "bubble_level_attempt_stats_v1";
 var ASSIST_SPIRIT_STORAGE_KEY = "bubble_assist_spirit_state_v1";
+var SPIRIT_SHOP_STORAGE_KEY = "bubble_spirit_shop_state_v1";
 var SUPPORTED_STORAGE_KEYS = {
   bubble_level_progress_v1: "LevelProgressStore",
   bubble_level_attempt_stats_v1: "LevelAttemptStatsStore",
   bubble_player_resources_v1: "PlayerResourceStore",
   bubble_assist_spirit_state_v1: "AssistSpiritStore",
+  bubble_spirit_shop_state_v1: "SpiritShopStore",
   bubble_stamina_recovery_state_v1: "StaminaRecoveryStore",
   bubble_daily_task_state_v1: "DailyTaskStore",
   bubble_player_inventory_v1: "InventoryStore",
@@ -105,16 +107,68 @@ function createInitialAssistSpiritState() {
   var spirits = {};
   ["milu", "lumi", "noya", "flora", "loco", "kelu", "yumi"].forEach(function (spiritId) {
     spirits[spiritId] = {
-      owned: true,
+      owned: spiritId === "milu",
       level: 1,
-      stars: 1,
       fragments: 0
     };
   });
   return {
-    version: 1,
+    version: 4,
     equippedSpiritId: "milu",
     spirits: spirits
+  };
+}
+
+function buildSpiritShopBusinessDateKey(now) {
+  var chinaBusinessDate = new Date(now.getTime() + (3 * 60 * 60 * 1000));
+  return [
+    String(chinaBusinessDate.getUTCFullYear()),
+    String(chinaBusinessDate.getUTCMonth() + 1).padStart(2, "0"),
+    String(chinaBusinessDate.getUTCDate()).padStart(2, "0")
+  ].join("-");
+}
+
+function hashSpiritShopDateKey(dateKey) {
+  var hash = 0;
+  for (var index = 0; index < dateKey.length; index += 1) {
+    hash = ((hash * 31) + dateKey.charCodeAt(index)) >>> 0;
+  }
+  return hash;
+}
+
+function buildSpiritShopFragmentOffers(dateKey, refreshCount) {
+  var spiritIds = ["milu", "lumi", "noya", "flora", "loco", "kelu", "yumi"];
+  var startIndex = (hashSpiritShopDateKey(dateKey) + refreshCount) % spiritIds.length;
+  var offers = [];
+  for (var offset = 0; offset < 6; offset += 1) {
+    offers.push(spiritIds[(startIndex + offset) % spiritIds.length]);
+  }
+  return offers;
+}
+
+function createInitialSpiritShopState() {
+  var businessDate = buildSpiritShopBusinessDateKey(new Date());
+  return {
+    version: 2,
+    businessDate: businessDate,
+    refreshCount: 0,
+    fragmentOfferSpiritIds: buildSpiritShopFragmentOffers(businessDate, 0),
+    purchasedFragmentSlots: [],
+    dailySkuCounts: {
+      royal_egg: 0,
+      fruit_basket: 0,
+      ice_tower: 0,
+      mushroom_house: 0,
+      gold_sack: 0,
+      fragment_bag: 0
+    },
+    inventory: {
+      royal_egg: 0,
+      fruit_basket: 0,
+      ice_tower: 0,
+      mushroom_house: 0
+    },
+    purchaseLogs: []
   };
 }
 
@@ -129,6 +183,12 @@ function createMissingStorageEntry(storageKey) {
     return {
       namespace: SUPPORTED_STORAGE_KEYS[storageKey],
       value: createInitialAssistSpiritState()
+    };
+  }
+  if (storageKey === SPIRIT_SHOP_STORAGE_KEY) {
+    return {
+      namespace: SUPPORTED_STORAGE_KEYS[storageKey],
+      value: createInitialSpiritShopState()
     };
   }
   throw new Error("player profile missing storageKey: " + storageKey);

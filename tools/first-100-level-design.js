@@ -2,7 +2,9 @@
 
 var fs = require("fs");
 var BoardLayout = require("../assets/scripts/config/BoardLayout");
+var LevelBoardSupportValidator = require("../assets/scripts/config/LevelBoardSupportValidator");
 var CampaignLevelModePolicy = require("./campaign-level-mode-policy");
+var CampaignLevelGenerationConfig = require("./campaign-level-generation-config");
 
 var FIRST_LEVEL_ID = 1;
 var LAST_LEVEL_ID = 100;
@@ -34,8 +36,9 @@ var REFERENCE_CELL_CODES = {
   y: true,
   x: true
 };
-var COLORS = ["R", "G", "B", "Y", "P"];
-var DISPLAY_COLOR_ORDER = ["B", "R", "G", "Y", "P"];
+var COLORS = CampaignLevelGenerationConfig.NORMAL_BALL_COLORS.slice();
+var SPLITTER_COLORS = CampaignLevelGenerationConfig.BASE_SPECIAL_COLORS.slice();
+var JAR_COLORS = CampaignLevelGenerationConfig.BASE_SPECIAL_COLORS.slice();
 var THEME_GROUPS = [
   {
     name: "flower",
@@ -118,7 +121,7 @@ var PATTERNS = THEME_GROUPS.reduce(function (patterns, theme) {
 var PHASE_BALL_OFFSETS = [0, 2, 4, 6, 8, 10, 12, 13, 15, 17];
 var PHASE_PASS_RATES = [92, 88, 84, 80, 76, 72, 68, 63, 58, 52];
 var CALIBRATED_SHOT_LIMITS = [
-  12, 10, 11, 10, 10, 14, 10, 22, 23, 10,
+  12, 15, 11, 10, 10, 14, 10, 13, 23, 10,
   10, 12, 12, 10, 17, 21, 10, 24, 24, 23,
   17, 12, 24, 16, 14, 13, 25, 23, 18, 17,
   11, 11, 20, 20, 22, 23, 12, 25, 16, 25,
@@ -131,18 +134,15 @@ var CALIBRATED_SHOT_LIMITS = [
 ];
 var MIN_OCCUPIED_LAYOUT_ROWS = 8;
 var ADJACENCY_DISTANCE = BoardLayout.bubbleDiameter + 8;
-var SWIRL_LEVEL_IDS = [21, 27, 34, 39, 46, 51, 57, 63, 69, 75, 81, 87, 93, 99];
-var VINE_SPIRIT_LEVEL_IDS = [31, 37, 43, 49, 55, 61, 67, 73, 79, 85, 91, 97];
-var WORMHOLE_LEVEL_IDS = [53, 65, 77, 89, 95];
 var LEVEL_ONE_TUTORIAL_LAYOUT = [
-  "BBRRBBRRBB.",
-  "RBBRRRBBR.",
-  ".RRBBBBRR..",
-  ".RRBRBRR..",
-  "..RBBBBR...",
-  "...BBB....",
-  "....RR.....",
-  "....R....."
+  "BBRRBBRRBBR",
+  "RBBRRRBBRR",
+  ".RRBBRRBBR.",
+  ".RBBRRBBR.",
+  "..RBBRRBB..",
+  "..BBRRBB..",
+  "...BRRBB...",
+  "...RBR...."
 ];
 var referenceLevelsById = null;
 
@@ -339,17 +339,7 @@ function getPatternName(levelId) {
 
 function getActiveColors(levelId) {
   assertFirstHundredLevelId(levelId);
-  var colorCount;
-  if (levelId === 1) {
-    colorCount = 2;
-  } else if (levelId <= 8) {
-    colorCount = 3;
-  } else if (levelId <= 74) {
-    colorCount = 4;
-  } else {
-    colorCount = 5;
-  }
-  return DISPLAY_COLOR_ORDER.slice(0, colorCount);
+  return CampaignLevelGenerationConfig.getActiveNormalBallColors(levelId);
 }
 
 function getTargetColor(levelId, activeColors) {
@@ -359,7 +349,7 @@ function getTargetColor(levelId, activeColors) {
   if (levelId === 1) {
     return "B";
   }
-  return activeColors[(levelId - 1) % activeColors.length];
+  return CampaignLevelGenerationConfig.getCollectibleTargetColor(levelId, activeColors);
 }
 
 function getBoardCapacity(rowCount) {
@@ -373,18 +363,15 @@ function getBoardCapacity(rowCount) {
   return total;
 }
 
-function getMinimumOccupiedCount(levelId, rowCount) {
+function getMinimumNormalBallCount(levelId, rowCount, specialCount) {
   assertFirstHundredLevelId(levelId);
+  if (!Number.isInteger(specialCount) || specialCount < 0) {
+    throw new Error("First-100 specialCount must be a non-negative integer.");
+  }
   var capacity = getBoardCapacity(rowCount);
-  if (levelId === 1) {
-    return 46;
-  }
-  var variant = getSilhouetteVariant(levelId);
-  var density = 0.6 + variant * 0.025 + ((levelId % 5) - 2) * 0.006;
-  if (getDesignBeat(levelId) === "exam") {
-    density += 0.02;
-  }
-  return Math.ceil(capacity * Math.min(0.72, density));
+  return Math.ceil(
+    (capacity - specialCount) * CampaignLevelGenerationConfig.getNormalBallOccupancyTarget(levelId)
+  );
 }
 
 function getBaseNormalBallCount(levelId) {
@@ -400,7 +387,7 @@ function resolveNormalBallCount(levelId, rowCount, specialCount) {
   if (!Number.isInteger(specialCount) || specialCount < 0) {
     throw new Error("First-100 specialCount must be a non-negative integer.");
   }
-  var minimumNormalCount = getMinimumOccupiedCount(levelId, rowCount) - specialCount;
+  var minimumNormalCount = getMinimumNormalBallCount(levelId, rowCount, specialCount);
   return Math.max(getBaseNormalBallCount(levelId), minimumNormalCount);
 }
 
@@ -454,15 +441,16 @@ function buildColorCounts(levelId, activeColors, targetColor, normalBallCount) {
 
 function makeEmptySplitterCounts() {
   var counts = {};
-  COLORS.forEach(function (color) {
+  SPLITTER_COLORS.forEach(function (color) {
     counts[color] = 0;
   });
   return counts;
 }
 
-function buildSpecialCounts(levelId, targetColor) {
+function buildBaseSpecialCounts(levelId, targetColor) {
   assertFirstHundredLevelId(levelId);
   var phase = getPhase(levelId);
+  var reactiveSpecialCounts = CampaignLevelGenerationConfig.getReactiveSpecialCounts(levelId);
   var counts = {
     stone: 0,
     ice: 0,
@@ -472,9 +460,9 @@ function buildSpecialCounts(levelId, targetColor) {
     splitters: makeEmptySplitterCounts(),
     key: 0,
     locked: 0,
-    swirl: SWIRL_LEVEL_IDS.indexOf(levelId) >= 0 ? 1 : 0,
-    vine_spirit: VINE_SPIRIT_LEVEL_IDS.indexOf(levelId) >= 0 ? 1 : 0,
-    wormhole: WORMHOLE_LEVEL_IDS.indexOf(levelId) >= 0 ? 2 : 0
+    swirl: reactiveSpecialCounts.swirl,
+    vine_spirit: reactiveSpecialCounts.vine_spirit,
+    wormhole: reactiveSpecialCounts.wormhole
   };
 
   if (levelId === 15) {
@@ -636,8 +624,39 @@ function buildSpecialCounts(levelId, targetColor) {
   return counts;
 }
 
+function getBoardCapacity(rowCount) {
+  if (!Number.isInteger(rowCount) || rowCount <= 0) {
+    throw new Error("First-100 board capacity requires positive rowCount.");
+  }
+  var capacity = 0;
+  for (var row = 0; row < rowCount; row += 1) {
+    capacity += BoardLayout.getRowColumnCount(row, BoardLayout.defaultColumns);
+  }
+  return capacity;
+}
+
+function buildSpecialCounts(levelId, targetColor) {
+  var counts = buildBaseSpecialCounts(levelId, targetColor);
+  var reactiveSpecialCounts = CampaignLevelGenerationConfig.getReactiveSpecialCounts(levelId);
+  counts.ice = CampaignLevelGenerationConfig.getIceBallCount(
+    levelId,
+    getBoardCapacity(resolveRowCount(levelId))
+  );
+  counts.swirl = reactiveSpecialCounts.swirl;
+  counts.vine_spirit = reactiveSpecialCounts.vine_spirit;
+  counts.wormhole = reactiveSpecialCounts.wormhole;
+  if (CampaignLevelGenerationConfig.isTrappedSpriteRescueLevelId(levelId)) {
+    var compatibleCounts = CampaignLevelGenerationConfig.buildTrappedSpriteRescueBaseSpecialCounts(counts);
+    compatibleCounts.swirl = reactiveSpecialCounts.swirl;
+    compatibleCounts.vine_spirit = reactiveSpecialCounts.vine_spirit;
+    compatibleCounts.wormhole = reactiveSpecialCounts.wormhole;
+    return compatibleCounts;
+  }
+  return counts;
+}
+
 function countSplitters(splitterCounts) {
-  return COLORS.reduce(function (sum, color) {
+  return SPLITTER_COLORS.reduce(function (sum, color) {
     return sum + splitterCounts[color];
   }, 0);
 }
@@ -651,38 +670,7 @@ function countSpecials(specialCounts) {
 
 function buildNewReactiveSpecialEntities(levelId) {
   assertFirstHundredLevelId(levelId);
-  var counts = buildSpecialCounts(levelId, getTargetColor(levelId, getActiveColors(levelId)));
-  var entities = [];
-  if (counts.swirl === 1) {
-    entities.push({
-      id: "swirl_01",
-      entityCategory: "reactive_ball",
-      entityType: "swirl"
-    });
-  }
-  if (counts.vine_spirit === 1) {
-    entities.push({
-      id: "vine_spirit_01",
-      entityCategory: "reactive_ball",
-      entityType: "vine_spirit"
-    });
-  }
-  if (counts.wormhole === 2) {
-    var moveDirection = levelId % 2 === 0 ? "left" : "right";
-    entities.push({
-      id: "wormhole_left",
-      entityCategory: "reactive_ball",
-      entityType: "wormhole",
-      moveDirection: moveDirection
-    });
-    entities.push({
-      id: "wormhole_right",
-      entityCategory: "reactive_ball",
-      entityType: "wormhole",
-      moveDirection: moveDirection
-    });
-  }
-  return entities;
+  return CampaignLevelGenerationConfig.buildReactiveSpecialEntities(levelId);
 }
 
 function resolveRowCount(levelId) {
@@ -712,7 +700,7 @@ function buildShotLimit(levelId) {
   if (!Number.isInteger(shotLimit) || shotLimit <= 0) {
     throw new Error("First-100 calibrated shot limit is invalid for level " + levelId + ".");
   }
-  return shotLimit;
+  return CampaignLevelGenerationConfig.applyClearanceRebalanceShotLimit(levelId, shotLimit);
 }
 
 function buildOpeningShotBalls(levelId, activeColors, targetColor, designBeat) {
@@ -741,26 +729,8 @@ function buildOpeningShotBalls(levelId, activeColors, targetColor, designBeat) {
   return opening;
 }
 
-function buildStarThresholds(targetScore, designBeat) {
-  if (!Number.isInteger(targetScore) || targetScore <= 0) {
-    throw new Error("First-100 targetScore must be a positive integer.");
-  }
-  var ratiosByBeat = {
-    introduce: [0.32, 0.6, 0.84],
-    practice: [0.34, 0.63, 0.87],
-    combine: [0.36, 0.66, 0.9],
-    twist: [0.38, 0.69, 0.93],
-    exam: [0.4, 0.72, 0.96]
-  };
-  var ratios = ratiosByBeat[designBeat];
-  if (!ratios) {
-    throw new Error("Unsupported first-100 design beat: " + designBeat);
-  }
-  return {
-    star1: Math.round(targetScore * ratios[0]),
-    star2: Math.round(targetScore * ratios[1]),
-    star3: Math.round(targetScore * ratios[2])
-  };
+function buildStarThresholds(levelId, targetScore, designBeat) {
+  return CampaignLevelGenerationConfig.buildStarThresholds(levelId, targetScore, designBeat);
 }
 
 function getDifficultyTuning(levelId) {
@@ -808,7 +778,22 @@ function buildLevelSpec(levelId) {
   var target2 = specialCounts.ice >= 3
     ? { type: "collect_ice_snowball", value: specialCounts.ice }
     : null;
-  var jarColors = COLORS.slice();
+  var jarColors = JAR_COLORS.slice();
+  var shotLimit = buildShotLimit(levelId);
+  if (CampaignLevelGenerationConfig.isTrappedSpriteRescueLevelId(levelId)) {
+    shotLimit = CampaignLevelGenerationConfig.buildTrappedSpriteRescueShotLimit({
+      levelId: levelId,
+      normalBallCount: normalBallCount,
+      rowCount: rowCount,
+      iceCount: specialCounts.ice,
+      baseSpecialCount: specialCounts.stone + specialCounts.blast + specialCounts.rainbow,
+      reactiveSpecialCounts: {
+        swirl: specialCounts.swirl,
+        vine_spirit: specialCounts.vine_spirit,
+        wormhole: specialCounts.wormhole
+      }
+    });
+  }
   return {
     levelId: levelId,
     themeName: theme.name,
@@ -832,7 +817,7 @@ function buildLevelSpec(levelId) {
     target2: target2,
     jarCount: jarColors.length,
     jarColors: jarColors,
-    shotLimit: buildShotLimit(levelId),
+    shotLimit: shotLimit,
     openingShotBalls: buildOpeningShotBalls(levelId, activeColors, targetColor, designBeat),
     passRate: Math.max(24, PHASE_PASS_RATES[getPhase(levelId) - 1] - getChapterIndex(levelId) * 0.6),
     tuning: getDifficultyTuning(levelId)
@@ -1524,7 +1509,8 @@ function placeSwirlEntity(rows, shapeSlots, entity, levelId, placementVariant, u
       return false;
     }
     return getHexNeighborCoordinates(cell.row, cell.col).every(function (neighbor) {
-      return shapeSlotMap[neighbor.row + ":" + neighbor.col] === true;
+      var neighborKey = neighbor.row + ":" + neighbor.col;
+      return shapeSlotMap[neighborKey] === true && !used[neighborKey] && !forbiddenSpecialSlots[neighborKey];
     });
   });
   if (candidates.length === 0) {
@@ -1550,7 +1536,7 @@ function placeSwirlEntity(rows, shapeSlots, entity, levelId, placementVariant, u
   });
 }
 
-function placeWormholePair(rows, shapeSlots, wormholes, levelId, placementVariant, used, forbiddenSpecialSlots) {
+function placeWormholePair(rows, shapeSlots, wormholes, levelId, placementVariant, pairIndex, used, forbiddenSpecialSlots, usedRows) {
   if (wormholes.length !== 2) {
     throw new Error("First-100 wormhole configuration must contain exactly two endpoints for level " + levelId + ".");
   }
@@ -1558,9 +1544,10 @@ function placeWormholePair(rows, shapeSlots, wormholes, levelId, placementVarian
     throw new Error("First-100 wormhole directions differ for level " + levelId + ".");
   }
   var candidates = [];
+  var shapeSlotMap = buildShapeSlotMap(shapeSlots);
   shapeSlots.forEach(function (left) {
     var leftKey = left.row + ":" + left.col;
-    if (used[leftKey] || forbiddenSpecialSlots[leftKey]) {
+    if (usedRows[left.row] || used[leftKey] || forbiddenSpecialSlots[leftKey]) {
       return;
     }
     shapeSlots.forEach(function (right) {
@@ -1568,6 +1555,12 @@ function placeWormholePair(rows, shapeSlots, wormholes, levelId, placementVarian
       if (right.row !== left.row || right.col - left.col < 3 ||
           used[rightKey] || forbiddenSpecialSlots[rightKey]) {
         return;
+      }
+      for (var segmentCol = left.col; segmentCol <= right.col; segmentCol += 1) {
+        var segmentKey = left.row + ":" + segmentCol;
+        if (!shapeSlotMap[segmentKey] || used[segmentKey] || forbiddenSpecialSlots[segmentKey]) {
+          return;
+        }
       }
       var normalizedLeft = getNormalizedCoordinates(left, rows);
       var normalizedRight = getNormalizedCoordinates(right, rows);
@@ -1591,7 +1584,7 @@ function placeWormholePair(rows, shapeSlots, wormholes, levelId, placementVarian
       pairA.right.col - pairB.right.col;
   });
   var candidateCount = Math.min(8, candidates.length);
-  var selected = candidates[placementVariant % candidateCount];
+  var selected = candidates[(placementVariant + pairIndex * 3) % candidateCount];
   var orderedWormholes = wormholes.slice().sort(function (left, right) {
     return String(left.id).localeCompare(String(right.id));
   });
@@ -1601,6 +1594,10 @@ function placeWormholePair(rows, shapeSlots, wormholes, levelId, placementVarian
   orderedWormholes[1].col = selected.right.col;
   used[selected.left.row + ":" + selected.left.col] = true;
   used[selected.right.row + ":" + selected.right.col] = true;
+  usedRows[selected.left.row] = true;
+  for (var col = selected.left.col; col <= selected.right.col; col += 1) {
+    forbiddenSpecialSlots[selected.left.row + ":" + col] = true;
+  }
 }
 
 function placeSpecialEntities(rows, shapeSlots, entities, levelId, placementVariant) {
@@ -1612,6 +1609,7 @@ function placeSpecialEntities(rows, shapeSlots, entities, levelId, placementVari
   }
   var used = {};
   var forbiddenSpecialSlots = {};
+  var usedWormholeRows = {};
   var placedMomentX = 0;
   var swirlEntities = entities.filter(function (entity) {
     return entity.entityType === "swirl";
@@ -1619,30 +1617,39 @@ function placeSpecialEntities(rows, shapeSlots, entities, levelId, placementVari
   var wormholeEntities = entities.filter(function (entity) {
     return entity.entityType === "wormhole";
   });
-  if (swirlEntities.length > 1) {
-    throw new Error("First-100 levels support at most one swirl: " + levelId + ".");
-  }
-  if (swirlEntities.length === 1) {
+  swirlEntities.sort(function (left, right) {
+    return String(left.id).localeCompare(String(right.id));
+  }).forEach(function (swirlEntity, swirlIndex) {
     placeSwirlEntity(
       rows,
       shapeSlots,
-      swirlEntities[0],
+      swirlEntity,
       levelId,
-      placementVariant,
+      placementVariant + swirlIndex * 5,
       used,
       forbiddenSpecialSlots
     );
-  }
+  });
   if (wormholeEntities.length > 0) {
-    placeWormholePair(
-      rows,
-      shapeSlots,
-      wormholeEntities,
-      levelId,
-      placementVariant,
-      used,
-      forbiddenSpecialSlots
-    );
+    if (wormholeEntities.length % 2 !== 0) {
+      throw new Error("First-100 wormhole endpoint count must be even for level " + levelId + ".");
+    }
+    wormholeEntities.sort(function (left, right) {
+      return String(left.id).localeCompare(String(right.id));
+    });
+    for (var pairIndex = 0; pairIndex < wormholeEntities.length / 2; pairIndex += 1) {
+      placeWormholePair(
+        rows,
+        shapeSlots,
+        wormholeEntities.slice(pairIndex * 2, pairIndex * 2 + 2),
+        levelId,
+        placementVariant,
+        pairIndex,
+        used,
+        forbiddenSpecialSlots,
+        usedWormholeRows
+      );
+    }
   }
   var orderedEntities = entities.filter(function (entity) {
     return entity.entityType !== "swirl" && entity.entityType !== "wormhole";
@@ -1771,6 +1778,8 @@ function assertTableRowMatchesDesign(tableRow) {
   compareNumber(tableRow.shotLimit, spec.shotLimit, "shotLimit", tableRow.levelId);
   COLORS.forEach(function (color) {
     compareNumber(tableRow.colorCounts[color], spec.colorCounts[color], "color count " + color, tableRow.levelId);
+  });
+  SPLITTER_COLORS.forEach(function (color) {
     compareNumber(tableRow.specialCounts.splitters[color], spec.specialCounts.splitters[color], "splitter count " + color, tableRow.levelId);
   });
   ["stone", "ice", "blast", "rainbow", "molotov", "key", "locked"].forEach(function (type) {
@@ -2023,9 +2032,16 @@ function validateVisualComposition(level, spec) {
 function validateGeneratedLevel(level) {
   assertObject(level, "First-100 generated level");
   var spec = buildLevelSpec(level.levelId);
+  var isTrappedSpriteRescue = CampaignLevelGenerationConfig.isTrappedSpriteRescueLevelId(level.levelId);
   compareNumber(level.layout.length, spec.rowCount, "layout row count", level.levelId);
   CampaignLevelModePolicy.assertExpectedLevelMode(level, spec.shotLimit);
-  compareNumber(level.dropInterval, spec.tuning.dropInterval, "dropInterval", level.levelId);
+  if (isTrappedSpriteRescue) {
+    if (level.dropInterval !== undefined) {
+      throw new Error("Level " + level.levelId + " trapped sprite rescue must not configure dropInterval.");
+    }
+  } else {
+    compareNumber(level.dropInterval, spec.tuning.dropInterval, "dropInterval", level.levelId);
+  }
   compareNumber(level.difficultyScore, spec.tuning.difficultyScore, "difficultyScore", level.levelId);
   compareNumber(level.jarCount, spec.jarCount, "jarCount", level.levelId);
   if (CampaignLevelModePolicy.isTimedLevelId(level.levelId)) {
@@ -2036,6 +2052,14 @@ function validateGeneratedLevel(level) {
     if (JSON.stringify(level.initialShotBalls) !== JSON.stringify(expectedInitialShotBalls)) {
       throw new Error("Level " + level.levelId + " timed initialShotBalls differ from first-100 design.");
     }
+  } else if (isTrappedSpriteRescue) {
+    var expectedRescueInitialShotBalls = [spec.targetColor, spec.targetColor];
+    if (JSON.stringify(level.initialShotBalls) !== JSON.stringify(expectedRescueInitialShotBalls)) {
+      throw new Error("Level " + level.levelId + " rescue initialShotBalls differ from first-100 design.");
+    }
+    if (level.openingShotBalls !== undefined) {
+      throw new Error("Level " + level.levelId + " rescue mode must not configure openingShotBalls.");
+    }
   } else {
     if (level.initialShotBalls !== undefined) {
       throw new Error("Level " + level.levelId + " must use openingShotBalls instead of initialShotBalls.");
@@ -2044,7 +2068,9 @@ function validateGeneratedLevel(level) {
       throw new Error("Level " + level.levelId + " openingShotBalls differ from first-100 design.");
     }
   }
-  var expectedStarThresholds = buildStarThresholds(level.targetScore, spec.designBeat);
+  var expectedStarThresholds = isTrappedSpriteRescue
+    ? CampaignLevelGenerationConfig.buildStarThresholds(level.levelId, level.targetScore, "rescue")
+    : buildStarThresholds(level.levelId, level.targetScore, spec.designBeat);
   if (JSON.stringify(level.starThresholds) !== JSON.stringify(expectedStarThresholds)) {
     throw new Error("Level " + level.levelId + " starThresholds differ from first-100 design.");
   }
@@ -2091,7 +2117,7 @@ function validateGeneratedLevel(level) {
   ].forEach(function (type) {
     compareNumber(actualSpecialCounts[type], spec.specialCounts[type], "generated special count " + type, level.levelId);
   });
-  COLORS.forEach(function (color) {
+  SPLITTER_COLORS.forEach(function (color) {
     compareNumber(
       actualSpecialCounts.splitters[color],
       spec.specialCounts.splitters[color],
@@ -2100,9 +2126,14 @@ function validateGeneratedLevel(level) {
     );
   });
 
-  var expectedWinConditions = [spec.target1];
-  if (spec.target2 !== null) {
-    expectedWinConditions.push(spec.target2);
+  var expectedWinConditions;
+  if (isTrappedSpriteRescue) {
+    expectedWinConditions = [{ type: "clear_all", value: 1 }];
+  } else {
+    expectedWinConditions = [spec.target1];
+    if (spec.target2 !== null) {
+      expectedWinConditions.push(spec.target2);
+    }
   }
   if (JSON.stringify(level.winConditions) !== JSON.stringify(expectedWinConditions)) {
     throw new Error("Level " + level.levelId + " win conditions differ from first-100 design.");
@@ -2119,18 +2150,24 @@ function validateGeneratedLevel(level) {
   level.specialEntities.forEach(function (entity) {
     occupancy[entity.row + ":" + entity.col] = true;
   });
+  if (isTrappedSpriteRescue) {
+    LevelBoardSupportValidator.assertGeneratedBoardRules(level, "level_" + String(level.levelId).padStart(3, "0"));
+    LevelBoardSupportValidator.assertInitialBoardSupported(level, "level_" + String(level.levelId).padStart(3, "0"));
+  }
   var emptyRows = level.layout.map(function (row) {
     return ".".repeat(row.length);
   });
-  var expectedSlots = buildShapeSlots(emptyRows, spec.patternName, spec.normalBallCount + spec.specialCount, level.levelId);
-  var expectedMap = {};
-  expectedSlots.forEach(function (cell) {
-    expectedMap[cell.row + ":" + cell.col] = true;
-  });
-  var actualKeys = Object.keys(occupancy).sort();
-  var expectedKeys = Object.keys(expectedMap).sort();
-  if (JSON.stringify(actualKeys) !== JSON.stringify(expectedKeys)) {
-    throw new Error("Level " + level.levelId + " occupancy does not match pattern " + spec.patternName + ".");
+  if (!isTrappedSpriteRescue) {
+    var expectedSlots = buildShapeSlots(emptyRows, spec.patternName, spec.normalBallCount + spec.specialCount, level.levelId);
+    var expectedMap = {};
+    expectedSlots.forEach(function (cell) {
+      expectedMap[cell.row + ":" + cell.col] = true;
+    });
+    var actualKeys = Object.keys(occupancy).sort();
+    var expectedKeys = Object.keys(expectedMap).sort();
+    if (JSON.stringify(actualKeys) !== JSON.stringify(expectedKeys)) {
+      throw new Error("Level " + level.levelId + " occupancy does not match pattern " + spec.patternName + ".");
+    }
   }
   var specialDensity = spec.specialCount / (spec.normalBallCount + spec.specialCount);
   if (specialDensity > 0.3) {
@@ -2140,10 +2177,10 @@ function validateGeneratedLevel(level) {
   level.specialEntities.forEach(function (entity) {
     specialTypes[entity.entityType] = true;
   });
-  if (Object.keys(specialTypes).length > 4) {
-    throw new Error("Level " + level.levelId + " uses more than four special entity types.");
+  if (Object.keys(specialTypes).length > 8) {
+    throw new Error("Level " + level.levelId + " uses more than eight special entity types.");
   }
-  var visualMetrics = validateVisualComposition(level, spec);
+  var visualMetrics = isTrappedSpriteRescue ? null : validateVisualComposition(level, spec);
   return {
     themeName: spec.themeName,
     patternName: spec.patternName,

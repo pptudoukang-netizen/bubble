@@ -1,9 +1,9 @@
 "use strict";
 
 var STAR_SCORE_BAND_RATIOS = {
-  star1: 0.3,
-  star2: 0.6,
-  star3: 0.85
+  star1: 0.5,
+  star2: 0.7,
+  star3: 0.88
 };
 
 function requirePositiveInteger(value, fieldName) {

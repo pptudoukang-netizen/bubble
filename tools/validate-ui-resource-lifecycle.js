@@ -3,6 +3,7 @@
 var assert = require("assert");
 var fs = require("fs");
 var path = require("path");
+var vm = require("vm");
 
 var PROJECT_ROOT = path.resolve(__dirname, "..");
 
@@ -57,6 +58,105 @@ function validateStartGameResourceOwnership() {
       "PropDescriptionView icon must belong to ui bundle: " + resourcePath
     );
   });
+}
+
+function validateStartGameRescueObjectives() {
+  var source = readProjectFile("assets/scripts/bootstrap/GameBootstrapPowerupInventoryMethods.js") +
+    "\nmodule.exports.__buildStartGameObjectivesForValidation = buildStartGameObjectives;\n";
+  var sandbox = {
+    module: { exports: {} },
+    exports: {},
+    require: function () {
+      return {};
+    }
+  };
+  vm.runInNewContext(source, sandbox, {
+    filename: "GameBootstrapPowerupInventoryMethods.js"
+  });
+  var buildObjectives = sandbox.module.exports.__buildStartGameObjectivesForValidation;
+  assert.strictEqual(typeof buildObjectives, "function", "StartGameView objective builder is required.");
+
+  var pack = JSON.parse(readProjectFile("remote-level-packs/levels_pack_011_100.json"));
+  var rescueConfig = pack.levels.level_063;
+  var rescueObjectives = buildObjectives(rescueConfig);
+  assert.strictEqual(rescueObjectives.ball, null, "Level 63 rescue must not require a ball collection objective.");
+  assert.strictEqual(rescueObjectives.iceSnowball, null, "Level 63 rescue must not require an ice collection objective.");
+  assert.throws(function () {
+    buildObjectives({
+      level: {
+        levelType: "normal",
+        bonusObjectives: [],
+        winConditions: [{ type: "clear_all", value: 1 }]
+      }
+    });
+  }, /StartGameView requires at least one collection objective/, "Non-rescue levels must keep the collection-objective contract.");
+}
+
+function getPrefabNodeById(prefab, reference) {
+  assert(reference && Number.isInteger(reference.__id__), "StartGameView prefab node reference is required.");
+  var node = prefab[reference.__id__];
+  assert(node && node.__type__ === "cc.Node", "StartGameView prefab node is invalid: " + reference.__id__);
+  return node;
+}
+
+function getPrefabChildNode(prefab, parentNode, name, description) {
+  var child = (parentNode._children || []).map(function (reference) {
+    return getPrefabNodeById(prefab, reference);
+  }).filter(function (node) {
+    return node._name === name;
+  })[0];
+  assert(child, "StartGameView prefab is missing " + description + ".");
+  return child;
+}
+
+function validateStartGamePrefabContract() {
+  var prefab = JSON.parse(readProjectFile("assets/ui/prefabs/StartGameView.prefab"));
+  var rootNode = getPrefabNodeById(prefab, prefab[0].data);
+  var panelNode = getPrefabChildNode(prefab, rootNode, "Panel", "Panel");
+  var titleBgNode = getPrefabChildNode(prefab, panelNode, "title_bg", "Panel/title_bg");
+  getPrefabChildNode(prefab, titleBgNode, "btn_close", "Panel/title_bg/btn_close");
+  getPrefabChildNode(prefab, panelNode, "target_score_bg", "Panel/target_score_bg");
+  var targetNode = getPrefabChildNode(prefab, panelNode, "target", "Panel/target");
+  var targetLayoutNode = getPrefabChildNode(prefab, targetNode, "traget_layout", "Panel/target/traget_layout");
+  getPrefabChildNode(prefab, targetLayoutNode, "target_ball", "Panel/target/traget_layout/target_ball");
+  getPrefabChildNode(prefab, targetLayoutNode, "target_ice", "Panel/target/traget_layout/target_ice");
+  getPrefabChildNode(prefab, targetLayoutNode, "target_spirit", "Panel/target/traget_layout/target_spirit");
+  var propNode = getPrefabChildNode(prefab, panelNode, "prop_node", "Panel/prop_node");
+  var propListNode = getPrefabChildNode(prefab, propNode, "prop_listview", "Panel/prop_node/prop_listview");
+  getPrefabChildNode(prefab, propNode, "directions_btn", "Panel/prop_node/directions_btn");
+  getPrefabChildNode(prefab, getPrefabChildNode(prefab, propListNode, "view", "Panel/prop_node/prop_listview/view"), "content", "Panel/prop_node/prop_listview/view/content");
+  var roleNode = getPrefabChildNode(prefab, panelNode, "role_node", "Panel/role_node");
+  var roleListNode = getPrefabChildNode(prefab, roleNode, "role_listview", "Panel/role_node/role_listview");
+  getPrefabChildNode(prefab, getPrefabChildNode(prefab, roleListNode, "view", "Panel/role_node/role_listview/view"), "content", "Panel/role_node/role_listview/view/content");
+
+  var controllerSource = readProjectFile("assets/scripts/ui/StartGameViewController.js");
+  var spriteProxySource = readProjectFile("assets/scripts/utils/SpriteProxyLayerHelper.js");
+  assert.ok(controllerSource.indexOf('requireChildNode(panelNode, "prop_node", "Panel")') >= 0, "StartGameView controller must bind Panel/prop_node.");
+  assert.ok(controllerSource.indexOf('requireChildNode(panelNode, "role_node", "Panel")') >= 0, "StartGameView controller must bind Panel/role_node.");
+  assert.ok(controllerSource.indexOf('requireChildNode(titleBgNode, "btn_close", "Panel/title_bg")') >= 0, "StartGameView controller must bind Panel/title_bg/btn_close.");
+  assert.ok(controllerSource.indexOf("this._nodes.targetNode.active = showCollectionTarget;") >= 0, "StartGameView must hide target when the level has no collection objective.");
+  assert.ok(controllerSource.indexOf("SpriteProxyLayerHelper.createProxyRoot(this.node") >= 0, "StartGameView main Sprite proxy root must not be a Panel Layout child.");
+  assert.ok(controllerSource.indexOf("root.setSiblingIndex(this._nodes.panel.getSiblingIndex());") >= 0, "StartGameView main Sprite proxy root must render above mask and below Panel text.");
+  assert.ok(controllerSource.indexOf("this._updatePanelLayout();") >= 0, "StartGameView must settle Panel Layout before rebuilding Sprite proxies.");
+  assert.ok(spriteProxySource.indexOf("function enableRecordAutoSync(rootNode, records)") >= 0, "SpriteProxyLayerHelper must support frame-by-frame record synchronization.");
+  assert.ok(controllerSource.indexOf("SpriteProxyLayerHelper.enableRecordAutoSync(this._renderProxyRoot, this._renderProxyRecords);") >= 0, "StartGameView Panel proxy must follow PopupPanelAnimator scaling.");
+
+  var sandbox = {
+    module: { exports: {} },
+    exports: {},
+    require: function () {
+      return {};
+    }
+  };
+  vm.runInNewContext(
+    controllerSource + "\nmodule.exports.__hasCollectionObjectiveForValidation = hasCollectionObjective;\n",
+    sandbox,
+    { filename: "StartGameViewController.js" }
+  );
+  var hasCollectionObjective = sandbox.module.exports.__hasCollectionObjectiveForValidation;
+  assert.strictEqual(hasCollectionObjective({ ball: null, iceSnowball: null }), false, "An empty objective set must hide StartGameView target.");
+  assert.strictEqual(hasCollectionObjective({ ball: { target: 1 }, iceSnowball: null }), true, "A ball objective must keep StartGameView target visible.");
+  assert.strictEqual(hasCollectionObjective({ ball: null, iceSnowball: { target: 1 } }), true, "An ice objective must keep StartGameView target visible.");
 }
 
 function validateGameplayReleaseScope() {
@@ -164,6 +264,8 @@ function validatePrefabFactoryOwnership() {
 
 function main() {
   validateStartGameResourceOwnership();
+  validateStartGameRescueObjectives();
+  validateStartGamePrefabContract();
   validateGameplayReleaseScope();
   return validatePrefabFactoryOwnership().then(function () {
     console.log("UI resource lifecycle validation passed.");

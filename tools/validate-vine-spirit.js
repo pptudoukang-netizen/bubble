@@ -202,8 +202,13 @@ function validateDamageReleaseAndDeathCleanup() {
       collidedCell: grid.getCell(0, 0)
     }
   }, grid, directVineResolution);
-  assert(directVineResolution.releasedVines.length === 1, "Direct hit must release an active vine.");
-  assert(grid.getCell(0, 0).color === "R", "Direct vine release must preserve the underlying normal ball.");
+  assert(directVineResolution.releasedVines.length === 0, "Direct hit without elimination must not release an active vine.");
+  assert(grid.getCell(0, 0).vineOwnerId === "vine_spirit_validation", "Direct hit without elimination must preserve the vine.");
+  var removedDirectNeighbor = grid.removeCells([grid.getCell(1, 0)]);
+  manager._resolveVinesAfterRemoval(removedDirectNeighbor, grid, directVineResolution);
+  assert(directVineResolution.releasedVines.length === 1, "An eliminated neighboring ball must release the directly hit vine.");
+  assert(directVineResolution.releasedVines[0].sourceType === "adjacent_elimination", "Vine release must record adjacent elimination as its only source.");
+  assert(grid.getCell(0, 0).color === "R" && !grid.getCell(0, 0).vineOwnerId, "Adjacent elimination must preserve the underlying normal ball after releasing its vine.");
 
   var secondHitResolution = createVineResolution();
   manager._resolveDirectVineImpact({
@@ -244,24 +249,23 @@ function validateExplosionInteractions() {
   var entangledBeforeExplosion = grid.getCell(1, 1);
   var spiritBeforeExplosion = grid.getCell(1, 2);
   var resolution = createVineResolution();
-  manager._resolveVinesHitByExplosion([
+  manager._resolveVineSpiritsHitByExplosion([
     entangledBeforeExplosion,
     spiritBeforeExplosion,
     entangledBeforeExplosion,
     spiritBeforeExplosion
   ], grid, resolution);
 
-  assert(resolution.releasedVines.length === 1, "One explosion must release each affected vine once.");
-  assert(resolution.releasedVines[0].sourceType === "explosion", "Explosion vine release must record its source.");
+  assert(resolution.releasedVines.length === 0, "Direct explosion coverage without a neighboring elimination must not release a vine.");
   assert(resolution.vineSpiritHits.length === 1, "One explosion must damage each affected spirit once.");
   assert(resolution.vineSpiritHits[0].sourceType === "explosion", "Explosion spirit damage must record its source.");
   assert(grid.getCell(1, 2).health === 2, "Explosion must deal exactly 1 damage to the vine spirit.");
   assert(
-    grid.getCell(1, 1) && grid.getCell(1, 1).color === "R" && !grid.getCell(1, 1).vineOwnerId,
-    "Explosion must release the vine without removing the underlying normal ball."
+    grid.getCell(1, 1) && grid.getCell(1, 1).color === "R" && grid.getCell(1, 1).vineOwnerId === "vine_spirit_validation",
+    "Direct explosion coverage must preserve both the vine and its underlying normal ball."
   );
 
-  manager._resolveVinesHitByExplosion([grid.getCell(1, 2)], grid, resolution);
+  manager._resolveVineSpiritsHitByExplosion([grid.getCell(1, 2)], grid, resolution);
   assert(grid.getCell(1, 2).health === 2, "The same resolution must not damage one spirit twice.");
 
   var blastGrid = buildGrid([
@@ -313,7 +317,8 @@ function validateExplosionInteractions() {
     global.cc = previousCc;
   }
   assert(blastResolution.vineSpiritHits.length === 1, "Blast shot must route explosion damage into vine resolution.");
-  assert(blastResolution.releasedVines.length === 1, "Blast shot must route explosion release into vine resolution.");
+  assert(blastResolution.releasedVines.length === 1, "Blast shot must release a vine only through an eliminated neighboring ball.");
+  assert(blastResolution.releasedVines[0].sourceType === "adjacent_elimination", "Blast-driven vine release must record adjacent elimination as its source.");
   assert(blastGrid.getCell(1, 2).health === 2, "Blast shot must deal exactly 1 damage to the spirit.");
   assert(
     blastGrid.getCell(1, 1) && blastGrid.getCell(1, 1).color === "R" && !blastGrid.getCell(1, 1).vineOwnerId,
@@ -388,28 +393,32 @@ function validateThirdShotPreviewAndCast() {
   var previewCell = grid.getCell(cast.targetRow, cast.targetCol);
   assert(previewCell.vinePreviewOwnerId === "vine_spirit_validation", "Vine target must expose preview ownership.");
   assert(!previewCell.vineOwnerId, "Preview target must not be active before the warning completes.");
+  var vineAudioEvents = manager.pendingRuntimeEvents.filter(function (event) {
+    return event.type === "vine_entanglement_started";
+  });
   assert(
-    !manager.pendingRuntimeEvents.some(function (event) { return event.type === "vine_entangled"; }),
-    "Vine preview must not emit the entanglement audio event."
+    vineAudioEvents.length === 1 && vineAudioEvents[0].count === 1,
+    "Vine preview start must emit one vine_entanglement_started audio event with the target count."
   );
 
   manager._updatePendingVineCast(SpecialAnimationTiming.vineCast.previewDuration * 0.5);
   assert(!continued, "Vine cast must remain pending during the warning.");
   assert(
-    !manager.pendingRuntimeEvents.some(function (event) { return event.type === "vine_entangled"; }),
-    "Incomplete vine warning must not emit the entanglement audio event."
+    manager.pendingRuntimeEvents.filter(function (event) { return event.type === "vine_entanglement_started"; }).length === 1,
+    "Incomplete vine warning must not emit a duplicate entanglement audio event."
   );
   manager._updatePendingVineCast(SpecialAnimationTiming.vineCast.previewDuration * 0.5);
   var entangled = grid.getCell(cast.targetRow, cast.targetCol);
   assert(entangled.vineOwnerId === "vine_spirit_validation", "Warning completion must activate the vine.");
   assert(!entangled.vinePreviewOwnerId, "Warning completion must clear preview ownership.");
   assert(cast.completed === true && continued, "Completed vine cast must resume the shot state machine.");
-  var vineAudioEvents = manager.pendingRuntimeEvents.filter(function (event) {
-    return event.type === "vine_entangled";
-  });
   assert(
-    vineAudioEvents.length === 1 && vineAudioEvents[0].count === 1,
-    "Completed vine cast must emit one vine_entangled audio event with the entangled count."
+    manager.pendingRuntimeEvents.filter(function (event) { return event.type === "vine_entanglement_started"; }).length === 1,
+    "Completed vine cast must not emit a duplicate entanglement audio event."
+  );
+  assert(
+    !manager.pendingRuntimeEvents.some(function (event) { return event.type === "vine_entangled"; }),
+    "Vine completion must not retain the delayed vine_entangled audio event."
   );
 
   var nonThirdResolution = createVineResolution();
@@ -422,9 +431,8 @@ function validateVineEntanglementAudioRouting() {
     _getGameplayBgmPath: function () {
       return "sound/game_bg1";
     },
-    _parseAudioResourceList: function () {
-      return [];
-    },
+    _parseAudioResourceList: GameBootstrapAudioMethods._parseAudioResourceList,
+    fairyAssistHitSfxResources: "sound/hit_spirit_1,sound/hit_spirit_2,sound/hit_spirit_3,sound/hit_spirit_4,sound/hit_spirit_5",
     vinesSfxResource: "sound/vines"
   });
   assert(audioConfig.sfxMap.vines === "sound/vines", "Vine sfx config must map vines to sound/vines.");
@@ -437,11 +445,11 @@ function validateVineEntanglementAudioRouting() {
     }
   }, {
     runtimeEvents: [{
-      type: "vine_entangled",
+      type: "vine_entanglement_started",
       count: 2
     }]
   });
-  assert(playedSfx.length === 1 && playedSfx[0] === "vines", "vine_entangled must play the vines sfx once.");
+  assert(playedSfx.length === 1 && playedSfx[0] === "vines", "vine_entanglement_started must play the vines sfx once.");
 }
 
 validateConfigAndCompactCodec();
@@ -451,4 +459,4 @@ validateExplosionInteractions();
 validateTopAnchorCollapseDropsVineEntities();
 validateThirdShotPreviewAndCast();
 validateVineEntanglementAudioRouting();
-console.log("[OK] vine_spirit config, codec, health, direct/adjacent/explosion damage, unsupported and top-collapse drops, vine release, third-shot preview, entanglement audio and death cleanup");
+console.log("[OK] vine_spirit config, codec, health, adjacent-only vine release, direct/explosion spirit damage, unsupported and top-collapse drops, third-shot preview, entanglement audio and death cleanup");

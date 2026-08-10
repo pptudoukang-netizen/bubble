@@ -13,7 +13,7 @@ var MIN_OCCUPIED_LAYOUT_ROWS = 8;
 var FIRST_AESTHETIC_LEVEL_ID = 101;
 var REFERENCE_PROJECTED_LAST_LEVEL_ID = 300;
 var MAX_CONSECUTIVE_BOTH_EDGE_EMPTY_ROWS = 3;
-var MAX_TOP_ROW_SAME_COLOR_RUN = 4;
+var MAX_TOP_ROW_SAME_COLOR_RUN = LevelBoardSupportValidator.MAX_TOP_ROW_SAME_COLOR_RUN;
 
 REDESIGN_LEVEL_IDS.forEach(function (levelId) {
   REDESIGN_LEVEL_ID_MAP[levelId] = true;
@@ -250,7 +250,7 @@ function addPeriodicEdgeAnchors(rows, selected, selectedMap, occupiedCount, leve
   }
 }
 
-function buildAestheticSelectedSlots(rows, specialCells, normalCount, levelId, shapeMode) {
+function buildAestheticSelectedSlots(rows, specialCells, requiredNormalCells, normalCount, levelId, shapeMode) {
   var allCells = collectAllCells(rows);
   var specialKeys = Object.keys(specialCells);
   var occupiedCount = normalCount + specialKeys.length;
@@ -277,7 +277,7 @@ function buildAestheticSelectedSlots(rows, specialCells, normalCount, levelId, s
   }
 
   allCells.forEach(function (cell) {
-    if (cell.row === 0 || specialCells[cell.row + ":" + cell.col]) {
+    if (cell.row === 0 || specialCells[cell.row + ":" + cell.col] || requiredNormalCells[cell.row + ":" + cell.col]) {
       pushAestheticSlot(cell);
     }
   });
@@ -337,6 +337,27 @@ function buildAestheticSelectedSlots(rows, specialCells, normalCount, levelId, s
     }
     return cellA.col - cellB.col;
   });
+}
+
+function buildRequiredNormalCellMap(requiredNormalSlots, specialCells, rows, levelId) {
+  if (!Array.isArray(requiredNormalSlots)) {
+    throw new Error("Level " + levelId + " requiredNormalSlots must be an array.");
+  }
+  var required = {};
+  requiredNormalSlots.forEach(function (slot, index) {
+    assertObject(slot, "Level " + levelId + " required normal slot " + index);
+    var row = requireNonNegativeInteger(slot.row, "Level " + levelId + " required normal row");
+    var col = requireNonNegativeInteger(slot.col, "Level " + levelId + " required normal col");
+    if (row >= rows.length || col >= rows[row].length) {
+      throw new Error("Level " + levelId + " required normal slot is outside layout: " + row + ":" + col);
+    }
+    var key = row + ":" + col;
+    if (specialCells[key]) {
+      throw new Error("Level " + levelId + " required normal slot overlaps a special entity: " + key);
+    }
+    required[key] = true;
+  });
+  return required;
 }
 
 function normalizeColors(rawColors, levelId) {
@@ -779,6 +800,147 @@ function analyzeLayout(rows, targetColor) {
   };
 }
 
+function analyzeCascadeRiskWithSpecialCells(rows, specialCells, isTrappedSpriteRescue, trappedSpriteRescue) {
+  var componentState = buildColorComponents(rows);
+  var occupiedCells = componentState.cells.map(function (cell) {
+    return {
+      id: cell.id,
+      row: cell.row,
+      col: cell.col,
+      color: cell.color,
+      normal: true
+    };
+  });
+  Object.keys(specialCells).forEach(function (cellKey) {
+    var parts = cellKey.split(":");
+    occupiedCells.push({
+      id: cellKey,
+      row: Number(parts[0]),
+      col: Number(parts[1]),
+      color: null,
+      normal: false
+    });
+  });
+  var occupiedCellMap = {};
+  occupiedCells.forEach(function (cell) {
+    occupiedCellMap[cell.id] = cell;
+  });
+  var supportRootIds;
+  if (isTrappedSpriteRescue) {
+    var anchorCell = trappedSpriteRescue.anchorCell;
+    supportRootIds = occupiedCells.filter(function (cell) {
+      return areAdjacent(anchorCell, cell);
+    }).map(function (cell) {
+      return cell.id;
+    });
+  } else {
+    supportRootIds = occupiedCells.filter(function (cell) {
+      return cell.row === 0;
+    }).map(function (cell) {
+      return cell.id;
+    });
+  }
+  if (supportRootIds.length === 0) {
+    throw new Error("Cascade risk analysis requires at least one support root.");
+  }
+
+  var maximumImpact = 0;
+  var maximumFloating = 0;
+  var maximumComponentSize = 0;
+  var maximumComponentColor = null;
+  componentState.components.forEach(function (component) {
+    if (component.length < 3) {
+      return;
+    }
+    var removedCellMap = {};
+    component.forEach(function (cell) {
+      removedCellMap[cell.id] = true;
+    });
+    var supportedCellMap = {};
+    var queue = supportRootIds.filter(function (cellId) {
+      return !removedCellMap[cellId];
+    });
+    while (queue.length > 0) {
+      var currentId = queue.pop();
+      if (supportedCellMap[currentId] || removedCellMap[currentId]) {
+        continue;
+      }
+      var current = occupiedCellMap[currentId];
+      if (!current) {
+        throw new Error("Cascade risk support traversal lost occupied cell " + currentId + ".");
+      }
+      supportedCellMap[currentId] = true;
+      occupiedCells.forEach(function (candidate) {
+        if (!supportedCellMap[candidate.id] && !removedCellMap[candidate.id] && areAdjacent(current, candidate)) {
+          queue.push(candidate.id);
+        }
+      });
+    }
+    var remainingCount = occupiedCells.length - component.length;
+    var supportedCount = Object.keys(supportedCellMap).length;
+    var floatingCount = remainingCount - supportedCount;
+    var impact = component.length + floatingCount;
+    if (impact > maximumImpact) {
+      maximumImpact = impact;
+      maximumFloating = floatingCount;
+      maximumComponentSize = component.length;
+      maximumComponentColor = component[0].color;
+    }
+  });
+  return {
+    occupiedCellCount: occupiedCells.length,
+    maximumImmediateImpact: maximumImpact,
+    maximumImmediateImpactRatio: maximumImpact / occupiedCells.length,
+    maximumImmediateFloating: maximumFloating,
+    maximumImmediateFloatingRatio: maximumFloating / occupiedCells.length,
+    triggeringComponentSize: maximumComponentSize,
+    triggeringComponentColor: maximumComponentColor
+  };
+}
+
+function analyzeCascadeRisk(options) {
+  assertObject(options, "Cascade risk options");
+  var levelId = requirePositiveInteger(options.levelId, "Cascade risk levelId");
+  var rows = normalizeRows(options.rows, levelId);
+  var specialCells = buildSpecialCellMap(options.specialEntities, rows, levelId);
+  var isTrappedSpriteRescue = options.levelType === "trapped_sprite_rescue";
+  if (isTrappedSpriteRescue && (!options.trappedSpriteRescue || !options.trappedSpriteRescue.anchorCell)) {
+    throw new Error("Level " + levelId + " cascade risk requires trappedSpriteRescue.anchorCell.");
+  }
+  return analyzeCascadeRiskWithSpecialCells(
+    rows,
+    specialCells,
+    isTrappedSpriteRescue,
+    options.trappedSpriteRescue
+  );
+}
+
+function normalizeCascadeBalancePolicy(rawPolicy, levelId) {
+  if (rawPolicy === undefined || rawPolicy === null) {
+    return null;
+  }
+  assertObject(rawPolicy, "Level " + levelId + " cascadeBalancePolicy");
+  ["preferredImmediateImpactRatio", "maximumImmediateImpactRatio"].forEach(function (fieldName) {
+    var fieldValue = rawPolicy[fieldName];
+    if (typeof fieldValue !== "number" || !Number.isFinite(fieldValue) || fieldValue <= 0 || fieldValue >= 1) {
+      throw new Error("Level " + levelId + " cascadeBalancePolicy." + fieldName + " must be within (0, 1).");
+    }
+  });
+  if (rawPolicy.preferredImmediateImpactRatio > rawPolicy.maximumImmediateImpactRatio) {
+    throw new Error(
+      "Level " + levelId + " cascadeBalancePolicy preferred ratio must not exceed maximum ratio."
+    );
+  }
+  if (!Number.isInteger(rawPolicy.candidateLimit) || rawPolicy.candidateLimit < 2) {
+    throw new Error("Level " + levelId + " cascadeBalancePolicy.candidateLimit must be an integer >= 2.");
+  }
+  return {
+    preferredImmediateImpactRatio: rawPolicy.preferredImmediateImpactRatio,
+    maximumImmediateImpactRatio: rawPolicy.maximumImmediateImpactRatio,
+    candidateLimit: rawPolicy.candidateLimit
+  };
+}
+
 function normalizeVisualFocus(rawFocus, targetColor, levelId) {
   if (rawFocus === undefined) {
     return null;
@@ -1050,6 +1212,7 @@ function buildClusteredLayout(options) {
     throw new Error("Level " + levelId + " is not registered for clustered redesign.");
   }
   var candidateProfile = resolveCandidateProfile(options);
+  var cascadeBalancePolicy = normalizeCascadeBalancePolicy(options.cascadeBalancePolicy, levelId);
   var rows = normalizeRows(options.rows, levelId);
   if (levelId >= FIRST_AESTHETIC_LEVEL_ID && options.preserveOccupiedSlots !== true) {
     rows = ensureAestheticRows(rows, levelId);
@@ -1062,6 +1225,11 @@ function buildClusteredLayout(options) {
   }
   var visualFocus = normalizeVisualFocus(options.visualFocus, targetColor, levelId);
   var specialCells = buildSpecialCellMap(options.specialEntities, rows, levelId);
+  var requiredNormalCells = buildRequiredNormalCellMap(options.requiredNormalSlots, specialCells, rows, levelId);
+  var isTrappedSpriteRescue = options.levelType === "trapped_sprite_rescue";
+  if (isTrappedSpriteRescue && (!options.trappedSpriteRescue || !options.trappedSpriteRescue.anchorCell)) {
+    throw new Error("Level " + levelId + " trapped sprite rescue layout requires anchorCell.");
+  }
   var limits = calculateCandidateLimits(colorState.counts, colors);
   if (candidateProfile === "full" && levelId <= 40) {
     limits.requiredGroupedRatio = Math.min(0.7, limits.maximumGroupedRatio);
@@ -1074,7 +1242,7 @@ function buildClusteredLayout(options) {
   if (levelId >= FIRST_AESTHETIC_LEVEL_ID && options.preserveOccupiedSlots !== true) {
     buildAestheticShapeModes(levelId, candidateProfile).forEach(function (shapeMode) {
       selectedSlotSets.push({
-        slots: buildAestheticSelectedSlots(rows, specialCells, colorState.total, levelId, shapeMode),
+        slots: buildAestheticSelectedSlots(rows, specialCells, requiredNormalCells, colorState.total, levelId, shapeMode),
         shapeMode: shapeMode,
         allowedIsolatedRatio: baseAllowedIsolatedRatio,
         allowedTargetSingletons: 0
@@ -1091,11 +1259,14 @@ function buildClusteredLayout(options) {
     });
   }
 
-  var minChunkSize = 4;
+  var minChunkSize = 3;
   var maxChunkSize = candidateProfile === "relaxed_campaign" ? 7 : 8;
   var maxOrderingMode = candidateProfile === "relaxed_campaign" ? 7 : 9;
   selectedSlotSets.forEach(function (slotSet) {
-    if (levelId >= FIRST_AESTHETIC_LEVEL_ID && !usesReferenceProjectedGeometry(levelId)) {
+    if (cascadeBalancePolicy !== null && candidates.length >= cascadeBalancePolicy.candidateLimit) {
+      return;
+    }
+    if (levelId >= FIRST_AESTHETIC_LEVEL_ID && !usesReferenceProjectedGeometry(levelId) && !isTrappedSpriteRescue) {
       var occupiedGeometry = analyzeOccupiedGeometry(rows, slotSet.slots, specialCells, levelId);
       if (!isGeometryStable(occupiedGeometry, rows.length)) {
         if (!bestRejected) {
@@ -1138,18 +1309,17 @@ function buildClusteredLayout(options) {
                 }
                 var candidateRows = assignChunksToRows(rows, orderedSlots, chunks, levelId);
                 var topRowSameColorRun = getMaxSameColorRun(candidateRows[0]);
+                if (topRowSameColorRun > MAX_TOP_ROW_SAME_COLOR_RUN) {
+                  continue;
+                }
                 var metrics = analyzeLayout(candidateRows, targetColor);
                 var colorComposition = analyzeColorComposition(candidateRows, colors, visualFocus);
-                var unsupportedCells = LevelBoardSupportValidator.findUnsupportedInitialCells({
-                  layout: candidateRows,
-                  specialEntities: options.specialEntities
-                }, "level_" + String(levelId).padStart(3, "0"));
                 if (!bestRejected ||
                     metrics.groupedRatio > bestRejected.metrics.groupedRatio ||
                     (metrics.groupedRatio === bestRejected.metrics.groupedRatio && metrics.isolatedRatio < bestRejected.metrics.isolatedRatio)) {
                   bestRejected = {
                     metrics: metrics,
-                    unsupportedCount: unsupportedCells.length,
+                    unsupportedCount: 0,
                     variant: [slotSet.shapeMode, chunkSize, mode, flip, rotation, reverseIndex, chunkPlan],
                     allowedIsolatedRatio: slotSet.allowedIsolatedRatio
                   };
@@ -1161,18 +1331,41 @@ function buildClusteredLayout(options) {
                     (colorComposition !== null && colorComposition.focusTargetCount < 2) ||
                     (colorComposition !== null && colorComposition.maxColorSideImbalanceRatio > 0.75) ||
                     (colorComposition !== null && colorComposition.mirroredColorEchoRatio < 0.12) ||
-                    topRowSameColorRun > MAX_TOP_ROW_SAME_COLOR_RUN ||
-                    countOccupiedRows(candidateRows, specialCells) < Math.min(getAestheticMinimumRows(levelId), rows.length) ||
-                    unsupportedCells.length > 0) {
+                    countOccupiedRows(candidateRows, specialCells) < Math.min(getAestheticMinimumRows(levelId), rows.length)) {
                   continue;
                 }
+                var unsupportedCells = LevelBoardSupportValidator.findUnsupportedInitialCells({
+                  layout: candidateRows,
+                  specialEntities: options.specialEntities,
+                  levelType: options.levelType,
+                  trappedSpriteRescue: options.trappedSpriteRescue
+                }, "level_" + String(levelId).padStart(3, "0"));
+                if (unsupportedCells.length > 0) {
+                  continue;
+                }
+                var cascadeRisk = cascadeBalancePolicy === null
+                  ? null
+                  : analyzeCascadeRiskWithSpecialCells(
+                    candidateRows,
+                    specialCells,
+                    isTrappedSpriteRescue,
+                    options.trappedSpriteRescue
+                  );
                 candidates.push({
                   rows: candidateRows,
                   metrics: metrics,
                   colorComposition: colorComposition,
+                  cascadeRisk: cascadeRisk,
                   score: scoreCandidate(metrics, limits, colorState.counts[targetColor], candidateProfile, colorComposition),
                   variant: [slotSet.shapeMode, chunkSize, mode, flip, rotation, reverseIndex, chunkPlan]
                 });
+                if (cascadeBalancePolicy !== null &&
+                    candidates.length >= cascadeBalancePolicy.candidateLimit) {
+                  return;
+                }
+                if (candidateProfile === "relaxed_campaign" && cascadeBalancePolicy === null) {
+                  return;
+                }
               }
             }
           }
@@ -1196,15 +1389,45 @@ function buildClusteredLayout(options) {
     throw new Error("Level " + levelId + " has no clustered layout candidate satisfying quality limits.");
   }
   candidates.sort(function (candidateA, candidateB) {
+    if (cascadeBalancePolicy !== null) {
+      var cascadeDistanceA = Math.abs(
+        candidateA.cascadeRisk.maximumImmediateImpactRatio -
+        cascadeBalancePolicy.preferredImmediateImpactRatio
+      );
+      var cascadeDistanceB = Math.abs(
+        candidateB.cascadeRisk.maximumImmediateImpactRatio -
+        cascadeBalancePolicy.preferredImmediateImpactRatio
+      );
+      if (cascadeDistanceA !== cascadeDistanceB) {
+        return cascadeDistanceA - cascadeDistanceB;
+      }
+      if (candidateA.cascadeRisk.maximumImmediateFloatingRatio !==
+          candidateB.cascadeRisk.maximumImmediateFloatingRatio) {
+        return candidateA.cascadeRisk.maximumImmediateFloatingRatio -
+          candidateB.cascadeRisk.maximumImmediateFloatingRatio;
+      }
+    }
     if (candidateA.score !== candidateB.score) {
       return candidateA.score - candidateB.score;
     }
     return candidateA.variant.join(":").localeCompare(candidateB.variant.join(":"));
   });
+  if (cascadeBalancePolicy !== null &&
+      candidates[0].cascadeRisk.maximumImmediateImpactRatio > cascadeBalancePolicy.maximumImmediateImpactRatio) {
+    throw new Error(
+      "Level " + levelId + " has no sampled cascade-balanced layout candidate." +
+      " bestImmediateImpact=" +
+      Math.round(candidates[0].cascadeRisk.maximumImmediateImpactRatio * 100) + "%" +
+      " maximumImmediateImpact=" +
+      Math.round(cascadeBalancePolicy.maximumImmediateImpactRatio * 100) + "%" +
+      " sampledCandidates=" + candidates.length
+    );
+  }
   return {
     rows: candidates[0].rows,
     metrics: candidates[0].metrics,
     colorComposition: candidates[0].colorComposition,
+    cascadeRisk: candidates[0].cascadeRisk,
     variant: candidates[0].variant.slice()
   };
 }
@@ -1265,7 +1488,8 @@ function validateClusteredLevel(level) {
 
   var limits = calculateCandidateLimits(counts, colors);
   var selectedSlots = collectLayoutSlots(rows, colors, counts, specialCells, levelId);
-  if (levelId >= FIRST_AESTHETIC_LEVEL_ID && !usesReferenceProjectedGeometry(levelId)) {
+  if (levelId >= FIRST_AESTHETIC_LEVEL_ID && !usesReferenceProjectedGeometry(levelId) &&
+      level.levelType !== "trapped_sprite_rescue") {
     var geometryMetrics = analyzeOccupiedGeometry(rows, selectedSlots, specialCells, levelId);
     if (!isGeometryStable(geometryMetrics, rows.length)) {
       throw new Error(
@@ -1308,5 +1532,6 @@ module.exports = {
   shouldRedesign: shouldRedesign,
   buildClusteredLayout: buildClusteredLayout,
   validateClusteredLevel: validateClusteredLevel,
-  analyzeLayout: analyzeLayout
+  analyzeLayout: analyzeLayout,
+  analyzeCascadeRisk: analyzeCascadeRisk
 };

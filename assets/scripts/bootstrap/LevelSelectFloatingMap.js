@@ -2,12 +2,14 @@
 
 var BundleLoader = require("../utils/BundleLoader");
 var LevelSelectMemoryDiagnostics = require("../utils/LevelSelectMemoryDiagnostics");
+var AssistSpiritConfig = require("../config/AssistSpiritConfig");
 
 var MAP_BUNDLE_NAME = "map";
 var CONFIG_PATH = "config/floating_map";
 var TELEPORT_ARRAY_PREFAB_NAME = "TeleportationArray";
 var PROTAGONIST_PATH = "image/ui/protagonist";
 var LEVEL_NUMBER_PATH_PREFIX = "image/num/";
+var TRAPPED_SPIRIT_PATH_PREFIX = "image/trapped_spirit/";
 var ROOT_NODE_NAME = "FloatingMapRoot";
 var CONTENT_NODE_NAME = "FloatingMapContent";
 var PROTAGONIST_NODE_NAME = "protagonist";
@@ -39,6 +41,7 @@ var NORMAL_ISLAND_CAPACITIES = {
   island7: 6,
   island8: 6
 };
+var RESCUE_LANDMARK_PREFAB_NAME = "landmark1";
 var SPECIAL_PREFABS = {
   landmark1: true,
   landmark2: true,
@@ -147,6 +150,69 @@ function loadMapLevelNumberSpriteFrames(bundle) {
   });
 }
 
+function getTrappedSpiritCatalog() {
+  var spirits = AssistSpiritConfig.getCatalog();
+  if (spirits.length !== 7) {
+    throw new Error("Floating map requires exactly seven assist spirit identities.");
+  }
+  return spirits;
+}
+
+function collectTrappedSpiritIdsForNodeRange(config, firstIndex, lastIndex) {
+  requireObject(config, "floating map config");
+  requireNonNegativeInteger(firstIndex, "collectTrappedSpiritIdsForNodeRange firstIndex");
+  requireNonNegativeInteger(lastIndex, "collectTrappedSpiritIdsForNodeRange lastIndex");
+  if (firstIndex > lastIndex || lastIndex >= config.nodes.length) {
+    throw new Error("collectTrappedSpiritIdsForNodeRange range is invalid.");
+  }
+
+  var spiritIds = {};
+  for (var index = firstIndex; index <= lastIndex; index += 1) {
+    var nodeConfig = config.nodes[index];
+    if (nodeConfig.prefab !== RESCUE_LANDMARK_PREFAB_NAME) {
+      continue;
+    }
+    AssistSpiritConfig.getSpirit(nodeConfig.rescueSpiritId);
+    spiritIds[nodeConfig.rescueSpiritId] = true;
+  }
+  return Object.keys(spiritIds).sort();
+}
+
+function loadMapTrappedSpiritSpriteFrames(bundle, spiritIds) {
+  var spriteFrames = {};
+  var catalog = getTrappedSpiritCatalog();
+  var catalogById = {};
+  catalog.forEach(function (spirit) {
+    catalogById[spirit.id] = true;
+  });
+  var requestedIds = Array.isArray(spiritIds) ? spiritIds.slice().sort() : [];
+  requestedIds.forEach(function (spiritId) {
+    if (typeof spiritId !== "string" || !catalogById[spiritId]) {
+      throw new Error("Unknown map trapped spirit id: " + spiritId);
+    }
+  });
+  return Promise.all(requestedIds.map(function (spiritId) {
+    return loadBundleAsset(
+      bundle,
+      TRAPPED_SPIRIT_PATH_PREFIX + spiritId,
+      cc.SpriteFrame,
+      "map trapped spirit `" + spiritId + "` sprite"
+    ).then(function (spriteFrame) {
+      if (spriteFrames[spiritId]) {
+        throw new Error("Duplicated map trapped spirit id: " + spiritId);
+      }
+      spriteFrames[spiritId] = spriteFrame;
+    });
+  })).then(function () {
+    requestedIds.forEach(function (spiritId) {
+      if (!spriteFrames[spiritId]) {
+        throw new Error("Map trapped spirit sprite is missing: " + spiritId);
+      }
+    });
+    return spriteFrames;
+  });
+}
+
 function cloneJson(data) {
   return JSON.parse(JSON.stringify(data));
 }
@@ -172,20 +238,39 @@ function validateNormalIslandCapacities(config) {
   });
 }
 
+function buildRescueLevelLookup(config) {
+  if (!Array.isArray(config.rescueLevelIds) || config.rescueLevelIds.length === 0) {
+    throw new Error("floating_map.rescueLevelIds must be a non-empty array.");
+  }
+  var lookup = {};
+  config.rescueLevelIds.forEach(function (levelId, index) {
+    requirePositiveInteger(levelId, "floating_map.rescueLevelIds[" + index + "]");
+    if (levelId > config.targetLevelCount) {
+      throw new Error("Floating map rescue level id exceeds targetLevelCount: " + levelId);
+    }
+    if (index > 0 && levelId <= config.rescueLevelIds[index - 1]) {
+      throw new Error("floating_map.rescueLevelIds must be strictly ascending.");
+    }
+    lookup[String(levelId)] = true;
+  });
+  return lookup;
+}
+
 function validateConfig(rawConfig) {
   var config = cloneJson(requireObject(rawConfig, "floating map config"));
-  if (config.schemaVersion !== 1) {
-    throw new Error("floating_map.schemaVersion must be 1.");
+  if (config.schemaVersion !== 3) {
+    throw new Error("floating_map.schemaVersion must be 3.");
   }
   requirePositiveInteger(config.targetLevelCount, "floating_map.targetLevelCount");
-  requirePositiveInteger(config.specialInterval, "floating_map.specialInterval");
   requirePositiveNumber(config.verticalPadding, "floating_map.verticalPadding");
   validateNormalIslandCapacities(config);
+  var rescueLevelLookup = buildRescueLevelLookup(config);
   if (!Array.isArray(config.nodes) || config.nodes.length === 0) {
     throw new Error("floating_map.nodes must be a non-empty array.");
   }
 
   var seenLevels = {};
+  var expectedLevelId = 1;
   config.nodes.forEach(function (nodeConfig, nodeIndex) {
     requireObject(nodeConfig, "floating_map.nodes[" + nodeIndex + "]");
     if (nodeConfig.index !== nodeIndex) {
@@ -236,13 +321,39 @@ function validateConfig(rawConfig) {
       if (seenLevels[String(levelId)] === true) {
         throw new Error("Floating map level id duplicated: " + levelId);
       }
-      if (nodeConfig.type === "normal" && levelId % config.specialInterval === 0) {
-        throw new Error("Special level assigned to normal floating island: " + levelId);
+      if (levelId !== expectedLevelId) {
+        throw new Error("Floating map level order mismatch: expected " + expectedLevelId + ", got " + levelId + ".");
       }
-      if (nodeConfig.type === "special" && levelId % config.specialInterval !== 0) {
-        throw new Error("Non-special level assigned to special floating island: " + levelId);
+      var rescue = rescueLevelLookup[String(levelId)] === true;
+      var hasRescueSpiritId = Object.prototype.hasOwnProperty.call(nodeConfig, "rescueSpiritId");
+      if (rescue) {
+        try {
+          AssistSpiritConfig.getSpirit(nodeConfig.rescueSpiritId);
+        } catch (error) {
+          throw new Error("Floating map rescue level " + levelId + " has invalid rescueSpiritId: " + error.message);
+        }
+      } else if (hasRescueSpiritId) {
+        throw new Error("Non-rescue floating map level configures rescueSpiritId: " + levelId);
+      }
+      if (nodeConfig.type === "normal" && rescue) {
+        throw new Error("Rescue level assigned to normal floating island: " + levelId);
+      }
+      if (
+        nodeConfig.type === "special" &&
+        rescue &&
+        nodeConfig.prefab !== RESCUE_LANDMARK_PREFAB_NAME
+      ) {
+        throw new Error("Rescue level must use landmark1: " + levelId);
+      }
+      if (
+        nodeConfig.type === "special" &&
+        !rescue &&
+        nodeConfig.prefab === RESCUE_LANDMARK_PREFAB_NAME
+      ) {
+        throw new Error("Non-rescue level assigned to landmark1: " + levelId);
       }
       seenLevels[String(levelId)] = true;
+      expectedLevelId += 1;
     });
   });
 
@@ -250,6 +361,9 @@ function validateConfig(rawConfig) {
     if (seenLevels[String(levelId)] !== true) {
       throw new Error("Floating map config missing level id: " + levelId);
     }
+  }
+  if (expectedLevelId !== config.targetLevelCount + 1) {
+    throw new Error("Floating map level order is incomplete.");
   }
   return config;
 }
@@ -395,11 +509,13 @@ function isRuntimeDisposed(state) {
 function cancelRuntimePrefetch(state) {
   if (isRuntimeDisposed(state)) {
     state.pendingPrefetchPrefabNames = {};
+    state.pendingPrefetchTrappedSpiritIds = {};
     state.prefabPrefetchPromise = null;
     return;
   }
   state.disposed = true;
   state.pendingPrefetchPrefabNames = {};
+  state.pendingPrefetchTrappedSpiritIds = {};
   state.prefabPrefetchPromise = null;
 }
 
@@ -427,6 +543,19 @@ function collectRequiredPrefabNames(state) {
   }
 
   return Object.keys(names).sort();
+}
+
+function collectRequiredTrappedSpiritIds(state) {
+  var visibleIndexes = resolveVisibleNodeIndexRange(state);
+  if (visibleIndexes.firstIndex > visibleIndexes.lastIndex) {
+    return [];
+  }
+  var retainIndexes = resolveRetainIndexRange(
+    visibleIndexes,
+    state.config.nodes.length,
+    MAP_PREFAB_RETAIN_NODE_BUFFER
+  );
+  return collectTrappedSpiritIdsForNodeRange(state.config, retainIndexes.firstIndex, retainIndexes.lastIndex);
 }
 
 function requireNonNegativeInteger(value, description) {
@@ -504,6 +633,48 @@ function ensureMapPrefabsLoaded(assets, prefabNames) {
   });
 
   return assets._prefabLoadPromises[loadKey];
+}
+
+function ensureMapTrappedSpiritSpriteFramesLoaded(assets, spiritIds) {
+  requireObject(assets, "floating map assets");
+  if (!assets.mapBundle || typeof assets.mapBundle.load !== "function") {
+    throw new Error("Floating map assets.mapBundle is required.");
+  }
+  if (!assets.trappedSpiritSpriteFrames || typeof assets.trappedSpiritSpriteFrames !== "object") {
+    throw new Error("Floating map trappedSpiritSpriteFrames is required.");
+  }
+
+  var missingIds = (Array.isArray(spiritIds) ? spiritIds : []).filter(function (spiritId) {
+    return typeof spiritId === "string" && spiritId && !assets.trappedSpiritSpriteFrames[spiritId];
+  });
+  if (missingIds.length === 0) {
+    return Promise.resolve(assets.trappedSpiritSpriteFrames);
+  }
+
+  var loadKey = missingIds.slice().sort().join("|");
+  assets._trappedSpiritSpriteLoadPromises = assets._trappedSpiritSpriteLoadPromises || {};
+  if (assets._trappedSpiritSpriteLoadPromises[loadKey]) {
+    return assets._trappedSpiritSpriteLoadPromises[loadKey];
+  }
+
+  assets._trappedSpiritSpriteLoadPromises[loadKey] = loadMapTrappedSpiritSpriteFrames(
+    assets.mapBundle,
+    missingIds
+  ).then(function (loadedFrames) {
+    missingIds.forEach(function (spiritId) {
+      if (!loadedFrames[spiritId]) {
+        throw new Error("Loaded map trapped spirit SpriteFrame is missing: " + spiritId);
+      }
+      assets.trappedSpiritSpriteFrames[spiritId] = loadedFrames[spiritId];
+    });
+    delete assets._trappedSpiritSpriteLoadPromises[loadKey];
+    return assets.trappedSpiritSpriteFrames;
+  }).catch(function (error) {
+    delete assets._trappedSpiritSpriteLoadPromises[loadKey];
+    throw error;
+  });
+
+  return assets._trappedSpiritSpriteLoadPromises[loadKey];
 }
 
 function collectPrefabNames(config) {
@@ -638,6 +809,12 @@ function loadAssets(focusLevelId) {
     return loadConfig(bundle).then(function (config) {
       var startupFocusLevelId = requirePositiveInteger(focusLevelId, "loadAssets focusLevelId");
       var startupPrefabNames = collectStartupPrefabNames(config, startupFocusLevelId);
+      var startupNodeIndex = findNodeIndexByLevelId(config, startupFocusLevelId);
+      var startupTrappedSpiritIds = collectTrappedSpiritIdsForNodeRange(
+        config,
+        Math.max(0, startupNodeIndex - STARTUP_VISIBLE_NODE_BUFFER),
+        Math.min(config.nodes.length - 1, startupNodeIndex + STARTUP_VISIBLE_NODE_BUFFER + 1)
+      );
       var prefabs = {};
       return Promise.all([
         ensureMapPrefabsLoaded({
@@ -646,13 +823,15 @@ function loadAssets(focusLevelId) {
           mapBundle: bundle
         }, startupPrefabNames),
         loadBundleAsset(bundle, PROTAGONIST_PATH, cc.SpriteFrame, "map protagonist sprite"),
-        loadMapLevelNumberSpriteFrames(bundle)
+        loadMapLevelNumberSpriteFrames(bundle),
+        loadMapTrappedSpiritSpriteFrames(bundle, startupTrappedSpiritIds)
       ]).then(function (results) {
         return {
           config: config,
           prefabs: results[0],
           protagonistSpriteFrame: results[1],
           levelNumberSpriteFrames: results[2],
+          trappedSpiritSpriteFrames: results[3],
           mapBundle: bundle
         };
       });
@@ -1105,6 +1284,26 @@ function configureSpecialDoor(islandNode, nodeConfig, state) {
   doorNode.active = state.isLevelCompleted(nodeConfig.levelIds[0]) === true;
 }
 
+function configureRescueSpirit(islandNode, nodeConfig, state) {
+  if (nodeConfig.prefab !== RESCUE_LANDMARK_PREFAB_NAME) {
+    if (Object.prototype.hasOwnProperty.call(nodeConfig, "rescueSpiritId")) {
+      throw new Error("Only landmark1 may configure rescueSpiritId: " + nodeConfig.index);
+    }
+    return;
+  }
+  AssistSpiritConfig.getSpirit(nodeConfig.rescueSpiritId);
+  var spriteFrame = state.assets.trappedSpiritSpriteFrames[nodeConfig.rescueSpiritId];
+  if (!spriteFrame) {
+    throw new Error("Floating map trapped spirit SpriteFrame is missing: " + nodeConfig.rescueSpiritId);
+  }
+  var cageBaseNode = requireChild(islandNode, "cage_base", nodeConfig.prefab);
+  var spiritNode = requireChild(cageBaseNode, "spirit", nodeConfig.prefab + "/cage_base");
+  var sprite = requireComponent(spiritNode, cc.Sprite, nodeConfig.prefab + "/cage_base/spirit");
+  sprite.spriteFrame = spriteFrame;
+  sprite.trim = false;
+  sprite.sizeMode = cc.Sprite.SizeMode.RAW;
+}
+
 function markIslandConfigured(islandNode, state) {
   islandNode.__floatingMapConfiguredRevision = state.islandDataRevision;
 }
@@ -1140,6 +1339,7 @@ function configureIslandNode(islandNode, nodeConfig, state) {
     configureNormalTeleport(islandNode, nodeConfig, state);
     return;
   }
+  configureRescueSpirit(islandNode, nodeConfig, state);
   configureSpecialDoor(islandNode, nodeConfig, state);
 }
 
@@ -1255,6 +1455,15 @@ function mergePendingPrefetchPrefabNames(state, prefabNames) {
   });
 }
 
+function mergePendingPrefetchTrappedSpiritIds(state, spiritIds) {
+  if (!state.pendingPrefetchTrappedSpiritIds || typeof state.pendingPrefetchTrappedSpiritIds !== "object") {
+    state.pendingPrefetchTrappedSpiritIds = {};
+  }
+  spiritIds.forEach(function (spiritId) {
+    state.pendingPrefetchTrappedSpiritIds[spiritId] = true;
+  });
+}
+
 function drainPendingPrefetchPrefabNames(state) {
   if (!state.pendingPrefetchPrefabNames || typeof state.pendingPrefetchPrefabNames !== "object") {
     return [];
@@ -1265,6 +1474,18 @@ function drainPendingPrefetchPrefabNames(state) {
   });
   state.pendingPrefetchPrefabNames = {};
   return pendingNames;
+}
+
+function drainPendingPrefetchTrappedSpiritIds(state) {
+  if (!state.pendingPrefetchTrappedSpiritIds || typeof state.pendingPrefetchTrappedSpiritIds !== "object") {
+    return [];
+  }
+
+  var pendingIds = Object.keys(state.pendingPrefetchTrappedSpiritIds).filter(function (spiritId) {
+    return !state.assets.trappedSpiritSpriteFrames[spiritId];
+  });
+  state.pendingPrefetchTrappedSpiritIds = {};
+  return pendingIds;
 }
 
 function reportMapPrefabPrefetchError(error) {
@@ -1285,7 +1506,8 @@ function runMapPrefabPrefetch(state) {
   }
 
   var pendingNames = drainPendingPrefetchPrefabNames(state);
-  if (pendingNames.length === 0) {
+  var pendingSpiritIds = drainPendingPrefetchTrappedSpiritIds(state);
+  if (pendingNames.length === 0 && pendingSpiritIds.length === 0) {
     state.prefabPrefetchPromise = null;
     if (!isRuntimeDisposed(state) && state.content && state.content.isValid) {
       syncVisibleNodesWithPrefetch(state);
@@ -1293,7 +1515,10 @@ function runMapPrefabPrefetch(state) {
     return Promise.resolve(null);
   }
 
-  return ensureMapPrefabsLoaded(state.assets, pendingNames).then(function () {
+  return Promise.all([
+    ensureMapPrefabsLoaded(state.assets, pendingNames),
+    ensureMapTrappedSpiritSpriteFramesLoaded(state.assets, pendingSpiritIds)
+  ]).then(function () {
     if (isRuntimeDisposed(state)) {
       state.prefabPrefetchPromise = null;
       return null;
@@ -1324,8 +1549,13 @@ function syncVisibleNodesWithPrefetch(state) {
   var missingPrefabNames = requiredPrefabNames.filter(function (prefabName) {
     return !state.assets.prefabs[prefabName];
   });
-  if (missingPrefabNames.length > 0) {
+  var requiredTrappedSpiritIds = collectRequiredTrappedSpiritIds(state);
+  var missingTrappedSpiritIds = requiredTrappedSpiritIds.filter(function (spiritId) {
+    return !state.assets.trappedSpiritSpriteFrames[spiritId];
+  });
+  if (missingPrefabNames.length > 0 || missingTrappedSpiritIds.length > 0) {
     mergePendingPrefetchPrefabNames(state, missingPrefabNames);
+    mergePendingPrefetchTrappedSpiritIds(state, missingTrappedSpiritIds);
     if (!state.prefabPrefetchPromise) {
       state.prefabPrefetchPromise = runMapPrefabPrefetch(state).catch(function (error) {
         state.prefabPrefetchPromise = null;
@@ -1753,6 +1983,7 @@ function requireRenderOptions(options) {
     throw new Error("Floating map protagonist sprite frame is required.");
   }
   requireObject(options.assets.levelNumberSpriteFrames, "Floating map level number sprite frames");
+  requireObject(options.assets.trappedSpiritSpriteFrames, "Floating map trapped spirit sprite frames");
   LEVEL_NUMBER_DIGITS.forEach(function (digit) {
     if (!options.assets.levelNumberSpriteFrames[digit]) {
       throw new Error("Floating map level number sprite frame is required: " + digit);
@@ -1819,7 +2050,8 @@ function render(options) {
     inertiaVelocityY: 0,
     inertiaTimer: null,
     prefabPrefetchPromise: null,
-    pendingPrefetchPrefabNames: {}
+    pendingPrefetchPrefabNames: {},
+    pendingPrefetchTrappedSpiritIds: {}
   };
   runtimeNodes.content.y = resolveInitialContentY(state, focusLevelId);
   mapHostNode.__floatingMapState = state;

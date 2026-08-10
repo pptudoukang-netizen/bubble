@@ -444,6 +444,7 @@ LevelRenderer.prototype._initializeBallScoreHud = function () {
   this.playedBallScoreCellIds = {};
   this.pendingBallScoreCellIds = {};
   this.pendingBallScoreCallbacks = {};
+  this.playedTimeBonusAwardedEvents = [];
   this._pruneBallScoreNodePool();
 };
 
@@ -534,6 +535,7 @@ LevelRenderer.prototype._resetBallScoreHudBeforeHudClear = function () {
   this.currentBallScoreResolution = null;
   this.playedBallScoreCellIds = {};
   this.pendingBallScoreCellIds = {};
+  this.playedTimeBonusAwardedEvents = [];
 };
 
 LevelRenderer.prototype._acquireBallScoreNode = function (gameViewNode, templateNode) {
@@ -800,6 +802,67 @@ LevelRenderer.prototype._playBallScoreDisplay = function (runtimeSnapshot) {
       this.ballScoreDisplayGeneration
     );
   }
+};
+
+LevelRenderer.prototype._playTimeBonusFloatingScoreDisplay = function (runtimeSnapshot) {
+  if (!runtimeSnapshot || !Array.isArray(runtimeSnapshot.runtimeEvents)) {
+    return;
+  }
+  if (!runtimeSnapshot.board || !Number.isInteger(runtimeSnapshot.board.maxColumns) ||
+      typeof runtimeSnapshot.board.viewportOffsetY !== "number" || !isFinite(runtimeSnapshot.board.viewportOffsetY)) {
+    throw new Error("Time bonus floating score requires board snapshot.");
+  }
+  if (!Array.isArray(this.playedTimeBonusAwardedEvents)) {
+    throw new Error("Time bonus floating score event state must be an array.");
+  }
+
+  runtimeSnapshot.runtimeEvents.forEach(function (event) {
+    if (!event || event.type !== "time_bonus_awarded") {
+      return;
+    }
+    if (!Number.isInteger(event.id) || event.id <= 0) {
+      throw new Error("time_bonus_awarded event requires a positive integer id.");
+    }
+    if (this.playedTimeBonusAwardedEvents.indexOf(event) >= 0) {
+      return;
+    }
+    if (!Array.isArray(event.cells) || !event.cells.length) {
+      throw new Error("time_bonus_awarded event requires awarded cells.");
+    }
+
+    var emittedCellIds = {};
+    event.cells.forEach(function (cell, index) {
+      if (!cell || typeof cell !== "object" || Array.isArray(cell)) {
+        throw new Error("time_bonus_awarded cell must be an object at index " + index + ".");
+      }
+      if (typeof cell.id !== "string" || !cell.id) {
+        throw new Error("time_bonus_awarded cell requires string id.");
+      }
+      if (emittedCellIds[cell.id]) {
+        throw new Error("time_bonus_awarded event repeats cell id: " + cell.id);
+      }
+      emittedCellIds[cell.id] = true;
+      if (!Number.isInteger(cell.row) || !Number.isInteger(cell.col) || cell.row < 0 || cell.col < 0) {
+        throw new Error("time_bonus_awarded cell requires non-negative row and col: " + cell.id);
+      }
+      if (!Number.isInteger(cell.bonusSeconds) || cell.bonusSeconds !== 5) {
+        throw new Error("time_bonus_awarded cell must grant exactly five seconds: " + cell.id);
+      }
+
+      var boardPosition = BoardLayout.getCellPosition(
+        cell.row,
+        cell.col,
+        runtimeSnapshot.board.maxColumns,
+        runtimeSnapshot.board.viewportOffsetY
+      );
+      var position = this._convertBoardPointToGameView(boardPosition.x, boardPosition.y);
+      this._spawnBallScoreDisplay({
+        cellId: "time_bonus_" + String(event.id) + "_" + cell.id,
+        points: cell.bonusSeconds
+      }, position);
+    }, this);
+    this.playedTimeBonusAwardedEvents.push(event);
+  }, this);
 };
 
 LevelRenderer.prototype._pruneJarFractionNodePool = function () {
@@ -1116,33 +1179,32 @@ LevelRenderer.prototype._renderJarScoreBoostTimer = function (runtimeSnapshot) {
 
 LevelRenderer.prototype._renderTimedLevelTimer = function (runtimeSnapshot) {
   var timedLevel = !!(runtimeSnapshot && runtimeSnapshot.timedLevel);
-  var panel = this._getMountedHudPanel();
-  if (!panel) {
-    if (timedLevel) {
-      throw new Error("Timed level requires HudPanel.");
-    }
-    return;
+  if (!this.layers || !this.layers.hud) {
+    throw new Error("HUD layer is missing when rendering timed level timer.");
   }
 
-  var timerNode = panel.getChildByName("timer");
+  if (typeof this._getMountedBgNode !== "function") {
+    throw new Error("Timed level timer requires mounted GameView bg resolver.");
+  }
+  var backgroundNode = this._getMountedBgNode();
+
+  var bigTimerNode = backgroundNode.getChildByName("BigTimer");
+  if (!bigTimerNode || !bigTimerNode.isValid) {
+    throw new Error("Mounted GameView bg.BigTimer node is missing.");
+  }
+
+  var timerNode = bigTimerNode.getChildByName("timer");
   if (!timerNode || !timerNode.isValid) {
-    if (timedLevel) {
-      throw new Error("Timed level requires HudPanel.timer node.");
-    }
-    return;
+    throw new Error("Mounted GameView bg.BigTimer.timer node is missing.");
   }
 
   var timerLabel = timerNode.getComponent(cc.Label);
   if (!timerLabel) {
-    if (timedLevel) {
-      throw new Error("HudPanel.timer requires Label component.");
-    }
-    timerNode.active = false;
-    return;
+    throw new Error("Mounted GameView bg.BigTimer.timer requires Label component.");
   }
 
   if (!timedLevel) {
-    timerNode.active = false;
+    bigTimerNode.active = false;
     timerLabel.string = "0";
     return;
   }
@@ -1153,10 +1215,9 @@ LevelRenderer.prototype._renderTimedLevelTimer = function (runtimeSnapshot) {
   }
   var remainingMs = Math.max(0, Math.ceil(remainingMsValue));
   var remainingSeconds = Math.max(0, Math.ceil(remainingMs / 1000));
-  var minutes = Math.floor(remainingSeconds / 60);
-  var seconds = remainingSeconds % 60;
+  bigTimerNode.active = true;
   timerNode.active = true;
-  timerLabel.string = minutes + ":" + (seconds < 10 ? "0" + seconds : String(seconds));
+  timerLabel.string = String(remainingSeconds);
 };
 
 LevelRenderer.prototype.playThreeLineEliminationAnimation = function (rows) {

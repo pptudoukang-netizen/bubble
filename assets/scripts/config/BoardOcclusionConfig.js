@@ -183,16 +183,19 @@ function groupsOverlap(left, right) {
 }
 
 function buildClearRule(level, levelId, zoneIndex) {
-  if (level.playMode === "timed_infinite_shots" || (levelId + zoneIndex) % 3 === 0) {
+  if (level.playMode === "timed_infinite_shots") {
     return {
       kind: "item_or_seconds",
       seconds: 12 + ((levelId + zoneIndex) % 7)
     };
   }
-  return {
-    kind: "item_or_shots",
-    shots: 4 + ((levelId + zoneIndex) % 3)
-  };
+  if (level.playMode === "shot_limited") {
+    return {
+      kind: "item_or_shots",
+      shots: 4 + ((levelId + zoneIndex) % 3)
+    };
+  }
+  throw new Error("Unsupported board occlusion playMode: " + String(level.playMode));
 }
 
 function createNonePlan() {
@@ -333,6 +336,14 @@ function normalizePlan(rawPlan, level, levelKey) {
   if (mode === MODE_PER_RUN && plan.variants.length < 1) {
     throw new Error("per_run requires at least one variant: " + levelKey);
   }
+  var expectedClearRuleKind;
+  if (level.playMode === "shot_limited") {
+    expectedClearRuleKind = "item_or_shots";
+  } else if (level.playMode === "timed_infinite_shots") {
+    expectedClearRuleKind = "item_or_seconds";
+  } else {
+    throw new Error("Unsupported board occlusion playMode `" + String(level.playMode) + "`: " + levelKey);
+  }
 
   var occupied = {};
   var specialCells = {};
@@ -430,14 +441,20 @@ function normalizePlan(rawPlan, level, levelKey) {
       if (Object.keys(connected).length !== zoneCells.length) {
         throw new Error("Board occlusion zone cells must form one connected hex region: " + levelKey);
       }
+      var clearRuleDescription =
+        "level.boardOcclusionPlan.variants[" + variantIndex + "].zones[" + zoneIndex + "].clearRule";
+      var clearRule = normalizeClearRule(zone.clearRule, clearRuleDescription);
+      if (clearRule.kind !== expectedClearRuleKind) {
+        throw new Error(
+          clearRuleDescription + ".kind must be " + expectedClearRuleKind +
+          " when level.playMode is " + level.playMode + ": " + levelKey
+        );
+      }
       return {
         id: zoneId,
         visualType: visualType,
         cells: zoneCells,
-        clearRule: normalizeClearRule(
-          zone.clearRule,
-          "level.boardOcclusionPlan.variants[" + variantIndex + "].zones[" + zoneIndex + "].clearRule"
-        )
+        clearRule: clearRule
       };
     });
     return {
@@ -455,7 +472,7 @@ function normalizePlan(rawPlan, level, levelKey) {
 
 function buildCampaignPlan(level) {
   return createPlanForLevel(level, {
-    enabled: level.levelId >= ENABLED_FROM_LEVEL,
+    enabled: level.levelId >= ENABLED_FROM_LEVEL && level.levelType !== "trapped_sprite_rescue",
     mode: MODE_PER_ATTEMPT
   });
 }

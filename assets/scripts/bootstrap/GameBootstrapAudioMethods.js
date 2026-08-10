@@ -1,25 +1,51 @@
 "use strict";
 
 var BubbleBreakSfxPolicy = require("../audio/BubbleBreakSfxPolicy");
+var AssistSpiritConfig = require("../config/AssistSpiritConfig");
 
-var JAR_BOUNCE_SFX_MIN_INTERVAL_MS = 80;
-var JAR_BOUNCE_SFX_MAX_PER_FRAME = 2;
-var JAR_BOUNCE_SFX_SLOT_COUNT = 5;
+var JAR_SLOT_COUNT = 5;
+var FAIRY_ASSIST_HIT_SFX_PATHS = Object.freeze([
+  "sound/hit_spirit_1",
+  "sound/hit_spirit_2",
+  "sound/hit_spirit_3",
+  "sound/hit_spirit_4",
+  "sound/hit_spirit_5"
+]);
+var ASSIST_SPIRIT_SKILL_SFX_BY_ID = Object.freeze({
+  permanent_thaw: "ablation",
+  release_vines: "vines"
+});
+
+function requireFairyAssistHitSfxPaths(paths) {
+  if (
+    !Array.isArray(paths) ||
+    paths.length !== FAIRY_ASSIST_HIT_SFX_PATHS.length ||
+    FAIRY_ASSIST_HIT_SFX_PATHS.some(function (expectedPath) {
+      return paths.indexOf(expectedPath) < 0;
+    })
+  ) {
+    throw new Error("Fairy assist hit sfx resources must contain exactly sound/hit_spirit_1 through sound/hit_spirit_5.");
+  }
+  return paths.slice();
+}
 
 module.exports = {
   _buildAudioConfig: function () {
+    var fairyAssistHitPaths = requireFairyAssistHitSfxPaths(
+      this._parseAudioResourceList(this.fairyAssistHitSfxResources)
+    );
     return {
       bgmPath: this._getGameplayBgmPath(),
       sfxMap: {
         uiClick: this.uiClickSfxResource,
         shot: this.shotSfxResource,
+        emission: this.emissionSfxResource,
         win: this.winSfxResource,
         lose: this.loseSfxResource,
-        jarBounce: this._parseAudioResourceList(this.jarBounceSfxResources),
         jarCollectBottom: this.jarCollectBottomSfxResource,
         break: this.breakSfxResource,
-        noElimination: this.noEliminationSfxResource,
-        fairyAssistHit: this.fairyAssistHitSfxResource,
+        hitBucket: this.hitBucketSfxResource,
+        fairyAssistHit: fairyAssistHitPaths,
         fairyAssistDepart: this.fairyAssistDepartSfxResource,
         gameEntryCountdown: this.gameEntryCountdownSfxResource,
         bomb: this.bombSfxResource,
@@ -27,6 +53,11 @@ module.exports = {
         fireworks: this.fireworksSfxResource,
         iceBreak: this.iceBreakSfxResource,
         vines: this.vinesSfxResource,
+        tornado: this.tornadoSfxResource,
+        lighting: this.lightingSfxResource,
+        ablation: this.ablationSfxResource,
+        skillCompleted: this.skillCompletedSfxResource,
+        trappedSpriteRescued: this.trappedSpriteRescuedSfxResource,
         useProps: this.usePropsSfxResource
       }
     };
@@ -42,6 +73,26 @@ module.exports = {
     return typeof this.gameBackgroundMusicResource === "string"
       ? this.gameBackgroundMusicResource.trim()
       : "";
+  },
+
+  _getTimedLevelGameplayBgmPath: function () {
+    return typeof this.timedLevelBackgroundMusicResource === "string"
+      ? this.timedLevelBackgroundMusicResource.trim()
+      : "";
+  },
+
+  _getGameplayBgmPathForLevel: function (levelConfig) {
+    if (!levelConfig || !levelConfig.level || typeof levelConfig.level.playMode !== "string") {
+      throw new Error("Gameplay background music requires level.playMode.");
+    }
+
+    if (levelConfig.level.playMode === "timed_infinite_shots") {
+      return this._getTimedLevelGameplayBgmPath();
+    }
+    if (levelConfig.level.playMode === "shot_limited") {
+      return this._getGameplayBgmPath();
+    }
+    throw new Error("Unsupported gameplay BGM playMode: " + levelConfig.level.playMode);
   },
 
   _parseAudioResourceList: function (value) {
@@ -66,25 +117,28 @@ module.exports = {
 
   _preloadStartupAudio: function () {
     if (!this.audioManager) {
-      return Promise.resolve();
+      throw new Error("Startup background music preload requires AudioManager.");
     }
 
-    var bgmPaths = [
-      this._getLevelSelectBgmPath(),
-      this._getGameplayBgmPath()
-    ].filter(function (path, index, list) {
+    var levelSelectBgmPath = this._getLevelSelectBgmPath();
+    var gameplayBgmPath = this._getGameplayBgmPath();
+    var timedGameplayBgmPath = this._getTimedLevelGameplayBgmPath();
+    if (!levelSelectBgmPath || !gameplayBgmPath || !timedGameplayBgmPath) {
+      throw new Error("Startup requires level-select, gameplay, and timed-level background music resources.");
+    }
+    var bgmPaths = [levelSelectBgmPath, gameplayBgmPath, timedGameplayBgmPath].filter(function (path, index, list) {
       return !!path && list.indexOf(path) === index;
     });
-
-    var preloadTasks = [];
-    if (typeof this.audioManager.preloadConfiguredAudio === "function") {
-      preloadTasks.push(this.audioManager.preloadConfiguredAudio());
-    }
-    if (bgmPaths.length && typeof this.audioManager.preloadPaths === "function") {
-      preloadTasks.push(this.audioManager.preloadPaths(bgmPaths));
+    if (typeof this.audioManager.preloadPaths !== "function") {
+      throw new Error("Startup background music preload requires AudioManager.preloadPaths.");
     }
 
-    return Promise.all(preloadTasks);
+    return this.audioManager.preloadPaths(bgmPaths).then(function (clips) {
+      if (!Array.isArray(clips) || clips.length !== bgmPaths.length || clips.some(function (clip) { return !clip; })) {
+        throw new Error("Startup background music preload did not return every configured clip.");
+      }
+      return clips;
+    });
   },
 
   _playBackgroundMusic: function (resourcePath) {
@@ -92,8 +146,19 @@ module.exports = {
       throw new Error("Background music playback requires AudioManager.playBgm.");
     }
 
+    if (typeof resourcePath !== "string" || resourcePath.trim().length === 0) {
+      throw new Error("Background music resource path must be a non-empty string.");
+    }
+
     return this.audioManager.playBgm(resourcePath, { loop: true }).then(function (clip) {
       if (!clip) {
+        var snapshot = this.audioManager.snapshot();
+        if (!snapshot || !snapshot.settings || typeof snapshot.settings.musicEnabled !== "boolean") {
+          throw new Error("Background music playback requires a valid AudioManager settings snapshot.");
+        }
+        if (snapshot.settings.musicEnabled) {
+          throw new Error("Background music did not start: " + resourcePath);
+        }
         return null;
       }
       if (typeof this.audioManager.stopAllSfx !== "function") {
@@ -112,8 +177,8 @@ module.exports = {
     return this._playBackgroundMusic(this._getLevelSelectBgmPath());
   },
 
-  _playGameplayBackgroundMusic: function () {
-    return this._playBackgroundMusic(this._getGameplayBgmPath());
+  _playGameplayBackgroundMusic: function (levelConfig) {
+    return this._playBackgroundMusic(this._getGameplayBgmPathForLevel(levelConfig));
   },
 
   _playSfx: function (name) {
@@ -124,6 +189,14 @@ module.exports = {
     this.audioManager.playSfx(name);
   },
 
+  _playFairyAssistHitSfx: function () {
+    if (!this.audioManager || typeof this.audioManager.playExclusiveSfx !== "function") {
+      throw new Error("Fairy assist hit audio requires AudioManager.playExclusiveSfx.");
+    }
+
+    return this.audioManager.playExclusiveSfx("fairyAssistHit", "fairyAssistHit");
+  },
+
   _runGameEntryCountdown: function () {
     if (!this.levelRenderer || typeof this.levelRenderer.playGameEntryCountdown !== "function") {
       throw new Error("Game entry countdown requires levelRenderer.playGameEntryCountdown.");
@@ -131,43 +204,6 @@ module.exports = {
 
     this._playSfx("gameEntryCountdown");
     return this.levelRenderer.playGameEntryCountdown();
-  },
-
-  _resolveJarBouncePath: function (jarIndex) {
-    if (!Number.isInteger(jarIndex) || jarIndex < 0 || jarIndex >= JAR_BOUNCE_SFX_SLOT_COUNT) {
-      throw new Error("Jar bounce sfx requires jarIndex from 0 to " + (JAR_BOUNCE_SFX_SLOT_COUNT - 1) + ".");
-    }
-
-    var bouncePaths = this._parseAudioResourceList(this.jarBounceSfxResources);
-    if (bouncePaths.length !== JAR_BOUNCE_SFX_SLOT_COUNT) {
-      throw new Error(
-        "Jar bounce sfx resources must include exactly " +
-        JAR_BOUNCE_SFX_SLOT_COUNT +
-        " entries (pao1-pao" +
-        JAR_BOUNCE_SFX_SLOT_COUNT +
-        ")."
-      );
-    }
-
-    return bouncePaths[jarIndex];
-  },
-
-  _canPlayJarBounceSfx: function (now, playedThisFrame) {
-    if (!Number.isFinite(now)) {
-      throw new Error("Jar bounce sfx throttle requires finite timestamp.");
-    }
-    if (playedThisFrame >= JAR_BOUNCE_SFX_MAX_PER_FRAME) {
-      return false;
-    }
-    if (
-      typeof this._lastJarBounceSfxAt === "number" &&
-      now - this._lastJarBounceSfxAt < JAR_BOUNCE_SFX_MIN_INTERVAL_MS
-    ) {
-      return false;
-    }
-
-    this._lastJarBounceSfxAt = now;
-    return true;
   },
 
   _triggerShortVibration: function () {
@@ -215,9 +251,6 @@ module.exports = {
       return;
     }
 
-    var now = Date.now();
-    var jarBouncePlayedThisFrame = 0;
-
     runtimeEvents.forEach(function (event) {
       if (!event || typeof event.type !== "string") {
         return;
@@ -228,19 +261,27 @@ module.exports = {
         if (!Number.isInteger(event.bounceCount) || event.bounceCount < 1) {
           throw new Error("jar_rim_bounce runtime event requires positive integer bounceCount.");
         }
-        if (!Number.isInteger(event.jarIndex) || event.jarIndex < 0 || event.jarIndex >= JAR_BOUNCE_SFX_SLOT_COUNT) {
-          throw new Error("jar_rim_bounce runtime event requires jarIndex from 0 to " + (JAR_BOUNCE_SFX_SLOT_COUNT - 1) + ".");
+        if (!Number.isInteger(event.jarIndex) || event.jarIndex < 0 || event.jarIndex >= JAR_SLOT_COUNT) {
+          throw new Error("jar_rim_bounce runtime event requires jarIndex from 0 to " + (JAR_SLOT_COUNT - 1) + ".");
         }
-        if (!this._canPlayJarBounceSfx(now, jarBouncePlayedThisFrame)) {
-          return;
-        }
-        jarBouncePlayedThisFrame += 1;
-        this._playSfx(this._resolveJarBouncePath(event.jarIndex));
         return;
       }
 
       if (event.type === "fairy_assist_hit") {
-        this._playSfx("fairyAssistHit");
+        this._playFairyAssistHitSfx();
+        return;
+      }
+
+      if (event.type === "assist_spirit_skill_ready") {
+        if (!Number.isInteger(event.charge_max) || event.charge_max <= 0) {
+          throw new Error("assist_spirit_skill_ready runtime event requires positive integer charge_max.");
+        }
+        this._playSfx("skillCompleted");
+        return;
+      }
+
+      if (event.type === "surplus_shot_launched") {
+        this._playSfx("emission");
         return;
       }
 
@@ -305,16 +346,40 @@ module.exports = {
         return;
       }
 
-      if (event.type === "vine_entangled") {
+      if (event.type === "vine_entanglement_started") {
         if (!Number.isInteger(event.count) || event.count < 1) {
-          throw new Error("vine_entangled runtime event requires positive integer count.");
+          throw new Error("vine_entanglement_started runtime event requires positive integer count.");
         }
         this._playSfx("vines");
         return;
       }
 
-      if (event.type === "shot_no_elimination") {
-        this._playSfx("noElimination");
+      if (event.type === "assist_spirit_skill_resolved") {
+        if (typeof event.skill_id !== "string" || !event.skill_id) {
+          throw new Error("assist_spirit_skill_resolved runtime event requires skill_id.");
+        }
+        if (event.skill_id === "lightning_chain" || event.skill_id === "tornado") {
+          return;
+        }
+        var assistSpiritSkillSfxKey = ASSIST_SPIRIT_SKILL_SFX_BY_ID[event.skill_id];
+        if (!assistSpiritSkillSfxKey) {
+          throw new Error("Unsupported assist spirit skill audio mapping: " + event.skill_id);
+        }
+        this._playSfx(assistSpiritSkillSfxKey);
+        return;
+      }
+
+      if (event.type === "trapped_sprite_rescued") {
+        AssistSpiritConfig.getSpirit(event.spiritId);
+        this._playSfx("trappedSpriteRescued");
+        return;
+      }
+
+      if (event.type === "shot_wall_bounce_no_elimination") {
+        if (!Number.isInteger(event.wallBounceCount) || event.wallBounceCount < 1) {
+          throw new Error("shot_wall_bounce_no_elimination runtime event requires positive integer wallBounceCount.");
+        }
+        this._playSfx("hitBucket");
         return;
       }
 

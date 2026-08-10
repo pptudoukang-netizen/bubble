@@ -1184,6 +1184,29 @@ module.exports = {
         continue;
       }
 
+      if (itemId === "gem") {
+        if (!this.playerResourceStore || typeof this.playerResourceStore.addGems !== "function") {
+          throw new Error("Sign-in gem reward requires PlayerResourceStore.addGems.");
+        }
+        if (typeof this.playerResourceStore.save !== "function") {
+          throw new Error("Sign-in gem reward requires PlayerResourceStore.save.");
+        }
+
+        this._refreshPlayerResources();
+        var gemAddResult = this.playerResourceStore.addGems(this.playerResources, count);
+        if (
+          !gemAddResult ||
+          gemAddResult.accepted !== true ||
+          gemAddResult.gained !== count ||
+          !gemAddResult.resources
+        ) {
+          throw new Error("PlayerResourceStore.addGems returned an invalid sign-in reward result.");
+        }
+        this.playerResources = this.playerResourceStore.save(gemAddResult.resources);
+        summaryTexts.push("钻石 +" + gemAddResult.gained);
+        continue;
+      }
+
       if (typeof this._addInventoryItem === "function") {
         var addResult = this._addInventoryItem(itemId, count);
         if (addResult && addResult.accepted) {

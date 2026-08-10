@@ -8,6 +8,16 @@ var FairyAssistConfig = require("../gameplay-src/config/FairyAssistConfig");
 var FairyAssistSystem = require("../gameplay-src/systems/FairyAssistSystem");
 var FallingMarbleSystem = require("../gameplay-src/systems/FallingMarbleSystem");
 var attachLevelRendererSceneJarMethods = require("../gameplay-src/render/LevelRendererSceneJarMethods");
+var AudioManager = require("../assets/scripts/audio/AudioManager");
+var GameBootstrapAudioMethods = require("../assets/scripts/bootstrap/GameBootstrapAudioMethods");
+
+var FAIRY_ASSIST_HIT_SFX_PATHS = [
+  "sound/hit_spirit_1",
+  "sound/hit_spirit_2",
+  "sound/hit_spirit_3",
+  "sound/hit_spirit_4",
+  "sound/hit_spirit_5"
+];
 
 function buildLevelConfig(maxDynamicMarbles) {
   return {
@@ -886,6 +896,39 @@ function testJarCollisionPartitionsCoverWallsAndInterJarSpace() {
   });
 }
 
+function testJarRimBounceSpeedIsAngleInvariant() {
+  var systems = createSystemsWithJar(5);
+  var zone = systems.falling.jarZones[0];
+  assert(zone, "rim bounce angle test requires jar zone.");
+  var shallowDrop = buildJarProbeDrop(
+    "shallow_rim_bounce",
+    zone.x + zone.innerHalfWidth + zone.edgeThickness * 0.5 + 0.5,
+    zone.mouthY + BoardLayout.bubbleRadius
+  );
+  var steepDrop = buildJarProbeDrop(
+    "steep_rim_bounce",
+    zone.x + zone.collectHalfWidth + 1,
+    zone.mouthY + BoardLayout.bubbleRadius
+  );
+
+  var shallowInteraction = systems.falling._processJarInteraction(shallowDrop);
+  var steepInteraction = systems.falling._processJarInteraction(steepDrop);
+  assert(shallowInteraction && shallowInteraction.bounced === true);
+  assert(steepInteraction && steepInteraction.bounced === true);
+  assert.strictEqual(shallowInteraction.edgeType, "outer");
+  assert.strictEqual(steepInteraction.edgeType, "inner");
+
+  var shallowSpeed = Math.sqrt(
+    shallowDrop.velocity.x * shallowDrop.velocity.x + shallowDrop.velocity.y * shallowDrop.velocity.y
+  );
+  var steepSpeed = Math.sqrt(
+    steepDrop.velocity.x * steepDrop.velocity.x + steepDrop.velocity.y * steepDrop.velocity.y
+  );
+  assert.ok(steepDrop.velocity.y > shallowDrop.velocity.y, "steeper bounce may have more upward speed.");
+  assert.ok(Math.abs(shallowSpeed - steepSpeed) <= 1e-6, "rim bounce speed must not depend on angle.");
+  assert.ok(Math.abs(shallowSpeed - systems.falling.rimBounceSpeed) <= 1e-6);
+}
+
 function testFinalJarRimContactRedirectsWithoutPrematureCollection() {
   var systems = createSystemsWithJar(5);
   var zone = systems.falling.jarZones[0];
@@ -910,6 +953,10 @@ function testFinalJarRimContactRedirectsWithoutPrematureCollection() {
   systems.falling.registerDrops([cell], grid);
   var drop = systems.falling.activeDrops[0];
   drop.rimBounceCount = systems.falling.maxRimBounces;
+  drop.lastRimBounceSpeed = systems.falling.rimBounceSpeed * Math.pow(
+    systems.falling.rimBounceDecay,
+    systems.falling.maxRimBounces - 1
+  );
   drop.glowStacks = 2;
   var update = systems.falling.update(0.01);
 
@@ -1041,6 +1088,27 @@ function testSideWallBounceKeepsHorizontalEscapeVelocity() {
   assert.ok(victoryDrop.velocity.x <= -minEscapeSpeed, "victory board drop must escape side wall without crossing it.");
   assert.ok(victoryDrop.velocity.y <= -100, "victory board drop must not receive side-wall lift.");
   assert.strictEqual(victoryDrop.remainingBounces, 2);
+}
+
+function testRecentJarRimSideWallReflectionPreservesSpeed() {
+  var systems = createSystems(5);
+  var drop = buildSideWallDrop("recent_rim_side_wall", systems.falling._dropLeftLimit, -220, 2);
+  drop.velocity.y = 120;
+  drop.jarCooldown = 0.05;
+  var speedBefore = Math.sqrt(drop.velocity.x * drop.velocity.x + drop.velocity.y * drop.velocity.y);
+  var remainingBouncesBefore = drop.remainingBounces;
+
+  systems.falling._applySideWallEscape(drop, true);
+
+  var speedAfter = Math.sqrt(drop.velocity.x * drop.velocity.x + drop.velocity.y * drop.velocity.y);
+  assert.ok(drop.velocity.x > 0, "recent jar rim side-wall contact must redirect inward.");
+  assert.ok(Math.abs(speedAfter - speedBefore) <= 1e-6, "recent jar rim side-wall contact must preserve speed.");
+  assert.strictEqual(drop.velocity.y, 120, "recent jar rim side-wall contact must preserve vertical speed.");
+  assert.strictEqual(
+    drop.remainingBounces,
+    remainingBouncesBefore,
+    "recent jar rim side-wall contact must not consume a wall bounce."
+  );
 }
 
 function testLeftmostJarOuterRimBounce() {
@@ -1264,10 +1332,234 @@ function testSurplusShotPendingCountFollowsVolleyLaunch() {
   ], origin, 2);
 
   assert.strictEqual(systems.falling.getPendingSurplusShotCount(), 2);
-  systems.falling.update(0.21);
+  var firstUpdate = systems.falling.update(0.21);
+  assert.strictEqual(firstUpdate.surplusShotLaunchedCount, 1);
   assert.strictEqual(systems.falling.getPendingSurplusShotCount(), 1);
-  systems.falling.update(0.21);
+  var secondUpdate = systems.falling.update(0.21);
+  assert.strictEqual(secondUpdate.surplusShotLaunchedCount, 1);
   assert.strictEqual(systems.falling.getPendingSurplusShotCount(), 0);
+  var completedUpdate = systems.falling.update(0.21);
+  assert.strictEqual(completedUpdate.surplusShotLaunchedCount, 0);
+}
+
+function testSurplusShotEmissionAudioRouting() {
+  var audioConfig = GameBootstrapAudioMethods._buildAudioConfig.call({
+    _getGameplayBgmPath: function () {
+      return "sound/game_bg1";
+    },
+    _parseAudioResourceList: GameBootstrapAudioMethods._parseAudioResourceList,
+    fairyAssistHitSfxResources: FAIRY_ASSIST_HIT_SFX_PATHS.join(","),
+    emissionSfxResource: "sound/emission"
+  });
+  assert.strictEqual(audioConfig.sfxMap.emission, "sound/emission");
+
+  var playedSfx = [];
+  GameBootstrapAudioMethods._playRuntimeAudioEvents.call({
+    _trackRuntimeTelemetryEvent: function () {},
+    _playSfx: function (name) {
+      playedSfx.push(name);
+    }
+  }, {
+    runtimeEvents: [
+      { type: "surplus_shot_launched" },
+      { type: "surplus_shot_launched" }
+    ]
+  });
+  assert.deepStrictEqual(playedSfx, ["emission", "emission"]);
+}
+
+function testFairyAssistHitRandomAudioRouting() {
+  var gameBootstrapSource = fs.readFileSync(
+    path.join(__dirname, "../assets/scripts/bootstrap/GameBootstrap.js"),
+    "utf8"
+  );
+  assert(
+    gameBootstrapSource.indexOf("_playFairyAssistHitSfx: GameBootstrapAudioMethods._playFairyAssistHitSfx") >= 0,
+    "GameBootstrap must attach the dedicated fairy assist hit audio method."
+  );
+
+  FAIRY_ASSIST_HIT_SFX_PATHS.forEach(function (resourcePath) {
+    var assetPath = path.join(__dirname, "../assets/audio", resourcePath + ".mp3");
+    assert(fs.existsSync(assetPath), "Missing fairy assist hit audio asset: " + assetPath);
+    assert(fs.existsSync(assetPath + ".meta"), "Missing fairy assist hit audio meta: " + assetPath + ".meta");
+  });
+
+  var audioConfig = GameBootstrapAudioMethods._buildAudioConfig.call({
+    _getGameplayBgmPath: function () {
+      return "sound/game_bg1";
+    },
+    _parseAudioResourceList: GameBootstrapAudioMethods._parseAudioResourceList,
+    fairyAssistHitSfxResources: FAIRY_ASSIST_HIT_SFX_PATHS.join(",")
+  });
+  assert.deepStrictEqual(audioConfig.sfxMap.fairyAssistHit, FAIRY_ASSIST_HIT_SFX_PATHS);
+  assert.throws(function () {
+    GameBootstrapAudioMethods._buildAudioConfig.call({
+      _getGameplayBgmPath: function () {
+        return "sound/game_bg1";
+      },
+      _parseAudioResourceList: GameBootstrapAudioMethods._parseAudioResourceList,
+      fairyAssistHitSfxResources: FAIRY_ASSIST_HIT_SFX_PATHS.slice(0, 4).join(",")
+    });
+  }, /must contain exactly sound\/hit_spirit_1 through sound\/hit_spirit_5/);
+
+  var fairyAssistHitPlayCount = 0;
+  GameBootstrapAudioMethods._playRuntimeAudioEvents.call({
+    _trackRuntimeTelemetryEvent: function () {},
+    _playFairyAssistHitSfx: function () {
+      fairyAssistHitPlayCount += 1;
+    }
+  }, {
+    runtimeEvents: [{ type: "fairy_assist_hit" }]
+  });
+  assert.strictEqual(fairyAssistHitPlayCount, 1);
+
+  var originalCc = global.cc;
+  var originalRandom = Math.random;
+  var selectedPaths = [];
+  var playedAudioIds = [];
+  var finishCallbacks = {};
+  var randomValues = [0, 0.21, 0.41, 0.61, 0.99, 0];
+  var randomIndex = 0;
+  try {
+    global.cc = {
+      audioEngine: {
+        setEffectsVolume: function () {},
+        playEffect: function () {
+          var audioId = playedAudioIds.length + 1;
+          playedAudioIds.push(audioId);
+          return audioId;
+        },
+        setFinishCallback: function (audioId, callback) {
+          finishCallbacks[audioId] = callback;
+        }
+      }
+    };
+    Math.random = function () {
+      var value = randomValues[randomIndex];
+      randomIndex += 1;
+      return value;
+    };
+
+    var audioManager = Object.create(AudioManager.prototype);
+    audioManager.settings = {
+      sfxEnabled: true,
+      sfxVolume: 1
+    };
+    audioManager.sfxMap = audioConfig.sfxMap;
+    audioManager._exclusiveSfxPlaybacks = {};
+    audioManager._tryUnlockWebAudio = function () {};
+    audioManager._loadClip = function (resourcePath) {
+      selectedPaths.push(resourcePath);
+      return {
+        then: function (callback) {
+          var result = callback(resourcePath + "_clip");
+          return {
+            catch: function () {
+              return result;
+            }
+          };
+        }
+      };
+    };
+
+    FAIRY_ASSIST_HIT_SFX_PATHS.forEach(function (resourcePath, index) {
+      audioManager.playExclusiveSfx("fairyAssistHit", "fairyAssistHit");
+      audioManager.playExclusiveSfx("fairyAssistHit", "fairyAssistHit");
+      assert.strictEqual(selectedPaths.length, index + 1, "A playing fairy hit SFX must reject overlapping collision audio.");
+      assert.strictEqual(playedAudioIds.length, index + 1, "Only one fairy hit audio instance may play at a time.");
+      assert.strictEqual(selectedPaths[index], resourcePath);
+      finishCallbacks[playedAudioIds[index]]();
+    });
+
+    audioManager.playExclusiveSfx("skillPreview", "sound/tornado");
+    audioManager.playExclusiveSfx("skillPreview", "sound/lighting");
+    assert.strictEqual(selectedPaths.length, 6, "A playing exclusive SFX channel must reject overlapping audio.");
+    assert.strictEqual(selectedPaths[5], "sound/tornado");
+    audioManager.playExclusiveSfx("fairyAssistHit", "fairyAssistHit");
+    assert.strictEqual(selectedPaths[6], FAIRY_ASSIST_HIT_SFX_PATHS[0], "Distinct exclusive audio channels must play independently.");
+    finishCallbacks[playedAudioIds[5]]();
+    audioManager.playExclusiveSfx("skillPreview", "sound/lighting");
+    assert.strictEqual(selectedPaths[7], "sound/lighting", "An exclusive audio channel must unlock only after its finish callback.");
+    finishCallbacks[playedAudioIds[6]]();
+    finishCallbacks[playedAudioIds[7]]();
+  } finally {
+    Math.random = originalRandom;
+    if (originalCc === undefined) {
+      delete global.cc;
+    } else {
+      global.cc = originalCc;
+    }
+  }
+
+  assert.deepStrictEqual(selectedPaths.slice(0, FAIRY_ASSIST_HIT_SFX_PATHS.length), FAIRY_ASSIST_HIT_SFX_PATHS);
+  assert.deepStrictEqual(audioManager._exclusiveSfxPlaybacks, {});
+}
+
+function testSurplusShotBonusEmitsInitialLaunchEvent() {
+  var GameManager = require("../gameplay-src/core/GameManager");
+  var manager = new GameManager();
+  var pendingSurplusShotCount = 0;
+  var originalCc = global.cc;
+  global.cc = {
+    log: function () {},
+    warn: function () {},
+    error: function () {}
+  };
+  manager.isTimedInfiniteShots = false;
+  manager.remainingShots = 2;
+  manager.levelRandomSeed = 7;
+  manager.activeProjectile = null;
+  manager.systems = {
+    shooterController: {
+      getAimState: function () {
+        return {
+          origin: {
+            x: BoardLayout.shooterOrigin.x,
+            y: BoardLayout.shooterOrigin.y
+          }
+        };
+      },
+      drainRemainingShotBalls: function (count) {
+        assert.strictEqual(count, 2);
+        return [
+          { color: "R", entityCategory: "normal_ball", entityType: null },
+          { color: "Y", entityCategory: "normal_ball", entityType: null }
+        ];
+      }
+    },
+    fallingMarbleSystem: {
+      hasActiveDrops: function () {
+        return false;
+      },
+      registerSurplusShotsFromOrigin: function (balls, origin, levelSeed) {
+        assert.strictEqual(balls.length, 2);
+        assert.strictEqual(origin.x, BoardLayout.shooterOrigin.x);
+        assert.strictEqual(origin.y, BoardLayout.shooterOrigin.y);
+        assert.strictEqual(levelSeed, 7);
+        pendingSurplusShotCount = balls.length - 1;
+        return [{ dropKind: "surplus_shot" }];
+      },
+      hasPendingSurplusShots: function () {
+        return pendingSurplusShotCount > 0;
+      }
+    }
+  };
+
+  manager._beginSurplusShotBonus();
+  if (originalCc === undefined) {
+    delete global.cc;
+  } else {
+    global.cc = originalCc;
+  }
+  var runtimeEvents = manager._drainRuntimeEvents();
+  assert.strictEqual(manager.state, "won_surplus_shots_pending");
+  assert.strictEqual(
+    runtimeEvents.filter(function (event) {
+      return event.type === "surplus_shot_launched";
+    }).length,
+    1,
+    "The immediately launched first surplus shot must emit one audio event."
+  );
 }
 
 function testCollectedMultiplierContract() {
@@ -1321,9 +1613,11 @@ testVictoryBoardDropIgnoresFairyBounce();
 testVictoryBoardDropRimBounces();
 testJarCollectionRequiresFullBallInsideMouth();
 testJarCollisionPartitionsCoverWallsAndInterJarSpace();
+testJarRimBounceSpeedIsAngleInvariant();
 testFinalJarRimContactRedirectsWithoutPrematureCollection();
 testVictoryBoardDropSkipsWallBounce();
 testSideWallBounceKeepsHorizontalEscapeVelocity();
+testRecentJarRimSideWallReflectionPreservesSpeed();
 testFiveJarAdaptiveMouthLayout();
 testLeftmostJarOuterRimBounce();
 testRightmostJarOuterRimBounceStaysInsideScreen();
@@ -1331,6 +1625,9 @@ testTopAnchorCollapseStartsSurplusVolley();
 testSurplusShotVelocityMatchesTurretAim();
 testSurplusShotTurretAngleStaysWithinThirtyDegrees();
 testSurplusShotPendingCountFollowsVolleyLaunch();
+testSurplusShotEmissionAudioRouting();
+testFairyAssistHitRandomAudioRouting();
+testSurplusShotBonusEmitsInitialLaunchEvent();
 testCollectedMultiplierContract();
 
 console.log("Fairy gameplay validation passed.");

@@ -139,6 +139,7 @@ function createEmptyUpdateResult() {
   return {
     updated: false,
     surplusUpdated: false,
+    surplusShotLaunchedCount: 0,
     collected: [],
     cleanupScored: [],
     missed: [],
@@ -523,8 +524,20 @@ FallingMarbleSystem.prototype._applySideWallEscape = function (drop, allowLift) 
   if (!drop.position || typeof drop.position.x !== "number" || !isFinite(drop.position.x)) {
     throw new Error("Falling drop side-wall escape requires finite position.x.");
   }
+  if (typeof drop.jarCooldown !== "number" || !isFinite(drop.jarCooldown) || drop.jarCooldown < 0) {
+    throw new Error("Falling drop side-wall escape requires non-negative jarCooldown.");
+  }
 
   var escapeDirection = drop.position.x <= this._dropLeftLimit ? 1 : -1;
+  if (drop.jarCooldown > 0) {
+    if (Math.abs(drop.velocity.x) <= 0) {
+      throw new Error("Recent jar rim bounce must reach the side wall with horizontal speed.");
+    }
+    // A side wall reached immediately after a jar-rim bounce only redirects the motion.
+    // It must not apply a second damping pass that makes shallow rim bounces look slower.
+    drop.velocity.x = escapeDirection * Math.abs(drop.velocity.x);
+    return;
+  }
   var minEscapeSpeed = Math.max(40, this.horizontalSpeed * 0.45);
   var reboundSpeed = Math.max(Math.abs(drop.velocity.x) * this.bounceDamping, minEscapeSpeed);
   drop.velocity.x = escapeDirection * reboundSpeed;
@@ -1483,7 +1496,16 @@ FallingMarbleSystem.prototype.update = function (dt) {
   var safeDt = typeof dt === "number" && isFinite(dt) && dt > 0 ? dt : 0;
   this.lastUpdateDt = safeDt;
 
+  var pendingSurplusShotCountBeforeUpdate = this.pendingSurplusShotBalls.length;
   result.surplusUpdated = this._processPendingSurplusShots(safeDt);
+  result.surplusShotLaunchedCount = pendingSurplusShotCountBeforeUpdate - this.pendingSurplusShotBalls.length;
+  if (
+    !Number.isInteger(result.surplusShotLaunchedCount) ||
+    result.surplusShotLaunchedCount < 0 ||
+    result.surplusShotLaunchedCount > 1
+  ) {
+    throw new Error("FallingMarbleSystem update must launch at most one surplus shot.");
+  }
   this._flushDeferredDrops();
 
   var layoutSignature = this._buildLayoutSignature();

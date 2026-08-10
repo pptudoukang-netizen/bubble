@@ -103,32 +103,25 @@ function buildReconstructedBouncePoints(origin, target, wallSequence) {
 }
 
 function buildProjectilePathFromShotPlan(shotPlan) {
-  var origin = shotPlan && shotPlan.origin ? clone(shotPlan.origin) : clone(BoardLayout.shooterOrigin);
-  var target = shotPlan && shotPlan.targetCellPosition ? clone(shotPlan.targetCellPosition) : clone(origin);
-  var bounceCount = shotPlan && typeof shotPlan.wallBounceCount === "number"
-    ? Math.max(0, Math.floor(shotPlan.wallBounceCount))
-    : 0;
+  if (!shotPlan || typeof shotPlan !== "object" || Array.isArray(shotPlan)) {
+    throw new Error("Projectile path requires shotPlan.");
+  }
+  if (!Array.isArray(shotPlan.pathPoints) || shotPlan.pathPoints.length < 2) {
+    throw new Error("Projectile path requires at least two authoritative shotPlan.pathPoints.");
+  }
 
-  var pathPoints = [];
-  appendUniquePathPoint(pathPoints, origin);
-  if (bounceCount > 0) {
-    var firstWallX = resolveFirstBounceWallX(shotPlan, origin, target);
-    var wallSequence = buildBounceWallSequence(firstWallX, bounceCount);
-    var bouncePoints = buildReconstructedBouncePoints(origin, target, wallSequence);
-    if (bouncePoints && bouncePoints.length) {
-      bouncePoints.forEach(function (point) {
-        appendUniquePathPoint(pathPoints, point);
-      });
+  return shotPlan.pathPoints.map(function (point, index) {
+    if (
+      !point ||
+      typeof point.x !== "number" ||
+      typeof point.y !== "number" ||
+      !isFinite(point.x) ||
+      !isFinite(point.y)
+    ) {
+      throw new Error("Projectile path point must be finite at index " + index + ".");
     }
-  }
-
-  appendUniquePathPoint(pathPoints, target);
-
-  if (pathPoints.length < 2) {
-    pathPoints.push(clone(target));
-  }
-
-  return pathPoints;
+    return clone(point);
+  });
 }
 
 function measurePathDistance(pathPoints) {

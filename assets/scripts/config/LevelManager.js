@@ -5,6 +5,8 @@ var RemoteLevelPackLoader = require("./RemoteLevelPackLoader");
 var LevelPackManifest = require("./LevelPackManifest");
 var RandomChallengeManager = require("./RandomChallengeManager");
 var TEST_LEVEL_KEY = "level_test";
+var TRAPPED_SPRITE_TEST_LEVEL_KEY = "level_trapped_sprite_test";
+var BOARD_OCCLUSION_TEST_LEVEL_KEY = "level_board_occlusion_test";
 
 function padLevelId(levelId) {
   return String(levelId).padStart(3, "0");
@@ -62,6 +64,34 @@ LevelManager.prototype.loadTestLevel = function () {
 
   return this._loader.loadLevelByKey(TEST_LEVEL_KEY).then(function (config) {
     this._cache[TEST_LEVEL_KEY] = config;
+    return clone(config);
+  }.bind(this));
+};
+
+LevelManager.prototype.loadTrappedSpriteTestLevel = function () {
+  if (this._cache[TRAPPED_SPRITE_TEST_LEVEL_KEY]) {
+    return Promise.resolve(clone(this._cache[TRAPPED_SPRITE_TEST_LEVEL_KEY]));
+  }
+  if (!this._loader || typeof this._loader.loadLevelByKey !== "function") {
+    throw new Error("Local level loader missing loadLevelByKey for " + TRAPPED_SPRITE_TEST_LEVEL_KEY + ".");
+  }
+
+  return this._loader.loadLevelByKey(TRAPPED_SPRITE_TEST_LEVEL_KEY).then(function (config) {
+    this._cache[TRAPPED_SPRITE_TEST_LEVEL_KEY] = config;
+    return clone(config);
+  }.bind(this));
+};
+
+LevelManager.prototype.loadBoardOcclusionTestLevel = function () {
+  if (this._cache[BOARD_OCCLUSION_TEST_LEVEL_KEY]) {
+    return Promise.resolve(clone(this._cache[BOARD_OCCLUSION_TEST_LEVEL_KEY]));
+  }
+  if (!this._loader || typeof this._loader.loadLevelByKey !== "function") {
+    throw new Error("Local level loader missing loadLevelByKey for " + BOARD_OCCLUSION_TEST_LEVEL_KEY + ".");
+  }
+
+  return this._loader.loadLevelByKey(BOARD_OCCLUSION_TEST_LEVEL_KEY).then(function (config) {
+    this._cache[BOARD_OCCLUSION_TEST_LEVEL_KEY] = config;
     return clone(config);
   }.bind(this));
 };

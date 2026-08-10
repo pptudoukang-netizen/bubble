@@ -146,6 +146,21 @@ module.exports = {
     this._grantedAttemptRewardKeys[key] = true;
   },
 
+  _isLevelSelectGemRewardAvailable: function () {
+    if (!this.adRewardQuotaStore || typeof this.adRewardQuotaStore.canGrant !== "function") {
+      throw new Error("Level select gem reward requires AdRewardQuotaStore.canGrant.");
+    }
+    var rewardEntry = AdRewardCatalog.resolveLevelSelectGemRewardEntry();
+    if (!rewardEntry || rewardEntry.quotaType !== "level_select_gem") {
+      throw new Error("Level select gem reward entry is invalid.");
+    }
+    var quotaResult = this.adRewardQuotaStore.canGrant(rewardEntry.quotaType);
+    if (!quotaResult || typeof quotaResult.allowed !== "boolean") {
+      throw new Error("Level select gem reward quota result is invalid.");
+    }
+    return quotaResult.allowed;
+  },
+
   _resolveRewardedVideoAdUnitId: function (options) {
     if (options !== undefined && (!options || typeof options !== "object" || Array.isArray(options))) {
       throw new Error("Rewarded video ad options must be an object when provided.");
@@ -641,6 +656,36 @@ module.exports = {
     this._setStatus("复活成功");
   },
 
+  _onLevelSelectGemRewardAdTap: function () {
+    if (!this.isSelectingLevel || !this._levelSelectNode || !this._levelSelectNode.isValid) {
+      throw new Error("Level select gem reward requires an active LevelView.");
+    }
+    var rewardEntry = AdRewardCatalog.resolveLevelSelectGemRewardEntry();
+    if (!rewardEntry) {
+      throw new Error("Level select gem reward entry is required.");
+    }
+    this._playSfx("uiClick");
+    return this._showRewardedAdForEntry(rewardEntry, {
+      entrySource: "level_select_gem",
+      adUnitId: this.levelSelectGemRewardedVideoAdUnitId,
+      onRewardGrantedMessage: "获得10个钻石",
+      onRewardGranted: function (grantResult) {
+        this._updateLevelSelectTopStatus({
+          updateEntryStates: false
+        });
+        this._showAwardViewForRewardItems([
+          {
+            id: "gem",
+            count: grantResult.gemGrant
+          }
+        ]).catch(function (error) {
+          Logger.error("Show level select gem ad award view failed", error && error.message ? error.message : error);
+          this._setStatus("钻石奖励弹窗加载失败");
+        }.bind(this));
+      }.bind(this)
+    });
+  },
+
   _showRewardedAdForEntry: function (entry, options) {
     options = options || {};
     if (!entry) {
@@ -693,7 +738,7 @@ module.exports = {
     }
 
     var isCurrentRoundRevive = entry.grantMode === "current_round_revive";
-    if (!isCurrentRoundRevive && this._hasGrantedAttemptReward(entry.rewardType)) {
+    if (!isCurrentRoundRevive && entry.repeatableWithinAttempt !== true && this._hasGrantedAttemptReward(entry.rewardType)) {
       this._setStatus("本局该奖励已领取");
       return Promise.resolve(false);
     }
@@ -757,7 +802,7 @@ module.exports = {
       if (this.adRewardQuotaStore && typeof this.adRewardQuotaStore.recordGrant === "function") {
         this.adRewardQuotaStore.recordGrant(entry.quotaType);
       }
-      if (!isCurrentRoundRevive) {
+      if (!isCurrentRoundRevive && entry.repeatableWithinAttempt !== true) {
         this._markAttemptRewardGranted(entry.rewardType);
       }
       this._trackTelemetry("ad_reward_grant", {
@@ -807,6 +852,34 @@ module.exports = {
       return {
         accepted: false,
         message: "奖励配置缺失"
+      };
+    }
+
+    if (entry.gemGrant) {
+      if (!this.playerResourceStore || typeof this.playerResourceStore.addGems !== "function") {
+        throw new Error("Ad gem reward requires PlayerResourceStore.addGems.");
+      }
+      if (typeof this.playerResourceStore.save !== "function") {
+        throw new Error("Ad gem reward requires PlayerResourceStore.save.");
+      }
+      this._refreshPlayerResources();
+      var gemGrant = requirePositiveInteger(entry.gemGrant, "Ad gem grant");
+      var gemAddResult = this.playerResourceStore.addGems(this.playerResources, gemGrant);
+      if (
+        !gemAddResult ||
+        gemAddResult.accepted !== true ||
+        !gemAddResult.resources ||
+        typeof gemAddResult.resources !== "object" ||
+        Array.isArray(gemAddResult.resources)
+      ) {
+        throw new Error("PlayerResourceStore.addGems returned an invalid ad reward result.");
+      }
+      this.playerResources = this.playerResourceStore.save(gemAddResult.resources);
+      return {
+        accepted: true,
+        gemGrant: gemGrant,
+        rewardValue: gemGrant,
+        message: "钻石奖励：+" + gemGrant
       };
     }
 
@@ -908,6 +981,25 @@ module.exports = {
         message: "补给成功：" +
           AdRewardCatalog.resolvePowerupDisplayName(adRunGrant.powerupType) +
           " +" + adRunGrantResult.gained
+      };
+    }
+
+    if (entry.assistSpiritSkillChargeGrant === true) {
+      if (!this.gameManager || typeof this.gameManager.grantAssistSpiritSkillChargeFromAd !== "function") {
+        throw new Error("Assist spirit skill charge ad reward requires GameManager.grantAssistSpiritSkillChargeFromAd.");
+      }
+      var skillChargeGrantResult = this.gameManager.grantAssistSpiritSkillChargeFromAd();
+      if (!skillChargeGrantResult || skillChargeGrantResult.accepted !== true || !skillChargeGrantResult.snapshot) {
+        return {
+          accepted: false,
+          message: "精灵技能充能失败"
+        };
+      }
+      return {
+        accepted: true,
+        snapshot: skillChargeGrantResult.snapshot,
+        rewardValue: entry.rewardValue,
+        message: "精灵技能已充满"
       };
     }
 
@@ -1063,6 +1155,28 @@ module.exports = {
       }.bind(this);
     }
     return this._showRewardedAdForEntry(rewardEntry, adOptions);
+  },
+
+  _tryUnlockAssistSpiritSkillChargeByAd: function () {
+    if (!this.currentLevelConfig || this.isSelectingLevel || this.isRestarting || this.isGameplayPaused) {
+      throw new Error("Assist spirit skill charge ad requires an active gameplay round.");
+    }
+    if (!this.gameManager || typeof this.gameManager.getAssistSpiritSkillAvailability !== "function") {
+      throw new Error("Assist spirit skill charge ad requires GameManager skill availability.");
+    }
+    var availability = this.gameManager.getAssistSpiritSkillAvailability();
+    if (!availability || availability.reason !== "charging") {
+      throw new Error("Assist spirit skill charge ad requires a charging global skill.");
+    }
+    var rewardEntry = AdRewardCatalog.resolveAssistSpiritSkillChargeRewardEntry();
+    if (!rewardEntry) {
+      throw new Error("Assist spirit skill charge ad reward entry is required.");
+    }
+    return this._showRewardedAdForEntry(rewardEntry, {
+      entrySource: "assist_spirit_skill_charge",
+      adUnitId: this.inventoryRewardedVideoAdUnitId,
+      onRewardGrantedMessage: "精灵技能已充满"
+    });
   },
 
   _resolveStaminaRecoveryGrantAmount: function () {

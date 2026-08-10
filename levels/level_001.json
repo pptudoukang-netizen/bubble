@@ -6,8 +6,8 @@
         "description": "Top-to-bottom rows. Each character represents one grid cell.",
         "legend": {
             ".": "empty",
-            "R": "red",
-            "B": "blue"
+            "B": "blue",
+            "R": "red"
         },
         "pattern": "kxppm_layout_001",
         "theme": "flower",
@@ -53,15 +53,15 @@
         ],
         "colorCount": 2,
         "colors": [
-            "R",
-            "B"
+            "B",
+            "R"
         ],
         "shotLimit": 12,
-        "targetScore": 3620,
+        "targetScore": 6300,
         "starThresholds": {
-            "star1": 1158,
-            "star2": 2172,
-            "star3": 3041
+            "star1": 3024,
+            "star2": 4284,
+            "star3": 5418
         },
         "dropInterval": 8,
         "jarCount": 5,
@@ -73,8 +73,8 @@
             "P"
         ],
         "spawnWeights": {
-            "R": 1.12,
-            "B": 2.4
+            "B": 2.4,
+            "R": 1.24
         },
         "openingShotBalls": [
             "B",
@@ -90,7 +90,7 @@
             {
                 "type": "collect_color",
                 "color": "B",
-                "value": 23
+                "value": 29
             }
         ],
         "bonusObjectives": [
@@ -110,14 +110,14 @@
             }
         ],
         "layout": [
-            "RRRRBBRRRBB",
-            ".RBBBRRBB.",
-            ".BBBR..BBRR",
-            ".BBR..BRR.",
-            "...R...R.B.",
-            ".RRBBRRRB.",
-            "........B..",
-            ".......B.."
+            "RRBRBBRRBBR",
+            ".RBRBBRRBB",
+            ".BBRRBBRBBR",
+            "RBBRRBBRBR",
+            "RBBRR..RBRR",
+            ".BBRRBBRB.",
+            "........R..",
+            ".......R.."
         ],
         "designNotes": "Gameplay is generated from the current LEVEL_CONFIG_TABLE_1_1000.csv rules; only the occupancy silhouette is projected from E:\\kxppm\\decrypted_config\\all_levels.json level 1 into current level 1 on the current 11/10-column board.",
         "difficultyScore": 23,

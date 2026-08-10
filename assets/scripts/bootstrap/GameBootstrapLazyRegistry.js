@@ -3,14 +3,24 @@
 module.exports = {
   SPIRIT_HALL_METHODS: [
     "_ensureSpiritHallViewPrefab",
+    "_ensureSpiritSystemTabBarPrefab",
     "_ensureSpiritHallSpriteFrames",
     "_refreshAssistSpiritState",
     "_showSpiritHallView",
     "_hideSpiritHallView",
     "_renderSpiritHallView",
     "_upgradeSelectedSpirit",
-    "_advanceSelectedSpirit",
     "_equipSelectedSpirit"
+  ],
+  SPIRIT_SHOP_METHODS: [
+    "_ensureSpiritShopViewPrefab",
+    "_ensureSpiritShopSpriteFrames",
+    "_showSpiritShopView",
+    "_hideSpiritShopView",
+    "_renderSpiritShopView",
+    "_purchaseSpiritShopFragment",
+    "_purchaseSpiritShopProduct",
+    "_refreshSpiritShopOffers"
   ],
   SIGN_IN_AWARD_FLOW_METHODS: [
     "_getDailySignInConfig",
@@ -144,6 +154,7 @@ module.exports = {
     "_buildAttemptRewardKey",
     "_hasGrantedAttemptReward",
     "_markAttemptRewardGranted",
+    "_isLevelSelectGemRewardAvailable",
     "_resolveRewardedVideoAdUnitId",
     "_hasRewardedVideoAdConfig",
     "_requireRewardedVideoAdConfig",
@@ -171,12 +182,14 @@ module.exports = {
     "_buildRewardedAdSceneId",
     "_onLoseWatchAdTap",
     "_onLoseCoinReviveTap",
+    "_onLevelSelectGemRewardAdTap",
     "_showRewardedAdForEntry",
     "_grantAdEntryReward",
     "_queueNextRoundReward",
     "_applyPendingNextRoundRewards",
     "_tryRecoverInventoryByAd",
     "_tryRecoverAdRunPowerupByAd",
+    "_tryUnlockAssistSpiritSkillChargeByAd",
     "_resolveStaminaRecoveryGrantAmount",
     "_tryRecoverStaminaByAd"
   ],

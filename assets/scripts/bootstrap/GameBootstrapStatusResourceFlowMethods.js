@@ -484,6 +484,11 @@ module.exports = {
     return requireNonNegativeInteger(this.playerResources.coins, "Player coins");
   },
 
+  _getCurrentGems: function () {
+    this._refreshPlayerResources();
+    return requireNonNegativeInteger(this.playerResources.gems, "Player gems");
+  },
+
   _spendCoinsForShop: function (amount, reason) {
     var cost = Math.floor(Number(amount));
     if (!Number.isInteger(cost) || cost <= 0) {
@@ -790,15 +795,24 @@ module.exports = {
 
     var loveInfoNode = topLayerNode.getChildByName("love_info");
     var goldInfoNode = topLayerNode.getChildByName("gold_info");
+    var gemInfoNode = topLayerNode.getChildByName("gem_info");
+    if (!gemInfoNode || !gemInfoNode.isValid) {
+      throw new Error("LevelView top_layer requires gem_info.");
+    }
     var loveNode = loveInfoNode ? loveInfoNode.getChildByName("love") : null;
     var timeNode = loveInfoNode ? loveInfoNode.getChildByName("time") : null;
     var goldNode = goldInfoNode ? goldInfoNode.getChildByName("gold") : null;
+    var gemNode = gemInfoNode.getChildByName("gem");
     var loveLabel = loveNode ? loveNode.getComponent(cc.Label) : null;
     var timeLabel = timeNode ? timeNode.getComponent(cc.Label) : null;
     var goldLabel = goldNode ? goldNode.getComponent(cc.Label) : null;
+    var gemLabel = gemNode ? gemNode.getComponent(cc.Label) : null;
 
     if (!timeLabel) {
       throw new Error("LevelView love_info requires time label.");
+    }
+    if (!gemLabel) {
+      throw new Error("LevelView gem_info/gem requires cc.Label.");
     }
     this._refreshPlayerResources();
     if (loveLabel) {
@@ -808,6 +822,15 @@ module.exports = {
     if (goldLabel) {
       setDynamicLabelString(goldLabel, this.playerResources.coins, "LevelView gold label");
     }
+    setDynamicLabelString(
+      gemLabel,
+      requireNonNegativeInteger(this.playerResources.gems, "Player gems"),
+      "LevelView gem label"
+    );
+    LevelSelectView.updateGemRewardVideoIcon(
+      this._levelSelectNode,
+      this._isLevelSelectGemRewardAvailable()
+    );
     LevelSelectView.updateDailyChallengeAttemptCount(this._levelSelectNode, this._getDailyChallengeAttemptCount());
 
     if (!shouldUpdateLevelSelectEntryStates(options)) {

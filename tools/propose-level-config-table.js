@@ -4,6 +4,7 @@ var fs = require("fs");
 var path = require("path");
 var BoardLayout = require("../assets/scripts/config/BoardLayout");
 var LevelPackCompactCodec = require("../assets/scripts/config/LevelPackCompactCodec");
+var CampaignLevelGenerationConfig = require("./campaign-level-generation-config");
 
 var LEVEL_DIR = path.resolve(__dirname, "../assets/map/config/levels");
 var REMOTE_PACK_DIR = path.resolve(__dirname, "../remote-level-packs");
@@ -24,6 +25,8 @@ var TARGET_OCCUPANCY_RATIO = 0.92;
 var MIN_PASS_RATE = PassRateSimulator.MIN_PASS_RATE;
 var MAX_TUNE_ITERATIONS = 500;
 var TARGET_LEVEL_COUNT = 1000;
+var NORMAL_BALL_COLORS = CampaignLevelGenerationConfig.NORMAL_BALL_COLORS.slice();
+var COLLECTIBLE_TARGET_COLORS = CampaignLevelGenerationConfig.BASE_SPECIAL_COLORS.slice();
 
 var HEADERS = [
   "关卡",
@@ -32,6 +35,9 @@ var HEADERS = [
   "绿球",
   "黄球",
   "紫球",
+  "橙球",
+  "黑球",
+  "白球",
   "总行数",
   "石头",
   "雪块",
@@ -126,7 +132,7 @@ function listAllLevelEntries() {
 }
 
 function countLayoutColors(layout) {
-  var counts = { B: 0, R: 0, G: 0, Y: 0, P: 0 };
+  var counts = { B: 0, R: 0, G: 0, Y: 0, P: 0, O: 0, K: 0, W: 0 };
   if (!Array.isArray(layout)) {
     throw new Error("layout must be array");
   }
@@ -294,7 +300,9 @@ function getBoardCapacity(rowCount) {
 }
 
 function sumColorCounts(colorCounts) {
-  return colorCounts.B + colorCounts.R + colorCounts.G + colorCounts.Y + colorCounts.P;
+  return NORMAL_BALL_COLORS.reduce(function (sum, color) {
+    return sum + colorCounts[color];
+  }, 0);
 }
 
 function sumSpecialCounts(specialCounts, proposedIce) {
@@ -326,7 +334,7 @@ function trimColorCountsToCapacity(colorCounts, specialCounts, proposedRows, pro
   }
 
   var scale = maxColorTotal / colorTotal;
-  var colors = ["B", "R", "G", "Y", "P"];
+  var colors = NORMAL_BALL_COLORS.slice();
   var trimmed = {};
   var used = 0;
   colors.forEach(function (color) {
@@ -345,13 +353,7 @@ function trimColorCountsToCapacity(colorCounts, specialCounts, proposedRows, pro
     }
   }
 
-  return {
-    B: trimmed.B,
-    R: trimmed.R,
-    G: trimmed.G,
-    Y: trimmed.Y,
-    P: trimmed.P
-  };
+  return trimmed;
 }
 
 function computeDesiredIceCount(levelId, progress, currentIce, proposedRows) {
@@ -395,14 +397,20 @@ function pickCollectColor(levelId, level, proposedColors, splitterInfo) {
     throw new Error("level " + levelId + " colors must be non-empty array");
   }
 
-  var preferredColor = level.colors[levelId % level.colors.length];
+  var collectibleColors = level.colors.filter(function (color) {
+    return COLLECTIBLE_TARGET_COLORS.indexOf(color) >= 0;
+  });
+  if (collectibleColors.length === 0) {
+    throw new Error("level " + levelId + " has no jar-supported collect color");
+  }
+  var preferredColor = collectibleColors[levelId % collectibleColors.length];
   if (proposedColors[preferredColor] > 0) {
     return preferredColor;
   }
 
   var bestColor = null;
   var bestSupply = 0;
-  level.colors.forEach(function (color) {
+  collectibleColors.forEach(function (color) {
     var supply = proposedColors[color];
     if (supply > bestSupply) {
       bestSupply = supply;
@@ -593,12 +601,15 @@ function buildProposedRow(entry) {
     R: scaleCount(colorCounts.R, rowScale),
     G: scaleCount(colorCounts.G, rowScale),
     Y: scaleCount(colorCounts.Y, rowScale),
-    P: scaleCount(colorCounts.P, rowScale)
+    P: scaleCount(colorCounts.P, rowScale),
+    O: scaleCount(colorCounts.O, rowScale),
+    K: scaleCount(colorCounts.K, rowScale),
+    W: scaleCount(colorCounts.W, rowScale)
   };
   proposedColors = trimColorCountsToCapacity(proposedColors, specialCounts, proposedRows, desiredIce);
   var proposedIce = resolveProposedIce(entry.levelId, progress, specialCounts.ice, proposedRows, proposedColors, specialCounts);
   proposedColors = trimColorCountsToCapacity(proposedColors, specialCounts, proposedRows, proposedIce);
-  var ballTotal = proposedColors.B + proposedColors.R + proposedColors.G + proposedColors.Y + proposedColors.P;
+  var ballTotal = sumColorCounts(proposedColors);
 
   var primaryObjective = proposePrimaryObjective(
     entry.levelId,
@@ -661,6 +672,9 @@ function buildProposedRow(entry) {
     proposedColors.G,
     proposedColors.Y,
     proposedColors.P,
+    proposedColors.O,
+    proposedColors.K,
+    proposedColors.W,
     proposedRows,
     specialCounts.stone,
     proposedIce,

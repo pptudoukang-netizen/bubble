@@ -9,6 +9,7 @@ var LevelProgressStore = Shared.LevelProgressStore;
 var LevelAttemptStatsStore = Shared.LevelAttemptStatsStore;
 var PlayerResourceStore = Shared.PlayerResourceStore;
 var AssistSpiritStore = Shared.AssistSpiritStore;
+var SpiritShopStore = Shared.SpiritShopStore;
 var DailyTaskStore = Shared.DailyTaskStore;
 var StaminaRecoveryStore = Shared.StaminaRecoveryStore;
 var InventoryStore = Shared.InventoryStore;
@@ -44,6 +45,7 @@ var GameCircleWelfareService = Shared.GameCircleWelfareService;
 var ShopConfigService = Shared.ShopConfigService;
 var ShopStateService = Shared.ShopStateService;
 var ShopPurchaseService = Shared.ShopPurchaseService;
+var SpiritShopService = Shared.SpiritShopService;
 var WechatShareService = Shared.WechatShareService;
 var FriendGiftService = Shared.FriendGiftService;
 var PlayerCloudProfileService = Shared.PlayerCloudProfileService;
@@ -52,6 +54,7 @@ var AdService = Shared.AdService;
 var WechatNativeTemplateAdAdapter = Shared.WechatNativeTemplateAdAdapter;
 var TelemetryService = Shared.TelemetryService;
 var AdRewardQuotaStore = Shared.AdRewardQuotaStore;
+var AdRewardCatalog = Shared.AdRewardCatalog;
 var clone = Shared.clone;
 var requireNonNegativeInteger = Shared.requireNonNegativeInteger;
 
@@ -85,6 +88,7 @@ module.exports = {
     this.isRestarting = false;
     this.isSelectingLevel = false;
     this.isGameplayPaused = false;
+    this._assistSpiritSkillInProgress = false;
     this.isPropDescriptionViewOpen = false;
     this._levelSelectNode = null;
     this._levelSelectViewPrefab = null;
@@ -163,7 +167,16 @@ module.exports = {
     this.staminaRecoveryState = this.staminaRecoveryStore.load();
     this.playerResources = this.playerResourceStore.load();
     this.assistSpiritStore = new AssistSpiritStore();
-    this.assistSpiritState = this.assistSpiritStore.load();
+    this.assistSpiritState = this.assistSpiritStore.loadWithRescueProgress(
+      this.levelProgress.completedLevels
+    );
+    this.spiritShopStore = new SpiritShopStore();
+    this.spiritShopService = new SpiritShopService({
+      shopStore: this.spiritShopStore,
+      playerResourceStore: this.playerResourceStore,
+      assistSpiritStore: this.assistSpiritStore,
+      random: Math.random
+    });
     if (RuntimeModeConfig.enableInspectorOverrides === true) {
       var inspectorStamina = Math.floor(Number(this.inspectorStaminaValue));
       if (!Number.isInteger(inspectorStamina) || inspectorStamina < 0) {
@@ -268,6 +281,19 @@ module.exports = {
     this._shopViewPrefab = null;
     this._shopViewNode = null;
     this._shopViewController = null;
+    this._spiritHallViewPrefab = null;
+    this._spiritHallViewNode = null;
+    this._spiritHallViewController = null;
+    this._spiritHallSpriteFrameCache = null;
+    this._spiritHallSpriteFrameLoadPromise = null;
+    this._spiritSystemTabBarPrefab = null;
+    this._spiritSystemTabBarPrefabLoadPromise = null;
+    this._spiritSystemTabBarNode = null;
+    this._spiritShopViewPrefab = null;
+    this._spiritShopViewNode = null;
+    this._spiritShopViewController = null;
+    this._spiritShopSpriteFrameCache = null;
+    this._spiritShopSpriteFrameLoadPromise = null;
     this._dailyTaskViewPrefab = null;
     this._dailyTaskViewNode = null;
     this._dailyTaskViewController = null;
@@ -498,9 +524,26 @@ module.exports = {
           dailyLimit: requireNonNegativeInteger(this.inventoryAdDailyLimit, "inventoryAdDailyLimit"),
           cooldownSec: requireNonNegativeInteger(this.adRewardCooldownSeconds, "adRewardCooldownSeconds")
         },
+        assist_spirit_skill_charge: {
+          dailyLimit: requireNonNegativeInteger(
+            AdRewardCatalog.ASSIST_SPIRIT_SKILL_CHARGE_AD_DAILY_LIMIT,
+            "Assist spirit skill charge ad daily limit"
+          ),
+          cooldownSec: requireNonNegativeInteger(
+            AdRewardCatalog.ASSIST_SPIRIT_SKILL_CHARGE_AD_COOLDOWN_SECONDS,
+            "Assist spirit skill charge ad cooldown seconds"
+          )
+        },
         stamina_refill: {
           dailyLimit: requireNonNegativeInteger(this.staminaAdDailyLimit, "staminaAdDailyLimit"),
           cooldownSec: requireNonNegativeInteger(this.adRewardCooldownSeconds, "adRewardCooldownSeconds")
+        },
+        level_select_gem: {
+          dailyLimit: requireNonNegativeInteger(
+            AdRewardCatalog.LEVEL_SELECT_GEM_DAILY_LIMIT,
+            "Level select gem ad daily limit"
+          ),
+          cooldownSec: 0
         }
       }
     });
@@ -585,6 +628,7 @@ module.exports = {
         poolManager: this.poolManager,
         levelManager: this.levelManager
       });
+      this._syncEquippedAssistSpiritToGameManager();
       this.levelRenderer = new LevelRenderer(this.node);
       this.levelRenderer.setFairyAssistSystem(this.gameManager.systems.fairyAssistSystem);
       this.levelRenderer.setFallingMarbleSystem(this.gameManager.systems.fallingMarbleSystem, this.gameManager);
@@ -644,6 +688,9 @@ module.exports = {
         }.bind(this),
         onUseSnowRemoval: function () {
           this._onUseSnowRemovalTap();
+        }.bind(this),
+        onUseAssistSpiritSkill: function () {
+          this._onUseAssistSpiritSkillTap();
         }.bind(this),
         onUsePreciseAim: function () {
           this._onUsePreciseAimTap();

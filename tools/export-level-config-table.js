@@ -18,6 +18,9 @@ var HEADERS = [
   "绿球",
   "黄球",
   "紫球",
+  "橙球",
+  "黑球",
+  "白球",
   "总行数",
   "石头",
   "雪块",
@@ -112,7 +115,7 @@ function listAllLevelEntries() {
 }
 
 function countLayoutColors(layout) {
-  var counts = { B: 0, R: 0, G: 0, Y: 0, P: 0 };
+  var counts = { B: 0, R: 0, G: 0, Y: 0, P: 0, O: 0, K: 0, W: 0 };
   if (!Array.isArray(layout)) {
     throw new Error("layout must be array");
   }
@@ -243,7 +246,8 @@ function buildRow(entry) {
   var colorCounts = countLayoutColors(level.layout);
   var specialCounts = countSpecialEntities(level.specialEntities);
   var objectiveDisplays = formatWinTargets(level.winConditions);
-  var ballTotal = colorCounts.B + colorCounts.R + colorCounts.G + colorCounts.Y + colorCounts.P;
+  var ballTotal = colorCounts.B + colorCounts.R + colorCounts.G + colorCounts.Y +
+    colorCounts.P + colorCounts.O + colorCounts.K + colorCounts.W;
   var splitterTotal =
     specialCounts.splitterB +
     specialCounts.splitterR +
@@ -275,6 +279,9 @@ function buildRow(entry) {
     colorCounts.G,
     colorCounts.Y,
     colorCounts.P,
+    colorCounts.O,
+    colorCounts.K,
+    colorCounts.W,
     level.layout.length,
     specialCounts.stone,
     specialCounts.ice,

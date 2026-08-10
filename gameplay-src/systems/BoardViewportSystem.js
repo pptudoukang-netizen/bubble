@@ -115,6 +115,7 @@ function BoardViewportSystem() {
   this.introActive = false;
   this.minOffsetY = 0;
   this.maxOffsetY = 0;
+  this.trappedSpriteRescueActive = false;
 }
 
 BoardViewportSystem.prototype = Object.create(BaseSystem.prototype);
@@ -131,6 +132,7 @@ BoardViewportSystem.prototype.configureLevel = function (levelConfig) {
   this.introActive = false;
   this.minOffsetY = 0;
   this.maxOffsetY = 0;
+  this.trappedSpriteRescueActive = levelConfig.level.levelType === "trapped_sprite_rescue";
   return this;
 };
 
@@ -149,6 +151,17 @@ BoardViewportSystem.prototype.isMoving = function () {
 BoardViewportSystem.prototype.planIntroPosition = function (cells) {
   if (!Array.isArray(cells)) {
     throw new Error("BoardViewportSystem.planIntroPosition requires cells array.");
+  }
+  if (this.trappedSpriteRescueActive) {
+    this.offsetY = 0;
+    this.targetOffsetY = 0;
+    this.phase = "idle";
+    this.introActive = false;
+    return {
+      needsScroll: false,
+      startOffsetY: 0,
+      targetOffsetY: 0
+    };
   }
   if (!cells.length) {
     this.offsetY = 0;
@@ -202,6 +215,9 @@ BoardViewportSystem.prototype.planIntroPosition = function (cells) {
 };
 
 BoardViewportSystem.prototype.planSettle = function (boardSnapshot) {
+  if (this.trappedSpriteRescueActive) {
+    throw new Error("BoardViewportSystem.planSettle is disabled in trapped sprite rescue mode.");
+  }
   if (!boardSnapshot || !Array.isArray(boardSnapshot.cells)) {
     throw new Error("BoardViewportSystem.planSettle requires board snapshot with cells.");
   }
@@ -243,6 +259,9 @@ BoardViewportSystem.prototype.getMaxOffsetY = function () {
 };
 
 BoardViewportSystem.prototype.shiftOffsetYByRows = function (rowCount) {
+  if (this.trappedSpriteRescueActive) {
+    throw new Error("BoardViewportSystem.shiftOffsetYByRows is disabled in trapped sprite rescue mode.");
+  }
   if (!Number.isInteger(rowCount)) {
     throw new Error("BoardViewportSystem.shiftOffsetYByRows requires integer rowCount.");
   }
@@ -314,6 +333,7 @@ BoardViewportSystem.prototype.snapshot = function () {
   snapshot.visibleRowSpan = BoardViewportConfig.targetVisibleRows;
   snapshot.introActive = this.introActive;
   snapshot.isMoving = this.isMoving();
+  snapshot.trappedSpriteRescueActive = this.trappedSpriteRescueActive;
   return snapshot;
 };
 

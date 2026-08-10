@@ -1,8 +1,10 @@
 "use strict";
 
-var TIMED_LEVEL_INTERVAL = 10;
-var TIMED_LEVEL_TIME_LIMIT_SECONDS = 90;
-var TIMED_LEVEL_REQUIRED_STAR_COUNT = 1;
+var CampaignLevelGenerationConfig = require("./campaign-level-generation-config");
+
+var TIMED_LEVEL_INTERVAL = CampaignLevelGenerationConfig.TIMED_LEVEL_INTERVAL;
+var TIMED_LEVEL_TIME_LIMIT_SECONDS = CampaignLevelGenerationConfig.TIMED_LEVEL_TIME_LIMIT_SECONDS;
+var TIMED_LEVEL_REQUIRED_STAR_COUNT = CampaignLevelGenerationConfig.TIMED_LEVEL_REQUIRED_STAR_COUNT;
 
 function assertLevelId(levelId) {
   if (!Number.isInteger(levelId) || levelId <= 0) {
@@ -12,21 +14,17 @@ function assertLevelId(levelId) {
 
 function isTimedLevelId(levelId) {
   assertLevelId(levelId);
-  return levelId % TIMED_LEVEL_INTERVAL === 0;
+  return CampaignLevelGenerationConfig.isTimedLevelId(levelId);
 }
 
 function getExpectedMode(levelId) {
-  if (isTimedLevelId(levelId)) {
-    return {
-      levelType: "special_floating_island",
-      playMode: "timed_infinite_shots",
-      timeLimitSeconds: TIMED_LEVEL_TIME_LIMIT_SECONDS,
-      requiredStarCount: TIMED_LEVEL_REQUIRED_STAR_COUNT
-    };
-  }
+  assertLevelId(levelId);
+  var plan = CampaignLevelGenerationConfig.getLevelPlan(levelId);
   return {
-    levelType: "normal",
-    playMode: "shot_limited"
+    levelType: plan.levelType,
+    playMode: plan.playMode,
+    timeLimitSeconds: plan.timeLimitSeconds,
+    requiredStarCount: plan.requiredStarCount
   };
 }
 

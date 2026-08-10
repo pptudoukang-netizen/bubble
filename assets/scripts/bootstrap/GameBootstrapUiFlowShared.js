@@ -41,6 +41,7 @@ var SIGN_IN_DAY_BG_SPRITE_PATHS = {
 };
 var SIGN_IN_ITEM_ICON_PATHS = {
   coin: "ui/image/props/coin",
+  gem: "ui/image/props/gem_icon",
   stamina: "ui/image/props/treasure_chest",
   gift_pack: "ui/image/props/gift_pack",
   precise_aim: "ui/image/props/aim",
@@ -57,6 +58,7 @@ var SIGN_IN_DAY_ITEM_ICON_PATHS = {
 };
 var SIGN_IN_ITEM_DISPLAY_NAMES = {
   coin: "金币",
+  gem: "钻石",
   stamina: "体力",
   gift_pack: "大礼包",
   precise_aim: "精确瞄准",
@@ -69,6 +71,7 @@ var SIGN_IN_ITEM_DISPLAY_NAMES = {
 var AWARD_VIEW_PREFAB_PATH = "prefabs/ui/AwardView";
 var AWARD_ITEM_ICON_PATHS = {
   coin: "ui/image/props/coin",
+  gem: "ui/image/props/gem_icon",
   stamina: "ui/image/props/love",
   precise_aim: "ui/image/props/aim",
   swap_ball: "ui/image/props/change_ball",
@@ -79,6 +82,7 @@ var AWARD_ITEM_ICON_PATHS = {
 };
 var AWARD_ITEM_DISPLAY_NAMES = {
   coin: "金币",
+  gem: "钻石",
   stamina: "体力",
   precise_aim: "精确瞄准",
   swap_ball: "换球",

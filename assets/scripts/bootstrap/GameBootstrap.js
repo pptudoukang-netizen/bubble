@@ -12,9 +12,14 @@ var GameBootstrapGameplayInputMethods = require("./GameBootstrapGameplayInputMet
 var GameBootstrapLevelRuntimeMethods = require("./GameBootstrapLevelRuntimeMethods");
 var GameBootstrapNewUserGuideMethods = require("./GameBootstrapNewUserGuideMethods");
 var GameBootstrapSpecialIntroduceFlowMethods = require("./GameBootstrapSpecialIntroduceFlowMethods");
+var GameBootstrapAssistSpiritSkillMethods = require("./GameBootstrapAssistSpiritSkillMethods");
 var lazySpiritHallMethods = createLazyModuleMethods(
   "./GameBootstrapSpiritHallMethods",
   LazyRegistry.SPIRIT_HALL_METHODS
+);
+var lazySpiritShopMethods = createLazyModuleMethods(
+  "./GameBootstrapSpiritShopMethods",
+  LazyRegistry.SPIRIT_SHOP_METHODS
 );
 var lazyPowerupInventoryMethods = createLazyModuleMethods(
   "./GameBootstrapPowerupInventoryMethods",
@@ -229,6 +234,10 @@ cc.Class({
       default: "sound/game_bg",
       tooltip: "游戏界面背景音乐资源路径（Resources 相对路径）。"
     },
+    timedLevelBackgroundMusicResource: {
+      default: "sound/game_bg_timed_level",
+      tooltip: "倒计时关卡背景音乐资源路径（Resources 相对路径）。"
+    },
     uiClickSfxResource: {
       default: "sound/ding0",
       tooltip: "按钮/界面点击音效资源路径。"
@@ -236,6 +245,10 @@ cc.Class({
     shotSfxResource: {
       default: "sound/ding2",
       tooltip: "发射音效资源路径。"
+    },
+    emissionSfxResource: {
+      default: "sound/emission",
+      tooltip: "通关后每颗剩余球实际发射时播放的音效资源路径（Resources 相对路径）。"
     },
     loseSfxResource: {
       default: "sound/ding3",
@@ -245,10 +258,6 @@ cc.Class({
       default: "sound/ding4",
       tooltip: "胜利音效资源路径。"
     },
-    jarBounceSfxResources: {
-      default: "sound/pao1,sound/pao2,sound/pao3,sound/pao4,sound/pao5",
-      tooltip: "掉落球与第1-5个缸沿碰撞时固定对应的音效资源列表（pao1-5），使用英文逗号分隔。"
-    },
     jarCollectBottomSfxResource: {
       default: "sound/score",
       tooltip: "球落入缸底被收集时播放的音效资源路径。"
@@ -257,13 +266,13 @@ cc.Class({
       default: "sound/break",
       tooltip: "棋盘中球消除时播放的音效资源路径。"
     },
-    noEliminationSfxResource: {
-      default: "sound/duang3",
-      tooltip: "吸附球没有产生消除时播放的音效资源路径。"
+    hitBucketSfxResource: {
+      default: "sound/hit_bucket",
+      tooltip: "发射球经过墙壁反弹、吸附后未产生消除时播放的音效资源路径。"
     },
-    fairyAssistHitSfxResource: {
-      default: "sound/duang1",
-      tooltip: "掉落玻璃球与精灵碰撞时播放的音效资源路径。"
+    fairyAssistHitSfxResources: {
+      default: "sound/hit_spirit_1,sound/hit_spirit_2,sound/hit_spirit_3,sound/hit_spirit_4,sound/hit_spirit_5",
+      tooltip: "掉落玻璃球与精灵碰撞时随机播放的5个音效资源路径，使用英文逗号分隔。"
     },
     fairyAssistDepartSfxResource: {
       default: "sound/fly",
@@ -291,7 +300,27 @@ cc.Class({
     },
     vinesSfxResource: {
       default: "sound/vines",
-      tooltip: "藤蔓完成缠绕普通球时播放的音效资源路径（Resources 相对路径）。"
+      tooltip: "藤蔓完成缠绕普通球或技能解除藤蔓时播放的音效资源路径（Resources 相对路径）。"
+    },
+    tornadoSfxResource: {
+      default: "sound/tornado",
+      tooltip: "龙卷风技能结算成功时播放的音效资源路径（Resources 相对路径）。"
+    },
+    lightingSfxResource: {
+      default: "sound/lighting",
+      tooltip: "闪电技能结算成功时播放的音效资源路径（Resources 相对路径）。"
+    },
+    ablationSfxResource: {
+      default: "sound/ablation",
+      tooltip: "雪块消融技能结算成功时播放的音效资源路径（Resources 相对路径）。"
+    },
+    skillCompletedSfxResource: {
+      default: "sound/skill_completed",
+      tooltip: "精灵技能充能完成时播放的音效资源路径（Resources 相对路径）。"
+    },
+    trappedSpriteRescuedSfxResource: {
+      default: "sound/cute_laughter",
+      tooltip: "被困精灵成功获救时播放的笑声音效资源路径（Resources 相对路径）。"
     },
     usePropsSfxResource: {
       default: "sound/use_props",
@@ -320,6 +349,10 @@ cc.Class({
     inventoryRewardedVideoAdUnitId: {
       default: "adunit-4c8e0cc2b2fc7428",
       tooltip: "局内道具库存不足时补给道具的激励视频广告位 ID。"
+    },
+    levelSelectGemRewardedVideoAdUnitId: {
+      default: "adunit-dfa53e016c63a38d",
+      tooltip: "LevelView 顶部钻石奖励使用的激励视频广告位 ID。"
     },
     signInDoubleRewardVideoAdUnitId: {
       default: "adunit-480bd8bf00a929fc",
@@ -383,15 +416,16 @@ cc.Class({
   _buildAudioConfig: GameBootstrapAudioMethods._buildAudioConfig,
   _getLevelSelectBgmPath: GameBootstrapAudioMethods._getLevelSelectBgmPath,
   _getGameplayBgmPath: GameBootstrapAudioMethods._getGameplayBgmPath,
+  _getTimedLevelGameplayBgmPath: GameBootstrapAudioMethods._getTimedLevelGameplayBgmPath,
+  _getGameplayBgmPathForLevel: GameBootstrapAudioMethods._getGameplayBgmPathForLevel,
   _parseAudioResourceList: GameBootstrapAudioMethods._parseAudioResourceList,
   _preloadStartupAudio: GameBootstrapAudioMethods._preloadStartupAudio,
   _playBackgroundMusic: GameBootstrapAudioMethods._playBackgroundMusic,
   _playLevelSelectBackgroundMusic: GameBootstrapAudioMethods._playLevelSelectBackgroundMusic,
   _playGameplayBackgroundMusic: GameBootstrapAudioMethods._playGameplayBackgroundMusic,
   _playSfx: GameBootstrapAudioMethods._playSfx,
+  _playFairyAssistHitSfx: GameBootstrapAudioMethods._playFairyAssistHitSfx,
   _runGameEntryCountdown: GameBootstrapAudioMethods._runGameEntryCountdown,
-  _resolveJarBouncePath: GameBootstrapAudioMethods._resolveJarBouncePath,
-  _canPlayJarBounceSfx: GameBootstrapAudioMethods._canPlayJarBounceSfx,
   _triggerShortVibration: GameBootstrapAudioMethods._triggerShortVibration,
   _playRuntimeAudioEvents: GameBootstrapAudioMethods._playRuntimeAudioEvents,
   _preloadStartupLevelConfigs: GameBootstrapStartupMethods._preloadStartupLevelConfigs,
@@ -455,6 +489,8 @@ cc.Class({
   _hideSpecialIntroduceView: GameBootstrapSpecialIntroduceFlowMethods._hideSpecialIntroduceView,
   _hideGeniusTipsView: GameBootstrapSpecialIntroduceFlowMethods._hideGeniusTipsView,
   _hideSartTipsView: GameBootstrapSpecialIntroduceFlowMethods._hideSartTipsView,
+  _syncEquippedAssistSpiritToGameManager: GameBootstrapAssistSpiritSkillMethods._syncEquippedAssistSpiritToGameManager,
+  _onUseAssistSpiritSkillTap: GameBootstrapAssistSpiritSkillMethods._onUseAssistSpiritSkillTap,
   _onUseSkillBallTap: lazyPowerupInventoryMethods._onUseSkillBallTap,
   _onUseThreeLineEliminationTap: lazyPowerupInventoryMethods._onUseThreeLineEliminationTap,
   _applyPlusThreeBallsUseResult: lazyPowerupInventoryMethods._applyPlusThreeBallsUseResult,
@@ -532,14 +568,22 @@ cc.Class({
   _renderInventoryView: lazyPowerupInventoryMethods._renderInventoryView,
   _updateInventoryEntryState: lazyPowerupInventoryMethods._updateInventoryEntryState,
   _ensureSpiritHallViewPrefab: lazySpiritHallMethods._ensureSpiritHallViewPrefab,
+  _ensureSpiritSystemTabBarPrefab: lazySpiritHallMethods._ensureSpiritSystemTabBarPrefab,
   _ensureSpiritHallSpriteFrames: lazySpiritHallMethods._ensureSpiritHallSpriteFrames,
   _refreshAssistSpiritState: lazySpiritHallMethods._refreshAssistSpiritState,
   _showSpiritHallView: lazySpiritHallMethods._showSpiritHallView,
   _hideSpiritHallView: lazySpiritHallMethods._hideSpiritHallView,
   _renderSpiritHallView: lazySpiritHallMethods._renderSpiritHallView,
   _upgradeSelectedSpirit: lazySpiritHallMethods._upgradeSelectedSpirit,
-  _advanceSelectedSpirit: lazySpiritHallMethods._advanceSelectedSpirit,
   _equipSelectedSpirit: lazySpiritHallMethods._equipSelectedSpirit,
+  _ensureSpiritShopViewPrefab: lazySpiritShopMethods._ensureSpiritShopViewPrefab,
+  _ensureSpiritShopSpriteFrames: lazySpiritShopMethods._ensureSpiritShopSpriteFrames,
+  _showSpiritShopView: lazySpiritShopMethods._showSpiritShopView,
+  _hideSpiritShopView: lazySpiritShopMethods._hideSpiritShopView,
+  _renderSpiritShopView: lazySpiritShopMethods._renderSpiritShopView,
+  _purchaseSpiritShopFragment: lazySpiritShopMethods._purchaseSpiritShopFragment,
+  _purchaseSpiritShopProduct: lazySpiritShopMethods._purchaseSpiritShopProduct,
+  _refreshSpiritShopOffers: lazySpiritShopMethods._refreshSpiritShopOffers,
   _trackTelemetry: lazyTelemetryMethods._trackTelemetry,
   _beginLevelAttemptTracking: lazyTelemetryMethods._beginLevelAttemptTracking,
   _trackRuntimeTelemetryEvent: lazyTelemetryMethods._trackRuntimeTelemetryEvent,
@@ -549,6 +593,7 @@ cc.Class({
   _buildAttemptRewardKey: lazyAdRewardMethods._buildAttemptRewardKey,
   _hasGrantedAttemptReward: lazyAdRewardMethods._hasGrantedAttemptReward,
   _markAttemptRewardGranted: lazyAdRewardMethods._markAttemptRewardGranted,
+  _isLevelSelectGemRewardAvailable: lazyAdRewardMethods._isLevelSelectGemRewardAvailable,
   _hasRewardedVideoAdConfig: lazyAdRewardMethods._hasRewardedVideoAdConfig,
   _resolveRewardedVideoAdUnitId: lazyAdRewardMethods._resolveRewardedVideoAdUnitId,
   _requireRewardedVideoAdConfig: lazyAdRewardMethods._requireRewardedVideoAdConfig,
@@ -577,6 +622,7 @@ cc.Class({
   _resolveStaminaRecoveryGrantAmount: lazyAdRewardMethods._resolveStaminaRecoveryGrantAmount,
   _onLoseWatchAdTap: lazyAdRewardMethods._onLoseWatchAdTap,
   _onLoseCoinReviveTap: lazyAdRewardMethods._onLoseCoinReviveTap,
+  _onLevelSelectGemRewardAdTap: lazyAdRewardMethods._onLevelSelectGemRewardAdTap,
   _showRewardedAdForEntry: lazyAdRewardMethods._showRewardedAdForEntry,
   _grantAdEntryReward: lazyAdRewardMethods._grantAdEntryReward,
   _queueNextRoundReward: lazyAdRewardMethods._queueNextRoundReward,
@@ -584,6 +630,7 @@ cc.Class({
   _tryRecoverInventoryByAd: lazyAdRewardMethods._tryRecoverInventoryByAd,
   _showGameplayInventoryQuickBuyForPowerup: lazyAdRewardMethods._showGameplayInventoryQuickBuyForPowerup,
   _tryRecoverAdRunPowerupByAd: lazyAdRewardMethods._tryRecoverAdRunPowerupByAd,
+  _tryUnlockAssistSpiritSkillChargeByAd: lazyAdRewardMethods._tryUnlockAssistSpiritSkillChargeByAd,
   _tryRecoverStaminaByAd: lazyAdRewardMethods._tryRecoverStaminaByAd,
   _loadInitialLevel: GameBootstrapLevelRuntimeMethods._loadInitialLevel,
   _getStartupLevelId: GameBootstrapLevelRuntimeMethods._getStartupLevelId,
@@ -654,6 +701,7 @@ cc.Class({
   _clearStaminaRecoveryTicker: GameBootstrapUiFlowMethods._clearStaminaRecoveryTicker,
   _getCurrentStamina: GameBootstrapUiFlowMethods._getCurrentStamina,
   _getCurrentCoins: GameBootstrapUiFlowMethods._getCurrentCoins,
+  _getCurrentGems: GameBootstrapUiFlowMethods._getCurrentGems,
   _refreshNewGiftState: GameBootstrapUiFlowMethods._refreshNewGiftState,
   _isNewGiftClaimed: GameBootstrapUiFlowMethods._isNewGiftClaimed,
   _updateNewGiftEntryState: GameBootstrapUiFlowMethods._updateNewGiftEntryState,
@@ -827,6 +875,10 @@ cc.Class({
   _resolveHighlightedLevelId: GameBootstrapUiFlowMethods._resolveHighlightedLevelId,
   _onLevelSelectTap: GameBootstrapUiFlowMethods._onLevelSelectTap,
   _startTestLevelEntry: GameBootstrapUiFlowMethods._startTestLevelEntry,
+  _startTrappedSpriteTestLevelEntry: GameBootstrapUiFlowMethods._startTrappedSpriteTestLevelEntry,
+  _onLevelSelectTrappedSpriteTestTap: GameBootstrapUiFlowMethods._onLevelSelectTrappedSpriteTestTap,
+  _startBoardOcclusionTestLevelEntry: GameBootstrapUiFlowMethods._startBoardOcclusionTestLevelEntry,
+  _onLevelSelectBoardOcclusionTestTap: GameBootstrapUiFlowMethods._onLevelSelectBoardOcclusionTestTap,
   _onLevelSelectTestTap: GameBootstrapUiFlowMethods._onLevelSelectTestTap,
   _openMapEditorScene: GameBootstrapUiFlowMethods._openMapEditorScene,
   _startLocalEditedLevelEntry: GameBootstrapUiFlowMethods._startLocalEditedLevelEntry,

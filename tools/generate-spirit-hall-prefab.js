@@ -9,12 +9,18 @@ var SPIRIT_ROOT = path.join(PROJECT_ROOT, "assets", "spirit_system");
 var PREFAB_PATH = path.join(SPIRIT_ROOT, "prefabs", "SpiritHallView.prefab");
 var PREFAB_META_PATH = PREFAB_PATH + ".meta";
 var PREFAB_UUID = "8c588f20-4bf3-49cf-a8a2-aec9fb770eea";
+var TAB_BAR_PREFAB_PATH = path.join(SPIRIT_ROOT, "prefabs", "SpiritSystemTabBar.prefab");
+var TAB_BAR_PREFAB_META_PATH = TAB_BAR_PREFAB_PATH + ".meta";
+var TAB_BAR_PREFAB_UUID = "2ac46b30-6e50-4a7d-9c55-658b89eaf421";
 var SCREEN_ADAPTER_SCRIPT_PATH = path.join(SPIRIT_ROOT, "SpiritHallScreenAdapter.js");
 var SCREEN_ADAPTER_META_PATH = SCREEN_ADAPTER_SCRIPT_PATH + ".meta";
 var SCREEN_ADAPTER_SCRIPT_UUID = "a3171b68-b238-4a3a-99aa-cee90f4d1b8d";
 var DEFAULT_MATERIAL_UUID = "eca5d2f2-8ef6-41c2-bbe6-f9c79d09c432";
 var DESIGN_WIDTH = 720;
 var DESIGN_HEIGHT = 1280;
+var UPGRADE_FRAGMENT_ICON_X = -175;
+var UPGRADE_FRAGMENT_ICON_Y = -500;
+var UPGRADE_FRAGMENT_ICON_SCALE = 0.6;
 
 function fail(message) {
   throw new Error(message);
@@ -75,56 +81,60 @@ function loadSpriteFrame(relativePngPath, expectedWidth, expectedHeight) {
 var frames = {
   background: loadSpriteFrame("bg.jpg", 720, 1560),
   miluRole: loadSpriteFrame("image/role/milu.png", 344, 387),
-  addButton: loadSpriteFrame("image/ui/add_button.png", 30, 32),
   backButton: loadSpriteFrame("image/ui/back_button.png", 71, 71),
   blueIceFrame: loadSpriteFrame("image/ui/blue_ice_frame.png", 89, 95),
   blueLeafShieldIcon: loadSpriteFrame("image/ui/blue_leaf_shield_icon.png", 47, 46),
   blueProgressBar: loadSpriteFrame("image/ui/blue_progress_bar.png", 163, 18),
   blueUpgradeButton: loadSpriteFrame("image/ui/blue_upgrade_button.png", 204, 89),
-  bottomNavigationBar: loadSpriteFrame("image/ui/bottom_navigation_bar.png", 699, 90),
-  coinIcon: loadSpriteFrame("image/ui/coin_icon.png", 33, 35),
+  coinIcon: loadSpriteFrame("image/ui/coin_icon.png", 40, 41),
   crystalTabIcon: loadSpriteFrame("image/ui/crystal_tab_icon.png", 100, 96),
   darkNameplate: loadSpriteFrame("image/ui/dark_nameplate.png", 149, 37),
   darkProgressBar: loadSpriteFrame("image/ui/dark_progress_bar.png", 163, 18),
   elfHallTitle: loadSpriteFrame("image/ui/elf_hall_title.png", 284, 86),
   fireIcon: loadSpriteFrame("image/ui/fire_icon.png", 50, 49),
   floraAvatar: loadSpriteFrame("image/ui/flora_avatar.png", 97, 96),
+  gemIcon: loadSpriteFrame("image/ui/gem_icon.png", 42, 40),
   greenBattleButton: loadSpriteFrame("image/ui/green_battle_button.png", 207, 88),
   greenDoubleLeafIcon: loadSpriteFrame("image/ui/green_double_leaf_icon.png", 47, 46),
   greenLeafFrame: loadSpriteFrame("image/ui/green_leaf_frame.png", 97, 96),
   greenProgressBar: loadSpriteFrame("image/ui/green_progress_bar.png", 164, 18),
   keluAvatar: loadSpriteFrame("image/ui/kelu_avatar.png", 100, 99),
   largeGlowingLeafBall: loadSpriteFrame("image/ui/large_glowing_leaf_ball.png", 89, 89),
-  largeIceBall: loadSpriteFrame("image/ui/large_ice_ball.png", 88, 87),
-  largeStarBall: loadSpriteFrame("image/ui/large_star_ball.png", 87, 87),
   leftArrowButton: loadSpriteFrame("image/ui/left_arrow_button.png", 34, 52),
   lightningIcon: loadSpriteFrame("image/ui/lightning_icon.png", 50, 49),
+  light: loadSpriteFrame("image/ui/light.png", 332, 375),
   locoAvatar: loadSpriteFrame("image/ui/loco_avatar.png", 100, 99),
   lumiAvatar: loadSpriteFrame("image/ui/lumi_avatar.png", 99, 99),
+  magicCircle: loadSpriteFrame("image/ui/magic_circle.png", 367, 375),
   miluAvatar: loadSpriteFrame("image/ui/milu_avatar_large.png", 97, 96),
+  miluFragments: loadSpriteFrame("image/tabbar/milu_fragments.png", 106, 115),
   narrowDarkPanel: loadSpriteFrame("image/ui/narrow_dark_panel.png", 279, 80),
   orangeFireFrame: loadSpriteFrame("image/ui/orange_fire_frame.png", 92, 96),
-  orangeStarButton: loadSpriteFrame("image/ui/orange_star_button.png", 197, 88),
   purpleMagicIcon: loadSpriteFrame("image/ui/purple_magic_icon.png", 47, 46),
   purpleProgressBar: loadSpriteFrame("image/ui/purple_progress_bar.png", 163, 17),
   purpleStarFrame: loadSpriteFrame("image/ui/purple_star_frame.png", 92, 90),
   redCrossedSwordsIcon: loadSpriteFrame("image/ui/red_crossed_swords_icon.png", 47, 46),
-  redNotificationDot: loadSpriteFrame("image/ui/red_notification_dot.png", 21, 20),
   redProgressBar: loadSpriteFrame("image/ui/red_progress_bar.png", 163, 17),
   rightArrowButton: loadSpriteFrame("image/ui/right_arrow_button.png", 38, 55),
-  rockTabIcon: loadSpriteFrame("image/ui/rock_tab_icon.png", 70, 63),
-  scrollTabIcon: loadSpriteFrame("image/ui/scroll_tab_icon.png", 67, 51),
-  shopTabIcon: loadSpriteFrame("image/ui/shop_tab_icon.png", 66, 53),
   squareDarkPanel: loadSpriteFrame("image/ui/square_dark_panel.png", 217, 243),
   starIcon: loadSpriteFrame("image/ui/star_icon.png", 50, 49),
   transferPanel: loadSpriteFrame("image/ui/transfer_panel.png", 441, 237),
-  treeTabIcon: loadSpriteFrame("image/ui/tree_tab_icon.png", 67, 62),
   windAvatar: loadSpriteFrame("image/ui/wind_elf_avatar.png", 100, 99),
   windIcon: loadSpriteFrame("image/ui/wind_icon.png", 50, 49),
   yellowLightningFrame: loadSpriteFrame("image/ui/yellow_lightning_frame.png", 92, 91),
   yellowSunFrame: loadSpriteFrame("image/ui/yellow_sun_frame.png", 108, 111),
   yumiAvatar: loadSpriteFrame("image/ui/yumi_avatar.png", 99, 99)
 };
+
+function loadTabBarFrames() {
+  frames.tabBarBottomNavigationBar = loadSpriteFrame("image/tabbar/bottom_navigation_bar.png", 720, 131);
+  frames.tabBarCrystalTabIcon = loadSpriteFrame("image/tabbar/crystal_tab_icon.png", 100, 96);
+  frames.tabBarRedNotificationDot = loadSpriteFrame("image/tabbar/red_notification_dot.png", 21, 20);
+  frames.tabBarRockTabIcon = loadSpriteFrame("image/tabbar/rock_tab_icon.png", 70, 63);
+  frames.tabBarScrollTabIcon = loadSpriteFrame("image/tabbar/scroll_tab_icon.png", 67, 51);
+  frames.tabBarShopTabIcon = loadSpriteFrame("image/tabbar/shop_tab_icon.png", 66, 53);
+  frames.tabBarTreeTabIcon = loadSpriteFrame("image/tabbar/tree_tab_icon.png", 67, 62);
+}
 
 function color(r, g, b, a) {
   return {
@@ -160,8 +170,8 @@ function typedTransform(x, y, scaleX, scaleY) {
   };
 }
 
-function stableFileId(key) {
-  return crypto.createHash("sha1").update("SpiritHallView/" + key).digest("base64").replace(/[+/=]/g, "").slice(0, 22);
+function stableFileId(scope, key) {
+  return crypto.createHash("sha1").update(scope + "/" + key).digest("base64").replace(/[+/=]/g, "").slice(0, 22);
 }
 
 function compressUuid(uuid) {
@@ -199,7 +209,10 @@ function rootY(screenY) {
   return DESIGN_HEIGHT / 2 - screenY;
 }
 
-function createBuilder() {
+function createBuilder(scope) {
+  if (typeof scope !== "string" || scope.length === 0) {
+    fail("Prefab builder scope is required.");
+  }
   var objects = [];
   var nodesById = {};
   var prefab = {
@@ -296,7 +309,7 @@ function createBuilder() {
       "__type__": "cc.PrefabInfo",
       root: { "__id__": 1 },
       asset: { "__id__": 0 },
-      fileId: stableFileId(key),
+      fileId: stableFileId(scope, key),
       sync: false
     });
     node._prefab = { "__id__": infoId };
@@ -502,7 +515,7 @@ function createBuilder() {
 
   function finishRoot(rootId) {
     if (rootId !== 1) {
-      fail("SpiritHallView root must be object id 1.");
+      fail(scope + " root must be object id 1.");
     }
     prefab.data = { "__id__": rootId };
   }
@@ -549,7 +562,7 @@ function nodeOptions(name, parentId, x, y, width, height) {
 
 function buildPrefab() {
   validateScreenAdapterAsset();
-  var builder = createBuilder();
+  var builder = createBuilder("SpiritHallView");
   var root = builder.addNode(nodeOptions("SpiritHallView", null, 360, 640, DESIGN_WIDTH, DESIGN_HEIGHT));
   builder.addBlockInput(root);
   builder.addWidget(root);
@@ -594,12 +607,15 @@ function buildPrefab() {
     "HeroShowcase",
     "AbilityDetails",
     "SpiritRoster",
-    "GrowthActions",
-    "BottomNavigation"
+    "GrowthActions"
   ].forEach(function (name) {
     sections[name] = builder.addNode(nodeOptions(name, logicLayer, 0, 0, DESIGN_WIDTH, DESIGN_HEIGHT));
     builder.addPrefabInfo(sections[name], name);
   });
+  sections.BottomNavigationMount = builder.addNode(
+    nodeOptions("BottomNavigationMount", logicLayer, 0, 0, DESIGN_WIDTH, DESIGN_HEIGHT)
+  );
+  builder.addPrefabInfo(sections.BottomNavigationMount, "BottomNavigationMount");
   sections.BackgroundAnchors = backgroundAnchors;
 
   var artIndex = 0;
@@ -722,10 +738,16 @@ function buildPrefab() {
       bold: true,
       horizontalAlign: 1,
       overflow: 1,
-      outlineWidth: 2,
-      outlineColor: OUTLINE_BLUE,
+      outlineWidth: 0,
       anchorX: 0.5
     };
+  }
+
+  function actionButtonTextOptions() {
+    var options = headlineOptions();
+    options.outlineWidth = 2;
+    options.outlineColor = OUTLINE_BLUE;
+    return options;
   }
 
   function bodyOptions(horizontalAlign) {
@@ -735,13 +757,23 @@ function buildPrefab() {
       bold: false,
       horizontalAlign: horizontalAlign,
       overflow: 2,
-      outlineWidth: 1,
-      outlineColor: OUTLINE_BLUE,
+      outlineWidth: 0,
       anchorX: 0
     };
   }
 
   addArt("BackgroundAnchors", backgroundRenderLayer, "background", frames.background, 360, 600, 720, 1560, false);
+  var upgradeMagicCircleArt = addArt(
+    "HeroShowcase",
+    roleRenderLayer,
+    "upgrade_magic_circle",
+    frames.magicCircle,
+    360,
+    383,
+    frames.magicCircle.width,
+    frames.magicCircle.height,
+    false
+  );
   var initialRoleArt = addArt(
     "HeroShowcase",
     roleRenderLayer,
@@ -753,6 +785,26 @@ function buildPrefab() {
     frames.miluRole.height,
     false
   );
+  var upgradeLightArt = addArt(
+    "HeroShowcase",
+    roleRenderLayer,
+    "upgrade_light",
+    frames.light,
+    360,
+    383,
+    frames.light.width,
+    frames.light.height,
+    false
+  );
+  [
+    upgradeMagicCircleArt.sourceNode,
+    upgradeMagicCircleArt.proxyNode,
+    upgradeLightArt.sourceNode,
+    upgradeLightArt.proxyNode
+  ].forEach(function (nodeId) {
+    builder.objects[nodeId]._active = false;
+    builder.objects[nodeId]._opacity = 0;
+  });
   [
     initialRoleArt.sourceSpriteComponentId,
     initialRoleArt.proxySpriteComponentId
@@ -765,27 +817,19 @@ function buildPrefab() {
   addArt("TopBar", uiRenderLayer, "elf_hall_title", frames.elfHallTitle, 360, 64, 284, 86, false);
 
   [
-    { key: "coin", y: 34, icon: frames.coinIcon, iconWidth: 27, iconHeight: 29, value: "68.7万" },
-    { key: "crystal", y: 76, icon: frames.largeIceBall, iconWidth: 29, iconHeight: 29, value: "12,450" },
-    { key: "shard", y: 118, icon: frames.largeStarBall, iconWidth: 29, iconHeight: 29, value: "320" }
+    { key: "coin", y: 34, icon: frames.coinIcon, iconWidth: 29, iconHeight: 30, value: "68.7万" },
+    { key: "crystal", y: 76, icon: frames.gemIcon, iconWidth: 30, iconHeight: 29, value: "12,450" }
   ].forEach(function (resource) {
     addArt("TopBar", uiRenderLayer, resource.key + "_bar", frames.narrowDarkPanel, 618, resource.y, 164, 40, false);
     addArt("TopBar", uiRenderLayer, resource.key + "_icon", resource.icon, 548, resource.y, resource.iconWidth, resource.iconHeight, false);
-    addArt("TopBar", uiRenderLayer, resource.key + "_add", frames.addButton, 684, resource.y, 25, 27, true);
     addText("TopBar", resource.key + "_value", resource.value, 619, resource.y, 105, 34, 23, WHITE, headlineOptions());
   });
-
-  addArt("TopBar", uiRenderLayer, "guide_frame", frames.blueIceFrame, 679, 169, 61, 65, true);
-  addArt("TopBar", uiRenderLayer, "guide_icon", frames.scrollTabIcon, 679, 161, 31, 24, false);
-  addArt("TopBar", uiRenderLayer, "guide_notification", frames.redNotificationDot, 702, 145, 18, 17, false);
-  addText("TopBar", "guide_text", "图鉴", 679, 190, 58, 24, 18, WHITE, headlineOptions());
 
   addArt("CurrentSpiritCard", uiRenderLayer, "current_card_panel", frames.squareDarkPanel, 73, 266, 132, 208, false);
   addText("CurrentSpiritCard", "current_card_title", "当前出战", 73, 184, 120, 28, 21, WHITE, headlineOptions());
   addArt("CurrentSpiritCard", uiRenderLayer, "current_card_avatar_frame", frames.greenLeafFrame, 73, 244, 76, 76, false);
   addArt("CurrentSpiritCard", uiRenderLayer, "current_card_avatar", frames.miluAvatar, 73, 244, 66, 66, false);
-  addText("CurrentSpiritCard", "current_card_stars", "★", 73, 303, 118, 26, 22, GOLD, headlineOptions());
-  addText("CurrentSpiritCard", "current_card_name", "米露 Lv.1", 73, 339, 120, 26, 18, WHITE, headlineOptions());
+  addText("CurrentSpiritCard", "current_card_name", "米露 Lv.1", 73, 314, 120, 26, 18, WHITE, headlineOptions());
 
   addArt("HeroShowcase", uiRenderLayer, "hero_left_arrow", frames.leftArrowButton, 118, 552, 34, 52, true);
   addArt("HeroShowcase", uiRenderLayer, "hero_right_arrow", frames.rightArrowButton, 602, 552, 38, 55, true);
@@ -793,7 +837,6 @@ function buildPrefab() {
   addArt("HeroShowcase", uiRenderLayer, "hero_element_icon", frames.greenDoubleLeafIcon, 248, 586, 38, 37, false);
   addText("HeroShowcase", "hero_name", "芙洛·森林精灵", 374, 585, 190, 34, 27, WHITE, headlineOptions());
   addText("HeroShowcase", "hero_level", "Lv.1", 483, 585, 70, 30, 20, WHITE, headlineOptions());
-  addText("HeroShowcase", "hero_stars", "★★★★★", 360, 616, 235, 32, 28, GOLD, headlineOptions());
 
   addArt("AbilityDetails", uiRenderLayer, "ability_stats_panel", frames.squareDarkPanel, 126, 791, 217, 243, false);
   addArt("AbilityDetails", uiRenderLayer, "ability_transfer_panel", frames.transferPanel, 468, 791, 441, 237, false);
@@ -813,8 +856,8 @@ function buildPrefab() {
       y: 766,
       icon: frames.blueLeafShieldIcon,
       fill: frames.blueProgressBar,
-      label: "当前概率",
-      value: "3%",
+      label: "当前效果",
+      value: "普通递球",
       valueNodeName: "current_probability_stat_value",
       progress: 64 / 104
     },
@@ -823,18 +866,18 @@ function buildPrefab() {
       y: 816,
       icon: frames.redCrossedSwordsIcon,
       fill: frames.redProgressBar,
-      label: "下级概率",
-      value: "5%",
+      label: "下级效果",
+      value: "普通递球",
       valueNodeName: "next_probability_stat_value",
       progress: 72 / 104
     },
     {
-      key: "rarity",
+      key: "fragment_count",
       y: 866,
       icon: frames.purpleMagicIcon,
       fill: frames.purpleProgressBar,
-      label: "当前星级",
-      value: "★★★★",
+      label: "拥有碎片",
+      value: "0",
       progress: 80 / 104
     }
   ];
@@ -871,7 +914,7 @@ function buildPrefab() {
   addText(
     "AbilityDetails",
     "ability_description",
-    "清除棋盘内全部藤蔓束缚；\n解除后重算顶部支撑。",
+    "当前等级的技能效果将在此展示。",
     352,
     765,
     324,
@@ -880,10 +923,10 @@ function buildPrefab() {
     WHITE,
     bodyOptions(0)
   );
-  addText("AbilityDetails", "current_probability_title", "Lv.1 当前概率", 354, 843, 150, 26, 17, GOLD, headlineOptions());
-  addText("AbilityDetails", "current_probability_value", "3%", 354, 878, 120, 42, 32, LIME, headlineOptions());
-  addText("AbilityDetails", "next_probability_title", "Lv.2 下级概率", 582, 843, 150, 26, 17, GOLD, headlineOptions());
-  addText("AbilityDetails", "next_probability_value", "5%", 582, 878, 120, 42, 32, LIME, headlineOptions());
+  addText("AbilityDetails", "current_probability_title", "Lv.1 当前效果", 354, 823, 150, 26, 17, GOLD, headlineOptions());
+  addText("AbilityDetails", "current_probability_value", "普通递球\n无特殊技能", 354, 858, 190, 54, 20, LIME, headlineOptions());
+  addText("AbilityDetails", "next_probability_title", "Lv.2 下级效果", 582, 823, 150, 26, 17, GOLD, headlineOptions());
+  addText("AbilityDetails", "next_probability_value", "普通递球\n无特殊技能", 582, 858, 190, 54, 20, LIME, headlineOptions());
 
   addArt("SpiritRoster", uiRenderLayer, "roster_left_arrow", frames.leftArrowButton, 17, 982, 27, 42, true);
   addArt("SpiritRoster", uiRenderLayer, "roster_right_arrow", frames.rightArrowButton, 703, 982, 29, 43, true);
@@ -916,39 +959,127 @@ function buildPrefab() {
     );
   });
 
-  addArt("GrowthActions", uiRenderLayer, "upgrade_button", frames.blueUpgradeButton, 119, 1117, 204, 89, true);
-  addArt("GrowthActions", uiRenderLayer, "advance_button", frames.orangeStarButton, 360, 1117, 197, 88, true);
-  addArt("GrowthActions", uiRenderLayer, "battle_button", frames.greenBattleButton, 601, 1117, 207, 88, true);
-  addText("GrowthActions", "upgrade_text", "升级", 137, 1100, 110, 38, 30, WHITE, headlineOptions());
-  addText("GrowthActions", "upgrade_cost", "12,000", 139, 1140, 102, 26, 18, WHITE, headlineOptions());
-  addText("GrowthActions", "advance_text", "进阶", 375, 1100, 110, 38, 30, WHITE, headlineOptions());
-  addText("GrowthActions", "advance_cost", "30/10", 375, 1140, 102, 26, 18, WHITE, headlineOptions());
-  addText("GrowthActions", "battle_text", "出战", 620, 1117, 120, 42, 31, WHITE, headlineOptions());
+  addArt("GrowthActions", uiRenderLayer, "upgrade_button", frames.blueUpgradeButton, 220, 1117, 204, 89, true);
+  addArt("GrowthActions", uiRenderLayer, "battle_button", frames.greenBattleButton, 525, 1117, 207, 88, true);
+  var upgradeFragmentIconArt = addArt(
+    "GrowthActions",
+    uiRenderLayer,
+    "upgrade_fragment_icon",
+    frames.miluFragments,
+    150,
+    1111,
+    52,
+    56,
+    false
+  );
+  [
+    upgradeFragmentIconArt.sourceNode,
+    upgradeFragmentIconArt.proxyNode
+  ].forEach(function (nodeId) {
+    var transform = builder.objects[nodeId]._trs.array;
+    transform[0] = UPGRADE_FRAGMENT_ICON_X;
+    transform[1] = UPGRADE_FRAGMENT_ICON_Y;
+    transform[7] = UPGRADE_FRAGMENT_ICON_SCALE;
+    transform[8] = UPGRADE_FRAGMENT_ICON_SCALE;
+  });
+  addText("GrowthActions", "upgrade_text", "升级", 239, 1100, 110, 38, 30, WHITE, actionButtonTextOptions());
+  addText("GrowthActions", "upgrade_cost", "0/10", 241, 1140, 102, 26, 18, WHITE, headlineOptions());
+  addText("GrowthActions", "battle_text", "出战", 544, 1117, 120, 42, 31, WHITE, actionButtonTextOptions());
 
-  addArt("BottomNavigation", uiRenderLayer, "bottom_navigation_bar", frames.bottomNavigationBar, 360, 1235, 699, 90, false);
-  var tabs = [
-    { key: "home", label: "精灵小屋", icon: frames.treeTabIcon, x: 76, y: 1214, width: 51, height: 47, notify: true },
-    { key: "bond", label: "精灵羁绊", icon: frames.rockTabIcon, x: 220, y: 1215, width: 53, height: 48, notify: false },
-    { key: "hall", label: "精灵大厅", icon: frames.crystalTabIcon, x: 360, y: 1205, width: 84, height: 81, notify: false },
-    { key: "growth", label: "成长任务", icon: frames.scrollTabIcon, x: 502, y: 1216, width: 51, height: 39, notify: true },
-    { key: "shop", label: "精灵商店", icon: frames.shopTabIcon, x: 644, y: 1216, width: 52, height: 42, notify: false }
-  ];
-  tabs.forEach(function (tab) {
-    addArt("BottomNavigation", uiRenderLayer, tab.key + "_tab", tab.icon, tab.x, tab.y, tab.width, tab.height, true);
-    addText(
-      "BottomNavigation",
+  return builder.objects;
+}
+
+function buildTabBarPrefab() {
+  loadTabBarFrames();
+  var builder = createBuilder("SpiritSystemTabBar");
+  var root = builder.addNode(nodeOptions("SpiritSystemTabBar", null, 0, 0, DESIGN_WIDTH, 90));
+  builder.addBlockInput(root);
+  builder.addPrefabInfo(root, "root");
+  builder.finishRoot(root);
+
+  var renderLayer = builder.addNode(
+    nodeOptions("SpiritSystemTabBarSpriteLayer", root, 0, 0, DESIGN_WIDTH, 90)
+  );
+  builder.addPrefabInfo(renderLayer, "SpiritSystemTabBarSpriteLayer");
+  var logicLayer = builder.addNode(
+    nodeOptions("SpiritSystemTabBarLogicLayer", root, 0, 0, DESIGN_WIDTH, 90)
+  );
+  builder.addPrefabInfo(logicLayer, "SpiritSystemTabBarLogicLayer");
+
+  var artIndex = 0;
+  function addTabArt(name, frame, x, y, width, height, clickable) {
+    assertFinitePositive(width, name + " width");
+    assertFinitePositive(height, name + " height");
+    var sourceNode = builder.addNode(
+      nodeOptions("source__" + name, logicLayer, x, y, width, height)
+    );
+    builder.addSprite(sourceNode, frame, false);
+    builder.addPrefabInfo(sourceNode, "source/" + artIndex + "/" + name);
+    var proxyNode = builder.addNode(
+      nodeOptions("proxy__" + name, renderLayer, x, y, width, height)
+    );
+    builder.addSprite(proxyNode, frame, true);
+    builder.addPrefabInfo(proxyNode, "proxy/" + artIndex + "/" + name);
+    if (clickable) {
+      builder.addButton(sourceNode, proxyNode);
+    }
+    artIndex += 1;
+  }
+
+  var textIndex = 0;
+  function addTabLabel(name, text, x, y, fontSize, textColor) {
+    var labelNodeId = builder.addNode(nodeOptions(name, logicLayer, x, y, 120, 28));
+    builder.objects[labelNodeId]._color = color(textColor.r, textColor.g, textColor.b, textColor.a);
+    builder.addLabel(labelNodeId, {
+      text: text,
+      fontSize: fontSize,
+      lineHeight: 32,
+      wrap: false,
+      bold: true,
+      horizontalAlign: 1,
+      overflow: 1,
+      outlineWidth: 0
+    });
+    builder.addPrefabInfo(labelNodeId, "text/" + textIndex + "/" + name);
+    textIndex += 1;
+  }
+
+  addTabArt("bottom_navigation_bar", frames.tabBarBottomNavigationBar, 0, 0, 699, 90, false);
+  [
+    { key: "home", label: "精灵小屋", icon: frames.tabBarTreeTabIcon, x: 76, y: 1214, width: 51, height: 47, notify: false },
+    { key: "bond", label: "精灵羁绊", icon: frames.tabBarRockTabIcon, x: 220, y: 1215, width: 53, height: 48, notify: false },
+    { key: "hall", label: "精灵大厅", icon: frames.tabBarCrystalTabIcon, x: 360, y: 1205, width: 84, height: 81, notify: false },
+    { key: "growth", label: "成长任务", icon: frames.tabBarScrollTabIcon, x: 502, y: 1216, width: 51, height: 39, notify: false },
+    { key: "shop", label: "精灵商店", icon: frames.tabBarShopTabIcon, x: 644, y: 1216, width: 52, height: 42, notify: false }
+  ].forEach(function (tab) {
+    var localX = rootX(tab.x);
+    addTabArt(
+      tab.key + "_tab",
+      tab.icon,
+      localX,
+      1235 - tab.y,
+      tab.width,
+      tab.height,
+      true
+    );
+    addTabLabel(
       tab.key + "_tab_label",
       tab.label,
-      tab.x,
-      1260,
-      120,
-      28,
+      localX,
+      1235 - 1260,
       tab.key === "hall" ? 17 : 18,
-      tab.key === "hall" ? GOLD : WHITE,
-      headlineOptions()
+      tab.key === "hall" ? GOLD : WHITE
     );
     if (tab.notify) {
-      addArt("BottomNavigation", uiRenderLayer, tab.key + "_notification", frames.redNotificationDot, tab.x + 31, 1192, 18, 17, false);
+      addTabArt(
+        tab.key + "_notification",
+        frames.tabBarRedNotificationDot,
+        rootX(tab.x + 31),
+        1235 - 1192,
+        18,
+        17,
+        false
+      );
     }
   });
 
@@ -989,22 +1120,59 @@ function validatePrefabObjects(objects) {
   var sourceSprites = 0;
   var proxySprites = 0;
   var progressBarComponents = 0;
+  var outlinedLabelCounts = {
+    upgrade_text: 0,
+    battle_text: 0
+  };
   var nodeNameCounts = {};
+  var gemIconSpriteNodes = 0;
   var requiredLeftAlignedLabels = {
     ability_kind_label: 0,
     current_probability_label: 0,
     next_probability_label: 0,
-    rarity_label: 0,
+    fragment_count_label: 0,
     ability_description: 0
   };
   var safeAreaComponents = 0;
   var screenAdapterComponents = 0;
+  var upgradeFragmentIconSpriteNodes = 0;
+  var upgradeEffectSpriteNodes = 0;
+  var upgradeEffectFrameUuids = {
+    source__upgrade_magic_circle: frames.magicCircle.uuid,
+    proxy__upgrade_magic_circle: frames.magicCircle.uuid,
+    source__upgrade_light: frames.light.uuid,
+    proxy__upgrade_light: frames.light.uuid
+  };
   var requiredNodeCounts = {
     FullBleedBackgroundLayer: 0,
     SafeAreaRoot: 0,
-    DesignContent: 0
+    DesignContent: 0,
+    BottomNavigationMount: 0,
+    source__upgrade_fragment_icon: 0,
+    proxy__upgrade_fragment_icon: 0,
+    source__upgrade_magic_circle: 0,
+    proxy__upgrade_magic_circle: 0,
+    source__upgrade_light: 0,
+    proxy__upgrade_light: 0
   };
   objects.forEach(function (object) {
+    if (object.__type__ === "cc.LabelOutline") {
+      var outlineNode = objects[object.node.__id__];
+      if (
+        !outlineNode ||
+        !Object.prototype.hasOwnProperty.call(outlinedLabelCounts, outlineNode._name)
+      ) {
+        fail(
+          "SpiritHallView system text must not use LabelOutline: " +
+          (outlineNode ? outlineNode._name : "invalid node") +
+          "."
+        );
+      }
+      if (object._width !== 2) {
+        fail(outlineNode._name + " must retain its 2px LabelOutline.");
+      }
+      outlinedLabelCounts[outlineNode._name] += 1;
+    }
     if (object.__type__ === "cc.SafeArea") {
       safeAreaComponents += 1;
     }
@@ -1069,6 +1237,59 @@ function validatePrefabObjects(objects) {
       }
       proxySprites += 1;
     }
+    if (object._name === "source__crystal_icon" || object._name === "proxy__crystal_icon") {
+      if (
+        !spriteComponent ||
+        !spriteComponent._spriteFrame ||
+        spriteComponent._spriteFrame.__uuid__ !== frames.gemIcon.uuid
+      ) {
+        fail(object._name + " must use image/ui/gem_icon.png.");
+      }
+      gemIconSpriteNodes += 1;
+    }
+    if (
+      object._name === "source__upgrade_fragment_icon" ||
+      object._name === "proxy__upgrade_fragment_icon"
+    ) {
+      if (
+        !spriteComponent ||
+        !spriteComponent._spriteFrame ||
+        spriteComponent._spriteFrame.__uuid__ !== frames.miluFragments.uuid
+      ) {
+        fail(object._name + " must initially use image/tabbar/milu_fragments.png.");
+      }
+      if (
+        object._trs.array[0] !== UPGRADE_FRAGMENT_ICON_X ||
+        object._trs.array[1] !== UPGRADE_FRAGMENT_ICON_Y ||
+        object._trs.array[7] !== UPGRADE_FRAGMENT_ICON_SCALE ||
+        object._trs.array[8] !== UPGRADE_FRAGMENT_ICON_SCALE
+      ) {
+        fail(
+          object._name +
+          " must use X=" +
+          UPGRADE_FRAGMENT_ICON_X +
+          ", Y=" +
+          UPGRADE_FRAGMENT_ICON_Y +
+          " and scale=" +
+          UPGRADE_FRAGMENT_ICON_SCALE +
+          "."
+        );
+      }
+      upgradeFragmentIconSpriteNodes += 1;
+    }
+    if (Object.prototype.hasOwnProperty.call(upgradeEffectFrameUuids, object._name)) {
+      if (
+        !spriteComponent ||
+        !spriteComponent._spriteFrame ||
+        spriteComponent._spriteFrame.__uuid__ !== upgradeEffectFrameUuids[object._name]
+      ) {
+        fail(object._name + " must use its authored spirit upgrade effect SpriteFrame.");
+      }
+      if (object._active !== false || object._opacity !== 0) {
+        fail(object._name + " must be initially inactive and transparent.");
+      }
+      upgradeEffectSpriteNodes += 1;
+    }
   });
   if (sourceSprites === 0 || proxySprites === 0 || sourceSprites !== proxySprites) {
     fail(
@@ -1085,6 +1306,38 @@ function validatePrefabObjects(objects) {
   if (progressBarComponents !== 4) {
     fail("SpiritHallView requires exactly four cc.ProgressBar components.");
   }
+  if (gemIconSpriteNodes !== 2) {
+    fail("SpiritHallView requires source/proxy crystal icons backed by image/ui/gem_icon.png.");
+  }
+  if (upgradeFragmentIconSpriteNodes !== 2) {
+    fail("SpiritHallView requires source/proxy upgrade fragment icons backed by image/tabbar.");
+  }
+  if (upgradeEffectSpriteNodes !== 4) {
+    fail("SpiritHallView requires two source/proxy spirit upgrade effect Sprite pairs.");
+  }
+  Object.keys(nodeNameCounts).forEach(function (nodeName) {
+    if (/^(?:source__|proxy__)?guide_(?:frame|icon|notification|text)$/.test(nodeName)) {
+      fail("SpiritHallView must not contain removed guide entry node: " + nodeName + ".");
+    }
+    if (nodeName.indexOf("shard_") >= 0) {
+      fail("SpiritHallView must not contain shard resource nodes: " + nodeName + ".");
+    }
+    if (
+      nodeName === "source__coin_add" ||
+      nodeName === "proxy__coin_add" ||
+      nodeName === "source__crystal_add" ||
+      nodeName === "proxy__crystal_add"
+    ) {
+      fail("SpiritHallView must not contain resource add button node: " + nodeName + ".");
+    }
+    if (
+      nodeName === "SpiritSystemTabBar" ||
+      nodeName === "source__bottom_navigation_bar" ||
+      /^(?:source__|proxy__)(?:home|bond|hall|growth|shop)_tab$/.test(nodeName)
+    ) {
+      fail("SpiritHallView must not inline shared tab bar node: " + nodeName + ".");
+    }
+  });
   Object.keys(nodeNameCounts).forEach(function (nodeName) {
     if (nodeNameCounts[nodeName] !== 1) {
       fail("SpiritHallView node names must be globally unique: " + nodeName + ".");
@@ -1100,6 +1353,144 @@ function validatePrefabObjects(objects) {
       fail("SpiritHallView requires exactly one left-aligned " + nodeName + " label.");
     }
   });
+  Object.keys(outlinedLabelCounts).forEach(function (nodeName) {
+    if (outlinedLabelCounts[nodeName] !== 1) {
+      fail("SpiritHallView requires exactly one outlined " + nodeName + " label.");
+    }
+  });
+}
+
+function validateTabBarPrefabObjects(objects) {
+  if (!Array.isArray(objects) || objects.length < 2) {
+    fail("SpiritSystemTabBar prefab must contain serialized objects.");
+  }
+  objects.forEach(function (object, objectIndex) {
+    walkIds(object, function (referencedId) {
+      if (!Number.isInteger(referencedId) || referencedId < 0 || referencedId >= objects.length) {
+        fail("SpiritSystemTabBar object " + objectIndex + " references invalid __id__ " + referencedId + ".");
+      }
+    });
+  });
+
+  var tabBarSpriteFrameUuids = {};
+  [
+    frames.tabBarBottomNavigationBar,
+    frames.tabBarCrystalTabIcon,
+    frames.tabBarRedNotificationDot,
+    frames.tabBarRockTabIcon,
+    frames.tabBarScrollTabIcon,
+    frames.tabBarShopTabIcon,
+    frames.tabBarTreeTabIcon
+  ].forEach(function (frame) {
+    if (frame.path.indexOf("image/tabbar/") !== 0) {
+      fail("SpiritSystemTabBar frame must belong to image/tabbar: " + frame.path + ".");
+    }
+    tabBarSpriteFrameUuids[frame.uuid] = true;
+  });
+
+  var nodesByName = {};
+  objects.forEach(function (object) {
+    if (object.__type__ === "cc.LabelOutline") {
+      fail("SpiritSystemTabBar system text must not use LabelOutline.");
+    }
+    if (
+      object.__type__ === "cc.Sprite" &&
+      (
+        !object._spriteFrame ||
+        !tabBarSpriteFrameUuids[object._spriteFrame.__uuid__]
+      )
+    ) {
+      fail("SpiritSystemTabBar SpriteFrame must belong to image/tabbar.");
+    }
+    if (object.__type__ !== "cc.Node") {
+      return;
+    }
+    if (Object.prototype.hasOwnProperty.call(nodesByName, object._name)) {
+      fail("SpiritSystemTabBar node names must be globally unique: " + object._name + ".");
+    }
+    nodesByName[object._name] = object;
+  });
+  [
+    "SpiritSystemTabBar",
+    "SpiritSystemTabBarSpriteLayer",
+    "SpiritSystemTabBarLogicLayer",
+    "source__bottom_navigation_bar",
+    "proxy__bottom_navigation_bar",
+    "source__home_tab",
+    "source__bond_tab",
+    "source__hall_tab",
+    "source__growth_tab",
+    "source__shop_tab"
+  ].forEach(function (nodeName) {
+    if (!Object.prototype.hasOwnProperty.call(nodesByName, nodeName)) {
+      fail("SpiritSystemTabBar requires node: " + nodeName + ".");
+    }
+  });
+
+  var root = nodesByName.SpiritSystemTabBar;
+  if (root._contentSize.width !== DESIGN_WIDTH || root._contentSize.height !== 90) {
+    fail("SpiritSystemTabBar root must be 720x90.");
+  }
+  [
+    "source__home_notification",
+    "proxy__home_notification",
+    "source__growth_notification",
+    "proxy__growth_notification"
+  ].forEach(function (nodeName) {
+    if (Object.prototype.hasOwnProperty.call(nodesByName, nodeName)) {
+      fail("SpiritSystemTabBar must not contain unopened-tab notification node: " + nodeName + ".");
+    }
+  });
+
+  var sourceSpriteCount = 0;
+  var proxySpriteCount = 0;
+  Object.keys(nodesByName).forEach(function (nodeName) {
+    var node = nodesByName[nodeName];
+    var sprite = node._components.map(function (componentReference) {
+      return objects[componentReference.__id__];
+    }).find(function (component) {
+      return component && component.__type__ === "cc.Sprite";
+    });
+    if (nodeName.indexOf("source__") === 0) {
+      if (!sprite || sprite._enabled !== false) {
+        fail(nodeName + " must contain one disabled source cc.Sprite.");
+      }
+      var proxyName = "proxy__" + nodeName.slice("source__".length);
+      var proxyNode = nodesByName[proxyName];
+      if (!proxyNode) {
+        fail("SpiritSystemTabBar proxy node is missing: " + proxyName + ".");
+      }
+      var proxySprite = proxyNode._components.map(function (componentReference) {
+        return objects[componentReference.__id__];
+      }).find(function (component) {
+        return component && component.__type__ === "cc.Sprite";
+      });
+      if (
+        !proxySprite ||
+        proxySprite._enabled !== true ||
+        proxySprite._spriteFrame.__uuid__ !== sprite._spriteFrame.__uuid__
+      ) {
+        fail(proxyName + " must contain the matching enabled proxy cc.Sprite.");
+      }
+      sourceSpriteCount += 1;
+    }
+    if (nodeName.indexOf("proxy__") === 0) {
+      proxySpriteCount += 1;
+    }
+  });
+  if (sourceSpriteCount === 0 || sourceSpriteCount !== proxySpriteCount) {
+    fail(
+      "SpiritSystemTabBar proxy/source Sprite counts must match and be non-zero, received " +
+      sourceSpriteCount + "/" + proxySpriteCount + "."
+    );
+  }
+
+  var buttons = objects.filter(function (object) {
+    return object && object.__type__ === "cc.Button";
+  });
+  if (buttons.length !== 5) {
+    fail("SpiritSystemTabBar requires exactly five tab Button components.");
+  }
 }
 
 function serializePrefab() {
@@ -1108,24 +1499,37 @@ function serializePrefab() {
   return JSON.stringify(objects, null, 2) + "\n";
 }
 
-function serializePrefabMeta() {
+function serializeTabBarPrefab() {
+  var objects = buildTabBarPrefab();
+  validateTabBarPrefabObjects(objects);
+  return JSON.stringify(objects, null, 2) + "\n";
+}
+
+function serializePrefabMeta(uuid) {
   return JSON.stringify({
     ver: "1.3.2",
-    uuid: PREFAB_UUID,
+    uuid: uuid,
     importer: "prefab",
     optimizationPolicy: "AUTO",
     asyncLoadAssets: false,
     readonly: false,
     subMetas: {}
-  }, null, 2) + "\n";
+  }, null, 2);
 }
 
 function main() {
   var prefabSource = serializePrefab();
-  var prefabMetaSource = serializePrefabMeta();
+  var prefabMetaSource = serializePrefabMeta(PREFAB_UUID);
+  var hallOnly = process.argv.indexOf("--hall-only") >= 0;
+  var tabBarPrefabSource = hallOnly ? null : serializeTabBarPrefab();
+  var tabBarPrefabMetaSource = hallOnly ? null : serializePrefabMeta(TAB_BAR_PREFAB_UUID);
   if (process.argv.indexOf("--check") >= 0) {
-    if (!fs.existsSync(PREFAB_PATH) || !fs.existsSync(PREFAB_META_PATH)) {
-      fail("SpiritHallView generated prefab or meta is missing.");
+    if (
+      !fs.existsSync(PREFAB_PATH) ||
+      !fs.existsSync(PREFAB_META_PATH) ||
+      (!hallOnly && (!fs.existsSync(TAB_BAR_PREFAB_PATH) || !fs.existsSync(TAB_BAR_PREFAB_META_PATH)))
+    ) {
+      fail("SpiritHallView or SpiritSystemTabBar generated prefab/meta is missing.");
     }
     if (fs.readFileSync(PREFAB_PATH, "utf8") !== prefabSource) {
       fail("SpiritHallView.prefab is stale. Run node tools/generate-spirit-hall-prefab.js.");
@@ -1133,13 +1537,26 @@ function main() {
     if (fs.readFileSync(PREFAB_META_PATH, "utf8") !== prefabMetaSource) {
       fail("SpiritHallView.prefab.meta is stale. Run node tools/generate-spirit-hall-prefab.js.");
     }
-    console.log("SpiritHallView prefab validation passed.");
+    if (!hallOnly && fs.readFileSync(TAB_BAR_PREFAB_PATH, "utf8") !== tabBarPrefabSource) {
+      fail("SpiritSystemTabBar.prefab is stale. Run node tools/generate-spirit-hall-prefab.js.");
+    }
+    if (!hallOnly && fs.readFileSync(TAB_BAR_PREFAB_META_PATH, "utf8") !== tabBarPrefabMetaSource) {
+      fail("SpiritSystemTabBar.prefab.meta is stale. Run node tools/generate-spirit-hall-prefab.js.");
+    }
+    console.log(hallOnly ? "SpiritHallView prefab validation passed." : "SpiritHallView and SpiritSystemTabBar prefab validation passed.");
     return;
   }
 
   fs.writeFileSync(PREFAB_PATH, prefabSource, "utf8");
   fs.writeFileSync(PREFAB_META_PATH, prefabMetaSource, "utf8");
-  console.log("Generated " + path.relative(PROJECT_ROOT, PREFAB_PATH) + ".");
+  if (!hallOnly) {
+    fs.writeFileSync(TAB_BAR_PREFAB_PATH, tabBarPrefabSource, "utf8");
+    fs.writeFileSync(TAB_BAR_PREFAB_META_PATH, tabBarPrefabMetaSource, "utf8");
+  }
+  console.log(hallOnly
+    ? "Generated " + path.relative(PROJECT_ROOT, PREFAB_PATH) + "."
+    : "Generated " + path.relative(PROJECT_ROOT, PREFAB_PATH) + " and " + path.relative(PROJECT_ROOT, TAB_BAR_PREFAB_PATH) + "."
+  );
 }
 
 main();

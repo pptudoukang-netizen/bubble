@@ -43,7 +43,7 @@
     return null;
   }
   var previousRequire = resolvePreviousRequire();
-  var gameplayCodeHash = "91cd111e6ab0db3a1dc62ceea09e86d6d56cc1bf75f964ca2eca2bcab28fb7ab";
+  var gameplayCodeHash = "d9e4a7ebc74eb437cb22a54072365af25e2d558ffe07fe796550291e88874ce0";
   var lazyRequire = (function (modules, cache, entries) {
     function load(moduleId, jumped) {
       if (!cache[moduleId]) {
@@ -256,6 +256,16 @@ function buildRevivePlan(levelConfig, runtimeSnapshot) {
   if (level.playMode !== "shot_limited") {
     throw new Error("Ad revive level.playMode is unsupported: " + level.playMode);
   }
+  if (level.levelType === "trapped_sprite_rescue") {
+    return {
+      grantedShots: AD_REVIVE_GRANTED_SHOTS,
+      grantedTimeSeconds: 0,
+      targetColor: null,
+      targetColorBallCount: 0,
+      randomBallCount: AD_REVIVE_TARGET_COLOR_BALLS,
+      description: buildRandomReviveDescription()
+    };
+  }
   var objectiveCompleted = isObjectiveCompleted(runtimeSnapshot);
   var targetColor = objectiveCompleted ? null : resolveReviveTargetColor(levelConfig, runtimeSnapshot);
   return {
@@ -290,6 +300,215 @@ module.exports = {
   buildRevivePlan: buildRevivePlan,
   buildReviveDescription: buildReviveDescription,
   resolveReviveTargetColor: resolveReviveTargetColor
+};
+
+},{}],
+"AssistSpiritPresentationConfig":[function(require,module,exports){
+"use strict";
+
+var SPIRIT_IDS = [
+  "milu",
+  "lumi",
+  "noya",
+  "flora",
+  "loco",
+  "kelu",
+  "yumi"
+];
+
+var PRESENTATION_BY_SPIRIT_ID = {};
+
+SPIRIT_IDS.forEach(function (spiritId) {
+  PRESENTATION_BY_SPIRIT_ID[spiritId] = {
+    spiritId: spiritId,
+    idleClipPath: "game/animation/" + spiritId + "_idle",
+    idleClipName: spiritId + "_idle",
+    deliverClipPath: "game/animation/" + spiritId + "_pao",
+    deliverClipName: spiritId + "_pao"
+  };
+});
+
+function clone(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function requirePresentation(spiritId) {
+  if (typeof spiritId !== "string" || !spiritId) {
+    throw new Error("Assist spirit presentation requires spiritId.");
+  }
+  var presentation = PRESENTATION_BY_SPIRIT_ID[spiritId];
+  if (!presentation) {
+    throw new Error("Unknown assist spirit presentation: " + spiritId);
+  }
+  return presentation;
+}
+
+module.exports = {
+  getSpiritIds: function () {
+    return SPIRIT_IDS.slice();
+  },
+  getBySpiritId: function (spiritId) {
+    return clone(requirePresentation(spiritId));
+  },
+  getAllClipPaths: function () {
+    var paths = [];
+    SPIRIT_IDS.forEach(function (spiritId) {
+      var presentation = requirePresentation(spiritId);
+      paths.push(presentation.idleClipPath, presentation.deliverClipPath);
+    });
+    return paths;
+  }
+};
+
+},{}],
+"AssistSpiritSkillChargeConfig":[function(require,module,exports){
+"use strict";
+
+var AssistSpiritConfig = require("../../assets/scripts/config/AssistSpiritConfig");
+
+function requireGlobalSkillSpiritId(spiritId) {
+  if (typeof spiritId !== "string" || !spiritId) {
+    throw new Error("Assist spirit skill charge requires spiritId.");
+  }
+  return spiritId;
+}
+
+module.exports = {
+  getMaxCharge: function (spiritId, level) {
+    requireGlobalSkillSpiritId(spiritId);
+    var abilityConfig = AssistSpiritConfig.getAbilityRuntimeConfig(spiritId);
+    if (abilityConfig.abilityType !== "global_skill") {
+      throw new Error("Assist spirit skill charge requires a global-skill spirit: " + spiritId);
+    }
+    return AssistSpiritConfig.getGlobalSkillChargeMax(level);
+  }
+};
+
+},{"../../assets/scripts/config/AssistSpiritConfig":"AssistSpiritConfig"}],
+"AssistSpiritSkillConfig":[function(require,module,exports){
+"use strict";
+
+var TORNADO_PATH_MARGIN = 120;
+var TORNADO_PATH_INFLUENCE_RADIUS = 96;
+var TORNADO_PATH_SAMPLE_SEGMENTS = 36;
+
+var SKILLS_BY_SPIRIT = {
+  milu: {
+    spiritId: "milu",
+    skillId: null,
+    iconPath: null
+  },
+  lumi: {
+    spiritId: "lumi",
+    skillId: null,
+    iconPath: null
+  },
+  noya: {
+    spiritId: "noya",
+    skillId: "tornado",
+    iconPath: "game/image/skill/icon/skill_tornado",
+    effectPath: "game/image/skill/tornado",
+    effectDuration: 0.8,
+    pathMargin: TORNADO_PATH_MARGIN,
+    pathInfluenceRadius: TORNADO_PATH_INFLUENCE_RADIUS,
+    pathSampleSegments: TORNADO_PATH_SAMPLE_SEGMENTS,
+    copyable: true
+  },
+  flora: {
+    spiritId: "flora",
+    skillId: "release_vines",
+    iconPath: "game/image/skill/icon/skill_release_vines",
+    effectDuration: 0.36,
+    copyable: true
+  },
+  loco: {
+    spiritId: "loco",
+    skillId: "permanent_thaw",
+    iconPath: "game/image/skill/icon/skill_thaw",
+    effectDuration: 0.36,
+    copyable: true
+  },
+  kelu: {
+    spiritId: "kelu",
+    skillId: "lightning_chain",
+    iconPath: "game/image/skill/icon/skill_lighting",
+    effectDuration: 0.7,
+    copyable: true
+  },
+  yumi: {
+    spiritId: "yumi",
+    skillId: "starlight_priority",
+    iconPath: "game/image/skill/icon/skill_star",
+    effectDuration: 0.4,
+    copyable: false
+  }
+};
+
+var YUMI_PRIORITY = [
+  "release_vines",
+  "permanent_thaw",
+  "lightning_chain",
+  "tornado"
+];
+
+function clone(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function requireSpiritId(spiritId) {
+  if (typeof spiritId !== "string" || !spiritId) {
+    throw new Error("Assist spirit skill config requires spiritId.");
+  }
+  var config = SKILLS_BY_SPIRIT[spiritId];
+  if (!config) {
+    throw new Error("Unknown assist spirit skill config: " + spiritId);
+  }
+  return config;
+}
+
+function getSpiritIdForSkill(skillId) {
+  var matchedSpiritId = null;
+  Object.keys(SKILLS_BY_SPIRIT).forEach(function (spiritId) {
+    var config = SKILLS_BY_SPIRIT[spiritId];
+    if (config.skillId === skillId) {
+      if (matchedSpiritId) {
+        throw new Error("Assist spirit skillId must be unique: " + skillId);
+      }
+      matchedSpiritId = spiritId;
+    }
+  });
+  if (!matchedSpiritId) {
+    throw new Error("Unknown assist spirit skillId: " + skillId);
+  }
+  return matchedSpiritId;
+}
+
+function getAllSpritePaths() {
+  var pathMap = {};
+  Object.keys(SKILLS_BY_SPIRIT).forEach(function (spiritId) {
+    var config = requireSpiritId(spiritId);
+    if (config.iconPath) {
+      pathMap[config.iconPath] = true;
+    }
+    if (config.effectPath) {
+      pathMap[config.effectPath] = true;
+    }
+  });
+  return Object.keys(pathMap);
+}
+
+module.exports = {
+  TORNADO_PATH_MARGIN: TORNADO_PATH_MARGIN,
+  TORNADO_PATH_INFLUENCE_RADIUS: TORNADO_PATH_INFLUENCE_RADIUS,
+  TORNADO_PATH_SAMPLE_SEGMENTS: TORNADO_PATH_SAMPLE_SEGMENTS,
+  YUMI_PRIORITY: YUMI_PRIORITY.slice(),
+  getBySpiritId: function (spiritId) {
+    return clone(requireSpiritId(spiritId));
+  },
+  getBySkillId: function (skillId) {
+    return clone(requireSpiritId(getSpiritIdForSkill(skillId)));
+  },
+  getAllSpritePaths: getAllSpritePaths
 };
 
 },{}],
@@ -499,6 +718,35 @@ BoardOcclusionSystem.prototype.clearAllWithItem = function () {
   return removed;
 };
 
+BoardOcclusionSystem.prototype.clearZonesWithoutBoardCells = function (boardCells) {
+  if (!Array.isArray(boardCells)) {
+    throw new Error("BoardOcclusionSystem.clearZonesWithoutBoardCells requires board cells array.");
+  }
+  var occupied = {};
+  boardCells.forEach(function (cell, index) {
+    if (!cell || !Number.isInteger(cell.row) || !Number.isInteger(cell.col)) {
+      throw new Error("Board occlusion boardCells[" + index + "] requires integer coordinates.");
+    }
+    occupied[cell.row + ":" + cell.col] = true;
+  });
+
+  var removed = [];
+  this.activeZones = this.activeZones.filter(function (zone) {
+    var hasCoveredBoardCell = zone.cells.some(function (cell) {
+      return occupied[cell.row + ":" + cell.col] === true;
+    });
+    if (hasCoveredBoardCell) {
+      return true;
+    }
+    removed.push(zone.id);
+    return false;
+  });
+  if (removed.length) {
+    this.version += 1;
+  }
+  return removed;
+};
+
 BoardOcclusionSystem.prototype.snapshotForRender = function () {
   return {
     version: this.version,
@@ -674,6 +922,7 @@ function BoardViewportSystem() {
   this.introActive = false;
   this.minOffsetY = 0;
   this.maxOffsetY = 0;
+  this.trappedSpriteRescueActive = false;
 }
 
 BoardViewportSystem.prototype = Object.create(BaseSystem.prototype);
@@ -690,6 +939,7 @@ BoardViewportSystem.prototype.configureLevel = function (levelConfig) {
   this.introActive = false;
   this.minOffsetY = 0;
   this.maxOffsetY = 0;
+  this.trappedSpriteRescueActive = levelConfig.level.levelType === "trapped_sprite_rescue";
   return this;
 };
 
@@ -708,6 +958,17 @@ BoardViewportSystem.prototype.isMoving = function () {
 BoardViewportSystem.prototype.planIntroPosition = function (cells) {
   if (!Array.isArray(cells)) {
     throw new Error("BoardViewportSystem.planIntroPosition requires cells array.");
+  }
+  if (this.trappedSpriteRescueActive) {
+    this.offsetY = 0;
+    this.targetOffsetY = 0;
+    this.phase = "idle";
+    this.introActive = false;
+    return {
+      needsScroll: false,
+      startOffsetY: 0,
+      targetOffsetY: 0
+    };
   }
   if (!cells.length) {
     this.offsetY = 0;
@@ -761,6 +1022,9 @@ BoardViewportSystem.prototype.planIntroPosition = function (cells) {
 };
 
 BoardViewportSystem.prototype.planSettle = function (boardSnapshot) {
+  if (this.trappedSpriteRescueActive) {
+    throw new Error("BoardViewportSystem.planSettle is disabled in trapped sprite rescue mode.");
+  }
   if (!boardSnapshot || !Array.isArray(boardSnapshot.cells)) {
     throw new Error("BoardViewportSystem.planSettle requires board snapshot with cells.");
   }
@@ -802,6 +1066,9 @@ BoardViewportSystem.prototype.getMaxOffsetY = function () {
 };
 
 BoardViewportSystem.prototype.shiftOffsetYByRows = function (rowCount) {
+  if (this.trappedSpriteRescueActive) {
+    throw new Error("BoardViewportSystem.shiftOffsetYByRows is disabled in trapped sprite rescue mode.");
+  }
   if (!Number.isInteger(rowCount)) {
     throw new Error("BoardViewportSystem.shiftOffsetYByRows requires integer rowCount.");
   }
@@ -873,6 +1140,7 @@ BoardViewportSystem.prototype.snapshot = function () {
   snapshot.visibleRowSpan = BoardViewportConfig.targetVisibleRows;
   snapshot.introActive = this.introActive;
   snapshot.isMoving = this.isMoving();
+  snapshot.trappedSpriteRescueActive = this.trappedSpriteRescueActive;
   return snapshot;
 };
 
@@ -1041,9 +1309,19 @@ function createSpecialEntityRecord(entity, row, col) {
     moveDirection: typeof entity.moveDirection === "string" && entity.moveDirection
       ? entity.moveDirection
       : null,
+    temporaryThawed: entity.temporaryThawed === true,
+    temporaryThawToken: typeof entity.temporaryThawToken === "string" && entity.temporaryThawToken
+      ? entity.temporaryThawToken
+      : null,
     row: row,
     col: col
   };
+  if (record.temporaryThawed && !(record.entityCategory === "obstacle_ball" && record.entityType === "ice")) {
+    throw new Error("Temporary thaw state is only valid on ice obstacles.");
+  }
+  if (record.temporaryThawed && !record.temporaryThawToken) {
+    throw new Error("Temporary thaw state requires temporaryThawToken.");
+  }
   if (entity.entityCategory === "reactive_ball" && entity.entityType === "vine_spirit") {
     record.health = Number.isInteger(entity.health) ? entity.health : VINE_SPIRIT_MAX_HEALTH;
     record.maxHealth = VINE_SPIRIT_MAX_HEALTH;
@@ -1060,11 +1338,14 @@ function BubbleGrid() {
   this.maxColumns = 0;
   this.version = 0;
   this.boardViewport = null;
+  this.trappedSpriteRescueSystem = null;
   this._cellMap = {};
   this._cellsByRow = {};
   this._specialCellMap = {};
+  this._timeBonusByCell = {};
   this._vineOwnerByCell = {};
   this._vinePreviewOwnerByCell = {};
+  this._cellRemovalListener = null;
 }
 
 BubbleGrid.prototype = Object.create(BaseSystem.prototype);
@@ -1076,6 +1357,34 @@ BubbleGrid.prototype.attachBoardViewport = function (boardViewport) {
   }
   this.boardViewport = boardViewport;
   return this;
+};
+
+BubbleGrid.prototype.attachTrappedSpriteRescueSystem = function (trappedSpriteRescueSystem) {
+  if (
+    !trappedSpriteRescueSystem ||
+    typeof trappedSpriteRescueSystem.isActive !== "function" ||
+    typeof trappedSpriteRescueSystem.getCellWorldPosition !== "function" ||
+    typeof trappedSpriteRescueSystem.getWorldCenter !== "function"
+  ) {
+    throw new Error("BubbleGrid.attachTrappedSpriteRescueSystem requires TrappedSpriteRescueSystem.");
+  }
+  this.trappedSpriteRescueSystem = trappedSpriteRescueSystem;
+  return this;
+};
+
+BubbleGrid.prototype.attachCellRemovalListener = function (listener) {
+  if (typeof listener !== "function") {
+    throw new Error("BubbleGrid.attachCellRemovalListener requires function.");
+  }
+  this._cellRemovalListener = listener;
+  return this;
+};
+
+BubbleGrid.prototype.isTrappedSpriteRescueActive = function () {
+  return !!(
+    this.trappedSpriteRescueSystem &&
+    this.trappedSpriteRescueSystem.isActive()
+  );
 };
 
 BubbleGrid.prototype._requireViewportOffsetY = function () {
@@ -1093,13 +1402,39 @@ BubbleGrid.prototype.configureLevel = function (levelConfig) {
   if (!this.boardViewport) {
     throw new Error("BubbleGrid.configureLevel requires attached BoardViewportSystem.");
   }
-  if (!Number.isInteger(levelConfig.level.initialDropSpaceRows) || levelConfig.level.initialDropSpaceRows < 8) {
+  if (
+    levelConfig.level.levelType === "trapped_sprite_rescue" &&
+    !this.trappedSpriteRescueSystem
+  ) {
+    throw new Error("Trapped sprite rescue BubbleGrid requires attached TrappedSpriteRescueSystem.");
+  }
+  if (
+    levelConfig.level.levelType !== "trapped_sprite_rescue" &&
+    (!Number.isInteger(levelConfig.level.initialDropSpaceRows) || levelConfig.level.initialDropSpaceRows < 8)
+  ) {
     throw new Error("BubbleGrid requires level.initialDropSpaceRows >= 8.");
   }
   this.layout = levelConfig.level.layout.slice();
   this.specialEntities = Array.isArray(levelConfig.level.specialEntities)
     ? clone(levelConfig.level.specialEntities)
     : [];
+  this._timeBonusByCell = {};
+  if (levelConfig.level.timeBonusBalls !== undefined) {
+    if (!Array.isArray(levelConfig.level.timeBonusBalls)) {
+      throw new Error("BubbleGrid timeBonusBalls must be an array when configured.");
+    }
+    levelConfig.level.timeBonusBalls.forEach(function (entry, index) {
+      if (!entry || !Number.isInteger(entry.row) || !Number.isInteger(entry.col) ||
+          !Number.isInteger(entry.bonusSeconds) || entry.bonusSeconds <= 0) {
+        throw new Error("BubbleGrid timeBonusBalls[" + index + "] is invalid.");
+      }
+      var coordinateKey = keyFor(entry.row, entry.col);
+      if (Object.prototype.hasOwnProperty.call(this._timeBonusByCell, coordinateKey)) {
+        throw new Error("BubbleGrid timeBonusBalls contains duplicate cell " + coordinateKey + ".");
+      }
+      this._timeBonusByCell[coordinateKey] = entry.bonusSeconds;
+    }, this);
+  }
   this.coordinateSystem = levelConfig.coordinateSystem || this.coordinateSystem;
   this._vineOwnerByCell = {};
   this._vinePreviewOwnerByCell = {};
@@ -1166,6 +1501,9 @@ BubbleGrid.prototype._createNormalCell = function (row, col, colorCode) {
     id: row + "_" + col,
     entityCategory: "normal_ball",
     entityType: null,
+    timeBonusSeconds: Object.prototype.hasOwnProperty.call(this._timeBonusByCell, cellKey)
+      ? this._timeBonusByCell[cellKey]
+      : null,
     vineOwnerId: Object.prototype.hasOwnProperty.call(this._vineOwnerByCell, cellKey)
       ? this._vineOwnerByCell[cellKey]
       : null,
@@ -1188,7 +1526,7 @@ BubbleGrid.prototype._createSpecialCell = function (entity, row, col) {
   var cell = {
     row: row,
     col: col,
-    color: null,
+    color: entity.temporaryThawed === true ? entity.innerColor : null,
     id: entity.id || ("special_" + row + "_" + col),
     entityCategory: entity.entityCategory,
     entityType: entity.entityType,
@@ -1199,8 +1537,23 @@ BubbleGrid.prototype._createSpecialCell = function (entity, row, col) {
     moveDirection: typeof entity.moveDirection === "string" && entity.moveDirection
       ? entity.moveDirection
       : null,
+    temporaryThawed: entity.temporaryThawed === true,
+    temporaryThawToken: typeof entity.temporaryThawToken === "string" && entity.temporaryThawToken
+      ? entity.temporaryThawToken
+      : null,
     isSpecial: true
   };
+  if (cell.temporaryThawed) {
+    if (!(cell.entityCategory === "obstacle_ball" && cell.entityType === "ice")) {
+      throw new Error("Temporary thaw cell must remain an ice obstacle.");
+    }
+    if (typeof cell.innerColor !== "string" || !cell.innerColor) {
+      throw new Error("Temporary thaw cell requires innerColor.");
+    }
+    if (!cell.temporaryThawToken) {
+      throw new Error("Temporary thaw cell requires temporaryThawToken.");
+    }
+  }
   if (isVineSpiritCell(entity)) {
     if (!Number.isInteger(entity.health) || entity.health <= 0 || entity.health > VINE_SPIRIT_MAX_HEALTH) {
       throw new Error("Vine spirit special cell requires health in [1, 3].");
@@ -1292,6 +1645,12 @@ BubbleGrid.prototype._resolveSegmentRowBounds = function (startPoint, endPoint, 
 BubbleGrid.prototype._iterateCellsNearSegment = function (startPoint, endPoint, paddingRows, callback) {
   if (typeof callback !== "function") {
     throw new Error("BubbleGrid segment iteration requires callback.");
+  }
+  if (this.isTrappedSpriteRescueActive()) {
+    this.cells.forEach(function (cell) {
+      callback.call(this, cell);
+    }, this);
+    return;
   }
   var bounds = this._resolveSegmentRowBounds(startPoint, endPoint, paddingRows);
   for (var row = bounds.minRow; row <= bounds.maxRow; row += 1) {
@@ -1421,12 +1780,38 @@ BubbleGrid.prototype.getClearableCells = function () {
   }));
 };
 
+BubbleGrid.prototype.getWormholePairs = function () {
+  var wormholesByRow = {};
+  this.cells.filter(isWormholeCell).forEach(function (wormhole) {
+    if (!wormholesByRow[wormhole.row]) {
+      wormholesByRow[wormhole.row] = [];
+    }
+    wormholesByRow[wormhole.row].push(wormhole);
+  });
+  return Object.keys(wormholesByRow).map(function (rowKey) {
+    var pair = wormholesByRow[rowKey].sort(function (left, right) {
+      return left.col - right.col;
+    });
+    if (pair.length !== 2) {
+      throw new Error("BubbleGrid wormhole row " + rowKey + " requires exactly two live endpoints.");
+    }
+    if (pair[1].col - pair[0].col < 2) {
+      throw new Error("BubbleGrid wormhole row " + rowKey + " requires at least one interior slot.");
+    }
+    if (
+      (pair[0].moveDirection !== "left" && pair[0].moveDirection !== "right") ||
+      pair[0].moveDirection !== pair[1].moveDirection
+    ) {
+      throw new Error("BubbleGrid wormhole row " + rowKey + " requires matching left/right moveDirection.");
+    }
+    return pair;
+  }).sort(function (left, right) {
+    return left[0].row - right[0].row;
+  });
+};
+
 BubbleGrid.prototype.hasWormholePair = function () {
-  var wormholeCount = this.cells.filter(isWormholeCell).length;
-  if (wormholeCount !== 0 && wormholeCount !== 2) {
-    throw new Error("BubbleGrid requires exactly two live wormholes when wormhole is configured.");
-  }
-  return wormholeCount === 2;
+  return this.getWormholePairs().length > 0;
 };
 
 BubbleGrid.prototype.getVineSpirits = function () {
@@ -1675,7 +2060,17 @@ BubbleGrid.prototype.hasCell = function (row, col) {
 };
 
 BubbleGrid.prototype.getCellPosition = function (row, col) {
+  if (this.isTrappedSpriteRescueActive()) {
+    return this.trappedSpriteRescueSystem.getCellWorldPosition(row, col, this.maxColumns);
+  }
   return BoardLayout.getCellPosition(row, col, this.maxColumns, this._requireViewportOffsetY());
+};
+
+BubbleGrid.prototype.notifyWorldTransformChanged = function () {
+  if (!this.isTrappedSpriteRescueActive()) {
+    throw new Error("BubbleGrid world transform changes are only valid in trapped sprite rescue mode.");
+  }
+  this.version += 1;
 };
 
 BubbleGrid.prototype.getNeighborCoordinates = function (row, col) {
@@ -1822,30 +2217,12 @@ BubbleGrid.prototype.rotateSwirlNeighborsClockwise = function (swirlCell) {
   return moves;
 };
 
-BubbleGrid.prototype.shiftWormholeInterior = function () {
-  var wormholes = this.getCells().filter(isWormholeCell).sort(function (left, right) {
-    return left.col - right.col;
-  });
-  if (!wormholes.length) {
-    return null;
-  }
-  if (wormholes.length !== 2) {
-    throw new Error("BubbleGrid wormhole shift requires exactly two wormholes.");
+BubbleGrid.prototype._shiftWormholePairInterior = function (wormholes) {
+  if (!Array.isArray(wormholes) || wormholes.length !== 2) {
+    throw new Error("BubbleGrid wormhole pair shift requires exactly two endpoints.");
   }
   var leftWormhole = wormholes[0];
   var rightWormhole = wormholes[1];
-  if (leftWormhole.row !== rightWormhole.row) {
-    throw new Error("BubbleGrid wormholes must remain on the same row.");
-  }
-  if (rightWormhole.col - leftWormhole.col < 2) {
-    throw new Error("BubbleGrid wormholes require at least one interior slot.");
-  }
-  if (
-    (leftWormhole.moveDirection !== "left" && leftWormhole.moveDirection !== "right") ||
-    leftWormhole.moveDirection !== rightWormhole.moveDirection
-  ) {
-    throw new Error("BubbleGrid wormhole pair requires matching left/right moveDirection.");
-  }
 
   var track = [];
   for (var col = leftWormhole.col + 1; col < rightWormhole.col; col += 1) {
@@ -1928,6 +2305,13 @@ BubbleGrid.prototype.shiftWormholeInterior = function () {
   };
 };
 
+BubbleGrid.prototype.shiftWormholeInteriors = function () {
+  var pairs = this.getWormholePairs();
+  return pairs.map(function (pair) {
+    return this._shiftWormholePairInterior(pair);
+  }, this);
+};
+
 BubbleGrid.prototype.getNeighborCells = function (row, col) {
   return this.getNeighborCoordinates(row, col).map(function (candidate) {
     return this.getCell(candidate.row, candidate.col);
@@ -1971,8 +2355,17 @@ BubbleGrid.prototype.isAttachableCell = function (row, col, direction, options) 
   if (!this.isValidCell(row, col) || this.hasCell(row, col)) {
     return false;
   }
+  if (
+    this.isTrappedSpriteRescueActive() &&
+    this.trappedSpriteRescueSystem.isReservedCell(row, col)
+  ) {
+    return false;
+  }
 
   if (row === 0) {
+    if (this.isTrappedSpriteRescueActive()) {
+      return false;
+    }
     return options.allowTopRow !== false;
   }
 
@@ -2024,7 +2417,12 @@ BubbleGrid.prototype.findFirstAttachableSlotOnSegment = function (startPoint, en
     : 0.2;
 
   var slotPaddingRows = Math.ceil(radius / BoardLayout.rowHeight) + 2;
-  var rowBounds = this._resolveSegmentRowBounds(startPoint, endPoint, slotPaddingRows);
+  // Rotated rescue boards no longer have screen-space rows.  Scan the
+  // authoritative grid coordinates and evaluate each slot in world space,
+  // otherwise a real opening can be hidden behind the first nearby bubble.
+  var rowBounds = this.isTrappedSpriteRescueActive()
+    ? { minRow: 0, maxRow: this.getRowCount() - 1 }
+    : this._resolveSegmentRowBounds(startPoint, endPoint, slotPaddingRows);
   var best = null;
 
   for (var row = rowBounds.minRow; row <= rowBounds.maxRow; row += 1) {
@@ -2240,6 +2638,71 @@ BubbleGrid.prototype.findCollisionOnSegment = function (startPoint, endPoint, co
   return this._buildSegmentCollisionResult(bestHit, startPoint, segment);
 };
 
+BubbleGrid.prototype.findTrappedSpriteCollisionOnSegment = function (startPoint, endPoint, collisionRadius) {
+  if (!this.isTrappedSpriteRescueActive()) {
+    return null;
+  }
+  if (!startPoint || !endPoint) {
+    throw new Error("Trapped sprite collision requires start and end points.");
+  }
+  if (!Number.isFinite(collisionRadius) || collisionRadius <= 0) {
+    throw new Error("Trapped sprite collision requires positive collisionRadius.");
+  }
+
+  var center = this.trappedSpriteRescueSystem.getWorldCenter();
+  var segment = {
+    x: endPoint.x - startPoint.x,
+    y: endPoint.y - startPoint.y
+  };
+  var segmentLengthSq = dot(segment, segment);
+  if (segmentLengthSq <= EPSILON) {
+    return null;
+  }
+
+  var startToCenter = {
+    x: startPoint.x - center.x,
+    y: startPoint.y - center.y
+  };
+  var b = 2 * dot(segment, startToCenter);
+  var c = dot(startToCenter, startToCenter) - collisionRadius * collisionRadius;
+  var discriminant = b * b - 4 * segmentLengthSq * c;
+  if (discriminant < 0) {
+    return null;
+  }
+
+  var sqrtDiscriminant = Math.sqrt(discriminant);
+  var t1 = (-b - sqrtDiscriminant) / (2 * segmentLengthSq);
+  var t2 = (-b + sqrtDiscriminant) / (2 * segmentLengthSq);
+  var hitT = null;
+  if (t1 >= -EPSILON && t1 <= 1 + EPSILON) {
+    hitT = clamp(t1, 0, 1);
+  } else if (t2 >= -EPSILON && t2 <= 1 + EPSILON) {
+    hitT = clamp(t2, 0, 1);
+  }
+  if (hitT === null) {
+    return null;
+  }
+
+  var hitPoint = {
+    x: startPoint.x + segment.x * hitT,
+    y: startPoint.y + segment.y * hitT
+  };
+  var hitNormal = normalize({
+    x: hitPoint.x - center.x,
+    y: hitPoint.y - center.y
+  });
+  if (Math.abs(hitNormal.x) <= 0.0001 && Math.abs(hitNormal.y) <= 0.0001) {
+    throw new Error("Trapped sprite collision normal cannot be zero.");
+  }
+
+  return {
+    point: hitPoint,
+    normal: hitNormal,
+    center: center,
+    t: hitT
+  };
+};
+
 BubbleGrid.prototype.findCollisionsOnSegmentForRadii = function (startPoint, endPoint, radii) {
   if (!startPoint || !endPoint) {
     return null;
@@ -2311,6 +2774,9 @@ BubbleGrid.prototype.findCollisionsOnSegmentForRadii = function (startPoint, end
 
 BubbleGrid.prototype.findAttachmentCell = function (point, collidedCell, direction, previousPoint) {
   if (!collidedCell) {
+    if (this.isTrappedSpriteRescueActive()) {
+      return null;
+    }
     return this._findTopSlot(point.x);
   }
 
@@ -2319,17 +2785,29 @@ BubbleGrid.prototype.findAttachmentCell = function (point, collidedCell, directi
     if (this.hasCell(candidate.row, candidate.col)) {
       return false;
     }
+    if (
+      this.isTrappedSpriteRescueActive() &&
+      this.trappedSpriteRescueSystem.isReservedCell(candidate.row, candidate.col)
+    ) {
+      return false;
+    }
 
     return this._isAttachmentCandidateReachable(candidate, incomingDirection);
   }, this);
 
   if (!candidates.length) {
     candidates = this.getNeighborCoordinates(collidedCell.row, collidedCell.col).filter(function (candidate) {
-      return !this.hasCell(candidate.row, candidate.col);
+      return !this.hasCell(candidate.row, candidate.col) && !(
+        this.isTrappedSpriteRescueActive() &&
+        this.trappedSpriteRescueSystem.isReservedCell(candidate.row, candidate.col)
+      );
     }, this);
   }
 
   if (!candidates.length) {
+    if (this.isTrappedSpriteRescueActive()) {
+      return null;
+    }
     return this._findTopSlot(point.x);
   }
 
@@ -2350,6 +2828,19 @@ BubbleGrid.prototype.findAttachmentCell = function (point, collidedCell, directi
   }.bind(this));
 
   return candidates[0];
+};
+
+BubbleGrid.prototype.findTrappedSpriteAttachmentCell = function (point, direction, previousPoint) {
+  if (!this.isTrappedSpriteRescueActive()) {
+    throw new Error("Trapped sprite attachment requires active trapped sprite rescue mode.");
+  }
+  var anchorCell = this.trappedSpriteRescueSystem.getAnchorCell();
+  return this.findAttachmentCell(
+    point,
+    anchorCell,
+    direction || { x: 0, y: 1 },
+    previousPoint || point
+  );
 };
 
 BubbleGrid.prototype._isAttachmentCandidateReachable = function (candidate, direction) {
@@ -2577,8 +3068,17 @@ BubbleGrid.prototype.findSplitterSpawnCell = function (splitterCell) {
 };
 
 BubbleGrid.prototype.addBubble = function (cell, colorOrBall) {
+  if (!cell || !Number.isInteger(cell.row) || !Number.isInteger(cell.col)) {
+    throw new Error("BubbleGrid.addBubble requires target cell coordinates.");
+  }
   var row = cell.row;
   var col = cell.col;
+  if (
+    this.isTrappedSpriteRescueActive() &&
+    this.trappedSpriteRescueSystem.isReservedCell(row, col)
+  ) {
+    throw new Error("BubbleGrid cannot attach a bubble to the trapped sprite anchor cell.");
+  }
 
   if (typeof colorOrBall === "string") {
     this._clearSpecialCell(row, col);
@@ -2606,6 +3106,53 @@ BubbleGrid.prototype.addBubble = function (cell, colorOrBall) {
   this._rebuildCaches();
   this.assertNoVisualOverlap("addBubble");
   return this.getCell(row, col);
+};
+
+BubbleGrid.prototype.setTemporaryThaw = function (row, col, thawToken, active) {
+  if (!Number.isInteger(row) || !Number.isInteger(col)) {
+    throw new Error("BubbleGrid temporary thaw requires integer coordinates.");
+  }
+  if (typeof thawToken !== "string" || !thawToken) {
+    throw new Error("BubbleGrid temporary thaw requires thawToken.");
+  }
+  if (typeof active !== "boolean") {
+    throw new Error("BubbleGrid temporary thaw requires active boolean.");
+  }
+  var cellKey = keyFor(row, col);
+  var entity = this._specialCellMap[cellKey];
+  if (!entity || entity.entityCategory !== "obstacle_ball" || entity.entityType !== "ice") {
+    throw new Error("BubbleGrid temporary thaw target must be a live ice obstacle: " + cellKey);
+  }
+  if (active) {
+    if (entity.temporaryThawed === true) {
+      throw new Error("BubbleGrid ice obstacle is already temporarily thawed: " + cellKey);
+    }
+    entity.temporaryThawed = true;
+    entity.temporaryThawToken = thawToken;
+  } else {
+    if (entity.temporaryThawed !== true || entity.temporaryThawToken !== thawToken) {
+      throw new Error("BubbleGrid temporary thaw token mismatch: " + cellKey);
+    }
+    entity.temporaryThawed = false;
+    entity.temporaryThawToken = null;
+  }
+  this.version += 1;
+  this._rebuildCaches();
+  return this.getCell(row, col);
+};
+
+BubbleGrid.prototype.findTemporaryThawCells = function (thawToken) {
+  if (typeof thawToken !== "string" || !thawToken) {
+    throw new Error("BubbleGrid temporary thaw lookup requires thawToken.");
+  }
+  return this.getCells().filter(function (cell) {
+    return cell.temporaryThawed === true && cell.temporaryThawToken === thawToken;
+  }).sort(function (left, right) {
+    if (left.row !== right.row) {
+      return left.row - right.row;
+    }
+    return left.col - right.col;
+  });
 };
 
 BubbleGrid.prototype._removeCellsByMode = function (cells, allowVineDrop) {
@@ -2649,6 +3196,7 @@ BubbleGrid.prototype._removeCellsByMode = function (cells, allowVineDrop) {
 
     touchedKeys[key] = true;
     removed.push(liveCell);
+    delete this._timeBonusByCell[key];
     this._setCell(cell.row, cell.col, ".");
     this._clearSpecialCell(cell.row, cell.col);
   }, this);
@@ -2657,6 +3205,9 @@ BubbleGrid.prototype._removeCellsByMode = function (cells, allowVineDrop) {
     this.version += 1;
     this._rebuildCaches();
     this.assertNoVisualOverlap("removeCells");
+    if (this._cellRemovalListener) {
+      this._cellRemovalListener(removed.slice(), allowVineDrop ? "floating_drop" : "elimination");
+    }
   }
 
   return removed;
@@ -2686,7 +3237,11 @@ BubbleGrid.prototype.snapshot = function () {
   snapshot.viewportOffsetY = this.getViewportOffsetY();
   snapshot.topAttachY = this.getTopAttachY();
   snapshot.dangerReached = false;
-  snapshot.cells = this.getCells();
+  snapshot.trappedSpriteRescueActive = this.isTrappedSpriteRescueActive();
+  snapshot.cells = this.getCells().map(function (cell) {
+    cell.position = this.getCellPosition(cell.row, cell.col);
+    return cell;
+  }, this);
   snapshot.specialEntities = this.getSpecialEntities();
   snapshot.version = this.version;
   return snapshot;
@@ -4315,6 +4870,7 @@ function createEmptyUpdateResult() {
   return {
     updated: false,
     surplusUpdated: false,
+    surplusShotLaunchedCount: 0,
     collected: [],
     cleanupScored: [],
     missed: [],
@@ -4699,8 +5255,20 @@ FallingMarbleSystem.prototype._applySideWallEscape = function (drop, allowLift) 
   if (!drop.position || typeof drop.position.x !== "number" || !isFinite(drop.position.x)) {
     throw new Error("Falling drop side-wall escape requires finite position.x.");
   }
+  if (typeof drop.jarCooldown !== "number" || !isFinite(drop.jarCooldown) || drop.jarCooldown < 0) {
+    throw new Error("Falling drop side-wall escape requires non-negative jarCooldown.");
+  }
 
   var escapeDirection = drop.position.x <= this._dropLeftLimit ? 1 : -1;
+  if (drop.jarCooldown > 0) {
+    if (Math.abs(drop.velocity.x) <= 0) {
+      throw new Error("Recent jar rim bounce must reach the side wall with horizontal speed.");
+    }
+    // A side wall reached immediately after a jar-rim bounce only redirects the motion.
+    // It must not apply a second damping pass that makes shallow rim bounces look slower.
+    drop.velocity.x = escapeDirection * Math.abs(drop.velocity.x);
+    return;
+  }
   var minEscapeSpeed = Math.max(40, this.horizontalSpeed * 0.45);
   var reboundSpeed = Math.max(Math.abs(drop.velocity.x) * this.bounceDamping, minEscapeSpeed);
   drop.velocity.x = escapeDirection * reboundSpeed;
@@ -5659,7 +6227,16 @@ FallingMarbleSystem.prototype.update = function (dt) {
   var safeDt = typeof dt === "number" && isFinite(dt) && dt > 0 ? dt : 0;
   this.lastUpdateDt = safeDt;
 
+  var pendingSurplusShotCountBeforeUpdate = this.pendingSurplusShotBalls.length;
   result.surplusUpdated = this._processPendingSurplusShots(safeDt);
+  result.surplusShotLaunchedCount = pendingSurplusShotCountBeforeUpdate - this.pendingSurplusShotBalls.length;
+  if (
+    !Number.isInteger(result.surplusShotLaunchedCount) ||
+    result.surplusShotLaunchedCount < 0 ||
+    result.surplusShotLaunchedCount > 1
+  ) {
+    throw new Error("FallingMarbleSystem update must launch at most one surplus shot.");
+  }
   this._flushDeferredDrops();
 
   var layoutSignature = this._buildLayoutSignature();
@@ -5873,6 +6450,8 @@ var Logger = require("../../assets/scripts/utils/Logger");
 var BoardLayout = require("../../assets/scripts/config/BoardLayout");
 var FairyAssistConfig = require("../config/FairyAssistConfig");
 var SpecialAnimationTiming = require("../config/SpecialAnimationTiming");
+var AssistSpiritSkillChargeConfig = require("../config/AssistSpiritSkillChargeConfig");
+var AssistSpiritSkillConfig = require("../config/AssistSpiritSkillConfig");
 var ShooterController = require("../systems/ShooterController");
 var TrajectoryPredictor = require("../systems/TrajectoryPredictor");
 var BubbleGrid = require("../systems/BubbleGrid");
@@ -5883,10 +6462,12 @@ var BoardViewportSystem = require("../systems/BoardViewportSystem");
 var FallingMarbleSystem = require("../systems/FallingMarbleSystem");
 var JarCollectorSystem = require("../systems/JarCollectorSystem");
 var BoardOcclusionSystem = require("../systems/BoardOcclusionSystem");
+var TrappedSpriteRescueSystem = require("../systems/TrappedSpriteRescueSystem");
 var ProjectileMath = require("./ProjectileMath");
 var AdRevivePolicy = require("./AdRevivePolicy");
 var StarRatingPolicy = require("../../assets/scripts/core/StarRatingPolicy");
 var createGameManagerShotResolutionMethods = require("./GameManagerShotResolutionMethods");
+var createGameManagerAssistSpiritSkillMethods = require("./GameManagerAssistSpiritSkillMethods");
 
 var clone = ProjectileMath.clone;
 var distance = ProjectileMath.distance;
@@ -5988,7 +6569,9 @@ function createEmptyResolution() {
     topAnchorCollapse: false,
     eliminationSequence: [],
     scoreEvents: [],
-    dangerReached: false
+    dangerReached: false,
+    shotMissed: false,
+    trappedSpriteRotation: null
   };
 }
 
@@ -6555,6 +7138,15 @@ function GameManager(options) {
   this.comboStreak = 0;
   this.maxComboStreak = 0;
   this.shotsFired = 0;
+  this.equippedAssistSpiritId = null;
+  this.equippedAssistSpiritLevel = null;
+  this.lastAssistSpiritProducedBallEvaluationShot = 0;
+  this.assistSpiritSkillSeed = null;
+  this.assistSpiritSkillResolutionSequence = 0;
+  this.assistSpiritSkillCharge = 0;
+  this.assistSpiritSkillChargeMax = 0;
+  this.assistSpiritSkillChargedCellIds = {};
+  this.assistSpiritSkillChargeSuppressed = false;
   this.dropInterval = 0;
   this.lastFiredColor = null;
   this.lastResolution = createEmptyResolution();
@@ -6585,6 +7177,7 @@ function GameManager(options) {
   this.impactSequence = 0;
   this.runtimeEventSequence = 0;
   this.pendingRuntimeEvents = [];
+  this.trappedSpriteRescueEventEmitted = false;
   this.surplusShotAimRecenterRevision = 0;
   this.surplusShotAimRecentered = false;
   this.pendingBoardAdvanceSpecialAnimationDelay = 0;
@@ -6608,6 +7201,7 @@ function GameManager(options) {
   this.pendingWormholeShiftResolution = null;
   this.pendingVineCastRemaining = 0;
   this.pendingVineCastResolution = null;
+  this.pendingTrappedSpritePostImpactResolution = null;
   this.pendingBarrierHammer = false;
   this.pendingRainbowColorSelection = null;
   this.ricochetGuideActive = false;
@@ -6615,6 +7209,7 @@ function GameManager(options) {
   this.jarScoreBoostMultiplier = 1;
   this.jarScoreBoostRemainingMs = 0;
   this._lastTimerRenderBucket = -1;
+  this.grantedTimeBonusCellIds = {};
   this.scoreRules = cloneScoreRules(BASE_SCORE_RULES);
   this.scoreHeatBand = buildScoreHeatBand(null, {
     difficulty: "normal",
@@ -6625,6 +7220,7 @@ function GameManager(options) {
     shooterController: new ShooterController(),
     trajectoryPredictor: new TrajectoryPredictor(),
     boardViewportSystem: new BoardViewportSystem(),
+    trappedSpriteRescueSystem: new TrappedSpriteRescueSystem(),
     bubbleGrid: new BubbleGrid(),
     matchSystem: new MatchSystem(),
     supportSystem: new SupportSystem(),
@@ -6634,6 +7230,10 @@ function GameManager(options) {
     boardOcclusionSystem: new BoardOcclusionSystem()
   };
   this.systems.bubbleGrid.attachBoardViewport(this.systems.boardViewportSystem);
+  this.systems.bubbleGrid.attachTrappedSpriteRescueSystem(this.systems.trappedSpriteRescueSystem);
+  this.systems.bubbleGrid.attachCellRemovalListener(function (removedCells, removalReason) {
+    this._grantTimeBonusForRemovedCells(removedCells, removalReason);
+  }.bind(this));
   this.systems.fallingMarbleSystem.attachFairyAssistSystem(this.systems.fairyAssistSystem);
 }
 
@@ -6661,6 +7261,9 @@ GameManager.prototype.startLevel = function (levelConfig, startContext) {
   if (!startContext || typeof startContext !== "object" || Array.isArray(startContext)) {
     throw new Error("GameManager.startLevel requires explicit startContext.");
   }
+  if (typeof startContext.seed !== "string" || !startContext.seed) {
+    throw new Error("GameManager.startLevel requires startContext.seed.");
+  }
   var level = levelConfig.level;
   this.isTimedInfiniteShots = level.playMode === "timed_infinite_shots";
   this.timeLimitMs = this.isTimedInfiniteShots ? assertPositiveInteger(level.timeLimitSeconds, "level.timeLimitSeconds") * 1000 : 0;
@@ -6675,6 +7278,16 @@ GameManager.prototype.startLevel = function (levelConfig, startContext) {
   this.comboStreak = 0;
   this.maxComboStreak = 0;
   this.shotsFired = 0;
+  this.lastAssistSpiritProducedBallEvaluationShot = 0;
+  this.assistSpiritSkillSeed = startContext.seed;
+  this.assistSpiritSkillResolutionSequence = 0;
+  this.assistSpiritSkillCharge = 0;
+  this.assistSpiritSkillChargeMax = this._isGlobalAssistSpiritSkillEquipped()
+    ? AssistSpiritSkillChargeConfig.getMaxCharge(this.equippedAssistSpiritId, this.equippedAssistSpiritLevel)
+    : 0;
+  this.assistSpiritSkillChargedCellIds = {};
+  this.assistSpiritSkillChargeSuppressed = false;
+  this.grantedTimeBonusCellIds = {};
   this.levelRandomSeed = assertPositiveInteger(level.levelId, "level.levelId");
   this.lastFiredColor = null;
   this.lastResolution = createEmptyResolution();
@@ -6700,6 +7313,7 @@ GameManager.prototype.startLevel = function (levelConfig, startContext) {
   this.impactSequence = 0;
   this.runtimeEventSequence = 0;
   this.pendingRuntimeEvents = [];
+  this.trappedSpriteRescueEventEmitted = false;
   this.surplusShotAimRecenterRevision = 0;
   this.surplusShotAimRecentered = false;
   this.pendingBoardAdvanceSpecialAnimationDelay = 0;
@@ -6723,6 +7337,7 @@ GameManager.prototype.startLevel = function (levelConfig, startContext) {
   this.pendingWormholeShiftResolution = null;
   this.pendingVineCastRemaining = 0;
   this.pendingVineCastResolution = null;
+  this.pendingTrappedSpritePostImpactResolution = null;
   this.pendingBarrierHammer = false;
   this.pendingRainbowColorSelection = null;
   this.ricochetGuideActive = false;
@@ -6855,6 +7470,9 @@ GameManager.prototype._filterImpactEventSurvivors = function (impact, removedCel
 };
 
 GameManager.prototype._applyPostImpactBoardShiftPolicy = function (resolution) {
+  if (this.systems.trappedSpriteRescueSystem.isActive()) {
+    return false;
+  }
   if (!resolution || !resolution.impact) {
     this._ensureMinimumVisibleBoardRows(resolution);
     return false;
@@ -6913,6 +7531,12 @@ GameManager.prototype._markBoardAdvancedThisFrame = function () {
 };
 
 GameManager.prototype._isBoardAdvanceBusy = function () {
+  if (
+    this.systems.trappedSpriteRescueSystem.isRotating() ||
+    this._hasPendingTrappedSpritePostImpactResolution()
+  ) {
+    return true;
+  }
   var viewport = this.systems.boardViewportSystem;
   if (viewport && typeof viewport.isMoving === "function" && viewport.isMoving()) {
     return true;
@@ -7022,6 +7646,76 @@ GameManager.prototype._hasPendingVineCast = function () {
   return this.pendingVineCastRemaining > 0;
 };
 
+GameManager.prototype._hasPendingTrappedSpritePostImpactResolution = function () {
+  if (this.pendingTrappedSpritePostImpactResolution === null) {
+    return false;
+  }
+  if (
+    !this.pendingTrappedSpritePostImpactResolution ||
+    typeof this.pendingTrappedSpritePostImpactResolution !== "object" ||
+    Array.isArray(this.pendingTrappedSpritePostImpactResolution)
+  ) {
+    throw new Error("Pending trapped sprite post-impact resolution must be an object or null.");
+  }
+  if (this.pendingTrappedSpritePostImpactResolution !== this.lastResolution) {
+    throw new Error("Pending trapped sprite post-impact resolution must remain lastResolution.");
+  }
+  if (!this.systems.trappedSpriteRescueSystem.isActive()) {
+    throw new Error("Pending trapped sprite post-impact resolution requires rescue mode.");
+  }
+  return true;
+};
+
+GameManager.prototype._deferTrappedSpritePostImpactResolution = function (resolution) {
+  if (!resolution || typeof resolution !== "object" || Array.isArray(resolution)) {
+    throw new Error("Trapped sprite post-impact deferral requires resolution.");
+  }
+  if (resolution !== this.lastResolution) {
+    throw new Error("Trapped sprite post-impact deferral requires lastResolution.");
+  }
+  if (!this.systems.trappedSpriteRescueSystem.isRotating()) {
+    throw new Error("Trapped sprite post-impact deferral requires active board rotation.");
+  }
+  if (this.pendingTrappedSpritePostImpactResolution !== null) {
+    throw new Error("Trapped sprite post-impact resolution cannot overlap.");
+  }
+  if (resolution.boardCleared) {
+    if (typeof this._emitTrappedSpriteRescueEvent !== "function") {
+      throw new Error("Trapped sprite post-impact deferral requires rescue event emitter.");
+    }
+    // The board is already logically empty. Emit before the rotation and falling-ball
+    // settlement so the departure animation and laughter are not hidden by WinView.
+    this._emitTrappedSpriteRescueEvent();
+  }
+  this.pendingTrappedSpritePostImpactResolution = resolution;
+};
+
+GameManager.prototype._continueAfterTrappedSpriteImpactRotation = function () {
+  if (!this._hasPendingTrappedSpritePostImpactResolution()) {
+    return false;
+  }
+  if (this.systems.trappedSpriteRescueSystem.isRotating()) {
+    return false;
+  }
+  if (this.molotovResolutionPending) {
+    throw new Error("Trapped sprite post-impact continuation cannot overlap molotov resolution.");
+  }
+
+  var resolution = this.pendingTrappedSpritePostImpactResolution;
+  this.pendingTrappedSpritePostImpactResolution = null;
+  if (this._beginSwirlRotationForResolution(resolution)) {
+    return true;
+  }
+  if (this._beginWormholeShiftForResolution(resolution)) {
+    return true;
+  }
+  if (this._beginVineCastForResolution(resolution)) {
+    return true;
+  }
+  this._continueAfterVineCast(resolution);
+  return true;
+};
+
 GameManager.prototype._beginVineCastForResolution = function (resolution) {
   if (!resolution || typeof resolution !== "object" || Array.isArray(resolution)) {
     throw new Error("Vine cast requires resolution.");
@@ -7085,6 +7779,9 @@ GameManager.prototype._beginVineCastForResolution = function (resolution) {
 
   this.pendingVineCastRemaining = VINE_CAST_PREVIEW_DURATION;
   this.pendingVineCastResolution = resolution;
+  this._pushRuntimeEvent("vine_entanglement_started", {
+    count: resolution.vineCasts.length
+  });
   return true;
 };
 
@@ -7156,51 +7853,50 @@ GameManager.prototype._beginWormholeShiftForResolution = function (resolution) {
   if (!wormholes.length) {
     return false;
   }
-  if (wormholes.length !== 2) {
-    throw new Error("Wormhole shift requires exactly two live wormholes.");
-  }
-  if (typeof grid.shiftWormholeInterior !== "function") {
-    throw new Error("Wormhole shift requires BubbleGrid.shiftWormholeInterior.");
+  if (typeof grid.shiftWormholeInteriors !== "function") {
+    throw new Error("Wormhole shift requires BubbleGrid.shiftWormholeInteriors.");
   }
   if (!Array.isArray(resolution.wormholeShifts)) {
     throw new Error("Wormhole shift requires resolution.wormholeShifts.");
   }
-  var shift = grid.shiftWormholeInterior();
-  if (!shift) {
-    throw new Error("BubbleGrid.shiftWormholeInterior must return a shift for a live wormhole pair.");
+  var shifts = grid.shiftWormholeInteriors();
+  if (!Array.isArray(shifts) || !shifts.length) {
+    throw new Error("BubbleGrid.shiftWormholeInteriors must return live pair shifts.");
   }
-  if (!Array.isArray(shift.moves)) {
-    throw new Error("Wormhole shift result requires moves array.");
-  }
-  shift.moves.forEach(function (move) {
-    if (!move || move.entityType !== "splitter") {
-      return;
+  shifts.forEach(function (shift, shiftIndex) {
+    if (!shift || !Array.isArray(shift.moves)) {
+      throw new Error("Wormhole shift result requires moves array.");
     }
-    this.pendingSplitterSpawns.forEach(function (pending) {
-      if (String(pending.id) === move.cellId) {
-        pending.row = move.toRow;
-        pending.col = move.toCol;
+    shift.moves.forEach(function (move) {
+      if (!move || move.entityType !== "splitter") {
+        return;
       }
-    });
-    resolution.reactiveTriggered.forEach(function (triggered) {
-      if (triggered && String(triggered.id) === move.cellId) {
-        triggered.row = move.toRow;
-        triggered.col = move.toCol;
-      }
+      this.pendingSplitterSpawns.forEach(function (pending) {
+        if (String(pending.id) === move.cellId) {
+          pending.row = move.toRow;
+          pending.col = move.toCol;
+        }
+      });
+      resolution.reactiveTriggered.forEach(function (triggered) {
+        if (triggered && String(triggered.id) === move.cellId) {
+          triggered.row = move.toRow;
+          triggered.col = move.toCol;
+        }
+      });
+    }, this);
+    resolution.wormholeShifts.push({
+      id: "wormhole_" + this.shotsFired + "_" + shiftIndex,
+      row: shift.row,
+      leftWormholeId: shift.leftWormholeId,
+      leftCol: shift.leftCol,
+      rightWormholeId: shift.rightWormholeId,
+      rightCol: shift.rightCol,
+      moveDirection: shift.moveDirection,
+      slotCount: shift.slotCount,
+      duration: WORMHOLE_SHIFT_DURATION,
+      moves: shift.moves
     });
   }, this);
-  resolution.wormholeShifts.push({
-    id: "wormhole_" + this.shotsFired,
-    row: shift.row,
-    leftWormholeId: shift.leftWormholeId,
-    leftCol: shift.leftCol,
-    rightWormholeId: shift.rightWormholeId,
-    rightCol: shift.rightCol,
-    moveDirection: shift.moveDirection,
-    slotCount: shift.slotCount,
-    duration: WORMHOLE_SHIFT_DURATION,
-    moves: shift.moves
-  });
   this.pendingWormholeShiftRemaining = WORMHOLE_SHIFT_DURATION;
   this.pendingWormholeShiftResolution = resolution;
   return true;
@@ -7318,9 +8014,6 @@ GameManager.prototype._updatePendingVineCast = function (dt) {
       throw new Error("Vine cast completion failed to entangle its target.");
     }
     cast.completed = true;
-  });
-  this._pushRuntimeEvent("vine_entangled", {
-    count: resolution.vineCasts.length
   });
   this.pendingVineCastResolution = null;
   this._continueAfterVineCast(resolution);
@@ -7718,10 +8411,12 @@ GameManager.prototype.confirmOutOfShotsAddBallPromptClosed = function () {
   return this.getRuntimeSnapshot();
 };
 
-GameManager.prototype._pushBubbleBreakEvent = function (removedCells, eliminationSequence) {
+GameManager.prototype._pushBubbleBreakEvent = function (removedCells, eliminationSequence, chargeSource) {
   if (!Array.isArray(removedCells) || !removedCells.length) {
     return;
   }
+
+  this._collectAssistSpiritSkillCharge(removedCells, chargeSource || "board_elimination");
 
   var shatterDelaysMs = buildBubbleBreakShatterDelaysMs(removedCells, eliminationSequence);
   if (!shatterDelaysMs.length) {
@@ -7732,6 +8427,89 @@ GameManager.prototype._pushBubbleBreakEvent = function (removedCells, eliminatio
     count: shatterDelaysMs.length,
     shatterDelaysMs: shatterDelaysMs
   });
+};
+
+GameManager.prototype._isGlobalAssistSpiritSkillEquipped = function () {
+  if (typeof this.equippedAssistSpiritId !== "string" || !this.equippedAssistSpiritId) {
+    return false;
+  }
+  return !!AssistSpiritSkillConfig.getBySpiritId(this.equippedAssistSpiritId).skillId;
+};
+
+GameManager.prototype._getAssistSpiritSkillChargeSnapshot = function () {
+  if (!this._isGlobalAssistSpiritSkillEquipped()) {
+    return {
+      charge: 0,
+      maxCharge: 0,
+      isCharged: false
+    };
+  }
+  var maxCharge = AssistSpiritSkillChargeConfig.getMaxCharge(
+    this.equippedAssistSpiritId,
+    this.equippedAssistSpiritLevel
+  );
+  if (!Number.isInteger(this.assistSpiritSkillCharge) || this.assistSpiritSkillCharge < 0 || this.assistSpiritSkillCharge > maxCharge) {
+    throw new Error("Assist spirit skill charge is invalid.");
+  }
+  if (this.assistSpiritSkillChargeMax !== maxCharge) {
+    throw new Error("Assist spirit skill charge max is inconsistent with config.");
+  }
+  return {
+    charge: this.assistSpiritSkillCharge,
+    maxCharge: maxCharge,
+    isCharged: this.assistSpiritSkillCharge === maxCharge
+  };
+};
+
+GameManager.prototype._collectAssistSpiritSkillCharge = function (removedCells, source) {
+  if (!Array.isArray(removedCells)) {
+    throw new Error("Assist spirit skill charge collection requires removedCells array.");
+  }
+  if (typeof source !== "string" || !source) {
+    throw new Error("Assist spirit skill charge collection requires source.");
+  }
+  if (!this._isGlobalAssistSpiritSkillEquipped() || source === "assist_spirit_skill" || this.assistSpiritSkillChargeSuppressed === true) {
+    return 0;
+  }
+  if (!this.assistSpiritSkillChargedCellIds || typeof this.assistSpiritSkillChargedCellIds !== "object" || Array.isArray(this.assistSpiritSkillChargedCellIds)) {
+    throw new Error("Assist spirit skill charged cell ids must be an object.");
+  }
+
+  var chargeState = this._getAssistSpiritSkillChargeSnapshot();
+  var gained = 0;
+  removedCells.forEach(function (cell) {
+    if (!cell || (typeof cell.id !== "string" && typeof cell.id !== "number")) {
+      throw new Error("Assist spirit skill charge collection requires removed cell id.");
+    }
+    if (cell.entityCategory !== "normal_ball") {
+      return;
+    }
+    var cellId = String(cell.id);
+    if (this.assistSpiritSkillChargedCellIds[cellId] === true) {
+      return;
+    }
+    this.assistSpiritSkillChargedCellIds[cellId] = true;
+    gained += 1;
+  }, this);
+
+  if (gained <= 0 || chargeState.isCharged) {
+    return 0;
+  }
+  var nextCharge = Math.min(chargeState.maxCharge, chargeState.charge + gained);
+  var appliedGained = nextCharge - chargeState.charge;
+  this.assistSpiritSkillCharge = nextCharge;
+  this._pushRuntimeEvent("assist_spirit_skill_charge_changed", {
+    source: source,
+    gained_count: appliedGained,
+    charge: nextCharge,
+    charge_max: chargeState.maxCharge
+  });
+  if (nextCharge === chargeState.maxCharge) {
+    this._pushRuntimeEvent("assist_spirit_skill_ready", {
+      charge_max: chargeState.maxCharge
+    });
+  }
+  return appliedGained;
 };
 
 GameManager.prototype._pushBombExplosionEvent = function () {
@@ -8153,12 +8931,34 @@ GameManager.prototype.fireShot = function () {
   }
 
   var shotPlan = this.pendingShotPlan;
-  if (!shotPlan || !shotPlan.valid || !shotPlan.targetCell) {
+  var rescueMissAllowed = function (plan) {
+    return !!(
+      plan &&
+      plan.valid &&
+      plan.hitType === "miss" &&
+      this.systems.trappedSpriteRescueSystem.isActive()
+    );
+  }.bind(this);
+  var rescueBlocked = function (plan) {
+    return !!(
+      plan &&
+      plan.valid &&
+      plan.hitType === "blocked" &&
+      this.systems.trappedSpriteRescueSystem.isActive()
+    );
+  }.bind(this);
+  if (rescueBlocked(shotPlan)) {
+    return this.getRuntimeSnapshot();
+  }
+  if (!shotPlan || !shotPlan.valid || (!shotPlan.targetCell && !rescueMissAllowed(shotPlan))) {
     // 发射优先沿用当前幽灵球路线；仅在缺失时才临时重算。
     this._refreshShotPlan(true);
     shotPlan = this.pendingShotPlan;
   }
-  if (!shotPlan || !shotPlan.valid || !shotPlan.targetCell) {
+  if (rescueBlocked(shotPlan)) {
+    return this.getRuntimeSnapshot();
+  }
+  if (!shotPlan || !shotPlan.valid || (!shotPlan.targetCell && !rescueMissAllowed(shotPlan))) {
     Logger.warn("Missing valid shot plan, fire aborted");
     return this.getRuntimeSnapshot();
   }
@@ -8174,6 +8974,7 @@ GameManager.prototype.fireShot = function () {
     this.remainingShots = remainingShotsAfterFire;
   }
   this.shotsFired += 1;
+  this._resolveAssistSpiritProducedBallAfterFire();
   this.lastFiredColor = queueResult.firedColor;
   this.lastResolution = createEmptyResolution();
   this.activeProjectile = buildActiveProjectile(queueResult.firedBall, shotPlan);
@@ -8182,7 +8983,7 @@ GameManager.prototype.fireShot = function () {
   this.isAiming = false;
 
   Logger.info("Shot fired", queueResult.firedColor, "remaining", this.remainingShots, "bounce", shotPlan.wallBounceCount);
-  return this.getRuntimeSnapshot();
+  return this.getRuntimeSnapshot(this._drainRuntimeEvents());
 };
 
 GameManager.prototype.grantPowerupInventory = function (powerupType, count) {
@@ -9246,6 +10047,63 @@ GameManager.prototype.useBarrierHammerAt = function (point) {
   };
 };
 
+GameManager.prototype._grantTimeBonusForRemovedCells = function (removedCells, removalReason) {
+  if (!Array.isArray(removedCells)) {
+    throw new Error("Time bonus grant requires removed cells array.");
+  }
+  if (removalReason !== "elimination" && removalReason !== "floating_drop") {
+    throw new Error("Time bonus grant removal reason is invalid: " + removalReason);
+  }
+  if (!this.isTimedInfiniteShots || this.state !== "running") {
+    return;
+  }
+  if (!this.grantedTimeBonusCellIds || typeof this.grantedTimeBonusCellIds !== "object" || Array.isArray(this.grantedTimeBonusCellIds)) {
+    throw new Error("Time bonus grant state is invalid.");
+  }
+
+  var awardedCells = [];
+  var grantedMilliseconds = 0;
+  removedCells.forEach(function (cell, index) {
+    if (!cell || typeof cell !== "object" || Array.isArray(cell)) {
+      throw new Error("Time bonus removed cell must be an object at index " + index + ".");
+    }
+    if (cell.entityCategory !== "normal_ball" || cell.timeBonusSeconds === null || cell.timeBonusSeconds === undefined) {
+      return;
+    }
+    if (!Number.isInteger(cell.timeBonusSeconds) || cell.timeBonusSeconds !== 5) {
+      throw new Error("Time bonus normal ball must grant exactly 5 seconds: " + cell.id);
+    }
+    if (typeof cell.id !== "string" || !cell.id) {
+      throw new Error("Time bonus normal ball requires string cell id.");
+    }
+    if (this.grantedTimeBonusCellIds[cell.id]) {
+      throw new Error("Time bonus normal ball was granted more than once: " + cell.id);
+    }
+    this.grantedTimeBonusCellIds[cell.id] = true;
+    grantedMilliseconds += cell.timeBonusSeconds * 1000;
+    awardedCells.push({
+      id: cell.id,
+      row: cell.row,
+      col: cell.col,
+      bonusSeconds: cell.timeBonusSeconds
+    });
+  }, this);
+
+  if (!awardedCells.length) {
+    return;
+  }
+  var previousRemainingTimeMs = this.remainingTimeMs;
+  this.remainingTimeMs += grantedMilliseconds;
+  this._lastTimerRenderBucket = Math.ceil(this.remainingTimeMs / TIMED_LEVEL_RENDER_BUCKET_MS);
+  this._pushRuntimeEvent("time_bonus_awarded", {
+    reason: removalReason,
+    previous_remaining_time_ms: previousRemainingTimeMs,
+    granted_time_seconds: grantedMilliseconds / 1000,
+    remaining_time_ms: this.remainingTimeMs,
+    cells: awardedCells
+  });
+};
+
 GameManager.prototype.pauseTimedLevelTimer = function () {
   if (!this.isTimedInfiniteShots) {
     return this.getRuntimeSnapshot();
@@ -9372,7 +10230,27 @@ GameManager.prototype.update = function (dt) {
   var viewportWasMoving = this.systems.boardViewportSystem.isMoving();
   var fallingStep = this.systems.fallingMarbleSystem.update(dt);
   var surplusUpdated = !!(fallingStep && fallingStep.surplusUpdated);
+  var surplusShotLaunchedCount = 0;
+  if (this.state === "won_surplus_shots_pending") {
+    if (
+      !fallingStep ||
+      !Number.isInteger(fallingStep.surplusShotLaunchedCount) ||
+      fallingStep.surplusShotLaunchedCount < 0 ||
+      fallingStep.surplusShotLaunchedCount > 1
+    ) {
+      throw new Error("Surplus shot update requires surplusShotLaunchedCount from 0 to 1.");
+    }
+    surplusShotLaunchedCount = fallingStep.surplusShotLaunchedCount;
+  }
+  for (var surplusLaunchIndex = 0; surplusLaunchIndex < surplusShotLaunchedCount; surplusLaunchIndex += 1) {
+    this._pushRuntimeEvent("surplus_shot_launched", {});
+  }
   var viewportFinished = this.systems.boardViewportSystem.update(dt);
+  var trappedSpriteRotationStep = this.systems.trappedSpriteRescueSystem.update(dt);
+  var trappedSpriteRotationUpdated = trappedSpriteRotationStep.changed === true;
+  if (trappedSpriteRotationStep.changed) {
+    this.systems.bubbleGrid.notifyWorldTransformChanged();
+  }
   if (viewportFinished && typeof this._onBoardViewportMoveFinished === "function") {
     this._onBoardViewportMoveFinished();
   }
@@ -9449,9 +10327,12 @@ GameManager.prototype.update = function (dt) {
   var scoreBoostChanged = this._updateJarScoreBoost(dt);
   runtimeEvents = runtimeEvents.concat(this._drainRuntimeEvents());
 
+  var trappedSpritePostImpactContinued = this._continueAfterTrappedSpriteImpactRotation();
   var boardAdvancedThisFrame = viewportFinished || this._updatePendingBoardAdvance(dt) || this._hasBoardAdvancedThisFrame();
   var swirlRotationWasPending = this._hasPendingSwirlRotation();
-  var swirlRotationCompleted = boardAdvancedThisFrame ? false : this._updatePendingSwirlRotation(dt);
+  var swirlRotationCompleted = boardAdvancedThisFrame || trappedSpritePostImpactContinued
+    ? false
+    : this._updatePendingSwirlRotation(dt);
   var wormholeShiftWasPending = this._hasPendingWormholeShift();
   var wormholeShiftCompleted = boardAdvancedThisFrame || swirlRotationWasPending || this._hasPendingSwirlRotation()
     ? false
@@ -9471,7 +10352,7 @@ GameManager.prototype.update = function (dt) {
   var hasPendingSwirlRotation = this._hasPendingSwirlRotation();
   var hasPendingWormholeShift = this._hasPendingWormholeShift();
   var hasPendingVineCast = this._hasPendingVineCast();
-
+  var hasPendingTrappedSpritePostImpact = this._hasPendingTrappedSpritePostImpactResolution();
   if (
     this.state === "won_surplus_shots_pending" &&
     !this.surplusShotAimRecentered &&
@@ -9523,8 +10404,9 @@ GameManager.prototype.update = function (dt) {
     }
   }
 
-  if (this.state === "won_pending" && !hasProjectile && !hasFallingDrops && !hasPendingSplitterSpawns && !hasPendingMolotovBlasts && !hasPendingSwirlRotation && !hasPendingWormholeShift && !hasPendingVineCast) {
+  if (this.state === "won_pending" && !hasProjectile && !hasFallingDrops && !hasPendingSplitterSpawns && !hasPendingMolotovBlasts && !hasPendingSwirlRotation && !hasPendingWormholeShift && !hasPendingVineCast && !hasPendingTrappedSpritePostImpact && !this.systems.trappedSpriteRescueSystem.isRotating()) {
     this._resolveBoardClearedOutcome();
+    runtimeEvents = runtimeEvents.concat(this._drainRuntimeEvents());
     return this.getRuntimeSnapshot(runtimeEvents);
   }
 
@@ -9537,6 +10419,7 @@ GameManager.prototype.update = function (dt) {
     !hasPendingSwirlRotation &&
     !hasPendingWormholeShift &&
     !hasPendingVineCast &&
+    !hasPendingTrappedSpritePostImpact &&
     !this.systems.fallingMarbleSystem.hasPendingSurplusShots()
   ) {
     if (typeof this._pushRuntimeEvent === "function") {
@@ -9568,8 +10451,10 @@ GameManager.prototype.update = function (dt) {
     !swirlRotationCompleted &&
     !wormholeShiftCompleted &&
     !vineCastCompleted &&
+    !trappedSpritePostImpactContinued &&
     !surplusUpdated &&
     !viewportUpdated &&
+    !trappedSpriteRotationUpdated &&
     !boardAdvancedThisFrame &&
     !runtimeEvents.length &&
     !timerChanged
@@ -9590,8 +10475,10 @@ GameManager.prototype.update = function (dt) {
     swirlRotationCompleted ||
     wormholeShiftCompleted ||
     vineCastCompleted ||
+    trappedSpritePostImpactContinued ||
     surplusUpdated ||
     viewportUpdated ||
+    trappedSpriteRotationUpdated ||
     boardAdvancedThisFrame ||
     runtimeEvents.length ||
     timerChanged
@@ -9608,8 +10495,10 @@ GameManager.prototype.update = function (dt) {
       !swirlRotationCompleted &&
       !wormholeShiftCompleted &&
       !vineCastCompleted &&
+      !trappedSpritePostImpactContinued &&
       !surplusUpdated &&
       !viewportUpdated &&
+      !trappedSpriteRotationUpdated &&
       !boardAdvancedThisFrame &&
       runtimeEvents.length === 0 &&
       !timerChanged
@@ -9627,8 +10516,10 @@ GameManager.prototype.update = function (dt) {
       !swirlRotationCompleted &&
       !wormholeShiftCompleted &&
       !vineCastCompleted &&
+      !trappedSpritePostImpactContinued &&
       !surplusUpdated &&
       !viewportUpdated &&
+      !trappedSpriteRotationUpdated &&
       !boardAdvancedThisFrame &&
       runtimeEvents.length === 0
     ) {
@@ -9643,8 +10534,10 @@ GameManager.prototype.update = function (dt) {
       !swirlRotationCompleted &&
       !wormholeShiftCompleted &&
       !vineCastCompleted &&
+      !trappedSpritePostImpactContinued &&
       !surplusUpdated &&
       !viewportUpdated &&
+      !trappedSpriteRotationUpdated &&
       !boardAdvancedThisFrame &&
       runtimeEvents.length === 0 &&
       !timerChanged
@@ -9680,6 +10573,9 @@ Object.assign(GameManager.prototype, createGameManagerShotResolutionMethods({
   COMBO_BONUS_PER_HIT: COMBO_BONUS_PER_HIT,
   findPrimaryCollectionObjective: findPrimaryCollectionObjective,
   listCollectionRewardObjectives: listCollectionRewardObjectives
+}));
+Object.assign(GameManager.prototype, createGameManagerAssistSpiritSkillMethods({
+  createEmptyResolution: createEmptyResolution
 }));
 
 GameManager.prototype.debugDropBottomRow = function () {
@@ -9780,6 +10676,28 @@ GameManager.prototype.getRuntimeSnapshot = function (runtimeEvents, renderOption
   ) {
     throw new Error("getRuntimeSnapshot renderOptions.refreshScope must be string.");
   }
+  if (
+    !this.systems ||
+    !this.systems.bubbleGrid ||
+    typeof this.systems.bubbleGrid.getCells !== "function" ||
+    !this.systems.boardOcclusionSystem ||
+    typeof this.systems.boardOcclusionSystem.clearZonesWithoutBoardCells !== "function"
+  ) {
+    throw new Error("getRuntimeSnapshot requires board occlusion and bubble grid synchronization.");
+  }
+  var snapshotRuntimeEvents = Array.isArray(runtimeEvents) ? runtimeEvents.slice() : [];
+  var boardEmptyOcclusionZoneIds = this.systems.boardOcclusionSystem.clearZonesWithoutBoardCells(
+    this.systems.bubbleGrid.getCells()
+  );
+  if (boardEmptyOcclusionZoneIds.length) {
+    this.runtimeEventSequence += 1;
+    snapshotRuntimeEvents.push({
+      id: this.runtimeEventSequence,
+      type: "board_occlusion_cleared",
+      reason: "board_empty",
+      zoneIds: boardEmptyOcclusionZoneIds.slice()
+    });
+  }
   var fallingSystem = this.systems.fallingMarbleSystem;
   var fairyAssistSystem = this.systems.fairyAssistSystem;
   var systemSnapshots = {
@@ -9790,6 +10708,7 @@ GameManager.prototype.getRuntimeSnapshot = function (runtimeEvents, renderOption
       : fallingSystem.snapshot(),
     boardOcclusionSystem: this.systems.boardOcclusionSystem.snapshotForRender()
   };
+  systemSnapshots.trappedSpriteRescueSystem = this.systems.trappedSpriteRescueSystem.snapshotForRender();
   var jarsSnapshot = this._getCachedJarSnapshot();
   var objectiveSnapshot = this._buildPrimaryObjectiveSnapshot(jarsSnapshot);
   if (!this._cachedAdRunPowerupAllowed) {
@@ -9799,6 +10718,17 @@ GameManager.prototype.getRuntimeSnapshot = function (runtimeEvents, renderOption
 
   var shooterController = this.systems.shooterController;
   var shooterSnapshot = shooterController.getShooterStateForRender();
+  if (this.equippedAssistSpiritId) {
+    var assistSpiritSkillAvailability = this.getAssistSpiritSkillAvailability();
+    shooterSnapshot.assistSpiritId = assistSpiritSkillAvailability.spiritId;
+    shooterSnapshot.assistSpiritLevel = this.equippedAssistSpiritLevel;
+    shooterSnapshot.assistSpiritSkillAvailable = assistSpiritSkillAvailability.available;
+    shooterSnapshot.assistSpiritSkillUnavailableReason = assistSpiritSkillAvailability.reason;
+    shooterSnapshot.assistSpiritResolvedSkillId = assistSpiritSkillAvailability.skillId || null;
+    shooterSnapshot.assistSpiritSkillCharge = assistSpiritSkillAvailability.charge;
+    shooterSnapshot.assistSpiritSkillChargeMax = assistSpiritSkillAvailability.maxCharge;
+    shooterSnapshot.assistSpiritSkillCharged = assistSpiritSkillAvailability.isCharged === true;
+  }
   shooterSnapshot.ricochetGuideActive = this.ricochetGuideActive === true;
   var topAttachY = this.systems.bubbleGrid && typeof this.systems.bubbleGrid.getTopAttachY === "function"
     ? this.systems.bubbleGrid.getTopAttachY()
@@ -9901,7 +10831,7 @@ GameManager.prototype.getRuntimeSnapshot = function (runtimeEvents, renderOption
       scoreDifficulty: this.scoreHeatBand ? this.scoreHeatBand.difficulty : "normal",
       maxComboStreak: this.maxComboStreak
     },
-    runtimeEvents: Array.isArray(runtimeEvents) ? runtimeEvents.slice() : [],
+    runtimeEvents: snapshotRuntimeEvents,
     systems: systemSnapshots,
     refreshScope: renderOptions.refreshScope || "full"
   };
@@ -9931,7 +10861,877 @@ module.exports = GameManager;
 
 
 
-},{"../../assets/scripts/utils/Logger":"Logger","../../assets/scripts/config/BoardLayout":"BoardLayout","../config/FairyAssistConfig":"FairyAssistConfig","../config/SpecialAnimationTiming":"SpecialAnimationTiming","../systems/ShooterController":"ShooterController","../systems/TrajectoryPredictor":"TrajectoryPredictor","../systems/BubbleGrid":"BubbleGrid","../systems/MatchSystem":"MatchSystem","../systems/SupportSystem":"SupportSystem","../systems/FairyAssistSystem":"FairyAssistSystem","../systems/BoardViewportSystem":"BoardViewportSystem","../systems/FallingMarbleSystem":"FallingMarbleSystem","../systems/JarCollectorSystem":"JarCollectorSystem","../systems/BoardOcclusionSystem":"BoardOcclusionSystem","./ProjectileMath":"ProjectileMath","./AdRevivePolicy":"AdRevivePolicy","../../assets/scripts/core/StarRatingPolicy":"StarRatingPolicy","./GameManagerShotResolutionMethods":"GameManagerShotResolutionMethods"}],
+},{"../../assets/scripts/utils/Logger":"Logger","../../assets/scripts/config/BoardLayout":"BoardLayout","../config/FairyAssistConfig":"FairyAssistConfig","../config/SpecialAnimationTiming":"SpecialAnimationTiming","../config/AssistSpiritSkillChargeConfig":"AssistSpiritSkillChargeConfig","../config/AssistSpiritSkillConfig":"AssistSpiritSkillConfig","../systems/ShooterController":"ShooterController","../systems/TrajectoryPredictor":"TrajectoryPredictor","../systems/BubbleGrid":"BubbleGrid","../systems/MatchSystem":"MatchSystem","../systems/SupportSystem":"SupportSystem","../systems/FairyAssistSystem":"FairyAssistSystem","../systems/BoardViewportSystem":"BoardViewportSystem","../systems/FallingMarbleSystem":"FallingMarbleSystem","../systems/JarCollectorSystem":"JarCollectorSystem","../systems/BoardOcclusionSystem":"BoardOcclusionSystem","../systems/TrappedSpriteRescueSystem":"TrappedSpriteRescueSystem","./ProjectileMath":"ProjectileMath","./AdRevivePolicy":"AdRevivePolicy","../../assets/scripts/core/StarRatingPolicy":"StarRatingPolicy","./GameManagerShotResolutionMethods":"GameManagerShotResolutionMethods","./GameManagerAssistSpiritSkillMethods":"GameManagerAssistSpiritSkillMethods"}],
+"GameManagerAssistSpiritSkillMethods":[function(require,module,exports){
+"use strict";
+
+var AssistSpiritSkillConfig = require("../config/AssistSpiritSkillConfig");
+var AssistSpiritSkillChargeConfig = require("../config/AssistSpiritSkillChargeConfig");
+var AssistSpiritConfig = require("../../assets/scripts/config/AssistSpiritConfig");
+
+function clone(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function cellKey(cell) {
+  if (!cell || !Number.isInteger(cell.row) || !Number.isInteger(cell.col)) {
+    throw new Error("Assist spirit skill target requires integer coordinates.");
+  }
+  return cell.row + ":" + cell.col;
+}
+
+function compareCellCoordinates(left, right) {
+  if (left.row !== right.row) {
+    return left.row - right.row;
+  }
+  return left.col - right.col;
+}
+
+function isIceCell(cell) {
+  return !!(
+    cell &&
+    cell.entityCategory === "obstacle_ball" &&
+    cell.entityType === "ice" &&
+    cell.temporaryThawed !== true
+  );
+}
+
+function isActiveVineCell(cell) {
+  return !!(
+    cell &&
+    cell.entityCategory === "normal_ball" &&
+    typeof cell.vineOwnerId === "string" &&
+    cell.vineOwnerId
+  );
+}
+
+function isDirectSkillTarget(cell) {
+  if (!cell || cell.temporaryThawed === true) {
+    return false;
+  }
+  if (cell.entityCategory === "normal_ball") {
+    return !isActiveVineCell(cell);
+  }
+  if (cell.entityCategory === "skill_ball") {
+    return true;
+  }
+  return isIceCell(cell);
+}
+
+function isTornadoTarget(cell) {
+  if (!cell) {
+    return false;
+  }
+  if (cell.entityCategory === "normal_ball") {
+    return !isActiveVineCell(cell);
+  }
+  return cell.entityCategory === "skill_ball";
+}
+
+function normalizeExpectedPlan(expectedPlan) {
+  if (!expectedPlan || typeof expectedPlan !== "object" || Array.isArray(expectedPlan)) {
+    throw new Error("Assist spirit skill use requires the authoritative preview plan.");
+  }
+  if (typeof expectedPlan.requestedSpiritId !== "string" || !expectedPlan.requestedSpiritId) {
+    throw new Error("Assist spirit skill preview requires requestedSpiritId.");
+  }
+  if (typeof expectedPlan.resolvedSpiritId !== "string" || !expectedPlan.resolvedSpiritId) {
+    throw new Error("Assist spirit skill preview requires resolvedSpiritId.");
+  }
+  if (typeof expectedPlan.skillId !== "string" || !expectedPlan.skillId) {
+    throw new Error("Assist spirit skill preview requires skillId.");
+  }
+  if (!Array.isArray(expectedPlan.targets)) {
+    throw new Error("Assist spirit skill preview requires targets array.");
+  }
+  if (expectedPlan.targets.length === 0 && expectedPlan.skillId !== "tornado") {
+    throw new Error("Assist spirit skill preview requires targets.");
+  }
+  return expectedPlan;
+}
+
+function buildPlanKey(plan) {
+  normalizeExpectedPlan(plan);
+  var tornadoPathKey = "";
+  if (plan.skillId === "tornado") {
+    if (
+      !plan.path ||
+      !plan.path.start ||
+      !plan.path.control1 ||
+      !plan.path.control2 ||
+      !plan.path.end
+    ) {
+      throw new Error("Tornado preview plan requires cubic Bezier path.");
+    }
+    if (!Number.isInteger(plan.nearbyCandidateCount) || plan.nearbyCandidateCount < 0) {
+      throw new Error("Tornado preview plan requires non-negative nearbyCandidateCount.");
+    }
+    tornadoPathKey = [
+      plan.path.start.x,
+      plan.path.start.y,
+      plan.path.control1.x,
+      plan.path.control1.y,
+      plan.path.control2.x,
+      plan.path.control2.y,
+      plan.path.end.x,
+      plan.path.end.y,
+      plan.nearbyCandidateCount
+    ].join(",");
+  }
+  return [
+    plan.requestedSpiritId,
+    plan.resolvedSpiritId,
+    plan.skillId,
+    plan.targets.map(cellKey).sort().join("|"),
+    tornadoPathKey
+  ].join("#");
+}
+
+function buildLightningTargets(grid, maxTargets) {
+  var remaining = grid.getCells().filter(isDirectSkillTarget);
+  if (remaining.length < 2) {
+    return [];
+  }
+  remaining.sort(function (left, right) {
+    if (left.row !== right.row) {
+      return right.row - left.row;
+    }
+    return left.col - right.col;
+  });
+  var chain = [remaining.shift()];
+  while (remaining.length && chain.length < maxTargets) {
+    var previous = chain[chain.length - 1];
+    var previousPosition = grid.getCellPosition(previous.row, previous.col);
+    remaining.sort(function (left, right) {
+      var leftPosition = grid.getCellPosition(left.row, left.col);
+      var rightPosition = grid.getCellPosition(right.row, right.col);
+      var leftDistance = Math.pow(leftPosition.x - previousPosition.x, 2) +
+        Math.pow(leftPosition.y - previousPosition.y, 2);
+      var rightDistance = Math.pow(rightPosition.x - previousPosition.x, 2) +
+        Math.pow(rightPosition.y - previousPosition.y, 2);
+      if (leftDistance !== rightDistance) {
+        return leftDistance - rightDistance;
+      }
+      return compareCellCoordinates(left, right);
+    });
+    chain.push(remaining.shift());
+  }
+  return chain;
+}
+
+function hashString(text) {
+  if (typeof text !== "string" || !text) {
+    throw new Error("Assist spirit skill random seed must be a non-empty string.");
+  }
+  var hash = 2166136261;
+  for (var index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function createSeededRandom(seed) {
+  var state = hashString(seed);
+  if (state === 0) {
+    throw new Error("Assist spirit skill seed produced an invalid zero state.");
+  }
+  return function () {
+    state += 0x6D2B79F5;
+    var value = state;
+    value = Math.imul(value ^ (value >>> 15), value | 1);
+    value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
+    return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function randomBetween(random, min, max) {
+  if (typeof random !== "function") {
+    throw new Error("Assist spirit skill random source is required.");
+  }
+  if (!Number.isFinite(min) || !Number.isFinite(max) || min > max) {
+    throw new Error("Assist spirit skill random range is invalid.");
+  }
+  return min + (max - min) * random();
+}
+
+function buildTornadoRandom(manager) {
+  if (typeof manager.assistSpiritSkillSeed !== "string" || !manager.assistSpiritSkillSeed) {
+    throw new Error("Tornado skill requires the current run seed.");
+  }
+  if (
+    !Number.isInteger(manager.assistSpiritSkillResolutionSequence) ||
+    manager.assistSpiritSkillResolutionSequence < 0
+  ) {
+    throw new Error("Tornado skill requires a non-negative resolution sequence.");
+  }
+  return createSeededRandom([
+    manager.assistSpiritSkillSeed,
+    "assist_spirit_tornado",
+    manager.assistSpiritSkillResolutionSequence
+  ].join("|"));
+}
+
+function buildProducedBallRandom(manager, shotSequence) {
+  if (typeof manager.assistSpiritSkillSeed !== "string" || !manager.assistSpiritSkillSeed) {
+    throw new Error("Produced-ball assist spirit requires the current run seed.");
+  }
+  if (!Number.isInteger(shotSequence) || shotSequence <= 0) {
+    throw new Error("Produced-ball assist spirit requires a positive shot sequence.");
+  }
+  return createSeededRandom([
+    manager.assistSpiritSkillSeed,
+    "assist_spirit_produced_ball",
+    manager.equippedAssistSpiritId,
+    shotSequence
+  ].join("|"));
+}
+
+function buildTornadoPath(grid, pathCells, skillConfig, random) {
+  if (!Array.isArray(pathCells) || pathCells.length === 0) {
+    throw new Error("Tornado path requires board cells.");
+  }
+  if (!Number.isFinite(skillConfig.pathMargin) || skillConfig.pathMargin <= 0) {
+    throw new Error("Tornado path requires positive pathMargin.");
+  }
+  var positions = pathCells.map(function (cell) {
+    return grid.getCellPosition(cell.row, cell.col);
+  });
+  var minX = Math.min.apply(Math, positions.map(function (position) {
+    return position.x;
+  }));
+  var maxX = Math.max.apply(Math, positions.map(function (position) {
+    return position.x;
+  }));
+  var minY = Math.min.apply(Math, positions.map(function (position) {
+    return position.y;
+  }));
+  var maxY = Math.max.apply(Math, positions.map(function (position) {
+    return position.y;
+  }));
+  var startY = minY - skillConfig.pathMargin;
+  var endY = maxY + skillConfig.pathMargin;
+  var verticalSpan = endY - startY;
+  return {
+    start: {
+      x: randomBetween(random, minX, maxX),
+      y: startY
+    },
+    control1: {
+      x: randomBetween(random, minX, maxX),
+      y: startY + verticalSpan * randomBetween(random, 0.24, 0.4)
+    },
+    control2: {
+      x: randomBetween(random, minX, maxX),
+      y: startY + verticalSpan * randomBetween(random, 0.6, 0.76)
+    },
+    end: {
+      x: randomBetween(random, minX, maxX),
+      y: endY
+    }
+  };
+}
+
+function evaluateCubicBezier(path, t) {
+  var inverse = 1 - t;
+  var inverseSquared = inverse * inverse;
+  var tSquared = t * t;
+  return {
+    x:
+      inverseSquared * inverse * path.start.x +
+      3 * inverseSquared * t * path.control1.x +
+      3 * inverse * tSquared * path.control2.x +
+      tSquared * t * path.end.x,
+    y:
+      inverseSquared * inverse * path.start.y +
+      3 * inverseSquared * t * path.control1.y +
+      3 * inverse * tSquared * path.control2.y +
+      tSquared * t * path.end.y
+  };
+}
+
+function distanceSquaredToSegment(point, start, end) {
+  var deltaX = end.x - start.x;
+  var deltaY = end.y - start.y;
+  var lengthSquared = deltaX * deltaX + deltaY * deltaY;
+  if (lengthSquared <= 0) {
+    return Math.pow(point.x - start.x, 2) + Math.pow(point.y - start.y, 2);
+  }
+  var projection = (
+    (point.x - start.x) * deltaX +
+    (point.y - start.y) * deltaY
+  ) / lengthSquared;
+  var clampedProjection = Math.max(0, Math.min(1, projection));
+  var closestX = start.x + deltaX * clampedProjection;
+  var closestY = start.y + deltaY * clampedProjection;
+  return Math.pow(point.x - closestX, 2) + Math.pow(point.y - closestY, 2);
+}
+
+function distanceSquaredToTornadoPath(position, path, sampleSegments) {
+  if (!Number.isInteger(sampleSegments) || sampleSegments < 2) {
+    throw new Error("Tornado path sampleSegments must be an integer of at least 2.");
+  }
+  var minimumDistanceSquared = Infinity;
+  var previous = evaluateCubicBezier(path, 0);
+  for (var index = 1; index <= sampleSegments; index += 1) {
+    var current = evaluateCubicBezier(path, index / sampleSegments);
+    minimumDistanceSquared = Math.min(
+      minimumDistanceSquared,
+      distanceSquaredToSegment(position, previous, current)
+    );
+    previous = current;
+  }
+  return minimumDistanceSquared;
+}
+
+function buildTornadoTargets(grid, eligibleCells, path, skillConfig, maxTargets) {
+  if (!Number.isFinite(skillConfig.pathInfluenceRadius) || skillConfig.pathInfluenceRadius <= 0) {
+    throw new Error("Tornado skill requires positive pathInfluenceRadius.");
+  }
+  if (!Number.isInteger(maxTargets) || maxTargets <= 0) {
+    throw new Error("Tornado skill requires positive integer maxTargets.");
+  }
+  var influenceRadiusSquared = skillConfig.pathInfluenceRadius * skillConfig.pathInfluenceRadius;
+  var nearbyCandidates = eligibleCells.map(function (cell) {
+    return {
+      cell: cell,
+      distanceSquared: distanceSquaredToTornadoPath(
+        grid.getCellPosition(cell.row, cell.col),
+        path,
+        skillConfig.pathSampleSegments
+      )
+    };
+  }).filter(function (candidate) {
+    return candidate.distanceSquared <= influenceRadiusSquared;
+  }).sort(function (left, right) {
+    if (left.distanceSquared !== right.distanceSquared) {
+      return left.distanceSquared - right.distanceSquared;
+    }
+    return compareCellCoordinates(left.cell, right.cell);
+  });
+  return {
+    nearbyCandidateCount: nearbyCandidates.length,
+    targets: nearbyCandidates.slice(0, maxTargets).map(function (candidate) {
+      return candidate.cell;
+    })
+  };
+}
+
+function limitTargetsByLevel(targets, maxTargets, description) {
+  if (!Array.isArray(targets)) {
+    throw new Error(description + " targets must be an array.");
+  }
+  if (maxTargets === null) {
+    return targets;
+  }
+  if (!Number.isInteger(maxTargets) || maxTargets <= 0) {
+    throw new Error(description + " requires a positive integer maxTargets or null for all.");
+  }
+  return targets.slice(0, maxTargets);
+}
+
+function buildPlanForSkill(manager, skillId, requestedSpiritId) {
+  var skillConfig = AssistSpiritSkillConfig.getBySkillId(skillId);
+  var levelConfig = AssistSpiritConfig.getGlobalSkillRuntimeConfig(skillId, manager.equippedAssistSpiritLevel);
+  var grid = manager.systems.bubbleGrid;
+  var targets = [];
+  var plan = {
+    accepted: false,
+    reason: "no_target",
+    requestedSpiritId: requestedSpiritId,
+    resolvedSpiritId: skillConfig.spiritId,
+    skillId: skillId,
+    iconPath: skillConfig.iconPath,
+    effectDuration: skillConfig.effectDuration,
+    effectLevel: levelConfig.level,
+    maxTargets: levelConfig.maxTargets,
+    targets: []
+  };
+
+  if (skillId === "release_vines") {
+    targets = limitTargetsByLevel(
+      grid.getCells().filter(isActiveVineCell).sort(compareCellCoordinates),
+      levelConfig.maxTargets,
+      "Vine release skill"
+    );
+  } else if (skillId === "permanent_thaw") {
+    targets = limitTargetsByLevel(
+      grid.getCells().filter(isIceCell).sort(compareCellCoordinates),
+      levelConfig.maxTargets,
+      "Permanent thaw skill"
+    );
+  } else if (skillId === "lightning_chain") {
+    targets = buildLightningTargets(grid, levelConfig.maxTargets);
+  } else if (skillId === "tornado") {
+    var tornadoPathCells = grid.getCells().sort(compareCellCoordinates);
+    var tornadoEligibleCells = grid.getCells().filter(isTornadoTarget).sort(compareCellCoordinates);
+    if (tornadoPathCells.length) {
+      var tornadoRandom = buildTornadoRandom(manager);
+      plan.path = buildTornadoPath(grid, tornadoPathCells, skillConfig, tornadoRandom);
+      plan.effectPath = skillConfig.effectPath;
+      plan.pathInfluenceRadius = skillConfig.pathInfluenceRadius;
+      var tornadoSelection = buildTornadoTargets(
+        grid,
+        tornadoEligibleCells,
+        plan.path,
+        skillConfig,
+        levelConfig.maxTargets
+      );
+      plan.nearbyCandidateCount = tornadoSelection.nearbyCandidateCount;
+      targets = tornadoSelection.targets;
+    }
+  } else {
+    throw new Error("Unsupported assist spirit skill: " + skillId);
+  }
+
+  if (
+    !targets.length &&
+    !(skillId === "tornado" && plan.path && Number.isInteger(plan.nearbyCandidateCount))
+  ) {
+    return plan;
+  }
+  plan.accepted = true;
+  plan.reason = null;
+  plan.targets = targets.map(function (target) {
+    return {
+      id: target.id,
+      row: target.row,
+      col: target.col
+    };
+  });
+  return plan;
+}
+
+function buildAuthoritativePlan(manager, spiritId) {
+  var spiritConfig = AssistSpiritSkillConfig.getBySpiritId(spiritId);
+  if (!spiritConfig.skillId) {
+    return {
+      accepted: false,
+      reason: "no_global_skill",
+      requestedSpiritId: spiritId,
+      resolvedSpiritId: spiritId,
+      skillId: null,
+      targets: []
+    };
+  }
+  if (spiritId !== "yumi") {
+    return buildPlanForSkill(manager, spiritConfig.skillId, spiritId);
+  }
+
+  for (var index = 0; index < AssistSpiritSkillConfig.YUMI_PRIORITY.length; index += 1) {
+    var skillId = AssistSpiritSkillConfig.YUMI_PRIORITY[index];
+    var candidate = buildPlanForSkill(manager, skillId, "yumi");
+    if (candidate.accepted) {
+      candidate.starlightIconPath = spiritConfig.iconPath;
+      candidate.starlightEffectDuration = spiritConfig.effectDuration;
+      return candidate;
+    }
+  }
+  return {
+    accepted: false,
+    reason: "no_target",
+    requestedSpiritId: "yumi",
+    resolvedSpiritId: "yumi",
+    skillId: "starlight_priority",
+    targets: []
+  };
+}
+
+function collectFloatingAfterSkill(manager, grid, resolution) {
+  var floatingCells = manager.systems.supportSystem.findFloatingCells(grid);
+  var removedFloating = grid.removeFloatingCells(floatingCells);
+  manager._appendUniqueCells(resolution.floating, removedFloating);
+  manager._collectRemovedKeysAndResolveUnlocks(removedFloating, grid, resolution);
+  manager._registerResolutionDrops(removedFloating, grid, resolution, undefined, {
+    skipEliminationPresentationHold: true,
+    skipAssistSpiritSkillCharge: true
+  });
+  manager.systems.jarCollectorSystem.collect([]);
+  return removedFloating;
+}
+
+function finalizeImmediateResolution(manager, resolution, shouldTryTopAnchorCollapse) {
+  if (typeof shouldTryTopAnchorCollapse !== "boolean") {
+    throw new Error("Assist spirit immediate resolution requires top-collapse policy.");
+  }
+  var grid = manager.systems.bubbleGrid;
+  resolution.boardCleared = manager._isBoardCleared(grid);
+  manager.lastResolution = resolution;
+  manager.pendingShotPlan = null;
+  manager.isAiming = false;
+  if (resolution.boardCleared) {
+    manager._resolveBoardClearedOutcome();
+    return;
+  }
+  if (shouldTryTopAnchorCollapse && manager._tryTopAnchorCollapse()) {
+    return;
+  }
+}
+
+function createGameManagerAssistSpiritSkillMethods(deps) {
+  var createEmptyResolution = deps.createEmptyResolution;
+
+  return {
+    setEquippedAssistSpirit: function (spiritId, level) {
+      AssistSpiritSkillConfig.getBySpiritId(spiritId);
+      var abilityConfig = AssistSpiritConfig.getAbilityRuntimeConfig(spiritId);
+      AssistSpiritConfig.getProbability(spiritId, level);
+      this.equippedAssistSpiritId = spiritId;
+      this.equippedAssistSpiritLevel = level;
+      this.assistSpiritSkillChargeMax = abilityConfig.abilityType === "global_skill"
+        ? AssistSpiritSkillChargeConfig.getMaxCharge(spiritId, level)
+        : 0;
+      return {
+        spiritId: spiritId,
+        level: level
+      };
+    },
+
+    _resolveAssistSpiritProducedBallAfterFire: function () {
+      if (typeof this.equippedAssistSpiritId !== "string" || !this.equippedAssistSpiritId) {
+        throw new Error("Produced-ball resolution requires equipped assist spirit.");
+      }
+      if (!Number.isInteger(this.equippedAssistSpiritLevel)) {
+        throw new Error("Produced-ball resolution requires equipped assist spirit level.");
+      }
+      if (!Number.isInteger(this.shotsFired) || this.shotsFired <= 0) {
+        throw new Error("Produced-ball resolution requires a positive fired shot count.");
+      }
+
+      var abilityConfig = AssistSpiritConfig.getAbilityRuntimeConfig(this.equippedAssistSpiritId);
+      if (abilityConfig.abilityType !== "produced_ball") {
+        return {
+          evaluated: false,
+          reason: "not_produced_ball_spirit"
+        };
+      }
+      if (
+        !Number.isInteger(this.lastAssistSpiritProducedBallEvaluationShot) ||
+        this.lastAssistSpiritProducedBallEvaluationShot < 0
+      ) {
+        throw new Error("Produced-ball evaluation sequence is invalid.");
+      }
+      if (this.lastAssistSpiritProducedBallEvaluationShot !== this.shotsFired - 1) {
+        throw new Error("Produced-ball ability must be evaluated exactly once per real shot.");
+      }
+      this.lastAssistSpiritProducedBallEvaluationShot = this.shotsFired;
+
+      var shooterController = this.systems && this.systems.shooterController;
+      if (!shooterController || typeof shooterController.convertCurrentNormalBallToSkillBall !== "function") {
+        throw new Error("Produced-ball resolution requires ShooterController conversion authority.");
+      }
+      var currentBall = shooterController.currentBall;
+      if (!currentBall) {
+        return {
+          evaluated: false,
+          reason: "no_loaded_ball",
+          shotSequence: this.shotsFired
+        };
+      }
+      if (currentBall.ballCategory !== "normal") {
+        return {
+          evaluated: false,
+          reason: "loaded_ball_not_normal",
+          shotSequence: this.shotsFired
+        };
+      }
+
+      var probabilityPercent = AssistSpiritConfig.getProbability(
+        this.equippedAssistSpiritId,
+        this.equippedAssistSpiritLevel
+      );
+      if (!Number.isInteger(probabilityPercent) || probabilityPercent <= 0 || probabilityPercent > 100) {
+        throw new Error("Produced-ball probability must be an integer percentage in (0, 100].");
+      }
+      var random = buildProducedBallRandom(this, this.shotsFired);
+      var rollBasisPoints = Math.floor(random() * 10000);
+      var thresholdBasisPoints = probabilityPercent * 100;
+      var triggered = rollBasisPoints < thresholdBasisPoints;
+      if (triggered) {
+        var conversion = shooterController.convertCurrentNormalBallToSkillBall(abilityConfig.producedBallType);
+        if (
+          !conversion ||
+          conversion.accepted !== true ||
+          !conversion.currentBall ||
+          conversion.currentBall.entityType !== abilityConfig.producedBallType
+        ) {
+          throw new Error("Produced-ball conversion did not return the authoritative skill ball.");
+        }
+      }
+
+      var result = {
+        evaluated: true,
+        triggered: triggered,
+        spiritId: this.equippedAssistSpiritId,
+        spiritLevel: this.equippedAssistSpiritLevel,
+        shotSequence: this.shotsFired,
+        probabilityPercent: probabilityPercent,
+        rollBasisPoints: rollBasisPoints,
+        producedBallType: abilityConfig.producedBallType
+      };
+      this._pushRuntimeEvent("assist_spirit_produced_ball_rolled", {
+        spirit_id: result.spiritId,
+        spirit_level: result.spiritLevel,
+        shot_sequence: result.shotSequence,
+        probability_percent: result.probabilityPercent,
+        roll_basis_points: result.rollBasisPoints,
+        triggered: result.triggered,
+        produced_ball_type: result.producedBallType
+      });
+      return result;
+    },
+
+    getAssistSpiritSkillAvailability: function () {
+      if (typeof this.equippedAssistSpiritId !== "string" || !this.equippedAssistSpiritId) {
+        throw new Error("GameManager requires equipped assist spirit before rendering gameplay.");
+      }
+      if (this._isInstantAdPowerupBusy()) {
+        var busyChargeState = this._getAssistSpiritSkillChargeSnapshot();
+        return {
+          spiritId: this.equippedAssistSpiritId,
+          available: false,
+          reason: "busy",
+          skillId: AssistSpiritSkillConfig.getBySpiritId(this.equippedAssistSpiritId).skillId,
+          charge: busyChargeState.charge,
+          maxCharge: busyChargeState.maxCharge,
+          isCharged: busyChargeState.isCharged
+        };
+      }
+      if (!this._isGlobalAssistSpiritSkillEquipped()) {
+        var unavailablePlan = buildAuthoritativePlan(this, this.equippedAssistSpiritId);
+        return {
+          spiritId: this.equippedAssistSpiritId,
+          available: false,
+          reason: unavailablePlan.reason,
+          skillId: unavailablePlan.skillId,
+          charge: 0,
+          maxCharge: 0,
+          isCharged: false
+        };
+      }
+      var chargeState = this._getAssistSpiritSkillChargeSnapshot();
+      if (!chargeState.isCharged) {
+        var chargingSpiritConfig = AssistSpiritSkillConfig.getBySpiritId(this.equippedAssistSpiritId);
+        return {
+          spiritId: this.equippedAssistSpiritId,
+          available: false,
+          reason: "charging",
+          skillId: chargingSpiritConfig.skillId,
+          charge: chargeState.charge,
+          maxCharge: chargeState.maxCharge,
+          isCharged: false
+        };
+      }
+      var plan = buildAuthoritativePlan(this, this.equippedAssistSpiritId);
+      return {
+        spiritId: this.equippedAssistSpiritId,
+        available: plan.accepted === true,
+        reason: plan.accepted ? null : plan.reason,
+        skillId: plan.skillId,
+        charge: chargeState.charge,
+        maxCharge: chargeState.maxCharge,
+        isCharged: true
+      };
+    },
+
+    previewAssistSpiritSkill: function (spiritId) {
+      if (spiritId !== this.equippedAssistSpiritId) {
+        throw new Error("Assist spirit skill preview must use the equipped spirit.");
+      }
+      if (this._isInstantAdPowerupBusy()) {
+        return {
+          accepted: false,
+          reason: "busy",
+          snapshot: this.getRuntimeSnapshot()
+        };
+      }
+      if (!this._isGlobalAssistSpiritSkillEquipped()) {
+        var unavailablePlan = buildAuthoritativePlan(this, spiritId);
+        unavailablePlan.snapshot = this.getRuntimeSnapshot();
+        return clone(unavailablePlan);
+      }
+      if (!this._getAssistSpiritSkillChargeSnapshot().isCharged) {
+        return {
+          accepted: false,
+          reason: "charging",
+          snapshot: this.getRuntimeSnapshot()
+        };
+      }
+      var plan = buildAuthoritativePlan(this, spiritId);
+      plan.snapshot = this.getRuntimeSnapshot();
+      return clone(plan);
+    },
+
+    useAssistSpiritSkill: function (spiritId, expectedPlan) {
+      if (spiritId !== this.equippedAssistSpiritId) {
+        throw new Error("Assist spirit skill use must use the equipped spirit.");
+      }
+      if (this._isInstantAdPowerupBusy()) {
+        return {
+          accepted: false,
+          reason: "busy",
+          snapshot: this.getRuntimeSnapshot()
+        };
+      }
+      if (!this._isGlobalAssistSpiritSkillEquipped()) {
+        return {
+          accepted: false,
+          reason: "no_global_skill",
+          snapshot: this.getRuntimeSnapshot()
+        };
+      }
+      if (!this._getAssistSpiritSkillChargeSnapshot().isCharged) {
+        return {
+          accepted: false,
+          reason: "charging",
+          snapshot: this.getRuntimeSnapshot()
+        };
+      }
+      var safeExpectedPlan = normalizeExpectedPlan(expectedPlan);
+      var actualPlan = buildAuthoritativePlan(this, spiritId);
+      if (!actualPlan.accepted) {
+        return {
+          accepted: false,
+          reason: actualPlan.reason,
+          snapshot: this.getRuntimeSnapshot()
+        };
+      }
+      if (buildPlanKey(actualPlan) !== buildPlanKey(safeExpectedPlan)) {
+        throw new Error("Assist spirit skill targets changed before resolution.");
+      }
+
+      var grid = this.systems.bubbleGrid;
+      var resolution = createEmptyResolution();
+      var skillId = actualPlan.skillId;
+      this.assistSpiritSkillChargeSuppressed = true;
+      var targetCells = actualPlan.targets.map(function (target) {
+        var cell = grid.getCell(target.row, target.col);
+        if (!cell || String(cell.id) !== String(target.id)) {
+          throw new Error("Assist spirit skill target is no longer on the board: " + cellKey(target));
+        }
+        return cell;
+      });
+
+      if (skillId === "release_vines") {
+        resolution.releasedVines = targetCells.map(function (target) {
+          return grid.removeVineAt(target.row, target.col);
+        });
+        collectFloatingAfterSkill(this, grid, resolution);
+      } else if (skillId === "permanent_thaw") {
+        resolution.iceCollected += this._registerIceCollection(targetCells);
+        resolution.thawed = targetCells.map(function (target) {
+          return this._thawIceCellAtCurrentPosition(grid, target);
+        }, this);
+      } else if (skillId === "lightning_chain") {
+        var removedLightning = grid.removeCells(targetCells);
+        if (removedLightning.length !== targetCells.length) {
+          throw new Error("Lightning chain failed to remove every authoritative target.");
+        }
+        this._pushBubbleBreakEvent(removedLightning, undefined, "assist_spirit_skill");
+        resolution.matched = removedLightning;
+        this._resolveVinesAfterRemoval(removedLightning, grid, resolution);
+        this._collectRemovedKeysAndResolveUnlocks(removedLightning, grid, resolution);
+        this._registerMatchedObjectiveCollection(removedLightning, resolution.eliminationSequence, resolution, grid);
+        collectFloatingAfterSkill(this, grid, resolution);
+        resolution.collected = removedLightning.concat(resolution.floating);
+      } else if (skillId === "tornado") {
+        var removedTornado = grid.removeCells(targetCells);
+        if (removedTornado.length !== targetCells.length) {
+          throw new Error("Tornado failed to detach every authoritative target.");
+        }
+        this._collectRemovedKeysAndResolveUnlocks(removedTornado, grid, resolution);
+        resolution.floating = removedTornado;
+        if (removedTornado.length > 0) {
+          collectFloatingAfterSkill(this, grid, resolution);
+        this._registerResolutionDrops(removedTornado, grid, resolution, undefined, {
+          skipEliminationPresentationHold: true,
+          skipAssistSpiritSkillCharge: true
+          });
+        }
+        resolution.collected = resolution.floating.slice();
+      } else {
+        throw new Error("Unsupported assist spirit skill resolution: " + skillId);
+      }
+
+      finalizeImmediateResolution(
+        this,
+        resolution,
+        skillId === "lightning_chain" ||
+          (skillId === "tornado" && resolution.floating.length > 0)
+      );
+      this.assistSpiritSkillChargeSuppressed = false;
+      var chargeState = this._getAssistSpiritSkillChargeSnapshot();
+      if (!chargeState.isCharged) {
+        throw new Error("Assist spirit skill resolution requires a fully charged skill.");
+      }
+      this.assistSpiritSkillCharge = 0;
+      this._pushRuntimeEvent("assist_spirit_skill_charge_consumed", {
+        charge_max: chargeState.maxCharge,
+        skill_id: skillId
+      });
+      if (
+        !Number.isInteger(this.assistSpiritSkillResolutionSequence) ||
+        this.assistSpiritSkillResolutionSequence < 0
+      ) {
+        throw new Error("Assist spirit skill resolution sequence is invalid.");
+      }
+      this.assistSpiritSkillResolutionSequence += 1;
+      this._pushRuntimeEvent("assist_spirit_skill_resolved", {
+        requested_spirit_id: spiritId,
+        resolved_spirit_id: actualPlan.resolvedSpiritId,
+        skill_id: skillId,
+        target_count: actualPlan.targets.length,
+        duration_shots: actualPlan.durationShots || 0
+      });
+      return {
+        accepted: true,
+        requestedSpiritId: spiritId,
+        resolvedSpiritId: actualPlan.resolvedSpiritId,
+        skillId: skillId,
+        targetCount: actualPlan.targets.length,
+        snapshot: this.getRuntimeSnapshot(this._drainRuntimeEvents())
+      };
+    },
+
+    grantAssistSpiritSkillChargeFromAd: function () {
+      if (this._isInstantAdPowerupBusy()) {
+        return {
+          accepted: false,
+          reason: "busy",
+          snapshot: this.getRuntimeSnapshot()
+        };
+      }
+      if (!this._isGlobalAssistSpiritSkillEquipped()) {
+        throw new Error("Assist spirit skill ad charge requires a global-skill spirit.");
+      }
+      var chargeState = this._getAssistSpiritSkillChargeSnapshot();
+      if (chargeState.isCharged) {
+        return {
+          accepted: false,
+          reason: "already_charged",
+          snapshot: this.getRuntimeSnapshot()
+        };
+      }
+      this.assistSpiritSkillCharge = chargeState.maxCharge;
+      this._pushRuntimeEvent("assist_spirit_skill_ad_granted", {
+        charge_max: chargeState.maxCharge
+      });
+      this._pushRuntimeEvent("assist_spirit_skill_ready", {
+        charge_max: chargeState.maxCharge,
+        source: "rewarded_ad"
+      });
+      return {
+        accepted: true,
+        gained: chargeState.maxCharge - chargeState.charge,
+        snapshot: this.getRuntimeSnapshot(this._drainRuntimeEvents())
+      };
+    }
+  };
+}
+
+module.exports = createGameManagerAssistSpiritSkillMethods;
+
+},{"../config/AssistSpiritSkillConfig":"AssistSpiritSkillConfig","../config/AssistSpiritSkillChargeConfig":"AssistSpiritSkillChargeConfig","../../assets/scripts/config/AssistSpiritConfig":"AssistSpiritConfig"}],
 "GameManagerShotResolutionMethods":[function(require,module,exports){
 "use strict";
 
@@ -9939,6 +11739,7 @@ var SpecialAnimationTiming = require("../config/SpecialAnimationTiming");
 var BoardViewportSystem = require("../systems/BoardViewportSystem");
 var EliminationSequenceBuilder = require("./EliminationSequenceBuilder");
 var JarScoreConfig = require("../config/JarScoreConfig");
+var AssistSpiritConfig = require("../../assets/scripts/config/AssistSpiritConfig");
 
 function createGameManagerShotResolutionMethods(deps) {
   var Logger = deps.Logger;
@@ -10605,6 +12406,9 @@ function createGameManagerShotResolutionMethods(deps) {
     },
 
     _scheduleBoardViewportSettle: function (resolution) {
+      if (this.systems.trappedSpriteRescueSystem.isActive()) {
+        return false;
+      }
       var viewport = this.systems.boardViewportSystem;
       var grid = this.systems.bubbleGrid;
       if (!viewport || !grid) {
@@ -10633,17 +12437,28 @@ function createGameManagerShotResolutionMethods(deps) {
     },
 
     _tryTopAnchorCollapse: function () {
+      if (this.systems.trappedSpriteRescueSystem.isActive()) {
+        return false;
+      }
       if (this.state !== "running" && this.state !== "out_of_shots_pending") {
         return false;
       }
       var grid = this.systems.bubbleGrid;
       var cells = grid.getCells();
-      var wormholeCount = cells.filter(function (cell) {
+      var wormholesByRow = {};
+      cells.filter(function (cell) {
         return cell && cell.entityCategory === "reactive_ball" && cell.entityType === "wormhole";
-      }).length;
-      if (wormholeCount !== 0 && wormholeCount !== 2) {
-        throw new Error("Top anchor collapse requires exactly two live wormholes.");
-      }
+      }).forEach(function (wormhole) {
+        if (!wormholesByRow[wormhole.row]) {
+          wormholesByRow[wormhole.row] = [];
+        }
+        wormholesByRow[wormhole.row].push(wormhole);
+      });
+      Object.keys(wormholesByRow).forEach(function (rowKey) {
+        if (wormholesByRow[rowKey].length !== 2) {
+          throw new Error("Top anchor collapse requires exactly two live wormholes on row " + rowKey + ".");
+        }
+      });
       if (!cells.length) {
         return false;
       }
@@ -10681,6 +12496,9 @@ function createGameManagerShotResolutionMethods(deps) {
     },
 
     _ensureMinimumVisibleBoardRows: function (resolution) {
+      if (this.systems.trappedSpriteRescueSystem.isActive()) {
+        return false;
+      }
       if (this._tryTopAnchorCollapse()) {
         return true;
       }
@@ -11348,6 +13166,13 @@ function createGameManagerShotResolutionMethods(deps) {
       ) {
         throw new Error("Resolution drop registration timingOptions must be an object when provided.");
       }
+      if (
+        timingOptions &&
+        Object.prototype.hasOwnProperty.call(timingOptions, "skipAssistSpiritSkillCharge") &&
+        typeof timingOptions.skipAssistSpiritSkillCharge !== "boolean"
+      ) {
+        throw new Error("Resolution drop registration timingOptions.skipAssistSpiritSkillCharge must be boolean.");
+      }
 
       var matchedCellsForDelay = timingOptions && timingOptions.matchedCellsForDelay;
       if (
@@ -11424,6 +13249,10 @@ function createGameManagerShotResolutionMethods(deps) {
       });
       if (!pendingCells.length) {
         return;
+      }
+
+      if (!timingOptions || timingOptions.skipAssistSpiritSkillCharge !== true) {
+        this._collectAssistSpiritSkillCharge(pendingCells, "floating_drop");
       }
 
       var prepared = this._prepareResolutionDropCells(pendingCells, resolution);
@@ -11610,7 +13439,7 @@ function createGameManagerShotResolutionMethods(deps) {
         blastCells.push(occupiedCell);
       });
 
-      this._resolveVinesHitByExplosion(blastCells, grid, resolution);
+      this._resolveVineSpiritsHitByExplosion(blastCells, grid, resolution);
       var removableBlastCells = blastCells.filter(function (cell) {
         return !isVineEntangledBall(cell) && !isVineSpiritBall(cell);
       });
@@ -12104,7 +13933,7 @@ function createGameManagerShotResolutionMethods(deps) {
       return removedKeys;
     },
 
-    _releaseVineOnce: function (cell, grid, resolution, sourceType) {
+    _releaseVineAfterAdjacentEliminationOnce: function (cell, grid, resolution) {
       if (!isVineEntangledBall(cell)) {
         throw new Error("Vine release requires an entangled normal ball.");
       }
@@ -12113,9 +13942,6 @@ function createGameManagerShotResolutionMethods(deps) {
       }
       if (!resolution || !Array.isArray(resolution.releasedVines)) {
         throw new Error("Vine release requires resolution.releasedVines.");
-      }
-      if (sourceType !== "direct_hit" && sourceType !== "adjacent_elimination" && sourceType !== "explosion") {
-        throw new Error("Vine release sourceType is invalid: " + sourceType);
       }
       var alreadyReleased = resolution.releasedVines.some(function (entry) {
         return entry && entry.cellId === cell.id;
@@ -12133,7 +13959,7 @@ function createGameManagerShotResolutionMethods(deps) {
         ownerId: released.vineOwnerId,
         row: released.row,
         col: released.col,
-        sourceType: sourceType
+        sourceType: "adjacent_elimination"
       };
       resolution.releasedVines.push(entry);
       return entry;
@@ -12207,37 +14033,30 @@ function createGameManagerShotResolutionMethods(deps) {
         });
       });
       Object.keys(entangledById).sort().forEach(function (cellId) {
-        this._releaseVineOnce(entangledById[cellId], grid, resolution, "adjacent_elimination");
+        this._releaseVineAfterAdjacentEliminationOnce(entangledById[cellId], grid, resolution);
       }, this);
       Object.keys(spiritsById).sort().forEach(function (spiritId) {
         this._damageVineSpiritOnce(spiritsById[spiritId], grid, resolution, "adjacent_elimination");
       }, this);
     },
 
-    _resolveVinesHitByExplosion: function (affectedCells, grid, resolution) {
+    _resolveVineSpiritsHitByExplosion: function (affectedCells, grid, resolution) {
       if (!Array.isArray(affectedCells)) {
         throw new Error("Vine explosion resolution requires affectedCells array.");
       }
       if (!grid || typeof grid.getCell !== "function") {
         throw new Error("Vine explosion resolution requires bubble grid.");
       }
-      var entangledById = {};
       var spiritsById = {};
       affectedCells.forEach(function (affectedCell) {
         if (!affectedCell || !Number.isInteger(affectedCell.row) || !Number.isInteger(affectedCell.col)) {
           throw new Error("Vine explosion resolution requires affected cell coordinates.");
         }
         var liveCell = grid.getCell(affectedCell.row, affectedCell.col);
-        if (isVineEntangledBall(liveCell)) {
-          entangledById[liveCell.id] = liveCell;
-        }
         if (isVineSpiritBall(liveCell)) {
           spiritsById[liveCell.id] = liveCell;
         }
       });
-      Object.keys(entangledById).sort().forEach(function (cellId) {
-        this._releaseVineOnce(entangledById[cellId], grid, resolution, "explosion");
-      }, this);
       Object.keys(spiritsById).sort().forEach(function (spiritId) {
         this._damageVineSpiritOnce(spiritsById[spiritId], grid, resolution, "explosion");
       }, this);
@@ -12253,7 +14072,6 @@ function createGameManagerShotResolutionMethods(deps) {
       }
       var liveCell = grid.getCell(collided.row, collided.col);
       if (liveCell && isVineEntangledBall(liveCell)) {
-        this._releaseVineOnce(liveCell, grid, resolution, "direct_hit");
         return;
       }
       if (liveCell && isVineSpiritBall(liveCell)) {
@@ -12558,7 +14376,7 @@ function createGameManagerShotResolutionMethods(deps) {
         }
       });
 
-      this._resolveVinesHitByExplosion(blastCells, grid, resolution);
+      this._resolveVineSpiritsHitByExplosion(blastCells, grid, resolution);
       var removableBlastCells = blastCells.filter(function (cell) {
         return !isVineEntangledBall(cell) && !isVineSpiritBall(cell);
       });
@@ -12643,6 +14461,35 @@ function createGameManagerShotResolutionMethods(deps) {
       var projectile = this.activeProjectile;
       var grid = this.systems.bubbleGrid;
       var targetCell = projectile.targetCell;
+      var trappedSpriteRescueSystem = this.systems.trappedSpriteRescueSystem;
+
+      if (
+        projectile.shotPlan &&
+        projectile.shotPlan.hitType === "miss" &&
+        trappedSpriteRescueSystem.isActive()
+      ) {
+        this.lastResolution = createEmptyResolution();
+        this.lastResolution.shotMissed = true;
+        this._resetComboStreak();
+        if (typeof this._pushRuntimeEvent === "function") {
+          this._pushRuntimeEvent("shot_missed_board");
+          this._pushRuntimeEvent("shot_no_elimination");
+        }
+        this.activeProjectile = null;
+        this.pendingProjectileFinalize = false;
+        this.pendingShotPlan = null;
+        var missClearedOcclusionZoneIds = this.systems.boardOcclusionSystem.onShotFired();
+        if (missClearedOcclusionZoneIds.length) {
+          this._pushRuntimeEvent("board_occlusion_cleared", {
+            reason: "shot_count",
+            zoneIds: missClearedOcclusionZoneIds
+          });
+        }
+        if (!this.isTimedInfiniteShots && this.remainingShots <= 0) {
+          this._showOutOfShotsAddBallPrompt();
+        }
+        return;
+      }
 
       if (!targetCell || grid.hasCell(targetCell.row, targetCell.col)) {
         var fallbackPoint = projectile.shotPlan && projectile.shotPlan.hitPoint
@@ -12655,6 +14502,9 @@ function createGameManagerShotResolutionMethods(deps) {
           this.systems.shooterController.getAimState().direction,
           projectile.position
         );
+      }
+      if (!targetCell) {
+        throw new Error("Planned shot could not resolve an attachment cell.");
       }
 
       var firedBall = projectile.ball || {
@@ -12673,14 +14523,43 @@ function createGameManagerShotResolutionMethods(deps) {
         var attachedBubble = grid.addBubble(targetCell, attachedColor);
         this.lastResolution = this._resolveAttachment(attachedBubble);
       }
+      if (trappedSpriteRescueSystem.isActive()) {
+        if (
+          !projectile.shotPlan ||
+          !projectile.shotPlan.impactDirection
+        ) {
+          throw new Error("Trapped sprite impact requires shotPlan.impactDirection.");
+        }
+        this.lastResolution.trappedSpriteRotation =
+          trappedSpriteRescueSystem.beginImpactRotation(
+            grid.getCellPosition(targetCell.row, targetCell.col),
+            projectile.shotPlan.impactDirection,
+            grid.getCells(),
+            grid
+          );
+        if (this.lastResolution.trappedSpriteRotation.started) {
+          this.lastResolution.impact = null;
+        }
+      }
       this._resolveDirectVineImpact(projectile, grid, this.lastResolution);
       if (!this.molotovResolutionPending) {
         this._resolveFairyAssistsAfterResolution(this.lastResolution);
       }
-      var swirlRotationStarted = !this.molotovResolutionPending && this._beginSwirlRotationForResolution(this.lastResolution);
-      var wormholeShiftStarted = !this.molotovResolutionPending && !swirlRotationStarted && this._beginWormholeShiftForResolution(this.lastResolution);
-      var vineCastStarted = !this.molotovResolutionPending && !swirlRotationStarted && !wormholeShiftStarted && this._beginVineCastForResolution(this.lastResolution);
-      var postShotSpecialStarted = swirlRotationStarted || wormholeShiftStarted || vineCastStarted;
+      var trappedSpriteRotationStarted = !!(
+        this.lastResolution.trappedSpriteRotation &&
+        this.lastResolution.trappedSpriteRotation.started
+      );
+      var swirlRotationStarted = false;
+      var wormholeShiftStarted = false;
+      var vineCastStarted = false;
+      if (trappedSpriteRotationStarted) {
+        this._deferTrappedSpritePostImpactResolution(this.lastResolution);
+      } else {
+        swirlRotationStarted = !this.molotovResolutionPending && this._beginSwirlRotationForResolution(this.lastResolution);
+        wormholeShiftStarted = !this.molotovResolutionPending && !swirlRotationStarted && this._beginWormholeShiftForResolution(this.lastResolution);
+        vineCastStarted = !this.molotovResolutionPending && !swirlRotationStarted && !wormholeShiftStarted && this._beginVineCastForResolution(this.lastResolution);
+      }
+      var postShotSpecialStarted = trappedSpriteRotationStarted || swirlRotationStarted || wormholeShiftStarted || vineCastStarted;
       var deferredBoardShift = postShotSpecialStarted ? true : this._applyPostImpactBoardShiftPolicy(this.lastResolution);
 
       var noEliminationTriggered = !(
@@ -12689,9 +14568,21 @@ function createGameManagerShotResolutionMethods(deps) {
         this.lastResolution.matched.length > 0
       );
       if (noEliminationTriggered) {
+        if (
+          !projectile.shotPlan ||
+          !Number.isInteger(projectile.shotPlan.wallBounceCount) ||
+          projectile.shotPlan.wallBounceCount < 0
+        ) {
+          throw new Error("Finalized projectile requires a non-negative integer shotPlan.wallBounceCount.");
+        }
         this._resetComboStreak();
         if (typeof this._pushRuntimeEvent === "function") {
           this._pushRuntimeEvent("shot_no_elimination");
+          if (projectile.shotPlan.wallBounceCount > 0) {
+            this._pushRuntimeEvent("shot_wall_bounce_no_elimination", {
+              wallBounceCount: projectile.shotPlan.wallBounceCount
+            });
+          }
         }
       }
 
@@ -12765,8 +14656,17 @@ function createGameManagerShotResolutionMethods(deps) {
       var matchedCells = this.systems.matchSystem.findMatchGroup(grid, attachedBubble);
 
       if (!matchedCells.length) {
-        this.systems.supportSystem.clearFloatingCells();
-        this.systems.fallingMarbleSystem.registerDrops([], grid);
+        if (this.systems.trappedSpriteRescueSystem.isActive()) {
+          var unsupportedCells = this.systems.supportSystem.findFloatingCells(grid);
+          var unsupportedRemoved = grid.removeFloatingCells(unsupportedCells);
+          this._appendUniqueCells(resolution.floating, unsupportedRemoved);
+          resolution.collected = unsupportedRemoved.slice();
+          this._registerResolutionDrops(unsupportedRemoved, grid, resolution);
+          this._applyResolutionDropScore(resolution, "matchedDrop");
+        } else {
+          this.systems.supportSystem.clearFloatingCells();
+          this.systems.fallingMarbleSystem.registerDrops([], grid);
+        }
         this.systems.jarCollectorSystem.collect([]);
         resolution.boardCleared = this._isBoardCleared(grid);
         return resolution;
@@ -12871,10 +14771,32 @@ function createGameManagerShotResolutionMethods(deps) {
       return true;
     },
 
+    _emitTrappedSpriteRescueEvent: function () {
+      var trappedSpriteRescueSystem = this.systems.trappedSpriteRescueSystem;
+      if (!trappedSpriteRescueSystem.isActive() || this.trappedSpriteRescueEventEmitted) {
+        return false;
+      }
+      var trappedSpriteSnapshot = trappedSpriteRescueSystem.snapshotForRender();
+      if (
+        !trappedSpriteSnapshot.active ||
+        typeof trappedSpriteSnapshot.spiritId !== "string"
+      ) {
+        throw new Error("Trapped sprite rescue completion requires spiritId.");
+      }
+      AssistSpiritConfig.getSpirit(trappedSpriteSnapshot.spiritId);
+      this._pushRuntimeEvent("trapped_sprite_rescued", {
+        spiritId: trappedSpriteSnapshot.spiritId
+      });
+      this.trappedSpriteRescueEventEmitted = true;
+      return true;
+    },
+
     _resolveBoardClearedOutcome: function () {
+      this._emitTrappedSpriteRescueEvent();
+
       // 清屏后若仍有掉落中的玻璃球，先进入等待态；
       // 等掉落完成并计分后，再决定本局最终胜负。
-      if (this.systems.fallingMarbleSystem.hasActiveDrops() || this._hasPendingSplitterSpawns() || this._hasPendingMolotovBlasts() || this._hasPendingSwirlRotation() || this._hasPendingWormholeShift() || this._hasPendingVineCast()) {
+      if (this.systems.fallingMarbleSystem.hasActiveDrops() || this._hasPendingSplitterSpawns() || this._hasPendingMolotovBlasts() || this._hasPendingSwirlRotation() || this._hasPendingWormholeShift() || this._hasPendingVineCast() || this._hasPendingTrappedSpritePostImpactResolution() || this.systems.trappedSpriteRescueSystem.isRotating()) {
         this.state = "won_pending";
         return;
       }
@@ -12928,7 +14850,18 @@ function createGameManagerShotResolutionMethods(deps) {
       this.isAiming = false;
       this.pendingShotPlan = null;
       this.surplusShotAimRecentered = false;
-      fallingMarbleSystem.registerSurplusShotsFromOrigin(drainedBalls, origin, this.levelRandomSeed);
+      var initialSurplusDrops = fallingMarbleSystem.registerSurplusShotsFromOrigin(
+        drainedBalls,
+        origin,
+        this.levelRandomSeed
+      );
+      if (
+        !Array.isArray(initialSurplusDrops) ||
+        initialSurplusDrops.length !== 1 ||
+        initialSurplusDrops[0].dropKind !== "surplus_shot"
+      ) {
+        throw new Error("Surplus shot bonus must launch exactly one surplus shot immediately.");
+      }
       this.state = "won_surplus_shots_pending";
       if (!fallingMarbleSystem.hasPendingSurplusShots()) {
         this.surplusShotAimRecentered = true;
@@ -12936,6 +14869,7 @@ function createGameManagerShotResolutionMethods(deps) {
       }
 
       if (typeof this._pushRuntimeEvent === "function") {
+        this._pushRuntimeEvent("surplus_shot_launched", {});
         this._pushRuntimeEvent("surplus_shots_started", {
           count: drainedBalls.length
         });
@@ -12950,7 +14884,7 @@ function createGameManagerShotResolutionMethods(deps) {
 
 module.exports = createGameManagerShotResolutionMethods;
 
-},{"../config/SpecialAnimationTiming":"SpecialAnimationTiming","../systems/BoardViewportSystem":"BoardViewportSystem","./EliminationSequenceBuilder":"EliminationSequenceBuilder","../config/JarScoreConfig":"JarScoreConfig"}],
+},{"../config/SpecialAnimationTiming":"SpecialAnimationTiming","../systems/BoardViewportSystem":"BoardViewportSystem","./EliminationSequenceBuilder":"EliminationSequenceBuilder","../config/JarScoreConfig":"JarScoreConfig","../../assets/scripts/config/AssistSpiritConfig":"AssistSpiritConfig"}],
 "JarCollectorSystem":[function(require,module,exports){
 "use strict";
 
@@ -13161,9 +15095,12 @@ var DebugFlags = require("../../assets/scripts/utils/DebugFlags");
 var BundleLoader = require("../../assets/scripts/utils/BundleLoader");
 var PrefabFactory = require("./PrefabFactory");
 var BoardLayout = require("../../assets/scripts/config/BoardLayout");
+var AssistSpiritConfig = require("../../assets/scripts/config/AssistSpiritConfig");
 var SpecialAnimationTiming = require("../config/SpecialAnimationTiming");
 var FairyAssistConfig = require("../config/FairyAssistConfig");
 var JarScoreConfig = require("../config/JarScoreConfig");
+var AssistSpiritSkillConfig = require("../config/AssistSpiritSkillConfig");
+var AssistSpiritPresentationConfig = require("../config/AssistSpiritPresentationConfig");
 var PropDescriptionConfig = require("../../assets/scripts/config/PropDescriptionConfig");
 var RUNTIME_REFRESH_SCOPE = require("../../assets/scripts/config/RuntimeRefreshScope");
 var StarRatingPolicy = require("../../assets/scripts/core/StarRatingPolicy");
@@ -13177,6 +15114,7 @@ var LightningChainRenderer = require("./LightningChainRenderer");
 var PropDescriptionViewController = require("../../assets/scripts/ui/PropDescriptionViewController");
 var attachLevelRendererSceneMethods = require("./LevelRendererSceneMethods");
 var attachLevelRendererFairyMethods = require("./LevelRendererFairyMethods");
+var attachLevelRendererAssistSpiritSkillMethods = require("./LevelRendererAssistSpiritSkillMethods");
 
 var loadSpriteFrame = RenderNodeHelpers.loadSpriteFrame;
 var createSolidWhiteSpriteFrame = RenderNodeHelpers.createSolidWhiteSpriteFrame;
@@ -13216,6 +15154,19 @@ var BALL_RESOURCES = {
   LIGHT: "game/image/ball/light_ball",
   SNOW_REMOVAL_TOOLS: "game/image/ball/snow_removal_tools"
 };
+var TIME_BONUS_FONT_RESOURCE = "game/fnt/num_b";
+var TRAPPED_SPIRIT_PATH_PREFIX = "game/trapped_spirit/";
+var TRAPPED_SPRITE_LAYER_Z_INDEX = 49;
+
+function buildTrappedSpriteResourcePath(spiritId) {
+  AssistSpiritConfig.getSpirit(spiritId);
+  return TRAPPED_SPIRIT_PATH_PREFIX + spiritId;
+}
+
+function buildSpiritFragmentRewardResourcePath(spiritId) {
+  AssistSpiritConfig.getSpirit(spiritId);
+  return "ui/image/props/" + spiritId + "_fragments";
+}
 
 var BOARD_OCCLUSION_RESOURCES = {
   cloud: "game/image/props/cloud",
@@ -13942,6 +15893,12 @@ function buildShooterRenderKey(runtimeSnapshot) {
     resolveRuntimeBallKey(shooter.nextBall || shooter.nextColor),
     shooter.queueAdvanceRevision,
     shooter.surplusShotAimRecenterRevision,
+    shooter.assistSpiritId,
+    shooter.assistSpiritSkillCharge,
+    shooter.assistSpiritSkillChargeMax,
+    shooter.assistSpiritSkillCharged === true ? 1 : 0,
+    shooter.assistSpiritSkillAvailable === true ? 1 : 0,
+    shooter.assistSpiritSkillUnavailableReason,
     Math.max(0, Math.floor(Number(shooter.skillInventory && shooter.skillInventory.swap) || 0)),
     trajectory && trajectory.targetCell ? (trajectory.targetCell.row + ":" + trajectory.targetCell.col) : "",
     projectile && projectile.position
@@ -14209,7 +16166,8 @@ function isIceBallLike(ballLike) {
     ballLike &&
     typeof ballLike === "object" &&
     ballLike.entityCategory === "obstacle_ball" &&
-    ballLike.entityType === "ice"
+    ballLike.entityType === "ice" &&
+    ballLike.temporaryThawed !== true
   );
 }
 
@@ -14252,12 +16210,16 @@ function LevelRenderer(rootNode) {
   this.rootNode = rootNode;
   this.spriteFrameCache = {};
   this.spriteFrameLoadPromises = {};
+  this.timeBonusBitmapFont = null;
+  this.timeBonusBitmapFontLoadPromise = null;
   this.fairyPrefabCache = {};
   this.fairyPrefabLoadPromises = {};
   this.fireworksPrefab = null;
   this.fireworksPrefabLoadPromise = null;
   this.explodeAnimationClip = null;
   this.explodeAnimationClipPromise = null;
+  this.assistSpiritAnimationClipCache = {};
+  this.assistSpiritAnimationClipLoadPromises = {};
   this.layers = null;
   this.prefabFactory = new PrefabFactory();
   this.bubbleShatterRenderer = new BubbleShatterRenderer({
@@ -14328,6 +16290,11 @@ function LevelRenderer(rootNode) {
   this.topSlotStarNodes = {};
   this.topSlotStarNodePool = [];
   this.topSlotStarRenderTick = 1;
+  this.trappedSpriteNode = null;
+  this.lastTrappedSpriteRescueEventId = -1;
+  this.trappedSpriteDepartureActive = false;
+  this.trappedSpriteDepartureCompleted = false;
+  this.trappedSpriteDepartureToken = 0;
   this.barrierHammerHintNodes = {};
   this.lastBarrierHammerHintKey = "";
   this.testSlotNodes = {};
@@ -14346,6 +16313,7 @@ function LevelRenderer(rootNode) {
   this.playedBallScoreCellIds = {};
   this.pendingBallScoreCellIds = {};
   this.pendingBallScoreCallbacks = {};
+  this.playedTimeBonusAwardedEvents = [];
   this.winActionHandlers = {
     onNextLevel: null,
     onRetryLevel: null
@@ -14396,6 +16364,7 @@ function LevelRenderer(rootNode) {
     onUseSwap: null,
     onUseBarrierHammer: null,
     onUseSnowRemoval: null,
+    onUseAssistSpiritSkill: null,
     onUseThreeLineElimination: null,
     onUsePlusThreeBalls: null,
     onRecoverAdRunPowerupByAd: null,
@@ -14458,8 +16427,10 @@ LevelRenderer.prototype.warmupSharedAssets = function () {
 
   this._sharedWarmupPromise = Promise.all([
     this._preloadSprites(this._collectCommonSpritePaths()),
+    this._preloadTimeBonusBitmapFont(),
     this._preloadFairyPrefabs(),
     this._preloadExplodeAnimationClip(),
+    this._preloadAssistSpiritAnimationClips(),
     this._preloadFireworksPrefab(),
     this.prefabFactory.preload(this._collectPrefabPaths()),
     this.bubbleShatterRenderer.preload(),
@@ -14488,8 +16459,8 @@ LevelRenderer.prototype.playLightningChainEffect = function (config) {
   if (!this.lastRuntimeSnapshot || !this.lastRuntimeSnapshot.board) {
     throw new Error("Board lightning chain requires current board snapshot.");
   }
-  if (!Array.isArray(config.hitPoints) || config.hitPoints.length === 0) {
-    throw new Error("Board lightning chain requires at least one hit point.");
+  if (!Array.isArray(config.hitPoints) || config.hitPoints.length < 2) {
+    throw new Error("Board lightning chain requires at least two hit points.");
   }
 
   var boardSnapshot = this.lastRuntimeSnapshot.board;
@@ -14558,7 +16529,6 @@ LevelRenderer.prototype.playLightningChainEffect = function (config) {
     this.spriteFrameCache,
     {
       chainId: config.chainId,
-      origin: config.origin,
       hitPoints: resolvedHitPoints,
       onHit: config.onHit
     }
@@ -14646,6 +16616,7 @@ LevelRenderer.prototype.setGameplayActionHandlers = function (handlers) {
     onUseSwap: typeof handlers.onUseSwap === "function" ? handlers.onUseSwap : null,
     onUseBarrierHammer: typeof handlers.onUseBarrierHammer === "function" ? handlers.onUseBarrierHammer : null,
     onUseSnowRemoval: typeof handlers.onUseSnowRemoval === "function" ? handlers.onUseSnowRemoval : null,
+    onUseAssistSpiritSkill: typeof handlers.onUseAssistSpiritSkill === "function" ? handlers.onUseAssistSpiritSkill : null,
     onUseThreeLineElimination: typeof handlers.onUseThreeLineElimination === "function" ? handlers.onUseThreeLineElimination : null,
     onUsePlusThreeBalls: typeof handlers.onUsePlusThreeBalls === "function" ? handlers.onUsePlusThreeBalls : null,
     onRecoverAdRunPowerupByAd: typeof handlers.onRecoverAdRunPowerupByAd === "function" ? handlers.onRecoverAdRunPowerupByAd : null,
@@ -14776,6 +16747,8 @@ LevelRenderer.prototype._invokeGameplayAction = function (action) {
     handler = this.gameplayActionHandlers.onUseBarrierHammer;
   } else if (action === "use_snow_removal") {
     handler = this.gameplayActionHandlers.onUseSnowRemoval;
+  } else if (action === "use_assist_spirit_skill") {
+    handler = this.gameplayActionHandlers.onUseAssistSpiritSkill;
   } else if (action === "use_precise_aim") {
     handler = this.gameplayActionHandlers.onUsePreciseAim;
   } else if (action === "use_three_line_elimination") {
@@ -14919,12 +16892,18 @@ LevelRenderer.prototype.renderLevel = function (levelConfig, runtimeSnapshot) {
   }.bind(this)).then(function () {
     clearChildren(this.layers.background);
     clearChildren(this.layers.board);
+    clearChildren(this.layers.trappedSprite);
     clearChildren(this.layers.boardOcclusion);
     this.wormholeDirectionGuideRoot = null;
     this.lastWormholeDirectionGuideKey = "";
     this.boardBubbleNodes = {};
     this.boardBubbleNodePool = {};
     this.boardCellRenderKeys = {};
+    this.trappedSpriteNode = null;
+    this.lastTrappedSpriteRescueEventId = -1;
+    this.trappedSpriteDepartureActive = false;
+    this.trappedSpriteDepartureCompleted = false;
+    this.trappedSpriteDepartureToken += 1;
     this.topSlotStarNodes = {};
     this.topSlotStarNodePool = [];
     this.barrierHammerHintNodes = {};
@@ -14966,6 +16945,8 @@ LevelRenderer.prototype.renderLevel = function (levelConfig, runtimeSnapshot) {
     this._renderBottomPanel(runtimeSnapshot);
     this._queueSkillPowerupCollectedFeedback(runtimeSnapshot);
     this._renderBoard(runtimeSnapshot.board);
+    this._renderTrappedSpriteRescue(runtimeSnapshot);
+    this._playTrappedSpriteRescueDeparture(runtimeSnapshot);
     this._renderBoardOcclusions(runtimeSnapshot);
     this._syncBarrierHammerStoneHints(runtimeSnapshot);
     this._renderMainland(runtimeSnapshot.board);
@@ -15064,9 +17045,22 @@ LevelRenderer.prototype._refreshRuntimeFalling = function (runtimeSnapshot) {
     this._renderFallingDrops(runtimeSnapshot);
   }
   this._renderFairyAssists(runtimeSnapshot);
+
+  var nextShooterKey = buildShooterRenderKey(runtimeSnapshot);
+  if (nextShooterKey !== this.lastShooterRenderKey) {
+    this._renderShooter(
+      runtimeSnapshot.shooter,
+      runtimeSnapshot.activeProjectile,
+      runtimeSnapshot.remainingShots
+    );
+    if (!runtimeSnapshot.activeProjectile) {
+      this.lastShooterRenderKey = nextShooterKey;
+    }
+  }
 };
 
 LevelRenderer.prototype._refreshRuntimeTimer = function (runtimeSnapshot) {
+  this._refreshBoardOcclusionCountdowns(runtimeSnapshot);
   var nextTimerKey = buildTimerRenderKey(runtimeSnapshot);
   if (nextTimerKey !== this.lastTimerRenderKey) {
     this._renderJarScoreBoostTimer(runtimeSnapshot);
@@ -15089,8 +17083,10 @@ LevelRenderer.prototype._refreshRuntimeFull = function (levelConfig, runtimeSnap
     this.spriteFrameCache
   );
   this._playBallScoreDisplay(runtimeSnapshot);
+  this._playTimeBonusFloatingScoreDisplay(runtimeSnapshot);
   if (boardChanged) {
     this._renderBoard(runtimeSnapshot.board);
+    this._renderTrappedSpriteRescue(runtimeSnapshot);
     this._renderTestGrid(runtimeSnapshot.board);
     this._renderMainland(runtimeSnapshot.board);
     this._renderJianbian(runtimeSnapshot.board);
@@ -15151,6 +17147,7 @@ LevelRenderer.prototype._refreshRuntimeFull = function (levelConfig, runtimeSnap
   this._playSplitterSpawnAnimation(runtimeSnapshot);
   this._playMolotovBlastAnimation(runtimeSnapshot);
   this._playBlastExplosionAnimation(runtimeSnapshot);
+  this._playTrappedSpriteRescueDeparture(runtimeSnapshot);
   this._playCommentAnimation(runtimeSnapshot);
 
   var hasActiveProjectile = !!(runtimeSnapshot.activeProjectile);
@@ -15231,6 +17228,7 @@ LevelRenderer.prototype._ensureLayers = function () {
     jarOcclusion: this._getOrCreateLayer("JarOcclusionLayer", 46),
     testGrid: this._getOrCreateLayer("TestGridLayer", 47),
     routeEditor: this._getOrCreateLayer("RouteEditorLayer", 48),
+    trappedSprite: this._getOrCreateLayer("TrappedSpriteLayer", TRAPPED_SPRITE_LAYER_Z_INDEX),
     hud: this._getOrCreateLayer("HUDLayer", 50),
     comment: this._getOrCreateLayer("CommentLayer", 95),
     modal: this._getOrCreateLayer("ModalLayer", 100)
@@ -15263,6 +17261,24 @@ LevelRenderer.prototype._collectSpritePaths = function (levelConfig, runtimeSnap
   }
 
   var level = levelConfig.level;
+  if (level.levelType === "trapped_sprite_rescue") {
+    if (
+      !level.trappedSpriteRescue ||
+      typeof level.trappedSpriteRescue.spiritId !== "string"
+    ) {
+      throw new Error("Trapped sprite rescue rendering requires level.trappedSpriteRescue.spiritId.");
+    }
+    pushUniqueSpritePath(
+      paths,
+      buildTrappedSpriteResourcePath(level.trappedSpriteRescue.spiritId),
+      "trapped sprite rescue center"
+    );
+    pushUniqueSpritePath(
+      paths,
+      buildSpiritFragmentRewardResourcePath(level.trappedSpriteRescue.spiritId),
+      "trapped sprite rescue fragment reward"
+    );
+  }
   if (!Array.isArray(level.colors)) {
     throw new Error("LevelRenderer sprite collection requires level.colors.");
   }
@@ -15408,6 +17424,182 @@ LevelRenderer.prototype._collectSpritePaths = function (levelConfig, runtimeSnap
   });
 };
 
+LevelRenderer.prototype._renderTrappedSpriteRescue = function (runtimeSnapshot) {
+  if (
+    !runtimeSnapshot ||
+    !runtimeSnapshot.systems ||
+    !runtimeSnapshot.systems.trappedSpriteRescueSystem
+  ) {
+    throw new Error("Trapped sprite rendering requires runtime system snapshot.");
+  }
+  var rescue = runtimeSnapshot.systems.trappedSpriteRescueSystem;
+  if (!rescue.active) {
+    if (this.trappedSpriteNode && this.trappedSpriteNode.isValid) {
+      this.trappedSpriteNode.destroy();
+    }
+    this.trappedSpriteNode = null;
+    return;
+  }
+  if (
+    !rescue.worldCenter ||
+    typeof rescue.worldCenter.x !== "number" ||
+    !isFinite(rescue.worldCenter.x) ||
+    typeof rescue.worldCenter.y !== "number" ||
+    !isFinite(rescue.worldCenter.y)
+  ) {
+    throw new Error("Trapped sprite rendering requires finite worldCenter.");
+  }
+  if (typeof rescue.renderScale !== "number" || !isFinite(rescue.renderScale) || rescue.renderScale <= 0) {
+    throw new Error("Trapped sprite rendering requires positive renderScale.");
+  }
+  var expectedPath = buildTrappedSpriteResourcePath(rescue.spiritId);
+  if (rescue.spriteResourcePath !== expectedPath) {
+    throw new Error("Trapped sprite runtime resource path mismatch.");
+  }
+  var spriteFrame = this.spriteFrameCache[expectedPath];
+  if (!spriteFrame) {
+    throw new Error("Trapped sprite SpriteFrame was not preloaded: " + expectedPath);
+  }
+  var node = this.trappedSpriteNode;
+  if (this.trappedSpriteDepartureActive || this.trappedSpriteDepartureCompleted) {
+    if (!node || !node.isValid) {
+      throw new Error("Trapped sprite departure requires its existing render node.");
+    }
+    return;
+  }
+  if (!node || !node.isValid) {
+    node = new cc.Node("TrappedSpriteCenter");
+    this.trappedSpriteNode = node;
+  }
+  if (node.parent !== this.layers.trappedSprite) {
+    node.parent = this.layers.trappedSprite;
+  }
+  node.active = true;
+  node.opacity = 255;
+  node.zIndex = 0;
+  node.setPosition(rescue.worldCenter.x, rescue.worldCenter.y);
+  // The trapped spirit occupies the same board cell as a normal bubble.
+  var sprite = ensureSprite(node, spriteFrame);
+  sprite.trim = false;
+  sprite.sizeMode = cc.Sprite.SizeMode.CUSTOM;
+  // Binding a SpriteFrame can restore its native dimensions on a newly created Sprite.
+  // Apply the board-cell visual size after that initial binding so the first frame is 65×65 too.
+  node.setScale(1);
+  node.setContentSize(BOARD_BUBBLE_SIZE);
+};
+
+LevelRenderer.prototype._playTrappedSpriteRescueDeparture = function (runtimeSnapshot) {
+  if (!runtimeSnapshot || !Array.isArray(runtimeSnapshot.runtimeEvents)) {
+    throw new Error("Trapped sprite departure requires runtimeEvents array.");
+  }
+
+  var rescueEvent = null;
+  runtimeSnapshot.runtimeEvents.forEach(function (event) {
+    if (!event || event.type !== "trapped_sprite_rescued") {
+      return;
+    }
+    if (!Number.isInteger(event.id) || event.id < 1) {
+      throw new Error("trapped_sprite_rescued render event requires positive integer id.");
+    }
+    if (event.id <= this.lastTrappedSpriteRescueEventId) {
+      return;
+    }
+    if (rescueEvent) {
+      throw new Error("Runtime snapshot must not contain multiple trapped sprite rescue events.");
+    }
+    rescueEvent = event;
+  }, this);
+
+  if (!rescueEvent) {
+    return;
+  }
+  AssistSpiritConfig.getSpirit(rescueEvent.spiritId);
+  if (
+    !runtimeSnapshot.systems ||
+    !runtimeSnapshot.systems.trappedSpriteRescueSystem ||
+    runtimeSnapshot.systems.trappedSpriteRescueSystem.spiritId !== rescueEvent.spiritId
+  ) {
+    throw new Error("Trapped sprite departure event does not match runtime spiritId.");
+  }
+  if (this.trappedSpriteDepartureActive || this.trappedSpriteDepartureCompleted) {
+    throw new Error("Trapped sprite departure must start exactly once.");
+  }
+
+  var node = this.trappedSpriteNode;
+  var layer = this.layers && this.layers.trappedSprite;
+  if (!node || !node.isValid || !layer || !layer.isValid || node.parent !== layer) {
+    throw new Error("Trapped sprite departure requires a valid node in TrappedSpriteLayer.");
+  }
+  if (typeof cc.tween !== "function") {
+    throw new Error("Trapped sprite departure requires cc.tween.");
+  }
+
+  var layerSize = layer.getContentSize();
+  var nodeSize = node.getContentSize();
+  if (
+    !layerSize ||
+    typeof layerSize.height !== "number" ||
+    !isFinite(layerSize.height) ||
+    layerSize.height <= 0 ||
+    !nodeSize ||
+    typeof nodeSize.height !== "number" ||
+    !isFinite(nodeSize.height) ||
+    nodeSize.height <= 0
+  ) {
+    throw new Error("Trapped sprite departure requires positive layer and node heights.");
+  }
+  if (typeof layer.anchorY !== "number" || !isFinite(layer.anchorY)) {
+    throw new Error("TrappedSpriteLayer anchorY must be finite.");
+  }
+
+  var timing = SpecialAnimationTiming.trappedSpriteRescue;
+  if (
+    !timing ||
+    typeof timing.flyOutDuration !== "number" ||
+    !isFinite(timing.flyOutDuration) ||
+    timing.flyOutDuration <= 0 ||
+    typeof timing.exitMargin !== "number" ||
+    !isFinite(timing.exitMargin) ||
+    timing.exitMargin <= 0
+  ) {
+    throw new Error("SpecialAnimationTiming.trappedSpriteRescue must define positive flyOutDuration and exitMargin.");
+  }
+
+  var scaleY = typeof node.scaleY === "number" && isFinite(node.scaleY)
+    ? Math.abs(node.scaleY)
+    : Math.abs(node.scale);
+  if (!isFinite(scaleY) || scaleY <= 0) {
+    throw new Error("Trapped sprite departure requires positive node scale.");
+  }
+  var layerTopY = (1 - layer.anchorY) * layerSize.height;
+  var targetY = layerTopY + nodeSize.height * scaleY * 0.5 + timing.exitMargin;
+
+  this.lastTrappedSpriteRescueEventId = rescueEvent.id;
+  this.trappedSpriteDepartureActive = true;
+  this.trappedSpriteDepartureToken += 1;
+  var departureToken = this.trappedSpriteDepartureToken;
+  node.stopAllActions();
+  cc.tween(node)
+    .to(timing.flyOutDuration, {
+      y: targetY
+    }, {
+      easing: "quadIn"
+    })
+    .call(function () {
+      if (
+        this.trappedSpriteDepartureToken !== departureToken ||
+        this.trappedSpriteNode !== node ||
+        !node.isValid
+      ) {
+        return;
+      }
+      node.active = false;
+      this.trappedSpriteDepartureActive = false;
+      this.trappedSpriteDepartureCompleted = true;
+    }.bind(this))
+    .start();
+};
+
 LevelRenderer.prototype._collectRetainedSpritePaths = function () {
   return this._collectCommonSpritePaths().filter(function (path, index, list) {
     return !!path && list.indexOf(path) === index;
@@ -15444,7 +17636,16 @@ LevelRenderer.prototype.releaseAfterGameplayBundleUnload = function () {
   this.fireworksPrefabLoadPromise = null;
   this.explodeAnimationClip = null;
   this.explodeAnimationClipPromise = null;
+  if (Object.keys(this.assistSpiritAnimationClipLoadPromises).length > 0) {
+    throw new Error("Cannot unload gameplay bundle while assist spirit animation clips are loading.");
+  }
+  this.assistSpiritAnimationClipCache = {};
+  this.assistSpiritAnimationClipLoadPromises = {};
   this._sharedWarmupPromise = null;
+  if (this.timeBonusBitmapFontLoadPromise) {
+    throw new Error("Cannot unload gameplay bundle while time bonus font is loading.");
+  }
+  this.timeBonusBitmapFont = null;
   if (!this.bubbleShatterRenderer || typeof this.bubbleShatterRenderer.releaseAfterGameplayBundleUnload !== "function") {
     throw new Error("LevelRenderer requires BubbleShatterRenderer.releaseAfterGameplayBundleUnload.");
   }
@@ -15536,6 +17737,9 @@ LevelRenderer.prototype._collectCommonSpritePaths = function () {
     COMMENT_ANIMATION_RESOURCES.unbelievable
   ];
   LightningChainRenderer.RESOURCE_PATHS.forEach(function (path) {
+    paths.push(path);
+  });
+  AssistSpiritSkillConfig.getAllSpritePaths().forEach(function (path) {
     paths.push(path);
   });
   PropDescriptionConfig.getAllIconPaths().forEach(function (path) {
@@ -15659,6 +17863,53 @@ LevelRenderer.prototype._preloadExplodeAnimationClip = function () {
   return this.explodeAnimationClipPromise;
 };
 
+LevelRenderer.prototype._preloadAssistSpiritAnimationClips = function () {
+  return Promise.all(AssistSpiritPresentationConfig.getAllClipPaths().map(function (path) {
+    var cachedClip = this.assistSpiritAnimationClipCache[path];
+    if (cachedClip) {
+      if (!cachedClip.isValid) {
+        throw new Error("Cached assist spirit animation clip is invalid: " + path);
+      }
+      return Promise.resolve(cachedClip);
+    }
+    if (this.assistSpiritAnimationClipLoadPromises[path]) {
+      return this.assistSpiritAnimationClipLoadPromises[path];
+    }
+
+    this.assistSpiritAnimationClipLoadPromises[path] = new Promise(function (resolve, reject) {
+      BundleLoader.loadRes(path, cc.AnimationClip, function (error, clip) {
+        if (error) {
+          reject(new Error("Load assist spirit animation clip failed `" + path + "`: " + error.message));
+          return;
+        }
+        if (!clip || !clip.isValid) {
+          reject(new Error("Load assist spirit animation clip returned invalid asset: " + path));
+          return;
+        }
+        var expectedClipName = path.slice(path.lastIndexOf("/") + 1);
+        if (clip.name !== expectedClipName) {
+          reject(new Error(
+            "Assist spirit animation clip name mismatch `" + path + "`: expected `" +
+            expectedClipName + "`, received `" + clip.name + "`."
+          ));
+          return;
+        }
+        if (typeof clip.duration !== "number" || !isFinite(clip.duration) || clip.duration <= 0) {
+          reject(new Error("Assist spirit animation clip duration is invalid: " + path));
+          return;
+        }
+        this.assistSpiritAnimationClipCache[path] = clip;
+        delete this.assistSpiritAnimationClipLoadPromises[path];
+        resolve(clip);
+      }.bind(this));
+    }.bind(this)).catch(function (error) {
+      delete this.assistSpiritAnimationClipLoadPromises[path];
+      throw error;
+    }.bind(this));
+    return this.assistSpiritAnimationClipLoadPromises[path];
+  }, this));
+};
+
 LevelRenderer.prototype._preloadFireworksPrefab = function () {
   if (this.fireworksPrefab) {
     return Promise.resolve(this.fireworksPrefab);
@@ -15725,7 +17976,10 @@ var LEVEL_RENDERER_SCENE_DEPS = {
   DebugFlags: DebugFlags,
   BoardLayout: BoardLayout,
   SpecialAnimationTiming: SpecialAnimationTiming,
+  AssistSpiritSkillConfig: AssistSpiritSkillConfig,
+  AssistSpiritPresentationConfig: AssistSpiritPresentationConfig,
   BALL_RESOURCES: BALL_RESOURCES,
+  TIME_BONUS_FONT_RESOURCE: TIME_BONUS_FONT_RESOURCE,
   WORMHOLE_DIRECTION_ARROW_RESOURCE: WORMHOLE_DIRECTION_ARROW_RESOURCE,
   WORMHOLE_DIRECTION_ARROW_SIZE: WORMHOLE_DIRECTION_ARROW_SIZE,
   WORMHOLE_DIRECTION_ARROW_TRAVEL_DISTANCE: WORMHOLE_DIRECTION_ARROW_TRAVEL_DISTANCE,
@@ -15738,6 +17992,8 @@ var LEVEL_RENDERER_SCENE_DEPS = {
   JAR_MASK_RESOURCES: JAR_MASK_RESOURCES,
   resolveJarScoreSpritePath: resolveJarScoreSpritePath,
   REWARD_ITEM_RESOURCES: REWARD_ITEM_RESOURCES,
+  buildTrappedSpriteResourcePath: buildTrappedSpriteResourcePath,
+  buildSpiritFragmentRewardResourcePath: buildSpiritFragmentRewardResourcePath,
   POWERUP_ICON_RESOURCES: POWERUP_ICON_RESOURCES,
   HUD_STAR_RESOURCES: HUD_STAR_RESOURCES,
   TOP_SLOT_STAR_RESOURCE: TOP_SLOT_STAR_RESOURCE,
@@ -15839,6 +18095,7 @@ var LEVEL_RENDERER_SCENE_DEPS = {
 
 attachLevelRendererSceneMethods(LevelRenderer, LEVEL_RENDERER_SCENE_DEPS);
 attachLevelRendererFairyMethods(LevelRenderer);
+attachLevelRendererAssistSpiritSkillMethods(LevelRenderer);
 
 function resolveCommentAnimationKey(clearedCount) {
   for (var index = 0; index < COMMENT_ANIMATION_TIERS.length; index += 1) {
@@ -15992,6 +18249,34 @@ LevelRenderer.prototype._applyJarVisual = function (node, colorCode) {
   spriteTarget.setContentSize(JAR_RENDER_SIZE);
 };
 
+LevelRenderer.prototype._preloadTimeBonusBitmapFont = function () {
+  if (this.timeBonusBitmapFont) {
+    return Promise.resolve(this.timeBonusBitmapFont);
+  }
+  if (this.timeBonusBitmapFontLoadPromise) {
+    return this.timeBonusBitmapFontLoadPromise;
+  }
+  if (typeof cc.BitmapFont !== "function") {
+    throw new Error("Time bonus display requires cc.BitmapFont.");
+  }
+  this.timeBonusBitmapFontLoadPromise = new Promise(function (resolve, reject) {
+    BundleLoader.loadRes(TIME_BONUS_FONT_RESOURCE, cc.BitmapFont, function (error, font) {
+      this.timeBonusBitmapFontLoadPromise = null;
+      if (error) {
+        reject(new Error("Load time bonus bitmap font failed `" + TIME_BONUS_FONT_RESOURCE + "`: " + error.message));
+        return;
+      }
+      if (!font) {
+        reject(new Error("Load time bonus bitmap font returned empty asset: " + TIME_BONUS_FONT_RESOURCE));
+        return;
+      }
+      this.timeBonusBitmapFont = font;
+      resolve(font);
+    }.bind(this));
+  }.bind(this));
+  return this.timeBonusBitmapFontLoadPromise;
+};
+
 LevelRenderer.prototype._applyJarMaskVisual = function (node, colorCode) {
   var maskNode = node.getChildByName("mask") || node.getChildByName("Mask");
   if (!maskNode) {
@@ -16010,7 +18295,218 @@ LevelRenderer.prototype._applyJarMaskVisual = function (node, colorCode) {
 module.exports = LevelRenderer;
 
 
-},{"../../assets/scripts/utils/Logger":"Logger","../../assets/scripts/utils/DebugFlags":"DebugFlags","../../assets/scripts/utils/BundleLoader":"BundleLoader","./PrefabFactory":"PrefabFactory","../../assets/scripts/config/BoardLayout":"BoardLayout","../config/SpecialAnimationTiming":"SpecialAnimationTiming","../config/FairyAssistConfig":"FairyAssistConfig","../config/JarScoreConfig":"JarScoreConfig","../../assets/scripts/config/PropDescriptionConfig":"PropDescriptionConfig","../../assets/scripts/config/RuntimeRefreshScope":"RuntimeRefreshScope","../../assets/scripts/core/StarRatingPolicy":"StarRatingPolicy","../core/AdRevivePolicy":"AdRevivePolicy","../../assets/scripts/services/AdRewardCatalog":"AdRewardCatalog","../../assets/scripts/render/RenderNodeHelpers":"RenderNodeHelpers","../../assets/scripts/utils/SpriteProxyLayerHelper":"SpriteProxyLayerHelper","./BubbleShatterRenderer":"BubbleShatterRenderer","./WormholeShaderRenderer":"WormholeShaderRenderer","./LightningChainRenderer":"LightningChainRenderer","../../assets/scripts/ui/PropDescriptionViewController":"PropDescriptionViewController","./LevelRendererSceneMethods":"LevelRendererSceneMethods","./LevelRendererFairyMethods":"LevelRendererFairyMethods"}],
+},{"../../assets/scripts/utils/Logger":"Logger","../../assets/scripts/utils/DebugFlags":"DebugFlags","../../assets/scripts/utils/BundleLoader":"BundleLoader","./PrefabFactory":"PrefabFactory","../../assets/scripts/config/BoardLayout":"BoardLayout","../../assets/scripts/config/AssistSpiritConfig":"AssistSpiritConfig","../config/SpecialAnimationTiming":"SpecialAnimationTiming","../config/FairyAssistConfig":"FairyAssistConfig","../config/JarScoreConfig":"JarScoreConfig","../config/AssistSpiritSkillConfig":"AssistSpiritSkillConfig","../config/AssistSpiritPresentationConfig":"AssistSpiritPresentationConfig","../../assets/scripts/config/PropDescriptionConfig":"PropDescriptionConfig","../../assets/scripts/config/RuntimeRefreshScope":"RuntimeRefreshScope","../../assets/scripts/core/StarRatingPolicy":"StarRatingPolicy","../core/AdRevivePolicy":"AdRevivePolicy","../../assets/scripts/services/AdRewardCatalog":"AdRewardCatalog","../../assets/scripts/render/RenderNodeHelpers":"RenderNodeHelpers","../../assets/scripts/utils/SpriteProxyLayerHelper":"SpriteProxyLayerHelper","./BubbleShatterRenderer":"BubbleShatterRenderer","./WormholeShaderRenderer":"WormholeShaderRenderer","./LightningChainRenderer":"LightningChainRenderer","../../assets/scripts/ui/PropDescriptionViewController":"PropDescriptionViewController","./LevelRendererSceneMethods":"LevelRendererSceneMethods","./LevelRendererFairyMethods":"LevelRendererFairyMethods","./LevelRendererAssistSpiritSkillMethods":"LevelRendererAssistSpiritSkillMethods"}],
+"LevelRendererAssistSpiritSkillMethods":[function(require,module,exports){
+"use strict";
+
+var AssistSpiritSkillConfig = require("../config/AssistSpiritSkillConfig");
+var BoardLayout = require("../../assets/scripts/config/BoardLayout");
+
+var TORNADO_BREATH_CYCLE_COUNT = 3;
+var TORNADO_BREATH_MIN_SCALE_X = 0.9;
+var TORNADO_BREATH_MAX_SCALE_X = 1.1;
+
+function requireFinitePoint(point, description) {
+  if (
+    !point ||
+    typeof point.x !== "number" ||
+    !isFinite(point.x) ||
+    typeof point.y !== "number" ||
+    !isFinite(point.y)
+  ) {
+    throw new Error(description + " requires a finite point.");
+  }
+  return point;
+}
+
+function requirePositiveDuration(value, description) {
+  if (typeof value !== "number" || !isFinite(value) || value <= 0) {
+    throw new Error(description + " requires a positive duration.");
+  }
+  return value;
+}
+
+function createEffectNode(renderer, path, name) {
+  if (!renderer.layers || !renderer.layers.shatter || !renderer.layers.shatter.isValid) {
+    throw new Error("Assist spirit skill effect requires shatter layer.");
+  }
+  var spriteFrame = renderer.spriteFrameCache[path];
+  if (!spriteFrame || !spriteFrame.isValid) {
+    throw new Error("Assist spirit skill SpriteFrame is missing: " + path);
+  }
+  var node = new cc.Node(name);
+  node.parent = renderer.layers.shatter;
+  node.zIndex = 120;
+  var sprite = node.addComponent(cc.Sprite);
+  sprite.spriteFrame = spriteFrame;
+  sprite.sizeMode = cc.Sprite.SizeMode.RAW;
+  node.setContentSize(spriteFrame.getOriginalSize());
+  return node;
+}
+
+function runActionPromise(node, action) {
+  return new Promise(function (resolve) {
+    node.runAction(cc.sequence(
+      action,
+      cc.callFunc(function () {
+        if (node && node.isValid) {
+          node.destroy();
+        }
+        resolve();
+      })
+    ));
+  });
+}
+
+function playPulse(renderer, path, name, duration, position) {
+  var node = createEffectNode(renderer, path, name);
+  node.setPosition(position.x, position.y);
+  node.opacity = 0;
+  node.setScale(0.45);
+  var halfDuration = duration * 0.5;
+  return runActionPromise(node, cc.sequence(
+    cc.spawn(
+      cc.scaleTo(halfDuration, 1.18),
+      cc.fadeTo(halfDuration, 255)
+    ),
+    cc.spawn(
+      cc.scaleTo(halfDuration, 1.45),
+      cc.fadeTo(halfDuration, 0)
+    )
+  ));
+}
+
+function resolveEffectCenter(renderer, plan) {
+  if (!renderer.lastRuntimeSnapshot || !renderer.lastRuntimeSnapshot.board) {
+    throw new Error("Assist spirit skill effect requires current board snapshot.");
+  }
+  var board = renderer.lastRuntimeSnapshot.board;
+  if (!Array.isArray(plan.targets) || !plan.targets.length) {
+    if (
+      plan.skillId === "tornado" &&
+      plan.path &&
+      plan.path.start &&
+      plan.path.control1 &&
+      plan.path.control2 &&
+      plan.path.end
+    ) {
+      var start = requireFinitePoint(plan.path.start, "Assist spirit tornado center start");
+      var control1 = requireFinitePoint(plan.path.control1, "Assist spirit tornado center control1");
+      var control2 = requireFinitePoint(plan.path.control2, "Assist spirit tornado center control2");
+      var end = requireFinitePoint(plan.path.end, "Assist spirit tornado center end");
+      return {
+        x: (start.x + 3 * control1.x + 3 * control2.x + end.x) / 8,
+        y: (start.y + 3 * control1.y + 3 * control2.y + end.y) / 8
+      };
+    }
+    throw new Error("Assist spirit skill effect requires targets.");
+  }
+  var total = plan.targets.reduce(function (sum, target) {
+    var position = renderer.lastRuntimeSnapshot.board.cells.find(function (cell) {
+      return cell && String(cell.id) === String(target.id);
+    });
+    if (!position) {
+      throw new Error("Assist spirit skill effect target is missing from board snapshot: " + target.id);
+    }
+    var boardPosition = BoardLayout.getCellPosition(
+      position.row,
+      position.col,
+      board.maxColumns,
+      board.viewportOffsetY
+    );
+    sum.x += boardPosition.x;
+    sum.y += boardPosition.y;
+    return sum;
+  }, { x: 0, y: 0 });
+  return {
+    x: total.x / plan.targets.length,
+    y: total.y / plan.targets.length
+  };
+}
+
+function attachLevelRendererAssistSpiritSkillMethods(LevelRenderer) {
+  LevelRenderer.prototype.playAssistSpiritSkillEffect = function (plan, onSkillEffectStarted) {
+    if (!plan || typeof plan !== "object" || Array.isArray(plan) || plan.accepted !== true) {
+      throw new Error("Assist spirit skill effect requires an accepted preview plan.");
+    }
+    if (typeof plan.requestedSpiritId !== "string" || typeof plan.skillId !== "string") {
+      throw new Error("Assist spirit skill effect requires spirit and skill ids.");
+    }
+    if (typeof onSkillEffectStarted !== "function") {
+      throw new Error("Assist spirit skill effect requires onSkillEffectStarted callback.");
+    }
+
+    var playResolvedEffect = function () {
+      onSkillEffectStarted(plan.skillId);
+      var skillConfig = AssistSpiritSkillConfig.getBySkillId(plan.skillId);
+      if (plan.skillId === "lightning_chain") {
+        return this.playLightningChainEffect({
+          chainId: [
+            "assist",
+            plan.requestedSpiritId,
+            plan.targets.map(function (target) {
+              return target.id;
+            }).join("_")
+          ].join("_"),
+          hitPoints: plan.targets
+        });
+      }
+      if (plan.skillId === "tornado") {
+        if (!plan.path || typeof plan.effectPath !== "string" || !plan.effectPath) {
+          throw new Error("Assist spirit tornado preview requires path and effectPath.");
+        }
+        var tornadoNode = createEffectNode(this, plan.effectPath, "AssistSpiritTornado");
+        var start = requireFinitePoint(plan.path.start, "Assist spirit tornado start");
+        var control1 = requireFinitePoint(plan.path.control1, "Assist spirit tornado control1");
+        var control2 = requireFinitePoint(plan.path.control2, "Assist spirit tornado control2");
+        var end = requireFinitePoint(plan.path.end, "Assist spirit tornado end");
+        var tornadoDuration = requirePositiveDuration(plan.effectDuration, "Assist spirit tornado");
+        var tornadoBreathHalfDuration = tornadoDuration / (TORNADO_BREATH_CYCLE_COUNT * 2);
+        if (typeof cc.bezierTo !== "function") {
+          throw new Error("Assist spirit tornado requires cc.bezierTo.");
+        }
+        tornadoNode.setPosition(start.x, start.y);
+        return runActionPromise(tornadoNode, cc.spawn(
+          cc.bezierTo(tornadoDuration, [
+            cc.v2(control1.x, control1.y),
+            cc.v2(control2.x, control2.y),
+            cc.v2(end.x, end.y)
+          ]),
+          cc.repeat(
+            cc.sequence(
+              cc.scaleTo(tornadoBreathHalfDuration, TORNADO_BREATH_MAX_SCALE_X, 1),
+              cc.scaleTo(tornadoBreathHalfDuration, TORNADO_BREATH_MIN_SCALE_X, 1)
+            ),
+            TORNADO_BREATH_CYCLE_COUNT
+          )
+        ));
+      }
+      return playPulse(
+        this,
+        skillConfig.iconPath,
+        "AssistSpiritSkill_" + plan.skillId,
+        requirePositiveDuration(plan.effectDuration, "Assist spirit skill pulse"),
+        resolveEffectCenter(this, plan)
+      );
+    }.bind(this);
+
+    if (plan.requestedSpiritId !== "yumi") {
+      return playResolvedEffect();
+    }
+    var yumiConfig = AssistSpiritSkillConfig.getBySpiritId("yumi");
+    return playPulse(
+      this,
+      yumiConfig.iconPath,
+      "AssistSpiritStarlight",
+      requirePositiveDuration(plan.starlightEffectDuration, "Yumi starlight"),
+      resolveEffectCenter(this, plan)
+    ).then(playResolvedEffect);
+  };
+}
+
+module.exports = attachLevelRendererAssistSpiritSkillMethods;
+
+},{"../config/AssistSpiritSkillConfig":"AssistSpiritSkillConfig","../../assets/scripts/config/BoardLayout":"BoardLayout"}],
 "LevelRendererFairyMethods":[function(require,module,exports){
 "use strict";
 
@@ -16502,6 +18998,7 @@ function attachLevelRendererSceneBoardMethods(LevelRenderer, deps) {
   var DebugFlags = deps.DebugFlags;
   var BoardLayout = deps.BoardLayout;
   var BALL_RESOURCES = deps.BALL_RESOURCES;
+  var TIME_BONUS_FONT_RESOURCE = deps.TIME_BONUS_FONT_RESOURCE;
   var TOP_SLOT_STAR_RESOURCE = deps.TOP_SLOT_STAR_RESOURCE;
   var PREFAB_PATHS = deps.PREFAB_PATHS;
   var ICE_OVERLAY_OPACITY = deps.ICE_OVERLAY_OPACITY;
@@ -16530,6 +19027,11 @@ function attachLevelRendererSceneBoardMethods(LevelRenderer, deps) {
   var VINE_OVERLAY_NODE_NAME = "VinesOverlay";
   var VINE_HEALTH_NODE_NAME = "VineSpiritHealth";
   var VINE_PREVIEW_FADE_DURATION = 0.18;
+  var TIME_BONUS_LABEL_NODE_NAME = "TimeBonus";
+  var TIME_BONUS_LABEL_Z_INDEX = 100;
+  // num_b.fnt declares a baseline of 10 for 61px-tall glyphs, so its visible
+  // glyphs sit below Cocos' geometric label center without this compensation.
+  var TIME_BONUS_LABEL_VERTICAL_OFFSET_RATIO = 0.15;
 
   function requirePositiveSize(size, fieldName) {
     if (
@@ -16689,6 +19191,7 @@ function attachLevelRendererSceneBoardMethods(LevelRenderer, deps) {
       resolveBallVisualKey(cell),
       lockedColorKey,
       typeof cell.health === "number" ? cell.health : "",
+      Number.isInteger(cell.timeBonusSeconds) ? cell.timeBonusSeconds : "",
       typeof cell.vineOwnerId === "string" ? cell.vineOwnerId : "",
       typeof cell.vinePreviewOwnerId === "string" ? cell.vinePreviewOwnerId : ""
     ].join("|");
@@ -16950,6 +19453,40 @@ function attachLevelRendererSceneBoardMethods(LevelRenderer, deps) {
     outline.width = 2;
   }
 
+  function syncTimeBonusLabel(renderer, node, cell) {
+    if (!node || !node.isValid) {
+      throw new Error("Time bonus label requires valid board node.");
+    }
+    var labelNode = getOrCreateChild(node, TIME_BONUS_LABEL_NODE_NAME);
+    var hasTimeBonus = !!(
+      cell &&
+      cell.entityCategory === "normal_ball" &&
+      Number.isInteger(cell.timeBonusSeconds) &&
+      cell.timeBonusSeconds > 0
+    );
+    if (!hasTimeBonus) {
+      labelNode.active = false;
+      return;
+    }
+    if (!renderer.timeBonusBitmapFont) {
+      throw new Error("Time bonus label font was not preloaded: " + TIME_BONUS_FONT_RESOURCE);
+    }
+    labelNode.active = true;
+    labelNode.setPosition(0, BOARD_BUBBLE_SIZE.height * TIME_BONUS_LABEL_VERTICAL_OFFSET_RATIO);
+    labelNode.setContentSize(BOARD_BUBBLE_SIZE.width, BOARD_BUBBLE_SIZE.height);
+    labelNode.zIndex = TIME_BONUS_LABEL_Z_INDEX;
+    labelNode.color = cc.color(255, 255, 255, 255);
+    var label = ensureLabel(
+      labelNode,
+      "+" + String(cell.timeBonusSeconds),
+      BOARD_BUBBLE_SIZE.height,
+      BOARD_BUBBLE_SIZE.height
+    );
+    label.useSystemFont = false;
+    label.font = renderer.timeBonusBitmapFont;
+    label.overflow = cc.Label.Overflow.SHRINK;
+  }
+
   function instantiateRequired(prefabFactory, prefabPath, parent, name, ownerName) {
     if (!prefabFactory || typeof prefabFactory.instantiate !== "function") {
       throw new Error(ownerName + " requires prefabFactory.instantiate.");
@@ -16999,12 +19536,22 @@ LevelRenderer.prototype._renderBoard = function (boardSnapshot) {
   }
 
   boardSnapshot.cells.forEach(function (cell) {
+    if (
+      !cell.position ||
+      typeof cell.position.x !== "number" ||
+      !isFinite(cell.position.x) ||
+      typeof cell.position.y !== "number" ||
+      !isFinite(cell.position.y)
+    ) {
+      throw new Error("Board rendering requires finite cell.position.");
+    }
     var cellId = String(cell.id);
     var renderKey = buildBoardCellRenderKey(cell, boardSnapshot);
     var cachedRenderKey = this.boardCellRenderKeys[cellId];
     var existingNode = this.boardBubbleNodes[cellId];
     if (existingNode && cachedRenderKey === renderKey) {
       existingNode.__boardTick = currentTick;
+      existingNode.setPosition(cell.position.x, cell.position.y);
       if (!existingNode.parent || existingNode.parent !== this.layers.board) {
         existingNode.parent = this.layers.board;
       }
@@ -17012,22 +19559,23 @@ LevelRenderer.prototype._renderBoard = function (boardSnapshot) {
       this.wormholeShaderRenderer.syncNode(existingNode, cell);
       syncVineOverlay(this, existingNode, cell);
       syncVineSpiritHealth(existingNode, cell);
+      syncTimeBonusLabel(this, existingNode, cell);
       this._applySplitterSpawnHiddenBoardState(existingNode, cell.id);
       this._applyMolotovBlastHiddenBoardState(existingNode, cell.id);
       return;
     }
 
     this.boardCellRenderKeys[cellId] = renderKey;
-    var cellPosition = BoardLayout.getCellPosition(cell.row, cell.col, boardSnapshot.maxColumns, boardSnapshot.viewportOffsetY);
     var bubbleNode = this._acquireBoardBubbleNode(cell);
     bubbleNode.__boardTick = currentTick;
-    bubbleNode.setPosition(cellPosition.x, cellPosition.y);
+    bubbleNode.setPosition(cell.position.x, cell.position.y);
     bubbleNode.setScale(1);
     bubbleNode.opacity = 255;
     this._applyBoardBubbleVisualCached(bubbleNode, cell, BOARD_BUBBLE_SIZE);
     this.wormholeShaderRenderer.syncNode(bubbleNode, cell);
     syncVineOverlay(this, bubbleNode, cell);
     syncVineSpiritHealth(bubbleNode, cell);
+    syncTimeBonusLabel(this, bubbleNode, cell);
     this._applySplitterSpawnHiddenBoardState(bubbleNode, cell.id);
     this._applyMolotovBlastHiddenBoardState(bubbleNode, cell.id);
   }, this);
@@ -17045,6 +19593,10 @@ LevelRenderer.prototype._renderTopSlotStars = function (boardSnapshot) {
 
   this.topSlotStarRenderTick += 1;
   var currentTick = this.topSlotStarRenderTick;
+  if (boardSnapshot.trappedSpriteRescueActive === true) {
+    this._recycleInactiveTopSlotStarNodes(currentTick);
+    return;
+  }
   var starFrame = requireTopSlotStarFrame(this);
   var occupied = buildTopRowOccupiedMap(boardSnapshot);
   var topRowColumns = BoardLayout.getRowColumnCount(0, boardSnapshot.maxColumns);
@@ -17354,6 +19906,10 @@ LevelRenderer.prototype._renderTestGrid = function (boardSnapshot) {
   if (!this.layers || !this.layers.testGrid) {
     return;
   }
+  if (boardSnapshot.trappedSpriteRescueActive === true) {
+    this.layers.testGrid.active = false;
+    return;
+  }
 
   if (!DebugFlags.get("testLayer")) {
     this.layers.testGrid.active = false;
@@ -17564,6 +20120,62 @@ function attachLevelRendererSceneFxMethods(LevelRenderer, deps) {
       throw new Error(ownerName + " position must be finite.");
     }
     return point;
+  }
+
+  function resolveBoardCellWorldPosition(runtimeSnapshot, row, col, ownerName) {
+    if (!runtimeSnapshot || !runtimeSnapshot.board) {
+      throw new Error(ownerName + " requires runtime board snapshot.");
+    }
+    if (!Number.isInteger(row) || !Number.isInteger(col)) {
+      throw new Error(ownerName + " requires integer board coordinates.");
+    }
+    var boardSnapshot = runtimeSnapshot.board;
+    if (!Number.isInteger(boardSnapshot.maxColumns) || boardSnapshot.maxColumns <= 0) {
+      throw new Error(ownerName + " requires positive board maxColumns.");
+    }
+    if (typeof boardSnapshot.viewportOffsetY !== "number" || !isFinite(boardSnapshot.viewportOffsetY)) {
+      throw new Error(ownerName + " requires finite board viewportOffsetY.");
+    }
+
+    var rescueSnapshot = runtimeSnapshot.systems && runtimeSnapshot.systems.trappedSpriteRescueSystem;
+    var rescueActive = !!(rescueSnapshot && rescueSnapshot.active === true);
+    if (boardSnapshot.trappedSpriteRescueActive === true && !rescueActive) {
+      throw new Error(ownerName + " rescue board requires trapped sprite system snapshot.");
+    }
+    if (!rescueActive) {
+      return requireFinitePoint(BoardLayout.getCellPosition(
+        row,
+        col,
+        boardSnapshot.maxColumns,
+        boardSnapshot.viewportOffsetY
+      ), ownerName);
+    }
+    if (
+      !rescueSnapshot.anchorCell ||
+      !Number.isInteger(rescueSnapshot.anchorCell.row) ||
+      !Number.isInteger(rescueSnapshot.anchorCell.col)
+    ) {
+      throw new Error(ownerName + " rescue transform requires anchorCell.");
+    }
+    var worldCenter = requireFinitePoint(rescueSnapshot.worldCenter, ownerName + " rescue center");
+    if (typeof rescueSnapshot.angleRad !== "number" || !isFinite(rescueSnapshot.angleRad)) {
+      throw new Error(ownerName + " rescue transform requires finite angleRad.");
+    }
+    var anchorLocal = BoardLayout.getCellPosition(
+      rescueSnapshot.anchorCell.row,
+      rescueSnapshot.anchorCell.col,
+      boardSnapshot.maxColumns,
+      0
+    );
+    var cellLocal = BoardLayout.getCellPosition(row, col, boardSnapshot.maxColumns, 0);
+    var localX = cellLocal.x - anchorLocal.x;
+    var localY = cellLocal.y - anchorLocal.y;
+    var cosine = Math.cos(rescueSnapshot.angleRad);
+    var sine = Math.sin(rescueSnapshot.angleRad);
+    return requireFinitePoint({
+      x: worldCenter.x + localX * cosine - localY * sine,
+      y: worldCenter.y + localX * sine + localY * cosine
+    }, ownerName);
   }
 
   function requirePositiveFiniteNumber(value, ownerName) {
@@ -18529,17 +21141,17 @@ LevelRenderer.prototype._playSwirlRotationAnimation = function (runtimeSnapshot)
       if (!bubbleNode || !bubbleNode.isValid) {
         throw new Error("Swirl animation target bubble node missing: " + move.targetCellId);
       }
-      var startPosition = BoardLayout.getCellPosition(
+      var startPosition = resolveBoardCellWorldPosition(
+        runtimeSnapshot,
         move.fromRow,
         move.fromCol,
-        boardSnapshot.maxColumns,
-        boardSnapshot.viewportOffsetY
+        "Swirl animation start"
       );
-      var targetPosition = BoardLayout.getCellPosition(
+      var targetPosition = resolveBoardCellWorldPosition(
+        runtimeSnapshot,
         move.toRow,
         move.toCol,
-        boardSnapshot.maxColumns,
-        boardSnapshot.viewportOffsetY
+        "Swirl animation target"
       );
       bubbleNode.stopAllActions();
       bubbleNode.setPosition(startPosition.x, startPosition.y);
@@ -18688,44 +21300,44 @@ LevelRenderer.prototype._syncWormholeDirectionGuide = function (boardSnapshot) {
 
   var wormholes = boardSnapshot.cells.filter(function (cell) {
     return !!(cell && cell.entityCategory === "reactive_ball" && cell.entityType === "wormhole");
-  }).sort(function (left, right) {
-    return left.col - right.col;
   });
 
   if (!wormholes.length) {
     this._destroyWormholeDirectionGuide();
     return;
   }
-  if (wormholes.length !== 2) {
-    throw new Error("Wormhole direction guide requires exactly two wormholes.");
-  }
+  var wormholesByRow = {};
+  wormholes.forEach(function (wormhole) {
+    if (!Number.isInteger(wormhole.row) || !Number.isInteger(wormhole.col)) {
+      throw new Error("Wormhole direction guide requires integer endpoint coordinates.");
+    }
+    if (!wormholesByRow[wormhole.row]) {
+      wormholesByRow[wormhole.row] = [];
+    }
+    wormholesByRow[wormhole.row].push(wormhole);
+  });
+  var pairs = Object.keys(wormholesByRow).map(function (rowKey) {
+    var pair = wormholesByRow[rowKey].sort(function (left, right) {
+      return left.col - right.col;
+    });
+    if (pair.length !== 2) {
+      throw new Error("Wormhole direction guide row " + rowKey + " requires exactly two endpoints.");
+    }
+    if (pair[1].col - pair[0].col < 2) {
+      throw new Error("Wormhole direction guide row " + rowKey + " requires at least one interior slot.");
+    }
+    if ((pair[0].moveDirection !== "left" && pair[0].moveDirection !== "right") ||
+        pair[0].moveDirection !== pair[1].moveDirection) {
+      throw new Error("Wormhole direction guide row " + rowKey + " requires matching left/right moveDirection.");
+    }
+    return pair;
+  }).sort(function (left, right) {
+    return left[0].row - right[0].row;
+  });
 
-  var leftWormhole = wormholes[0];
-  var rightWormhole = wormholes[1];
-  if (!Number.isInteger(leftWormhole.row) || !Number.isInteger(leftWormhole.col) ||
-      !Number.isInteger(rightWormhole.row) || !Number.isInteger(rightWormhole.col)) {
-    throw new Error("Wormhole direction guide requires integer endpoint coordinates.");
-  }
-  if (leftWormhole.row !== rightWormhole.row) {
-    throw new Error("Wormhole direction guide endpoints must share one row.");
-  }
-  if (rightWormhole.col - leftWormhole.col < 2) {
-    throw new Error("Wormhole direction guide requires at least one interior slot.");
-  }
-  if ((leftWormhole.moveDirection !== "left" && leftWormhole.moveDirection !== "right") ||
-      leftWormhole.moveDirection !== rightWormhole.moveDirection) {
-    throw new Error("Wormhole direction guide requires matching left/right moveDirection.");
-  }
-
-  var direction = leftWormhole.moveDirection;
-  var guideKey = [
-    leftWormhole.row,
-    leftWormhole.col,
-    rightWormhole.col,
-    direction,
-    boardSnapshot.maxColumns,
-    boardSnapshot.viewportOffsetY
-  ].join("|");
+  var guideKey = pairs.map(function (pair) {
+    return [pair[0].row, pair[0].col, pair[1].col, pair[0].moveDirection].join(":");
+  }).concat([boardSnapshot.maxColumns, boardSnapshot.viewportOffsetY]).join("|");
   if (this.lastWormholeDirectionGuideKey === guideKey) {
     if (!this.wormholeDirectionGuideRoot || !this.wormholeDirectionGuideRoot.isValid) {
       throw new Error("Wormhole direction guide key requires a valid guide root.");
@@ -18778,22 +21390,26 @@ LevelRenderer.prototype._syncWormholeDirectionGuide = function (boardSnapshot) {
   this.wormholeDirectionGuideRoot = guideRoot;
   this.lastWormholeDirectionGuideKey = guideKey;
 
-  var interiorSlotCount = rightWormhole.col - leftWormhole.col - 1;
-  var directionSign = direction === "right" ? 1 : -1;
-  for (var slotIndex = 0; slotIndex < interiorSlotCount; slotIndex += 1) {
-    var col = leftWormhole.col + 1 + slotIndex;
-    var position = BoardLayout.getCellPosition(
-      leftWormhole.row,
-      col,
-      boardSnapshot.maxColumns,
-      boardSnapshot.viewportOffsetY
-    );
+  pairs.forEach(function (pair, pairIndex) {
+    var leftWormhole = pair[0];
+    var rightWormhole = pair[1];
+    var direction = leftWormhole.moveDirection;
+    var interiorSlotCount = rightWormhole.col - leftWormhole.col - 1;
+    var directionSign = direction === "right" ? 1 : -1;
+    for (var slotIndex = 0; slotIndex < interiorSlotCount; slotIndex += 1) {
+      var col = leftWormhole.col + 1 + slotIndex;
+      var position = BoardLayout.getCellPosition(
+        leftWormhole.row,
+        col,
+        boardSnapshot.maxColumns,
+        boardSnapshot.viewportOffsetY
+      );
     if (!position || typeof position.x !== "number" || !isFinite(position.x) ||
         typeof position.y !== "number" || !isFinite(position.y)) {
       throw new Error("Wormhole direction guide received invalid cell position.");
     }
 
-    var arrowNode = new cc.Node("DirectionArrow_" + slotIndex);
+      var arrowNode = new cc.Node("DirectionArrow_" + pairIndex + "_" + slotIndex);
     arrowNode.parent = guideRoot;
     arrowNode.setContentSize(WORMHOLE_DIRECTION_ARROW_SIZE);
     arrowNode.setPosition(position.x, position.y);
@@ -18808,7 +21424,7 @@ LevelRenderer.prototype._syncWormholeDirectionGuide = function (boardSnapshot) {
       WORMHOLE_DIRECTION_ARROW_CYCLE_PAUSE;
     var baseX = position.x;
     var baseY = position.y;
-    arrowNode.runAction(cc.repeatForever(cc.sequence(
+      arrowNode.runAction(cc.repeatForever(cc.sequence(
       cc.callFunc(function (node, data) {
         if (!node || !node.isValid) {
           throw new Error("Wormhole direction arrow was destroyed during animation.");
@@ -18829,8 +21445,9 @@ LevelRenderer.prototype._syncWormholeDirectionGuide = function (boardSnapshot) {
         cc.scaleTo(WORMHOLE_DIRECTION_ARROW_FADE_OUT_DURATION, 0.82)
       ),
       cc.delayTime(trailingDelay)
-    )));
-  }
+      )));
+    }
+  });
 };
 
 LevelRenderer.prototype._playMolotovBlastAnimation = function (runtimeSnapshot) {
@@ -18910,12 +21527,12 @@ LevelRenderer.prototype._playBlastExplosionAnimation = function (runtimeSnapshot
     }
     this.blastExplosionAnimatedIds[normalizedId] = true;
 
-    var explosionPosition = requireFinitePoint(BoardLayout.getCellPosition(
+    var explosionPosition = resolveBoardCellWorldPosition(
+      runtimeSnapshot,
       explosion.row,
       explosion.col,
-      boardSnapshot.maxColumns,
-      boardSnapshot.viewportOffsetY
-    ), "Blast explosion");
+      "Blast explosion"
+    );
     playExplosionAnimationAt(this, "BlastExplosionFx_" + normalizedId, explosionPosition, "Blast explosion animation", null);
   }, this);
 };
@@ -19226,11 +21843,11 @@ LevelRenderer.prototype._playIceThawShake = function (runtimeSnapshot) {
       ) {
         throw new Error("Ice thaw animation requires board position when bubble node is missing.");
       }
-      var cellPosition = BoardLayout.getCellPosition(
+      var cellPosition = resolveBoardCellWorldPosition(
+        runtimeSnapshot,
         cell.row,
         cell.col,
-        boardSnapshot.maxColumns,
-        boardSnapshot.viewportOffsetY
+        "Ice thaw animation"
       );
       baseX = cellPosition.x;
       baseY = cellPosition.y;
@@ -19977,6 +22594,7 @@ LevelRenderer.prototype._initializeBallScoreHud = function () {
   this.playedBallScoreCellIds = {};
   this.pendingBallScoreCellIds = {};
   this.pendingBallScoreCallbacks = {};
+  this.playedTimeBonusAwardedEvents = [];
   this._pruneBallScoreNodePool();
 };
 
@@ -20067,6 +22685,7 @@ LevelRenderer.prototype._resetBallScoreHudBeforeHudClear = function () {
   this.currentBallScoreResolution = null;
   this.playedBallScoreCellIds = {};
   this.pendingBallScoreCellIds = {};
+  this.playedTimeBonusAwardedEvents = [];
 };
 
 LevelRenderer.prototype._acquireBallScoreNode = function (gameViewNode, templateNode) {
@@ -20333,6 +22952,67 @@ LevelRenderer.prototype._playBallScoreDisplay = function (runtimeSnapshot) {
       this.ballScoreDisplayGeneration
     );
   }
+};
+
+LevelRenderer.prototype._playTimeBonusFloatingScoreDisplay = function (runtimeSnapshot) {
+  if (!runtimeSnapshot || !Array.isArray(runtimeSnapshot.runtimeEvents)) {
+    return;
+  }
+  if (!runtimeSnapshot.board || !Number.isInteger(runtimeSnapshot.board.maxColumns) ||
+      typeof runtimeSnapshot.board.viewportOffsetY !== "number" || !isFinite(runtimeSnapshot.board.viewportOffsetY)) {
+    throw new Error("Time bonus floating score requires board snapshot.");
+  }
+  if (!Array.isArray(this.playedTimeBonusAwardedEvents)) {
+    throw new Error("Time bonus floating score event state must be an array.");
+  }
+
+  runtimeSnapshot.runtimeEvents.forEach(function (event) {
+    if (!event || event.type !== "time_bonus_awarded") {
+      return;
+    }
+    if (!Number.isInteger(event.id) || event.id <= 0) {
+      throw new Error("time_bonus_awarded event requires a positive integer id.");
+    }
+    if (this.playedTimeBonusAwardedEvents.indexOf(event) >= 0) {
+      return;
+    }
+    if (!Array.isArray(event.cells) || !event.cells.length) {
+      throw new Error("time_bonus_awarded event requires awarded cells.");
+    }
+
+    var emittedCellIds = {};
+    event.cells.forEach(function (cell, index) {
+      if (!cell || typeof cell !== "object" || Array.isArray(cell)) {
+        throw new Error("time_bonus_awarded cell must be an object at index " + index + ".");
+      }
+      if (typeof cell.id !== "string" || !cell.id) {
+        throw new Error("time_bonus_awarded cell requires string id.");
+      }
+      if (emittedCellIds[cell.id]) {
+        throw new Error("time_bonus_awarded event repeats cell id: " + cell.id);
+      }
+      emittedCellIds[cell.id] = true;
+      if (!Number.isInteger(cell.row) || !Number.isInteger(cell.col) || cell.row < 0 || cell.col < 0) {
+        throw new Error("time_bonus_awarded cell requires non-negative row and col: " + cell.id);
+      }
+      if (!Number.isInteger(cell.bonusSeconds) || cell.bonusSeconds !== 5) {
+        throw new Error("time_bonus_awarded cell must grant exactly five seconds: " + cell.id);
+      }
+
+      var boardPosition = BoardLayout.getCellPosition(
+        cell.row,
+        cell.col,
+        runtimeSnapshot.board.maxColumns,
+        runtimeSnapshot.board.viewportOffsetY
+      );
+      var position = this._convertBoardPointToGameView(boardPosition.x, boardPosition.y);
+      this._spawnBallScoreDisplay({
+        cellId: "time_bonus_" + String(event.id) + "_" + cell.id,
+        points: cell.bonusSeconds
+      }, position);
+    }, this);
+    this.playedTimeBonusAwardedEvents.push(event);
+  }, this);
 };
 
 LevelRenderer.prototype._pruneJarFractionNodePool = function () {
@@ -20649,33 +23329,32 @@ LevelRenderer.prototype._renderJarScoreBoostTimer = function (runtimeSnapshot) {
 
 LevelRenderer.prototype._renderTimedLevelTimer = function (runtimeSnapshot) {
   var timedLevel = !!(runtimeSnapshot && runtimeSnapshot.timedLevel);
-  var panel = this._getMountedHudPanel();
-  if (!panel) {
-    if (timedLevel) {
-      throw new Error("Timed level requires HudPanel.");
-    }
-    return;
+  if (!this.layers || !this.layers.hud) {
+    throw new Error("HUD layer is missing when rendering timed level timer.");
   }
 
-  var timerNode = panel.getChildByName("timer");
+  if (typeof this._getMountedBgNode !== "function") {
+    throw new Error("Timed level timer requires mounted GameView bg resolver.");
+  }
+  var backgroundNode = this._getMountedBgNode();
+
+  var bigTimerNode = backgroundNode.getChildByName("BigTimer");
+  if (!bigTimerNode || !bigTimerNode.isValid) {
+    throw new Error("Mounted GameView bg.BigTimer node is missing.");
+  }
+
+  var timerNode = bigTimerNode.getChildByName("timer");
   if (!timerNode || !timerNode.isValid) {
-    if (timedLevel) {
-      throw new Error("Timed level requires HudPanel.timer node.");
-    }
-    return;
+    throw new Error("Mounted GameView bg.BigTimer.timer node is missing.");
   }
 
   var timerLabel = timerNode.getComponent(cc.Label);
   if (!timerLabel) {
-    if (timedLevel) {
-      throw new Error("HudPanel.timer requires Label component.");
-    }
-    timerNode.active = false;
-    return;
+    throw new Error("Mounted GameView bg.BigTimer.timer requires Label component.");
   }
 
   if (!timedLevel) {
-    timerNode.active = false;
+    bigTimerNode.active = false;
     timerLabel.string = "0";
     return;
   }
@@ -20686,10 +23365,9 @@ LevelRenderer.prototype._renderTimedLevelTimer = function (runtimeSnapshot) {
   }
   var remainingMs = Math.max(0, Math.ceil(remainingMsValue));
   var remainingSeconds = Math.max(0, Math.ceil(remainingMs / 1000));
-  var minutes = Math.floor(remainingSeconds / 60);
-  var seconds = remainingSeconds % 60;
+  bigTimerNode.active = true;
   timerNode.active = true;
-  timerLabel.string = minutes + ":" + (seconds < 10 ? "0" + seconds : String(seconds));
+  timerLabel.string = String(remainingSeconds);
 };
 
 LevelRenderer.prototype.playThreeLineEliminationAnimation = function (rows) {
@@ -22631,6 +25309,10 @@ function attachLevelRendererSceneOcclusionMethods(LevelRenderer, deps) {
   var BOARD_OCCLUSION_CLOCK_RESOURCE = deps.BOARD_OCCLUSION_CLOCK_RESOURCE;
   var ensureSprite = deps.ensureSprite;
   var ensureLabel = deps.ensureLabel;
+  var CLOUD_BREATH_HALF_DURATION_SECONDS = 2.4;
+  var CLOUD_BREATH_START_OPACITY = 244;
+  var CLOUD_BREATH_MAX_OPACITY = 252;
+  var CLOUD_BREATH_MIN_OPACITY = 236;
 
   function requireFinite(value, description) {
     if (typeof value !== "number" || !isFinite(value)) {
@@ -22666,7 +25348,7 @@ function attachLevelRendererSceneOcclusionMethods(LevelRenderer, deps) {
     };
   }
 
-  function configureCountdownClock(rootNode, spriteFrame, y) {
+  function configureCountdownClock(rootNode, spriteFrame) {
     if (!spriteFrame || typeof spriteFrame.getOriginalSize !== "function") {
       throw new Error("Board occlusion countdown clock requires a valid SpriteFrame.");
     }
@@ -22679,19 +25361,24 @@ function attachLevelRendererSceneOcclusionMethods(LevelRenderer, deps) {
     }
     var clockNode = new cc.Node("CountdownClock");
     clockNode.parent = rootNode;
-    clockNode.setPosition(-38, y);
+    clockNode.setPosition(0, 0);
+    clockNode.zIndex = 1;
     clockNode.setContentSize(originalSize);
     var clockSprite = ensureSprite(clockNode, spriteFrame);
     clockSprite.trim = false;
     clockSprite.sizeMode = cc.Sprite.SizeMode.RAW;
-    clockNode.setScale(26 / Math.max(originalSize.width, originalSize.height));
+    return {
+      labelY: -originalSize.height * 0.25,
+      labelWidth: originalSize.width - 8,
+      labelHeight: Math.floor(originalSize.height * 0.36)
+    };
   }
 
   function configureCountdownLabel(rootNode, zone, bounds, clockSpriteFrame) {
-    var countdownY = -bounds.height * 0.5 + 22;
     var labelNode = new cc.Node("Countdown");
     labelNode.parent = rootNode;
-    labelNode.setPosition(0, countdownY);
+    labelNode.setPosition(0, 0);
+    labelNode.zIndex = 2;
     labelNode.setContentSize(120, 34);
     var label = ensureLabel(labelNode, "", 25, 29, cc.Label.HorizontalAlign.CENTER);
     labelNode.color = cc.color(255, 249, 212);
@@ -22706,7 +25393,7 @@ function attachLevelRendererSceneOcclusionMethods(LevelRenderer, deps) {
       if (!Number.isInteger(zone.remainingShots) || zone.remainingShots <= 0) {
         throw new Error("Board occlusion remainingShots must be a positive integer while active.");
       }
-      label.string = zone.remainingShots + " 发";
+      label.string = zone.remainingShots + "发";
       return;
     }
     if (zone.remainingTimeMs !== null) {
@@ -22717,10 +25404,13 @@ function attachLevelRendererSceneOcclusionMethods(LevelRenderer, deps) {
       if (!clockSpriteFrame) {
         throw new Error("Board occlusion timed zone clock was not preloaded: " + BOARD_OCCLUSION_CLOCK_RESOURCE);
       }
-      configureCountdownClock(rootNode, clockSpriteFrame, countdownY);
-      labelNode.setPosition(18, countdownY);
-      labelNode.setContentSize(82, 34);
-      label.string = Math.ceil(zone.remainingTimeMs / 1000) + " 秒";
+      var clockLayout = configureCountdownClock(rootNode, clockSpriteFrame);
+      labelNode.setPosition(0, clockLayout.labelY);
+      labelNode.setContentSize(clockLayout.labelWidth, clockLayout.labelHeight);
+      label.fontSize = 16;
+      label.lineHeight = 18;
+      outline.width = 2;
+      label.string = Math.ceil(zone.remainingTimeMs / 1000) + "秒";
       return;
     }
     label.string = "道具清理";
@@ -22729,26 +25419,30 @@ function attachLevelRendererSceneOcclusionMethods(LevelRenderer, deps) {
   function configureOcclusionMotion(imageNode, visualType) {
     imageNode.stopAllActions();
     if (visualType === "cloud") {
-      imageNode.opacity = 228;
+      imageNode.opacity = CLOUD_BREATH_START_OPACITY;
       imageNode.runAction(cc.repeatForever(cc.sequence(
-        cc.fadeTo(1.25, 250),
-        cc.fadeTo(1.25, 218)
+        cc.fadeTo(CLOUD_BREATH_HALF_DURATION_SECONDS, CLOUD_BREATH_MAX_OPACITY),
+        cc.fadeTo(CLOUD_BREATH_HALF_DURATION_SECONDS, CLOUD_BREATH_MIN_OPACITY)
       )));
       return;
     }
     if (visualType === "leaves") {
       imageNode.opacity = 255;
-      imageNode.angle = -2;
-      imageNode.runAction(cc.repeatForever(cc.sequence(
-        cc.rotateTo(1.15, 2.5),
-        cc.rotateTo(1.15, -2)
-      )));
+      imageNode.angle = 0;
       return;
     }
     throw new Error("Unsupported board occlusion visual type: " + visualType);
   }
 
-  LevelRenderer.prototype._renderBoardOcclusions = function (runtimeSnapshot) {
+  function buildOcclusionRenderKey(runtimeSnapshot, snapshot) {
+    return [
+      snapshot.version,
+      runtimeSnapshot.board.maxColumns,
+      runtimeSnapshot.board.viewportOffsetY
+    ].join("|");
+  }
+
+  function requireOcclusionSnapshot(runtimeSnapshot) {
     if (!runtimeSnapshot || !runtimeSnapshot.board) {
       throw new Error("Board occlusion rendering requires runtime board snapshot.");
     }
@@ -22765,11 +25459,12 @@ function attachLevelRendererSceneOcclusionMethods(LevelRenderer, deps) {
     if (!Array.isArray(snapshot.activeZones)) {
       throw new Error("Board occlusion render activeZones must be an array.");
     }
-    var renderKey = [
-      snapshot.version,
-      runtimeSnapshot.board.maxColumns,
-      runtimeSnapshot.board.viewportOffsetY
-    ].join("|");
+    return snapshot;
+  }
+
+  LevelRenderer.prototype._renderBoardOcclusions = function (runtimeSnapshot) {
+    var snapshot = requireOcclusionSnapshot.call(this, runtimeSnapshot);
+    var renderKey = buildOcclusionRenderKey(runtimeSnapshot, snapshot);
     if (renderKey === this.lastBoardOcclusionRenderKey) {
       return;
     }
@@ -22827,6 +25522,34 @@ function attachLevelRendererSceneOcclusionMethods(LevelRenderer, deps) {
     }, this);
     this.lastBoardOcclusionRenderKey = renderKey;
   };
+
+  LevelRenderer.prototype._refreshBoardOcclusionCountdowns = function (runtimeSnapshot) {
+    var snapshot = requireOcclusionSnapshot.call(this, runtimeSnapshot);
+    if (this.layers.boardOcclusion.children.length !== snapshot.activeZones.length) {
+      throw new Error("Board occlusion countdown refresh requires one rendered node per active zone.");
+    }
+    snapshot.activeZones.forEach(function (zone, zoneIndex) {
+      requireFinite(zone.remainingTimeMs, "Board occlusion remainingTimeMs");
+      if (zone.remainingTimeMs <= 0) {
+        throw new Error("Board occlusion remainingTimeMs must be positive while active.");
+      }
+      var rootName = "BoardOcclusion_" + zoneIndex + "_" + zone.id;
+      var rootNode = this.layers.boardOcclusion.getChildByName(rootName);
+      if (!rootNode || !rootNode.isValid) {
+        throw new Error("Board occlusion countdown root node is missing: " + rootName);
+      }
+      var labelNode = rootNode.getChildByName("Countdown");
+      if (!labelNode || !labelNode.isValid) {
+        throw new Error("Board occlusion countdown label node is missing: " + rootName);
+      }
+      var label = labelNode.getComponent(cc.Label);
+      if (!label) {
+        throw new Error("Board occlusion countdown label component is missing: " + rootName);
+      }
+      label.string = Math.ceil(zone.remainingTimeMs / 1000) + "秒";
+    }, this);
+    this.lastBoardOcclusionRenderKey = buildOcclusionRenderKey(runtimeSnapshot, snapshot);
+  };
 }
 
 module.exports = attachLevelRendererSceneOcclusionMethods;
@@ -22836,7 +25559,30 @@ module.exports = attachLevelRendererSceneOcclusionMethods;
 "use strict";
 
 var SceneShared = require("./LevelRendererSceneShared");
+var LOSE_REVIVE_ICON_SIZE = 50;
+var LOSE_CLEARANCE_TARGET_ICON_HEIGHT = 65;
 
+function getSpriteFrameWidthAtHeight(spriteFrame, height, description) {
+  if (!spriteFrame || typeof spriteFrame.getOriginalSize !== "function") {
+    throw new Error(description + " requires SpriteFrame.getOriginalSize.");
+  }
+  if (typeof height !== "number" || !isFinite(height) || height <= 0) {
+    throw new Error(description + " height must be positive.");
+  }
+  var originalSize = spriteFrame.getOriginalSize();
+  if (
+    !originalSize ||
+    typeof originalSize.width !== "number" ||
+    !isFinite(originalSize.width) ||
+    originalSize.width <= 0 ||
+    typeof originalSize.height !== "number" ||
+    !isFinite(originalSize.height) ||
+    originalSize.height <= 0
+  ) {
+    throw new Error(description + " original size is invalid.");
+  }
+  return height * originalSize.width / originalSize.height;
+}
 function buildLoseRevivePresentation(levelConfig, revivePlan) {
   if (!levelConfig || !levelConfig.level || typeof levelConfig.level.playMode !== "string") {
     throw new Error("LoseView revive presentation requires level.playMode.");
@@ -22844,18 +25590,20 @@ function buildLoseRevivePresentation(levelConfig, revivePlan) {
   if (!revivePlan || typeof revivePlan !== "object" || Array.isArray(revivePlan)) {
     throw new Error("LoseView revive presentation requires revive plan.");
   }
-  if (levelConfig.level.playMode === "timed_infinite_shots") {
+  var level = levelConfig.level;
+  if (level.playMode === "timed_infinite_shots") {
     if (revivePlan.grantedShots !== 0 || !Number.isInteger(revivePlan.grantedTimeSeconds) || revivePlan.grantedTimeSeconds <= 0) {
       throw new Error("Timed LoseView revive presentation requires positive grantedTimeSeconds and zero grantedShots.");
     }
     return {
-      description: "+" + revivePlan.grantedTimeSeconds + "秒",
+      description: "规定时间内通关",
       descriptionX: 0,
-      showBall: false
+      showBall: false,
+      iconType: null
     };
   }
-  if (levelConfig.level.playMode !== "shot_limited") {
-    throw new Error("LoseView revive presentation level.playMode is unsupported: " + levelConfig.level.playMode);
+  if (level.playMode !== "shot_limited") {
+    throw new Error("LoseView revive presentation level.playMode is unsupported: " + level.playMode);
   }
   if (!Number.isInteger(revivePlan.grantedShots) || revivePlan.grantedShots <= 0 || revivePlan.grantedTimeSeconds !== 0) {
     throw new Error("Shot-limited LoseView revive presentation requires positive grantedShots and zero grantedTimeSeconds.");
@@ -22863,7 +25611,25 @@ function buildLoseRevivePresentation(levelConfig, revivePlan) {
   return {
     description: "赠送" + revivePlan.grantedShots + "球",
     descriptionX: 32,
-    showBall: true
+    showBall: true,
+    iconType: "ball"
+  };
+}
+
+function buildLoseClearanceTargetPresentation(levelConfig) {
+  if (!levelConfig || !levelConfig.level || typeof levelConfig.level !== "object") {
+    throw new Error("LoseView clearance target presentation requires level config.");
+  }
+  var level = levelConfig.level;
+  if (level.levelType !== "trapped_sprite_rescue") {
+    return null;
+  }
+  if (!level.trappedSpriteRescue || typeof level.trappedSpriteRescue.spiritId !== "string" || !level.trappedSpriteRescue.spiritId) {
+    throw new Error("Trapped sprite rescue LoseView clearance target requires level.trappedSpriteRescue.spiritId.");
+  }
+  return {
+    description: "救出精灵",
+    spiritId: level.trappedSpriteRescue.spiritId
   };
 }
 
@@ -22873,6 +25639,8 @@ function attachLevelRendererScenePopupMethods(LevelRenderer, deps) {
   var BALL_RESOURCES = deps.BALL_RESOURCES;
   var LOSE_STATUS_RESOURCES = deps.LOSE_STATUS_RESOURCES;
   var REWARD_ITEM_RESOURCES = deps.REWARD_ITEM_RESOURCES;
+  var buildTrappedSpriteResourcePath = deps.buildTrappedSpriteResourcePath;
+  var buildSpiritFragmentRewardResourcePath = deps.buildSpiritFragmentRewardResourcePath;
   var PREFAB_PATHS = deps.PREFAB_PATHS;
   var SpriteProxyLayerHelper = deps.SpriteProxyLayerHelper;
   var PropDescriptionViewController = deps.PropDescriptionViewController;
@@ -22938,7 +25706,68 @@ function attachLevelRendererScenePopupMethods(LevelRenderer, deps) {
     });
   }
 
-  function renderLoseFailureStatus(renderer, loseContent, runtimeSnapshot) {
+  function renderLoseClearanceTarget(renderer, loseContent, levelConfig) {
+    var statusLayoutNode = requireChildNode(loseContent, "taget", "LoseView");
+    var targetBallNode = requireChildNode(statusLayoutNode, "ball", "LoseView/taget");
+    var clearTargetNode = requireChildNode(statusLayoutNode, "clearn_target", "LoseView/taget");
+    var targetBallSprite = targetBallNode.getComponent(cc.Sprite);
+    var clearTargetLabel = clearTargetNode.getComponent(cc.Label);
+    if (!targetBallSprite || !targetBallSprite.spriteFrame) {
+      throw new Error("LoseView/taget/ball requires authored SpriteFrame.");
+    }
+    if (!clearTargetLabel || typeof clearTargetLabel.string !== "string") {
+      throw new Error("LoseView/taget/clearn_target requires cc.Label.");
+    }
+    if (!targetBallNode.__loseClearTargetDefaultSpriteFrame) {
+      targetBallNode.__loseClearTargetDefaultSpriteFrame = targetBallSprite.spriteFrame;
+      targetBallNode.__loseClearTargetDefaultTrim = targetBallSprite.trim;
+    }
+    if (!targetBallNode.__loseClearTargetDefaultContentSize) {
+      if (typeof targetBallNode.getContentSize !== "function") {
+        throw new Error("LoseView/taget/ball requires getContentSize.");
+      }
+      var defaultContentSize = targetBallNode.getContentSize();
+      if (!defaultContentSize || defaultContentSize.width <= 0 || defaultContentSize.height <= 0) {
+        throw new Error("LoseView/taget/ball authored content size must be positive.");
+      }
+      targetBallNode.__loseClearTargetDefaultContentSize = {
+        width: defaultContentSize.width,
+        height: defaultContentSize.height
+      };
+    }
+    if (typeof clearTargetNode.__loseClearTargetDefaultText !== "string") {
+      clearTargetNode.__loseClearTargetDefaultText = clearTargetLabel.string;
+    }
+
+    var presentation = buildLoseClearanceTargetPresentation(levelConfig);
+    if (!presentation) {
+      var defaultSprite = ensureSprite(targetBallNode, targetBallNode.__loseClearTargetDefaultSpriteFrame);
+      defaultSprite.trim = targetBallNode.__loseClearTargetDefaultTrim;
+      targetBallNode.setContentSize(
+        targetBallNode.__loseClearTargetDefaultContentSize.width,
+        targetBallNode.__loseClearTargetDefaultContentSize.height
+      );
+      setRequiredLabelString(clearTargetNode, clearTargetNode.__loseClearTargetDefaultText, "LoseView/taget/clearn_target");
+      return;
+    }
+    if (typeof buildTrappedSpriteResourcePath !== "function") {
+      throw new Error("LoseView rescue clearance target requires a trapped sprite resource resolver.");
+    }
+    var spritePath = buildTrappedSpriteResourcePath(presentation.spiritId);
+    var spriteFrame = renderer.spriteFrameCache[spritePath];
+    if (!spriteFrame) {
+      throw new Error("LoseView rescue clearance target sprite is not preloaded: " + spritePath);
+    }
+    var sprite = ensureSprite(targetBallNode, spriteFrame);
+    sprite.trim = false;
+    targetBallNode.setContentSize(
+      getSpriteFrameWidthAtHeight(spriteFrame, LOSE_CLEARANCE_TARGET_ICON_HEIGHT, "LoseView rescue clearance target"),
+      LOSE_CLEARANCE_TARGET_ICON_HEIGHT
+    );
+    setRequiredLabelString(clearTargetNode, presentation.description, "LoseView/taget/clearn_target");
+  }
+
+  function renderLoseFailureStatus(renderer, loseContent, levelConfig, runtimeSnapshot) {
     if (!runtimeSnapshot || typeof runtimeSnapshot !== "object") {
       throw new Error("LoseView failure status requires runtime snapshot.");
     }
@@ -22984,6 +25813,7 @@ function attachLevelRendererScenePopupMethods(LevelRenderer, deps) {
     }
 
     setRequiredLabelString(failTipsNode, failTips, "LoseView/fail_tips");
+    renderLoseClearanceTarget(renderer, loseContent, levelConfig);
     ensureSprite(ballStatusNode, ballComplete ? completeSpriteFrame : incompleteSpriteFrame);
     ensureSprite(starStatusNode, starComplete ? completeSpriteFrame : incompleteSpriteFrame);
   }
@@ -23012,16 +25842,22 @@ function attachLevelRendererScenePopupMethods(LevelRenderer, deps) {
       return;
     }
 
-    var iconCode = revivePlan.targetColor ? revivePlan.targetColor : "RAINBOW";
-    var spritePath = BALL_RESOURCES[iconCode];
+    var spritePath;
+    if (presentation.iconType === "ball") {
+      var iconCode = revivePlan.targetColor ? revivePlan.targetColor : "RAINBOW";
+      spritePath = BALL_RESOURCES[iconCode];
+    } else {
+      throw new Error("LoseView revive gain requires a supported icon type.");
+    }
     if (!spritePath) {
-      throw new Error("LoseView revive gain unsupported icon code: " + iconCode);
+      throw new Error("LoseView revive gain icon resource path is required.");
     }
     var spriteFrame = renderer.spriteFrameCache[spritePath];
     if (!spriteFrame) {
       throw new Error("LoseView revive gain sprite is not preloaded: " + spritePath);
     }
     ensureSprite(ballNode, spriteFrame);
+    ballNode.setContentSize(LOSE_REVIVE_ICON_SIZE, LOSE_REVIVE_ICON_SIZE);
   }
 
   function renderLoseCoinButton(renderer, loseContent, canRevive) {
@@ -23101,11 +25937,23 @@ LevelRenderer.prototype._setWinValueText = function (valueNode, text) {
     return runtimeSnapshot.winStats.clearRewardItems;
   }
 
-  function resolveRewardItemSpritePath(itemId) {
-    if (!REWARD_ITEM_RESOURCES || !REWARD_ITEM_RESOURCES[itemId]) {
-      throw new Error("WinView unsupported reward item id: " + itemId);
+  function resolveRewardItemSpritePath(rewardItem) {
+    if (!rewardItem || typeof rewardItem !== "object") {
+      throw new Error("WinView reward item is required.");
     }
-    return REWARD_ITEM_RESOURCES[itemId];
+    if (rewardItem.id === "spirit_fragment") {
+      if (typeof buildSpiritFragmentRewardResourcePath !== "function") {
+        throw new Error("WinView requires spirit fragment reward resource resolver.");
+      }
+      if (typeof rewardItem.spiritId !== "string" || rewardItem.spiritId.length === 0) {
+        throw new Error("WinView spirit fragment reward requires spiritId.");
+      }
+      return buildSpiritFragmentRewardResourcePath(rewardItem.spiritId);
+    }
+    if (!REWARD_ITEM_RESOURCES || !REWARD_ITEM_RESOURCES[rewardItem.id]) {
+      throw new Error("WinView unsupported reward item id: " + rewardItem.id);
+    }
+    return REWARD_ITEM_RESOURCES[rewardItem.id];
   }
 
   function requireWinChild(parentNode, childName, ownerName) {
@@ -23170,7 +26018,7 @@ LevelRenderer.prototype._renderWinAwardInfo = function (winContent, rewardItems)
 
     var iconNode = requireWinChild(itemNode, "icon", itemNode.name);
     var numNode = requireWinChild(itemNode, "num", itemNode.name);
-    var spritePath = resolveRewardItemSpritePath(itemId);
+    var spritePath = resolveRewardItemSpritePath(rewardItem);
     var spriteFrame = this.spriteFrameCache[spritePath];
     if (!spriteFrame || (cc && typeof cc.isValid === "function" && !cc.isValid(spriteFrame))) {
       throw new Error("WinView reward sprite is not preloaded: " + spritePath);
@@ -23815,7 +26663,7 @@ LevelRenderer.prototype._renderLoseView = function (runtimeSnapshot) {
     this._playPopupContentOpenAnimation(loseContent);
   }
 
-  renderLoseFailureStatus(this, loseContent, runtimeSnapshot);
+  renderLoseFailureStatus(this, loseContent, this.currentLevelConfig, runtimeSnapshot);
 
   var loseRewardEntry = typeof resolveLoseRewardEntry === "function"
     ? resolveLoseRewardEntry(runtimeSnapshot.state)
@@ -23910,6 +26758,8 @@ LevelRenderer.prototype._renderResultPopup = function (runtimeSnapshot) {
 
 module.exports = attachLevelRendererScenePopupMethods;
 module.exports.buildLoseRevivePresentation = buildLoseRevivePresentation;
+module.exports.buildLoseClearanceTargetPresentation = buildLoseClearanceTargetPresentation;
+module.exports.getSpriteFrameWidthAtHeight = getSpriteFrameWidthAtHeight;
 
 },{"./LevelRendererSceneShared":"LevelRendererSceneShared"}],
 "LevelRendererSceneScaffoldMethods":[function(require,module,exports){
@@ -24401,6 +27251,10 @@ LevelRenderer.prototype._alignNodeYToTopRowBubbleVisualTop = function (node, loc
 
 LevelRenderer.prototype._renderMainland = function (boardSnapshot) {
   var mainlandNode = this._resolveMainlandNode();
+  if (boardSnapshot.trappedSpriteRescueActive === true) {
+    mainlandNode.active = false;
+    return;
+  }
   var bgNode = mainlandNode.parent;
   if (!bgNode || !bgNode.isValid) {
     throw new Error("Mainland parent bg node is required.");
@@ -24430,6 +27284,10 @@ LevelRenderer.prototype._renderJianbian = function (boardSnapshot) {
   }
 
   var jianbianNode = this._resolveJianbianNode();
+  if (boardSnapshot.trappedSpriteRescueActive === true) {
+    jianbianNode.active = false;
+    return;
+  }
   this._alignNodeYToTopRowBubbleVisualTop(jianbianNode, gameViewNode, boardSnapshot);
 };
 }
@@ -24482,6 +27340,8 @@ var SceneShared = require("./LevelRendererSceneShared");
 function attachLevelRendererSceneShooterMethods(LevelRenderer, deps) {
   var requireChildNode = SceneShared.requireChildNode;
   var BoardLayout = deps.BoardLayout;
+  var AssistSpiritSkillConfig = deps.AssistSpiritSkillConfig;
+  var AssistSpiritPresentationConfig = deps.AssistSpiritPresentationConfig;
   var BALL_RESOURCES = deps.BALL_RESOURCES;
   var PREFAB_PATHS = deps.PREFAB_PATHS;
   var BOARD_BUBBLE_SIZE = deps.BOARD_BUBBLE_SIZE;
@@ -24513,8 +27373,6 @@ function attachLevelRendererSceneShooterMethods(LevelRenderer, deps) {
   var SHOOTER_HANDOFF_ARC_HEIGHT = 52;
   var SHOOTER_AIM_RECENTER_DURATION = 0.28;
   var SHOOTER_HERO_NODE_NAME = "handler_milu";
-  var SHOOTER_HERO_IDLE_CLIP_NAME = "genius_hero_idle";
-  var SHOOTER_HERO_FIRE_CLIP_NAME = "genius_hero_pao";
   var SHOOTER_PREFAB_LAYOUT_NODE_NAMES = [
     SHOOTER_HERO_NODE_NAME,
     "CurrentBallAnchor",
@@ -24524,8 +27382,75 @@ function attachLevelRendererSceneShooterMethods(LevelRenderer, deps) {
     "NextBallDock",
     "NextBallAnchor",
     "TurretNumBg",
-    "Surplus"
+    "Surplus",
+    "Skill"
   ];
+  var ASSIST_SKILL_GRAY_COLOR = cc.color(116, 116, 116, 255);
+
+  function requireAssistSkillChargeValue(value, fieldName) {
+    if (!Number.isInteger(value) || value < 0) {
+      throw new Error("ShooterPanel Skill " + fieldName + " must be a non-negative integer.");
+    }
+    return value;
+  }
+
+  function getOrCreateAssistSkillChargeFill(skillNode) {
+    var fillNode = skillNode.getChildByName("SkillChargeFill");
+    if (!fillNode) {
+      fillNode = new cc.Node("SkillChargeFill");
+      fillNode.setAnchorPoint(skillNode.anchorX, skillNode.anchorY);
+      fillNode.setContentSize(skillNode.getContentSize());
+      fillNode.setPosition(0, 0);
+      skillNode.addChild(fillNode);
+      fillNode.setSiblingIndex(0);
+      fillNode.addComponent(cc.Sprite);
+    }
+    var fillSprite = fillNode.getComponent(cc.Sprite);
+    if (!fillSprite) {
+      throw new Error("ShooterPanel SkillChargeFill requires cc.Sprite.");
+    }
+    return {
+      node: fillNode,
+      sprite: fillSprite
+    };
+  }
+
+  function syncAssistSkillChargeVisual(skillNode, skillFrame, charge, maxCharge) {
+    var safeCharge = requireAssistSkillChargeValue(charge, "assistSpiritSkillCharge");
+    var safeMaxCharge = requireAssistSkillChargeValue(maxCharge, "assistSpiritSkillChargeMax");
+    if (safeMaxCharge <= 0 || safeCharge > safeMaxCharge) {
+      throw new Error("ShooterPanel Skill charge must be within a positive maximum.");
+    }
+    var skillSprite = skillNode.getComponent(cc.Sprite);
+    if (!skillSprite) {
+      throw new Error("ShooterPanel Skill requires cc.Sprite.");
+    }
+    var adNode = requireChildNode(skillNode, "ad", "ShooterPanel/Skill");
+    var fill = getOrCreateAssistSkillChargeFill(skillNode);
+    var ratio = safeCharge / safeMaxCharge;
+
+    skillSprite.spriteFrame = skillFrame;
+    skillSprite.sizeMode = cc.Sprite.SizeMode.CUSTOM;
+    skillSprite.type = cc.Sprite.Type.SIMPLE;
+    skillSprite.node.color = ASSIST_SKILL_GRAY_COLOR;
+
+    fill.node.setContentSize(skillNode.getContentSize());
+    fill.node.setPosition(0, 0);
+    fill.node.active = ratio > 0;
+    if (fill.node.active) {
+      fill.sprite.sizeMode = cc.Sprite.SizeMode.CUSTOM;
+      fill.sprite.type = cc.Sprite.Type.FILLED;
+      fill.sprite.fillType = cc.Sprite.FillType.VERTICAL;
+      fill.sprite.fillStart = 1 - ratio;
+      fill.sprite.fillRange = ratio;
+      fill.sprite.spriteFrame = skillFrame;
+      fill.node.setAnchorPoint(skillNode.anchorX, skillNode.anchorY);
+      fill.node.setContentSize(skillNode.getContentSize());
+      fill.node.setPosition(0, 0);
+      fill.node.color = cc.color(255, 255, 255, 255);
+    }
+    adNode.active = ratio < 1;
+  }
 
   function syncShooterPrefabLayout(shooterPanel, aimOrigin) {
     if (
@@ -24643,8 +27568,58 @@ function attachLevelRendererSceneShooterMethods(LevelRenderer, deps) {
     return clip;
   }
 
-  function playShooterHeroIdle(heroNode) {
-    return playShooterHeroClip(heroNode, SHOOTER_HERO_IDLE_CLIP_NAME, null);
+  function playShooterHeroIdle(heroNode, clipName) {
+    return playShooterHeroClip(heroNode, clipName, null);
+  }
+
+  function installShooterHeroClips(renderer, heroNode, spiritId) {
+    var presentation = AssistSpiritPresentationConfig.getBySpiritId(spiritId);
+    var idleClip = renderer.assistSpiritAnimationClipCache[presentation.idleClipPath];
+    var deliverClip = renderer.assistSpiritAnimationClipCache[presentation.deliverClipPath];
+    if (!idleClip || !idleClip.isValid) {
+      throw new Error("Shooter hero idle clip was not preloaded: " + presentation.idleClipPath);
+    }
+    if (!deliverClip || !deliverClip.isValid) {
+      throw new Error("Shooter hero deliver clip was not preloaded: " + presentation.deliverClipPath);
+    }
+    if (idleClip.name !== presentation.idleClipName) {
+      throw new Error("Shooter hero idle clip name mismatch: " + idleClip.name);
+    }
+    if (deliverClip.name !== presentation.deliverClipName) {
+      throw new Error("Shooter hero deliver clip name mismatch: " + deliverClip.name);
+    }
+
+    var animation = requireShooterHeroAnimation(heroNode);
+    if (
+      heroNode.__shooterHeroSpiritId === spiritId &&
+      requireShooterHeroClip(animation, presentation.idleClipName) === idleClip &&
+      requireShooterHeroClip(animation, presentation.deliverClipName) === deliverClip
+    ) {
+      return presentation;
+    }
+    if (typeof animation.stop !== "function") {
+      throw new Error("Shooter hero animation requires stop API.");
+    }
+    if (typeof animation.removeClip !== "function") {
+      throw new Error("Shooter hero animation requires removeClip API.");
+    }
+    if (typeof animation.addClip !== "function") {
+      throw new Error("Shooter hero animation requires addClip API.");
+    }
+    animation.stop();
+    animation.getClips().slice().forEach(function (clip) {
+      animation.removeClip(clip, true);
+    });
+    animation.addClip(idleClip);
+    animation.addClip(deliverClip);
+    requireShooterHeroClip(animation, presentation.idleClipName);
+    requireShooterHeroClip(animation, presentation.deliverClipName);
+
+    heroNode.__shooterHeroSpiritId = spiritId;
+    heroNode.__shooterHeroPlayingClip = "";
+    heroNode.__shooterHeroAnimationToken =
+      (typeof heroNode.__shooterHeroAnimationToken === "number" ? heroNode.__shooterHeroAnimationToken : 0) + 1;
+    return presentation;
   }
 
   function resolveFiniteRemainingShots(remainingShots, shooterSnapshot, description) {
@@ -24815,6 +27790,43 @@ LevelRenderer.prototype._renderShooter = function (shooterSnapshot, activeProjec
     );
   }
 
+  if (!shooterSnapshot || typeof shooterSnapshot.assistSpiritId !== "string") {
+    throw new Error("ShooterPanel Skill requires shooterSnapshot.assistSpiritId.");
+  }
+  var assistSkillConfig = AssistSpiritSkillConfig.getBySpiritId(shooterSnapshot.assistSpiritId);
+  var assistSkillNode = layoutNodes.Skill;
+  assistSkillNode.active = !!assistSkillConfig.skillId;
+  if (assistSkillNode.active) {
+    var assistSkillSprite = assistSkillNode.getComponent(cc.Sprite);
+    if (!assistSkillSprite) {
+      throw new Error("ShooterPanel Skill requires cc.Sprite.");
+    }
+    var assistSkillButton = assistSkillNode.getComponent(cc.Button);
+    if (!assistSkillButton) {
+      throw new Error("ShooterPanel Skill requires cc.Button.");
+    }
+    var assistSkillFrame = this.spriteFrameCache[assistSkillConfig.iconPath];
+    if (!assistSkillFrame || !assistSkillFrame.isValid) {
+      throw new Error("ShooterPanel Skill SpriteFrame is missing: " + assistSkillConfig.iconPath);
+    }
+    syncAssistSkillChargeVisual(
+      assistSkillNode,
+      assistSkillFrame,
+      shooterSnapshot.assistSpiritSkillCharge,
+      shooterSnapshot.assistSpiritSkillChargeMax
+    );
+    this._bindBottomPanelButton(assistSkillNode, "use_assist_spirit_skill");
+    this._setBottomPanelButtonEnabled(
+      assistSkillNode,
+      canUsePowerup &&
+        !pendingBarrierHammer &&
+        (
+          shooterSnapshot.assistSpiritSkillCharged !== true ||
+          shooterSnapshot.assistSpiritSkillAvailable === true
+        )
+    );
+  }
+
   var nextAnchor = layoutNodes.NextBallAnchor;
   nextAnchor.setScale(1);
   nextAnchor.opacity = 255;
@@ -24866,13 +27878,19 @@ LevelRenderer.prototype._renderShooter = function (shooterSnapshot, activeProjec
   }
 
   var ghost = getOrCreateChild(shooterPanel, "GhostBubble");
-  var hasTrajectory = !!(trajectory && trajectory.targetCellPosition && trajectory.pathPoints && trajectory.pathPoints.length >= 2);
+  var hasTrajectory = !!(
+    trajectory &&
+    trajectory.hitType !== "miss" &&
+    trajectory.pathPoints &&
+    trajectory.pathPoints.length >= 2
+  );
+  var hasGhostTarget = hasTrajectory && !!trajectory.targetCellPosition;
   var wallBounceCount = hasTrajectory && Number.isInteger(trajectory.wallBounceCount)
     ? trajectory.wallBounceCount
     : 0;
   var ricochetGuideActive = !!(shooterSnapshot && shooterSnapshot.ricochetGuideActive);
   var shouldShowGhost = BoardLayout.showGhostBubble !== false && (ricochetGuideActive || wallBounceCount === 0);
-  ghost.active = shouldShowGhost && !activeProjectile && hasTrajectory && !!currentBallLike;
+  ghost.active = shouldShowGhost && !activeProjectile && hasGhostTarget && !!currentBallLike;
   if (ghost.active) {
     ghost.setPosition(trajectory.targetCellPosition.x, trajectory.targetCellPosition.y);
     ghost.setScale(1);
@@ -24966,6 +27984,10 @@ LevelRenderer.prototype._syncShooterHeroAnimation = function (
   activeProjectile,
   finiteRemainingShots
 ) {
+  if (!shooterSnapshot || typeof shooterSnapshot.assistSpiritId !== "string" || !shooterSnapshot.assistSpiritId) {
+    throw new Error("Shooter hero animation requires shooterSnapshot.assistSpiritId.");
+  }
+  var presentation = installShooterHeroClips(this, heroNode, shooterSnapshot.assistSpiritId);
   var revision = shooterSnapshot.queueAdvanceRevision;
   if (!Number.isInteger(revision) || revision < 0) {
     throw new Error("Shooter hero animation requires a non-negative queueAdvanceRevision.");
@@ -24973,7 +27995,7 @@ LevelRenderer.prototype._syncShooterHeroAnimation = function (
 
   if (typeof shooterPanel.__lastShooterHeroFireRevision !== "number") {
     shooterPanel.__lastShooterHeroFireRevision = revision;
-    playShooterHeroIdle(heroNode);
+    playShooterHeroIdle(heroNode, presentation.idleClipName);
     return;
   }
   if (revision < shooterPanel.__lastShooterHeroFireRevision) {
@@ -24986,25 +28008,28 @@ LevelRenderer.prototype._syncShooterHeroAnimation = function (
     }
     if (finiteRemainingShots === 0) {
       shooterPanel.__lastShooterHeroFireRevision = revision;
-      playShooterHeroIdle(heroNode);
+      playShooterHeroIdle(heroNode, presentation.idleClipName);
       return;
     }
     if (!activeProjectile) {
       throw new Error("Shooter hero fire animation requires an active projectile.");
     }
     shooterPanel.__lastShooterHeroFireRevision = revision;
-    this._playShooterHeroFireAnimation(heroNode);
+    this._playShooterHeroFireAnimation(heroNode, presentation);
     return;
   }
 
   if (!heroNode.__shooterHeroPlayingClip) {
-    playShooterHeroIdle(heroNode);
+    playShooterHeroIdle(heroNode, presentation.idleClipName);
   }
 };
 
-LevelRenderer.prototype._playShooterHeroFireAnimation = function (heroNode) {
-  playShooterHeroClip(heroNode, SHOOTER_HERO_FIRE_CLIP_NAME, function () {
-    playShooterHeroIdle(heroNode);
+LevelRenderer.prototype._playShooterHeroFireAnimation = function (heroNode, presentation) {
+  if (!presentation || typeof presentation.deliverClipName !== "string" || typeof presentation.idleClipName !== "string") {
+    throw new Error("Shooter hero deliver animation requires presentation config.");
+  }
+  playShooterHeroClip(heroNode, presentation.deliverClipName, function () {
+    playShooterHeroIdle(heroNode, presentation.idleClipName);
   });
 };
 
@@ -25181,7 +28206,6 @@ LevelRenderer.prototype._syncShooterGuideDots = function (shooterPanel, shooterS
   var hasTrajectory = !!(
     trajectory &&
     trajectory.valid &&
-    trajectory.targetCellPosition &&
     trajectory.pathPoints &&
     trajectory.pathPoints.length >= 2
   );
@@ -25452,7 +28476,6 @@ var RESOURCE_PATHS = {
 
 var RESOURCE_KEYS = Object.keys(RESOURCE_PATHS);
 var SEGMENT_HEIGHT = 56;
-var SEGMENT_ENDPOINT_OVERLAP = 14;
 var SEGMENT_FADE_IN_DURATION = 0.035;
 var SEGMENT_FRAME_DURATION = 0.055;
 var SEGMENT_FADE_OUT_DURATION = 0.11;
@@ -25528,9 +28551,8 @@ function validatePlayConfig(config) {
   }
 
   var chainId = requireChainId(config.chainId);
-  var origin = requireFinitePoint(config.origin, "Lightning chain origin");
-  if (!Array.isArray(config.hitPoints) || config.hitPoints.length === 0) {
-    throw new Error("Lightning chain requires at least one hit point.");
+  if (!Array.isArray(config.hitPoints) || config.hitPoints.length < 2) {
+    throw new Error("Lightning chain requires at least two hit points.");
   }
   if (config.onHit !== undefined && typeof config.onHit !== "function") {
     throw new Error("Lightning chain onHit must be a function when provided.");
@@ -25541,18 +28563,12 @@ function validatePlayConfig(config) {
     return requireHitPoint(hitPoint, index, usedIds);
   });
 
-  var previousPoint = origin;
-  hitPoints.forEach(function (hitPoint, index) {
-    resolveSegmentGeometry(previousPoint, hitPoint, index);
-    previousPoint = hitPoint;
-  });
+  for (var segmentIndex = 0; segmentIndex < hitPoints.length - 1; segmentIndex += 1) {
+    resolveSegmentGeometry(hitPoints[segmentIndex], hitPoints[segmentIndex + 1], segmentIndex);
+  }
 
   return {
     chainId: chainId,
-    origin: {
-      x: origin.x,
-      y: origin.y
-    },
     hitPoints: hitPoints,
     onHit: config.onHit
   };
@@ -25572,7 +28588,7 @@ function resolveSegmentGeometry(startPoint, endPoint, index) {
   return {
     x: startPoint.x,
     y: startPoint.y,
-    width: distance + SEGMENT_ENDPOINT_OVERLAP,
+    width: distance,
     height: SEGMENT_HEIGHT,
     angle: Math.atan2(dy, dx) * 180 / Math.PI
   };
@@ -25898,11 +28914,11 @@ LightningChainRenderer.prototype.play = function (layer, spriteFrameCache, confi
 
   var segments = [];
   var impacts = [];
-  var previousPoint = normalizedConfig.origin;
   normalizedConfig.hitPoints.forEach(function (hitPoint, index) {
-    segments.push(createSegmentNode(root, spriteFrames, previousPoint, hitPoint, index));
     impacts.push(createImpactNodes(root, spriteFrames, hitPoint, index));
-    previousPoint = hitPoint;
+    if (index < normalizedConfig.hitPoints.length - 1) {
+      segments.push(createSegmentNode(root, spriteFrames, hitPoint, normalizedConfig.hitPoints[index + 1], index));
+    }
   });
 
   return new Promise(function (resolve) {
@@ -25915,21 +28931,33 @@ LightningChainRenderer.prototype.play = function (layer, spriteFrameCache, confi
     this.activeState = state;
     var timeline = [];
 
-    normalizedConfig.hitPoints.forEach(function (hitPoint, index) {
-      if (index > 0) {
-        timeline.push(cc.delayTime(HIT_STAGGER_DURATION));
+    var playHit = function (hitPoint, index) {
+      playImpact(impacts[index]);
+      state.completedHitIds.push(hitPoint.id);
+      if (normalizedConfig.onHit) {
+        normalizedConfig.onHit(hitPoint, index);
       }
+    };
+
+    timeline.push(cc.callFunc(function () {
+      if (this.activeState !== state) {
+        throw new Error("Lightning chain active state changed during playback.");
+      }
+      requireActiveNode(root, "Lightning chain root");
+      playHit(normalizedConfig.hitPoints[0], 0);
+    }.bind(this)));
+
+    segments.forEach(function (segment, segmentIndex) {
+      var hitPointIndex = segmentIndex + 1;
+      var hitPoint = normalizedConfig.hitPoints[hitPointIndex];
+      timeline.push(cc.delayTime(HIT_STAGGER_DURATION));
       timeline.push(cc.callFunc(function () {
         if (this.activeState !== state) {
           throw new Error("Lightning chain active state changed during playback.");
         }
         requireActiveNode(root, "Lightning chain root");
-        playSegment(segments[index], spriteFrames);
-        playImpact(impacts[index]);
-        state.completedHitIds.push(hitPoint.id);
-        if (normalizedConfig.onHit) {
-          normalizedConfig.onHit(hitPoint, index);
-        }
+        playSegment(segment, spriteFrames);
+        playHit(hitPoint, hitPointIndex);
       }.bind(this)));
     }, this);
 
@@ -26359,32 +29387,25 @@ function buildReconstructedBouncePoints(origin, target, wallSequence) {
 }
 
 function buildProjectilePathFromShotPlan(shotPlan) {
-  var origin = shotPlan && shotPlan.origin ? clone(shotPlan.origin) : clone(BoardLayout.shooterOrigin);
-  var target = shotPlan && shotPlan.targetCellPosition ? clone(shotPlan.targetCellPosition) : clone(origin);
-  var bounceCount = shotPlan && typeof shotPlan.wallBounceCount === "number"
-    ? Math.max(0, Math.floor(shotPlan.wallBounceCount))
-    : 0;
+  if (!shotPlan || typeof shotPlan !== "object" || Array.isArray(shotPlan)) {
+    throw new Error("Projectile path requires shotPlan.");
+  }
+  if (!Array.isArray(shotPlan.pathPoints) || shotPlan.pathPoints.length < 2) {
+    throw new Error("Projectile path requires at least two authoritative shotPlan.pathPoints.");
+  }
 
-  var pathPoints = [];
-  appendUniquePathPoint(pathPoints, origin);
-  if (bounceCount > 0) {
-    var firstWallX = resolveFirstBounceWallX(shotPlan, origin, target);
-    var wallSequence = buildBounceWallSequence(firstWallX, bounceCount);
-    var bouncePoints = buildReconstructedBouncePoints(origin, target, wallSequence);
-    if (bouncePoints && bouncePoints.length) {
-      bouncePoints.forEach(function (point) {
-        appendUniquePathPoint(pathPoints, point);
-      });
+  return shotPlan.pathPoints.map(function (point, index) {
+    if (
+      !point ||
+      typeof point.x !== "number" ||
+      typeof point.y !== "number" ||
+      !isFinite(point.x) ||
+      !isFinite(point.y)
+    ) {
+      throw new Error("Projectile path point must be finite at index " + index + ".");
     }
-  }
-
-  appendUniquePathPoint(pathPoints, target);
-
-  if (pathPoints.length < 2) {
-    pathPoints.push(clone(target));
-  }
-
-  return pathPoints;
+    return clone(point);
+  });
 }
 
 function measurePathDistance(pathPoints) {
@@ -26572,6 +29593,8 @@ function ShooterController() {
   this.currentBall = null;
   this.nextBall = null;
   this.authoredOpeningQueue = [];
+  this.lastRandomColor = null;
+  this.consecutiveRandomColorCount = 0;
   this.currentColor = null;
   this.nextColor = null;
   this.queueAdvanceRevision = 0;
@@ -26600,22 +29623,21 @@ ShooterController.prototype.configureLevel = function (levelConfig) {
   this.currentBall = null;
   this.nextBall = null;
   this.authoredOpeningQueue = [];
+  this.lastRandomColor = null;
+  this.consecutiveRandomColorCount = 0;
   if (levelConfig.level.openingShotBalls !== undefined && levelConfig.level.initialShotBalls !== undefined) {
     throw new Error("ShooterController openingShotBalls and initialShotBalls cannot both be configured.");
   }
   if (levelConfig.level.openingShotBalls !== undefined) {
     this._applyOpeningShotBalls(levelConfig.level.openingShotBalls);
   }
+  if (Array.isArray(levelConfig.level.initialShotBalls)) {
+    this._applyInitialShotBalls(levelConfig.level.initialShotBalls);
+  }
   this._syncQueueForRemainingShots(
     levelConfig.level.playMode === "timed_infinite_shots" ? 2 : this.shotLimit
   );
   this.queueAdvanceRevision = 0;
-  if (Array.isArray(levelConfig.level.initialShotBalls)) {
-    this._applyInitialShotBalls(levelConfig.level.initialShotBalls);
-    this._syncQueueForRemainingShots(
-      levelConfig.level.playMode === "timed_infinite_shots" ? 2 : this.shotLimit
-    );
-  }
   this._syncLegacyColorFields();
   this.aimDirection = { x: 0, y: 1 };
   var configuredMaxAimAngle = levelConfig.level && typeof levelConfig.level.aimMaxAngleDeg === "number"
@@ -26901,6 +29923,25 @@ ShooterController.prototype.equipSkillBall = function (entityType) {
   };
 };
 
+ShooterController.prototype.convertCurrentNormalBallToSkillBall = function (entityType) {
+  if (entityType !== "blast") {
+    throw new Error("ShooterController produced ball type is unsupported: " + entityType);
+  }
+  if (!this.currentBall || this.currentBall.ballCategory !== "normal") {
+    throw new Error("ShooterController produced ball conversion requires a current normal ball.");
+  }
+
+  var replacedBall = clone(this.currentBall);
+  this.currentBall = createSkillBall(entityType);
+  this._syncLegacyColorFields();
+  return {
+    accepted: true,
+    entityType: entityType,
+    replacedBall: replacedBall,
+    currentBall: clone(this.currentBall)
+  };
+};
+
 ShooterController.prototype.resolveCurrentRainbowColor = function (colorCode) {
   if (this.availableColors.indexOf(colorCode) === -1) {
     return {
@@ -27071,22 +30112,39 @@ ShooterController.prototype._pickColor = function () {
     return null;
   }
 
-  var totalWeight = this.availableColors.reduce(function (sum, colorCode) {
+  var candidateColors = this.consecutiveRandomColorCount >= 2
+    ? this.availableColors.filter(function (colorCode) {
+      return colorCode !== this.lastRandomColor;
+    }.bind(this))
+    : this.availableColors;
+  if (!candidateColors.length) {
+    throw new Error("ShooterController cannot generate a third consecutive random color without another available color.");
+  }
+
+  var totalWeight = candidateColors.reduce(function (sum, colorCode) {
     return sum + (this.spawnWeights[colorCode] || 1);
   }.bind(this), 0);
 
   var threshold = Math.random() * totalWeight;
   var running = 0;
 
-  for (var i = 0; i < this.availableColors.length; i += 1) {
-    var colorCode = this.availableColors[i];
+  var selectedColor = candidateColors[candidateColors.length - 1];
+  for (var i = 0; i < candidateColors.length; i += 1) {
+    var colorCode = candidateColors[i];
     running += this.spawnWeights[colorCode] || 1;
     if (threshold <= running) {
-      return colorCode;
+      selectedColor = colorCode;
+      break;
     }
   }
 
-  return this.availableColors[this.availableColors.length - 1];
+  if (selectedColor === this.lastRandomColor) {
+    this.consecutiveRandomColorCount += 1;
+  } else {
+    this.lastRandomColor = selectedColor;
+    this.consecutiveRandomColorCount = 1;
+  }
+  return selectedColor;
 };
 
 ShooterController.prototype._pickNormalBall = function () {
@@ -27162,6 +30220,11 @@ var fairyAssist = {
   flyOutDistance: 880
 };
 
+var trappedSpriteRescue = {
+  flyOutDuration: 0.65,
+  exitMargin: 80
+};
+
 function requirePositiveNumber(value, fieldName) {
   var numberValue = Number(value);
   if (!isFinite(numberValue) || numberValue <= 0) {
@@ -27219,6 +30282,7 @@ module.exports = Object.freeze({
   wormholeShift: Object.freeze(wormholeShift),
   vineCast: Object.freeze(vineCast),
   fairyAssist: Object.freeze(fairyAssist),
+  trappedSpriteRescue: Object.freeze(trappedSpriteRescue),
   impactBounce: Object.freeze(impactBounce),
   iceSnowballCollect: Object.freeze(iceSnowballCollect),
   calculateImpactBounceTotalDuration: calculateImpactBounceTotalDuration
@@ -27258,6 +30322,7 @@ function SupportSystem() {
   BaseSystem.call(this, "SupportSystem");
   this.anchorRows = 1;
   this.lastFloatingCells = [];
+  this.trappedSpriteAnchorCell = null;
 }
 
 SupportSystem.prototype = Object.create(BaseSystem.prototype);
@@ -27267,6 +30332,19 @@ SupportSystem.prototype.configureLevel = function (levelConfig) {
   BaseSystem.prototype.configureLevel.call(this, levelConfig);
   this.anchorRows = 1;
   this.lastFloatingCells = [];
+  this.trappedSpriteAnchorCell = null;
+  if (levelConfig.level.levelType === "trapped_sprite_rescue") {
+    var rescue = levelConfig.level.trappedSpriteRescue;
+    if (
+      !rescue ||
+      !rescue.anchorCell ||
+      !Number.isInteger(rescue.anchorCell.row) ||
+      !Number.isInteger(rescue.anchorCell.col)
+    ) {
+      throw new Error("SupportSystem requires trapped sprite anchorCell.");
+    }
+    this.trappedSpriteAnchorCell = clone(rescue.anchorCell);
+  }
   return this;
 };
 
@@ -27282,7 +30360,19 @@ SupportSystem.prototype.findFloatingCells = function (grid) {
 
   for (var seedIndex = 0; seedIndex < cells.length; seedIndex += 1) {
     var seedCell = cells[seedIndex];
-    if (seedCell.row < this.anchorRows || isLockedAnchor(seedCell) || isWormholeAnchor(seedCell)) {
+    var touchesTrappedSprite = this.trappedSpriteAnchorCell &&
+      grid.getNeighborCoordinates(
+        this.trappedSpriteAnchorCell.row,
+        this.trappedSpriteAnchorCell.col
+      ).some(function (neighbor) {
+        return neighbor.row === seedCell.row && neighbor.col === seedCell.col;
+      });
+    if (
+      (this.trappedSpriteAnchorCell === null && seedCell.row < this.anchorRows) ||
+      isLockedAnchor(seedCell) ||
+      isWormholeAnchor(seedCell) ||
+      touchesTrappedSprite
+    ) {
       queue.push({
         row: seedCell.row,
         col: seedCell.col
@@ -27333,6 +30423,9 @@ SupportSystem.prototype.snapshot = function () {
   var snapshot = BaseSystem.prototype.snapshot.call(this);
   snapshot.anchorRows = this.anchorRows;
   snapshot.lastFloatingCells = clone(this.lastFloatingCells);
+  snapshot.trappedSpriteAnchorCell = this.trappedSpriteAnchorCell
+    ? clone(this.trappedSpriteAnchorCell)
+    : null;
   return snapshot;
 };
 
@@ -27344,6 +30437,7 @@ module.exports = SupportSystem;
 
 var BaseSystem = require("./BaseSystem");
 var BoardLayout = require("../../assets/scripts/config/BoardLayout");
+var RESCUE_BOUNDARY_BOUNCE_LIMIT = 24;
 
 function normalize(vector) {
   var length = Math.sqrt(vector.x * vector.x + vector.y * vector.y) || 1;
@@ -27387,6 +30481,9 @@ function pushPathPoint(points, point) {
 }
 
 function buildFallbackPlan(grid, origin, direction) {
+  if (grid.isTrappedSpriteRescueActive()) {
+    throw new Error("Trapped sprite rescue trajectory cannot use the top-attachment fallback.");
+  }
   var impactX = origin.x + direction.x * 1200;
   var targetCell = grid.findAttachmentCell({ x: impactX, y: grid.getTopAttachY() }, null, direction, origin);
   var targetCellPosition = grid.getCellPosition(targetCell.row, targetCell.col);
@@ -27403,11 +30500,12 @@ function buildFallbackPlan(grid, origin, direction) {
     collidedCell: null,
     targetCell: clone(targetCell),
     targetCellPosition: clone(targetCellPosition),
-    totalDistance: distance(origin, targetCellPosition)
+    totalDistance: distance(origin, targetCellPosition),
+    impactDirection: clone(direction)
   };
 }
 
-function buildPlan(origin, direction, wallPoints, hitType, hitPoint, collidedCell, targetCell, targetCellPosition) {
+function buildPlan(origin, direction, wallPoints, hitType, hitPoint, collidedCell, targetCell, targetCellPosition, impactDirection) {
   var pathPoints = [];
   pushPathPoint(pathPoints, origin);
 
@@ -27438,7 +30536,8 @@ function buildPlan(origin, direction, wallPoints, hitType, hitPoint, collidedCel
     collidedCell: collidedCell ? clone(collidedCell) : null,
     targetCell: clone(targetCell),
     targetCellPosition: clone(targetCellPosition),
-    totalDistance: totalDistance
+    totalDistance: totalDistance,
+    impactDirection: clone(impactDirection)
   };
 }
 
@@ -27514,10 +30613,15 @@ TrajectoryPredictor.prototype.predictShotPlan = function (grid, origin, directio
   var currentPoint = clone(origin);
   var currentDirection = normalize(direction);
   var wallPoints = [];
+  var rescueActive = grid.isTrappedSpriteRescueActive();
   var topAttachY = grid.getTopAttachY();
+  var rescueExitY = rayOrigin.y - this.wallEpsilon;
+  var boundaryBounceLimit = rescueActive
+    ? Math.max(this.maxBounces, RESCUE_BOUNDARY_BOUNCE_LIMIT)
+    : this.maxBounces;
   var EPSILON = 0.000001;
 
-  for (var bounce = 0; bounce <= this.maxBounces; bounce += 1) {
+  for (var bounce = 0; bounce <= boundaryBounceLimit; bounce += 1) {
     var distanceToWall = Number.POSITIVE_INFINITY;
 
     if (Math.abs(currentDirection.x) > EPSILON) {
@@ -27539,14 +30643,26 @@ TrajectoryPredictor.prototype.predictShotPlan = function (grid, origin, directio
     if (collisionInfo) {
       distanceToBubble = collisionInfo.t * probeDistance;
     }
+    var trappedSpriteCollision = rescueActive
+      ? grid.findTrappedSpriteCollisionOnSegment(currentPoint, probeEnd, this.predictionCollisionRadius)
+      : null;
+    var distanceToTrappedSprite = Number.POSITIVE_INFINITY;
+    if (trappedSpriteCollision) {
+      distanceToTrappedSprite = trappedSpriteCollision.t * probeDistance;
+    }
 
-    var slotInfo = grid.findFirstAttachableSlotOnSegment(
-      currentPoint,
-      probeEnd,
-      currentDirection,
-      this.slotProbeRadius,
-      this.slotCaptureTightness
-    );
+    // Rescue boards only use slot probing when a direct bubble collision has
+    // no attachment neighbor.  This preserves ordinary rescue impacts while
+    // still allowing a shot to settle in a real rotated-board gap.
+    var slotInfo = rescueActive
+      ? null
+      : grid.findFirstAttachableSlotOnSegment(
+        currentPoint,
+        probeEnd,
+        currentDirection,
+        this.slotProbeRadius,
+        this.slotCaptureTightness
+      );
     var distanceToSlot = Number.POSITIVE_INFINITY;
     if (slotInfo) {
       distanceToSlot = slotInfo.t * probeDistance;
@@ -27560,11 +30676,29 @@ TrajectoryPredictor.prototype.predictShotPlan = function (grid, origin, directio
       }
     }
 
+    var distanceToRescueExit = Number.POSITIVE_INFINITY;
+    if (rescueActive && currentDirection.y < -EPSILON) {
+      var projectedRescueExitDistance = (rescueExitY - currentPoint.y) / currentDirection.y;
+      if (projectedRescueExitDistance > EPSILON) {
+        distanceToRescueExit = projectedRescueExitDistance;
+      }
+    }
+
     var preferSlot = this._shouldPreferSlotCandidate(slotInfo, distanceToSlot, distanceToBubble, EPSILON);
     var effectiveSlotDistance = preferSlot ? distanceToSlot : Number.POSITIVE_INFINITY;
-    var minDistance = Math.min(distanceToBubble, effectiveSlotDistance, distanceToTop, distanceToWall);
+    var minDistance = Math.min(
+      distanceToBubble,
+      distanceToTrappedSprite,
+      effectiveSlotDistance,
+      distanceToTop,
+      distanceToRescueExit,
+      distanceToWall
+    );
 
     if (!isFinite(minDistance)) {
+      if (rescueActive) {
+        throw new Error("Trapped sprite rescue trajectory cannot reach a bubble or the cannon exit line.");
+      }
       return buildFallbackPlan(grid, rayOrigin, rayDirection);
     }
 
@@ -27577,7 +30711,38 @@ TrajectoryPredictor.prototype.predictShotPlan = function (grid, origin, directio
         slotInfo.point,
         null,
         slotInfo.cell,
-        slotInfo.center
+        slotInfo.center,
+        currentDirection
+      );
+    }
+
+    if (
+      distanceToTrappedSprite <= minDistance + EPSILON &&
+      trappedSpriteCollision
+    ) {
+      var trappedSpriteImpactPoint = clone(trappedSpriteCollision.point);
+      var targetFromTrappedSprite = grid.findTrappedSpriteAttachmentCell(
+        trappedSpriteImpactPoint,
+        currentDirection,
+        currentPoint
+      );
+      if (!targetFromTrappedSprite) {
+        throw new Error("Trapped sprite support impact requires an attachment cell.");
+      }
+      var trappedSpriteTargetPosition = grid.getCellPosition(
+        targetFromTrappedSprite.row,
+        targetFromTrappedSprite.col
+      );
+      return buildPlan(
+        rayOrigin,
+        rayDirection,
+        wallPoints,
+        "trapped_sprite",
+        trappedSpriteImpactPoint,
+        null,
+        targetFromTrappedSprite,
+        trappedSpriteTargetPosition,
+        currentDirection
       );
     }
 
@@ -27589,9 +30754,68 @@ TrajectoryPredictor.prototype.predictShotPlan = function (grid, origin, directio
         currentDirection,
         currentPoint
       );
+      if (!targetFromBubble) {
+        if (rescueActive) {
+          var rescueSlotInfo = grid.findFirstAttachableSlotOnSegment(
+            currentPoint,
+            bubbleImpactPoint,
+            currentDirection,
+            this.slotProbeRadius,
+            this.slotCaptureTightness
+          );
+          if (rescueSlotInfo) {
+            return buildPlan(
+              rayOrigin,
+              rayDirection,
+              wallPoints,
+              "slot",
+              rescueSlotInfo.point,
+              null,
+              rescueSlotInfo.cell,
+              rescueSlotInfo.center,
+              currentDirection
+            );
+          }
+          // A rotated rescue board can expose the outer face of a fully-packed
+          // boundary bubble.  It is a real collision, but has no legal hex
+          // neighbor to receive a new bubble.  Keep that state explicit for
+          // aiming instead of selecting an unrelated cell or throwing while
+          // the cannon sweeps across it.
+          return buildPlan(
+            rayOrigin,
+            rayDirection,
+            wallPoints,
+            "blocked",
+            bubbleImpactPoint,
+            collisionInfo.cell,
+            null,
+            null,
+            currentDirection
+          );
+        }
+        return buildPlan(
+          rayOrigin,
+          rayDirection,
+          wallPoints,
+          "miss",
+          bubbleImpactPoint,
+          collisionInfo.cell,
+          null,
+          bubbleImpactPoint,
+          currentDirection
+        );
+      }
       var bubbleTargetPosition = grid.getCellPosition(targetFromBubble.row, targetFromBubble.col);
 
-      if (currentDirection.y > 0 && targetFromBubble.row > collisionInfo.cell.row) {
+      // Tunnel assistance is only valid on the direct ray.  After a side-wall
+      // reflection it can replace the first physical collision with a later,
+      // higher-row collider, making the final snap jump across an occupied row.
+      if (
+        !rescueActive &&
+        wallPoints.length === 0 &&
+        currentDirection.y > 0 &&
+        targetFromBubble.row > collisionInfo.cell.row
+      ) {
         var tryRadii = [
           this.predictionCollisionRadius,
           this.tunnelAssistRadius,
@@ -27659,7 +30883,26 @@ TrajectoryPredictor.prototype.predictShotPlan = function (grid, origin, directio
         bubbleImpactPoint,
         collisionInfo.cell,
         targetFromBubble,
-        bubbleTargetPosition
+        bubbleTargetPosition,
+        currentDirection
+      );
+    }
+
+    if (distanceToRescueExit <= minDistance + EPSILON) {
+      var rescueExitPoint = {
+        x: currentPoint.x + currentDirection.x * distanceToRescueExit,
+        y: rescueExitY
+      };
+      return buildPlan(
+        rayOrigin,
+        rayDirection,
+        wallPoints,
+        "miss",
+        rescueExitPoint,
+        null,
+        null,
+        rescueExitPoint,
+        currentDirection
       );
     }
 
@@ -27668,6 +30911,23 @@ TrajectoryPredictor.prototype.predictShotPlan = function (grid, origin, directio
         x: currentPoint.x + currentDirection.x * distanceToTop,
         y: topAttachY
       };
+      if (rescueActive) {
+        if (bounce >= boundaryBounceLimit) {
+          throw new Error("Trapped sprite rescue trajectory exceeded its boundary bounce limit.");
+        }
+        var hitSideWallAtTop = isFinite(distanceToWall) &&
+          Math.abs(distanceToWall - distanceToTop) <= EPSILON;
+        wallPoints.push(topImpactPoint);
+        currentDirection = {
+          x: hitSideWallAtTop ? -currentDirection.x : currentDirection.x,
+          y: -currentDirection.y
+        };
+        currentPoint = {
+          x: topImpactPoint.x + currentDirection.x * this.wallEpsilon,
+          y: topImpactPoint.y + currentDirection.y * this.wallEpsilon
+        };
+        continue;
+      }
       var targetFromTop = grid.findAttachmentCell(topImpactPoint, null, currentDirection, currentPoint);
       var topTargetPosition = grid.getCellPosition(targetFromTop.row, targetFromTop.col);
 
@@ -27679,11 +30939,16 @@ TrajectoryPredictor.prototype.predictShotPlan = function (grid, origin, directio
         topImpactPoint,
         null,
         targetFromTop,
-        topTargetPosition
+        topTargetPosition,
+        currentDirection
       );
     }
 
-    if (distanceToWall <= minDistance + EPSILON && isFinite(distanceToWall) && bounce < this.maxBounces) {
+    if (
+      distanceToWall <= minDistance + EPSILON &&
+      isFinite(distanceToWall) &&
+      bounce < boundaryBounceLimit
+    ) {
       var wallPoint = {
         x: currentPoint.x + currentDirection.x * distanceToWall,
         y: currentPoint.y + currentDirection.y * distanceToWall
@@ -27701,9 +30966,15 @@ TrajectoryPredictor.prototype.predictShotPlan = function (grid, origin, directio
       continue;
     }
 
+    if (rescueActive) {
+      throw new Error("Trapped sprite rescue trajectory exceeded its boundary bounce limit.");
+    }
     return buildFallbackPlan(grid, rayOrigin, rayDirection);
   }
 
+  if (rescueActive) {
+    throw new Error("Trapped sprite rescue trajectory did not resolve within the boundary bounce limit.");
+  }
   return buildFallbackPlan(grid, rayOrigin, rayDirection);
 };
 
@@ -27765,6 +31036,448 @@ module.exports = TrajectoryPredictor;
 
 
 },{"./BaseSystem":"BaseSystem","../../assets/scripts/config/BoardLayout":"BoardLayout"}],
+"TrappedSpriteRescueSystem":[function(require,module,exports){
+"use strict";
+
+var BaseSystem = require("./BaseSystem");
+var BoardLayout = require("../../assets/scripts/config/BoardLayout");
+var AssistSpiritConfig = require("../../assets/scripts/config/AssistSpiritConfig");
+
+var LEVEL_TYPE = "trapped_sprite_rescue";
+var PHASE_IDLE = "idle";
+var PHASE_ROTATING = "rotating";
+var DEG_TO_RAD = Math.PI / 180;
+var TRAPPED_SPIRIT_PATH_PREFIX = "game/trapped_spirit/";
+
+function clone(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function requireFiniteNumber(value, fieldName) {
+  if (typeof value !== "number" || !isFinite(value)) {
+    throw new Error(fieldName + " must be a finite number.");
+  }
+  return value;
+}
+
+function requirePositiveNumber(value, fieldName) {
+  var numberValue = requireFiniteNumber(value, fieldName);
+  if (numberValue <= 0) {
+    throw new Error(fieldName + " must be positive.");
+  }
+  return numberValue;
+}
+
+function requireCoordinate(value, fieldName) {
+  if (!value || !Number.isInteger(value.row) || !Number.isInteger(value.col)) {
+    throw new Error(fieldName + " requires integer row and col.");
+  }
+  return {
+    row: value.row,
+    col: value.col
+  };
+}
+
+function requirePoint(value, fieldName) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(fieldName + " must be an object.");
+  }
+  return {
+    x: requireFiniteNumber(value.x, fieldName + ".x"),
+    y: requireFiniteNumber(value.y, fieldName + ".y")
+  };
+}
+
+function normalizeDirection(direction, fieldName) {
+  var point = requirePoint(direction, fieldName);
+  var length = Math.sqrt(point.x * point.x + point.y * point.y);
+  if (!isFinite(length) || length <= 0.000001) {
+    throw new Error(fieldName + " must have positive length.");
+  }
+  return {
+    x: point.x / length,
+    y: point.y / length
+  };
+}
+
+function rotatePoint(point, angleRad) {
+  var cosine = Math.cos(angleRad);
+  var sine = Math.sin(angleRad);
+  return {
+    x: point.x * cosine - point.y * sine,
+    y: point.x * sine + point.y * cosine
+  };
+}
+
+function buildSpriteResourcePath(spiritId) {
+  AssistSpiritConfig.getSpirit(spiritId);
+  return TRAPPED_SPIRIT_PATH_PREFIX + spiritId;
+}
+
+function TrappedSpriteRescueSystem() {
+  BaseSystem.call(this, "TrappedSpriteRescueSystem");
+  this.active = false;
+  this.spiritId = "";
+  this.spriteResourcePath = "";
+  this.anchorCell = null;
+  this.worldCenter = null;
+  this.renderScale = 1;
+  this.rotationConfig = null;
+  this.angleRad = 0;
+  this.phase = PHASE_IDLE;
+  this.elapsedSec = 0;
+  this.durationSec = 0;
+  this.startAngleRad = 0;
+  this.targetAngleRad = 0;
+  this.initialAngularVelocityDeg = 0;
+  this.revision = 0;
+  this.lastRotation = null;
+}
+
+TrappedSpriteRescueSystem.prototype = Object.create(BaseSystem.prototype);
+TrappedSpriteRescueSystem.prototype.constructor = TrappedSpriteRescueSystem;
+
+TrappedSpriteRescueSystem.prototype.configureLevel = function (levelConfig) {
+  BaseSystem.prototype.configureLevel.call(this, levelConfig);
+  if (!levelConfig || !levelConfig.level) {
+    throw new Error("TrappedSpriteRescueSystem.configureLevel requires level config.");
+  }
+
+  var level = levelConfig.level;
+  this.active = level.levelType === LEVEL_TYPE;
+  this.spiritId = "";
+  this.spriteResourcePath = "";
+  this.anchorCell = null;
+  this.worldCenter = null;
+  this.renderScale = 1;
+  this.rotationConfig = null;
+  this.angleRad = 0;
+  this.phase = PHASE_IDLE;
+  this.elapsedSec = 0;
+  this.durationSec = 0;
+  this.startAngleRad = 0;
+  this.targetAngleRad = 0;
+  this.initialAngularVelocityDeg = 0;
+  this.revision = 0;
+  this.lastRotation = null;
+
+  if (!this.active) {
+    if (level.trappedSpriteRescue !== undefined) {
+      throw new Error("Non-rescue level must not configure level.trappedSpriteRescue.");
+    }
+    return this;
+  }
+
+  var config = level.trappedSpriteRescue;
+  if (!config || typeof config !== "object" || Array.isArray(config)) {
+    throw new Error("Trapped sprite rescue level requires level.trappedSpriteRescue.");
+  }
+  if (!config.rotation || typeof config.rotation !== "object" || Array.isArray(config.rotation)) {
+    throw new Error("Trapped sprite rescue level requires rotation config.");
+  }
+
+  this.spiritId = config.spiritId;
+  this.spriteResourcePath = buildSpriteResourcePath(this.spiritId);
+  this.anchorCell = requireCoordinate(config.anchorCell, "Trapped sprite anchorCell");
+  this.worldCenter = requirePoint(config.worldCenter, "Trapped sprite worldCenter");
+  this.renderScale = requirePositiveNumber(config.renderScale, "Trapped sprite renderScale");
+  this.rotationConfig = clone(config.rotation);
+  return this;
+};
+
+TrappedSpriteRescueSystem.prototype.isActive = function () {
+  return this.active === true;
+};
+
+TrappedSpriteRescueSystem.prototype.isRotating = function () {
+  return this.active === true && this.phase === PHASE_ROTATING;
+};
+
+TrappedSpriteRescueSystem.prototype.isReservedCell = function (row, col) {
+  return !!(
+    this.active &&
+    this.anchorCell &&
+    row === this.anchorCell.row &&
+    col === this.anchorCell.col
+  );
+};
+
+TrappedSpriteRescueSystem.prototype.getAnchorCell = function () {
+  if (!this.active || !this.anchorCell) {
+    throw new Error("Trapped sprite anchor is unavailable outside rescue mode.");
+  }
+  return clone(this.anchorCell);
+};
+
+TrappedSpriteRescueSystem.prototype.getWorldCenter = function () {
+  if (!this.active || !this.worldCenter) {
+    throw new Error("Trapped sprite world center is unavailable outside rescue mode.");
+  }
+  return clone(this.worldCenter);
+};
+
+TrappedSpriteRescueSystem.prototype.getCellWorldPosition = function (row, col, maxColumns) {
+  if (!this.active) {
+    throw new Error("Trapped sprite world transform requires active rescue mode.");
+  }
+  if (!Number.isInteger(row) || !Number.isInteger(col)) {
+    throw new Error("Trapped sprite world transform requires integer row and col.");
+  }
+  if (!Number.isInteger(maxColumns) || maxColumns <= 0) {
+    throw new Error("Trapped sprite world transform requires positive maxColumns.");
+  }
+
+  var anchorPosition = BoardLayout.getCellPosition(
+    this.anchorCell.row,
+    this.anchorCell.col,
+    maxColumns,
+    0
+  );
+  var cellPosition = BoardLayout.getCellPosition(row, col, maxColumns, 0);
+  var rotated = rotatePoint({
+    x: cellPosition.x - anchorPosition.x,
+    y: cellPosition.y - anchorPosition.y
+  }, this.angleRad);
+  return {
+    x: this.worldCenter.x + rotated.x,
+    y: this.worldCenter.y + rotated.y
+  };
+};
+
+TrappedSpriteRescueSystem.prototype.worldDirectionToLocal = function (direction) {
+  if (!this.active) {
+    throw new Error("Trapped sprite direction transform requires active rescue mode.");
+  }
+  return rotatePoint(normalizeDirection(direction, "Trapped sprite world direction"), -this.angleRad);
+};
+
+TrappedSpriteRescueSystem.prototype.beginImpactRotation = function (impactPoint, incomingDirection, supportedCells, grid) {
+  if (!this.active) {
+    throw new Error("Trapped sprite impact rotation requires active rescue mode.");
+  }
+  if (this.isRotating()) {
+    throw new Error("Trapped sprite impact rotation cannot overlap another rotation.");
+  }
+  if (!Array.isArray(supportedCells)) {
+    throw new Error("Trapped sprite impact rotation requires supportedCells array.");
+  }
+  if (!grid || typeof grid.getCellPosition !== "function") {
+    throw new Error("Trapped sprite impact rotation requires BubbleGrid.");
+  }
+
+  var impact = requirePoint(impactPoint, "Trapped sprite impactPoint");
+  var incoming = normalizeDirection(incomingDirection, "Trapped sprite incomingDirection");
+  var radiusVector = {
+    x: impact.x - this.worldCenter.x,
+    y: impact.y - this.worldCenter.y
+  };
+  var impactRadius = Math.sqrt(
+    radiusVector.x * radiusVector.x +
+    radiusVector.y * radiusVector.y
+  );
+  if (!isFinite(impactRadius) || impactRadius <= 0.000001) {
+    throw new Error("Trapped sprite impact radius must be positive.");
+  }
+
+  var radialDirection = {
+    x: radiusVector.x / impactRadius,
+    y: radiusVector.y / impactRadius
+  };
+  var signedTangentialFactor =
+    radialDirection.x * incoming.y -
+    radialDirection.y * incoming.x;
+  var rotationConfig = this.rotationConfig;
+  var deadZone = requireFiniteNumber(
+    rotationConfig.tangentialDeadZone,
+    "Trapped sprite tangentialDeadZone"
+  );
+  var radiusUnit = impactRadius / BoardLayout.bubbleDiameter;
+  var inertia = requirePositiveNumber(
+    rotationConfig.coreInertia,
+    "Trapped sprite coreInertia"
+  );
+
+  supportedCells.forEach(function (cell) {
+    if (!cell || !Number.isInteger(cell.row) || !Number.isInteger(cell.col)) {
+      throw new Error("Trapped sprite inertia requires supported cell coordinates.");
+    }
+    var position = grid.getCellPosition(cell.row, cell.col);
+    var dx = position.x - this.worldCenter.x;
+    var dy = position.y - this.worldCenter.y;
+    var normalizedRadiusSq = (dx * dx + dy * dy) /
+      (BoardLayout.bubbleDiameter * BoardLayout.bubbleDiameter);
+    inertia += normalizedRadiusSq;
+  }, this);
+
+  var torque = 0;
+  var initialAngularVelocityDeg = 0;
+  if (Math.abs(signedTangentialFactor) > deadZone && supportedCells.length > 0) {
+    torque =
+      requirePositiveNumber(rotationConfig.projectileImpulse, "Trapped sprite projectileImpulse") *
+      requirePositiveNumber(rotationConfig.torqueScale, "Trapped sprite torqueScale") *
+      radiusUnit *
+      signedTangentialFactor;
+    var maxAngularSpeedDeg = requirePositiveNumber(
+      rotationConfig.maxAngularSpeedDeg,
+      "Trapped sprite maxAngularSpeedDeg"
+    );
+    initialAngularVelocityDeg = clamp(
+      torque / inertia,
+      -maxAngularSpeedDeg,
+      maxAngularSpeedDeg
+    );
+  }
+
+  var damping = requirePositiveNumber(
+    rotationConfig.angularDamping,
+    "Trapped sprite angularDamping"
+  );
+  var stopSpeedDeg = requirePositiveNumber(
+    rotationConfig.stopAngularSpeedDeg,
+    "Trapped sprite stopAngularSpeedDeg"
+  );
+  var maxDurationSec = requirePositiveNumber(
+    rotationConfig.maxDurationSec,
+    "Trapped sprite maxDurationSec"
+  );
+  var durationSec = 0;
+  var deltaAngleDeg = 0;
+  if (Math.abs(initialAngularVelocityDeg) > stopSpeedDeg) {
+    durationSec = Math.min(
+      maxDurationSec,
+      Math.log(Math.abs(initialAngularVelocityDeg) / stopSpeedDeg) / damping
+    );
+    deltaAngleDeg =
+      initialAngularVelocityDeg /
+      damping *
+      (1 - Math.exp(-damping * durationSec));
+    var maxStepAngleDeg = requirePositiveNumber(
+      rotationConfig.maxStepAngleDeg,
+      "Trapped sprite maxStepAngleDeg"
+    );
+    deltaAngleDeg = clamp(deltaAngleDeg, -maxStepAngleDeg, maxStepAngleDeg);
+  }
+
+  var rotation = {
+    started: durationSec > 0 && Math.abs(deltaAngleDeg) > 0.0001,
+    impactPoint: impact,
+    incomingDirection: incoming,
+    impactRadius: impactRadius,
+    tangentialFactor: signedTangentialFactor,
+    torque: torque,
+    momentOfInertia: inertia,
+    supportedCellCount: supportedCells.length,
+    initialAngularVelocityDeg: initialAngularVelocityDeg,
+    startAngleRad: this.angleRad,
+    targetAngleRad: this.angleRad + deltaAngleDeg * DEG_TO_RAD,
+    deltaAngleDeg: deltaAngleDeg,
+    durationSec: durationSec
+  };
+  this.lastRotation = clone(rotation);
+
+  if (!rotation.started) {
+    return clone(rotation);
+  }
+
+  this.phase = PHASE_ROTATING;
+  this.elapsedSec = 0;
+  this.durationSec = durationSec;
+  this.startAngleRad = rotation.startAngleRad;
+  this.targetAngleRad = rotation.targetAngleRad;
+  this.initialAngularVelocityDeg = initialAngularVelocityDeg;
+  this.revision += 1;
+  return clone(rotation);
+};
+
+TrappedSpriteRescueSystem.prototype.update = function (dt) {
+  var safeDt = requireFiniteNumber(dt, "TrappedSpriteRescueSystem.update dt");
+  if (safeDt < 0) {
+    throw new Error("TrappedSpriteRescueSystem.update dt must not be negative.");
+  }
+  if (!this.isRotating()) {
+    return {
+      changed: false,
+      completed: false
+    };
+  }
+
+  this.elapsedSec = Math.min(this.durationSec, this.elapsedSec + safeDt);
+  var damping = requirePositiveNumber(
+    this.rotationConfig.angularDamping,
+    "Trapped sprite angularDamping"
+  );
+  var denominator = 1 - Math.exp(-damping * this.durationSec);
+  if (!isFinite(denominator) || denominator <= 0) {
+    throw new Error("Trapped sprite rotation easing denominator must be positive.");
+  }
+  var normalizedProgress =
+    (1 - Math.exp(-damping * this.elapsedSec)) /
+    denominator;
+  normalizedProgress = clamp(normalizedProgress, 0, 1);
+  this.angleRad =
+    this.startAngleRad +
+    (this.targetAngleRad - this.startAngleRad) * normalizedProgress;
+  this.revision += 1;
+
+  var completed = this.elapsedSec >= this.durationSec;
+  if (completed) {
+    this.angleRad = this.targetAngleRad;
+    this.phase = PHASE_IDLE;
+    this.elapsedSec = 0;
+    this.durationSec = 0;
+    this.initialAngularVelocityDeg = 0;
+    this.revision += 1;
+  }
+
+  return {
+    changed: true,
+    completed: completed
+  };
+};
+
+TrappedSpriteRescueSystem.prototype.snapshotForRender = function () {
+  if (!this.active) {
+    return {
+      active: false,
+      phase: PHASE_IDLE,
+      revision: this.revision
+    };
+  }
+  return {
+    active: true,
+    spiritId: this.spiritId,
+    spriteResourcePath: this.spriteResourcePath,
+    anchorCell: clone(this.anchorCell),
+    worldCenter: clone(this.worldCenter),
+    renderScale: this.renderScale,
+    angleRad: this.angleRad,
+    angleDeg: this.angleRad / DEG_TO_RAD,
+    phase: this.phase,
+    rotating: this.isRotating(),
+    revision: this.revision,
+    lastRotation: this.lastRotation ? clone(this.lastRotation) : null
+  };
+};
+
+TrappedSpriteRescueSystem.prototype.snapshot = function () {
+  var snapshot = BaseSystem.prototype.snapshot.call(this);
+  var renderSnapshot = this.snapshotForRender();
+  Object.keys(renderSnapshot).forEach(function (key) {
+    snapshot[key] = renderSnapshot[key];
+  });
+  return snapshot;
+};
+
+TrappedSpriteRescueSystem.LEVEL_TYPE = LEVEL_TYPE;
+TrappedSpriteRescueSystem.buildSpriteResourcePath = buildSpriteResourcePath;
+
+module.exports = TrappedSpriteRescueSystem;
+
+},{"./BaseSystem":"BaseSystem","../../assets/scripts/config/BoardLayout":"BoardLayout","../../assets/scripts/config/AssistSpiritConfig":"AssistSpiritConfig"}],
 "WormholeShaderRenderer":[function(require,module,exports){
 "use strict";
 

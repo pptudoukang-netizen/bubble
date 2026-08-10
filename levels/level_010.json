@@ -6,9 +6,9 @@
         "description": "Top-to-bottom rows. Each character represents one grid cell.",
         "legend": {
             ".": "empty",
+            "B": "blue",
             "R": "red",
             "G": "green",
-            "B": "blue",
             "Y": "yellow"
         },
         "pattern": "kxppm_layout_010",
@@ -46,6 +46,7 @@
         "difficulty": "expert",
         "teaches": [
             "legacy_skill_ball",
+            "timed_infinite_shots",
             "flower_theme",
             "kxppm_layout_010_pattern",
             "kxppm_layout_010_silhouette",
@@ -54,18 +55,30 @@
         ],
         "colorCount": 4,
         "colors": [
+            "B",
             "R",
             "G",
-            "B",
             "Y"
         ],
         "timeLimitSeconds": 90,
         "requiredStarCount": 1,
-        "targetScore": 4350,
+        "timeBonusBalls": [
+            {
+                "row": 3,
+                "col": 3,
+                "bonusSeconds": 5
+            },
+            {
+                "row": 2,
+                "col": 2,
+                "bonusSeconds": 5
+            }
+        ],
+        "targetScore": 8500,
         "starThresholds": {
-            "star1": 1566,
-            "star2": 2871,
-            "star3": 3915
+            "star1": 4420,
+            "star2": 6120,
+            "star3": 7650
         },
         "dropInterval": 6,
         "jarCount": 5,
@@ -77,9 +90,9 @@
             "P"
         ],
         "spawnWeights": {
+            "B": 1.12,
             "R": 2.4,
-            "G": 1.24,
-            "B": 1,
+            "G": 1,
             "Y": 1.12
         },
         "initialShotBalls": [
@@ -95,7 +108,7 @@
             {
                 "type": "collect_color",
                 "color": "R",
-                "value": 22
+                "value": 25
             }
         ],
         "bonusObjectives": [
@@ -115,15 +128,15 @@
             }
         ],
         "layout": [
-            "YYYYBBBBGGG",
-            ".B......G.",
-            "..BBRRRR...",
-            ".BGGGGRRR.",
-            "RRY......RY",
-            ".RRYY.YYY.",
-            "...GGGGY...",
+            "GYYYRRRGGGY",
+            "GG..RR..YY",
+            "..RGGGGB...",
+            "RRRRRBBBBR",
+            "BBB......BR",
+            "YYYRR.RRRR",
+            "...YRRRR...",
             ".RR.....B.",
-            "RRRRRRBBBRR"
+            "GGGGYYYYBBB"
         ],
         "designNotes": "Gameplay is generated from the current LEVEL_CONFIG_TABLE_1_1000.csv rules; only the occupancy silhouette is projected from E:\\kxppm\\decrypted_config\\all_levels.json level 10 into current level 10 on the current 11/10-column board.",
         "difficultyScore": 50,

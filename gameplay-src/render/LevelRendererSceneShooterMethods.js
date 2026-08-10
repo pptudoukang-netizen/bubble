@@ -5,6 +5,8 @@ var SceneShared = require("./LevelRendererSceneShared");
 function attachLevelRendererSceneShooterMethods(LevelRenderer, deps) {
   var requireChildNode = SceneShared.requireChildNode;
   var BoardLayout = deps.BoardLayout;
+  var AssistSpiritSkillConfig = deps.AssistSpiritSkillConfig;
+  var AssistSpiritPresentationConfig = deps.AssistSpiritPresentationConfig;
   var BALL_RESOURCES = deps.BALL_RESOURCES;
   var PREFAB_PATHS = deps.PREFAB_PATHS;
   var BOARD_BUBBLE_SIZE = deps.BOARD_BUBBLE_SIZE;
@@ -36,8 +38,6 @@ function attachLevelRendererSceneShooterMethods(LevelRenderer, deps) {
   var SHOOTER_HANDOFF_ARC_HEIGHT = 52;
   var SHOOTER_AIM_RECENTER_DURATION = 0.28;
   var SHOOTER_HERO_NODE_NAME = "handler_milu";
-  var SHOOTER_HERO_IDLE_CLIP_NAME = "genius_hero_idle";
-  var SHOOTER_HERO_FIRE_CLIP_NAME = "genius_hero_pao";
   var SHOOTER_PREFAB_LAYOUT_NODE_NAMES = [
     SHOOTER_HERO_NODE_NAME,
     "CurrentBallAnchor",
@@ -47,8 +47,75 @@ function attachLevelRendererSceneShooterMethods(LevelRenderer, deps) {
     "NextBallDock",
     "NextBallAnchor",
     "TurretNumBg",
-    "Surplus"
+    "Surplus",
+    "Skill"
   ];
+  var ASSIST_SKILL_GRAY_COLOR = cc.color(116, 116, 116, 255);
+
+  function requireAssistSkillChargeValue(value, fieldName) {
+    if (!Number.isInteger(value) || value < 0) {
+      throw new Error("ShooterPanel Skill " + fieldName + " must be a non-negative integer.");
+    }
+    return value;
+  }
+
+  function getOrCreateAssistSkillChargeFill(skillNode) {
+    var fillNode = skillNode.getChildByName("SkillChargeFill");
+    if (!fillNode) {
+      fillNode = new cc.Node("SkillChargeFill");
+      fillNode.setAnchorPoint(skillNode.anchorX, skillNode.anchorY);
+      fillNode.setContentSize(skillNode.getContentSize());
+      fillNode.setPosition(0, 0);
+      skillNode.addChild(fillNode);
+      fillNode.setSiblingIndex(0);
+      fillNode.addComponent(cc.Sprite);
+    }
+    var fillSprite = fillNode.getComponent(cc.Sprite);
+    if (!fillSprite) {
+      throw new Error("ShooterPanel SkillChargeFill requires cc.Sprite.");
+    }
+    return {
+      node: fillNode,
+      sprite: fillSprite
+    };
+  }
+
+  function syncAssistSkillChargeVisual(skillNode, skillFrame, charge, maxCharge) {
+    var safeCharge = requireAssistSkillChargeValue(charge, "assistSpiritSkillCharge");
+    var safeMaxCharge = requireAssistSkillChargeValue(maxCharge, "assistSpiritSkillChargeMax");
+    if (safeMaxCharge <= 0 || safeCharge > safeMaxCharge) {
+      throw new Error("ShooterPanel Skill charge must be within a positive maximum.");
+    }
+    var skillSprite = skillNode.getComponent(cc.Sprite);
+    if (!skillSprite) {
+      throw new Error("ShooterPanel Skill requires cc.Sprite.");
+    }
+    var adNode = requireChildNode(skillNode, "ad", "ShooterPanel/Skill");
+    var fill = getOrCreateAssistSkillChargeFill(skillNode);
+    var ratio = safeCharge / safeMaxCharge;
+
+    skillSprite.spriteFrame = skillFrame;
+    skillSprite.sizeMode = cc.Sprite.SizeMode.CUSTOM;
+    skillSprite.type = cc.Sprite.Type.SIMPLE;
+    skillSprite.node.color = ASSIST_SKILL_GRAY_COLOR;
+
+    fill.node.setContentSize(skillNode.getContentSize());
+    fill.node.setPosition(0, 0);
+    fill.node.active = ratio > 0;
+    if (fill.node.active) {
+      fill.sprite.sizeMode = cc.Sprite.SizeMode.CUSTOM;
+      fill.sprite.type = cc.Sprite.Type.FILLED;
+      fill.sprite.fillType = cc.Sprite.FillType.VERTICAL;
+      fill.sprite.fillStart = 1 - ratio;
+      fill.sprite.fillRange = ratio;
+      fill.sprite.spriteFrame = skillFrame;
+      fill.node.setAnchorPoint(skillNode.anchorX, skillNode.anchorY);
+      fill.node.setContentSize(skillNode.getContentSize());
+      fill.node.setPosition(0, 0);
+      fill.node.color = cc.color(255, 255, 255, 255);
+    }
+    adNode.active = ratio < 1;
+  }
 
   function syncShooterPrefabLayout(shooterPanel, aimOrigin) {
     if (
@@ -166,8 +233,58 @@ function attachLevelRendererSceneShooterMethods(LevelRenderer, deps) {
     return clip;
   }
 
-  function playShooterHeroIdle(heroNode) {
-    return playShooterHeroClip(heroNode, SHOOTER_HERO_IDLE_CLIP_NAME, null);
+  function playShooterHeroIdle(heroNode, clipName) {
+    return playShooterHeroClip(heroNode, clipName, null);
+  }
+
+  function installShooterHeroClips(renderer, heroNode, spiritId) {
+    var presentation = AssistSpiritPresentationConfig.getBySpiritId(spiritId);
+    var idleClip = renderer.assistSpiritAnimationClipCache[presentation.idleClipPath];
+    var deliverClip = renderer.assistSpiritAnimationClipCache[presentation.deliverClipPath];
+    if (!idleClip || !idleClip.isValid) {
+      throw new Error("Shooter hero idle clip was not preloaded: " + presentation.idleClipPath);
+    }
+    if (!deliverClip || !deliverClip.isValid) {
+      throw new Error("Shooter hero deliver clip was not preloaded: " + presentation.deliverClipPath);
+    }
+    if (idleClip.name !== presentation.idleClipName) {
+      throw new Error("Shooter hero idle clip name mismatch: " + idleClip.name);
+    }
+    if (deliverClip.name !== presentation.deliverClipName) {
+      throw new Error("Shooter hero deliver clip name mismatch: " + deliverClip.name);
+    }
+
+    var animation = requireShooterHeroAnimation(heroNode);
+    if (
+      heroNode.__shooterHeroSpiritId === spiritId &&
+      requireShooterHeroClip(animation, presentation.idleClipName) === idleClip &&
+      requireShooterHeroClip(animation, presentation.deliverClipName) === deliverClip
+    ) {
+      return presentation;
+    }
+    if (typeof animation.stop !== "function") {
+      throw new Error("Shooter hero animation requires stop API.");
+    }
+    if (typeof animation.removeClip !== "function") {
+      throw new Error("Shooter hero animation requires removeClip API.");
+    }
+    if (typeof animation.addClip !== "function") {
+      throw new Error("Shooter hero animation requires addClip API.");
+    }
+    animation.stop();
+    animation.getClips().slice().forEach(function (clip) {
+      animation.removeClip(clip, true);
+    });
+    animation.addClip(idleClip);
+    animation.addClip(deliverClip);
+    requireShooterHeroClip(animation, presentation.idleClipName);
+    requireShooterHeroClip(animation, presentation.deliverClipName);
+
+    heroNode.__shooterHeroSpiritId = spiritId;
+    heroNode.__shooterHeroPlayingClip = "";
+    heroNode.__shooterHeroAnimationToken =
+      (typeof heroNode.__shooterHeroAnimationToken === "number" ? heroNode.__shooterHeroAnimationToken : 0) + 1;
+    return presentation;
   }
 
   function resolveFiniteRemainingShots(remainingShots, shooterSnapshot, description) {
@@ -338,6 +455,43 @@ LevelRenderer.prototype._renderShooter = function (shooterSnapshot, activeProjec
     );
   }
 
+  if (!shooterSnapshot || typeof shooterSnapshot.assistSpiritId !== "string") {
+    throw new Error("ShooterPanel Skill requires shooterSnapshot.assistSpiritId.");
+  }
+  var assistSkillConfig = AssistSpiritSkillConfig.getBySpiritId(shooterSnapshot.assistSpiritId);
+  var assistSkillNode = layoutNodes.Skill;
+  assistSkillNode.active = !!assistSkillConfig.skillId;
+  if (assistSkillNode.active) {
+    var assistSkillSprite = assistSkillNode.getComponent(cc.Sprite);
+    if (!assistSkillSprite) {
+      throw new Error("ShooterPanel Skill requires cc.Sprite.");
+    }
+    var assistSkillButton = assistSkillNode.getComponent(cc.Button);
+    if (!assistSkillButton) {
+      throw new Error("ShooterPanel Skill requires cc.Button.");
+    }
+    var assistSkillFrame = this.spriteFrameCache[assistSkillConfig.iconPath];
+    if (!assistSkillFrame || !assistSkillFrame.isValid) {
+      throw new Error("ShooterPanel Skill SpriteFrame is missing: " + assistSkillConfig.iconPath);
+    }
+    syncAssistSkillChargeVisual(
+      assistSkillNode,
+      assistSkillFrame,
+      shooterSnapshot.assistSpiritSkillCharge,
+      shooterSnapshot.assistSpiritSkillChargeMax
+    );
+    this._bindBottomPanelButton(assistSkillNode, "use_assist_spirit_skill");
+    this._setBottomPanelButtonEnabled(
+      assistSkillNode,
+      canUsePowerup &&
+        !pendingBarrierHammer &&
+        (
+          shooterSnapshot.assistSpiritSkillCharged !== true ||
+          shooterSnapshot.assistSpiritSkillAvailable === true
+        )
+    );
+  }
+
   var nextAnchor = layoutNodes.NextBallAnchor;
   nextAnchor.setScale(1);
   nextAnchor.opacity = 255;
@@ -389,13 +543,19 @@ LevelRenderer.prototype._renderShooter = function (shooterSnapshot, activeProjec
   }
 
   var ghost = getOrCreateChild(shooterPanel, "GhostBubble");
-  var hasTrajectory = !!(trajectory && trajectory.targetCellPosition && trajectory.pathPoints && trajectory.pathPoints.length >= 2);
+  var hasTrajectory = !!(
+    trajectory &&
+    trajectory.hitType !== "miss" &&
+    trajectory.pathPoints &&
+    trajectory.pathPoints.length >= 2
+  );
+  var hasGhostTarget = hasTrajectory && !!trajectory.targetCellPosition;
   var wallBounceCount = hasTrajectory && Number.isInteger(trajectory.wallBounceCount)
     ? trajectory.wallBounceCount
     : 0;
   var ricochetGuideActive = !!(shooterSnapshot && shooterSnapshot.ricochetGuideActive);
   var shouldShowGhost = BoardLayout.showGhostBubble !== false && (ricochetGuideActive || wallBounceCount === 0);
-  ghost.active = shouldShowGhost && !activeProjectile && hasTrajectory && !!currentBallLike;
+  ghost.active = shouldShowGhost && !activeProjectile && hasGhostTarget && !!currentBallLike;
   if (ghost.active) {
     ghost.setPosition(trajectory.targetCellPosition.x, trajectory.targetCellPosition.y);
     ghost.setScale(1);
@@ -489,6 +649,10 @@ LevelRenderer.prototype._syncShooterHeroAnimation = function (
   activeProjectile,
   finiteRemainingShots
 ) {
+  if (!shooterSnapshot || typeof shooterSnapshot.assistSpiritId !== "string" || !shooterSnapshot.assistSpiritId) {
+    throw new Error("Shooter hero animation requires shooterSnapshot.assistSpiritId.");
+  }
+  var presentation = installShooterHeroClips(this, heroNode, shooterSnapshot.assistSpiritId);
   var revision = shooterSnapshot.queueAdvanceRevision;
   if (!Number.isInteger(revision) || revision < 0) {
     throw new Error("Shooter hero animation requires a non-negative queueAdvanceRevision.");
@@ -496,7 +660,7 @@ LevelRenderer.prototype._syncShooterHeroAnimation = function (
 
   if (typeof shooterPanel.__lastShooterHeroFireRevision !== "number") {
     shooterPanel.__lastShooterHeroFireRevision = revision;
-    playShooterHeroIdle(heroNode);
+    playShooterHeroIdle(heroNode, presentation.idleClipName);
     return;
   }
   if (revision < shooterPanel.__lastShooterHeroFireRevision) {
@@ -509,25 +673,28 @@ LevelRenderer.prototype._syncShooterHeroAnimation = function (
     }
     if (finiteRemainingShots === 0) {
       shooterPanel.__lastShooterHeroFireRevision = revision;
-      playShooterHeroIdle(heroNode);
+      playShooterHeroIdle(heroNode, presentation.idleClipName);
       return;
     }
     if (!activeProjectile) {
       throw new Error("Shooter hero fire animation requires an active projectile.");
     }
     shooterPanel.__lastShooterHeroFireRevision = revision;
-    this._playShooterHeroFireAnimation(heroNode);
+    this._playShooterHeroFireAnimation(heroNode, presentation);
     return;
   }
 
   if (!heroNode.__shooterHeroPlayingClip) {
-    playShooterHeroIdle(heroNode);
+    playShooterHeroIdle(heroNode, presentation.idleClipName);
   }
 };
 
-LevelRenderer.prototype._playShooterHeroFireAnimation = function (heroNode) {
-  playShooterHeroClip(heroNode, SHOOTER_HERO_FIRE_CLIP_NAME, function () {
-    playShooterHeroIdle(heroNode);
+LevelRenderer.prototype._playShooterHeroFireAnimation = function (heroNode, presentation) {
+  if (!presentation || typeof presentation.deliverClipName !== "string" || typeof presentation.idleClipName !== "string") {
+    throw new Error("Shooter hero deliver animation requires presentation config.");
+  }
+  playShooterHeroClip(heroNode, presentation.deliverClipName, function () {
+    playShooterHeroIdle(heroNode, presentation.idleClipName);
   });
 };
 
@@ -704,7 +871,6 @@ LevelRenderer.prototype._syncShooterGuideDots = function (shooterPanel, shooterS
   var hasTrajectory = !!(
     trajectory &&
     trajectory.valid &&
-    trajectory.targetCellPosition &&
     trajectory.pathPoints &&
     trajectory.pathPoints.length >= 2
   );

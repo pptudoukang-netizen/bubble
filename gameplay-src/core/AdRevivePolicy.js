@@ -181,6 +181,16 @@ function buildRevivePlan(levelConfig, runtimeSnapshot) {
   if (level.playMode !== "shot_limited") {
     throw new Error("Ad revive level.playMode is unsupported: " + level.playMode);
   }
+  if (level.levelType === "trapped_sprite_rescue") {
+    return {
+      grantedShots: AD_REVIVE_GRANTED_SHOTS,
+      grantedTimeSeconds: 0,
+      targetColor: null,
+      targetColorBallCount: 0,
+      randomBallCount: AD_REVIVE_TARGET_COLOR_BALLS,
+      description: buildRandomReviveDescription()
+    };
+  }
   var objectiveCompleted = isObjectiveCompleted(runtimeSnapshot);
   var targetColor = objectiveCompleted ? null : resolveReviveTargetColor(levelConfig, runtimeSnapshot);
   return {

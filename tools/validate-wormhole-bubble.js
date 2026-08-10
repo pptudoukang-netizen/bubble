@@ -141,7 +141,9 @@ function validateMixedCellShiftAndProtection() {
   };
   var grid = createGrid(levelConfig);
   grid.damageVineSpirit("vine_moving");
-  var shifted = grid.shiftWormholeInterior();
+  var shifts = grid.shiftWormholeInteriors();
+  assert(shifts.length === 1, "Single wormhole pair fixture must produce one shift.");
+  var shifted = shifts[0];
   assert(shifted && shifted.slotCount === 7, "Wormhole shift must expose all seven interior slots.");
   assert(grid.getCell(3, 1) === null, "Wrapped empty slot must move into the first interior position.");
   assert(grid.getCell(3, 2).color === "R", "Normal ball must move right by one slot.");
@@ -152,6 +154,41 @@ function validateMixedCellShiftAndProtection() {
   assert(grid.getCell(3, 0).id === "wormhole_left" && grid.getCell(3, 8).id === "wormhole_right", "Wormhole endpoints must remain fixed.");
   assert(grid.removeCells([grid.getCell(3, 0), grid.getCell(3, 8)]).length === 0, "Wormholes must reject removal.");
   assert(grid.getClearableCells().length === grid.getCells().length - 2, "Wormholes must be excluded from clearable board cells.");
+}
+
+function validateMultiplePairShift() {
+  var levelConfig = {
+    coordinateSystem: "odd-r-hex",
+    level: {
+      levelId: 1,
+      code: "WORMHOLE_MULTI_PAIR_SHIFT",
+      initialDropSpaceRows: 8,
+      layout: [
+        "R.........",
+        ".........",
+        ".R.B......",
+        ".........",
+        "..G.Y.....",
+        ".........",
+        "..........",
+        "........."
+      ],
+      specialEntities: [
+        { id: "pair_01_left", entityCategory: "reactive_ball", entityType: "wormhole", moveDirection: "right", row: 2, col: 0 },
+        { id: "pair_01_right", entityCategory: "reactive_ball", entityType: "wormhole", moveDirection: "right", row: 2, col: 5 },
+        { id: "pair_02_left", entityCategory: "reactive_ball", entityType: "wormhole", moveDirection: "left", row: 4, col: 1 },
+        { id: "pair_02_right", entityCategory: "reactive_ball", entityType: "wormhole", moveDirection: "left", row: 4, col: 6 }
+      ]
+    }
+  };
+  var grid = createGrid(levelConfig);
+  var pairs = grid.getWormholePairs();
+  assert(pairs.length === 2, "BubbleGrid must resolve two wormhole pairs by row.");
+  var shifts = grid.shiftWormholeInteriors();
+  assert(shifts.length === 2 && shifts[0].row === 2 && shifts[1].row === 4, "Both wormhole rows must shift in one phase.");
+  assert(grid.getCell(2, 2).color === "R" && grid.getCell(2, 4).color === "B", "Right-moving pair must rotate its own interior.");
+  assert(grid.getCell(4, 1).id === "pair_02_left" && grid.getCell(4, 6).id === "pair_02_right", "Second pair endpoints must remain fixed.");
+  assert(grid.getCell(4, 1).row === 4 && grid.getCell(4, 6).row === 4, "Second pair must remain isolated on its row.");
 }
 
 function validateDeferredSupportDropAndNoAutoMatch() {
@@ -587,6 +624,20 @@ function validateFlowShaderAndShiftCompatibility() {
       maxColumns: 10,
       viewportOffsetY: 0,
       cells: [
+        { entityCategory: "reactive_ball", entityType: "wormhole", row: 2, col: 1, moveDirection: "right" },
+        { entityCategory: "reactive_ball", entityType: "wormhole", row: 2, col: 4, moveDirection: "right" },
+        { entityCategory: "reactive_ball", entityType: "wormhole", row: 5, col: 2, moveDirection: "left" },
+        { entityCategory: "reactive_ball", entityType: "wormhole", row: 5, col: 5, moveDirection: "left" }
+      ]
+    });
+    assert(fxRenderer.wormholeDirectionGuideRoot.children.length === 4, "Two wormhole pairs must render arrows for both isolated interiors.");
+    assert(fxRenderer.wormholeDirectionGuideRoot.children.filter(function (node) { return node.angle === 0; }).length === 2, "First wormhole pair arrows must face right.");
+    assert(fxRenderer.wormholeDirectionGuideRoot.children.filter(function (node) { return node.angle === 180; }).length === 2, "Second wormhole pair arrows must face left.");
+
+    fxRenderer._syncWormholeDirectionGuide({
+      maxColumns: 10,
+      viewportOffsetY: 0,
+      cells: [
         { entityCategory: "reactive_ball", entityType: "wormhole", row: 3, col: 1, moveDirection: "left" },
         { entityCategory: "reactive_ball", entityType: "wormhole", row: 3, col: 4, moveDirection: "left" }
       ]
@@ -612,7 +663,8 @@ function validateFlowShaderAndShiftCompatibility() {
 
 validateConfigAndCompactCodec();
 validateMixedCellShiftAndProtection();
+validateMultiplePairShift();
 validateDeferredSupportDropAndNoAutoMatch();
 validateTopAnchorCollapsePreservesWormholes();
 validateFlowShaderAndShiftCompatibility();
-console.log("[OK] wormhole config, compact codec, mixed-cell cyclic shift, direction guide, fixed support, top-anchor collapse, deferred drop, clear-state and layered flow shader rules");
+console.log("[OK] wormhole config, compact codec, multi-pair mixed-cell cyclic shift, direction guide, fixed support, top-anchor collapse, deferred drop, clear-state and layered flow shader rules");

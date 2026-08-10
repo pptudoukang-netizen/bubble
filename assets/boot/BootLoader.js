@@ -1,6 +1,5 @@
 "use strict";
 
-var BOOT_SCENE_NAME = "boot";
 var GAME_SCENE_NAME = "game";
 var CORE_BUNDLE_NAME = "core";
 var CORE_READY_MARKER = "__BUBBLE_CORE_CODE_LOADED__";
@@ -32,12 +31,11 @@ function requireChild(parent, name, description) {
   return child;
 }
 
-function requireBootProgressBar() {
+function requireBootProgressBar(canvas) {
   var scene = cc.director.getScene();
-  if (!scene || scene.name !== BOOT_SCENE_NAME) {
-    throw new Error("BootLoader expected start scene `" + BOOT_SCENE_NAME + "`.");
+  if (!scene || !canvas || !canvas.isValid || canvas.name !== "Canvas" || canvas.parent !== scene) {
+    throw new Error("BootLoader must run on the boot scene Canvas.");
   }
-  var canvas = requireChild(scene, "Canvas", "boot canvas");
   var loadingView = requireChild(canvas, "LoadingView", "loading view");
   var panel = requireChild(loadingView, "Panel", "loading panel");
   var track = requireChild(panel, "ProgressTrack", "loading progress track");
@@ -177,8 +175,8 @@ function loadCoreSubpackage(progressBar) {
   });
 }
 
-function startBootFlow() {
-  var progressBar = requireBootProgressBar();
+function startBootFlow(canvas) {
+  var progressBar = requireBootProgressBar(canvas);
   progressBar.progress = 0;
   cc.director.once(cc.Director.EVENT_AFTER_DRAW, function () {
     loadCoreSubpackage(progressBar);
@@ -188,4 +186,11 @@ function startBootFlow() {
 if (!cc || !cc.director || !cc.Director) {
   throw new Error("BootLoader requires Cocos Creator runtime.");
 }
-cc.director.once(cc.Director.EVENT_AFTER_SCENE_LAUNCH, startBootFlow);
+
+cc.Class({
+  extends: cc.Component,
+
+  onLoad: function () {
+    startBootFlow(this.node);
+  }
+});

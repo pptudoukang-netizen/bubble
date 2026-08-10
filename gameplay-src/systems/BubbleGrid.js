@@ -113,9 +113,19 @@ function createSpecialEntityRecord(entity, row, col) {
     moveDirection: typeof entity.moveDirection === "string" && entity.moveDirection
       ? entity.moveDirection
       : null,
+    temporaryThawed: entity.temporaryThawed === true,
+    temporaryThawToken: typeof entity.temporaryThawToken === "string" && entity.temporaryThawToken
+      ? entity.temporaryThawToken
+      : null,
     row: row,
     col: col
   };
+  if (record.temporaryThawed && !(record.entityCategory === "obstacle_ball" && record.entityType === "ice")) {
+    throw new Error("Temporary thaw state is only valid on ice obstacles.");
+  }
+  if (record.temporaryThawed && !record.temporaryThawToken) {
+    throw new Error("Temporary thaw state requires temporaryThawToken.");
+  }
   if (entity.entityCategory === "reactive_ball" && entity.entityType === "vine_spirit") {
     record.health = Number.isInteger(entity.health) ? entity.health : VINE_SPIRIT_MAX_HEALTH;
     record.maxHealth = VINE_SPIRIT_MAX_HEALTH;
@@ -132,11 +142,14 @@ function BubbleGrid() {
   this.maxColumns = 0;
   this.version = 0;
   this.boardViewport = null;
+  this.trappedSpriteRescueSystem = null;
   this._cellMap = {};
   this._cellsByRow = {};
   this._specialCellMap = {};
+  this._timeBonusByCell = {};
   this._vineOwnerByCell = {};
   this._vinePreviewOwnerByCell = {};
+  this._cellRemovalListener = null;
 }
 
 BubbleGrid.prototype = Object.create(BaseSystem.prototype);
@@ -148,6 +161,34 @@ BubbleGrid.prototype.attachBoardViewport = function (boardViewport) {
   }
   this.boardViewport = boardViewport;
   return this;
+};
+
+BubbleGrid.prototype.attachTrappedSpriteRescueSystem = function (trappedSpriteRescueSystem) {
+  if (
+    !trappedSpriteRescueSystem ||
+    typeof trappedSpriteRescueSystem.isActive !== "function" ||
+    typeof trappedSpriteRescueSystem.getCellWorldPosition !== "function" ||
+    typeof trappedSpriteRescueSystem.getWorldCenter !== "function"
+  ) {
+    throw new Error("BubbleGrid.attachTrappedSpriteRescueSystem requires TrappedSpriteRescueSystem.");
+  }
+  this.trappedSpriteRescueSystem = trappedSpriteRescueSystem;
+  return this;
+};
+
+BubbleGrid.prototype.attachCellRemovalListener = function (listener) {
+  if (typeof listener !== "function") {
+    throw new Error("BubbleGrid.attachCellRemovalListener requires function.");
+  }
+  this._cellRemovalListener = listener;
+  return this;
+};
+
+BubbleGrid.prototype.isTrappedSpriteRescueActive = function () {
+  return !!(
+    this.trappedSpriteRescueSystem &&
+    this.trappedSpriteRescueSystem.isActive()
+  );
 };
 
 BubbleGrid.prototype._requireViewportOffsetY = function () {
@@ -165,13 +206,39 @@ BubbleGrid.prototype.configureLevel = function (levelConfig) {
   if (!this.boardViewport) {
     throw new Error("BubbleGrid.configureLevel requires attached BoardViewportSystem.");
   }
-  if (!Number.isInteger(levelConfig.level.initialDropSpaceRows) || levelConfig.level.initialDropSpaceRows < 8) {
+  if (
+    levelConfig.level.levelType === "trapped_sprite_rescue" &&
+    !this.trappedSpriteRescueSystem
+  ) {
+    throw new Error("Trapped sprite rescue BubbleGrid requires attached TrappedSpriteRescueSystem.");
+  }
+  if (
+    levelConfig.level.levelType !== "trapped_sprite_rescue" &&
+    (!Number.isInteger(levelConfig.level.initialDropSpaceRows) || levelConfig.level.initialDropSpaceRows < 8)
+  ) {
     throw new Error("BubbleGrid requires level.initialDropSpaceRows >= 8.");
   }
   this.layout = levelConfig.level.layout.slice();
   this.specialEntities = Array.isArray(levelConfig.level.specialEntities)
     ? clone(levelConfig.level.specialEntities)
     : [];
+  this._timeBonusByCell = {};
+  if (levelConfig.level.timeBonusBalls !== undefined) {
+    if (!Array.isArray(levelConfig.level.timeBonusBalls)) {
+      throw new Error("BubbleGrid timeBonusBalls must be an array when configured.");
+    }
+    levelConfig.level.timeBonusBalls.forEach(function (entry, index) {
+      if (!entry || !Number.isInteger(entry.row) || !Number.isInteger(entry.col) ||
+          !Number.isInteger(entry.bonusSeconds) || entry.bonusSeconds <= 0) {
+        throw new Error("BubbleGrid timeBonusBalls[" + index + "] is invalid.");
+      }
+      var coordinateKey = keyFor(entry.row, entry.col);
+      if (Object.prototype.hasOwnProperty.call(this._timeBonusByCell, coordinateKey)) {
+        throw new Error("BubbleGrid timeBonusBalls contains duplicate cell " + coordinateKey + ".");
+      }
+      this._timeBonusByCell[coordinateKey] = entry.bonusSeconds;
+    }, this);
+  }
   this.coordinateSystem = levelConfig.coordinateSystem || this.coordinateSystem;
   this._vineOwnerByCell = {};
   this._vinePreviewOwnerByCell = {};
@@ -238,6 +305,9 @@ BubbleGrid.prototype._createNormalCell = function (row, col, colorCode) {
     id: row + "_" + col,
     entityCategory: "normal_ball",
     entityType: null,
+    timeBonusSeconds: Object.prototype.hasOwnProperty.call(this._timeBonusByCell, cellKey)
+      ? this._timeBonusByCell[cellKey]
+      : null,
     vineOwnerId: Object.prototype.hasOwnProperty.call(this._vineOwnerByCell, cellKey)
       ? this._vineOwnerByCell[cellKey]
       : null,
@@ -260,7 +330,7 @@ BubbleGrid.prototype._createSpecialCell = function (entity, row, col) {
   var cell = {
     row: row,
     col: col,
-    color: null,
+    color: entity.temporaryThawed === true ? entity.innerColor : null,
     id: entity.id || ("special_" + row + "_" + col),
     entityCategory: entity.entityCategory,
     entityType: entity.entityType,
@@ -271,8 +341,23 @@ BubbleGrid.prototype._createSpecialCell = function (entity, row, col) {
     moveDirection: typeof entity.moveDirection === "string" && entity.moveDirection
       ? entity.moveDirection
       : null,
+    temporaryThawed: entity.temporaryThawed === true,
+    temporaryThawToken: typeof entity.temporaryThawToken === "string" && entity.temporaryThawToken
+      ? entity.temporaryThawToken
+      : null,
     isSpecial: true
   };
+  if (cell.temporaryThawed) {
+    if (!(cell.entityCategory === "obstacle_ball" && cell.entityType === "ice")) {
+      throw new Error("Temporary thaw cell must remain an ice obstacle.");
+    }
+    if (typeof cell.innerColor !== "string" || !cell.innerColor) {
+      throw new Error("Temporary thaw cell requires innerColor.");
+    }
+    if (!cell.temporaryThawToken) {
+      throw new Error("Temporary thaw cell requires temporaryThawToken.");
+    }
+  }
   if (isVineSpiritCell(entity)) {
     if (!Number.isInteger(entity.health) || entity.health <= 0 || entity.health > VINE_SPIRIT_MAX_HEALTH) {
       throw new Error("Vine spirit special cell requires health in [1, 3].");
@@ -364,6 +449,12 @@ BubbleGrid.prototype._resolveSegmentRowBounds = function (startPoint, endPoint, 
 BubbleGrid.prototype._iterateCellsNearSegment = function (startPoint, endPoint, paddingRows, callback) {
   if (typeof callback !== "function") {
     throw new Error("BubbleGrid segment iteration requires callback.");
+  }
+  if (this.isTrappedSpriteRescueActive()) {
+    this.cells.forEach(function (cell) {
+      callback.call(this, cell);
+    }, this);
+    return;
   }
   var bounds = this._resolveSegmentRowBounds(startPoint, endPoint, paddingRows);
   for (var row = bounds.minRow; row <= bounds.maxRow; row += 1) {
@@ -493,12 +584,38 @@ BubbleGrid.prototype.getClearableCells = function () {
   }));
 };
 
+BubbleGrid.prototype.getWormholePairs = function () {
+  var wormholesByRow = {};
+  this.cells.filter(isWormholeCell).forEach(function (wormhole) {
+    if (!wormholesByRow[wormhole.row]) {
+      wormholesByRow[wormhole.row] = [];
+    }
+    wormholesByRow[wormhole.row].push(wormhole);
+  });
+  return Object.keys(wormholesByRow).map(function (rowKey) {
+    var pair = wormholesByRow[rowKey].sort(function (left, right) {
+      return left.col - right.col;
+    });
+    if (pair.length !== 2) {
+      throw new Error("BubbleGrid wormhole row " + rowKey + " requires exactly two live endpoints.");
+    }
+    if (pair[1].col - pair[0].col < 2) {
+      throw new Error("BubbleGrid wormhole row " + rowKey + " requires at least one interior slot.");
+    }
+    if (
+      (pair[0].moveDirection !== "left" && pair[0].moveDirection !== "right") ||
+      pair[0].moveDirection !== pair[1].moveDirection
+    ) {
+      throw new Error("BubbleGrid wormhole row " + rowKey + " requires matching left/right moveDirection.");
+    }
+    return pair;
+  }).sort(function (left, right) {
+    return left[0].row - right[0].row;
+  });
+};
+
 BubbleGrid.prototype.hasWormholePair = function () {
-  var wormholeCount = this.cells.filter(isWormholeCell).length;
-  if (wormholeCount !== 0 && wormholeCount !== 2) {
-    throw new Error("BubbleGrid requires exactly two live wormholes when wormhole is configured.");
-  }
-  return wormholeCount === 2;
+  return this.getWormholePairs().length > 0;
 };
 
 BubbleGrid.prototype.getVineSpirits = function () {
@@ -747,7 +864,17 @@ BubbleGrid.prototype.hasCell = function (row, col) {
 };
 
 BubbleGrid.prototype.getCellPosition = function (row, col) {
+  if (this.isTrappedSpriteRescueActive()) {
+    return this.trappedSpriteRescueSystem.getCellWorldPosition(row, col, this.maxColumns);
+  }
   return BoardLayout.getCellPosition(row, col, this.maxColumns, this._requireViewportOffsetY());
+};
+
+BubbleGrid.prototype.notifyWorldTransformChanged = function () {
+  if (!this.isTrappedSpriteRescueActive()) {
+    throw new Error("BubbleGrid world transform changes are only valid in trapped sprite rescue mode.");
+  }
+  this.version += 1;
 };
 
 BubbleGrid.prototype.getNeighborCoordinates = function (row, col) {
@@ -894,30 +1021,12 @@ BubbleGrid.prototype.rotateSwirlNeighborsClockwise = function (swirlCell) {
   return moves;
 };
 
-BubbleGrid.prototype.shiftWormholeInterior = function () {
-  var wormholes = this.getCells().filter(isWormholeCell).sort(function (left, right) {
-    return left.col - right.col;
-  });
-  if (!wormholes.length) {
-    return null;
-  }
-  if (wormholes.length !== 2) {
-    throw new Error("BubbleGrid wormhole shift requires exactly two wormholes.");
+BubbleGrid.prototype._shiftWormholePairInterior = function (wormholes) {
+  if (!Array.isArray(wormholes) || wormholes.length !== 2) {
+    throw new Error("BubbleGrid wormhole pair shift requires exactly two endpoints.");
   }
   var leftWormhole = wormholes[0];
   var rightWormhole = wormholes[1];
-  if (leftWormhole.row !== rightWormhole.row) {
-    throw new Error("BubbleGrid wormholes must remain on the same row.");
-  }
-  if (rightWormhole.col - leftWormhole.col < 2) {
-    throw new Error("BubbleGrid wormholes require at least one interior slot.");
-  }
-  if (
-    (leftWormhole.moveDirection !== "left" && leftWormhole.moveDirection !== "right") ||
-    leftWormhole.moveDirection !== rightWormhole.moveDirection
-  ) {
-    throw new Error("BubbleGrid wormhole pair requires matching left/right moveDirection.");
-  }
 
   var track = [];
   for (var col = leftWormhole.col + 1; col < rightWormhole.col; col += 1) {
@@ -1000,6 +1109,13 @@ BubbleGrid.prototype.shiftWormholeInterior = function () {
   };
 };
 
+BubbleGrid.prototype.shiftWormholeInteriors = function () {
+  var pairs = this.getWormholePairs();
+  return pairs.map(function (pair) {
+    return this._shiftWormholePairInterior(pair);
+  }, this);
+};
+
 BubbleGrid.prototype.getNeighborCells = function (row, col) {
   return this.getNeighborCoordinates(row, col).map(function (candidate) {
     return this.getCell(candidate.row, candidate.col);
@@ -1043,8 +1159,17 @@ BubbleGrid.prototype.isAttachableCell = function (row, col, direction, options) 
   if (!this.isValidCell(row, col) || this.hasCell(row, col)) {
     return false;
   }
+  if (
+    this.isTrappedSpriteRescueActive() &&
+    this.trappedSpriteRescueSystem.isReservedCell(row, col)
+  ) {
+    return false;
+  }
 
   if (row === 0) {
+    if (this.isTrappedSpriteRescueActive()) {
+      return false;
+    }
     return options.allowTopRow !== false;
   }
 
@@ -1096,7 +1221,12 @@ BubbleGrid.prototype.findFirstAttachableSlotOnSegment = function (startPoint, en
     : 0.2;
 
   var slotPaddingRows = Math.ceil(radius / BoardLayout.rowHeight) + 2;
-  var rowBounds = this._resolveSegmentRowBounds(startPoint, endPoint, slotPaddingRows);
+  // Rotated rescue boards no longer have screen-space rows.  Scan the
+  // authoritative grid coordinates and evaluate each slot in world space,
+  // otherwise a real opening can be hidden behind the first nearby bubble.
+  var rowBounds = this.isTrappedSpriteRescueActive()
+    ? { minRow: 0, maxRow: this.getRowCount() - 1 }
+    : this._resolveSegmentRowBounds(startPoint, endPoint, slotPaddingRows);
   var best = null;
 
   for (var row = rowBounds.minRow; row <= rowBounds.maxRow; row += 1) {
@@ -1312,6 +1442,71 @@ BubbleGrid.prototype.findCollisionOnSegment = function (startPoint, endPoint, co
   return this._buildSegmentCollisionResult(bestHit, startPoint, segment);
 };
 
+BubbleGrid.prototype.findTrappedSpriteCollisionOnSegment = function (startPoint, endPoint, collisionRadius) {
+  if (!this.isTrappedSpriteRescueActive()) {
+    return null;
+  }
+  if (!startPoint || !endPoint) {
+    throw new Error("Trapped sprite collision requires start and end points.");
+  }
+  if (!Number.isFinite(collisionRadius) || collisionRadius <= 0) {
+    throw new Error("Trapped sprite collision requires positive collisionRadius.");
+  }
+
+  var center = this.trappedSpriteRescueSystem.getWorldCenter();
+  var segment = {
+    x: endPoint.x - startPoint.x,
+    y: endPoint.y - startPoint.y
+  };
+  var segmentLengthSq = dot(segment, segment);
+  if (segmentLengthSq <= EPSILON) {
+    return null;
+  }
+
+  var startToCenter = {
+    x: startPoint.x - center.x,
+    y: startPoint.y - center.y
+  };
+  var b = 2 * dot(segment, startToCenter);
+  var c = dot(startToCenter, startToCenter) - collisionRadius * collisionRadius;
+  var discriminant = b * b - 4 * segmentLengthSq * c;
+  if (discriminant < 0) {
+    return null;
+  }
+
+  var sqrtDiscriminant = Math.sqrt(discriminant);
+  var t1 = (-b - sqrtDiscriminant) / (2 * segmentLengthSq);
+  var t2 = (-b + sqrtDiscriminant) / (2 * segmentLengthSq);
+  var hitT = null;
+  if (t1 >= -EPSILON && t1 <= 1 + EPSILON) {
+    hitT = clamp(t1, 0, 1);
+  } else if (t2 >= -EPSILON && t2 <= 1 + EPSILON) {
+    hitT = clamp(t2, 0, 1);
+  }
+  if (hitT === null) {
+    return null;
+  }
+
+  var hitPoint = {
+    x: startPoint.x + segment.x * hitT,
+    y: startPoint.y + segment.y * hitT
+  };
+  var hitNormal = normalize({
+    x: hitPoint.x - center.x,
+    y: hitPoint.y - center.y
+  });
+  if (Math.abs(hitNormal.x) <= 0.0001 && Math.abs(hitNormal.y) <= 0.0001) {
+    throw new Error("Trapped sprite collision normal cannot be zero.");
+  }
+
+  return {
+    point: hitPoint,
+    normal: hitNormal,
+    center: center,
+    t: hitT
+  };
+};
+
 BubbleGrid.prototype.findCollisionsOnSegmentForRadii = function (startPoint, endPoint, radii) {
   if (!startPoint || !endPoint) {
     return null;
@@ -1383,6 +1578,9 @@ BubbleGrid.prototype.findCollisionsOnSegmentForRadii = function (startPoint, end
 
 BubbleGrid.prototype.findAttachmentCell = function (point, collidedCell, direction, previousPoint) {
   if (!collidedCell) {
+    if (this.isTrappedSpriteRescueActive()) {
+      return null;
+    }
     return this._findTopSlot(point.x);
   }
 
@@ -1391,17 +1589,29 @@ BubbleGrid.prototype.findAttachmentCell = function (point, collidedCell, directi
     if (this.hasCell(candidate.row, candidate.col)) {
       return false;
     }
+    if (
+      this.isTrappedSpriteRescueActive() &&
+      this.trappedSpriteRescueSystem.isReservedCell(candidate.row, candidate.col)
+    ) {
+      return false;
+    }
 
     return this._isAttachmentCandidateReachable(candidate, incomingDirection);
   }, this);
 
   if (!candidates.length) {
     candidates = this.getNeighborCoordinates(collidedCell.row, collidedCell.col).filter(function (candidate) {
-      return !this.hasCell(candidate.row, candidate.col);
+      return !this.hasCell(candidate.row, candidate.col) && !(
+        this.isTrappedSpriteRescueActive() &&
+        this.trappedSpriteRescueSystem.isReservedCell(candidate.row, candidate.col)
+      );
     }, this);
   }
 
   if (!candidates.length) {
+    if (this.isTrappedSpriteRescueActive()) {
+      return null;
+    }
     return this._findTopSlot(point.x);
   }
 
@@ -1422,6 +1632,19 @@ BubbleGrid.prototype.findAttachmentCell = function (point, collidedCell, directi
   }.bind(this));
 
   return candidates[0];
+};
+
+BubbleGrid.prototype.findTrappedSpriteAttachmentCell = function (point, direction, previousPoint) {
+  if (!this.isTrappedSpriteRescueActive()) {
+    throw new Error("Trapped sprite attachment requires active trapped sprite rescue mode.");
+  }
+  var anchorCell = this.trappedSpriteRescueSystem.getAnchorCell();
+  return this.findAttachmentCell(
+    point,
+    anchorCell,
+    direction || { x: 0, y: 1 },
+    previousPoint || point
+  );
 };
 
 BubbleGrid.prototype._isAttachmentCandidateReachable = function (candidate, direction) {
@@ -1649,8 +1872,17 @@ BubbleGrid.prototype.findSplitterSpawnCell = function (splitterCell) {
 };
 
 BubbleGrid.prototype.addBubble = function (cell, colorOrBall) {
+  if (!cell || !Number.isInteger(cell.row) || !Number.isInteger(cell.col)) {
+    throw new Error("BubbleGrid.addBubble requires target cell coordinates.");
+  }
   var row = cell.row;
   var col = cell.col;
+  if (
+    this.isTrappedSpriteRescueActive() &&
+    this.trappedSpriteRescueSystem.isReservedCell(row, col)
+  ) {
+    throw new Error("BubbleGrid cannot attach a bubble to the trapped sprite anchor cell.");
+  }
 
   if (typeof colorOrBall === "string") {
     this._clearSpecialCell(row, col);
@@ -1678,6 +1910,53 @@ BubbleGrid.prototype.addBubble = function (cell, colorOrBall) {
   this._rebuildCaches();
   this.assertNoVisualOverlap("addBubble");
   return this.getCell(row, col);
+};
+
+BubbleGrid.prototype.setTemporaryThaw = function (row, col, thawToken, active) {
+  if (!Number.isInteger(row) || !Number.isInteger(col)) {
+    throw new Error("BubbleGrid temporary thaw requires integer coordinates.");
+  }
+  if (typeof thawToken !== "string" || !thawToken) {
+    throw new Error("BubbleGrid temporary thaw requires thawToken.");
+  }
+  if (typeof active !== "boolean") {
+    throw new Error("BubbleGrid temporary thaw requires active boolean.");
+  }
+  var cellKey = keyFor(row, col);
+  var entity = this._specialCellMap[cellKey];
+  if (!entity || entity.entityCategory !== "obstacle_ball" || entity.entityType !== "ice") {
+    throw new Error("BubbleGrid temporary thaw target must be a live ice obstacle: " + cellKey);
+  }
+  if (active) {
+    if (entity.temporaryThawed === true) {
+      throw new Error("BubbleGrid ice obstacle is already temporarily thawed: " + cellKey);
+    }
+    entity.temporaryThawed = true;
+    entity.temporaryThawToken = thawToken;
+  } else {
+    if (entity.temporaryThawed !== true || entity.temporaryThawToken !== thawToken) {
+      throw new Error("BubbleGrid temporary thaw token mismatch: " + cellKey);
+    }
+    entity.temporaryThawed = false;
+    entity.temporaryThawToken = null;
+  }
+  this.version += 1;
+  this._rebuildCaches();
+  return this.getCell(row, col);
+};
+
+BubbleGrid.prototype.findTemporaryThawCells = function (thawToken) {
+  if (typeof thawToken !== "string" || !thawToken) {
+    throw new Error("BubbleGrid temporary thaw lookup requires thawToken.");
+  }
+  return this.getCells().filter(function (cell) {
+    return cell.temporaryThawed === true && cell.temporaryThawToken === thawToken;
+  }).sort(function (left, right) {
+    if (left.row !== right.row) {
+      return left.row - right.row;
+    }
+    return left.col - right.col;
+  });
 };
 
 BubbleGrid.prototype._removeCellsByMode = function (cells, allowVineDrop) {
@@ -1721,6 +2000,7 @@ BubbleGrid.prototype._removeCellsByMode = function (cells, allowVineDrop) {
 
     touchedKeys[key] = true;
     removed.push(liveCell);
+    delete this._timeBonusByCell[key];
     this._setCell(cell.row, cell.col, ".");
     this._clearSpecialCell(cell.row, cell.col);
   }, this);
@@ -1729,6 +2009,9 @@ BubbleGrid.prototype._removeCellsByMode = function (cells, allowVineDrop) {
     this.version += 1;
     this._rebuildCaches();
     this.assertNoVisualOverlap("removeCells");
+    if (this._cellRemovalListener) {
+      this._cellRemovalListener(removed.slice(), allowVineDrop ? "floating_drop" : "elimination");
+    }
   }
 
   return removed;
@@ -1758,7 +2041,11 @@ BubbleGrid.prototype.snapshot = function () {
   snapshot.viewportOffsetY = this.getViewportOffsetY();
   snapshot.topAttachY = this.getTopAttachY();
   snapshot.dangerReached = false;
-  snapshot.cells = this.getCells();
+  snapshot.trappedSpriteRescueActive = this.isTrappedSpriteRescueActive();
+  snapshot.cells = this.getCells().map(function (cell) {
+    cell.position = this.getCellPosition(cell.row, cell.col);
+    return cell;
+  }, this);
   snapshot.specialEntities = this.getSpecialEntities();
   snapshot.version = this.version;
   return snapshot;

@@ -2,6 +2,7 @@
 
 var BundleLoader = require("../utils/BundleLoader");
 var SpriteProxyLayerHelper = require("../utils/SpriteProxyLayerHelper");
+var AssistSpiritConfig = require("../config/AssistSpiritConfig");
 
 var POWERUP_DEFINITIONS = [
   { itemId: "plus_three_balls", unlockLevel: 1, iconPath: "ui/image/props/plus_ball", temporary: true },
@@ -18,15 +19,35 @@ var PROP_ITEM_HORIZONTAL_PADDING = 12;
 var PROP_ITEM_SPACING = 16;
 var PROP_ITEM_WIDTH = 90;
 var PROP_ITEM_ICON_NODE_NAME = "icon";
+var ROLE_ITEM_HORIZONTAL_PADDING = 12;
+var ROLE_ITEM_SPACING = 16;
+var ROLE_ITEM_ICON_NODE_NAME = "icon";
+var START_GAME_SPIRIT_AVATAR_PATH_BY_ID = {
+  milu: "ui/image/start_view/milu",
+  lumi: "ui/image/start_view/lumi",
+  noya: "ui/image/start_view/noya",
+  flora: "ui/image/start_view/flora",
+  loco: "ui/image/start_view/loco",
+  kelu: "ui/image/start_view/kelu",
+  yumi: "spirit_system/image/ui/yumi_avatar"
+};
 var START_GAME_RENDER_PROXY_ROOT_NAME = "start_game_render_proxy_root";
 var START_GAME_PROP_RENDER_PROXY_ROOT_NAME = "start_game_prop_render_proxy_root";
+var START_GAME_ROLE_RENDER_PROXY_ROOT_NAME = "start_game_role_render_proxy_root";
+var TIMED_INFINITE_SHOTS_PLAY_MODE = "timed_infinite_shots";
+var SHOT_LIMITED_PLAY_MODE = "shot_limited";
+var NORMAL_LEVEL_TYPE = "normal";
+var TRAPPED_SPRITE_RESCUE_LEVEL_TYPE = "trapped_sprite_rescue";
 var START_GAME_RENDER_PROXY_LAYER_NAMES = {
   panel: "start_game_proxy_panel_layer",
   chrome: "start_game_proxy_chrome_layer",
   target: "start_game_proxy_target_layer",
   propBackground: "start_game_proxy_prop_background_layer",
   propIcon: "start_game_proxy_prop_icon_layer",
-  propState: "start_game_proxy_prop_state_layer"
+  propState: "start_game_proxy_prop_state_layer",
+  roleBackground: "start_game_proxy_role_background_layer",
+  roleIcon: "start_game_proxy_role_icon_layer",
+  roleState: "start_game_proxy_role_state_layer"
 };
 
 function findNodeByNameRecursive(rootNode, name) {
@@ -97,6 +118,44 @@ function requireNonNegativeInteger(value, description) {
     throw new Error(description + " must be a non-negative integer.");
   }
   return value;
+}
+
+function buildClearanceTargetText(options) {
+  requireObject(options, "StartGameView clearance target options");
+  var oneStarTargetScore = requirePositiveInteger(
+    options.oneStarTargetScore,
+    "StartGameView one-star target score"
+  );
+  if (typeof options.playMode !== "string") {
+    throw new Error("StartGameView playMode must be a string.");
+  }
+  if (typeof options.levelType !== "string") {
+    throw new Error("StartGameView levelType must be a string.");
+  }
+
+  if (options.playMode === TIMED_INFINITE_SHOTS_PLAY_MODE) {
+    var timeLimitSeconds = requirePositiveInteger(
+      options.timeLimitSeconds,
+      "StartGameView timed level timeLimitSeconds"
+    );
+    return "目标：" + timeLimitSeconds + "秒内掉落全部球球且达到" + oneStarTargetScore + "分";
+  }
+
+  if (options.levelType === TRAPPED_SPRITE_RESCUE_LEVEL_TYPE) {
+    if (options.playMode !== SHOT_LIMITED_PLAY_MODE) {
+      throw new Error("StartGameView rescue level must use shot_limited playMode.");
+    }
+    return "目标：救出精灵并达到" + oneStarTargetScore + "分";
+  }
+
+  if (options.levelType === NORMAL_LEVEL_TYPE && options.playMode === SHOT_LIMITED_PLAY_MODE) {
+    return "目标：掉落全部球球且达到" + oneStarTargetScore + "分";
+  }
+
+  throw new Error(
+    "Unsupported StartGameView clearance target level type/play mode: " +
+    options.levelType + "/" + options.playMode
+  );
 }
 
 function getOrderedPowerupDefinitionsForLevel(levelId) {
@@ -377,16 +436,62 @@ function normalizePurchaseOptions(purchaseOptionsByItemId) {
   return output;
 }
 
+function hasCollectionObjective(objectives) {
+  requireObject(objectives, "StartGameView objectives");
+  return objectives.ball !== null && objectives.ball !== undefined ||
+    objectives.iceSnowball !== null && objectives.iceSnowball !== undefined;
+}
+
+function normalizeAssistSpiritState(state) {
+  requireObject(state, "StartGameView assist spirit state");
+  if (typeof state.equippedSpiritId !== "string" || state.equippedSpiritId.length === 0) {
+    throw new Error("StartGameView equippedSpiritId must be a non-empty string.");
+  }
+  requireObject(state.spirits, "StartGameView assist spirit roster");
+  var catalog = AssistSpiritConfig.getCatalog();
+  var normalizedSpirits = {};
+  catalog.forEach(function (spirit) {
+    var entry = requireObject(state.spirits[spirit.id], "StartGameView assist spirit `" + spirit.id + "`");
+    if (typeof entry.owned !== "boolean") {
+      throw new Error("StartGameView assist spirit owned state must be boolean: " + spirit.id);
+    }
+    normalizedSpirits[spirit.id] = {
+      owned: entry.owned
+    };
+  });
+  if (!normalizedSpirits[state.equippedSpiritId]) {
+    throw new Error("StartGameView equipped assist spirit is unsupported: " + state.equippedSpiritId);
+  }
+  if (normalizedSpirits[state.equippedSpiritId].owned !== true) {
+    throw new Error("StartGameView equipped assist spirit must be unlocked.");
+  }
+  return {
+    equippedSpiritId: state.equippedSpiritId,
+    spirits: normalizedSpirits
+  };
+}
+
+function getStartGameSpiritAvatarPath(spiritId) {
+  var spirit = AssistSpiritConfig.getSpirit(spiritId);
+  var path = START_GAME_SPIRIT_AVATAR_PATH_BY_ID[spirit.id];
+  if (typeof path !== "string" || path.length === 0) {
+    throw new Error("StartGameView avatar path is missing for assist spirit: " + spirit.id);
+  }
+  return path;
+}
+
 function StartGameViewController(options) {
   requireObject(options, "StartGameViewController options");
   this.node = requireValidNode(options.node, "root node");
   this.onClose = requireFunction(options.onClose, "StartGameViewController onClose");
   this.onPlay = requireFunction(options.onPlay, "StartGameViewController onPlay");
   this.onUnavailable = requireFunction(options.onUnavailable, "StartGameViewController onUnavailable");
+  this.onEquipSpirit = requireFunction(options.onEquipSpirit, "StartGameViewController onEquipSpirit");
   this.onPurchasePowerup = requireFunction(options.onPurchasePowerup, "StartGameViewController onPurchasePowerup");
   this.onOpenPropDescription = requireFunction(options.onOpenPropDescription, "StartGameViewController onOpenPropDescription");
   this._nodes = this._resolveNodes();
   this._propNodes = [];
+  this._roleNodes = [];
   this._spriteFrames = {};
   this._spriteLoadPromise = null;
   this._renderState = null;
@@ -400,7 +505,11 @@ function StartGameViewController(options) {
   this._propRenderProxyRoot = null;
   this._propRenderProxyLayers = {};
   this._propRenderProxyRecords = [];
+  this._roleRenderProxyRoot = null;
+  this._roleRenderProxyLayers = {};
+  this._roleRenderProxyRecords = [];
   this._initPropNodes();
+  this._initRoleNodes();
   this._bindActions();
 }
 
@@ -409,41 +518,63 @@ StartGameViewController.prototype._resolveNodes = function () {
   var titleBgNode = requireChildNode(panelNode, "title_bg", "Panel");
   var playButtonNode = requireChildNode(panelNode, "play_btn", "Panel");
   var targetNode = requireChildNode(panelNode, "target", "Panel");
+  var targetScoreBgNode = requireChildNode(panelNode, "target_score_bg", "Panel");
   var targetLayoutNode = requireChildNode(targetNode, "traget_layout", "Panel/target");
   var targetBallNode = requireChildNode(targetLayoutNode, "target_ball", "Panel/target/traget_layout");
   var targetIceNode = requireChildNode(targetLayoutNode, "target_ice", "Panel/target/traget_layout");
-  var propListNode = requireChildNode(panelNode, "prop_listview", "Panel");
-  var propViewNode = requireChildNode(propListNode, "view", "Panel/prop_listview");
-  var propContentNode = requireChildNode(propViewNode, "content", "Panel/prop_listview/view");
-  var propTemplateNode = requireChildNode(propContentNode, "prop", "Panel/prop_listview/view/content");
+  var targetSpiritNode = requireChildNode(targetLayoutNode, "target_spirit", "Panel/target/traget_layout");
+  var propNode = requireChildNode(panelNode, "prop_node", "Panel");
+  var propListNode = requireChildNode(propNode, "prop_listview", "Panel/prop_node");
+  var propViewNode = requireChildNode(propListNode, "view", "Panel/prop_node/prop_listview");
+  var propContentNode = requireChildNode(propViewNode, "content", "Panel/prop_node/prop_listview/view");
+  var propTemplateNode = requireChildNode(propContentNode, "prop", "Panel/prop_node/prop_listview/view/content");
+  var roleNode = requireChildNode(panelNode, "role_node", "Panel");
+  var roleListNode = requireChildNode(roleNode, "role_listview", "Panel/role_node");
+  var roleViewNode = requireChildNode(roleListNode, "view", "Panel/role_node/role_listview");
+  var roleContentNode = requireChildNode(roleViewNode, "content", "Panel/role_node/role_listview/view");
+  var roleTemplateNode = requireChildNode(roleContentNode, "role", "Panel/role_node/role_listview/view/content");
   var scrollView = propListNode.getComponent(cc.ScrollView);
+  var roleScrollView = roleListNode.getComponent(cc.ScrollView);
   if (!scrollView) {
     throw new Error("StartGameView prop_listview requires cc.ScrollView.");
   }
   if (scrollView.content !== propContentNode) {
     throw new Error("StartGameView prop_listview ScrollView.content must be Panel/prop_listview/view/content.");
   }
+  if (!roleScrollView) {
+    throw new Error("StartGameView role_listview requires cc.ScrollView.");
+  }
+  if (roleScrollView.content !== roleContentNode) {
+    throw new Error("StartGameView role_listview ScrollView.content must be Panel/role_listview/view/content.");
+  }
 
   return {
     mask: requireValidNode(findNodeByNameRecursive(this.node, "mask"), "mask"),
     panel: panelNode,
-    closeButton: requireChildNode(panelNode, "btn_close", "Panel"),
+    closeButton: requireChildNode(titleBgNode, "btn_close", "Panel/title_bg"),
     levelLabelNode: requireChildNode(titleBgNode, "level", "Panel/title_bg"),
     playButton: playButtonNode,
     staminaCostLabelNode: requireChildNode(playButtonNode, "num", "Panel/play_btn"),
     targetNode: targetNode,
-    targetScoreLabelNode: requireChildNode(targetNode, "target_score", "Panel/target"),
+    targetScoreLabelNode: requireChildNode(targetScoreBgNode, "target_score", "Panel/target_score_bg"),
     targetLayoutNode: targetLayoutNode,
     targetBallNode: targetBallNode,
     targetBallCountLabelNode: requireChildNode(targetBallNode, "num", "Panel/target/traget_layout/target_ball"),
     targetIceNode: targetIceNode,
     targetIceCountLabelNode: requireChildNode(targetIceNode, "num", "Panel/target/traget_layout/target_ice"),
+    targetSpiritNode: targetSpiritNode,
+    propNode: propNode,
     propListNode: propListNode,
     propViewNode: propViewNode,
     propContentNode: propContentNode,
     propScrollView: scrollView,
     propTemplateNode: propTemplateNode,
-    directionsButton: requireChildNode(panelNode, "directions_btn", "Panel")
+    roleListNode: roleListNode,
+    roleViewNode: roleViewNode,
+    roleContentNode: roleContentNode,
+    roleScrollView: roleScrollView,
+    roleTemplateNode: roleTemplateNode,
+    directionsButton: requireChildNode(propNode, "directions_btn", "Panel/prop_node")
   };
 };
 
@@ -475,6 +606,17 @@ StartGameViewController.prototype._updateTargetLayout = function () {
   }
   if (typeof layout.updateLayout !== "function") {
     throw new Error("StartGameView target layout requires cc.Layout.updateLayout.");
+  }
+  layout.updateLayout();
+};
+
+StartGameViewController.prototype._updatePanelLayout = function () {
+  var layout = requireValidNode(this._nodes.panel, "Panel").getComponent(cc.Layout);
+  if (!layout) {
+    throw new Error("StartGameView Panel requires cc.Layout.");
+  }
+  if (typeof layout.updateLayout !== "function") {
+    throw new Error("StartGameView Panel requires cc.Layout.updateLayout.");
   }
   layout.updateLayout();
 };
@@ -513,20 +655,26 @@ StartGameViewController.prototype._bindProxySyncToNode = function (node) {
 };
 
 StartGameViewController.prototype._ensureRenderProxyLayers = function () {
-  if (this._renderProxyRoot && this._renderProxyRoot.isValid && this._propRenderProxyRoot && this._propRenderProxyRoot.isValid) {
+  if (
+    this._renderProxyRoot && this._renderProxyRoot.isValid &&
+    this._propRenderProxyRoot && this._propRenderProxyRoot.isValid &&
+    this._roleRenderProxyRoot && this._roleRenderProxyRoot.isValid
+  ) {
     return;
   }
 
-  var root = SpriteProxyLayerHelper.createProxyRoot(this._nodes.panel, {
+  var root = SpriteProxyLayerHelper.createProxyRoot(this.node, {
     name: START_GAME_RENDER_PROXY_ROOT_NAME,
-    zIndex: -1
+    zIndex: 0
   });
+  root.setSiblingIndex(this._nodes.panel.getSiblingIndex());
   this._renderProxyRoot = root;
   this._renderProxyLayers = SpriteProxyLayerHelper.createProxyLayers(root, [
     { key: "panel", name: START_GAME_RENDER_PROXY_LAYER_NAMES.panel, zIndex: 0 },
     { key: "chrome", name: START_GAME_RENDER_PROXY_LAYER_NAMES.chrome, zIndex: 1 },
     { key: "target", name: START_GAME_RENDER_PROXY_LAYER_NAMES.target, zIndex: 2 },
-    { key: "propBackground", name: START_GAME_RENDER_PROXY_LAYER_NAMES.propBackground, zIndex: 3 }
+    { key: "propBackground", name: START_GAME_RENDER_PROXY_LAYER_NAMES.propBackground, zIndex: 3 },
+    { key: "roleBackground", name: START_GAME_RENDER_PROXY_LAYER_NAMES.roleBackground, zIndex: 4 }
   ]);
 
   var propRoot = SpriteProxyLayerHelper.createProxyRoot(this._nodes.propContentNode, {
@@ -539,11 +687,38 @@ StartGameViewController.prototype._ensureRenderProxyLayers = function () {
     { key: "propIcon", name: START_GAME_RENDER_PROXY_LAYER_NAMES.propIcon, zIndex: 1 },
     { key: "propState", name: START_GAME_RENDER_PROXY_LAYER_NAMES.propState, zIndex: 2 }
   ]);
+
+  var roleRoot = SpriteProxyLayerHelper.createProxyRoot(this._nodes.roleContentNode, {
+    name: START_GAME_ROLE_RENDER_PROXY_ROOT_NAME,
+    zIndex: -1
+  });
+  this._roleRenderProxyRoot = roleRoot;
+  this._roleRenderProxyLayers = SpriteProxyLayerHelper.createProxyLayers(roleRoot, [
+    { key: "roleState", name: START_GAME_RENDER_PROXY_LAYER_NAMES.roleState, zIndex: 0 },
+    { key: "roleIcon", name: START_GAME_RENDER_PROXY_LAYER_NAMES.roleIcon, zIndex: 1 }
+  ]);
 };
 
 StartGameViewController.prototype._clearRenderProxyRecords = function () {
   SpriteProxyLayerHelper.clearRecords(this._renderProxyRecords);
   SpriteProxyLayerHelper.clearRecords(this._propRenderProxyRecords);
+  SpriteProxyLayerHelper.clearRecords(this._roleRenderProxyRecords);
+};
+
+StartGameViewController.prototype._createRoleSpriteProxyRecord = function (layerKey, sourceNode, name, visible) {
+  var layerNode = this._roleRenderProxyLayers[layerKey];
+  if (!layerNode || !layerNode.isValid) {
+    throw new Error("StartGameView role render proxy layer is invalid: " + layerKey);
+  }
+  var record = SpriteProxyLayerHelper.createRecord({
+    layerNode: layerNode,
+    sourceNode: sourceNode,
+    rootNode: this._roleRenderProxyRoot,
+    name: name,
+    visible: visible === true
+  });
+  this._roleRenderProxyRecords.push(record);
+  return record;
 };
 
 StartGameViewController.prototype._createSpriteProxyRecord = function (layerKey, sourceNode, name, visible) {
@@ -577,19 +752,50 @@ StartGameViewController.prototype._createPropSpriteProxyRecord = function (layer
 StartGameViewController.prototype._hideStaticSourceSprites = function () {
   SpriteProxyLayerHelper.setSpriteRenderEnabled(this._nodes.panel, false, "StartGameView Panel background");
   SpriteProxyLayerHelper.setSpriteRenderEnabled(this._nodes.closeButton, false, "StartGameView close button");
-  SpriteProxyLayerHelper.setSpriteRenderEnabled(requireChildNode(this._nodes.panel, "line", "Panel"), false, "StartGameView line");
   SpriteProxyLayerHelper.setSpriteRenderEnabled(this._nodes.playButton, false, "StartGameView play_btn");
   SpriteProxyLayerHelper.setSpriteRenderEnabled(requireChildNode(this._nodes.playButton, "love", "Panel/play_btn"), false, "StartGameView play_btn/love");
   SpriteProxyLayerHelper.setSpriteRenderEnabled(this._nodes.targetNode, false, "StartGameView target");
   SpriteProxyLayerHelper.setSpriteRenderEnabled(this._nodes.targetBallNode, false, "StartGameView target_ball");
   SpriteProxyLayerHelper.setSpriteRenderEnabled(this._nodes.targetIceNode, false, "StartGameView target_ice");
+  SpriteProxyLayerHelper.setSpriteRenderEnabled(this._nodes.targetSpiritNode, false, "StartGameView target_spirit");
   SpriteProxyLayerHelper.setSpriteRenderEnabled(this._nodes.propListNode, false, "StartGameView prop_listview");
+  SpriteProxyLayerHelper.setSpriteRenderEnabled(this._nodes.roleListNode, false, "StartGameView role_listview");
+};
+
+StartGameViewController.prototype._hideRoleSourceSprites = function (entry) {
+  SpriteProxyLayerHelper.setSpriteRenderEnabled(entry.iconNode, false, "StartGameView role icon");
+  SpriteProxyLayerHelper.setSpriteRenderEnabled(entry.selectNode, false, "StartGameView role select");
+};
+
+StartGameViewController.prototype._setRoleAvatarGrayState = function (entry, grayed) {
+  if (typeof grayed !== "boolean") {
+    throw new Error("StartGameView role gray state must be boolean: " + entry.spirit.id);
+  }
+  if (!cc.Material || typeof cc.Material.getBuiltinMaterial !== "function") {
+    throw new Error("StartGameView role gray state requires cc.Material.getBuiltinMaterial.");
+  }
+  var materialName = grayed ? "2d-gray-sprite" : "2d-sprite";
+  var material = cc.Material.getBuiltinMaterial(materialName);
+  if (!material) {
+    throw new Error("StartGameView role material is missing: " + materialName);
+  }
+  [entry.iconNode, entry.iconProxyRecord && entry.iconProxyRecord.proxyNode].forEach(function (node) {
+    if (!node) {
+      return;
+    }
+    var sprite = getSprite(node, "StartGameView role avatar");
+    if (typeof sprite.setMaterial !== "function") {
+      throw new Error("StartGameView role avatar requires Sprite.setMaterial.");
+    }
+    if (!sprite.setMaterial(0, material)) {
+      throw new Error("StartGameView failed to apply role material: " + materialName);
+    }
+  });
 };
 
 StartGameViewController.prototype._hidePropSourceSprites = function (entry) {
   SpriteProxyLayerHelper.setSpriteRenderEnabled(entry.node, false, "StartGameView prop background");
   SpriteProxyLayerHelper.setSpriteRenderEnabled(entry.iconNode, false, "StartGameView prop icon");
-  SpriteProxyLayerHelper.setSpriteRenderEnabled(requireChildNode(entry.node, "price_bg", entry.node.name), false, "StartGameView prop price_bg");
   SpriteProxyLayerHelper.setSpriteRenderEnabled(entry.selectNode, false, "StartGameView prop select");
   SpriteProxyLayerHelper.setSpriteRenderEnabled(entry.coinNode, false, "StartGameView prop coin");
 };
@@ -601,30 +807,47 @@ StartGameViewController.prototype._rebuildRenderProxies = function () {
 
   this._createSpriteProxyRecord("panel", this._nodes.panel, "start_game_panel_bg_proxy", true);
   this._createSpriteProxyRecord("chrome", this._nodes.closeButton, "start_game_close_button_proxy", true);
-  this._createSpriteProxyRecord("chrome", requireChildNode(this._nodes.panel, "line", "Panel"), "start_game_line_proxy", true);
   this._createSpriteProxyRecord("chrome", this._nodes.playButton, "start_game_play_button_proxy", true);
   this._createSpriteProxyRecord("chrome", requireChildNode(this._nodes.playButton, "love", "Panel/play_btn"), "start_game_play_love_proxy", true);
-  this._createSpriteProxyRecord("target", this._nodes.targetNode, "start_game_target_bg_proxy", true);
-  this._createSpriteProxyRecord("target", this._nodes.targetBallNode, "start_game_target_ball_proxy", this._nodes.targetBallNode.active === true);
-  this._createSpriteProxyRecord("target", this._nodes.targetIceNode, "start_game_target_ice_proxy", this._nodes.targetIceNode.active === true);
+  var targetVisible = this._nodes.targetNode.active === true;
+  this._createSpriteProxyRecord("target", this._nodes.targetNode, "start_game_target_bg_proxy", targetVisible);
+  this._createSpriteProxyRecord("target", this._nodes.targetBallNode, "start_game_target_ball_proxy", targetVisible && this._nodes.targetBallNode.active === true);
+  this._createSpriteProxyRecord("target", this._nodes.targetIceNode, "start_game_target_ice_proxy", targetVisible && this._nodes.targetIceNode.active === true);
+  this._createSpriteProxyRecord("target", this._nodes.targetSpiritNode, "start_game_target_spirit_proxy", targetVisible && this._nodes.targetSpiritNode.active === true);
   this._createSpriteProxyRecord("propBackground", this._nodes.propListNode, "start_game_prop_list_bg_proxy", true);
+  this._createSpriteProxyRecord("roleBackground", this._nodes.roleListNode, "start_game_role_list_bg_proxy", true);
 
   this._propNodes.forEach(function (entry, index) {
     this._hidePropSourceSprites(entry);
     this._createPropSpriteProxyRecord("propBackground", entry.node, "start_game_prop_bg_proxy_" + index, true);
-    this._createPropSpriteProxyRecord("propBackground", requireChildNode(entry.node, "price_bg", entry.node.name), "start_game_prop_price_bg_proxy_" + index, true);
     this._createPropSpriteProxyRecord("propIcon", entry.iconNode, "start_game_prop_icon_proxy_" + index, true);
     this._createPropSpriteProxyRecord("propState", entry.selectNode, "start_game_prop_select_proxy_" + index, true);
     this._createPropSpriteProxyRecord("propState", entry.coinNode, "start_game_prop_coin_proxy_" + index, true);
   }, this);
+
+  this._roleNodes.forEach(function (entry, index) {
+    this._hideRoleSourceSprites(entry);
+    entry.iconProxyRecord = this._createRoleSpriteProxyRecord("roleIcon", entry.iconNode, "start_game_role_icon_proxy_" + index, true);
+    this._createRoleSpriteProxyRecord("roleState", entry.selectNode, "start_game_role_select_proxy_" + index, true);
+    this._setRoleAvatarGrayState(entry, entry.owned !== true);
+  }, this);
+
+  SpriteProxyLayerHelper.enableRecordAutoSync(this._renderProxyRoot, this._renderProxyRecords);
+  SpriteProxyLayerHelper.enableRecordAutoSync(this._propRenderProxyRoot, this._propRenderProxyRecords);
+  SpriteProxyLayerHelper.enableRecordAutoSync(this._roleRenderProxyRoot, this._roleRenderProxyRecords);
 };
 
 StartGameViewController.prototype._syncRenderProxies = function () {
-  if (!this._renderProxyRoot || !this._renderProxyRoot.isValid || !this._propRenderProxyRoot || !this._propRenderProxyRoot.isValid) {
+  if (
+    !this._renderProxyRoot || !this._renderProxyRoot.isValid ||
+    !this._propRenderProxyRoot || !this._propRenderProxyRoot.isValid ||
+    !this._roleRenderProxyRoot || !this._roleRenderProxyRoot.isValid
+  ) {
     return;
   }
   SpriteProxyLayerHelper.syncRecords(this._renderProxyRecords, this._renderProxyRoot);
   SpriteProxyLayerHelper.syncRecords(this._propRenderProxyRecords, this._propRenderProxyRoot);
+  SpriteProxyLayerHelper.syncRecords(this._roleRenderProxyRecords, this._roleRenderProxyRoot);
 };
 
 StartGameViewController.prototype._layoutPropNodes = function () {
@@ -693,6 +916,41 @@ StartGameViewController.prototype._resetPropListScrollPosition = function () {
   this._syncRenderProxies();
 };
 
+StartGameViewController.prototype._layoutRoleNodes = function () {
+  var contentNode = requireValidNode(this._nodes.roleContentNode, "Panel/role_listview/view/content");
+  var viewSize = getValidSize(this._nodes.roleViewNode, "Panel/role_listview/view");
+  var itemSize = getValidSize(this._nodes.roleTemplateNode, "Panel/role_listview/view/content/role");
+  var contentAnchor = contentNode.getAnchorPoint();
+  var itemAnchor = this._nodes.roleTemplateNode.getAnchorPoint();
+  var itemY = this._nodes.roleTemplateNode.y;
+  if (!Number.isFinite(itemY)) {
+    throw new Error("StartGameView role template y must be finite.");
+  }
+  var contentWidth = Math.max(
+    viewSize.width,
+    ROLE_ITEM_HORIZONTAL_PADDING * 2 + itemSize.width * this._roleNodes.length + ROLE_ITEM_SPACING * (this._roleNodes.length - 1)
+  );
+  contentNode.setContentSize(contentWidth, viewSize.height);
+  this._roleNodes.forEach(function (entry, index) {
+    var x = -contentWidth * contentAnchor.x + ROLE_ITEM_HORIZONTAL_PADDING + itemSize.width * itemAnchor.x + (itemSize.width + ROLE_ITEM_SPACING) * index;
+    entry.node.setPosition(x, itemY);
+  });
+};
+
+StartGameViewController.prototype._resetRoleListScrollPosition = function () {
+  var scrollView = this._nodes.roleScrollView;
+  var contentNode = requireValidNode(this._nodes.roleContentNode, "Panel/role_listview/view/content");
+  if (!scrollView || scrollView.content !== contentNode) {
+    throw new Error("StartGameView role_listview ScrollView.content is invalid.");
+  }
+  if (typeof scrollView.stopAutoScroll !== "function" || typeof scrollView.scrollToLeft !== "function") {
+    throw new Error("StartGameView role_listview requires horizontal scroll APIs.");
+  }
+  scrollView.stopAutoScroll();
+  scrollView.scrollToLeft(0);
+  this._syncRenderProxies();
+};
+
 StartGameViewController.prototype._initPropNodes = function () {
   var propContentNode = requireValidNode(this._nodes.propContentNode, "Panel/prop_listview/view/content");
   var propTemplateNode = requireValidNode(this._nodes.propTemplateNode, "Panel/prop_listview/view/content/prop");
@@ -733,6 +991,65 @@ StartGameViewController.prototype._initPropNodes = function () {
   }, this);
 };
 
+StartGameViewController.prototype._initRoleNodes = function () {
+  var roleContentNode = requireValidNode(this._nodes.roleContentNode, "Panel/role_listview/view/content");
+  var roleTemplateNode = requireValidNode(this._nodes.roleTemplateNode, "Panel/role_listview/view/content/role");
+  AssistSpiritConfig.getCatalog().forEach(function (spirit, index) {
+    var roleNode = index === 0 ? roleTemplateNode : cc.instantiate(roleTemplateNode);
+    if (index > 0) {
+      roleNode.parent = roleContentNode;
+    }
+    roleNode.name = "role_" + spirit.id;
+    roleNode.active = true;
+    var entry = {
+      spirit: spirit,
+      node: roleNode,
+      iconNode: requireChildNode(roleNode, ROLE_ITEM_ICON_NODE_NAME, roleNode.name),
+      selectNode: requireChildNode(roleNode, "select", roleNode.name),
+      nameNode: requireChildNode(roleNode, "name", roleNode.name),
+      iconProxyRecord: null,
+      owned: false
+    };
+    this._roleNodes.push(entry);
+    bindTapOnce(roleNode, "__startGameRoleTapBound", function () {
+      this._onRoleTap(spirit.id);
+    }.bind(this));
+    this._bindProxySyncToNode(roleNode);
+  }, this);
+  this._layoutRoleNodes();
+  this._resetRoleListScrollPosition();
+};
+
+StartGameViewController.prototype._renderRoleItems = function (assistSpiritState) {
+  var state = normalizeAssistSpiritState(assistSpiritState);
+  this._roleNodes.forEach(function (entry) {
+    var spiritState = state.spirits[entry.spirit.id];
+    entry.owned = spiritState.owned;
+    setPropIconSpriteFrame(
+      entry.iconNode,
+      this._spriteFrames[getStartGameSpiritAvatarPath(entry.spirit.id)],
+      getValidSize(entry.iconNode, entry.node.name + "/icon").width,
+      entry.node.name + "/icon"
+    );
+    setLabelText(entry.nameNode, entry.spirit.displayName, entry.node.name + "/name");
+    entry.selectNode.active = state.equippedSpiritId === entry.spirit.id;
+    this._setRoleAvatarGrayState(entry, entry.owned !== true);
+  }, this);
+};
+
+StartGameViewController.prototype._onRoleTap = function (spiritId) {
+  if (!this._renderState || !this._renderState.assistSpiritState) {
+    throw new Error("StartGameView assist spirit state is required before selecting a role.");
+  }
+  var spirit = AssistSpiritConfig.getSpirit(spiritId);
+  var state = normalizeAssistSpiritState(this._renderState.assistSpiritState);
+  if (state.spirits[spirit.id].owned !== true) {
+    this.onUnavailable(AssistSpiritConfig.NOT_UNLOCKED_TIP);
+    return;
+  }
+  this.onEquipSpirit(spirit.id);
+};
+
 StartGameViewController.prototype._getRequiredSpritePaths = function (options) {
   requireObject(options, "StartGameView render options");
   requireObject(options.objectives, "StartGameView objectives");
@@ -748,6 +1065,9 @@ StartGameViewController.prototype._getRequiredSpritePaths = function (options) {
   });
   POWERUP_DEFINITIONS.forEach(function (definition) {
     paths.push(definition.iconPath);
+  });
+  AssistSpiritConfig.getCatalog().forEach(function (spirit) {
+    paths.push(getStartGameSpiritAvatarPath(spirit.id));
   });
   return paths.filter(function (path, index, list) {
     return list.indexOf(path) === index;
@@ -961,10 +1281,21 @@ StartGameViewController.prototype._renderContent = function (options) {
   var levelId = requirePositiveInteger(options.levelId, "StartGameView levelId");
   var staminaCost = requirePositiveInteger(options.staminaCost, "StartGameView staminaCost");
   var oneStarTargetScore = requirePositiveInteger(options.oneStarTargetScore, "StartGameView one-star target score");
+  var clearanceTargetText = buildClearanceTargetText({
+    oneStarTargetScore: oneStarTargetScore,
+    playMode: options.playMode,
+    levelType: options.levelType,
+    timeLimitSeconds: options.timeLimitSeconds
+  });
   requireObject(options.inventory, "StartGameView inventory");
   requireObject(options.objectives, "StartGameView objectives");
+  var assistSpiritState = normalizeAssistSpiritState(options.assistSpiritState);
   var temporaryPurchasesByItemId = normalizeTemporaryPurchases(options.temporaryPurchasesByItemId);
-  if (!options.objectives.ball && !options.objectives.iceSnowball) {
+  if (
+    !options.objectives.ball &&
+    !options.objectives.iceSnowball &&
+    options.levelType !== TRAPPED_SPRITE_RESCUE_LEVEL_TYPE
+  ) {
     throw new Error("StartGameView requires at least one collection objective.");
   }
   if (typeof options.showAwardTips !== "boolean") {
@@ -976,6 +1307,7 @@ StartGameViewController.prototype._renderContent = function (options) {
   this._renderState = {
     levelId: levelId,
     inventory: options.inventory,
+    assistSpiritState: assistSpiritState,
     temporaryPurchasesByItemId: temporaryPurchasesByItemId,
     purchaseOptionsByItemId: purchaseOptionsByItemId
   };
@@ -994,10 +1326,12 @@ StartGameViewController.prototype._renderContent = function (options) {
 
   setLabelText(this._nodes.levelLabelNode, "第" + levelId + "关", "Panel/title_bg/level");
   setLabelText(this._nodes.staminaCostLabelNode, String(staminaCost), "Panel/play_btn/num");
+  var isRescueLevel = options.levelType === TRAPPED_SPRITE_RESCUE_LEVEL_TYPE;
+  var showCollectionTarget = hasCollectionObjective(options.objectives);
   setLabelText(
     this._nodes.targetScoreLabelNode,
-    "目标：掉落全部琉璃球且达到" + oneStarTargetScore + "分",
-    "Panel/target/target_score"
+    clearanceTargetText,
+    "Panel/target_score_bg/target_score"
   );
   this._renderStartGameTargetSlot(
     options.objectives.ball,
@@ -1011,13 +1345,20 @@ StartGameViewController.prototype._renderContent = function (options) {
     this._nodes.targetIceCountLabelNode,
     "Panel/target/traget_layout/target_ice"
   );
-  this._updateTargetLayout();
+  this._nodes.targetNode.active = showCollectionTarget;
+  this._nodes.targetSpiritNode.active = showCollectionTarget && isRescueLevel;
+  if (showCollectionTarget) {
+    this._updateTargetLayout();
+  }
+  this._updatePanelLayout();
 
+  this._renderRoleItems(assistSpiritState);
   this._syncPropNodeOrderForLevel(levelId);
   this._renderPropItems();
   this._renderPropSelectionState();
   this._rebuildRenderProxies();
   this._resetPropListScrollPosition();
+  this._resetRoleListScrollPosition();
 };
 
 StartGameViewController.prototype.render = function (options) {
@@ -1031,5 +1372,6 @@ StartGameViewController.prototype.render = function (options) {
 };
 
 StartGameViewController.POWERUP_DEFINITIONS = POWERUP_DEFINITIONS.slice();
+StartGameViewController.buildClearanceTargetText = buildClearanceTargetText;
 
 module.exports = StartGameViewController;

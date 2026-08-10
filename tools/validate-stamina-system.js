@@ -9,11 +9,14 @@ var PLAYER_RESOURCE_STORE_PATH = path.join(PROJECT_ROOT, "assets/scripts/utils/P
 var LEVEL_PROGRESS_STORE_PATH = path.join(PROJECT_ROOT, "assets/scripts/utils/LevelProgressStore.js");
 var STRICT_STORAGE_PATH = path.join(PROJECT_ROOT, "assets/scripts/utils/StrictStorage.js");
 var LEVEL_ATTEMPT_STATS_STORE_PATH = path.join(PROJECT_ROOT, "assets/scripts/utils/LevelAttemptStatsStore.js");
+var ASSIST_SPIRIT_STORE_PATH = path.join(PROJECT_ROOT, "assets/scripts/utils/AssistSpiritStore.js");
+var SPIRIT_SHOP_STORE_PATH = path.join(PROJECT_ROOT, "assets/scripts/utils/SpiritShopStore.js");
 var PLAYER_CLOUD_PROFILE_SERVICE_PATH = path.join(PROJECT_ROOT, "assets/scripts/services/PlayerCloudProfileService.js");
 var BOOTSTRAP_PATH = path.join(PROJECT_ROOT, "assets/scripts/bootstrap/GameBootstrap.js");
 var BOOTSTRAP_COMPOSITION_PATH = path.join(PROJECT_ROOT, "assets/scripts/bootstrap/GameBootstrapCompositionMethods.js");
 var STATUS_RESOURCE_FLOW_PATH = path.join(PROJECT_ROOT, "assets/scripts/bootstrap/GameBootstrapStatusResourceFlowMethods.js");
 var LEVEL_SELECT_FLOW_PATH = path.join(PROJECT_ROOT, "assets/scripts/bootstrap/GameBootstrapLevelSelectFlowMethods.js");
+var TELEMETRY_METHODS_PATH = path.join(PROJECT_ROOT, "assets/scripts/bootstrap/GameBootstrapTelemetryMethods.js");
 
 function createMemoryStorage() {
   var data = {};
@@ -48,6 +51,33 @@ function assert(condition, message) {
 
 function readText(filePath) {
   return fs.readFileSync(filePath, "utf8");
+}
+
+function loadTelemetryMethodsForTest() {
+  var source = readText(TELEMETRY_METHODS_PATH);
+  var module = {
+    exports: {}
+  };
+  var sandbox = {
+    module: module,
+    exports: module.exports,
+    require: function (request) {
+      if (request === "./GameBootstrapShared") {
+        return {
+          AdRewardCatalog: {
+            resolveLoseRewardEntry: function () {
+              return null;
+            }
+          }
+        };
+      }
+      throw new Error("Unexpected telemetry validation dependency: " + request);
+    }
+  };
+  vm.runInNewContext(source, sandbox, {
+    filename: TELEMETRY_METHODS_PATH
+  });
+  return module.exports;
 }
 
 function toDateKey(date) {
@@ -172,6 +202,13 @@ function loadLevelSelectFlowMethodsForTest() {
           hideGameCircleWelfareViewNode: function () {}
         };
       }
+      if (request === "./GameBootstrapShared") {
+        return {
+          buildBoardOcclusionStartContext: function () {
+            return {};
+          }
+        };
+      }
       if (request === "./LevelSelectFloatingMap") {
         return {};
       }
@@ -184,6 +221,22 @@ function loadLevelSelectFlowMethodsForTest() {
         return {
           MODE: "random_challenge"
         };
+      }
+      if (request === "../config/AssistSpiritRescueConfig") {
+        return {
+          findSpiritIdByLevelId: function () {
+            return null;
+          },
+          requireSpiritIdByLevelId: function () {
+            throw new Error("Stamina validation must not resolve a rescue spirit.");
+          }
+        };
+      }
+      if (request === "../config/LocalEditedLevelStore") {
+        return function LocalEditedLevelStore() {};
+      }
+      if (request === "../editor/MapEditorLevelPicker") {
+        return {};
       }
       throw new Error("Unexpected require in level select flow validation: " + request);
     },
@@ -218,9 +271,10 @@ function assertInitialResources() {
   var store = createStore();
   var resources = store.load(new Date("2026-05-25T08:00:00"));
 
-  assert(resources.version === 1, "Initial resources version must be 1.");
+  assert(resources.version === 2, "Initial resources version must be 2.");
   assert(resources.stamina === 20, "New player initial stamina must be 20.");
   assert(resources.coins === 0, "New player initial coins must be 0.");
+  assert(resources.gems === 200, "New player initial gems must be 200.");
   assert(resources.lastDailyResetDate === "2026-05-25", "Initial resources must use current day key.");
 }
 
@@ -485,12 +539,27 @@ function assertWinRewardStaminaItemsMergeForDisplay() {
   assert(snapshot.winStats.clearRewardItems[1].count === 3, "WinView reward merge must sum stamina reward counts.");
 }
 
+function buildProfileStorageValue(entry, LevelAttemptStatsStore, attemptState) {
+  if (entry.storageKey === LevelAttemptStatsStore.STORAGE_KEY) {
+    return attemptState;
+  }
+  var AssistSpiritStore = require(ASSIST_SPIRIT_STORE_PATH);
+  if (entry.storageKey === AssistSpiritStore.STORAGE_KEY) {
+    return AssistSpiritStore.createInitialState();
+  }
+  var SpiritShopStore = require(SPIRIT_SHOP_STORE_PATH);
+  if (entry.storageKey === SpiritShopStore.STORAGE_KEY) {
+    return SpiritShopStore.createInitialState(new Date("2026-05-25T08:00:00"));
+  }
+  return {};
+}
+
 function buildProfileWithAttemptState(PlayerCloudProfileService, LevelAttemptStatsStore, attemptState) {
   var storage = {};
   PlayerCloudProfileService.STORAGE_ENTRIES.forEach(function (entry) {
     storage[entry.storageKey] = {
       namespace: entry.namespace,
-      value: entry.storageKey === LevelAttemptStatsStore.STORAGE_KEY ? attemptState : {}
+      value: buildProfileStorageValue(entry, LevelAttemptStatsStore, attemptState)
     };
   });
   return {
@@ -504,7 +573,7 @@ function seedProfileStorage(StrictStorage, PlayerCloudProfileService, LevelAttem
     StrictStorage.writeJson(
       entry.storageKey,
       entry.namespace,
-      entry.storageKey === LevelAttemptStatsStore.STORAGE_KEY ? attemptState : {}
+      buildProfileStorageValue(entry, LevelAttemptStatsStore, attemptState)
     );
   });
 }
@@ -590,6 +659,75 @@ function assertCloudProfileSyncDefersGameplayApply() {
   });
 }
 
+function assertTestRunPowerupAttemptTrackingRules() {
+  var methods = loadTelemetryMethodsForTest();
+  var LevelAttemptStatsStore = require(LEVEL_ATTEMPT_STATS_STORE_PATH);
+  var store = new LevelAttemptStatsStore();
+  var initialState = LevelAttemptStatsStore.createInitialState();
+  var testHost = {
+    _currentRunContext: {
+      mode: "test"
+    },
+    _currentAttemptId: "",
+    levelAttemptStatsStore: store,
+    levelAttemptStats: initialState
+  };
+
+  assert(
+    methods._recordAttemptPowerupUsed.call(testHost, "blast") === false,
+    "Test run powerup use must explicitly skip player attempt statistics."
+  );
+  assert(
+    testHost.levelAttemptStats.totalAttemptCount === 0 && testHost.levelAttemptStats.activeAttempt === null,
+    "Test run powerup use must not create or mutate a player attempt."
+  );
+
+  var missingAttemptHost = {
+    _currentRunContext: {
+      mode: "normal"
+    },
+    _currentAttemptId: "",
+    levelAttemptStatsStore: store,
+    levelAttemptStats: LevelAttemptStatsStore.createInitialState()
+  };
+  var missingAttemptError = null;
+  try {
+    methods._recordAttemptPowerupUsed.call(missingAttemptHost, "blast");
+  } catch (error) {
+    missingAttemptError = error;
+  }
+  assert(
+    missingAttemptError && missingAttemptError.message.indexOf("attemptId must be a non-empty string") >= 0,
+    "Normal run powerup use must remain fail-fast when attemptId is missing."
+  );
+
+  var activeState = store.recordStart(LevelAttemptStatsStore.createInitialState(), {
+    attemptId: "attempt_powerup_validation",
+    levelId: 15,
+    levelCode: "L015_POWERUP_VALIDATION",
+    runMode: "normal",
+    startedAt: 1000,
+    startState: "aiming",
+    initialShots: 20
+  });
+  var normalHost = {
+    _currentRunContext: {
+      mode: "normal"
+    },
+    _currentAttemptId: "attempt_powerup_validation",
+    levelAttemptStatsStore: store,
+    levelAttemptStats: activeState
+  };
+  assert(
+    methods._recordAttemptPowerupUsed.call(normalHost, "blast") === true,
+    "Normal run powerup use must persist player attempt statistics."
+  );
+  assert(
+    normalHost.levelAttemptStats.activeAttempt.powerupsUsed.blast === 1,
+    "Normal run blast use must increment the active attempt powerup count."
+  );
+}
+
 global.cc = {
   sys: {
     localStorage: createMemoryStorage()
@@ -603,6 +741,7 @@ Promise.resolve().then(function () {
   assertDailyBaselineDoesNotOverwriteSurplus();
   assertSameDayDoesNotRefill();
   assertConsumeRules();
+  assertTestRunPowerupAttemptTrackingRules();
   assertFirstAttemptStaminaRewardRules();
   assertFinalCampaignLevelNextAction();
   assertFinalCampaignLevelProgressBoundary();

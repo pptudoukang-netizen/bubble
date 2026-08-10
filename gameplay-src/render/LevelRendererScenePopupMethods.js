@@ -1,7 +1,30 @@
 "use strict";
 
 var SceneShared = require("./LevelRendererSceneShared");
+var LOSE_REVIVE_ICON_SIZE = 50;
+var LOSE_CLEARANCE_TARGET_ICON_HEIGHT = 65;
 
+function getSpriteFrameWidthAtHeight(spriteFrame, height, description) {
+  if (!spriteFrame || typeof spriteFrame.getOriginalSize !== "function") {
+    throw new Error(description + " requires SpriteFrame.getOriginalSize.");
+  }
+  if (typeof height !== "number" || !isFinite(height) || height <= 0) {
+    throw new Error(description + " height must be positive.");
+  }
+  var originalSize = spriteFrame.getOriginalSize();
+  if (
+    !originalSize ||
+    typeof originalSize.width !== "number" ||
+    !isFinite(originalSize.width) ||
+    originalSize.width <= 0 ||
+    typeof originalSize.height !== "number" ||
+    !isFinite(originalSize.height) ||
+    originalSize.height <= 0
+  ) {
+    throw new Error(description + " original size is invalid.");
+  }
+  return height * originalSize.width / originalSize.height;
+}
 function buildLoseRevivePresentation(levelConfig, revivePlan) {
   if (!levelConfig || !levelConfig.level || typeof levelConfig.level.playMode !== "string") {
     throw new Error("LoseView revive presentation requires level.playMode.");
@@ -9,18 +32,20 @@ function buildLoseRevivePresentation(levelConfig, revivePlan) {
   if (!revivePlan || typeof revivePlan !== "object" || Array.isArray(revivePlan)) {
     throw new Error("LoseView revive presentation requires revive plan.");
   }
-  if (levelConfig.level.playMode === "timed_infinite_shots") {
+  var level = levelConfig.level;
+  if (level.playMode === "timed_infinite_shots") {
     if (revivePlan.grantedShots !== 0 || !Number.isInteger(revivePlan.grantedTimeSeconds) || revivePlan.grantedTimeSeconds <= 0) {
       throw new Error("Timed LoseView revive presentation requires positive grantedTimeSeconds and zero grantedShots.");
     }
     return {
-      description: "+" + revivePlan.grantedTimeSeconds + "秒",
+      description: "规定时间内通关",
       descriptionX: 0,
-      showBall: false
+      showBall: false,
+      iconType: null
     };
   }
-  if (levelConfig.level.playMode !== "shot_limited") {
-    throw new Error("LoseView revive presentation level.playMode is unsupported: " + levelConfig.level.playMode);
+  if (level.playMode !== "shot_limited") {
+    throw new Error("LoseView revive presentation level.playMode is unsupported: " + level.playMode);
   }
   if (!Number.isInteger(revivePlan.grantedShots) || revivePlan.grantedShots <= 0 || revivePlan.grantedTimeSeconds !== 0) {
     throw new Error("Shot-limited LoseView revive presentation requires positive grantedShots and zero grantedTimeSeconds.");
@@ -28,7 +53,25 @@ function buildLoseRevivePresentation(levelConfig, revivePlan) {
   return {
     description: "赠送" + revivePlan.grantedShots + "球",
     descriptionX: 32,
-    showBall: true
+    showBall: true,
+    iconType: "ball"
+  };
+}
+
+function buildLoseClearanceTargetPresentation(levelConfig) {
+  if (!levelConfig || !levelConfig.level || typeof levelConfig.level !== "object") {
+    throw new Error("LoseView clearance target presentation requires level config.");
+  }
+  var level = levelConfig.level;
+  if (level.levelType !== "trapped_sprite_rescue") {
+    return null;
+  }
+  if (!level.trappedSpriteRescue || typeof level.trappedSpriteRescue.spiritId !== "string" || !level.trappedSpriteRescue.spiritId) {
+    throw new Error("Trapped sprite rescue LoseView clearance target requires level.trappedSpriteRescue.spiritId.");
+  }
+  return {
+    description: "救出精灵",
+    spiritId: level.trappedSpriteRescue.spiritId
   };
 }
 
@@ -38,6 +81,8 @@ function attachLevelRendererScenePopupMethods(LevelRenderer, deps) {
   var BALL_RESOURCES = deps.BALL_RESOURCES;
   var LOSE_STATUS_RESOURCES = deps.LOSE_STATUS_RESOURCES;
   var REWARD_ITEM_RESOURCES = deps.REWARD_ITEM_RESOURCES;
+  var buildTrappedSpriteResourcePath = deps.buildTrappedSpriteResourcePath;
+  var buildSpiritFragmentRewardResourcePath = deps.buildSpiritFragmentRewardResourcePath;
   var PREFAB_PATHS = deps.PREFAB_PATHS;
   var SpriteProxyLayerHelper = deps.SpriteProxyLayerHelper;
   var PropDescriptionViewController = deps.PropDescriptionViewController;
@@ -103,7 +148,68 @@ function attachLevelRendererScenePopupMethods(LevelRenderer, deps) {
     });
   }
 
-  function renderLoseFailureStatus(renderer, loseContent, runtimeSnapshot) {
+  function renderLoseClearanceTarget(renderer, loseContent, levelConfig) {
+    var statusLayoutNode = requireChildNode(loseContent, "taget", "LoseView");
+    var targetBallNode = requireChildNode(statusLayoutNode, "ball", "LoseView/taget");
+    var clearTargetNode = requireChildNode(statusLayoutNode, "clearn_target", "LoseView/taget");
+    var targetBallSprite = targetBallNode.getComponent(cc.Sprite);
+    var clearTargetLabel = clearTargetNode.getComponent(cc.Label);
+    if (!targetBallSprite || !targetBallSprite.spriteFrame) {
+      throw new Error("LoseView/taget/ball requires authored SpriteFrame.");
+    }
+    if (!clearTargetLabel || typeof clearTargetLabel.string !== "string") {
+      throw new Error("LoseView/taget/clearn_target requires cc.Label.");
+    }
+    if (!targetBallNode.__loseClearTargetDefaultSpriteFrame) {
+      targetBallNode.__loseClearTargetDefaultSpriteFrame = targetBallSprite.spriteFrame;
+      targetBallNode.__loseClearTargetDefaultTrim = targetBallSprite.trim;
+    }
+    if (!targetBallNode.__loseClearTargetDefaultContentSize) {
+      if (typeof targetBallNode.getContentSize !== "function") {
+        throw new Error("LoseView/taget/ball requires getContentSize.");
+      }
+      var defaultContentSize = targetBallNode.getContentSize();
+      if (!defaultContentSize || defaultContentSize.width <= 0 || defaultContentSize.height <= 0) {
+        throw new Error("LoseView/taget/ball authored content size must be positive.");
+      }
+      targetBallNode.__loseClearTargetDefaultContentSize = {
+        width: defaultContentSize.width,
+        height: defaultContentSize.height
+      };
+    }
+    if (typeof clearTargetNode.__loseClearTargetDefaultText !== "string") {
+      clearTargetNode.__loseClearTargetDefaultText = clearTargetLabel.string;
+    }
+
+    var presentation = buildLoseClearanceTargetPresentation(levelConfig);
+    if (!presentation) {
+      var defaultSprite = ensureSprite(targetBallNode, targetBallNode.__loseClearTargetDefaultSpriteFrame);
+      defaultSprite.trim = targetBallNode.__loseClearTargetDefaultTrim;
+      targetBallNode.setContentSize(
+        targetBallNode.__loseClearTargetDefaultContentSize.width,
+        targetBallNode.__loseClearTargetDefaultContentSize.height
+      );
+      setRequiredLabelString(clearTargetNode, clearTargetNode.__loseClearTargetDefaultText, "LoseView/taget/clearn_target");
+      return;
+    }
+    if (typeof buildTrappedSpriteResourcePath !== "function") {
+      throw new Error("LoseView rescue clearance target requires a trapped sprite resource resolver.");
+    }
+    var spritePath = buildTrappedSpriteResourcePath(presentation.spiritId);
+    var spriteFrame = renderer.spriteFrameCache[spritePath];
+    if (!spriteFrame) {
+      throw new Error("LoseView rescue clearance target sprite is not preloaded: " + spritePath);
+    }
+    var sprite = ensureSprite(targetBallNode, spriteFrame);
+    sprite.trim = false;
+    targetBallNode.setContentSize(
+      getSpriteFrameWidthAtHeight(spriteFrame, LOSE_CLEARANCE_TARGET_ICON_HEIGHT, "LoseView rescue clearance target"),
+      LOSE_CLEARANCE_TARGET_ICON_HEIGHT
+    );
+    setRequiredLabelString(clearTargetNode, presentation.description, "LoseView/taget/clearn_target");
+  }
+
+  function renderLoseFailureStatus(renderer, loseContent, levelConfig, runtimeSnapshot) {
     if (!runtimeSnapshot || typeof runtimeSnapshot !== "object") {
       throw new Error("LoseView failure status requires runtime snapshot.");
     }
@@ -149,6 +255,7 @@ function attachLevelRendererScenePopupMethods(LevelRenderer, deps) {
     }
 
     setRequiredLabelString(failTipsNode, failTips, "LoseView/fail_tips");
+    renderLoseClearanceTarget(renderer, loseContent, levelConfig);
     ensureSprite(ballStatusNode, ballComplete ? completeSpriteFrame : incompleteSpriteFrame);
     ensureSprite(starStatusNode, starComplete ? completeSpriteFrame : incompleteSpriteFrame);
   }
@@ -177,16 +284,22 @@ function attachLevelRendererScenePopupMethods(LevelRenderer, deps) {
       return;
     }
 
-    var iconCode = revivePlan.targetColor ? revivePlan.targetColor : "RAINBOW";
-    var spritePath = BALL_RESOURCES[iconCode];
+    var spritePath;
+    if (presentation.iconType === "ball") {
+      var iconCode = revivePlan.targetColor ? revivePlan.targetColor : "RAINBOW";
+      spritePath = BALL_RESOURCES[iconCode];
+    } else {
+      throw new Error("LoseView revive gain requires a supported icon type.");
+    }
     if (!spritePath) {
-      throw new Error("LoseView revive gain unsupported icon code: " + iconCode);
+      throw new Error("LoseView revive gain icon resource path is required.");
     }
     var spriteFrame = renderer.spriteFrameCache[spritePath];
     if (!spriteFrame) {
       throw new Error("LoseView revive gain sprite is not preloaded: " + spritePath);
     }
     ensureSprite(ballNode, spriteFrame);
+    ballNode.setContentSize(LOSE_REVIVE_ICON_SIZE, LOSE_REVIVE_ICON_SIZE);
   }
 
   function renderLoseCoinButton(renderer, loseContent, canRevive) {
@@ -266,11 +379,23 @@ LevelRenderer.prototype._setWinValueText = function (valueNode, text) {
     return runtimeSnapshot.winStats.clearRewardItems;
   }
 
-  function resolveRewardItemSpritePath(itemId) {
-    if (!REWARD_ITEM_RESOURCES || !REWARD_ITEM_RESOURCES[itemId]) {
-      throw new Error("WinView unsupported reward item id: " + itemId);
+  function resolveRewardItemSpritePath(rewardItem) {
+    if (!rewardItem || typeof rewardItem !== "object") {
+      throw new Error("WinView reward item is required.");
     }
-    return REWARD_ITEM_RESOURCES[itemId];
+    if (rewardItem.id === "spirit_fragment") {
+      if (typeof buildSpiritFragmentRewardResourcePath !== "function") {
+        throw new Error("WinView requires spirit fragment reward resource resolver.");
+      }
+      if (typeof rewardItem.spiritId !== "string" || rewardItem.spiritId.length === 0) {
+        throw new Error("WinView spirit fragment reward requires spiritId.");
+      }
+      return buildSpiritFragmentRewardResourcePath(rewardItem.spiritId);
+    }
+    if (!REWARD_ITEM_RESOURCES || !REWARD_ITEM_RESOURCES[rewardItem.id]) {
+      throw new Error("WinView unsupported reward item id: " + rewardItem.id);
+    }
+    return REWARD_ITEM_RESOURCES[rewardItem.id];
   }
 
   function requireWinChild(parentNode, childName, ownerName) {
@@ -335,7 +460,7 @@ LevelRenderer.prototype._renderWinAwardInfo = function (winContent, rewardItems)
 
     var iconNode = requireWinChild(itemNode, "icon", itemNode.name);
     var numNode = requireWinChild(itemNode, "num", itemNode.name);
-    var spritePath = resolveRewardItemSpritePath(itemId);
+    var spritePath = resolveRewardItemSpritePath(rewardItem);
     var spriteFrame = this.spriteFrameCache[spritePath];
     if (!spriteFrame || (cc && typeof cc.isValid === "function" && !cc.isValid(spriteFrame))) {
       throw new Error("WinView reward sprite is not preloaded: " + spritePath);
@@ -980,7 +1105,7 @@ LevelRenderer.prototype._renderLoseView = function (runtimeSnapshot) {
     this._playPopupContentOpenAnimation(loseContent);
   }
 
-  renderLoseFailureStatus(this, loseContent, runtimeSnapshot);
+  renderLoseFailureStatus(this, loseContent, this.currentLevelConfig, runtimeSnapshot);
 
   var loseRewardEntry = typeof resolveLoseRewardEntry === "function"
     ? resolveLoseRewardEntry(runtimeSnapshot.state)
@@ -1075,3 +1200,5 @@ LevelRenderer.prototype._renderResultPopup = function (runtimeSnapshot) {
 
 module.exports = attachLevelRendererScenePopupMethods;
 module.exports.buildLoseRevivePresentation = buildLoseRevivePresentation;
+module.exports.buildLoseClearanceTargetPresentation = buildLoseClearanceTargetPresentation;
+module.exports.getSpriteFrameWidthAtHeight = getSpriteFrameWidthAtHeight;

@@ -14,6 +14,7 @@ var CORE_MARKER_PATH = path.join(ASSETS_ROOT, "scripts/bootstrap/CoreBundleReady
 var SCRIPTS_META_PATH = path.join(ASSETS_ROOT, "scripts.meta");
 var BUILDER_SETTINGS_PATH = path.join(PROJECT_ROOT, "settings/builder.json");
 var PROJECT_SETTINGS_PATH = path.join(PROJECT_ROOT, "settings/project.json");
+var BOOT_LOADER_COMPONENT_ID = "5039eb1VPRG1JT+bI5uDxg1";
 
 function readJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, "utf8"));
@@ -50,11 +51,32 @@ function assertBootScene() {
   var customComponents = findEntries(bootScene, function (entry) {
     return typeof entry.__type__ === "string" && entry.__type__.indexOf("cc.") !== 0;
   });
-  if (customComponents.length !== 0) {
-    throw new Error("boot.fire must not reference business script components.");
+  if (
+    customComponents.length !== 1 ||
+    customComponents[0].__type__ !== BOOT_LOADER_COMPONENT_ID
+  ) {
+    throw new Error("boot.fire must contain only the BootLoader custom component.");
+  }
+  var canvasIndex = bootScene.findIndex(function (entry) {
+    return entry && entry.__type__ === "cc.Node" && entry._name === "Canvas";
+  });
+  var bootLoaderIndex = bootScene.indexOf(customComponents[0]);
+  if (
+    !customComponents[0].node ||
+    customComponents[0].node.__id__ !== canvasIndex ||
+    !bootScene[canvasIndex]._components.some(function (reference) {
+      return reference.__id__ === bootLoaderIndex;
+    })
+  ) {
+    throw new Error("BootLoader must be attached to the boot scene Canvas.");
   }
 
   var gameScene = readJson(GAME_SCENE_PATH);
+  if (findEntries(gameScene, function (entry) {
+    return entry && entry.__type__ === BOOT_LOADER_COMPONENT_ID;
+  }).length !== 0) {
+    throw new Error("game.fire must not contain BootLoader.");
+  }
   var bootstrapComponents = findEntries(gameScene, function (entry) {
     return Object.prototype.hasOwnProperty.call(entry, "initialLevelId") &&
       Object.prototype.hasOwnProperty.call(entry, "rewardedVideoAdUnitId");
@@ -91,12 +113,11 @@ function assertCoreBundleMeta() {
 
 function assertBootLoader() {
   var loaderMeta = readJson(BOOT_LOADER_META_PATH);
-  if (loaderMeta.isPlugin !== true || loaderMeta.loadPluginInEditor !== false) {
-    throw new Error("BootLoader must be a runtime-only plugin script.");
+  if (loaderMeta.isPlugin !== false || loaderMeta.loadPluginInEditor !== false) {
+    throw new Error("BootLoader must be a boot-scene component, not a global plugin.");
   }
   var loaderSource = readText(BOOT_LOADER_PATH);
   [
-    'var BOOT_SCENE_NAME = "boot"',
     'var CORE_BUNDLE_NAME = "core"',
     'wx.loadSubpackage',
     'cc.assetManager.loadBundle',
@@ -107,7 +128,9 @@ function assertBootLoader() {
     'event.totalBytesWritten',
     'event.totalBytesExpectedToWrite',
     'if (hasWrittenBytes || hasExpectedBytes)',
-    'resolveSubpackageProgress01(event)'
+    'resolveSubpackageProgress01(event)',
+    'extends: cc.Component',
+    'startBootFlow(this.node)'
   ].forEach(function (requiredText) {
     if (loaderSource.indexOf(requiredText) < 0) {
       throw new Error("BootLoader startup step missing: " + requiredText);
@@ -115,6 +138,9 @@ function assertBootLoader() {
   });
   if (/\brequire\s*\(/.test(loaderSource)) {
     throw new Error("BootLoader must not synchronously require core business modules.");
+  }
+  if (loaderSource.indexOf("EVENT_AFTER_SCENE_LAUNCH") >= 0) {
+    throw new Error("BootLoader must not register a global scene-launch listener.");
   }
 
   var markerSource = readText(CORE_MARKER_PATH);

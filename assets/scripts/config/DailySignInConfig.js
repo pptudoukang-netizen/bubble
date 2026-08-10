@@ -29,6 +29,7 @@ module.exports = {
     {
       day: 4,
       items: [
+        { id: "gem", count: 10 },
         { id: "barrier_hammer", count: 1 }
       ]
     },

@@ -6,7 +6,7 @@ var path = require("path");
 var BoardLayout = require("../assets/scripts/config/BoardLayout");
 var AimTuningProfiles = require("../assets/scripts/config/AimTuningProfiles");
 var BubbleGrid = require("../gameplay-src/systems/BubbleGrid");
-var GameManager = require("../gameplay-src/core/GameManager");
+var RuntimeGameManager = require("../gameplay-src/core/GameManager");
 var EliminationSequenceBuilder = require("../gameplay-src/core/EliminationSequenceBuilder");
 var LevelPackCompactCodec = require("../assets/scripts/config/LevelPackCompactCodec");
 var LevelPackManifest = require("../assets/scripts/config/LevelPackManifest");
@@ -22,6 +22,38 @@ var AdRewardCatalog = require("../assets/scripts/services/AdRewardCatalog");
 var AdRevivePolicy = require("../gameplay-src/core/AdRevivePolicy");
 var attachLevelRendererScenePopupMethods = require("../gameplay-src/render/LevelRendererScenePopupMethods");
 var attachLevelRendererSceneHudMethods = require("../gameplay-src/render/LevelRendererSceneHudMethods");
+
+function GameManager() {
+  var manager = new RuntimeGameManager();
+  manager.setEquippedAssistSpirit("milu", 1);
+  return manager;
+}
+
+GameManager.prototype = RuntimeGameManager.prototype;
+
+function createInactiveTrappedSpriteRescueSystemFixture() {
+  return {
+    isActive: function () {
+      return false;
+    },
+    isRotating: function () {
+      return false;
+    },
+    update: function () {
+      return {
+        changed: false,
+        completed: false
+      };
+    },
+    snapshotForRender: function () {
+      return {
+        active: false,
+        phase: "idle",
+        revision: 0
+      };
+    }
+  };
+}
 
 function syncHudBottomLineYForValidation() {
   if (typeof BoardLayout.boardStartY !== "number" || !isFinite(BoardLayout.boardStartY)) {
@@ -44,8 +76,8 @@ function runTimedAndShotLimitedReviveCase() {
     throw new Error("Timed revive plan must grant exactly 10 seconds and zero balls.");
   }
   var timedPresentation = attachLevelRendererScenePopupMethods.buildLoseRevivePresentation(timedLevelConfig, timedPlan);
-  if (timedPresentation.description !== "+10秒" || timedPresentation.descriptionX !== 0 || timedPresentation.showBall !== false) {
-    throw new Error("Timed LoseView revive presentation must center +10秒 and hide handsel_ball.");
+  if (timedPresentation.description !== "规定时间内通关" || timedPresentation.descriptionX !== 0 || timedPresentation.showBall !== false || timedPresentation.iconType !== null) {
+    throw new Error("Timed LoseView revive presentation must center 规定时间内通关 and hide handsel_ball.");
   }
   var timedRewardEntry = AdRewardCatalog.resolveLoseRewardEntry("lost_objective");
   if (!timedRewardEntry || timedRewardEntry.grantMode !== "current_round_revive") {
@@ -106,8 +138,61 @@ function runTimedAndShotLimitedReviveCase() {
   if (shotPlan.grantedShots !== 10 || shotPlan.grantedTimeSeconds !== 0) {
     throw new Error("Shot-limited revive plan must grant exactly 10 balls and zero seconds.");
   }
-  if (shotPresentation.description !== "赠送10球" || shotPresentation.descriptionX !== 32 || shotPresentation.showBall !== true) {
+  if (shotPresentation.description !== "赠送10球" || shotPresentation.descriptionX !== 32 || shotPresentation.showBall !== true || shotPresentation.iconType !== "ball") {
     throw new Error("Shot-limited LoseView revive presentation must use x=32 and show handsel_ball.");
+  }
+
+  var rescueLevelConfig = {
+    level: {
+      playMode: "shot_limited",
+      levelType: "trapped_sprite_rescue",
+      colors: ["R", "G"],
+      bonusObjectives: [],
+      winConditions: [
+        { type: "clear_all", value: 1 }
+      ],
+      trappedSpriteRescue: {
+        spiritId: "milu"
+      }
+    }
+  };
+  var rescueRuntimeSnapshot = {
+    board: {
+      cells: [
+        { color: "R" },
+        { color: "G" }
+      ]
+    },
+    objectives: {
+      progress: 0,
+      target: 0
+    }
+  };
+  var rescuePlan = AdRevivePolicy.buildRevivePlan(rescueLevelConfig, rescueRuntimeSnapshot);
+  if (
+    rescuePlan.grantedShots !== 10 ||
+    rescuePlan.grantedTimeSeconds !== 0 ||
+    rescuePlan.targetColor !== null ||
+    rescuePlan.targetColorBallCount !== 0 ||
+    rescuePlan.randomBallCount !== 2 ||
+    rescuePlan.description !== "增加随机球x10"
+  ) {
+    throw new Error("Trapped sprite rescue revive must grant ten shots with two random supply balls.");
+  }
+  var rescuePresentation = attachLevelRendererScenePopupMethods.buildLoseRevivePresentation(rescueLevelConfig, rescuePlan);
+  if (rescuePresentation.description !== "赠送10球" || rescuePresentation.descriptionX !== 32 || rescuePresentation.showBall !== true || rescuePresentation.iconType !== "ball") {
+    throw new Error("Trapped sprite rescue LoseView revive presentation must retain the normal ten-ball reward.");
+  }
+  var rescueClearanceTargetPresentation = attachLevelRendererScenePopupMethods.buildLoseClearanceTargetPresentation(rescueLevelConfig);
+  if (!rescueClearanceTargetPresentation || rescueClearanceTargetPresentation.description !== "救出精灵" || rescueClearanceTargetPresentation.spiritId !== "milu") {
+    throw new Error("Trapped sprite rescue LoseView clearance target must display the trapped spirit and 救出精灵.");
+  }
+  if (attachLevelRendererScenePopupMethods.getSpriteFrameWidthAtHeight({
+    getOriginalSize: function () {
+      return { width: 120, height: 80 };
+    }
+  }, 65, "validation") !== 97.5) {
+    throw new Error("Trapped sprite LoseView clearance target width must preserve its original aspect ratio at height 65.");
   }
 
   var shotManager = new GameManager();
@@ -140,6 +225,88 @@ function runTimedAndShotLimitedReviveCase() {
   if (shotManager.state !== "running" || shotResult.remainingShots !== 10 || shotResult.grantedTimeSeconds !== 0) {
     throw new Error("Shot-limited revive must resume running with exactly 10 granted shots.");
   }
+
+  var rescueManager = new GameManager();
+  rescueManager.currentLevel = rescueLevelConfig;
+  rescueManager.isTimedInfiniteShots = false;
+  rescueManager.state = "out_of_shots";
+  rescueManager.remainingShots = 0;
+  rescueManager.remainingTimeMs = 0;
+  rescueManager.systems.bubbleGrid = {
+    getCells: function () {
+      return rescueRuntimeSnapshot.board.cells.slice();
+    }
+  };
+  rescueManager.systems.shooterController = {
+    setUpcomingNormalBalls: function () {
+      throw new Error("Trapped sprite rescue revive must not request target-color balls.");
+    },
+    setUpcomingRandomNormalBalls: function (count) {
+      return { accepted: count === 2 };
+    }
+  };
+  rescueManager._buildPrimaryObjectiveSnapshot = function () {
+    return rescueRuntimeSnapshot.objectives;
+  };
+  rescueManager._getCachedJarSnapshot = function () {
+    return {};
+  };
+  rescueManager.getRuntimeSnapshot = timedManager.getRuntimeSnapshot;
+  var rescueResult = rescueManager.reviveFromAd();
+  if (rescueManager.state !== "running" || rescueResult.remainingShots !== 10 || rescueResult.grantedTimeSeconds !== 0) {
+    throw new Error("Trapped sprite rescue revive must resume running with exactly ten granted shots.");
+  }
+}
+
+function runTimedTimeBonusBallSettlementCase() {
+  var manager = new GameManager();
+  var events = [];
+  manager.isTimedInfiniteShots = true;
+  manager.state = "running";
+  manager.remainingTimeMs = 3000;
+  manager.grantedTimeBonusCellIds = {};
+  manager._pushRuntimeEvent = function (type, data) {
+    events.push({ type: type, data: data });
+  };
+
+  manager._grantTimeBonusForRemovedCells([
+    {
+      id: "2_4",
+      row: 2,
+      col: 4,
+      entityCategory: "normal_ball",
+      timeBonusSeconds: 5
+    }
+  ], "floating_drop");
+  if (manager.remainingTimeMs !== 8000) {
+    throw new Error("Timed time bonus ball must add five seconds without an upper cap.");
+  }
+  if (events.length !== 1 || events[0].type !== "time_bonus_awarded" ||
+      events[0].data.reason !== "floating_drop" || events[0].data.granted_time_seconds !== 5 ||
+      events[0].data.remaining_time_ms !== 8000 || !Array.isArray(events[0].data.cells) ||
+      events[0].data.cells.length !== 1 || events[0].data.cells[0].id !== "2_4" ||
+      events[0].data.cells[0].row !== 2 || events[0].data.cells[0].col !== 4 ||
+      events[0].data.cells[0].bonusSeconds !== 5) {
+    throw new Error("Timed time bonus ball must emit an exact floating-drop runtime event.");
+  }
+
+  var duplicateRejected = false;
+  try {
+    manager._grantTimeBonusForRemovedCells([
+      {
+        id: "2_4",
+        row: 2,
+        col: 4,
+        entityCategory: "normal_ball",
+        timeBonusSeconds: 5
+      }
+    ], "elimination");
+  } catch (error) {
+    duplicateRejected = /more than once/.test(error.message);
+  }
+  if (!duplicateRejected) {
+    throw new Error("Timed time bonus ball must reject duplicate settlement.");
+  }
 }
 
 function createGridWithViewport(levelConfig) {
@@ -161,6 +328,7 @@ function createKeyUnlockRegressionManager() {
   var SupportSystem = require("../gameplay-src/systems/SupportSystem");
   var manager = new GameManager();
   manager.systems = {
+    trappedSpriteRescueSystem: createInactiveTrappedSpriteRescueSystemFixture(),
     supportSystem: new SupportSystem(),
     fallingMarbleSystem: {
       registerDrops: function () {}
@@ -339,6 +507,34 @@ function runCase(levelCase) {
     ok: failures.length === 0,
     failures: failures
   };
+}
+
+function runReflectedShotDoesNotTunnelPastFirstCollisionCase() {
+  var levelConfig = createLevelConfig(1);
+  var grid = createGridWithViewport(levelConfig);
+  var predictor = new TrajectoryPredictor();
+  predictor.initialize({});
+  predictor.configureLevel(levelConfig);
+
+  var origin = {
+    x: BoardLayout.shooterOrigin.x,
+    y: BoardLayout.shooterOrigin.y
+  };
+  var plan = predictor.predictShotPlan(
+    grid,
+    origin,
+    normalizeDirection(origin, { x: 540, y: 100 })
+  );
+
+  if (!plan || !plan.valid || plan.wallBounceCount !== 1) {
+    throw new Error("Reflected-shot fixture must produce exactly one wall bounce.");
+  }
+  if (!plan.collidedCell || plan.collidedCell.row !== 7 || plan.collidedCell.col !== 7) {
+    throw new Error("Reflected shot must attach from its first physical collision instead of tunneling past it.");
+  }
+  if (!plan.targetCell || plan.targetCell.row !== 8 || plan.targetCell.col !== 8) {
+    throw new Error("Reflected shot must retain the first collision's legal attachment cell.");
+  }
 }
 
 function runKeyUnlockBoardAdvanceDelayCase() {
@@ -922,6 +1118,8 @@ function runMolotovFloatingMolotovRegistersDropCase() {
   };
 
   manager.systems = {
+
+    trappedSpriteRescueSystem: createInactiveTrappedSpriteRescueSystemFixture(),
     bubbleGrid: grid,
     supportSystem: {
       findFloatingCells: function (targetGrid) {
@@ -1161,6 +1359,8 @@ function runKeyUnlockUnsupportedFallsCase() {
   jarCollectorSystem.configureLevel(levelConfig);
 
   manager.systems = {
+
+    trappedSpriteRescueSystem: createInactiveTrappedSpriteRescueSystemFixture(),
     bubbleGrid: grid,
     supportSystem: supportSystem,
     matchSystem: matchSystem,
@@ -1326,6 +1526,8 @@ function runMolotovEliminationSequencePositionCase() {
   };
 
   manager.systems = {
+
+    trappedSpriteRescueSystem: createInactiveTrappedSpriteRescueSystemFixture(),
     bubbleGrid: grid,
     supportSystem: {
       findFloatingCells: function () {
@@ -1505,6 +1707,7 @@ function runMolotovChainSplitterDedupCase() {
     }
   };
   manager.systems = {
+    trappedSpriteRescueSystem: createInactiveTrappedSpriteRescueSystemFixture(),
     bubbleGrid: grid,
     supportSystem: {
       findFloatingCells: function () {
@@ -1656,6 +1859,7 @@ function runMolotovPendingResolutionSeedsSplitterDedupCase() {
     }
   };
   manager.systems = {
+    trappedSpriteRescueSystem: createInactiveTrappedSpriteRescueSystemFixture(),
     bubbleGrid: grid,
     supportSystem: {
       findFloatingCells: function () {
@@ -1798,6 +2002,7 @@ function runMolotovBlastPhaseDropsUnsupportedSourceSupportCase() {
     }
   };
   manager.systems = {
+    trappedSpriteRescueSystem: createInactiveTrappedSpriteRescueSystemFixture(),
     bubbleGrid: grid,
     supportSystem: {
       findFloatingCells: function () {
@@ -1884,6 +2089,8 @@ function runMolotovPendingResolutionFinalizeCase() {
   };
 
   manager.systems = {
+
+    trappedSpriteRescueSystem: createInactiveTrappedSpriteRescueSystemFixture(),
     bubbleGrid: grid,
     supportSystem: {
       findFloatingCells: function (targetGrid) {
@@ -1974,6 +2181,7 @@ function runMolotovBlastUpdateForcesFullRefreshCase() {
   manager.pendingProjectileFinalize = false;
   manager.pendingRuntimeEvents = [];
   manager.systems = {
+    trappedSpriteRescueSystem: createInactiveTrappedSpriteRescueSystemFixture(),
     fallingMarbleSystem: {
       hasActiveDrops: function () {
         return true;
@@ -1997,6 +2205,12 @@ function runMolotovBlastUpdateForcesFullRefreshCase() {
       }
     },
     boardOcclusionSystem: {
+      clearZonesWithoutBoardCells: function (boardCells) {
+        if (!Array.isArray(boardCells)) {
+          throw new Error("Shot regression board occlusion stub requires board cells array.");
+        }
+        return [];
+      },
       update: function () {
         return [];
       }
@@ -2277,6 +2491,7 @@ function runCollectionRewardDoesNotClearRemainingBoardCase() {
     { id: "board_r2", row: 2, col: 2, color: "B", entityCategory: "normal_ball", entityType: null }
   ];
   manager.systems = {
+    trappedSpriteRescueSystem: createInactiveTrappedSpriteRescueSystemFixture(),
     bubbleGrid: {
       getCells: function () {
         return boardCells.slice();
@@ -2308,6 +2523,12 @@ function runCollectionRewardDoesNotClearRemainingBoardCase() {
       }
     },
     boardOcclusionSystem: {
+      clearZonesWithoutBoardCells: function (boardCells) {
+        if (!Array.isArray(boardCells)) {
+          throw new Error("Shot regression board occlusion stub requires board cells array.");
+        }
+        return [];
+      },
       snapshotForRender: function () {
         return {
           version: 0,
@@ -2358,6 +2579,7 @@ function createAddBallPromptRegressionManager() {
   manager.remainingShots = 0;
   manager.state = "running";
   manager.systems = {
+    trappedSpriteRescueSystem: createInactiveTrappedSpriteRescueSystemFixture(),
     bubbleGrid: {
       version: 1,
       getCells: function () {
@@ -2448,6 +2670,12 @@ function createAddBallPromptRegressionManager() {
       }
     },
     boardOcclusionSystem: {
+      clearZonesWithoutBoardCells: function (boardCells) {
+        if (!Array.isArray(boardCells)) {
+          throw new Error("Shot regression board occlusion stub requires board cells array.");
+        }
+        return [];
+      },
       snapshotForRender: function () {
         return {
           version: 0,
@@ -2735,7 +2963,7 @@ function runOneStarTargetScoreCase() {
       targetScore: 2580
     }
   });
-  if (oneStarTargetScore !== 774) {
+  if (oneStarTargetScore !== 1290) {
     throw new Error("One-star target score must use the runtime star threshold policy.");
   }
   var authoredThresholds = StarRatingPolicy.resolveStarThresholds({
@@ -2792,6 +3020,80 @@ function runAuthoredOpeningShotQueueCase() {
   revivedShooter.setUpcomingRandomNormalBalls(2);
   if (revivedShooter.getShooterState().authoredOpeningQueue.length !== 0) {
     throw new Error("Revive queue replacement must clear the remaining authored opening shots.");
+  }
+}
+
+function runRandomShotColorStreakLimitCase() {
+  var previousRandom = Math.random;
+  try {
+    Math.random = function () {
+      return 0;
+    };
+
+    var shooter = new ShooterController();
+    shooter.initialize({});
+    shooter.configureLevel({
+      level: {
+        levelId: 51,
+        shotLimit: 8,
+        playMode: "shot_limited",
+        colors: ["R", "B"],
+        spawnWeights: { R: 100, B: 1 }
+      }
+    });
+
+    var firedColors = [];
+    for (var index = 0; index < 6; index += 1) {
+      firedColors.push(shooter.currentBall.color);
+      shooter.advanceQueue(7 - index, false);
+    }
+    if (JSON.stringify(firedColors) !== JSON.stringify(["R", "R", "B", "R", "R", "B"])) {
+      throw new Error("Random shot colors must exclude a color after two consecutive selections.");
+    }
+
+    var initialColorShooter = new ShooterController();
+    initialColorShooter.initialize({});
+    initialColorShooter.configureLevel({
+      level: {
+        levelId: 52,
+        shotLimit: 5,
+        playMode: "shot_limited",
+        colors: ["R", "B"],
+        spawnWeights: { R: 100, B: 1 },
+        initialShotBalls: ["B", "B"]
+      }
+    });
+    var initialThenRandomColors = [];
+    for (var initialIndex = 0; initialIndex < 5; initialIndex += 1) {
+      initialThenRandomColors.push(initialColorShooter.currentBall.color);
+      initialColorShooter.advanceQueue(4 - initialIndex, false);
+    }
+    if (JSON.stringify(initialThenRandomColors) !== JSON.stringify(["B", "B", "R", "R", "B"])) {
+      throw new Error("Configured initial shot colors must not count toward the random color streak.");
+    }
+
+    var singleColorShooter = new ShooterController();
+    singleColorShooter.initialize({});
+    singleColorShooter.configureLevel({
+      level: {
+        levelId: 53,
+        shotLimit: 3,
+        playMode: "shot_limited",
+        colors: ["R"],
+        spawnWeights: { R: 1 }
+      }
+    });
+    var rejectedImpossibleThirdColor = false;
+    try {
+      singleColorShooter.advanceQueue(2, false);
+    } catch (error) {
+      rejectedImpossibleThirdColor = error.message.indexOf("third consecutive random color") >= 0;
+    }
+    if (!rejectedImpossibleThirdColor) {
+      throw new Error("A single-color random queue must fail fast before generating a third same-color ball.");
+    }
+  } finally {
+    Math.random = previousRandom;
   }
 }
 
@@ -3044,6 +3346,9 @@ function runTopAnchorCollapseCancelsPendingSplitterSpawnCase() {
     maxColumns: 11,
     getCells: function () {
       return cells.slice();
+    },
+    getWormholePairs: function () {
+      return [];
     },
     removeFloatingCells: function (removeTargets) {
       var removed = [];
@@ -3342,6 +3647,7 @@ function runStoneBallJarScoreZeroCase() {
   manager.score = 500;
   manager.lastResolution = { scoreDelta: 0, scoreEvents: [] };
   manager.systems = {
+    trappedSpriteRescueSystem: createInactiveTrappedSpriteRescueSystemFixture(),
     jarCollectorSystem: new JarCollectorSystem()
   };
   manager.systems.jarCollectorSystem.jarCount = 1;
@@ -3392,6 +3698,7 @@ function runJarCollectionFloatingScoreEventCase() {
     manager.score = 0;
     manager.lastResolution = { scoreDelta: 0, scoreEvents: [] };
     manager.systems = {
+      trappedSpriteRescueSystem: createInactiveTrappedSpriteRescueSystemFixture(),
       jarCollectorSystem: new JarCollectorSystem()
     };
     manager.systems.jarCollectorSystem.jarCount = 1;
@@ -3454,6 +3761,7 @@ function runOutsideJarCleanupScoreCase() {
   manager.sameColorJarCollected = 0;
   manager.sameColorJarBonusScore = 0;
   manager.systems = {
+    trappedSpriteRescueSystem: createInactiveTrappedSpriteRescueSystemFixture(),
     jarCollectorSystem: new JarCollectorSystem()
   };
   manager.systems.jarCollectorSystem.jarCount = 1;
@@ -3564,6 +3872,7 @@ function runColorPermutationJarScoreCase() {
     manager.score = 0;
     manager.lastResolution = { scoreDelta: 0, scoreEvents: [] };
     manager.systems = {
+      trappedSpriteRescueSystem: createInactiveTrappedSpriteRescueSystemFixture(),
       jarCollectorSystem: new JarCollectorSystem()
     };
     manager.systems.jarCollectorSystem.configureLevel(levelConfig);
@@ -3792,6 +4101,68 @@ function runBallScoreDisplayGenerationCase() {
   }
 }
 
+function runTimeBonusFloatingScoreDisplayCase() {
+  function ValidationRenderer() {}
+  attachLevelRendererSceneHudMethods(ValidationRenderer, {
+    BoardLayout: BoardLayout
+  });
+
+  var renderer = Object.create(ValidationRenderer.prototype);
+  renderer.playedTimeBonusAwardedEvents = [];
+  var spawned = [];
+  renderer._convertBoardPointToGameView = function (x, y) {
+    return { x: x + 17, y: y - 23 };
+  };
+  renderer._spawnBallScoreDisplay = function (scoreEvent, position) {
+    spawned.push({
+      cellId: scoreEvent.cellId,
+      points: scoreEvent.points,
+      position: position
+    });
+  };
+
+  var firstEvent = {
+    id: 41,
+    type: "time_bonus_awarded",
+    cells: [
+      { id: "2_4", row: 2, col: 4, bonusSeconds: 5 },
+      { id: "3_1", row: 3, col: 1, bonusSeconds: 5 }
+    ]
+  };
+  var snapshot = {
+    board: { maxColumns: 10, viewportOffsetY: 0 },
+    runtimeEvents: [firstEvent]
+  };
+  renderer._playTimeBonusFloatingScoreDisplay(snapshot);
+  renderer._playTimeBonusFloatingScoreDisplay(snapshot);
+
+  var expectedFirstPosition = BoardLayout.getCellPosition(2, 4, 10, 0);
+  if (
+    spawned.length !== 2 ||
+    spawned[0].cellId !== "time_bonus_41_2_4" ||
+    spawned[0].points !== 5 ||
+    spawned[0].position.x !== expectedFirstPosition.x + 17 ||
+    spawned[0].position.y !== expectedFirstPosition.y - 23
+  ) {
+    throw new Error("Time bonus award must float +5 from the removed ball position exactly once.");
+  }
+
+  var sameIdNewEvent = {
+    id: 41,
+    type: "time_bonus_awarded",
+    cells: [
+      { id: "4_2", row: 4, col: 2, bonusSeconds: 5 }
+    ]
+  };
+  renderer._playTimeBonusFloatingScoreDisplay({
+    board: { maxColumns: 10, viewportOffsetY: 0 },
+    runtimeEvents: [sameIdNewEvent]
+  });
+  if (spawned.length !== 3 || spawned[2].cellId !== "time_bonus_41_4_2") {
+    throw new Error("Time bonus floating score must use event-object identity rather than a persistent numeric id.");
+  }
+}
+
 function runJarFractionDisplayEventIdentityCase() {
   function ValidationRenderer() {}
   attachLevelRendererSceneHudMethods(ValidationRenderer, {
@@ -3911,6 +4282,7 @@ function runMatchedObjectiveCollectionCase() {
     }
   };
   manager.systems = {
+    trappedSpriteRescueSystem: createInactiveTrappedSpriteRescueSystemFixture(),
     jarCollectorSystem: new JarCollectorSystem()
   };
   manager.systems.jarCollectorSystem.configureLevel(manager.currentLevel);
@@ -3965,6 +4337,7 @@ function runMatchedObjectiveCollectionCase() {
   var managerWithoutSequence = new GameManager();
   managerWithoutSequence.currentLevel = manager.currentLevel;
   managerWithoutSequence.systems = {
+    trappedSpriteRescueSystem: createInactiveTrappedSpriteRescueSystemFixture(),
     jarCollectorSystem: new JarCollectorSystem()
   };
   managerWithoutSequence.systems.jarCollectorSystem.configureLevel(manager.currentLevel);
@@ -4198,7 +4571,7 @@ function runConfiguredAudioPreloadsArraySfxCase() {
   var audioManager = Object.create(AudioManager.prototype);
   audioManager.bgmPath = "sound/game_bg1";
   audioManager.sfxMap = {
-    jarBounce: ["sound/pao1", "sound/pao2", "sound/pao1"],
+    multiHit: ["sound/hit1", "sound/hit2", "sound/hit1"],
     jarCollectBottom: "sound/score",
     empty: []
   };
@@ -4212,8 +4585,8 @@ function runConfiguredAudioPreloadsArraySfxCase() {
 
   var expected = [
     "sound/game_bg1",
-    "sound/pao1",
-    "sound/pao2",
+    "sound/hit1",
+    "sound/hit2",
     "sound/score"
   ];
   if (!preloadedPaths || preloadedPaths.join(",") !== expected.join(",")) {
@@ -4221,27 +4594,200 @@ function runConfiguredAudioPreloadsArraySfxCase() {
   }
 }
 
-function runJarBounceSfxMappingCase() {
-  var context = {
-    jarBounceSfxResources: "sound/pao1,sound/pao2,sound/pao3,sound/pao4,sound/pao5",
-    _parseAudioResourceList: GameBootstrapAudioMethods._parseAudioResourceList
-  };
+function runJarRimBounceAudioDisabledCase() {
+  var gameBootstrapSource = fs.readFileSync(
+    path.resolve(__dirname, "../assets/scripts/bootstrap/GameBootstrap.js"),
+    "utf8"
+  );
+  if (gameBootstrapSource.indexOf("jarBounceSfxResources") >= 0 || gameBootstrapSource.indexOf("_playJarBounceSfx") >= 0) {
+    throw new Error("GameBootstrap must not expose jar rim bounce audio configuration or playback methods.");
+  }
 
-  for (var jarIndex = 0; jarIndex < 5; jarIndex += 1) {
-    var resolvedPath = GameBootstrapAudioMethods._resolveJarBouncePath.call(context, jarIndex);
-    if (resolvedPath !== "sound/pao" + (jarIndex + 1)) {
-      throw new Error("Jar " + (jarIndex + 1) + " rim bounce should map to pao" + (jarIndex + 1) + ".");
+  var audioConfig = GameBootstrapAudioMethods._buildAudioConfig.call({
+    _getGameplayBgmPath: function () {
+      return "sound/game_bg1";
+    },
+    _parseAudioResourceList: GameBootstrapAudioMethods._parseAudioResourceList,
+    fairyAssistHitSfxResources: "sound/hit_spirit_1,sound/hit_spirit_2,sound/hit_spirit_3,sound/hit_spirit_4,sound/hit_spirit_5"
+  });
+  if (Object.prototype.hasOwnProperty.call(audioConfig.sfxMap, "jarBounce")) {
+    throw new Error("Audio config must not preload or expose jar rim bounce SFX.");
+  }
+
+  var trackedEventTypes = [];
+  var playedSfxKeys = [];
+  GameBootstrapAudioMethods._playRuntimeAudioEvents.call({
+    _trackRuntimeTelemetryEvent: function (event) {
+      trackedEventTypes.push(event.type);
+    },
+    _playSfx: function (sfxKey) {
+      playedSfxKeys.push(sfxKey);
     }
+  }, {
+    runtimeEvents: [{ type: "jar_rim_bounce", bounceCount: 1, jarIndex: 2 }]
+  });
+  if (trackedEventTypes.length !== 1 || trackedEventTypes[0] !== "jar_rim_bounce") {
+    throw new Error("jar_rim_bounce must remain available to runtime telemetry.");
+  }
+  if (playedSfxKeys.length !== 0) {
+    throw new Error("jar_rim_bounce must not play SFX.");
   }
 
-  var rejectedInvalidJarIndex = false;
+  var rejectedInvalidBounce = false;
   try {
-    GameBootstrapAudioMethods._resolveJarBouncePath.call(context, 5);
+    GameBootstrapAudioMethods._playRuntimeAudioEvents.call({
+      _trackRuntimeTelemetryEvent: function () {}
+    }, {
+      runtimeEvents: [{ type: "jar_rim_bounce", bounceCount: 0, jarIndex: 2 }]
+    });
   } catch (error) {
-    rejectedInvalidJarIndex = /jarIndex from 0 to 4/.test(error.message);
+    rejectedInvalidBounce = error.message.indexOf("positive integer bounceCount") >= 0;
   }
-  if (!rejectedInvalidJarIndex) {
-    throw new Error("Jar bounce sfx mapping should reject jar indexes outside 1-5.");
+  if (!rejectedInvalidBounce) {
+    throw new Error("Silent jar rim bounce events must retain fail-fast payload validation.");
+  }
+}
+
+function runNoEliminationSfxDisabledCase() {
+  var audioConfig = GameBootstrapAudioMethods._buildAudioConfig.call({
+    _getGameplayBgmPath: function () {
+      return "sound/game_bg1";
+    },
+    _parseAudioResourceList: GameBootstrapAudioMethods._parseAudioResourceList,
+    fairyAssistHitSfxResources: "sound/hit_spirit_1,sound/hit_spirit_2,sound/hit_spirit_3,sound/hit_spirit_4,sound/hit_spirit_5"
+  });
+  if (Object.prototype.hasOwnProperty.call(audioConfig.sfxMap, "noElimination")) {
+    throw new Error("No-elimination SFX must not remain in the configured audio map.");
+  }
+
+  var trackedEventTypes = [];
+  var playedSfxKeys = [];
+  GameBootstrapAudioMethods._playRuntimeAudioEvents.call({
+    _trackRuntimeTelemetryEvent: function (event) {
+      trackedEventTypes.push(event.type);
+    },
+    _playSfx: function (sfxKey) {
+      playedSfxKeys.push(sfxKey);
+    }
+  }, {
+    runtimeEvents: [{ type: "shot_no_elimination" }]
+  });
+
+  if (trackedEventTypes.length !== 1 || trackedEventTypes[0] !== "shot_no_elimination") {
+    throw new Error("shot_no_elimination must remain available to runtime telemetry.");
+  }
+  if (playedSfxKeys.length !== 0) {
+    throw new Error("shot_no_elimination must not play SFX.");
+  }
+}
+
+function runWallBounceNoEliminationAudioCase() {
+  var hitBucketAssetPath = path.resolve(__dirname, "../assets/audio/sound/hit_bucket.mp3");
+  if (!fs.existsSync(hitBucketAssetPath) || !fs.existsSync(hitBucketAssetPath + ".meta")) {
+    throw new Error("Wall-bounce no-elimination audio requires hit_bucket.mp3 and its meta file.");
+  }
+
+  function finalizeShot(wallBounceCount, matchedCount) {
+    var manager = new GameManager();
+    manager.pendingRuntimeEvents = [];
+    manager.remainingShots = 2;
+    manager.isTimedInfiniteShots = false;
+    manager.molotovResolutionPending = false;
+    manager.pendingProjectileFinalize = true;
+    manager.activeProjectile = {
+      position: { x: 0, y: 0 },
+      color: "R",
+      ball: {
+        ballCategory: "normal",
+        color: "R",
+        entityCategory: "normal_ball",
+        entityType: null
+      },
+      targetCell: { row: 0, col: 0 },
+      shotPlan: {
+        hitType: "cell",
+        wallBounceCount: wallBounceCount
+      }
+    };
+    manager.systems = {
+      bubbleGrid: {
+        hasCell: function () {
+          return false;
+        },
+        addBubble: function () {
+          return { id: "attached", row: 0, col: 0, color: "R" };
+        }
+      },
+      trappedSpriteRescueSystem: createInactiveTrappedSpriteRescueSystemFixture(),
+      boardOcclusionSystem: {
+        onShotFired: function () {
+          return [];
+        }
+      }
+    };
+    manager._resolveAttachment = function () {
+      return {
+        matched: Array.from({ length: matchedCount }, function (_, index) {
+          return { id: "matched_" + index, row: 0, col: index };
+        }),
+        trappedSpriteRotation: null,
+        boardCleared: false
+      };
+    };
+    manager._resolveDirectVineImpact = function () {};
+    manager._resolveFairyAssistsAfterResolution = function () {};
+    manager._beginSwirlRotationForResolution = function () {
+      return true;
+    };
+
+    manager._finalizePlannedShot();
+    return manager._drainRuntimeEvents();
+  }
+
+  var bouncedNoEliminationEvents = finalizeShot(1, 0);
+  var bounceAudioEvents = bouncedNoEliminationEvents.filter(function (event) {
+    return event.type === "shot_wall_bounce_no_elimination";
+  });
+  if (bounceAudioEvents.length !== 1 || bounceAudioEvents[0].wallBounceCount !== 1) {
+    throw new Error("A bounced shot without elimination must emit one wall-bounce audio event.");
+  }
+  if (!bouncedNoEliminationEvents.some(function (event) { return event.type === "shot_no_elimination"; })) {
+    throw new Error("Bounced no-elimination shot must preserve the base shot_no_elimination event.");
+  }
+
+  if (finalizeShot(0, 0).some(function (event) { return event.type === "shot_wall_bounce_no_elimination"; })) {
+    throw new Error("A direct shot without elimination must not emit wall-bounce audio.");
+  }
+  if (finalizeShot(2, 1).some(function (event) { return event.type === "shot_wall_bounce_no_elimination"; })) {
+    throw new Error("A bounced shot with elimination must not emit wall-bounce no-elimination audio.");
+  }
+
+  var audioConfig = GameBootstrapAudioMethods._buildAudioConfig.call({
+    _getGameplayBgmPath: function () {
+      return "sound/game_bg1";
+    },
+    _parseAudioResourceList: GameBootstrapAudioMethods._parseAudioResourceList,
+    fairyAssistHitSfxResources: "sound/hit_spirit_1,sound/hit_spirit_2,sound/hit_spirit_3,sound/hit_spirit_4,sound/hit_spirit_5",
+    hitBucketSfxResource: "sound/hit_bucket"
+  });
+  if (audioConfig.sfxMap.hitBucket !== "sound/hit_bucket") {
+    throw new Error("Wall-bounce no-elimination audio must map hitBucket to sound/hit_bucket.");
+  }
+
+  var playedSfxKeys = [];
+  GameBootstrapAudioMethods._playRuntimeAudioEvents.call({
+    _trackRuntimeTelemetryEvent: function () {},
+    _playSfx: function (sfxKey) {
+      playedSfxKeys.push(sfxKey);
+    }
+  }, {
+    runtimeEvents: [{
+      type: "shot_wall_bounce_no_elimination",
+      wallBounceCount: 1
+    }]
+  });
+  if (playedSfxKeys.length !== 1 || playedSfxKeys[0] !== "hitBucket") {
+    throw new Error("Wall-bounce no-elimination runtime event must play hitBucket exactly once.");
   }
 }
 
@@ -4440,6 +4986,9 @@ function main() {
     });
   });
 
+  runReflectedShotDoesNotTunnelPastFirstCollisionCase();
+  console.log("[OK]", "reflected_shot_first_collision", "bank shot does not tunnel to a later attachment point");
+
   runKeyUnlockBoardAdvanceDelayCase();
   console.log("[OK]", "key_unlock_board_advance_delay", "waited for special animation before board advance");
   runImpactBounceBoardAdvanceDelayCase();
@@ -4496,6 +5045,8 @@ function main() {
   console.log("[OK]", "add_ball_prompt_plus_ten", "plus ten balls resumes running from add-ball prompt");
   runTimedAndShotLimitedReviveCase();
   console.log("[OK]", "timed_and_shot_limited_revive", "timed revive grants 10 seconds with centered text and hidden ball while shot-limited revive keeps 10 balls at x=32");
+  runTimedTimeBonusBallSettlementCase();
+  console.log("[OK]", "timed_time_bonus_ball_settlement", "normal time bonus ball grants five seconds once for floating drop without an upper cap");
   runPreciseAimInventoryActivatesGuideCase();
   console.log("[OK]", "precise_aim_inventory_activates_guide", "precise aim inventory activates ricochet guide and consumes one item");
   runCollectedSkillPowerupsEmitInventoryEventsCase();
@@ -4508,6 +5059,8 @@ function main() {
   console.log("[OK]", "one_star_target_score", "uses the same one-star threshold policy as runtime scoring");
   runAuthoredOpeningShotQueueCase();
   console.log("[OK]", "authored_opening_shot_queue", "plays six authored colors in order and clears them on revive override");
+  runRandomShotColorStreakLimitCase();
+  console.log("[OK]", "random_shot_color_streak_limit", "random normal balls never select the same color more than twice in a row");
   runStoneBallJarScoreZeroCase();
   console.log("[OK]", "stone_ball_jar_score_zero", "stone ball in jar scores 0 and keeps total score");
   runJarCollectionFloatingScoreEventCase();
@@ -4520,6 +5073,8 @@ function main() {
   console.log("[OK]", "combo_matched_ball_score_display", "combo raises shattered-ball score and floating score display");
   runBallScoreDisplayGenerationCase();
   console.log("[OK]", "ball_score_display_generation", "stale score callbacks are isolated and same-id events display independently");
+  runTimeBonusFloatingScoreDisplayCase();
+  console.log("[OK]", "time_bonus_floating_score_display", "removed time bonus balls float +5 from their board positions exactly once");
   runJarFractionDisplayEventIdentityCase();
   console.log("[OK]", "jar_fraction_display_event_identity", "same-id jar score events display independently without replaying the same event");
   runJarFractionBundleUnloadCleanupCase();
@@ -4532,8 +5087,12 @@ function main() {
   console.log("[OK]", "bubble_break_sfx_count", "break sfx plays once per bubble_break event");
   runConfiguredAudioPreloadsArraySfxCase();
   console.log("[OK]", "configured_audio_array_sfx_preload", "array sfx paths are preloaded for immediate playback");
-  runJarBounceSfxMappingCase();
-  console.log("[OK]", "jar_bounce_sfx_mapping", "jar 1-5 rim bounces map to pao1-pao5");
+  runJarRimBounceAudioDisabledCase();
+  console.log("[OK]", "jar_rim_bounce_audio_disabled", "jar rim bounce remains observable but does not play SFX");
+  runNoEliminationSfxDisabledCase();
+  console.log("[OK]", "no_elimination_sfx_disabled", "shot_no_elimination remains silent while telemetry is preserved");
+  runWallBounceNoEliminationAudioCase();
+  console.log("[OK]", "wall_bounce_no_elimination_audio", "only bounced shots without elimination play hit_bucket");
   runIceThawRuntimeEventCase();
   console.log("[OK]", "ice_thaw_runtime_event", "successful ice thaw emits one counted runtime event");
   runBoardIntroViewportCase();

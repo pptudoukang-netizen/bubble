@@ -59,13 +59,12 @@ function validateGeometryAndContract() {
   );
   assert.strictEqual(geometry.x, 10);
   assert.strictEqual(geometry.y, 20);
-  assert.strictEqual(geometry.width, 19);
+  assert.strictEqual(geometry.width, 5);
   assert.strictEqual(geometry.height, 56);
   assert.ok(Math.abs(geometry.angle - 53.13010235415598) < 0.000001);
 
   var normalized = LightningChainRenderer.validatePlayConfig({
     chainId: "kelu-shot-18",
-    origin: { x: -120, y: -300 },
     hitPoints: [
       { id: "bubble-a", x: -80, y: 120 },
       { id: "bubble-b", x: 10, y: 170 },
@@ -83,14 +82,20 @@ function validateGeometryAndContract() {
   assertThrowsMessage(function () {
     LightningChainRenderer.validatePlayConfig({
       chainId: "empty",
-      origin: { x: 0, y: 0 },
       hitPoints: []
     });
-  }, /at least one hit point/);
+  }, /at least two hit points/);
+  assertThrowsMessage(function () {
+    LightningChainRenderer.validatePlayConfig({
+      chainId: "single",
+      hitPoints: [
+        { id: "only", x: 10, y: 0 }
+      ]
+    });
+  }, /at least two hit points/);
   assertThrowsMessage(function () {
     LightningChainRenderer.validatePlayConfig({
       chainId: "duplicate",
-      origin: { x: 0, y: 0 },
       hitPoints: [
         { id: "same", x: 10, y: 0 },
         { id: "same", x: 20, y: 0 }
@@ -100,9 +105,9 @@ function validateGeometryAndContract() {
   assertThrowsMessage(function () {
     LightningChainRenderer.validatePlayConfig({
       chainId: "zero-length",
-      origin: { x: 10, y: 10 },
       hitPoints: [
-        { id: "same-position", x: 10, y: 10 }
+        { id: "same-position-a", x: 10, y: 10 },
+        { id: "same-position-b", x: 10, y: 10 }
       ]
     });
   }, /length must be at least/);
@@ -124,6 +129,24 @@ function validateLevelRendererIntegration() {
       "LevelRenderer lightning integration is missing: " + requiredSource
     );
   });
+  assert.strictEqual(
+    levelRendererSource.indexOf("origin: config.origin"),
+    -1,
+    "Board lightning chain must start from the first authoritative hit point."
+  );
+
+  var assistRendererSource = readProjectFile("gameplay-src/render/LevelRendererAssistSpiritSkillMethods.js");
+  assert.strictEqual(
+    assistRendererSource.indexOf("Assist spirit lightning"),
+    -1,
+    "Assist spirit lightning must not inject the shooter origin."
+  );
+  var assistGameplaySource = readProjectFile("gameplay-src/core/GameManagerAssistSpiritSkillMethods.js");
+  assert.strictEqual(
+    assistGameplaySource.indexOf("plan.origin = clone(manager.systems.shooterController.origin)"),
+    -1,
+    "Authoritative lightning plan must contain targets only."
+  );
 
   var scaffoldSource = readProjectFile("gameplay-src/render/LevelRendererSceneScaffoldMethods.js");
   assert.ok(
@@ -133,6 +156,7 @@ function validateLevelRendererIntegration() {
 }
 
 function installCocosActionMock() {
+  var createdNodeNames = [];
   function MockSprite() {
     this.spriteFrame = null;
     this.sizeMode = null;
@@ -166,6 +190,7 @@ function installCocosActionMock() {
   }
 
   function MockNode(name) {
+    createdNodeNames.push(name);
     this.name = name;
     this.children = [];
     this.isValid = true;
@@ -276,6 +301,7 @@ function installCocosActionMock() {
       };
     }
   };
+  return createdNodeNames;
 }
 
 function buildMockSpriteFrameCache() {
@@ -290,13 +316,12 @@ function buildMockSpriteFrameCache() {
 }
 
 async function validateRuntimePlayback() {
-  installCocosActionMock();
+  var createdNodeNames = installCocosActionMock();
   var renderer = new LightningChainRenderer();
   var layer = new global.cc.Node("SkillFxLayer");
   var hitOrder = [];
   var result = await renderer.play(layer, buildMockSpriteFrameCache(), {
     chainId: "runtime-chain",
-    origin: { x: 0, y: -100 },
     hitPoints: [
       { id: "bubble-1", x: -50, y: 10 },
       { id: "bubble-2", x: 20, y: 70 },
@@ -311,6 +336,20 @@ async function validateRuntimePlayback() {
   assert.deepStrictEqual(result.completedHitIds, hitOrder);
   assert.strictEqual(result.cancelled, false);
   assert.strictEqual(result.reason, "completed");
+  assert.deepStrictEqual(
+    createdNodeNames.filter(function (name) {
+      return name.indexOf("LightningSegment_") === 0;
+    }),
+    ["LightningSegment_0", "LightningSegment_1"],
+    "A-B-C must create exactly the A→B and B→C lightning segments."
+  );
+  assert.deepStrictEqual(
+    createdNodeNames.filter(function (name) {
+      return name.indexOf("LightningRing_") === 0;
+    }),
+    ["LightningRing_0", "LightningRing_1", "LightningRing_2"],
+    "A-B-C must keep one centered impact presentation for every hit bubble."
+  );
   assert.strictEqual(renderer.isPlaying(), false);
   assert.strictEqual(layer.children.length, 0, "Completed lightning chain must remove its render root.");
 }

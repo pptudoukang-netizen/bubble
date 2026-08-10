@@ -4,6 +4,7 @@ var childProcess = require("child_process");
 var fs = require("fs");
 var path = require("path");
 
+var CampaignLevelGenerationConfig = require("./campaign-level-generation-config");
 var ReferenceDesign = require("./reference-levels-101-300-design");
 
 var PROJECT_ROOT = path.resolve(__dirname, "..");
@@ -47,6 +48,9 @@ function rewriteShotLimits() {
   for (var levelId = ReferenceDesign.FIRST_LEVEL_ID;
     levelId <= ReferenceDesign.LAST_LEVEL_ID;
     levelId += 1) {
+    if (CampaignLevelGenerationConfig.isTrappedSpriteRescueLevelId(levelId)) {
+      continue;
+    }
     parsed.rows[levelId - 1][parsed.shotLimitIndex] = String(ReferenceDesign.getShotLimit(levelId));
   }
   var output = parsed.headers.join(",") + "\n" + parsed.rows.map(function (cells) {

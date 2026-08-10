@@ -1,5 +1,7 @@
 "use strict";
 
+var CampaignLevelGenerationConfig = require("./campaign-level-generation-config");
+
 var FIRST_LEVEL_ID = 101;
 var LAST_LEVEL_ID = 300;
 var CALIBRATED_SHOT_LIMITS = [
@@ -42,7 +44,10 @@ CALIBRATED_SHOT_LIMITS.forEach(function (shotLimit, index) {
 
 function getShotLimit(levelId) {
   assertLevelId(levelId);
-  return CALIBRATED_SHOT_LIMITS[levelId - FIRST_LEVEL_ID];
+  return CampaignLevelGenerationConfig.applyClearanceRebalanceShotLimit(
+    levelId,
+    CALIBRATED_SHOT_LIMITS[levelId - FIRST_LEVEL_ID]
+  );
 }
 
 function assertTableRowMatchesDesign(tableRow) {
@@ -51,6 +56,20 @@ function assertTableRowMatchesDesign(tableRow) {
   }
   assertLevelId(tableRow.levelId);
   var expectedShotLimit = getShotLimit(tableRow.levelId);
+  if (CampaignLevelGenerationConfig.isTrappedSpriteRescueLevelId(tableRow.levelId)) {
+    var normalBallCount = Object.keys(tableRow.colorCounts).reduce(function (sum, color) {
+      return sum + tableRow.colorCounts[color];
+    }, 0);
+    var reactiveSpecialCounts = CampaignLevelGenerationConfig.getReactiveSpecialCounts(tableRow.levelId);
+    expectedShotLimit = CampaignLevelGenerationConfig.buildTrappedSpriteRescueShotLimit({
+      levelId: tableRow.levelId,
+      normalBallCount: normalBallCount,
+      rowCount: tableRow.rowCount,
+      iceCount: tableRow.specialCounts.ice,
+      baseSpecialCount: tableRow.specialCounts.stone + tableRow.specialCounts.blast + tableRow.specialCounts.rainbow,
+      reactiveSpecialCounts: reactiveSpecialCounts
+    });
+  }
   if (tableRow.shotLimit !== expectedShotLimit) {
     throw new Error(
       "Level " + tableRow.levelId + " shotLimit differs from calibrated design: expected " +

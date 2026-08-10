@@ -13,6 +13,7 @@ var RandomChallengeRules = require("../config/RandomChallengeRules");
 var LocalEditedLevelStore = require("../config/LocalEditedLevelStore");
 var MapEditorLevelPicker = require("../editor/MapEditorLevelPicker");
 var StarRatingPolicy = Shared.StarRatingPolicy;
+var AssistSpiritRescueConfig = require("../config/AssistSpiritRescueConfig");
 var hideGameCircleWelfareViewNode = Shared.hideGameCircleWelfareViewNode;
 var HIDDEN_UNLOCK_ALL_LEVELS_TAP_COUNT = 5;
 var HIDDEN_UNLOCK_ALL_LEVELS_WINDOW_MS = 2000;
@@ -29,6 +30,140 @@ function isWechatGameRuntime() {
     typeof cc.sys.WECHAT_GAME !== "undefined" &&
     cc.sys.platform === cc.sys.WECHAT_GAME
   );
+}
+
+function unlockAssistSpiritForCompletedRescueLevel(host, levelId) {
+  if (!host.currentLevelConfig || !host.currentLevelConfig.level) {
+    throw new Error("Assist spirit rescue unlock requires current level config.");
+  }
+  var level = host.currentLevelConfig.level;
+  if (level.levelId !== levelId) {
+    throw new Error("Assist spirit rescue unlock level id mismatches current config.");
+  }
+  if (level.levelType !== "trapped_sprite_rescue") {
+    return null;
+  }
+  if (!host.assistSpiritStore || typeof host.assistSpiritStore.buildUnlock !== "function") {
+    throw new Error("Assist spirit rescue unlock requires AssistSpiritStore.buildUnlock.");
+  }
+  if (typeof host.assistSpiritStore.load !== "function" || typeof host.assistSpiritStore.save !== "function") {
+    throw new Error("Assist spirit rescue unlock requires AssistSpiritStore load/save.");
+  }
+  if (!level.trappedSpriteRescue || typeof level.trappedSpriteRescue !== "object") {
+    throw new Error("Assist spirit rescue unlock requires trappedSpriteRescue config.");
+  }
+  var expectedSpiritId = AssistSpiritRescueConfig.requireSpiritIdByLevelId(levelId);
+  if (level.trappedSpriteRescue.spiritId !== expectedSpiritId) {
+    throw new Error(
+      "Assist spirit rescue unlock identity mismatch at level " + levelId +
+      ": expected " + expectedSpiritId + ", got " + level.trappedSpriteRescue.spiritId + "."
+    );
+  }
+  var result = host.assistSpiritStore.buildUnlock(
+    host.assistSpiritStore.load(),
+    expectedSpiritId
+  );
+  if (result.accepted === true) {
+    host.assistSpiritState = host.assistSpiritStore.save(result.state);
+    Logger.info("Assist spirit unlocked from rescue level", {
+      levelId: levelId,
+      spiritId: expectedSpiritId
+    });
+    return result;
+  }
+  if (result.reason !== "ALREADY_OWNED") {
+    throw new Error("Unsupported assist spirit rescue unlock rejection: " + result.reason);
+  }
+  host.assistSpiritState = result.state;
+  return result;
+}
+
+function resolveCurrentRescueSpiritId(host) {
+  if (!host || !host.currentLevelConfig || !host.currentLevelConfig.level) {
+    throw new Error("Rescue fragment reward requires current level config.");
+  }
+  var level = host.currentLevelConfig.level;
+  if (level.levelType !== "trapped_sprite_rescue") {
+    return null;
+  }
+  if (!Number.isInteger(level.levelId) || level.levelId <= 0) {
+    throw new Error("Rescue fragment reward requires positive current level id.");
+  }
+  if (!level.trappedSpriteRescue || typeof level.trappedSpriteRescue !== "object") {
+    throw new Error("Rescue fragment reward requires trappedSpriteRescue config.");
+  }
+  var expectedSpiritId = AssistSpiritRescueConfig.requireSpiritIdByLevelId(level.levelId);
+  if (level.trappedSpriteRescue.spiritId !== expectedSpiritId) {
+    throw new Error("Rescue fragment reward identity does not match rescue schedule.");
+  }
+  return expectedSpiritId;
+}
+
+function resolveFirstClearRescueFragmentReward(host, isFirstCompletion) {
+  if (typeof isFirstCompletion !== "boolean") {
+    throw new Error("Rescue fragment reward requires first-completion flag.");
+  }
+  if (!isFirstCompletion) {
+    return null;
+  }
+  var spiritId = resolveCurrentRescueSpiritId(host);
+  if (spiritId === null) {
+    return null;
+  }
+  if (!host.assistSpiritStore || typeof host.assistSpiritStore.load !== "function") {
+    throw new Error("Rescue fragment reward requires AssistSpiritStore.load.");
+  }
+  var state = host.assistSpiritStore.load();
+  if (!state || !state.spirits || !state.spirits[spiritId] || typeof state.spirits[spiritId].owned !== "boolean") {
+    throw new Error("Rescue fragment reward requires valid assist spirit ownership state.");
+  }
+  if (state.spirits[spiritId].owned !== true) {
+    return null;
+  }
+  return {
+    id: "spirit_fragment",
+    spiritId: spiritId,
+    count: AssistSpiritRescueConfig.FIRST_CLEAR_FRAGMENT_REWARD_COUNT
+  };
+}
+
+function grantRescueFragmentReward(host, rewardItem) {
+  if (!rewardItem || rewardItem.id !== "spirit_fragment") {
+    throw new Error("Rescue fragment reward item is invalid.");
+  }
+  if (typeof rewardItem.spiritId !== "string" || rewardItem.spiritId.length === 0) {
+    throw new Error("Rescue fragment reward requires spirit id.");
+  }
+  if (!Number.isInteger(rewardItem.count) || rewardItem.count <= 0) {
+    throw new Error("Rescue fragment reward count must be positive integer.");
+  }
+  if (
+    !host.assistSpiritStore ||
+    typeof host.assistSpiritStore.load !== "function" ||
+    typeof host.assistSpiritStore.buildAddFragments !== "function" ||
+    typeof host.assistSpiritStore.save !== "function"
+  ) {
+    throw new Error("Rescue fragment reward requires AssistSpiritStore load/add/save.");
+  }
+  var grant = host.assistSpiritStore.buildAddFragments(
+    host.assistSpiritStore.load(),
+    rewardItem.spiritId,
+    rewardItem.count
+  );
+  if (
+    !grant ||
+    grant.accepted !== true ||
+    grant.spiritId !== rewardItem.spiritId ||
+    grant.gained !== rewardItem.count
+  ) {
+    throw new Error("Rescue fragment reward grant result is invalid.");
+  }
+  host.assistSpiritState = host.assistSpiritStore.save(grant.state);
+  return {
+    id: "spirit_fragment",
+    spiritId: grant.spiritId,
+    count: grant.gained
+  };
 }
 
 function requireNonEmptyString(value, fieldName) {
@@ -202,28 +337,45 @@ function mergeRewardItemsById(rewardItems, description) {
     throw new Error(description + " reward items must be an array.");
   }
 
-  var itemIds = [];
-  var countsById = {};
+  var itemKeys = [];
+  var countsByKey = {};
+  var itemsByKey = {};
   rewardItems.forEach(function (item, index) {
     if (!item || typeof item !== "object" || Array.isArray(item)) {
       throw new Error(description + " reward item must be object at index " + index + ".");
     }
-    if (item.id !== "coin" && item.id !== "stamina") {
+    if (item.id !== "coin" && item.id !== "stamina" && item.id !== "spirit_fragment") {
       throw new Error(description + " unsupported reward item id: " + item.id);
     }
     var count = requirePositiveInteger(item.count, description + " reward item count: " + item.id);
-    if (!Object.prototype.hasOwnProperty.call(countsById, item.id)) {
-      countsById[item.id] = 0;
-      itemIds.push(item.id);
+    var itemKey = item.id;
+    if (item.id === "spirit_fragment") {
+      if (typeof item.spiritId !== "string" || item.spiritId.length === 0) {
+        throw new Error(description + " spirit fragment reward requires spiritId.");
+      }
+      itemKey += ":" + item.spiritId;
     }
-    countsById[item.id] += count;
+    if (!Object.prototype.hasOwnProperty.call(countsByKey, itemKey)) {
+      countsByKey[itemKey] = 0;
+      itemKeys.push(itemKey);
+      itemsByKey[itemKey] = {
+        id: item.id,
+        spiritId: item.id === "spirit_fragment" ? item.spiritId : undefined
+      };
+    }
+    countsByKey[itemKey] += count;
   });
 
-  return itemIds.map(function (itemId) {
-    return {
-      id: itemId,
-      count: countsById[itemId]
+  return itemKeys.map(function (itemKey) {
+    var item = itemsByKey[itemKey];
+    var merged = {
+      id: item.id,
+      count: countsByKey[itemKey]
     };
+    if (item.id === "spirit_fragment") {
+      merged.spiritId = item.spiritId;
+    }
+    return merged;
   });
 }
 
@@ -409,21 +561,22 @@ module.exports = {
         this._ensureGameCircleEntryButton();
       }
       this._maybeAutoShowSignInView();
-      this._playLevelSelectBackgroundMusic();
-      this._setStatus("Please select a level");
-      this._logAssetManagerStats("level_select");
-      if (prepareLevelId !== null) {
-        if (typeof this._showStartGameView !== "function") {
-          throw new Error("Level select prepare requires StartGameView entry method.");
+      return this._playLevelSelectBackgroundMusic().then(function () {
+        this._setStatus("Please select a level");
+        this._logAssetManagerStats("level_select");
+        if (prepareLevelId !== null) {
+          if (typeof this._showStartGameView !== "function") {
+            throw new Error("Level select prepare requires StartGameView entry method.");
+          }
+          Promise.resolve().then(function () {
+            return this._showStartGameView(prepareLevelId);
+          }.bind(this)).catch(function (error) {
+            Logger.error("Show prepared StartGameView failed", error && error.stack ? error.stack : String(error));
+            throw error;
+          });
         }
-        Promise.resolve().then(function () {
-          return this._showStartGameView(prepareLevelId);
-        }.bind(this)).catch(function (error) {
-          Logger.error("Show prepared StartGameView failed", error && error.stack ? error.stack : String(error));
-          throw error;
-        });
-      }
-      return null;
+        return null;
+      }.bind(this));
     }.bind(this)).catch(function (error) {
       this.isSelectingLevel = true;
       this.currentLevelConfig = null;
@@ -719,6 +872,9 @@ module.exports = {
       isLevelCompleted: this._isLevelCompleted.bind(this),
       staminaValue: this._getCurrentStamina(),
       coinValue: this._getCurrentCoins(),
+      gemValue: this._getCurrentGems(),
+      showGemRewardVideoIcon: this._isLevelSelectGemRewardAvailable(),
+      onClaimGemReward: this._onLevelSelectGemRewardAdTap.bind(this),
       dailyChallengeAttemptCount: this._getDailyChallengeAttemptCount(),
       showTestLevelButton: isAllLevelsTemporarilyUnlocked(this),
       onOpenSettings: this._onLevelSelectSettingTap.bind(this),
@@ -733,6 +889,8 @@ module.exports = {
       onQuickStart: this._onLevelSelectQuickStartTap.bind(this),
       onRandomChallenge: this._onLevelSelectRandomChallengeTap.bind(this),
       onTestLevel: this._onLevelSelectTestTap.bind(this),
+      onTrappedSpriteTest: this._onLevelSelectTrappedSpriteTestTap.bind(this),
+      onBoardOcclusionTest: this._onLevelSelectBoardOcclusionTestTap.bind(this),
       onLocalEditedLevel: this._onLevelSelectLocalEditedLevelTap.bind(this),
       onBackToCurrentLevel: this._onLevelSelectBackToCurrentLevelTap.bind(this)
     });
@@ -845,12 +1003,20 @@ module.exports = {
         this._currentLevelAwardedClearRewardItems = this._grantRandomChallengeRewardItems(collectionRewardCompleted);
       } else {
         var isFirstCompletion = !this._isLevelCompleted(this._currentLevelId);
+        var rescueFragmentReward = this._currentLevelEnteredByTestUnlock === true
+          ? null
+          : resolveFirstClearRescueFragmentReward(this, isFirstCompletion);
         this._recordCurrentLevelWin(snapshot);
         var clearRewardItems = this._currentLevelEnteredByTestUnlock === true
           ? []
           : this._grantCurrentLevelClearRewardItems(isFirstCompletion, collectionRewardCompleted);
+        var awardedRescueFragmentReward = rescueFragmentReward === null
+          ? []
+          : [grantRescueFragmentReward(this, rescueFragmentReward)];
         this._currentLevelAwardedClearRewardItems = mergeRewardItemsById(
-          clearRewardItems.concat(this._grantFirstAttemptClearStaminaReward(isFirstCompletion)),
+          clearRewardItems
+            .concat(this._grantFirstAttemptClearStaminaReward(isFirstCompletion))
+            .concat(awardedRescueFragmentReward),
           "Level clear awarded"
         );
       }
@@ -960,6 +1126,7 @@ module.exports = {
     var score = resolveWinSnapshotScore(snapshot);
     this.levelProgress = this.levelProgressStore.recordCompletion(this.levelProgress, this._currentLevelId, stars, score);
     this.levelProgressStore.save(this.levelProgress);
+    unlockAssistSpiritForCompletedRescueLevel(this, this._currentLevelId);
     if (isWechatGameRuntime()) {
       this._submitWorldLeaderboardProgressAfterLevelClear();
     } else {
@@ -1111,6 +1278,86 @@ module.exports = {
       this._setStatus("Load level_test failed. Check console logs.");
       throw error;
     }.bind(this));
+  },
+
+  _startTrappedSpriteTestLevelEntry: function () {
+    if (!this.levelManager || typeof this.levelManager.loadTrappedSpriteTestLevel !== "function") {
+      throw new Error("Trapped sprite test entry requires LevelManager.loadTrappedSpriteTestLevel.");
+    }
+    if (!Array.isArray(this._pendingStartGamePowerups)) {
+      throw new Error("Trapped sprite test entry requires pending StartGameView powerups array.");
+    }
+    this._pendingStartGamePowerups = [];
+    this._pendingStartGamePreciseAimActivation = false;
+    this.isRestarting = true;
+    this._setStatus("Loading level_trapped_sprite_test...");
+    return this.levelManager.loadTrappedSpriteTestLevel().then(function (levelConfig) {
+      if (!levelConfig || !levelConfig.level || !Number.isInteger(levelConfig.level.levelId) || levelConfig.level.levelId <= 0) {
+        throw new Error("level_trapped_sprite_test requires a positive integer level.levelId.");
+      }
+      this._pendingPreparedLevelConfig = {
+        levelId: levelConfig.level.levelId,
+        levelConfig: levelConfig
+      };
+      return this._loadLevelById(
+        levelConfig.level.levelId,
+        "Trapped sprite test level started",
+        "Load level_trapped_sprite_test failed. Check console logs.",
+        { mode: "test", testSource: "trapped_sprite" }
+      );
+    }.bind(this)).catch(function (error) {
+      this.isRestarting = false;
+      this._setStatus("Load level_trapped_sprite_test failed. Check console logs.");
+      throw error;
+    }.bind(this));
+  },
+
+  _onLevelSelectTrappedSpriteTestTap: function () {
+    if (this.isRestarting) {
+      return;
+    }
+    this._playSfx("uiClick");
+    this._startTrappedSpriteTestLevelEntry();
+  },
+
+  _startBoardOcclusionTestLevelEntry: function () {
+    if (!this.levelManager || typeof this.levelManager.loadBoardOcclusionTestLevel !== "function") {
+      throw new Error("Board occlusion test entry requires LevelManager.loadBoardOcclusionTestLevel.");
+    }
+    if (!Array.isArray(this._pendingStartGamePowerups)) {
+      throw new Error("Board occlusion test entry requires pending StartGameView powerups array.");
+    }
+    this._pendingStartGamePowerups = [];
+    this._pendingStartGamePreciseAimActivation = false;
+    this.isRestarting = true;
+    this._setStatus("Loading level_board_occlusion_test...");
+    return this.levelManager.loadBoardOcclusionTestLevel().then(function (levelConfig) {
+      if (!levelConfig || !levelConfig.level || !Number.isInteger(levelConfig.level.levelId) || levelConfig.level.levelId <= 0) {
+        throw new Error("level_board_occlusion_test requires a positive integer level.levelId.");
+      }
+      this._pendingPreparedLevelConfig = {
+        levelId: levelConfig.level.levelId,
+        levelConfig: levelConfig
+      };
+      return this._loadLevelById(
+        levelConfig.level.levelId,
+        "Board occlusion test level started",
+        "Load level_board_occlusion_test failed. Check console logs.",
+        { mode: "test", testSource: "board_occlusion" }
+      );
+    }.bind(this)).catch(function (error) {
+      this.isRestarting = false;
+      this._setStatus("Load level_board_occlusion_test failed. Check console logs.");
+      throw error;
+    }.bind(this));
+  },
+
+  _onLevelSelectBoardOcclusionTestTap: function () {
+    if (this.isRestarting) {
+      return;
+    }
+    this._playSfx("uiClick");
+    this._startBoardOcclusionTestLevelEntry();
   },
 
   _onLevelSelectTestTap: function () {
@@ -1426,6 +1673,7 @@ module.exports = {
         this._prepareRouteEditorForLevel(levelConfig, this._currentLevelId);
         return this.levelRenderer.syncBoardLayoutHudBottomLineAsync().then(function () {
           this._applyBoardTuningFromProperties();
+          this._syncEquippedAssistSpiritToGameManager();
           var snapshot = this.gameManager.startLevel(
             levelConfig,
             BootstrapShared.buildBoardOcclusionStartContext(this, levelConfig, this._currentRunContext)
@@ -1455,22 +1703,23 @@ module.exports = {
       this._renderRouteEditor();
       this._refreshRouteEditorButtons();
       this._setStatus(this._formatStatus(levelConfig, snapshot));
-      this._playGameplayBackgroundMusic();
-      Logger.info("Random challenge started", {
-        seed: run.seed,
-        difficultyTier: run.difficultyTier,
-        configHash: run.configHash
-      });
-      this._logAssetManagerStats("gameplay");
-      this.levelRenderer.setGameplayInteractionEnabled(false);
-      return this._runGameEntryCountdown().then(function () {
-        this.levelRenderer.setGameplayInteractionEnabled(true);
-        this.isRestarting = false;
-        this._setDropTestButtonVisible(true);
-        this._syncSpecialIntroduceForRuntimeSnapshot(snapshot);
-        this._syncGeniusTipsForRuntimeSnapshot(snapshot);
-        this._syncSartTipsForRuntimeSnapshot(snapshot);
-        return null;
+      return this._playGameplayBackgroundMusic(levelConfig).then(function () {
+        Logger.info("Random challenge started", {
+          seed: run.seed,
+          difficultyTier: run.difficultyTier,
+          configHash: run.configHash
+        });
+        this._logAssetManagerStats("gameplay");
+        this.levelRenderer.setGameplayInteractionEnabled(false);
+        return this._runGameEntryCountdown().then(function () {
+          this.levelRenderer.setGameplayInteractionEnabled(true);
+          this.isRestarting = false;
+          this._setDropTestButtonVisible(true);
+          this._syncSpecialIntroduceForRuntimeSnapshot(snapshot);
+          this._syncGeniusTipsForRuntimeSnapshot(snapshot);
+          this._syncSartTipsForRuntimeSnapshot(snapshot);
+          return null;
+        }.bind(this));
       }.bind(this));
     }.bind(this)).catch(function (error) {
       this.isRestarting = false;

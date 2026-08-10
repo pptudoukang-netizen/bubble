@@ -8,6 +8,7 @@ var GeniusTipsViewController = require("../ui/GeniusTipsViewController");
 var SartTipsViewController = require("../ui/SartTipsViewController");
 var BoardLayout = require("../config/BoardLayout");
 var PropDescriptionConfig = require("../config/PropDescriptionConfig");
+var AssistSpiritConfig = require("../config/AssistSpiritConfig");
 
 var INTRODUCE_VIEW_PREFAB_PATH = "prefabs/ui/IntroduceView";
 var GENIUS_TIPS_VIEW_PREFAB_PATH = "prefabs/ui/GeniusTipsView";
@@ -19,6 +20,9 @@ var SART_TIPS_VIEW_Z_INDEX = 535;
 var GENIUS_TIPS_INTRODUCE_KEY = "genius_tips";
 var SART_TIPS_INTRODUCE_KEY = "top_slot_star_tips";
 var SNOW_RULE_INTRODUCE_KEY = "ice_snowball";
+var TRAPPED_SPRITE_RESCUE_INTRODUCE_KEY = "trapped_sprite_rescue";
+var TRAPPED_SPRITE_RESCUE_LEVEL_TYPE = "trapped_sprite_rescue";
+var TRAPPED_SPRITE_RESOURCE_PREFIX = "game/trapped_spirit/";
 var PROP_TIPS_TITLE_MODE_RULE = "rule";
 var INTRODUCE_ORDER = PropDescriptionConfig.SPECIAL_ORDER;
 var INTRODUCE_DEFINITIONS = PropDescriptionConfig.SPECIAL_DEFINITIONS;
@@ -33,6 +37,43 @@ function requireDefinition(key) {
     throw new Error("Special introduce definition missing: " + key);
   }
   return INTRODUCE_DEFINITIONS[key];
+}
+
+function buildTrappedSpriteRescueIntroduceDefinition(levelConfig) {
+  if (!levelConfig || typeof levelConfig !== "object" || Array.isArray(levelConfig)) {
+    throw new Error("Trapped sprite rescue introduce requires current level config.");
+  }
+  if (!levelConfig.level || typeof levelConfig.level !== "object" || Array.isArray(levelConfig.level)) {
+    throw new Error("Trapped sprite rescue introduce requires current level config.level.");
+  }
+
+  var level = levelConfig.level;
+  if (level.levelType !== TRAPPED_SPRITE_RESCUE_LEVEL_TYPE) {
+    return null;
+  }
+  if (!level.trappedSpriteRescue || typeof level.trappedSpriteRescue !== "object" || Array.isArray(level.trappedSpriteRescue)) {
+    throw new Error("Trapped sprite rescue introduce requires level.trappedSpriteRescue.");
+  }
+
+  var spirit = AssistSpiritConfig.getSpirit(level.trappedSpriteRescue.spiritId);
+  return {
+    title: "营救关",
+    summary: spirit.displayName + "被困在棋盘中心，清空周围泡泡即可完成营救。",
+    effectTitle: "营救规则",
+    effectDescription: "被困精灵是唯一支撑点；命中精灵后，发射球会吸附到相邻空格。清空棋盘即可救出精灵。",
+    iconPath: TRAPPED_SPRITE_RESOURCE_PREFIX + spirit.id
+  };
+}
+
+function resolveIntroduceDefinition(key, levelConfig) {
+  if (key === TRAPPED_SPRITE_RESCUE_INTRODUCE_KEY) {
+    var rescueDefinition = buildTrappedSpriteRescueIntroduceDefinition(levelConfig);
+    if (rescueDefinition === null) {
+      throw new Error("Trapped sprite rescue introduce key requires a rescue level.");
+    }
+    return rescueDefinition;
+  }
+  return requireDefinition(key);
 }
 
 function requireSnowRuleTipsText(definition) {
@@ -81,9 +122,16 @@ function resolveIntroduceKeyForCell(cell) {
   throw new Error("Special introduce unsupported entityType: " + cell.entityType);
 }
 
-function collectIntroduceKeys(snapshot) {
+function collectIntroduceKeys(snapshot, levelConfig) {
   var safeSnapshot = requireRuntimeSnapshot(snapshot);
   var presentKeys = {};
+  var rescueDefinition = buildTrappedSpriteRescueIntroduceDefinition(levelConfig);
+  if (rescueDefinition !== null) {
+    presentKeys[TRAPPED_SPRITE_RESCUE_INTRODUCE_KEY] = true;
+  }
+  if (safeSnapshot.timedLevel === true) {
+    presentKeys.time_bonus = true;
+  }
   var objectives = safeSnapshot.objectives;
   if (objectives && typeof objectives === "object" && objectives.type === "collect_ice_snowball") {
     presentKeys.ice_snowball = true;
@@ -96,7 +144,7 @@ function collectIntroduceKeys(snapshot) {
     }
   });
 
-  return INTRODUCE_ORDER.filter(function (key) {
+  return [TRAPPED_SPRITE_RESCUE_INTRODUCE_KEY].concat(INTRODUCE_ORDER).filter(function (key) {
     return presentKeys[key] === true;
   });
 }
@@ -332,7 +380,7 @@ module.exports = {
       throw new Error("Special introduce queue must be an array.");
     }
     var store = requireStore(this);
-    var keys = collectIntroduceKeys(snapshot);
+    var keys = collectIntroduceKeys(snapshot, this.currentLevelConfig);
     var appended = false;
     keys.forEach(function (key) {
       if (
@@ -419,7 +467,7 @@ module.exports = {
   },
 
   _showSpecialIntroduceView: function (key) {
-    var definition = requireDefinition(key);
+    var definition = resolveIntroduceDefinition(key, this.currentLevelConfig);
     if (key === SNOW_RULE_INTRODUCE_KEY) {
       return this._showSnowRuleTipsView(key, definition);
     }

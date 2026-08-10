@@ -67,6 +67,7 @@ var START_GAME_COLLECTION_OBJECTIVE_TYPES = {
   collect_color: true,
   collect_ice_snowball: true
 };
+var TRAPPED_SPRITE_RESCUE_LEVEL_TYPE = "trapped_sprite_rescue";
 var START_GAME_NATIVE_TEMPLATE_AD_SHOW_DELAY_SEC = 0.3;
 var START_GAME_AD_LOG_LABEL = "StartGameAd";
 var START_GAME_PROP_DESCRIPTION_VIEW_Z_INDEX = 350;
@@ -279,6 +280,7 @@ function buildStartGameObjectiveEntry(objective) {
 }
 
 function buildStartGameObjectives(levelConfig) {
+  var level = getLevelBody(levelConfig);
   var objectives = getStartGameObjectiveList(levelConfig);
   var ballObjective = null;
   var iceSnowballObjective = null;
@@ -304,7 +306,11 @@ function buildStartGameObjectives(levelConfig) {
     }
   }
 
-  if (!ballObjective && !iceSnowballObjective) {
+  if (
+    !ballObjective &&
+    !iceSnowballObjective &&
+    level.levelType !== TRAPPED_SPRITE_RESCUE_LEVEL_TYPE
+  ) {
     throw new Error("StartGameView requires at least one collection objective.");
   }
 
@@ -909,7 +915,13 @@ module.exports = {
       this.levelRenderer.refreshRuntime(this.currentLevelConfig, snapshot);
 
       if (useResult && useResult.accepted) {
-        this._consumePersistentInventoryItemForPowerup("snow_removal");
+        var isBoardOcclusionTest =
+          this._currentRunContext &&
+          this._currentRunContext.mode === "test" &&
+          this._currentRunContext.testSource === "board_occlusion";
+        if (!isBoardOcclusionTest) {
+          this._consumePersistentInventoryItemForPowerup("snow_removal");
+        }
         return;
       }
 
@@ -1762,6 +1774,12 @@ module.exports = {
             this._playSfx("uiClick");
             return this._purchaseStartGamePowerup(itemId);
           }.bind(this),
+          onEquipSpirit: function (spiritId) {
+            if (this._equipSelectedSpirit(spiritId) !== true) {
+              throw new Error("StartGameView equip must succeed for an unlocked assist spirit: " + spiritId);
+            }
+            return this._renderStartGameView();
+          }.bind(this),
           onOpenPropDescription: function () {
             this._playSfx("uiClick");
             return this._showStartGamePropDescriptionView();
@@ -1782,6 +1800,12 @@ module.exports = {
       this._startGameViewController.onPurchasePowerup = function (itemId) {
         this._playSfx("uiClick");
         return this._purchaseStartGamePowerup(itemId);
+      }.bind(this);
+      this._startGameViewController.onEquipSpirit = function (spiritId) {
+        if (this._equipSelectedSpirit(spiritId) !== true) {
+          throw new Error("StartGameView equip must succeed for an unlocked assist spirit: " + spiritId);
+        }
+        return this._renderStartGameView();
       }.bind(this);
       this._startGameViewController.onOpenPropDescription = function () {
         this._playSfx("uiClick");
@@ -1811,12 +1835,21 @@ module.exports = {
       throw new Error("StartGameView level config is required before rendering.");
     }
 
+    var level = getLevelBody(this._startGameLevelConfig);
     this._refreshPlayerInventory();
+    if (!this.assistSpiritStore || typeof this.assistSpiritStore.load !== "function") {
+      throw new Error("StartGameView requires AssistSpiritStore.load.");
+    }
+    this.assistSpiritState = this.assistSpiritStore.load();
     return this._startGameViewController.render({
       levelId: normalizeStartGameLevelId(this._startGameLevelId),
       staminaCost: LEVEL_ENTRY_STAMINA_COST,
       oneStarTargetScore: StarRatingPolicy.resolveOneStarTargetScore(this._startGameLevelConfig),
+      playMode: level.playMode,
+      levelType: level.levelType,
+      timeLimitSeconds: level.timeLimitSeconds,
       inventory: this.playerInventory,
+      assistSpiritState: this.assistSpiritState,
       objectives: buildStartGameObjectives(this._startGameLevelConfig),
       showAwardTips: shouldShowFirstClearAwardTips(this, this._startGameLevelId),
       selectedItems: this._pendingStartGamePowerups,

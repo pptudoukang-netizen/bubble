@@ -10,7 +10,7 @@ var PROJECT_ROOT = path.resolve(__dirname, "..");
 var TABLE_PATH = path.join(PROJECT_ROOT, "LEVEL_CONFIG_TABLE_1_1000.csv");
 var GENERATOR_PATH = path.join(__dirname, "generate-1000-level-configs.js");
 var EXPECTED_HEADERS = [
-  "关卡", "蓝球", "红球", "绿球", "黄球", "紫球", "总行数",
+  "关卡", "蓝球", "红球", "绿球", "黄球", "紫球", "橙球", "黑球", "白球", "总行数",
   "石头", "雪块", "炸弹", "彩虹球", "燃烧瓶",
   "蓝分裂球", "红分裂球", "绿分裂球", "黄分裂球", "紫分裂球",
   "钥匙", "锁定球", "收集目标1", "收集目标2", "发射球数量", "通关率"
@@ -68,6 +68,9 @@ function buildTableCells(spec) {
     spec.colorCounts.G,
     spec.colorCounts.Y,
     spec.colorCounts.P,
+    spec.colorCounts.O,
+    spec.colorCounts.K,
+    spec.colorCounts.W,
     spec.rowCount,
     spec.specialCounts.stone,
     spec.specialCounts.ice,

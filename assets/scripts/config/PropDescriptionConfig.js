@@ -1,6 +1,7 @@
 "use strict";
 
 var SPECIAL_ORDER = [
+  "time_bonus",
   "ice",
   "splitter",
   "swirl",
@@ -14,6 +15,14 @@ var SPECIAL_ORDER = [
 ];
 
 var SPECIAL_DEFINITIONS = {
+  time_bonus: {
+    title: "加时球",
+    description: "消除加时球可为计时关额外增加 5 秒。",
+    summary: "加时球消除后会立即增加 5 秒，帮你争取更多通关时间。",
+    effectTitle: "时间奖励",
+    effectDescription: "优先消除加时球，延长倒计时并获得更多操作空间。",
+    iconPath: "ui/image/preview_balls/time_ball"
+  },
   ice: {
     title: "冰冻球",
     description: "带有冰壳，需要先击破冰层，内部颜色球才能参与匹配消除。",

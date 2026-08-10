@@ -79,7 +79,8 @@ var QUICK_START_BUTTON_BREATH_DOWN_DURATION = 0.54;
 var LEVEL_SELECT_IDLE_ANIMATIONS_ENABLED = false;
 var TOP_RESOURCE_ICON_PATHS = {
   stamina: "map/image/props/love",
-  coin: "map/image/props/coin"
+  coin: "map/image/props/coin",
+  gem: "map/image/props/gem_icon"
 };
 var DAILY_CHALLENGE_ATTEMPT_TASK_ID = "challenge_attempt_10";
 
@@ -143,7 +144,8 @@ function hasTopResourceIconFrames() {
   return !!(
     topResourceIconFrames &&
     hasValidSpriteFrame(topResourceIconFrames.stamina) &&
-    hasValidSpriteFrame(topResourceIconFrames.coin)
+    hasValidSpriteFrame(topResourceIconFrames.coin) &&
+    hasValidSpriteFrame(topResourceIconFrames.gem)
   );
 }
 
@@ -158,11 +160,13 @@ function ensureTopResourceIconFrames() {
 
   topResourceIconLoadPromise = Promise.all([
     loadRequiredSpriteFrame(TOP_RESOURCE_ICON_PATHS.stamina, "LevelView stamina icon"),
-    loadRequiredSpriteFrame(TOP_RESOURCE_ICON_PATHS.coin, "LevelView coin icon")
+    loadRequiredSpriteFrame(TOP_RESOURCE_ICON_PATHS.coin, "LevelView coin icon"),
+    loadRequiredSpriteFrame(TOP_RESOURCE_ICON_PATHS.gem, "LevelView gem icon")
   ]).then(function (results) {
     topResourceIconFrames = {
       stamina: cacheSpriteFrame(results[0], "LevelView stamina icon"),
-      coin: cacheSpriteFrame(results[1], "LevelView coin icon")
+      coin: cacheSpriteFrame(results[1], "LevelView coin icon"),
+      gem: cacheSpriteFrame(results[2], "LevelView gem icon")
     };
     topResourceIconLoadPromise = null;
     return topResourceIconFrames;
@@ -190,6 +194,7 @@ function releaseMapBundleAssets() {
 
   validateCachedSpriteFrameBeforeBundleRelease(topResourceIconFrames.stamina, "LevelView stamina icon");
   validateCachedSpriteFrameBeforeBundleRelease(topResourceIconFrames.coin, "LevelView coin icon");
+  validateCachedSpriteFrameBeforeBundleRelease(topResourceIconFrames.gem, "LevelView gem icon");
   topResourceIconFrames = null;
 }
 
@@ -1232,9 +1237,25 @@ function rebindTopResourceSprites(levelView) {
   var loveIconNode = requireNode(loveBgNode, "love_icon", "LevelView love_bg");
   var goldInfoNode = requireNode(topLayerNode, "gold_info", "LevelView top_layer");
   var coinIconNode = requireNode(goldInfoNode, "icon", "LevelView gold_info");
+  var gemInfoNode = requireNode(topLayerNode, "gem_info", "LevelView top_layer");
+  var gemIconNode = requireNode(gemInfoNode, "icon", "LevelView gem_info");
 
   requireSprite(loveIconNode, "LevelView love_icon").spriteFrame = topResourceIconFrames.stamina;
   requireSprite(coinIconNode, "LevelView gold icon").spriteFrame = topResourceIconFrames.coin;
+  requireSprite(gemIconNode, "LevelView gem icon").spriteFrame = topResourceIconFrames.gem;
+}
+
+function updateGemRewardVideoIcon(levelView, visible) {
+  if (!levelView || !levelView.isValid) {
+    throw new Error("LevelSelectView requires a valid level view before updating gem reward video icon.");
+  }
+  if (typeof visible !== "boolean") {
+    throw new Error("LevelView gem reward video icon visibility must be boolean.");
+  }
+  var topLayerNode = resolveTopLayerNode(levelView);
+  var gemInfoNode = requireNode(topLayerNode, "gem_info", "LevelView top_layer");
+  var videoIconNode = requireNode(gemInfoNode, "vido_icon", "LevelView gem_info");
+  videoIconNode.active = visible;
 }
 
 function updateTopStatus(levelView, options) {
@@ -1245,6 +1266,15 @@ function updateTopStatus(levelView, options) {
   options = options || {};
   var staminaValue = Math.max(0, Math.floor(Number(options.staminaValue) || 0));
   var coinValue = Math.max(0, Math.floor(Number(options.coinValue) || 0));
+  var gemValue = requireNonNegativeInteger(options.gemValue, "LevelView gemValue");
+  if (typeof options.showGemRewardVideoIcon !== "boolean") {
+    throw new Error("LevelSelectView requires boolean showGemRewardVideoIcon.");
+  }
+  var showGemRewardVideoIcon = options.showGemRewardVideoIcon;
+  if (typeof options.onClaimGemReward !== "function") {
+    throw new Error("LevelSelectView requires onClaimGemReward.");
+  }
+  var onClaimGemReward = options.onClaimGemReward;
   var dailyChallengeAttemptCount = requireNonNegativeInteger(
     options.dailyChallengeAttemptCount,
     "LevelView dailyChallengeAttemptCount"
@@ -1281,10 +1311,17 @@ function updateTopStatus(levelView, options) {
   rebindTopResourceSprites(levelView);
   var loveNode = topLayerNode ? topLayerNode.getChildByName("love_info") : null;
   var goldNode = topLayerNode ? topLayerNode.getChildByName("gold_info") : null;
+  var gemInfoNode = requireNode(topLayerNode, "gem_info", "LevelView top_layer");
   var staminaLabelNode = loveNode ? loveNode.getChildByName("love") : null;
   var coinLabelNode = goldNode ? goldNode.getChildByName("gold") : null;
+  var gemLabelNode = requireNode(gemInfoNode, "gem", "LevelView gem_info");
+  var gemRewardVideoIconNode = requireNode(gemInfoNode, "vido_icon", "LevelView gem_info");
   var staminaLabel = staminaLabelNode ? staminaLabelNode.getComponent(cc.Label) : null;
   var coinLabel = coinLabelNode ? coinLabelNode.getComponent(cc.Label) : null;
+  var gemLabel = gemLabelNode.getComponent(cc.Label);
+  if (!gemLabel) {
+    throw new Error("LevelView gem_info/gem requires cc.Label.");
+  }
 
   if (staminaLabel) {
     setDynamicLabelString(staminaLabel, staminaValue, "LevelView stamina label");
@@ -1292,6 +1329,14 @@ function updateTopStatus(levelView, options) {
   if (coinLabel) {
     setDynamicLabelString(coinLabel, coinValue, "LevelView coin label");
   }
+  setDynamicLabelString(gemLabel, gemValue, "LevelView gem label");
+  updateGemRewardVideoIcon(levelView, showGemRewardVideoIcon);
+  bindNamedButtonTap(
+    gemRewardVideoIconNode,
+    "__gemRewardVideoTapBound",
+    "__onClaimGemReward",
+    onClaimGemReward
+  );
 
   var bottomLayerNode = levelView.getChildByName("bottom_layer");
   bindNamedButtonTap(
@@ -1503,6 +1548,84 @@ function bindLocalEditedLevelButton(levelView, onLocalEditedLevel, showTestLevel
   );
 }
 
+function bindTrappedSpriteTestButton(levelView, onTrappedSpriteTest, showTestLevelButton) {
+  if (typeof onTrappedSpriteTest !== "function") {
+    throw new Error("LevelSelectView requires onTrappedSpriteTest.");
+  }
+  if (typeof showTestLevelButton !== "boolean") {
+    throw new Error("LevelSelectView trapped sprite test button requires boolean showTestLevelButton.");
+  }
+  var testLevelButtonNode = findChildByNameRecursive(levelView, "test_btn");
+  if (!testLevelButtonNode || !testLevelButtonNode.isValid || !testLevelButtonNode.parent) {
+    throw new Error("LevelSelectView trapped sprite test button requires test_btn parent.");
+  }
+  var trappedButtonNode = testLevelButtonNode.parent.getChildByName("trapped_sprite_test_btn");
+  if (!trappedButtonNode) {
+    trappedButtonNode = cc.instantiate(testLevelButtonNode);
+    if (!trappedButtonNode || !trappedButtonNode.isValid) {
+      throw new Error("LevelSelectView failed to clone trapped sprite test button.");
+    }
+    trappedButtonNode.name = "trapped_sprite_test_btn";
+    trappedButtonNode.parent = testLevelButtonNode.parent;
+    trappedButtonNode.setPosition(testLevelButtonNode.x + 290, testLevelButtonNode.y);
+    var iconNode = trappedButtonNode.getChildByName("icon");
+    if (!iconNode || !iconNode.isValid) {
+      throw new Error("LevelView/trapped_sprite_test_btn requires icon.");
+    }
+    var label = iconNode.getComponent(cc.Label);
+    if (!label) {
+      throw new Error("LevelView/trapped_sprite_test_btn/icon requires cc.Label.");
+    }
+    label.string = "精灵";
+  }
+  trappedButtonNode.active = showTestLevelButton;
+  bindNamedButtonTap(
+    trappedButtonNode,
+    "__trappedSpriteTestTapBound",
+    "__onTrappedSpriteTest",
+    onTrappedSpriteTest
+  );
+}
+
+function bindBoardOcclusionTestButton(levelView, onBoardOcclusionTest, showTestLevelButton) {
+  if (typeof onBoardOcclusionTest !== "function") {
+    throw new Error("LevelSelectView requires onBoardOcclusionTest.");
+  }
+  if (typeof showTestLevelButton !== "boolean") {
+    throw new Error("LevelSelectView board occlusion test button requires boolean showTestLevelButton.");
+  }
+  var testLevelButtonNode = findChildByNameRecursive(levelView, "test_btn");
+  if (!testLevelButtonNode || !testLevelButtonNode.isValid || !testLevelButtonNode.parent) {
+    throw new Error("LevelSelectView board occlusion test button requires test_btn parent.");
+  }
+  var occlusionButtonNode = testLevelButtonNode.parent.getChildByName("board_occlusion_test_btn");
+  if (!occlusionButtonNode) {
+    occlusionButtonNode = cc.instantiate(testLevelButtonNode);
+    if (!occlusionButtonNode || !occlusionButtonNode.isValid) {
+      throw new Error("LevelSelectView failed to clone board occlusion test button.");
+    }
+    occlusionButtonNode.name = "board_occlusion_test_btn";
+    occlusionButtonNode.parent = testLevelButtonNode.parent;
+    occlusionButtonNode.setPosition(testLevelButtonNode.x + 435, testLevelButtonNode.y);
+    var iconNode = occlusionButtonNode.getChildByName("icon");
+    if (!iconNode || !iconNode.isValid) {
+      throw new Error("LevelView/board_occlusion_test_btn requires icon.");
+    }
+    var label = iconNode.getComponent(cc.Label);
+    if (!label) {
+      throw new Error("LevelView/board_occlusion_test_btn/icon requires cc.Label.");
+    }
+    label.string = "遮挡";
+  }
+  occlusionButtonNode.active = showTestLevelButton;
+  bindNamedButtonTap(
+    occlusionButtonNode,
+    "__boardOcclusionTestTapBound",
+    "__onBoardOcclusionTest",
+    onBoardOcclusionTest
+  );
+}
+
 function updateDailyChallengeAttemptCount(levelView, attemptCount) {
   if (!levelView || !levelView.isValid) {
     throw new Error("LevelSelectView requires a valid level view node before updating daily challenge count.");
@@ -1564,6 +1687,15 @@ function renderLevelSelectContent(options) {
     : function () {};
   var staminaValue = Math.max(0, Math.floor(Number(options.staminaValue) || 0));
   var coinValue = Math.max(0, Math.floor(Number(options.coinValue) || 0));
+  var gemValue = requireNonNegativeInteger(options.gemValue, "LevelView gemValue");
+  if (typeof options.showGemRewardVideoIcon !== "boolean") {
+    throw new Error("LevelSelectView requires boolean showGemRewardVideoIcon.");
+  }
+  var showGemRewardVideoIcon = options.showGemRewardVideoIcon;
+  if (typeof options.onClaimGemReward !== "function") {
+    throw new Error("LevelSelectView requires onClaimGemReward.");
+  }
+  var onClaimGemReward = options.onClaimGemReward;
   var dailyChallengeAttemptCount = requireNonNegativeInteger(
     options.dailyChallengeAttemptCount,
     "LevelView dailyChallengeAttemptCount"
@@ -1607,6 +1739,14 @@ function renderLevelSelectContent(options) {
     throw new Error("LevelSelectView requires onTestLevel.");
   }
   var onTestLevel = options.onTestLevel;
+  if (typeof options.onTrappedSpriteTest !== "function") {
+    throw new Error("LevelSelectView requires onTrappedSpriteTest.");
+  }
+  var onTrappedSpriteTest = options.onTrappedSpriteTest;
+  if (typeof options.onBoardOcclusionTest !== "function") {
+    throw new Error("LevelSelectView requires onBoardOcclusionTest.");
+  }
+  var onBoardOcclusionTest = options.onBoardOcclusionTest;
   if (typeof options.onLocalEditedLevel !== "function") {
     throw new Error("LevelSelectView requires onLocalEditedLevel.");
   }
@@ -1655,6 +1795,9 @@ function renderLevelSelectContent(options) {
   updateTopStatus(levelView, {
     staminaValue: staminaValue,
     coinValue: coinValue,
+    gemValue: gemValue,
+    showGemRewardVideoIcon: showGemRewardVideoIcon,
+    onClaimGemReward: onClaimGemReward,
     dailyChallengeAttemptCount: dailyChallengeAttemptCount,
     onOpenSettings: onOpenSettings,
     onOpenRanking: onOpenRanking,
@@ -1668,6 +1811,8 @@ function renderLevelSelectContent(options) {
   bindQuickStartButton(levelView, onQuickStart);
   bindRandomChallengeButton(levelView, onRandomChallenge);
   bindLocalEditedLevelButton(levelView, onLocalEditedLevel, showTestLevelButton);
+  bindTrappedSpriteTestButton(levelView, onTrappedSpriteTest, showTestLevelButton);
+  bindBoardOcclusionTestButton(levelView, onBoardOcclusionTest, showTestLevelButton);
   bindTestLevelButton(levelView, onTestLevel, showTestLevelButton);
   var backToCurrentLevelButtonNode = levelView.getChildByName("back_cur_level");
   if (!backToCurrentLevelButtonNode || !backToCurrentLevelButtonNode.isValid) {
@@ -1727,6 +1872,7 @@ module.exports = {
   ensureTopResourceIconFrames: ensureTopResourceIconFrames,
   releaseMapBundleAssets: releaseMapBundleAssets,
   rebindTopResourceSprites: rebindTopResourceSprites,
+  updateGemRewardVideoIcon: updateGemRewardVideoIcon,
   loadFloatingMapAssets: FloatingMap.loadAssets,
   renderLevelSelectContent: renderLevelSelectContent,
   updateDailyChallengeAttemptCount: updateDailyChallengeAttemptCount,

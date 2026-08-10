@@ -84,12 +84,30 @@ module.exports = {
     if (typeof this._hideSpecialIntroduceView === "function") {
       this._hideSpecialIntroduceView();
     }
-    if (
+    var hasSpiritHallViewResources = Boolean(
       this._spiritHallViewNode ||
       this._spiritHallViewPrefab ||
+      this._spiritSystemTabBarNode ||
       this._spiritHallSpriteFrameCache
-    ) {
-      this._hideSpiritHallView();
+    );
+    var hasSpiritShopViewResources = Boolean(
+      this._spiritShopViewNode ||
+      this._spiritShopViewPrefab ||
+      this._spiritShopSpriteFrameCache
+    );
+    if (hasSpiritHallViewResources) {
+      this._hideSpiritHallView({
+        releaseBundle: !hasSpiritShopViewResources
+      });
+    }
+    if (hasSpiritShopViewResources) {
+      this._hideSpiritShopView({
+        releaseBundle: true
+      });
+    } else if (!hasSpiritHallViewResources && this._spiritSystemTabBarPrefab) {
+      this._hideSpiritHallView({
+        releaseBundle: true
+      });
     }
   },
 

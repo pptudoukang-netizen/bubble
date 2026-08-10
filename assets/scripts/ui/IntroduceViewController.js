@@ -148,6 +148,7 @@ function IntroduceViewController(options) {
 IntroduceViewController.prototype._resolveNodes = function () {
   var panelNode = requireChildNode(this.node, "Panel", "IntroduceView");
   return {
+    maskNode: requireChildNode(this.node, "mask", "IntroduceView"),
     panelNode: panelNode,
     closeButton: requireChildNode(panelNode, "btn_close", "IntroduceView/Panel"),
     titleNode: requireChildNode(panelNode, "title", "IntroduceView/Panel"),
@@ -159,6 +160,9 @@ IntroduceViewController.prototype._resolveNodes = function () {
 };
 
 IntroduceViewController.prototype._bindActions = function () {
+  bindTapOnce(this._nodes.maskNode, "__introduceMaskTapBound", function () {
+    this.onClose();
+  }.bind(this));
   bindTapOnce(this._nodes.closeButton, "__introduceCloseTapBound", function () {
     this.onClose();
   }.bind(this));

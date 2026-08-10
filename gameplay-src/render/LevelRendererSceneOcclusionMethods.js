@@ -7,6 +7,10 @@ function attachLevelRendererSceneOcclusionMethods(LevelRenderer, deps) {
   var BOARD_OCCLUSION_CLOCK_RESOURCE = deps.BOARD_OCCLUSION_CLOCK_RESOURCE;
   var ensureSprite = deps.ensureSprite;
   var ensureLabel = deps.ensureLabel;
+  var CLOUD_BREATH_HALF_DURATION_SECONDS = 2.4;
+  var CLOUD_BREATH_START_OPACITY = 244;
+  var CLOUD_BREATH_MAX_OPACITY = 252;
+  var CLOUD_BREATH_MIN_OPACITY = 236;
 
   function requireFinite(value, description) {
     if (typeof value !== "number" || !isFinite(value)) {
@@ -42,7 +46,7 @@ function attachLevelRendererSceneOcclusionMethods(LevelRenderer, deps) {
     };
   }
 
-  function configureCountdownClock(rootNode, spriteFrame, y) {
+  function configureCountdownClock(rootNode, spriteFrame) {
     if (!spriteFrame || typeof spriteFrame.getOriginalSize !== "function") {
       throw new Error("Board occlusion countdown clock requires a valid SpriteFrame.");
     }
@@ -55,19 +59,24 @@ function attachLevelRendererSceneOcclusionMethods(LevelRenderer, deps) {
     }
     var clockNode = new cc.Node("CountdownClock");
     clockNode.parent = rootNode;
-    clockNode.setPosition(-38, y);
+    clockNode.setPosition(0, 0);
+    clockNode.zIndex = 1;
     clockNode.setContentSize(originalSize);
     var clockSprite = ensureSprite(clockNode, spriteFrame);
     clockSprite.trim = false;
     clockSprite.sizeMode = cc.Sprite.SizeMode.RAW;
-    clockNode.setScale(26 / Math.max(originalSize.width, originalSize.height));
+    return {
+      labelY: -originalSize.height * 0.25,
+      labelWidth: originalSize.width - 8,
+      labelHeight: Math.floor(originalSize.height * 0.36)
+    };
   }
 
   function configureCountdownLabel(rootNode, zone, bounds, clockSpriteFrame) {
-    var countdownY = -bounds.height * 0.5 + 22;
     var labelNode = new cc.Node("Countdown");
     labelNode.parent = rootNode;
-    labelNode.setPosition(0, countdownY);
+    labelNode.setPosition(0, 0);
+    labelNode.zIndex = 2;
     labelNode.setContentSize(120, 34);
     var label = ensureLabel(labelNode, "", 25, 29, cc.Label.HorizontalAlign.CENTER);
     labelNode.color = cc.color(255, 249, 212);
@@ -82,7 +91,7 @@ function attachLevelRendererSceneOcclusionMethods(LevelRenderer, deps) {
       if (!Number.isInteger(zone.remainingShots) || zone.remainingShots <= 0) {
         throw new Error("Board occlusion remainingShots must be a positive integer while active.");
       }
-      label.string = zone.remainingShots + " 发";
+      label.string = zone.remainingShots + "发";
       return;
     }
     if (zone.remainingTimeMs !== null) {
@@ -93,10 +102,13 @@ function attachLevelRendererSceneOcclusionMethods(LevelRenderer, deps) {
       if (!clockSpriteFrame) {
         throw new Error("Board occlusion timed zone clock was not preloaded: " + BOARD_OCCLUSION_CLOCK_RESOURCE);
       }
-      configureCountdownClock(rootNode, clockSpriteFrame, countdownY);
-      labelNode.setPosition(18, countdownY);
-      labelNode.setContentSize(82, 34);
-      label.string = Math.ceil(zone.remainingTimeMs / 1000) + " 秒";
+      var clockLayout = configureCountdownClock(rootNode, clockSpriteFrame);
+      labelNode.setPosition(0, clockLayout.labelY);
+      labelNode.setContentSize(clockLayout.labelWidth, clockLayout.labelHeight);
+      label.fontSize = 16;
+      label.lineHeight = 18;
+      outline.width = 2;
+      label.string = Math.ceil(zone.remainingTimeMs / 1000) + "秒";
       return;
     }
     label.string = "道具清理";
@@ -105,26 +117,30 @@ function attachLevelRendererSceneOcclusionMethods(LevelRenderer, deps) {
   function configureOcclusionMotion(imageNode, visualType) {
     imageNode.stopAllActions();
     if (visualType === "cloud") {
-      imageNode.opacity = 228;
+      imageNode.opacity = CLOUD_BREATH_START_OPACITY;
       imageNode.runAction(cc.repeatForever(cc.sequence(
-        cc.fadeTo(1.25, 250),
-        cc.fadeTo(1.25, 218)
+        cc.fadeTo(CLOUD_BREATH_HALF_DURATION_SECONDS, CLOUD_BREATH_MAX_OPACITY),
+        cc.fadeTo(CLOUD_BREATH_HALF_DURATION_SECONDS, CLOUD_BREATH_MIN_OPACITY)
       )));
       return;
     }
     if (visualType === "leaves") {
       imageNode.opacity = 255;
-      imageNode.angle = -2;
-      imageNode.runAction(cc.repeatForever(cc.sequence(
-        cc.rotateTo(1.15, 2.5),
-        cc.rotateTo(1.15, -2)
-      )));
+      imageNode.angle = 0;
       return;
     }
     throw new Error("Unsupported board occlusion visual type: " + visualType);
   }
 
-  LevelRenderer.prototype._renderBoardOcclusions = function (runtimeSnapshot) {
+  function buildOcclusionRenderKey(runtimeSnapshot, snapshot) {
+    return [
+      snapshot.version,
+      runtimeSnapshot.board.maxColumns,
+      runtimeSnapshot.board.viewportOffsetY
+    ].join("|");
+  }
+
+  function requireOcclusionSnapshot(runtimeSnapshot) {
     if (!runtimeSnapshot || !runtimeSnapshot.board) {
       throw new Error("Board occlusion rendering requires runtime board snapshot.");
     }
@@ -141,11 +157,12 @@ function attachLevelRendererSceneOcclusionMethods(LevelRenderer, deps) {
     if (!Array.isArray(snapshot.activeZones)) {
       throw new Error("Board occlusion render activeZones must be an array.");
     }
-    var renderKey = [
-      snapshot.version,
-      runtimeSnapshot.board.maxColumns,
-      runtimeSnapshot.board.viewportOffsetY
-    ].join("|");
+    return snapshot;
+  }
+
+  LevelRenderer.prototype._renderBoardOcclusions = function (runtimeSnapshot) {
+    var snapshot = requireOcclusionSnapshot.call(this, runtimeSnapshot);
+    var renderKey = buildOcclusionRenderKey(runtimeSnapshot, snapshot);
     if (renderKey === this.lastBoardOcclusionRenderKey) {
       return;
     }
@@ -202,6 +219,34 @@ function attachLevelRendererSceneOcclusionMethods(LevelRenderer, deps) {
       configureCountdownLabel(rootNode, zone, bounds, clockSpriteFrame);
     }, this);
     this.lastBoardOcclusionRenderKey = renderKey;
+  };
+
+  LevelRenderer.prototype._refreshBoardOcclusionCountdowns = function (runtimeSnapshot) {
+    var snapshot = requireOcclusionSnapshot.call(this, runtimeSnapshot);
+    if (this.layers.boardOcclusion.children.length !== snapshot.activeZones.length) {
+      throw new Error("Board occlusion countdown refresh requires one rendered node per active zone.");
+    }
+    snapshot.activeZones.forEach(function (zone, zoneIndex) {
+      requireFinite(zone.remainingTimeMs, "Board occlusion remainingTimeMs");
+      if (zone.remainingTimeMs <= 0) {
+        throw new Error("Board occlusion remainingTimeMs must be positive while active.");
+      }
+      var rootName = "BoardOcclusion_" + zoneIndex + "_" + zone.id;
+      var rootNode = this.layers.boardOcclusion.getChildByName(rootName);
+      if (!rootNode || !rootNode.isValid) {
+        throw new Error("Board occlusion countdown root node is missing: " + rootName);
+      }
+      var labelNode = rootNode.getChildByName("Countdown");
+      if (!labelNode || !labelNode.isValid) {
+        throw new Error("Board occlusion countdown label node is missing: " + rootName);
+      }
+      var label = labelNode.getComponent(cc.Label);
+      if (!label) {
+        throw new Error("Board occlusion countdown label component is missing: " + rootName);
+      }
+      label.string = Math.ceil(zone.remainingTimeMs / 1000) + "秒";
+    }, this);
+    this.lastBoardOcclusionRenderKey = buildOcclusionRenderKey(runtimeSnapshot, snapshot);
   };
 }
 

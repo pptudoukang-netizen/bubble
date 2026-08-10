@@ -44,6 +44,10 @@
             "root": "subpackages/core"
         },
         {
+            "name": "spirit_system",
+            "root": "subpackages/spirit_system"
+        },
+        {
             "name": "ui",
             "root": "subpackages/ui"
         }

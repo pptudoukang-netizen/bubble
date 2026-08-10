@@ -239,11 +239,16 @@ module.exports = {
   },
 
   _recordAttemptPowerupUsed: function (powerupType) {
+    var safePowerupType = requireNonEmptyString(powerupType, "Level attempt powerup type");
+    if (requireRunMode(this) === "test") {
+      return false;
+    }
     saveAttemptStats(this, requireAttemptStore(this).recordPowerupUsed(
       this.levelAttemptStats,
       this._currentAttemptId,
-      powerupType
+      safePowerupType
     ));
+    return true;
   },
 
   _recordCurrentAttemptQuit: function (quitReason, snapshot) {

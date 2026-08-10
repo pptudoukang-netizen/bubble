@@ -8,6 +8,9 @@ var vm = require("vm");
 var PROJECT_ROOT = path.resolve(__dirname, "..");
 var PREFAB_PATH = path.join(PROJECT_ROOT, "assets", "spirit_system", "prefabs", "SpiritHallView.prefab");
 var ADAPTER_PATH = path.join(PROJECT_ROOT, "assets", "spirit_system", "SpiritHallScreenAdapter.js");
+var DESIGN_HEIGHT = 1280;
+var TAB_BAR_Y = -595;
+var TAB_BAR_HEIGHT = 90;
 
 function createNode(serializedNode) {
   return {
@@ -191,24 +194,46 @@ function runScenario(name, viewport) {
 
   var logicLayer = requireNodeByPath(rootNode, ["SafeAreaRoot", "DesignContent", "LogicLayer"]);
   var topBar = requireNodeByPath(logicLayer, ["TopBar"]);
-  var bottomNavigation = requireNodeByPath(logicLayer, ["BottomNavigation"]);
+  var heroShowcase = requireNodeByPath(logicLayer, ["HeroShowcase"]);
+  var abilityDetails = requireNodeByPath(logicLayer, ["AbilityDetails"]);
+  var bottomNavigationMount = requireNodeByPath(logicLayer, ["BottomNavigationMount"]);
   assert.ok(Math.abs(topBar.y - viewport.expectedHalfExtension) < 1e-8, name + " top extension");
+  assert.ok(Math.abs(heroShowcase.y + viewport.expectedHalfExtension) < 1e-8, name + " hero showcase bottom extension");
+  assert.ok(Math.abs(abilityDetails.y + viewport.expectedHalfExtension) < 1e-8, name + " ability details bottom extension");
+  var expectedBottomNavigationExtension = Math.max(
+    0,
+    viewport.safeHeight / viewport.expectedScale - DESIGN_HEIGHT
+  ) / 2;
+  var expectedBottomNavigationY = -expectedBottomNavigationExtension - viewport.safeY / viewport.expectedScale;
   assert.ok(
-    Math.abs(bottomNavigation.y + viewport.expectedHalfExtension) < 1e-8,
-    name + " bottom extension"
+    Math.abs(bottomNavigationMount.y - expectedBottomNavigationY) < 1e-8,
+    name + " bottom screen offset"
+  );
+  var tabBarBottomY = safeAreaRoot.y + viewport.expectedScale * (
+    bottomNavigationMount.y + TAB_BAR_Y - TAB_BAR_HEIGHT / 2
+  );
+  assert.ok(
+    Math.abs(tabBarBottomY + viewport.visibleHeight / 2) < 1e-8,
+    name + " tab bar bottom must align with screen bottom"
   );
 
   var sourceBack = requireNodeByPath(topBar, ["source__back_button"]);
   var proxyBack = findNodeRecursive(rootNode, "proxy__back_button");
   assert.ok(proxyBack, name + " back proxy");
   assert.ok(Math.abs(proxyBack.y - (sourceBack.y + topBar.y)) < 1e-8, name + " top proxy alignment");
-
-  var sourceBottomBar = requireNodeByPath(bottomNavigation, ["source__bottom_navigation_bar"]);
-  var proxyBottomBar = findNodeRecursive(rootNode, "proxy__bottom_navigation_bar");
-  assert.ok(proxyBottomBar, name + " bottom proxy");
+  var sourceHero = requireNodeByPath(heroShowcase, ["source__hero_nameplate"]);
+  var proxyHero = findNodeRecursive(rootNode, "proxy__hero_nameplate");
+  assert.ok(proxyHero, name + " hero proxy");
   assert.ok(
-    Math.abs(proxyBottomBar.y - (sourceBottomBar.y + bottomNavigation.y)) < 1e-8,
-    name + " bottom proxy alignment"
+    Math.abs(proxyHero.y - (sourceHero.y + heroShowcase.y)) < 1e-8,
+    name + " hero proxy alignment"
+  );
+  var sourceAbility = requireNodeByPath(abilityDetails, ["source__ability_stats_panel"]);
+  var proxyAbility = findNodeRecursive(rootNode, "proxy__ability_stats_panel");
+  assert.ok(proxyAbility, name + " ability proxy");
+  assert.ok(
+    Math.abs(proxyAbility.y - (sourceAbility.y + abilityDetails.y)) < 1e-8,
+    name + " ability proxy alignment"
   );
 
   var backgroundProxy = requireNodeByPath(rootNode, ["FullBleedBackgroundLayer", "proxy__background"]);

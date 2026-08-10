@@ -2,13 +2,16 @@
 
 var fs = require("fs");
 var path = require("path");
+var CampaignLevelGenerationConfig = require("./campaign-level-generation-config");
 
 var PROJECT_ROOT = path.resolve(__dirname, "..");
 var MAP_ROOT = path.join(PROJECT_ROOT, "assets", "map");
 var CONFIG_DIR = path.join(MAP_ROOT, "config");
 var CONFIG_PATH = path.join(CONFIG_DIR, "floating_map.json");
-var SPECIAL_INTERVAL = 20;
 var VERTICAL_PADDING = 10;
+var RESCUE_LANDMARK_PREFAB = "landmark1";
+var TRAPPED_SPIRIT_IMAGE_DIR = path.join(MAP_ROOT, "image", "trapped_spirit");
+var NON_RESCUE_LANDMARK_PREFABS = ["landmark2", "landmark3", "landmark4", "landmark5"];
 var NORMAL_ISLAND_CAPACITIES = {
   island1: 3,
   island2: 4,
@@ -19,13 +22,13 @@ var NORMAL_ISLAND_CAPACITIES = {
   island7: 6,
   island8: 6
 };
-var NORMAL_SEGMENT_PATTERNS = [
-  ["island1", "island2", "island6", "island7"],
-  ["island3", "island4", "island5", "island8"],
-  ["island5", "island1", "island6", "island5"],
-  ["island2", "island3", "island4", "island4", "island1"]
-];
-var LANDMARK_PREFABS = ["landmark1", "landmark2", "landmark3", "landmark4", "landmark5"];
+var NORMAL_PREFABS_BY_CAPACITY = {
+  3: ["island1"],
+  4: ["island2", "island3", "island4"],
+  5: ["island5"],
+  6: ["island6", "island7", "island8"]
+};
+var NORMAL_CAPACITY_PRIORITY = [6, 5, 4, 3];
 
 function parseTargetLevelCount(argv) {
   var index = argv.indexOf("--target");
@@ -180,36 +183,64 @@ function validateSpecialPrefab(prefabName) {
 function validateMapAssets() {
   requireFile(path.join(PROJECT_ROOT, "assets", "map.meta"));
   requireFile(path.join(MAP_ROOT, "prefabs", "TeleportationArray.prefab"));
-  requireFile(path.join(MAP_ROOT, "image", "protagonist.png"));
+  requireFile(path.join(MAP_ROOT, "image", "ui", "protagonist.png"));
   Object.keys(NORMAL_ISLAND_CAPACITIES).forEach(function (prefabName) {
     validateNormalPrefab(prefabName, NORMAL_ISLAND_CAPACITIES[prefabName]);
   });
-  LANDMARK_PREFABS.forEach(validateSpecialPrefab);
+  [RESCUE_LANDMARK_PREFAB].concat(NON_RESCUE_LANDMARK_PREFABS).forEach(validateSpecialPrefab);
+  CampaignLevelGenerationConfig.TRAPPED_SPRITE_SPIRIT_IDS.forEach(function (spiritId) {
+    var imagePath = path.join(TRAPPED_SPIRIT_IMAGE_DIR, spiritId + ".png");
+    requireFile(imagePath);
+    requireFile(imagePath + ".meta");
+  });
 }
 
-function requireSegmentPattern(pattern) {
-  var totalCapacity = pattern.reduce(function (total, prefabName) {
-    var capacity = NORMAL_ISLAND_CAPACITIES[prefabName];
-    if (!Number.isInteger(capacity)) {
-      throw new Error("Unknown normal island prefab in pattern: " + prefabName);
+function buildNormalCapacityPlan(levelCount) {
+  if (!Number.isInteger(levelCount) || levelCount < 0) {
+    throw new Error("Normal floating-map level count must be a non-negative integer.");
+  }
+  var memo = {};
+  function solve(remaining) {
+    if (remaining === 0) {
+      return [];
     }
-    return total + capacity;
-  }, 0);
-  if (totalCapacity !== SPECIAL_INTERVAL - 1) {
-    throw new Error("Normal segment pattern capacity must be " + (SPECIAL_INTERVAL - 1) + ", got " + totalCapacity + ".");
+    if (Object.prototype.hasOwnProperty.call(memo, String(remaining))) {
+      return memo[String(remaining)];
+    }
+    for (var index = 0; index < NORMAL_CAPACITY_PRIORITY.length; index += 1) {
+      var capacity = NORMAL_CAPACITY_PRIORITY[index];
+      if (capacity > remaining) {
+        continue;
+      }
+      var tail = solve(remaining - capacity);
+      if (tail) {
+        memo[String(remaining)] = [capacity].concat(tail);
+        return memo[String(remaining)];
+      }
+    }
+    memo[String(remaining)] = null;
+    return null;
   }
+  var plan = solve(levelCount);
+  return plan;
 }
 
-function makeLevelIds(startLevelId, capacity) {
-  var ids = [];
-  for (var offset = 0; offset < capacity; offset += 1) {
-    ids.push(startLevelId + offset);
+function takeNormalPrefab(capacity, cursors) {
+  var prefabs = NORMAL_PREFABS_BY_CAPACITY[String(capacity)];
+  if (!Array.isArray(prefabs) || prefabs.length === 0) {
+    throw new Error("Normal floating-map prefab capacity is unsupported: " + capacity);
   }
-  return ids;
+  var cursor = cursors[String(capacity)];
+  if (!Number.isInteger(cursor) || cursor < 0) {
+    throw new Error("Normal floating-map prefab cursor is invalid for capacity " + capacity + ".");
+  }
+  var prefabName = prefabs[cursor % prefabs.length];
+  cursors[String(capacity)] = cursor + 1;
+  return prefabName;
 }
 
-function makeNode(index, type, prefab, capacity, levelIds, metrics, y) {
-  return {
+function makeNode(index, type, prefab, capacity, levelIds, metrics, y, rescueSpiritId) {
+  var node = {
     index: index,
     type: type,
     prefab: prefab,
@@ -220,42 +251,108 @@ function makeNode(index, type, prefab, capacity, levelIds, metrics, y) {
     levelIds: levelIds,
     y: y
   };
+  if (rescueSpiritId !== undefined) {
+    node.rescueSpiritId = rescueSpiritId;
+  }
+  return node;
 }
 
 function buildConfig(targetLevelCount) {
-  if (targetLevelCount % SPECIAL_INTERVAL !== 0) {
-    throw new Error("Target level count must be divisible by " + SPECIAL_INTERVAL + ".");
+  if (targetLevelCount !== CampaignLevelGenerationConfig.TARGET_LEVEL_COUNT) {
+    throw new Error(
+      "Floating-map target must match campaign target " +
+      CampaignLevelGenerationConfig.TARGET_LEVEL_COUNT +
+      ", got " + targetLevelCount + "."
+    );
   }
-  NORMAL_SEGMENT_PATTERNS.forEach(requireSegmentPattern);
 
+  var rescueLevelIds = CampaignLevelGenerationConfig.TRAPPED_SPRITE_RESCUE_LEVEL_IDS.slice();
+  var rescueLookup = {};
+  rescueLevelIds.forEach(function (levelId) {
+    rescueLookup[String(levelId)] = true;
+  });
   var nodes = [];
   var nodeIndex = 0;
   var nextBottomY = 0;
-  var segmentCount = targetLevelCount / SPECIAL_INTERVAL;
-  for (var segmentIndex = 0; segmentIndex < segmentCount; segmentIndex += 1) {
-    var pattern = NORMAL_SEGMENT_PATTERNS[segmentIndex % NORMAL_SEGMENT_PATTERNS.length];
-    var nextLevelId = segmentIndex * SPECIAL_INTERVAL + 1;
-    pattern.forEach(function (prefabName) {
-      var capacity = NORMAL_ISLAND_CAPACITIES[prefabName];
-      var metrics = readPrefabRootMetrics(prefabName);
-      nodes.push(makeNode(nodeIndex, "normal", prefabName, capacity, makeLevelIds(nextLevelId, capacity), metrics, nextBottomY + metrics.anchorY * metrics.height));
-      nextBottomY += metrics.height + VERTICAL_PADDING * 2;
-      nodeIndex += 1;
-      nextLevelId += capacity;
-    });
+  var pendingNormalLevelIds = [];
+  var normalPrefabCursors = {
+    3: 0,
+    4: 0,
+    5: 0,
+    6: 0
+  };
+  var nonRescueLandmarkCursor = 0;
 
-    var specialLevelId = (segmentIndex + 1) * SPECIAL_INTERVAL;
-    var landmarkPrefab = LANDMARK_PREFABS[segmentIndex % LANDMARK_PREFABS.length];
-    var landmarkMetrics = readPrefabRootMetrics(landmarkPrefab);
-    nodes.push(makeNode(nodeIndex, "special", landmarkPrefab, 1, [specialLevelId], landmarkMetrics, nextBottomY + landmarkMetrics.anchorY * landmarkMetrics.height));
-    nextBottomY += landmarkMetrics.height + VERTICAL_PADDING * 2;
+  function appendNode(type, prefabName, levelIds, rescueSpiritId) {
+    var metrics = readPrefabRootMetrics(prefabName);
+    nodes.push(makeNode(
+      nodeIndex,
+      type,
+      prefabName,
+      levelIds.length,
+      levelIds,
+      metrics,
+      nextBottomY + metrics.anchorY * metrics.height,
+      rescueSpiritId
+    ));
+    nextBottomY += metrics.height + VERTICAL_PADDING * 2;
     nodeIndex += 1;
   }
 
+  function flushNormalLevels() {
+    var capacityPlan = buildNormalCapacityPlan(pendingNormalLevelIds.length);
+    if (!capacityPlan) {
+      if (pendingNormalLevelIds.length > 2) {
+        throw new Error(
+          "Normal floating-map run cannot be represented by island capacities: " +
+          pendingNormalLevelIds.length
+        );
+      }
+      pendingNormalLevelIds.forEach(function (levelId) {
+        var prefabName = NON_RESCUE_LANDMARK_PREFABS[
+          nonRescueLandmarkCursor % NON_RESCUE_LANDMARK_PREFABS.length
+        ];
+        nonRescueLandmarkCursor += 1;
+        appendNode("special", prefabName, [levelId]);
+      });
+      pendingNormalLevelIds = [];
+      return;
+    }
+    var offset = 0;
+    capacityPlan.forEach(function (capacity) {
+      var prefabName = takeNormalPrefab(capacity, normalPrefabCursors);
+      var levelIds = pendingNormalLevelIds.slice(offset, offset + capacity);
+      if (levelIds.length !== capacity) {
+        throw new Error("Normal floating-map capacity plan overflow at level " + pendingNormalLevelIds[offset] + ".");
+      }
+      appendNode("normal", prefabName, levelIds);
+      offset += capacity;
+    });
+    if (offset !== pendingNormalLevelIds.length) {
+      throw new Error("Normal floating-map capacity plan did not consume the full run.");
+    }
+    pendingNormalLevelIds = [];
+  }
+
+  for (var levelId = 1; levelId <= targetLevelCount; levelId += 1) {
+    if (rescueLookup[String(levelId)] === true) {
+      flushNormalLevels();
+      appendNode(
+        "special",
+        RESCUE_LANDMARK_PREFAB,
+        [levelId],
+        CampaignLevelGenerationConfig.getTrappedSpriteRescueSpiritId(levelId)
+      );
+      continue;
+    }
+    pendingNormalLevelIds.push(levelId);
+  }
+  flushNormalLevels();
+
   return {
-    schemaVersion: 1,
+    schemaVersion: 3,
     targetLevelCount: targetLevelCount,
-    specialInterval: SPECIAL_INTERVAL,
+    rescueLevelIds: rescueLevelIds,
     verticalPadding: VERTICAL_PADDING,
     normalIslandCapacities: NORMAL_ISLAND_CAPACITIES,
     nodes: nodes
@@ -264,6 +361,23 @@ function buildConfig(targetLevelCount) {
 
 function validateGeneratedConfig(config) {
   var seen = {};
+  var rescueLookup = {};
+  var expectedLevelId = 1;
+  if (config.schemaVersion !== 3) {
+    throw new Error("Generated floating-map schemaVersion must be 3.");
+  }
+  if (!Array.isArray(config.rescueLevelIds) || config.rescueLevelIds.length === 0) {
+    throw new Error("Generated floating-map rescueLevelIds must be non-empty.");
+  }
+  if (
+    config.rescueLevelIds.join(",") !==
+    CampaignLevelGenerationConfig.TRAPPED_SPRITE_RESCUE_LEVEL_IDS.join(",")
+  ) {
+    throw new Error("Generated floating-map rescue schedule mismatches campaign configuration.");
+  }
+  config.rescueLevelIds.forEach(function (levelId) {
+    rescueLookup[String(levelId)] = true;
+  });
   if (config.nodes.length === 0) {
     throw new Error("Generated floating map config must contain nodes.");
   }
@@ -294,19 +408,59 @@ function validateGeneratedConfig(config) {
       if (seen[levelId] === true) {
         throw new Error("Duplicated level id: " + levelId);
       }
-      if (node.type === "normal" && levelId % config.specialInterval === 0) {
-        throw new Error("Special level assigned to normal island: " + levelId);
+      if (levelId !== expectedLevelId) {
+        throw new Error("Floating-map level order mismatch: expected " + expectedLevelId + ", got " + levelId + ".");
       }
-      if (node.type === "special" && levelId % config.specialInterval !== 0) {
-        throw new Error("Non-special level assigned to special island: " + levelId);
+      var rescue = rescueLookup[String(levelId)] === true;
+      var hasRescueSpiritId = Object.prototype.hasOwnProperty.call(node, "rescueSpiritId");
+      if (rescue) {
+        var expectedSpiritId = CampaignLevelGenerationConfig.getTrappedSpriteRescueSpiritId(levelId);
+        if (node.rescueSpiritId !== expectedSpiritId) {
+          throw new Error(
+            "Rescue floating-map spirit mismatch at level " + levelId +
+            ": expected " + expectedSpiritId + ", got " + node.rescueSpiritId + "."
+          );
+        }
+      } else if (hasRescueSpiritId) {
+        throw new Error("Non-rescue floating-map node must not configure rescueSpiritId: " + levelId);
+      }
+      if (node.type === "normal") {
+        if (NORMAL_ISLAND_CAPACITIES[node.prefab] !== node.capacity) {
+          throw new Error("Normal floating-map prefab capacity mismatch at level " + levelId + ".");
+        }
+        if (rescue) {
+          throw new Error("Rescue level assigned to normal floating island: " + levelId);
+        }
+      } else if (node.type === "special") {
+        if (node.capacity !== 1) {
+          throw new Error("Special floating-map node must have capacity 1 at level " + levelId + ".");
+        }
+        if (rescue && node.prefab !== RESCUE_LANDMARK_PREFAB) {
+          throw new Error("Rescue level must use landmark1: " + levelId);
+        }
+        if (!rescue && node.prefab === RESCUE_LANDMARK_PREFAB) {
+          throw new Error("Non-rescue level assigned to landmark1: " + levelId);
+        }
+        if (
+          node.prefab !== RESCUE_LANDMARK_PREFAB &&
+          NON_RESCUE_LANDMARK_PREFABS.indexOf(node.prefab) < 0
+        ) {
+          throw new Error("Unknown special floating-map prefab at level " + levelId + ": " + node.prefab);
+        }
+      } else {
+        throw new Error("Unknown floating-map node type at index " + node.index + ": " + node.type);
       }
       seen[levelId] = true;
+      expectedLevelId += 1;
     });
   });
   for (var levelId = 1; levelId <= config.targetLevelCount; levelId += 1) {
     if (seen[levelId] !== true) {
       throw new Error("Missing level id in generated config: " + levelId);
     }
+  }
+  if (expectedLevelId !== config.targetLevelCount + 1) {
+    throw new Error("Generated floating-map level order is incomplete.");
   }
 }
 

@@ -4,6 +4,9 @@ var bootstrapModuleLoaders = {
   "./GameBootstrapSpiritHallMethods": function () {
     return require("./GameBootstrapSpiritHallMethods");
   },
+  "./GameBootstrapSpiritShopMethods": function () {
+    return require("./GameBootstrapSpiritShopMethods");
+  },
   "./GameBootstrapSignInAwardFlowMethods": function () {
     return require("./GameBootstrapSignInAwardFlowMethods");
   },

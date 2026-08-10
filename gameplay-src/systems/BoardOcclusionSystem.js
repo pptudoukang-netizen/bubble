@@ -171,6 +171,35 @@ BoardOcclusionSystem.prototype.clearAllWithItem = function () {
   return removed;
 };
 
+BoardOcclusionSystem.prototype.clearZonesWithoutBoardCells = function (boardCells) {
+  if (!Array.isArray(boardCells)) {
+    throw new Error("BoardOcclusionSystem.clearZonesWithoutBoardCells requires board cells array.");
+  }
+  var occupied = {};
+  boardCells.forEach(function (cell, index) {
+    if (!cell || !Number.isInteger(cell.row) || !Number.isInteger(cell.col)) {
+      throw new Error("Board occlusion boardCells[" + index + "] requires integer coordinates.");
+    }
+    occupied[cell.row + ":" + cell.col] = true;
+  });
+
+  var removed = [];
+  this.activeZones = this.activeZones.filter(function (zone) {
+    var hasCoveredBoardCell = zone.cells.some(function (cell) {
+      return occupied[cell.row + ":" + cell.col] === true;
+    });
+    if (hasCoveredBoardCell) {
+      return true;
+    }
+    removed.push(zone.id);
+    return false;
+  });
+  if (removed.length) {
+    this.version += 1;
+  }
+  return removed;
+};
+
 BoardOcclusionSystem.prototype.snapshotForRender = function () {
   return {
     version: this.version,

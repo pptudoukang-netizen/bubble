@@ -7,7 +7,9 @@ var NAMESPACE = "AdRewardQuotaStore";
 var QUOTA_TYPES = [
   "lose_next_round",
   "inventory_refill",
-  "stamina_refill"
+  "assist_spirit_skill_charge",
+  "stamina_refill",
+  "level_select_gem"
 ];
 
 function clone(data) {

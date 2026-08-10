@@ -6,6 +6,7 @@ var AimTuningProfiles = require("./AimTuningProfiles");
 var BoardLayout = require("./BoardLayout");
 var BoardOcclusionConfig = require("./BoardOcclusionConfig");
 var LevelBoardSupportValidator = require("./LevelBoardSupportValidator");
+var AssistSpiritConfig = require("./AssistSpiritConfig");
 
 var SPECIAL_ENTITY_TYPES = {
   skill_ball: ["rainbow", "blast"],
@@ -14,7 +15,16 @@ var SPECIAL_ENTITY_TYPES = {
   locked_ball: ["locked"],
   key_ball: ["key"]
 };
+var TRAPPED_SPRITE_ALLOWED_SPECIAL_ENTITY_KEYS = {
+  "skill_ball:rainbow": true,
+  "skill_ball:blast": true,
+  "obstacle_ball:stone": true,
+  "obstacle_ball:ice": true,
+  "reactive_ball:swirl": true,
+  "reactive_ball:vine_spirit": true
+};
 var ALLOWED_COLORS = ["R", "G", "B", "Y", "P", "K", "O", "W"];
+var MAX_ACTIVE_COLOR_COUNT = 5;
 var ALLOWED_INNER_COLORS = ALLOWED_COLORS.slice();
 var ALLOWED_SPLITTER_COLORS = ["R", "G", "B", "Y", "P"];
 var ALLOWED_CLEAR_REWARD_ITEM_IDS = ["coin", "stamina"];
@@ -41,7 +51,8 @@ var BONUS_OBJECTIVE_TYPES = {
 };
 var LEVEL_TYPES = {
   normal: true,
-  special_floating_island: true
+  special_floating_island: true,
+  trapped_sprite_rescue: true
 };
 var PLAY_MODES = {
   shot_limited: true,
@@ -58,6 +69,9 @@ var FIXED_JAR_COLORS = ["R", "G", "B", "Y", "P"];
 var FIXED_JAR_COUNT = FIXED_JAR_COLORS.length;
 var MAX_SHOT_LIMIT = 54;
 var CLEAR_REWARD_START_LEVEL_ID = 1;
+var TIMED_LEVEL_TIME_BONUS_SECONDS = 5;
+var TIMED_LEVEL_MIN_TIME_BONUS_BALLS = 2;
+var TIMED_LEVEL_MAX_TIME_BONUS_BALLS = 5;
 
 function clone(data) {
   return JSON.parse(JSON.stringify(data));
@@ -130,6 +144,96 @@ function validateTopRowAnchored(layout, specialEntities, levelKey) {
   });
   if (occupiedCount <= 0) {
     throw new Error("Level layout top row must contain at least one anchor: " + levelKey);
+  }
+}
+
+function normalizeTrappedSpriteRescue(levelConfig, levelKey) {
+  var isRescueLevel = levelConfig.levelType === "trapped_sprite_rescue";
+  var rescue = levelConfig.trappedSpriteRescue;
+  if (!isRescueLevel) {
+    if (rescue !== undefined) {
+      throw new Error("level.trappedSpriteRescue is only valid for trapped_sprite_rescue: " + levelKey);
+    }
+    return;
+  }
+  if (!rescue || typeof rescue !== "object" || Array.isArray(rescue)) {
+    throw new Error("trapped_sprite_rescue requires level.trappedSpriteRescue: " + levelKey);
+  }
+  if (Object.prototype.hasOwnProperty.call(rescue, "spriteId")) {
+    throw new Error("level.trappedSpriteRescue.spriteId is obsolete; use spiritId: " + levelKey);
+  }
+  try {
+    AssistSpiritConfig.getSpirit(rescue.spiritId);
+  } catch (error) {
+    throw new Error("level.trappedSpriteRescue.spiritId is invalid: " + levelKey + ": " + error.message);
+  }
+  if (
+    !rescue.anchorCell ||
+    !Number.isInteger(rescue.anchorCell.row) ||
+    !Number.isInteger(rescue.anchorCell.col) ||
+    rescue.anchorCell.row < 0 ||
+    rescue.anchorCell.row >= levelConfig.layout.length ||
+    rescue.anchorCell.col < 0 ||
+    rescue.anchorCell.col >= BoardLayout.getRowColumnCount(rescue.anchorCell.row, BoardLayout.defaultColumns)
+  ) {
+    throw new Error("level.trappedSpriteRescue.anchorCell must be a valid board coordinate: " + levelKey);
+  }
+  if (levelConfig.layout[rescue.anchorCell.row].charAt(rescue.anchorCell.col) !== ".") {
+    throw new Error("level.trappedSpriteRescue.anchorCell must remain empty for the trapped sprite: " + levelKey);
+  }
+  if (!rescue.worldCenter || typeof rescue.worldCenter !== "object" || Array.isArray(rescue.worldCenter)) {
+    throw new Error("level.trappedSpriteRescue.worldCenter must be an object: " + levelKey);
+  }
+  assertNumberInRange(rescue.worldCenter.x, "level.trappedSpriteRescue.worldCenter.x", BoardLayout.boardLeft, BoardLayout.boardRight, levelKey);
+  assertNumberInRange(rescue.worldCenter.y, "level.trappedSpriteRescue.worldCenter.y", BoardLayout.getCannonTopLineY(), BoardLayout.boardStartY, levelKey);
+  assertNumberInRange(rescue.renderScale, "level.trappedSpriteRescue.renderScale", 0.5, 3, levelKey);
+
+  var rotation = rescue.rotation;
+  if (!rotation || typeof rotation !== "object" || Array.isArray(rotation)) {
+    throw new Error("level.trappedSpriteRescue.rotation must be an object: " + levelKey);
+  }
+  [
+    "projectileImpulse",
+    "torqueScale",
+    "coreInertia",
+    "maxAngularSpeedDeg",
+    "angularDamping",
+    "stopAngularSpeedDeg",
+    "maxStepAngleDeg",
+    "maxDurationSec"
+  ].forEach(function (fieldName) {
+    if (typeof rotation[fieldName] !== "number" || !isFinite(rotation[fieldName]) || rotation[fieldName] <= 0) {
+      throw new Error("level.trappedSpriteRescue.rotation." + fieldName + " must be positive: " + levelKey);
+    }
+  });
+  assertNumberInRange(
+    rotation.tangentialDeadZone,
+    "level.trappedSpriteRescue.rotation.tangentialDeadZone",
+    0,
+    0.95,
+    levelKey
+  );
+  if (!Array.isArray(levelConfig.specialEntities)) {
+    throw new Error("trapped_sprite_rescue requires normalized level.specialEntities: " + levelKey);
+  }
+  levelConfig.specialEntities.forEach(function (entity, index) {
+    var entityKey = entity.entityCategory + ":" + entity.entityType;
+    if (TRAPPED_SPRITE_ALLOWED_SPECIAL_ENTITY_KEYS[entityKey] !== true) {
+      throw new Error(
+        "trapped_sprite_rescue specialEntities[" + index + "] is incompatible: " + entityKey + ": " + levelKey
+      );
+    }
+    if (entity.row === TOP_BOARD_ROW_INDEX) {
+      throw new Error("trapped_sprite_rescue special entity must not occupy the top row: " + levelKey);
+    }
+    if (entity.row === rescue.anchorCell.row && entity.col === rescue.anchorCell.col) {
+      throw new Error("trapped_sprite_rescue anchorCell overlaps a special entity: " + levelKey);
+    }
+  });
+  if (levelConfig.layout[TOP_BOARD_ROW_INDEX].split("").some(function (cellCode) {
+    return cellCode !== ".";
+  })) {
+    throw new Error("trapped_sprite_rescue top row must be empty: " + levelKey);
   }
 }
 
@@ -233,24 +337,31 @@ function validateSwirlTracks(normalizedLayout, normalizedEntities, levelKey) {
 function validateWormholePair(normalizedEntities, levelKey) {
   var wormholes = normalizedEntities.filter(function (entity) {
     return entity.entityCategory === "reactive_ball" && entity.entityType === "wormhole";
-  }).sort(function (left, right) {
-    return left.col - right.col;
   });
   if (!wormholes.length) {
     return;
   }
-  if (wormholes.length !== 2) {
-    throw new Error("level must contain exactly two wormholes when wormhole is configured: " + levelKey);
-  }
-  if (wormholes[0].row !== wormholes[1].row) {
-    throw new Error("wormholes must be placed on the same row: " + levelKey);
-  }
-  if (wormholes[1].col - wormholes[0].col < 2) {
-    throw new Error("wormholes must contain at least one interior slot: " + levelKey);
-  }
-  if (wormholes[0].moveDirection !== wormholes[1].moveDirection) {
-    throw new Error("wormhole pair moveDirection must match: " + levelKey);
-  }
+  var byRow = {};
+  wormholes.forEach(function (wormhole) {
+    if (!byRow[wormhole.row]) {
+      byRow[wormhole.row] = [];
+    }
+    byRow[wormhole.row].push(wormhole);
+  });
+  Object.keys(byRow).forEach(function (rowKey) {
+    var pair = byRow[rowKey].sort(function (left, right) {
+      return left.col - right.col;
+    });
+    if (pair.length !== 2) {
+      throw new Error("each wormhole row must contain exactly two endpoints: " + levelKey + " row " + rowKey);
+    }
+    if (pair[1].col - pair[0].col < 2) {
+      throw new Error("wormhole pair must contain at least one interior slot: " + levelKey + " row " + rowKey);
+    }
+    if (pair[0].moveDirection !== pair[1].moveDirection) {
+      throw new Error("wormhole pair moveDirection must match: " + levelKey + " row " + rowKey);
+    }
+  });
 }
 
 function hasUniqueItems(items) {
@@ -261,7 +372,11 @@ function resolveExpectedLevelId(rawConfig, levelKey) {
   if (typeof levelKey !== "string") {
     throw new Error("levelKey must be a string.");
   }
-  if (levelKey === "level_test") {
+  if (
+    levelKey === "level_test" ||
+    levelKey === "level_trapped_sprite_test" ||
+    levelKey === "level_board_occlusion_test"
+  ) {
     if (!rawConfig || typeof rawConfig !== "object" || !rawConfig.level) {
       throw new Error("Test level config is missing `level`: " + levelKey);
     }
@@ -609,6 +724,10 @@ function normalizeOpeningShotBalls(levelConfig, levelKey) {
 
 function normalizeStarThresholds(levelConfig, levelKey) {
   if (levelConfig.starThresholds === undefined) {
+    var formalLevelMatch = /^level_(\d+)$/.exec(levelKey);
+    if (formalLevelMatch && Number(formalLevelMatch[1]) <= 1000) {
+      throw new Error("formal campaign level requires explicit level.starThresholds: " + levelKey);
+    }
     return;
   }
   var thresholds = levelConfig.starThresholds;
@@ -653,6 +772,9 @@ function normalizeLevelMode(levelConfig, levelKey) {
   if (levelType === "special_floating_island" && playMode !== "timed_infinite_shots") {
     throw new Error("special_floating_island must use timed_infinite_shots: " + levelKey);
   }
+  if (levelType === "trapped_sprite_rescue" && playMode !== "shot_limited") {
+    throw new Error("trapped_sprite_rescue must use shot_limited: " + levelKey);
+  }
   if (playMode === "timed_infinite_shots") {
     if (levelType !== "special_floating_island") {
       throw new Error("timed_infinite_shots must use special_floating_island: " + levelKey);
@@ -673,6 +795,55 @@ function normalizeLevelMode(levelConfig, levelKey) {
   levelConfig.playMode = playMode;
 }
 
+function normalizeTimeBonusBalls(levelConfig, levelKey) {
+  if (levelConfig.playMode !== "timed_infinite_shots") {
+    if (levelConfig.timeBonusBalls !== undefined) {
+      throw new Error("level.timeBonusBalls is only valid for timed_infinite_shots: " + levelKey);
+    }
+    return;
+  }
+  if (!Array.isArray(levelConfig.timeBonusBalls)) {
+    throw new Error("timed_infinite_shots requires level.timeBonusBalls array: " + levelKey);
+  }
+  if (
+    levelConfig.timeBonusBalls.length < TIMED_LEVEL_MIN_TIME_BONUS_BALLS ||
+    levelConfig.timeBonusBalls.length > TIMED_LEVEL_MAX_TIME_BONUS_BALLS
+  ) {
+    throw new Error(
+      "level.timeBonusBalls must contain " + TIMED_LEVEL_MIN_TIME_BONUS_BALLS + "-" +
+      TIMED_LEVEL_MAX_TIME_BONUS_BALLS + " entries: " + levelKey
+    );
+  }
+  var usedCoordinates = {};
+  levelConfig.timeBonusBalls = levelConfig.timeBonusBalls.map(function (entry, index) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      throw new Error("level.timeBonusBalls[" + index + "] must be an object: " + levelKey);
+    }
+    if (!Number.isInteger(entry.row) || entry.row < 0 || entry.row >= levelConfig.layout.length) {
+      throw new Error("level.timeBonusBalls[" + index + "].row out of range: " + levelKey);
+    }
+    if (!Number.isInteger(entry.col) || entry.col < 0 || entry.col >= levelConfig.layout[entry.row].length) {
+      throw new Error("level.timeBonusBalls[" + index + "].col out of range: " + levelKey);
+    }
+    if (levelConfig.layout[entry.row].charAt(entry.col) === ".") {
+      throw new Error("level.timeBonusBalls[" + index + "] must target an existing normal ball: " + levelKey);
+    }
+    if (entry.bonusSeconds !== TIMED_LEVEL_TIME_BONUS_SECONDS) {
+      throw new Error("level.timeBonusBalls[" + index + "].bonusSeconds must be " + TIMED_LEVEL_TIME_BONUS_SECONDS + ": " + levelKey);
+    }
+    var coordinateKey = entry.row + ":" + entry.col;
+    if (usedCoordinates[coordinateKey]) {
+      throw new Error("level.timeBonusBalls contains duplicate coordinate " + coordinateKey + ": " + levelKey);
+    }
+    usedCoordinates[coordinateKey] = true;
+    return {
+      row: entry.row,
+      col: entry.col,
+      bonusSeconds: entry.bonusSeconds
+    };
+  });
+}
+
 function normalizeAdPowerupRules(levelConfig, levelKey) {
   if (levelConfig.adPowerupRules === undefined) {
     throw new Error("level.adPowerupRules is required: " + levelKey);
@@ -683,6 +854,9 @@ function normalizeAdPowerupRules(levelConfig, levelKey) {
   }
   if (!Array.isArray(rules.allowed)) {
     throw new Error("level.adPowerupRules.allowed must be array: " + levelKey);
+  }
+  if (levelConfig.levelType === "trapped_sprite_rescue" && rules.allowed.length !== 0) {
+    throw new Error("trapped_sprite_rescue must not allow ad powerups: " + levelKey);
   }
   var seen = {};
   rules.allowed.forEach(function (powerupType, index) {
@@ -735,6 +909,11 @@ function normalizeLevelConfig(rawConfig, levelKey) {
   if (!hasUniqueItems(config.level.colors)) {
     throw new Error("level.colors must not contain duplicates: " + levelKey);
   }
+  if (config.level.colors.length > MAX_ACTIVE_COLOR_COUNT) {
+    throw new Error(
+      "level.colors must contain at most " + MAX_ACTIVE_COLOR_COUNT + " active colors: " + levelKey
+    );
+  }
   config.level.colors.forEach(function (colorCode) {
     if (ALLOWED_COLORS.indexOf(colorCode) === -1) {
       throw new Error("unsupported color in level.colors `" + colorCode + "`: " + levelKey);
@@ -742,13 +921,16 @@ function normalizeLevelConfig(rawConfig, levelKey) {
   });
 
   config.level.layout = normalizeLayoutRows(config.level.layout, config.level.colors, levelKey);
-  validateTopRowAnchored(config.level.layout, config.level.specialEntities, levelKey);
 
   if (!Number.isInteger(config.level.colorCount) || config.level.colorCount !== config.level.colors.length) {
     throw new Error("level.colorCount must equal level.colors.length: " + levelKey);
   }
 
   normalizeLevelMode(config.level, levelKey);
+  normalizeTimeBonusBalls(config.level, levelKey);
+  if (config.level.levelType !== "trapped_sprite_rescue") {
+    validateTopRowAnchored(config.level.layout, config.level.specialEntities, levelKey);
+  }
   if (config.level.playMode === "timed_infinite_shots") {
     if (config.level.shotLimit !== undefined && config.level.shotLimit !== null) {
       throw new Error("level.shotLimit must not be configured for timed_infinite_shots: " + levelKey);
@@ -758,7 +940,13 @@ function normalizeLevelConfig(rawConfig, levelKey) {
   }
   config.level.targetScore = assertPositiveInteger(config.level.targetScore, "level.targetScore", levelKey);
   normalizeStarThresholds(config.level, levelKey);
-  config.level.dropInterval = assertPositiveInteger(config.level.dropInterval, "level.dropInterval", levelKey);
+  if (config.level.levelType === "trapped_sprite_rescue") {
+    if (config.level.dropInterval !== undefined) {
+      throw new Error("trapped_sprite_rescue must not configure level.dropInterval: " + levelKey);
+    }
+  } else {
+    config.level.dropInterval = assertPositiveInteger(config.level.dropInterval, "level.dropInterval", levelKey);
+  }
   var clearRewardItems = normalizeClearRewardItems(config.level, expectedLevelId, levelKey);
   if (clearRewardItems !== undefined) {
     config.level.clearRewardItems = clearRewardItems;
@@ -816,6 +1004,7 @@ function normalizeLevelConfig(rawConfig, levelKey) {
   config.level.winConditions = normalizeObjectiveList(config.level.winConditions, WIN_CONDITION_TYPES, "winConditions", config.level, levelKey);
   config.level.bonusObjectives = normalizeObjectiveList(config.level.bonusObjectives, BONUS_OBJECTIVE_TYPES, "bonusObjectives", config.level, levelKey);
   config.level.specialEntities = normalizeSpecialEntities(config.level, levelKey);
+  normalizeTrappedSpriteRescue(config.level, levelKey);
   config.level.boardOcclusionPlan = BoardOcclusionConfig.normalizePlan(
     config.level.boardOcclusionPlan,
     config.level,
@@ -823,11 +1012,20 @@ function normalizeLevelConfig(rawConfig, levelKey) {
   );
   validateOccupiedLayoutRows(config.level.layout, config.level.specialEntities, levelKey);
   LevelBoardSupportValidator.assertInitialBoardSupported(config.level, levelKey);
+  if (/^level_\d+$/.test(levelKey) && expectedLevelId <= 1000) {
+    LevelBoardSupportValidator.assertGeneratedBoardRules(config.level, levelKey);
+  }
   validateIceSnowballObjectives(config.level, levelKey);
   validateSplitterObjectives(config.level, levelKey);
   validateKeyLockCounts(config.level, levelKey);
   normalizeAdPowerupRules(config.level, levelKey);
-  validateInitialDropSpaceRows(config.level, levelKey);
+  if (config.level.levelType === "trapped_sprite_rescue") {
+    if (config.level.initialDropSpaceRows !== undefined) {
+      throw new Error("trapped_sprite_rescue must not configure level.initialDropSpaceRows: " + levelKey);
+    }
+  } else {
+    validateInitialDropSpaceRows(config.level, levelKey);
+  }
 
   var aimMeta = AimTuningProfiles.applyToLevel(config.level);
 

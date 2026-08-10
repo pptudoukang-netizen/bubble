@@ -3,18 +3,21 @@
 var StrictStorage = require("../utils/StrictStorage");
 var LevelAttemptStatsStore = require("../utils/LevelAttemptStatsStore");
 var AssistSpiritStore = require("../utils/AssistSpiritStore");
+var SpiritShopStore = require("../utils/SpiritShopStore");
 
 var PROFILE_VERSION = 1;
-var EXPECTED_DEPLOYMENT_MARKER = "playerProfile_v20260724_assist_spirit_v1";
+var EXPECTED_DEPLOYMENT_MARKER = "playerProfile_v20260809_assist_spirit_level_only_v5";
 var SYNC_SOURCE_CLOUD = "cloud";
 var SYNC_SOURCE_LOCAL = "local";
 var LEVEL_ATTEMPT_STATS_STORAGE_KEY = LevelAttemptStatsStore.STORAGE_KEY;
 var ASSIST_SPIRIT_STORAGE_KEY = AssistSpiritStore.STORAGE_KEY;
+var SPIRIT_SHOP_STORAGE_KEY = SpiritShopStore.STORAGE_KEY;
 var STORAGE_ENTRIES = [
   { storageKey: "bubble_level_progress_v1", namespace: "LevelProgressStore" },
   { storageKey: LEVEL_ATTEMPT_STATS_STORAGE_KEY, namespace: LevelAttemptStatsStore.NAMESPACE },
   { storageKey: "bubble_player_resources_v1", namespace: "PlayerResourceStore" },
   { storageKey: "bubble_assist_spirit_state_v1", namespace: "AssistSpiritStore" },
+  { storageKey: SPIRIT_SHOP_STORAGE_KEY, namespace: SpiritShopStore.NAMESPACE },
   { storageKey: "bubble_stamina_recovery_state_v1", namespace: "StaminaRecoveryStore" },
   { storageKey: "bubble_daily_task_state_v1", namespace: "DailyTaskStore" },
   { storageKey: "bubble_player_inventory_v1", namespace: "InventoryStore" },
@@ -162,6 +165,9 @@ function normalizeStorageValue(storageKey, value) {
   if (storageKey === ASSIST_SPIRIT_STORAGE_KEY) {
     return AssistSpiritStore.normalizeState(value);
   }
+  if (storageKey === SPIRIT_SHOP_STORAGE_KEY) {
+    return SpiritShopStore.normalizeState(value);
+  }
   return value;
 }
 
@@ -176,6 +182,12 @@ function createMissingStorageEntry(storageKey, entryMap) {
     return {
       namespace: entryMap[storageKey].namespace,
       value: AssistSpiritStore.createInitialState()
+    };
+  }
+  if (storageKey === SPIRIT_SHOP_STORAGE_KEY) {
+    return {
+      namespace: entryMap[storageKey].namespace,
+      value: SpiritShopStore.createInitialState(new Date())
     };
   }
   throw new Error("Player cloud profile missing storageKey: " + storageKey);

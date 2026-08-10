@@ -191,6 +191,10 @@ module.exports = {
       }.bind(this)).then(function () {
         return this._waitForNextRenderedFrame();
       }.bind(this)).then(function () {
+        return this._waitForNextRenderedFrame();
+      }.bind(this)).then(function () {
+        return this._waitForNextRenderedFrame();
+      }.bind(this)).then(function () {
         this._scheduleBackgroundRemoteLevelPackPreload();
         this._scheduleDeferredUiBundleWarmup();
         this._scheduleDeferredFriendStaminaGiftClaim();
@@ -233,6 +237,10 @@ module.exports = {
       }.bind(this));
     }.bind(this)).then(function () {
       return this._showLevelSelectView();
+    }.bind(this)).then(function () {
+      return this._waitForNextRenderedFrame();
+    }.bind(this)).then(function () {
+      return this._waitForNextRenderedFrame();
     }.bind(this)).then(function () {
       return this._waitForNextRenderedFrame();
     }.bind(this)).then(function () {
@@ -361,8 +369,16 @@ module.exports = {
           run: function () {
             return host._preloadStartupPrefabs();
           }
+        },
+        {
+          id: "background_music",
+          stage: "加载背景音乐...",
+          weight: 1,
+          run: function () {
+            return host._preloadStartupAudio();
+          }
         }
-      ], "加载选关界面...", {
+      ], "加载选关界面和背景音乐...", {
         base: STARTUP_PREFAB_PROGRESS_BASE,
         span: STARTUP_PREFAB_PROGRESS_SPAN
       });
@@ -588,8 +604,11 @@ module.exports = {
     if (!this.playerResourceStore || typeof this.playerResourceStore.load !== "function") {
       throw new Error("Reload player profile requires PlayerResourceStore.load.");
     }
-    if (!this.assistSpiritStore || typeof this.assistSpiritStore.load !== "function") {
-      throw new Error("Reload player profile requires AssistSpiritStore.load.");
+    if (!this.assistSpiritStore || typeof this.assistSpiritStore.loadWithRescueProgress !== "function") {
+      throw new Error("Reload player profile requires AssistSpiritStore.loadWithRescueProgress.");
+    }
+    if (!this.spiritShopStore || typeof this.spiritShopStore.load !== "function") {
+      throw new Error("Reload player profile requires SpiritShopStore.load.");
     }
     if (!this.staminaRecoveryStore || typeof this.staminaRecoveryStore.load !== "function") {
       throw new Error("Reload player profile requires StaminaRecoveryStore.load.");
@@ -630,7 +649,10 @@ module.exports = {
     this.levelAttemptStats = this.levelAttemptStatsStore.load();
     this.staminaRecoveryState = this.staminaRecoveryStore.load();
     this.playerResources = this.playerResourceStore.load(now);
-    this.assistSpiritState = this.assistSpiritStore.load();
+    this.assistSpiritState = this.assistSpiritStore.loadWithRescueProgress(
+      this.levelProgress.completedLevels
+    );
+    this.spiritShopStore.load(now);
     this.dailyTaskState = this.dailyTaskStore.load(now);
     this.playerInventory = this.inventoryStore.load();
     this.selectedPowerupsState = this.selectedPowerupsStore.load();
