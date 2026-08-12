@@ -35,6 +35,10 @@ function createGameManagerShotResolutionMethods(deps) {
   var MOLOTOV_BLAST_DROP_INNER_SPEED = 860;
   var MOLOTOV_BLAST_DROP_OUTER_SPEED = 640;
   var ELIMINATION_SEQUENCE_INTERVAL_MS = 30;
+  var NON_COLLECTIBLE_JAR_SCORE_COLORS = {
+    K: true,
+    W: true
+  };
 
   function requireFinitePoint(point, ownerName) {
     if (
@@ -501,7 +505,11 @@ function createGameManagerShotResolutionMethods(deps) {
         ? this.systems.jarCollectorSystem.jarColors
         : [];
       var scoredDrops = collectedDrops.filter(function (drop) {
-        return !!(drop && typeof drop.color === "string" && jarColors.indexOf(drop.color) !== -1);
+        return !!(
+          drop &&
+          typeof drop.color === "string" &&
+          (jarColors.indexOf(drop.color) !== -1 || NON_COLLECTIBLE_JAR_SCORE_COLORS[drop.color] === true)
+        );
       });
 
       if (!scoredDrops.length) {
@@ -2802,9 +2810,12 @@ function createGameManagerShotResolutionMethods(deps) {
             grid.getCells(),
             grid
           );
-        if (this.lastResolution.trappedSpriteRotation.started) {
-          this.lastResolution.impact = null;
-        }
+      }
+      if (
+        this.lastResolution.trappedSpriteRotation &&
+        this.lastResolution.trappedSpriteRotation.started
+      ) {
+        this.lastResolution.impact = null;
       }
       this._resolveDirectVineImpact(projectile, grid, this.lastResolution);
       if (!this.molotovResolutionPending) {
@@ -3067,6 +3078,10 @@ function createGameManagerShotResolutionMethods(deps) {
       }
 
       if (!this._isClearWinCompleted()) {
+        if (!this.isTimedInfiniteShots && this.remainingShots > 0) {
+          this._beginSurplusShotBonus("board_clear_score_recheck");
+          return;
+        }
         this.state = "lost_objective";
         return;
       }
@@ -3074,9 +3089,12 @@ function createGameManagerShotResolutionMethods(deps) {
       this._resolveClearWinOutcome();
     },
 
-    _beginSurplusShotBonus: function () {
+    _beginSurplusShotBonus: function (settlementReason) {
       if (this.isTimedInfiniteShots) {
         throw new Error("Surplus shot bonus cannot run in timed infinite-shot mode.");
+      }
+      if (settlementReason !== "clear_win" && settlementReason !== "board_clear_score_recheck") {
+        throw new Error("Surplus shot bonus requires an explicit settlement reason.");
       }
 
       var remainingCount = Math.floor(Number(this.remainingShots) || 0);
@@ -3127,7 +3145,9 @@ function createGameManagerShotResolutionMethods(deps) {
       ) {
         throw new Error("Surplus shot bonus must launch exactly one surplus shot immediately.");
       }
-      this.state = "won_surplus_shots_pending";
+      this.state = settlementReason === "clear_win"
+        ? "won_surplus_shots_pending"
+        : "board_clear_score_recheck_surplus_shots_pending";
       if (!fallingMarbleSystem.hasPendingSurplusShots()) {
         this.surplusShotAimRecentered = true;
         this.surplusShotAimRecenterRevision += 1;

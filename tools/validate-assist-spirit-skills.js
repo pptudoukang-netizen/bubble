@@ -137,6 +137,19 @@ function validateResourcesAndPrefab() {
   assert(componentTypes.indexOf("cc.Sprite") >= 0, "ShooterPanel Skill requires cc.Sprite.");
   assert(componentTypes.indexOf("cc.Button") >= 0, "ShooterPanel Skill requires cc.Button.");
   assert(skillNodeIndex > 0, "ShooterPanel Skill node must be serialized.");
+  var shooterPanelNodes = prefab.filter(function (entry) {
+    return entry && entry.__type__ === "cc.Node" && entry._name === "ShooterPanel";
+  });
+  assert(shooterPanelNodes.length === 1, "ShooterPanel prefab root must be serialized exactly once.");
+  var shooterPanelNodeIndex = prefab.indexOf(shooterPanelNodes[0]);
+  var skillHaloNodes = prefab.filter(function (entry) {
+    return entry && entry.__type__ === "cc.Node" && entry._name === "SkillHalo";
+  });
+  assert(skillHaloNodes.length === 1, "ShooterPanel requires exactly one SkillHalo node.");
+  assert(
+    skillHaloNodes[0]._parent && skillHaloNodes[0]._parent.__id__ === shooterPanelNodeIndex,
+    "ShooterPanel SkillHalo must be a direct child of ShooterPanel."
+  );
   var adChildNodes = prefab.filter(function (entry) {
     return entry && entry.__type__ === "cc.Node" && entry._name === "ad" && entry._parent && entry._parent.__id__ === skillNodeIndex;
   });
@@ -168,6 +181,21 @@ function validateResourcesAndPrefab() {
       fillLayoutAfterFrameIndex > fillFrameIndex &&
       chargeVisualSource.indexOf("fill.node.setAnchorPoint(skillNode.anchorX, skillNode.anchorY)") >= 0,
     "ShooterPanel SkillChargeFill must preserve authored anchor and size after its first SpriteFrame assignment."
+  );
+  var skillHaloVisualStart = shooterRendererSource.indexOf("function syncAssistSkillHalo");
+  var skillHaloVisualEnd = shooterRendererSource.indexOf("function syncShooterPrefabLayout", skillHaloVisualStart);
+  assert(
+    skillHaloVisualStart >= 0 && skillHaloVisualEnd > skillHaloVisualStart,
+    "ShooterPanel SkillHalo visual synchronization is required."
+  );
+  var skillHaloVisualSource = shooterRendererSource.slice(skillHaloVisualStart, skillHaloVisualEnd);
+  assert(
+    shooterRendererSource.indexOf('"SkillHalo"') >= 0 &&
+      skillHaloVisualSource.indexOf("skillHaloNode.active = enabled") >= 0 &&
+      skillHaloVisualSource.indexOf("cc.repeatForever") >= 0 &&
+      skillHaloVisualSource.indexOf("cc.rotateBy(ASSIST_SKILL_HALO_ROTATION_DURATION, -360)") >= 0 &&
+      skillHaloVisualSource.indexOf("skillHaloNode.stopAllActions()") >= 0,
+    "ShooterPanel SkillHalo must show and rotate clockwise only while the skill is available."
   );
   var assistSkillButtonStart = shooterRendererSource.indexOf('this._bindBottomPanelButton(assistSkillNode, "use_assist_spirit_skill")');
   var assistSkillButtonEnd = shooterRendererSource.indexOf("var nextAnchor", assistSkillButtonStart);

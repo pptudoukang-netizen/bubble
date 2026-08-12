@@ -13,6 +13,7 @@ var GameManager = require("../gameplay-src/core/GameManager");
 var FairyAssistConfig = require("../gameplay-src/config/FairyAssistConfig");
 var SpecialAnimationTiming = require("../gameplay-src/config/SpecialAnimationTiming");
 var attachLevelRendererSceneBoardMethods = require("../gameplay-src/render/LevelRendererSceneBoardMethods");
+var attachLevelRendererSceneFxMethods = require("../gameplay-src/render/LevelRendererSceneFxMethods");
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
@@ -376,8 +377,118 @@ function validateFloatingNodesOverridePendingShatterRetention() {
   }
 }
 
+function validateSwirlRotationCarriesTimeBonusLabel() {
+  var previousCc = global.cc;
+  global.cc = {
+    moveTo: function (duration, x, y) {
+      return { type: "moveTo", duration: duration, x: x, y: y };
+    },
+    rotateBy: function (duration, angle) {
+      return { type: "rotateBy", duration: duration, angle: angle };
+    },
+    spawn: function () {
+      return { type: "spawn", actions: Array.prototype.slice.call(arguments) };
+    }
+  };
+
+  try {
+    function FxRenderer() {}
+    attachLevelRendererSceneFxMethods(FxRenderer, {
+      BoardLayout: BoardLayout,
+      SpecialAnimationTiming: SpecialAnimationTiming
+    });
+
+    var timeBonusNode = { isValid: true };
+    var movingNode = {
+      isValid: true,
+      angle: 23,
+      stopAllActions: function () {},
+      setPosition: function (x, y) {
+        this.x = x;
+        this.y = y;
+      },
+      runAction: function (action) {
+        this.action = action;
+      },
+      getChildByName: function (name) {
+        return name === "TimeBonus" ? timeBonusNode : null;
+      }
+    };
+    timeBonusNode.parent = movingNode;
+    var centerNode = {
+      isValid: true,
+      angle: 17,
+      stopAllActions: function () {},
+      runAction: function (action) {
+        this.action = action;
+      }
+    };
+    var renderer = new FxRenderer();
+    renderer.swirlRotationAnimatedIds = {};
+    renderer.boardBubbleNodes = {
+      time_bonus_moving: movingNode,
+      swirl_center: centerNode
+    };
+
+    renderer._playSwirlRotationAnimation({
+      board: {
+        maxColumns: 10,
+        viewportOffsetY: 0
+      },
+      lastResolution: {
+        swirlRotations: [{
+          id: "time_bonus_swirl_rotation",
+          duration: SpecialAnimationTiming.swirlRotation.duration,
+          angleDegrees: 60,
+          centerId: "swirl_center",
+          moves: [{
+            fromRow: 2,
+            fromCol: 3,
+            toRow: 2,
+            toCol: 4,
+            targetCellId: "time_bonus_moving"
+          }]
+        }]
+      }
+    });
+
+    if (timeBonusNode.parent !== movingNode) {
+      throw new Error("Time bonus label must remain a child of its moving bubble node.");
+    }
+    if (movingNode.angle !== 23 || !movingNode.action || movingNode.action.type !== "spawn") {
+      throw new Error("Swirl track bubble must preserve its current angle and animate on its root node.");
+    }
+    var compositeAction = movingNode.action;
+    if (compositeAction.actions.length !== 2) {
+      throw new Error("Swirl track bubble must move and rotate as one composite action.");
+    }
+    var rotationAction = compositeAction.actions.filter(function (action) {
+      return action.type === "rotateBy";
+    })[0];
+    if (!rotationAction || rotationAction.duration !== SpecialAnimationTiming.swirlRotation.duration || rotationAction.angle !== 60) {
+      throw new Error("Time bonus bubble and its label must rotate in the swirl movement direction.");
+    }
+    if (
+      centerNode.angle !== 17 ||
+      !centerNode.action ||
+      centerNode.action.type !== "rotateBy" ||
+      centerNode.action.duration !== SpecialAnimationTiming.swirlRotation.duration ||
+      centerNode.action.angle !== 60
+    ) {
+      throw new Error("Swirl center must preserve its current angle and rotate in the swirl movement direction.");
+    }
+  } finally {
+    if (typeof previousCc === "undefined") {
+      delete global.cc;
+    } else {
+      global.cc = previousCc;
+    }
+  }
+}
+
 validateConfigAndCompactCodec();
 validateRotationAndDeferredDrop();
 validateSwirlCenterAndNeighborDropWithoutStaleEliminationHold();
 validateFloatingNodesOverridePendingShatterRetention();
+validateSwirlRotationCarriesTimeBonusLabel();
 console.log("[OK] swirl_bubble config, clockwise rotation, full-chain support drop and board-node recycling");

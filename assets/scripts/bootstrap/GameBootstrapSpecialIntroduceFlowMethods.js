@@ -248,6 +248,9 @@ function hasTopEmptySlots(snapshot) {
   if (!snapshot.board || typeof snapshot.board !== "object" || Array.isArray(snapshot.board)) {
     throw new Error("Top slot tips sync requires runtime board snapshot.");
   }
+  if (snapshot.board.trappedSpriteRescueActive === true) {
+    return false;
+  }
   var occupied = buildTopRowOccupiedMap(snapshot.board);
   var topRowColumns = BoardLayout.getRowColumnCount(0, snapshot.board.maxColumns);
   for (var col = 0; col < topRowColumns; col += 1) {

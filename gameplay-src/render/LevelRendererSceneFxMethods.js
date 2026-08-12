@@ -1077,8 +1077,7 @@ LevelRenderer.prototype._playSwirlRotationAnimation = function (runtimeSnapshot)
   if (
     typeof cc.moveTo !== "function" ||
     typeof cc.rotateBy !== "function" ||
-    typeof cc.sequence !== "function" ||
-    typeof cc.callFunc !== "function"
+    typeof cc.spawn !== "function"
   ) {
     throw new Error("Swirl animation requires Cocos action APIs.");
   }
@@ -1138,7 +1137,10 @@ LevelRenderer.prototype._playSwirlRotationAnimation = function (runtimeSnapshot)
       );
       bubbleNode.stopAllActions();
       bubbleNode.setPosition(startPosition.x, startPosition.y);
-      bubbleNode.runAction(cc.moveTo(rotation.duration, targetPosition.x, targetPosition.y));
+      bubbleNode.runAction(cc.spawn(
+        cc.moveTo(rotation.duration, targetPosition.x, targetPosition.y),
+        cc.rotateBy(rotation.duration, rotation.angleDegrees)
+      ));
     }, this);
 
     if (typeof rotation.centerId !== "string" && typeof rotation.centerId !== "number") {
@@ -1149,16 +1151,7 @@ LevelRenderer.prototype._playSwirlRotationAnimation = function (runtimeSnapshot)
       throw new Error("Swirl animation center node missing: " + rotation.centerId);
     }
     centerNode.stopAllActions();
-    centerNode.angle = 0;
-    centerNode.runAction(cc.sequence(
-      cc.rotateBy(rotation.duration, -rotation.angleDegrees),
-      cc.callFunc(function () {
-        if (!centerNode || !centerNode.isValid) {
-          throw new Error("Swirl animation center node was destroyed before completion.");
-        }
-        centerNode.angle = 0;
-      })
-    ));
+    centerNode.runAction(cc.rotateBy(rotation.duration, rotation.angleDegrees));
   }, this);
 };
 
@@ -1200,6 +1193,15 @@ LevelRenderer.prototype._playWormholeShiftAnimation = function (runtimeSnapshot)
     if (shift.moveDirection !== "left" && shift.moveDirection !== "right") {
       throw new Error("Wormhole animation requires left/right moveDirection.");
     }
+    if (
+      !Number.isInteger(shift.leftCol) ||
+      !Number.isInteger(shift.rightCol) ||
+      shift.rightCol - shift.leftCol < 2 ||
+      !Number.isInteger(shift.slotCount) ||
+      shift.slotCount !== shift.rightCol - shift.leftCol - 1
+    ) {
+      throw new Error("Wormhole animation requires valid interior boundaries.");
+    }
     if (!Array.isArray(shift.moves)) {
       throw new Error("Wormhole animation requires moves array.");
     }
@@ -1233,7 +1235,25 @@ LevelRenderer.prototype._playWormholeShiftAnimation = function (runtimeSnapshot)
         boardSnapshot.maxColumns,
         boardSnapshot.viewportOffsetY
       );
+      var isWrappedMove = shift.moveDirection === "left"
+        ? move.fromCol === shift.leftCol + 1 && move.toCol === shift.rightCol - 1
+        : move.fromCol === shift.rightCol - 1 && move.toCol === shift.leftCol + 1;
+      if (move.fromRow !== shift.row || move.toRow !== shift.row) {
+        throw new Error("Wormhole animation move must stay on its pair row.");
+      }
+      if (!isWrappedMove) {
+        var expectedStep = shift.moveDirection === "left" ? -1 : 1;
+        if (move.toCol - move.fromCol !== expectedStep) {
+          throw new Error("Wormhole animation move does not match moveDirection.");
+        }
+      }
       bubbleNode.stopAllActions();
+      if (isWrappedMove) {
+        // The wrapped cell teleports through the fixed endpoints. Rendering it across the
+        // whole interior makes the newly emerged edge bubble pass through the endpoint.
+        bubbleNode.setPosition(targetPosition.x, targetPosition.y);
+        return;
+      }
       bubbleNode.setPosition(startPosition.x, startPosition.y);
       bubbleNode.runAction(cc.moveTo(shift.duration, targetPosition.x, targetPosition.y));
     }, this);
@@ -2034,6 +2054,7 @@ LevelRenderer.prototype._syncBoardClearFireworks = function (runtimeSnapshot) {
   if (
     runtimeSnapshot.state === "won_pending" ||
     runtimeSnapshot.state === "won_surplus_shots_pending" ||
+    runtimeSnapshot.state === "board_clear_score_recheck_surplus_shots_pending" ||
     runtimeSnapshot.state === "won_settlement_pending"
   ) {
     this._startBoardClearFireworks();

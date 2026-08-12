@@ -43,7 +43,7 @@
     return null;
   }
   var previousRequire = resolvePreviousRequire();
-  var gameplayCodeHash = "d9e4a7ebc74eb437cb22a54072365af25e2d558ffe07fe796550291e88874ce0";
+  var gameplayCodeHash = "6f7f88d1f66834ad1eb548d1c1ddf7ccf346ac0a234cb8cdca73ebd89aef4b6a";
   var lazyRequire = (function (modules, cache, entries) {
     function load(moduleId, jumped) {
       if (!cache[moduleId]) {
@@ -1341,6 +1341,7 @@ function BubbleGrid() {
   this.trappedSpriteRescueSystem = null;
   this._cellMap = {};
   this._cellsByRow = {};
+  this._rescueExtendedNormalCellMap = {};
   this._specialCellMap = {};
   this._timeBonusByCell = {};
   this._vineOwnerByCell = {};
@@ -1415,6 +1416,7 @@ BubbleGrid.prototype.configureLevel = function (levelConfig) {
     throw new Error("BubbleGrid requires level.initialDropSpaceRows >= 8.");
   }
   this.layout = levelConfig.level.layout.slice();
+  this._rescueExtendedNormalCellMap = {};
   this.specialEntities = Array.isArray(levelConfig.level.specialEntities)
     ? clone(levelConfig.level.specialEntities)
     : [];
@@ -1458,8 +1460,16 @@ BubbleGrid.prototype.getColumnCountForRow = function (row) {
   return BoardLayout.getRowColumnCount(row, this.maxColumns);
 };
 
+BubbleGrid.prototype._isLayoutBackedCell = function (row, col) {
+  return Number.isInteger(row) && row >= 0 &&
+    Number.isInteger(col) && col >= 0 && col < this.getColumnCountForRow(row);
+};
+
 BubbleGrid.prototype.isValidCell = function (row, col) {
-  return row >= 0 && col >= 0 && col < this.getColumnCountForRow(row);
+  if (this.isTrappedSpriteRescueActive()) {
+    return Number.isInteger(row) && Number.isInteger(col);
+  }
+  return this._isLayoutBackedCell(row, col);
 };
 
 BubbleGrid.prototype._normalizeRowString = function (rowIndex, rowString) {
@@ -1583,6 +1593,24 @@ BubbleGrid.prototype._rebuildCaches = function () {
       this._cellMap[keyFor(rowIndex, columnIndex)] = cell;
       this._pushCellToRowBucket(cell);
     }, this);
+  }, this);
+
+  Object.keys(this._rescueExtendedNormalCellMap).forEach(function (key) {
+    var extendedCell = this._rescueExtendedNormalCellMap[key];
+    if (!this.isTrappedSpriteRescueActive()) {
+      throw new Error("BubbleGrid extended cells require active trapped sprite rescue mode.");
+    }
+    if (this._isLayoutBackedCell(extendedCell.row, extendedCell.col)) {
+      throw new Error("BubbleGrid extended cell must remain outside authored layout coordinates: " + key);
+    }
+    if (this._cellMap[key]) {
+      throw new Error("BubbleGrid extended cell overlaps an authored layout cell: " + key);
+    }
+
+    var normalCell = this._createNormalCell(extendedCell.row, extendedCell.col, extendedCell.color);
+    this.cells.push(normalCell);
+    this._cellMap[key] = normalCell;
+    this._pushCellToRowBucket(normalCell);
   }, this);
 
   Object.keys(this._specialCellMap).forEach(function (key) {
@@ -1749,6 +1777,25 @@ BubbleGrid.prototype._ensureRow = function (rowIndex) {
 };
 
 BubbleGrid.prototype._setCell = function (row, col, color) {
+  if (!Number.isInteger(row) || !Number.isInteger(col)) {
+    throw new Error("BubbleGrid._setCell requires integer coordinates.");
+  }
+  if (!this._isLayoutBackedCell(row, col)) {
+    if (!this.isTrappedSpriteRescueActive()) {
+      throw new Error("BubbleGrid cannot write outside authored layout coordinates.");
+    }
+    var extendedKey = keyFor(row, col);
+    if (color === ".") {
+      delete this._rescueExtendedNormalCellMap[extendedKey];
+    } else {
+      this._rescueExtendedNormalCellMap[extendedKey] = {
+        row: row,
+        col: col,
+        color: color
+      };
+    }
+    return;
+  }
   this._ensureRow(row);
   var normalizedRow = this._normalizeRowString(row, this.layout[row]);
   var chars = normalizedRow.split("");
@@ -2074,7 +2121,7 @@ BubbleGrid.prototype.notifyWorldTransformChanged = function () {
 };
 
 BubbleGrid.prototype.getNeighborCoordinates = function (row, col) {
-  var offsets = row % 2 === 1 ? [
+  var offsets = row % 2 !== 0 ? [
     { row: -1, col: 0 },
     { row: -1, col: 1 },
     { row: 0, col: -1 },
@@ -4310,6 +4357,17 @@ var SLOTS = [
   { index: 5, nodeName: "genius6" }
 ];
 
+var GLOW_SCORE_MULTIPLIERS = [
+  { numerator: 1, denominator: 1 },
+  { numerator: 5, denominator: 4 },
+  { numerator: 3, denominator: 2 },
+  { numerator: 2, denominator: 1 },
+  { numerator: 5, denominator: 2 },
+  { numerator: 16, denominator: 5 },
+  { numerator: 4, denominator: 1 },
+  { numerator: 5, denominator: 1 }
+];
+
 function requirePositiveFiniteNumber(value, fieldName) {
   if (typeof value !== "number" || !isFinite(value) || value <= 0) {
     throw new Error(fieldName + " must be a positive finite number.");
@@ -4380,6 +4438,23 @@ function validateSlots(slots) {
   });
 }
 
+function validateGlowScoreMultipliers(multipliers, maxGlowStacks) {
+  if (!Array.isArray(multipliers) || multipliers.length !== maxGlowStacks + 1) {
+    throw new Error("FairyAssistConfig glow score multipliers must cover every glow stack.");
+  }
+  multipliers.forEach(function (multiplier, glowStacks) {
+    if (!multiplier || !Number.isInteger(multiplier.numerator) || multiplier.numerator <= 0) {
+      throw new Error("FairyAssistConfig glow score multiplier numerator is invalid at glow stack " + glowStacks + ".");
+    }
+    if (!Number.isInteger(multiplier.denominator) || multiplier.denominator <= 0) {
+      throw new Error("FairyAssistConfig glow score multiplier denominator is invalid at glow stack " + glowStacks + ".");
+    }
+    if (glowStacks === 0 && multiplier.numerator !== multiplier.denominator) {
+      throw new Error("FairyAssistConfig zero-glow score multiplier must equal one.");
+    }
+  });
+}
+
 validateColorRules(COLOR_RULES);
 validateSlots(SLOTS);
 
@@ -4395,7 +4470,8 @@ var CONFIG = {
   spriteWidth: 200,
   spriteHeight: 160,
   dropCollisionGlowScale: 86 / 72,
-  maxGlowStacks: 7
+  maxGlowStacks: 7,
+  glowScoreMultipliers: GLOW_SCORE_MULTIPLIERS
 };
 
 if (!Number.isInteger(CONFIG.removeCountOnMiss) || CONFIG.removeCountOnMiss <= 0) {
@@ -4414,11 +4490,22 @@ requirePositiveFiniteNumber(CONFIG.dropCollisionGlowScale, "FairyAssistConfig.dr
 if (!Number.isInteger(CONFIG.maxGlowStacks) || CONFIG.maxGlowStacks <= 0) {
   throw new Error("FairyAssistConfig.maxGlowStacks must be a positive integer.");
 }
+validateGlowScoreMultipliers(CONFIG.glowScoreMultipliers, CONFIG.maxGlowStacks);
+
+CONFIG.getScoreMultiplierForGlowStacks = function (glowStacks) {
+  if (!Number.isInteger(glowStacks) || glowStacks < 0 || glowStacks > CONFIG.maxGlowStacks) {
+    throw new Error("FairyAssistConfig glow stack score lookup is out of range: " + glowStacks + ".");
+  }
+  var multiplier = CONFIG.glowScoreMultipliers[glowStacks];
+  return multiplier.numerator / multiplier.denominator;
+};
 
 COLOR_RULES.forEach(Object.freeze);
 SLOTS.forEach(Object.freeze);
+GLOW_SCORE_MULTIPLIERS.forEach(Object.freeze);
 Object.freeze(COLOR_RULES);
 Object.freeze(SLOTS);
+Object.freeze(GLOW_SCORE_MULTIPLIERS);
 
 module.exports = Object.freeze(CONFIG);
 
@@ -5418,7 +5505,6 @@ FallingMarbleSystem.prototype._buildDropFromCell = function (
       ? String(cell.rootDropId)
       : String(cell.id),
     hitFairyIds: [],
-    fairyBonusSteps: 0,
     finalMultiplier: 1,
     glowStacks: 0,
     splitGeneration: 0
@@ -5595,7 +5681,6 @@ FallingMarbleSystem.prototype._createSurplusShotDrop = function (ball, spawnInde
     turretAngleDeg: this.surplusTurretAngleDeg,
     rootDropId: "surplus_shot_" + spawnIndex,
     hitFairyIds: [],
-    fairyBonusSteps: 0,
     finalMultiplier: 1,
     glowStacks: 0,
     splitGeneration: 0
@@ -5945,7 +6030,6 @@ FallingMarbleSystem.prototype._createCollectedEvent = function (drop, zone) {
     jarColor: zone ? zone.color : null,
     sameColor: sameColor,
     bonusMultiplier: sameColor ? zone.sameColorBonus : 1,
-    fairyBonusSteps: drop.fairyBonusSteps,
     fairyMultiplier: drop.finalMultiplier,
     finalMultiplier: drop.finalMultiplier,
     glowStacks: drop.glowStacks,
@@ -5987,9 +6071,6 @@ FallingMarbleSystem.prototype._createSplitChildren = function (drop) {
 };
 
 FallingMarbleSystem.prototype._applyFairyCollision = function (drop, activeDropCount) {
-  if (drop && drop.dropKind === "victory_board_drop") {
-    return null;
-  }
   if (!this.fairyAssistSystem) {
     throw new Error("FallingMarbleSystem fairy collision requires FairyAssistSystem.");
   }
@@ -6023,12 +6104,14 @@ FallingMarbleSystem.prototype._applyFairyCollision = function (drop, activeDropC
   );
   drop.position.x = collision.fairy.position.x + normal.x * collision.collisionDistance;
   drop.position.y = collision.fairy.position.y + normal.y * collision.collisionDistance;
-  drop.fairyBonusSteps += collision.fairy.bonusStep;
-  drop.finalMultiplier = 1 + drop.fairyBonusSteps;
   if (!Number.isInteger(drop.glowStacks) || drop.glowStacks < 0) {
     throw new Error("Falling drop glowStacks must be a non-negative integer.");
   }
-  drop.glowStacks = Math.min(FairyAssistConfig.maxGlowStacks, drop.glowStacks + 1);
+  drop.glowStacks = Math.min(
+    FairyAssistConfig.maxGlowStacks,
+    drop.glowStacks + collision.fairy.bonusStep
+  );
+  drop.finalMultiplier = FairyAssistConfig.getScoreMultiplierForGlowStacks(drop.glowStacks);
 
   var result = {
     fairyId: collision.fairy.id,
@@ -6754,6 +6837,13 @@ function resolveBallDisplayCode(ball) {
 
 function isSkillBall(cellOrBall) {
   return !!(cellOrBall && cellOrBall.entityCategory === "skill_ball");
+}
+
+function isPowerupShotBall(ball) {
+  return !!(
+    isSkillBall(ball) ||
+    (ball && ball.sourceSkillBallType === "rainbow")
+  );
 }
 
 function isIceBall(cellOrBall) {
@@ -8384,6 +8474,24 @@ GameManager.prototype._isBoardCleared = function (grid) {
   return cells.every(isWormholeBall);
 };
 
+GameManager.prototype._resolveTrappedSpriteRescueBoardEmpty = function () {
+  var trappedSpriteRescueSystem = this.systems.trappedSpriteRescueSystem;
+  if (!trappedSpriteRescueSystem.isActive()) {
+    return false;
+  }
+  if (this.state !== "running" && this.state !== "out_of_shots_pending") {
+    return false;
+  }
+  if (!this._isBoardCleared(this.systems.bubbleGrid)) {
+    return false;
+  }
+
+  // A rescue clear is authoritative as soon as the support scan has removed the
+  // final board cells. Do not depend on an individual resolution branch to report it.
+  this._resolveBoardClearedOutcome();
+  return true;
+};
+
 GameManager.prototype._resolveOutOfShotsOutcome = function () {
   if (this._isBoardCleared(this.systems.bubbleGrid)) {
     this._resolveBoardClearedOutcome();
@@ -8811,7 +8919,7 @@ GameManager.prototype._resolveClearWinOutcome = function () {
   }
 
   if (this.remainingShots > 0) {
-    this._beginSurplusShotBonus();
+    this._beginSurplusShotBonus("clear_win");
     return;
   }
 
@@ -8939,31 +9047,20 @@ GameManager.prototype.fireShot = function () {
       this.systems.trappedSpriteRescueSystem.isActive()
     );
   }.bind(this);
-  var rescueBlocked = function (plan) {
-    return !!(
-      plan &&
-      plan.valid &&
-      plan.hitType === "blocked" &&
-      this.systems.trappedSpriteRescueSystem.isActive()
-    );
-  }.bind(this);
-  if (rescueBlocked(shotPlan)) {
-    return this.getRuntimeSnapshot();
-  }
   if (!shotPlan || !shotPlan.valid || (!shotPlan.targetCell && !rescueMissAllowed(shotPlan))) {
     // 发射优先沿用当前幽灵球路线；仅在缺失时才临时重算。
     this._refreshShotPlan(true);
     shotPlan = this.pendingShotPlan;
-  }
-  if (rescueBlocked(shotPlan)) {
-    return this.getRuntimeSnapshot();
   }
   if (!shotPlan || !shotPlan.valid || (!shotPlan.targetCell && !rescueMissAllowed(shotPlan))) {
     Logger.warn("Missing valid shot plan, fire aborted");
     return this.getRuntimeSnapshot();
   }
 
-  var remainingShotsAfterFire = this.isTimedInfiniteShots ? 0 : this.remainingShots - 1;
+  var currentBall = this.systems.shooterController.currentBall;
+  var remainingShotsAfterFire = this.isTimedInfiniteShots
+    ? 0
+    : this.remainingShots - (isPowerupShotBall(currentBall) ? 0 : 1);
   var queueResult = this.systems.shooterController.advanceQueue(
     remainingShotsAfterFire,
     this.isTimedInfiniteShots
@@ -10164,6 +10261,8 @@ GameManager.prototype.update = function (dt) {
     this._finalizePlannedShot();
   }
 
+  this._resolveTrappedSpriteRescueBoardEmpty();
+
   if (this.activeProjectile) {
     var projectile = this.activeProjectile;
     var remainingDistance = projectile.speed * dt;
@@ -10231,7 +10330,10 @@ GameManager.prototype.update = function (dt) {
   var fallingStep = this.systems.fallingMarbleSystem.update(dt);
   var surplusUpdated = !!(fallingStep && fallingStep.surplusUpdated);
   var surplusShotLaunchedCount = 0;
-  if (this.state === "won_surplus_shots_pending") {
+  if (
+    this.state === "won_surplus_shots_pending" ||
+    this.state === "board_clear_score_recheck_surplus_shots_pending"
+  ) {
     if (
       !fallingStep ||
       !Number.isInteger(fallingStep.surplusShotLaunchedCount) ||
@@ -10309,7 +10411,6 @@ GameManager.prototype.update = function (dt) {
           jarColor: drop.jarColor,
           sameColor: !!drop.sameColor,
           bonusMultiplier: typeof drop.bonusMultiplier === "number" ? drop.bonusMultiplier : 1,
-          fairyBonusSteps: drop.fairyBonusSteps,
           fairyMultiplier: drop.fairyMultiplier,
           finalMultiplier: drop.finalMultiplier,
           glowStacks: drop.glowStacks,
@@ -10321,6 +10422,7 @@ GameManager.prototype.update = function (dt) {
     }
   }
   if (cleanupScoredDrops.length) {
+    this._injectCollectedSkillBalls(cleanupScoredDrops);
     this._applyJarCollectionScore(cleanupScoredDrops);
   }
   runtimeEvents = runtimeEvents.concat(this._drainRuntimeEvents());
@@ -10354,7 +10456,7 @@ GameManager.prototype.update = function (dt) {
   var hasPendingVineCast = this._hasPendingVineCast();
   var hasPendingTrappedSpritePostImpact = this._hasPendingTrappedSpritePostImpactResolution();
   if (
-    this.state === "won_surplus_shots_pending" &&
+    (this.state === "won_surplus_shots_pending" || this.state === "board_clear_score_recheck_surplus_shots_pending") &&
     !this.surplusShotAimRecentered &&
     !this.systems.fallingMarbleSystem.hasPendingSurplusShots()
   ) {
@@ -10411,7 +10513,7 @@ GameManager.prototype.update = function (dt) {
   }
 
   if (
-    this.state === "won_surplus_shots_pending" &&
+    (this.state === "won_surplus_shots_pending" || this.state === "board_clear_score_recheck_surplus_shots_pending") &&
     !hasProjectile &&
     !hasFallingDrops &&
     !hasPendingSplitterSpawns &&
@@ -10422,10 +10524,17 @@ GameManager.prototype.update = function (dt) {
     !hasPendingTrappedSpritePostImpact &&
     !this.systems.fallingMarbleSystem.hasPendingSurplusShots()
   ) {
-    if (typeof this._pushRuntimeEvent === "function") {
+    var isBoardClearScoreRecheck = this.state === "board_clear_score_recheck_surplus_shots_pending";
+    var hasReachedRequiredStar = !isBoardClearScoreRecheck || this._isClearWinCompleted();
+    if (hasReachedRequiredStar && typeof this._pushRuntimeEvent === "function") {
       this._pushRuntimeEvent("surplus_shots_finished", {});
     }
-    this._scheduleWinSettlement();
+    if (isBoardClearScoreRecheck) {
+      this._resolveBoardClearedOutcome();
+    } else {
+      this._scheduleWinSettlement();
+    }
+    runtimeEvents = runtimeEvents.concat(this._drainRuntimeEvents());
     return this.getRuntimeSnapshot(runtimeEvents);
   }
 
@@ -10759,7 +10868,10 @@ GameManager.prototype.getRuntimeSnapshot = function (runtimeEvents, renderOption
     : null;
 
   shooterSnapshot.surplusShotAimRecenterRevision = this.surplusShotAimRecenterRevision;
-  if (this.state === "won_surplus_shots_pending") {
+  if (
+    this.state === "won_surplus_shots_pending" ||
+    this.state === "board_clear_score_recheck_surplus_shots_pending"
+  ) {
     var fallingMarbleSystem = this.systems.fallingMarbleSystem;
     if (!fallingMarbleSystem || typeof fallingMarbleSystem.getSurplusTurretAimDirection !== "function") {
       throw new Error("Surplus shot render requires FallingMarbleSystem.getSurplusTurretAimDirection.");
@@ -10789,7 +10901,7 @@ GameManager.prototype.getRuntimeSnapshot = function (runtimeEvents, renderOption
 
   return {
     state: this.state,
-    surplusShotsSettling: this.state === "won_surplus_shots_pending",
+    surplusShotsSettling: this.state === "won_surplus_shots_pending" || this.state === "board_clear_score_recheck_surplus_shots_pending",
     levelCode: this.currentLevel ? this.currentLevel.level.code : null,
     remainingShots: this.remainingShots,
     infiniteShots: !!this.isTimedInfiniteShots,
@@ -11770,6 +11882,10 @@ function createGameManagerShotResolutionMethods(deps) {
   var MOLOTOV_BLAST_DROP_INNER_SPEED = 860;
   var MOLOTOV_BLAST_DROP_OUTER_SPEED = 640;
   var ELIMINATION_SEQUENCE_INTERVAL_MS = 30;
+  var NON_COLLECTIBLE_JAR_SCORE_COLORS = {
+    K: true,
+    W: true
+  };
 
   function requireFinitePoint(point, ownerName) {
     if (
@@ -12236,7 +12352,11 @@ function createGameManagerShotResolutionMethods(deps) {
         ? this.systems.jarCollectorSystem.jarColors
         : [];
       var scoredDrops = collectedDrops.filter(function (drop) {
-        return !!(drop && typeof drop.color === "string" && jarColors.indexOf(drop.color) !== -1);
+        return !!(
+          drop &&
+          typeof drop.color === "string" &&
+          (jarColors.indexOf(drop.color) !== -1 || NON_COLLECTIBLE_JAR_SCORE_COLORS[drop.color] === true)
+        );
       });
 
       if (!scoredDrops.length) {
@@ -14537,9 +14657,12 @@ function createGameManagerShotResolutionMethods(deps) {
             grid.getCells(),
             grid
           );
-        if (this.lastResolution.trappedSpriteRotation.started) {
-          this.lastResolution.impact = null;
-        }
+      }
+      if (
+        this.lastResolution.trappedSpriteRotation &&
+        this.lastResolution.trappedSpriteRotation.started
+      ) {
+        this.lastResolution.impact = null;
       }
       this._resolveDirectVineImpact(projectile, grid, this.lastResolution);
       if (!this.molotovResolutionPending) {
@@ -14802,6 +14925,10 @@ function createGameManagerShotResolutionMethods(deps) {
       }
 
       if (!this._isClearWinCompleted()) {
+        if (!this.isTimedInfiniteShots && this.remainingShots > 0) {
+          this._beginSurplusShotBonus("board_clear_score_recheck");
+          return;
+        }
         this.state = "lost_objective";
         return;
       }
@@ -14809,9 +14936,12 @@ function createGameManagerShotResolutionMethods(deps) {
       this._resolveClearWinOutcome();
     },
 
-    _beginSurplusShotBonus: function () {
+    _beginSurplusShotBonus: function (settlementReason) {
       if (this.isTimedInfiniteShots) {
         throw new Error("Surplus shot bonus cannot run in timed infinite-shot mode.");
+      }
+      if (settlementReason !== "clear_win" && settlementReason !== "board_clear_score_recheck") {
+        throw new Error("Surplus shot bonus requires an explicit settlement reason.");
       }
 
       var remainingCount = Math.floor(Number(this.remainingShots) || 0);
@@ -14862,7 +14992,9 @@ function createGameManagerShotResolutionMethods(deps) {
       ) {
         throw new Error("Surplus shot bonus must launch exactly one surplus shot immediately.");
       }
-      this.state = "won_surplus_shots_pending";
+      this.state = settlementReason === "clear_win"
+        ? "won_surplus_shots_pending"
+        : "board_clear_score_recheck_surplus_shots_pending";
       if (!fallingMarbleSystem.hasPendingSurplusShots()) {
         this.surplusShotAimRecentered = true;
         this.surplusShotAimRecenterRevision += 1;
@@ -15734,7 +15866,10 @@ function buildStateText(runtimeSnapshot) {
     return "步数耗尽";
   }
 
-  if (runtimeSnapshot.state === "won_surplus_shots_pending") {
+  if (
+    runtimeSnapshot.state === "won_surplus_shots_pending" ||
+    runtimeSnapshot.state === "board_clear_score_recheck_surplus_shots_pending"
+  ) {
     return "剩余球结算中";
   }
 
@@ -21094,8 +21229,7 @@ LevelRenderer.prototype._playSwirlRotationAnimation = function (runtimeSnapshot)
   if (
     typeof cc.moveTo !== "function" ||
     typeof cc.rotateBy !== "function" ||
-    typeof cc.sequence !== "function" ||
-    typeof cc.callFunc !== "function"
+    typeof cc.spawn !== "function"
   ) {
     throw new Error("Swirl animation requires Cocos action APIs.");
   }
@@ -21155,7 +21289,10 @@ LevelRenderer.prototype._playSwirlRotationAnimation = function (runtimeSnapshot)
       );
       bubbleNode.stopAllActions();
       bubbleNode.setPosition(startPosition.x, startPosition.y);
-      bubbleNode.runAction(cc.moveTo(rotation.duration, targetPosition.x, targetPosition.y));
+      bubbleNode.runAction(cc.spawn(
+        cc.moveTo(rotation.duration, targetPosition.x, targetPosition.y),
+        cc.rotateBy(rotation.duration, rotation.angleDegrees)
+      ));
     }, this);
 
     if (typeof rotation.centerId !== "string" && typeof rotation.centerId !== "number") {
@@ -21166,16 +21303,7 @@ LevelRenderer.prototype._playSwirlRotationAnimation = function (runtimeSnapshot)
       throw new Error("Swirl animation center node missing: " + rotation.centerId);
     }
     centerNode.stopAllActions();
-    centerNode.angle = 0;
-    centerNode.runAction(cc.sequence(
-      cc.rotateBy(rotation.duration, -rotation.angleDegrees),
-      cc.callFunc(function () {
-        if (!centerNode || !centerNode.isValid) {
-          throw new Error("Swirl animation center node was destroyed before completion.");
-        }
-        centerNode.angle = 0;
-      })
-    ));
+    centerNode.runAction(cc.rotateBy(rotation.duration, rotation.angleDegrees));
   }, this);
 };
 
@@ -21217,6 +21345,15 @@ LevelRenderer.prototype._playWormholeShiftAnimation = function (runtimeSnapshot)
     if (shift.moveDirection !== "left" && shift.moveDirection !== "right") {
       throw new Error("Wormhole animation requires left/right moveDirection.");
     }
+    if (
+      !Number.isInteger(shift.leftCol) ||
+      !Number.isInteger(shift.rightCol) ||
+      shift.rightCol - shift.leftCol < 2 ||
+      !Number.isInteger(shift.slotCount) ||
+      shift.slotCount !== shift.rightCol - shift.leftCol - 1
+    ) {
+      throw new Error("Wormhole animation requires valid interior boundaries.");
+    }
     if (!Array.isArray(shift.moves)) {
       throw new Error("Wormhole animation requires moves array.");
     }
@@ -21250,7 +21387,25 @@ LevelRenderer.prototype._playWormholeShiftAnimation = function (runtimeSnapshot)
         boardSnapshot.maxColumns,
         boardSnapshot.viewportOffsetY
       );
+      var isWrappedMove = shift.moveDirection === "left"
+        ? move.fromCol === shift.leftCol + 1 && move.toCol === shift.rightCol - 1
+        : move.fromCol === shift.rightCol - 1 && move.toCol === shift.leftCol + 1;
+      if (move.fromRow !== shift.row || move.toRow !== shift.row) {
+        throw new Error("Wormhole animation move must stay on its pair row.");
+      }
+      if (!isWrappedMove) {
+        var expectedStep = shift.moveDirection === "left" ? -1 : 1;
+        if (move.toCol - move.fromCol !== expectedStep) {
+          throw new Error("Wormhole animation move does not match moveDirection.");
+        }
+      }
       bubbleNode.stopAllActions();
+      if (isWrappedMove) {
+        // The wrapped cell teleports through the fixed endpoints. Rendering it across the
+        // whole interior makes the newly emerged edge bubble pass through the endpoint.
+        bubbleNode.setPosition(targetPosition.x, targetPosition.y);
+        return;
+      }
       bubbleNode.setPosition(startPosition.x, startPosition.y);
       bubbleNode.runAction(cc.moveTo(shift.duration, targetPosition.x, targetPosition.y));
     }, this);
@@ -22051,6 +22206,7 @@ LevelRenderer.prototype._syncBoardClearFireworks = function (runtimeSnapshot) {
   if (
     runtimeSnapshot.state === "won_pending" ||
     runtimeSnapshot.state === "won_surplus_shots_pending" ||
+    runtimeSnapshot.state === "board_clear_score_recheck_surplus_shots_pending" ||
     runtimeSnapshot.state === "won_settlement_pending"
   ) {
     this._startBoardClearFireworks();
@@ -25379,21 +25535,17 @@ function attachLevelRendererSceneOcclusionMethods(LevelRenderer, deps) {
     labelNode.parent = rootNode;
     labelNode.setPosition(0, 0);
     labelNode.zIndex = 2;
-    labelNode.setContentSize(120, 34);
-    var label = ensureLabel(labelNode, "", 25, 29, cc.Label.HorizontalAlign.CENTER);
-    labelNode.color = cc.color(255, 249, 212);
-    var outline = labelNode.getComponent(cc.LabelOutline);
-    if (!outline) {
-      outline = labelNode.addComponent(cc.LabelOutline);
-    }
-    outline.color = cc.color(66, 74, 63);
-    outline.width = 3;
+    labelNode.setContentSize(72, 56);
+    var label = ensureLabel(labelNode, "", 42, 48, cc.Label.HorizontalAlign.CENTER);
+    labelNode.color = cc.color(255, 138, 31);
 
     if (zone.remainingShots !== null) {
       if (!Number.isInteger(zone.remainingShots) || zone.remainingShots <= 0) {
         throw new Error("Board occlusion remainingShots must be a positive integer while active.");
       }
-      label.string = zone.remainingShots + "发";
+      label.overflow = cc.Label.Overflow.NONE;
+      label.enableWrapText = false;
+      label.string = String(zone.remainingShots);
       return;
     }
     if (zone.remainingTimeMs !== null) {
@@ -25409,7 +25561,12 @@ function attachLevelRendererSceneOcclusionMethods(LevelRenderer, deps) {
       labelNode.setContentSize(clockLayout.labelWidth, clockLayout.labelHeight);
       label.fontSize = 16;
       label.lineHeight = 18;
-      outline.width = 2;
+      var timedOutline = labelNode.getComponent(cc.LabelOutline);
+      if (!timedOutline) {
+        timedOutline = labelNode.addComponent(cc.LabelOutline);
+      }
+      timedOutline.color = cc.color(66, 74, 63);
+      timedOutline.width = 2;
       label.string = Math.ceil(zone.remainingTimeMs / 1000) + "秒";
       return;
     }
@@ -27383,9 +27540,11 @@ function attachLevelRendererSceneShooterMethods(LevelRenderer, deps) {
     "NextBallAnchor",
     "TurretNumBg",
     "Surplus",
-    "Skill"
+    "Skill",
+    "SkillHalo"
   ];
   var ASSIST_SKILL_GRAY_COLOR = cc.color(116, 116, 116, 255);
+  var ASSIST_SKILL_HALO_ROTATION_DURATION = 1.6;
 
   function requireAssistSkillChargeValue(value, fieldName) {
     if (!Number.isInteger(value) || value < 0) {
@@ -27450,6 +27609,31 @@ function attachLevelRendererSceneShooterMethods(LevelRenderer, deps) {
       fill.node.color = cc.color(255, 255, 255, 255);
     }
     adNode.active = ratio < 1;
+  }
+
+  function syncAssistSkillHalo(skillHaloNode, enabled) {
+    skillHaloNode.active = enabled;
+    if (!enabled) {
+      if (skillHaloNode.__assistSkillHaloRotationActive) {
+        skillHaloNode.stopAllActions();
+        skillHaloNode.__assistSkillHaloRotationActive = false;
+        skillHaloNode.angle = 0;
+      }
+      return;
+    }
+
+    if (skillHaloNode.__assistSkillHaloRotationActive) {
+      return;
+    }
+
+    skillHaloNode.stopAllActions();
+    skillHaloNode.angle = 0;
+    skillHaloNode.__assistSkillHaloRotationActive = true;
+    skillHaloNode.runAction(
+      cc.repeatForever(
+        cc.rotateBy(ASSIST_SKILL_HALO_ROTATION_DURATION, -360)
+      )
+    );
   }
 
   function syncShooterPrefabLayout(shooterPanel, aimOrigin) {
@@ -27795,7 +27979,12 @@ LevelRenderer.prototype._renderShooter = function (shooterSnapshot, activeProjec
   }
   var assistSkillConfig = AssistSpiritSkillConfig.getBySpiritId(shooterSnapshot.assistSpiritId);
   var assistSkillNode = layoutNodes.Skill;
+  var assistSkillHaloNode = layoutNodes.SkillHalo;
   assistSkillNode.active = !!assistSkillConfig.skillId;
+  syncAssistSkillHalo(
+    assistSkillHaloNode,
+    assistSkillNode.active && shooterSnapshot.assistSpiritSkillAvailable === true
+  );
   if (assistSkillNode.active) {
     var assistSkillSprite = assistSkillNode.getComponent(cc.Sprite);
     if (!assistSkillSprite) {
@@ -29958,6 +30147,7 @@ ShooterController.prototype.resolveCurrentRainbowColor = function (colorCode) {
   }
 
   this.currentBall = createNormalBall(colorCode);
+  this.currentBall.sourceSkillBallType = "rainbow";
   this._syncLegacyColorFields();
 
   return {
@@ -30776,22 +30966,7 @@ TrajectoryPredictor.prototype.predictShotPlan = function (grid, origin, directio
               currentDirection
             );
           }
-          // A rotated rescue board can expose the outer face of a fully-packed
-          // boundary bubble.  It is a real collision, but has no legal hex
-          // neighbor to receive a new bubble.  Keep that state explicit for
-          // aiming instead of selecting an unrelated cell or throwing while
-          // the cannon sweeps across it.
-          return buildPlan(
-            rayOrigin,
-            rayDirection,
-            wallPoints,
-            "blocked",
-            bubbleImpactPoint,
-            collisionInfo.cell,
-            null,
-            null,
-            currentDirection
-          );
+          throw new Error("Trapped sprite bubble collision requires an attachment cell.");
         }
         return buildPlan(
           rayOrigin,

@@ -550,27 +550,34 @@ function validateFlowShaderAndShiftCompatibility() {
         }
       };
     }
-    var movingNode = {
-      isValid: true,
-      stopCount: 0,
-      action: null,
-      stopAllActions: function () {
-        this.stopCount += 1;
-      },
-      setPosition: function (x, y) {
-        this.x = x;
-        this.y = y;
-      },
-      runAction: function (action) {
-        this.action = action;
-      }
-    };
+    function createMovingNode() {
+      return {
+        isValid: true,
+        stopCount: 0,
+        action: null,
+        stopAllActions: function () {
+          this.stopCount += 1;
+        },
+        setPosition: function (x, y) {
+          this.x = x;
+          this.y = y;
+        },
+        runAction: function (action) {
+          this.action = action;
+        }
+      };
+    }
+    var movingNode = createMovingNode();
+    var leftWrappedNode = createMovingNode();
+    var rightWrappedNode = createMovingNode();
     var leftEndpoint = createEndpointNode();
     var rightEndpoint = createEndpointNode();
     var fxRenderer = new FxRenderer();
     fxRenderer.wormholeShiftAnimatedIds = {};
     fxRenderer.boardBubbleNodes = {
       moving: movingNode,
+      left_wrapped: leftWrappedNode,
+      right_wrapped: rightWrappedNode,
       wormhole_left: leftEndpoint,
       wormhole_right: rightEndpoint
     };
@@ -582,21 +589,50 @@ function validateFlowShaderAndShiftCompatibility() {
       lastResolution: {
         wormholeShifts: [{
           id: "wormhole_shift_animation_test",
+          row: 3,
           duration: SpecialAnimationTiming.wormholeShift.duration,
           moveDirection: "right",
           leftWormholeId: "wormhole_left",
+          leftCol: 0,
           rightWormholeId: "wormhole_right",
+          rightCol: 4,
+          slotCount: 3,
           moves: [{
             fromRow: 3,
             fromCol: 1,
             toRow: 3,
             toCol: 2,
             targetCellId: "moving"
+          }, {
+            fromRow: 3,
+            fromCol: 3,
+            toRow: 3,
+            toCol: 1,
+            targetCellId: "right_wrapped"
+          }]
+        }, {
+          id: "wormhole_shift_animation_left_wrap_test",
+          row: 3,
+          duration: SpecialAnimationTiming.wormholeShift.duration,
+          moveDirection: "left",
+          leftWormholeId: "wormhole_left",
+          leftCol: 0,
+          rightWormholeId: "wormhole_right",
+          rightCol: 4,
+          slotCount: 3,
+          moves: [{
+            fromRow: 3,
+            fromCol: 1,
+            toRow: 3,
+            toCol: 3,
+            targetCellId: "left_wrapped"
           }]
         }]
       }
     });
     assert(movingNode.stopCount === 1 && movingNode.action.type === "moveTo", "Interior bubble must still play the shift movement.");
+    assert(leftWrappedNode.stopCount === 1 && leftWrappedNode.action === null && leftWrappedNode.x === 30 && leftWrappedNode.y === 30, "Left-moving wrapped bubble must stay aligned to the rightmost interior slot without crossing the endpoint.");
+    assert(rightWrappedNode.stopCount === 1 && rightWrappedNode.action === null && rightWrappedNode.x === 10 && rightWrappedNode.y === 30, "Right-moving wrapped bubble must stay aligned to the leftmost interior slot without crossing the endpoint.");
     assert(leftEndpoint.stopCount === 0 && rightEndpoint.stopCount === 0, "Wormhole shift must not interrupt endpoint flow shaders.");
 
     fxRenderer.layers = {

@@ -707,6 +707,7 @@ function validateBootstrapAndCloudContract() {
   var bootstrap = readText("assets/scripts/bootstrap/GameBootstrap.js");
   var hallMethods = readText("assets/scripts/bootstrap/GameBootstrapSpiritHallMethods.js");
   var shopMethods = readText("assets/scripts/bootstrap/GameBootstrapSpiritShopMethods.js");
+  var uiFlowShared = readText("assets/scripts/bootstrap/GameBootstrapUiFlowShared.js");
   var lifecycleMethods = readText("assets/scripts/bootstrap/GameBootstrapLifecycleMethods.js");
   var compositionMethods = readText("assets/scripts/bootstrap/GameBootstrapCompositionMethods.js");
   var shopService = readText("assets/scripts/services/SpiritShopService.js");
@@ -753,7 +754,46 @@ function validateBootstrapAndCloudContract() {
     2,
     "Spirit shop successful purchase tip route"
   );
+  requireContains(
+    shopMethods,
+    "showSpiritShopAward(this, buildSpiritFragmentAwardItem(result.spiritId, result.quantity));",
+    "Spirit fragment purchase congratulation popup route"
+  );
+  requireContains(
+    shopMethods,
+    "showSpiritShopAward(this, buildSpiritShopProductAwardItem(result));",
+    "Spirit product purchase congratulation popup route"
+  );
+  requireContains(
+    shopMethods,
+    "Spirit shop purchase requires AwardView renderer.",
+    "Spirit shop purchase must fail fast when AwardView is unavailable"
+  );
+  [
+    "royal_egg: \"spirit_system/image/shop/royal_egg_item\"",
+    "fruit_basket: \"spirit_system/image/shop/fruit_basket_item\"",
+    "ice_tower: \"spirit_system/image/shop/ice_tower_item\"",
+    "mushroom_house: \"spirit_system/image/shop/mushroom_house_item\"",
+    "milu_fragments: \"ui/image/props/milu_fragments\"",
+    "lumi_fragments: \"ui/image/props/lumi_fragments\"",
+    "noya_fragments: \"ui/image/props/noya_fragments\"",
+    "flora_fragments: \"ui/image/props/flora_fragments\"",
+    "loco_fragments: \"ui/image/props/loco_fragments\"",
+    "kelu_fragments: \"ui/image/props/kelu_fragments\"",
+    "yumi_fragments: \"ui/image/props/yumi_fragments\""
+  ].forEach(function (awardItemPath) {
+    requireContains(uiFlowShared, awardItemPath, "Spirit shop AwardView item icon contract: " + awardItemPath);
+  });
   requireContains(compositionMethods, "random: Math.random", "Spirit shop explicit production random source");
+  requireOrdered(
+    compositionMethods,
+    [
+      "this.spiritShopStore = new SpiritShopStore();",
+      "this.spiritShopStore.load(new Date());",
+      "this.spiritShopService = new SpiritShopService({"
+    ],
+    "Startup initializes SpiritShopStore before cloud-profile collection"
+  );
   requireContains(shopService, "resolveFragmentBagQuantity", "Spirit shop fragment bag quantity resolution");
   requireContains(shopService, "getEligibleFragmentBagSpiritIds", "Spirit shop max-star exclusion");
   assert(shopService.indexOf("addGems") < 0, "Spirit shop must not retain crystal bag gem grants.");

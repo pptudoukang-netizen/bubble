@@ -644,7 +644,10 @@ function buildStateText(runtimeSnapshot) {
     return "步数耗尽";
   }
 
-  if (runtimeSnapshot.state === "won_surplus_shots_pending") {
+  if (
+    runtimeSnapshot.state === "won_surplus_shots_pending" ||
+    runtimeSnapshot.state === "board_clear_score_recheck_surplus_shots_pending"
+  ) {
     return "剩余球结算中";
   }
 

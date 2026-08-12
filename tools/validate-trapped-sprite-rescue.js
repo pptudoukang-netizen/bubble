@@ -24,6 +24,11 @@ var LEVEL_PATH = path.join(
   "levels",
   "level_trapped_sprite_test.json"
 );
+var LEVEL_63_PACK_PATH = path.join(
+  ROOT,
+  "remote-level-packs",
+  "levels_pack_011_100.json"
+);
 var FLOATING_MAP_PATH = path.join(ROOT, "assets", "map", "config", "floating_map.json");
 var LevelConfigLoader = require("../assets/scripts/config/LevelConfigLoader");
 var LevelBoardSupportValidator = require("../assets/scripts/config/LevelBoardSupportValidator");
@@ -90,6 +95,147 @@ function nearlyEqual(left, right, epsilon) {
   return Math.abs(left - right) <= epsilon;
 }
 
+function cellKey(row, col) {
+  return row + ":" + col;
+}
+
+function getHexNeighbors(row, col) {
+  var offsets = row % 2 === 1 ? [
+    [-1, 0], [-1, 1], [0, -1], [0, 1], [1, 0], [1, 1]
+  ] : [
+    [-1, -1], [-1, 0], [0, -1], [0, 1], [1, -1], [1, 0]
+  ];
+  return offsets.map(function (offset) {
+    return { row: row + offset[0], col: col + offset[1] };
+  });
+}
+
+function getClockwiseHexNeighbors(row, col) {
+  var offsets = row % 2 === 1 ? [
+    [-1, 0], [-1, 1], [0, 1], [1, 1], [1, 0], [0, -1]
+  ] : [
+    [-1, -1], [-1, 0], [0, 1], [1, 0], [1, -1], [0, -1]
+  ];
+  return offsets.map(function (offset) {
+    return { row: row + offset[0], col: col + offset[1] };
+  });
+}
+
+function getOddRHexDistance(left, right) {
+  var leftQ = left.col - (left.row - (left.row & 1)) / 2;
+  var rightQ = right.col - (right.row - (right.row & 1)) / 2;
+  return Math.max(
+    Math.abs(leftQ - rightQ),
+    Math.abs(left.row - right.row),
+    Math.abs((-leftQ - left.row) - (-rightQ - right.row))
+  );
+}
+
+function getMaximumCyclicRun(colors) {
+  var hasBreak = colors.some(function (color) { return color === null; });
+  var maxRun = 0;
+  var run = 0;
+  var previous = null;
+  var iterationCount = hasBreak ? colors.length : colors.length * 2;
+  var startIndex = hasBreak ? (colors.indexOf(null) + 1) % colors.length : 0;
+  for (var index = 0; index < iterationCount; index += 1) {
+    var color = colors[(startIndex + index) % colors.length];
+    if (color === null) {
+      previous = null;
+      run = 0;
+    } else if (color === previous) {
+      run += 1;
+    } else {
+      previous = color;
+      run = 1;
+    }
+    maxRun = Math.max(maxRun, Math.min(run, colors.length));
+  }
+  return maxRun;
+}
+
+function validateGeneratedRescueBoardDesign(level, levelId) {
+  var anchor = level.trappedSpriteRescue.anchorCell;
+  assert(
+    anchor.row === CampaignLevelGenerationConfig.TRAPPED_SPRITE_RESCUE_ANCHOR_ROW,
+    "Remote rescue anchor row mismatch: " + levelId
+  );
+  assert(
+    anchor.col === Math.floor(BoardLayout.getRowColumnCount(anchor.row, BoardLayout.defaultColumns) / 2),
+    "Remote rescue anchor column mismatch: " + levelId
+  );
+  var occupied = {};
+  var colors = {};
+  level.layout.forEach(function (rowString, row) {
+    rowString.split("").forEach(function (cellCode, col) {
+      if (cellCode !== ".") {
+        occupied[cellKey(row, col)] = true;
+        colors[cellKey(row, col)] = cellCode;
+      }
+    });
+  });
+  level.specialEntities.forEach(function (entity) {
+    var key = cellKey(entity.row, entity.col);
+    assert(!occupied[key], "Remote rescue special entity overlaps a normal ball: " + levelId + " at " + key);
+    occupied[key] = true;
+  });
+  var expected = {};
+  level.layout.forEach(function (rowString, row) {
+    for (var col = 0; col < rowString.length; col += 1) {
+      var distance = getOddRHexDistance(anchor, { row: row, col: col });
+      if (distance >= 1 && distance <= CampaignLevelGenerationConfig.TRAPPED_SPRITE_RESCUE_HEX_RADIUS) {
+        expected[cellKey(row, col)] = true;
+      }
+    }
+  });
+  assert(
+    Object.keys(expected).length === CampaignLevelGenerationConfig.TRAPPED_SPRITE_RESCUE_OCCUPIED_CELL_COUNT,
+    "Remote rescue expected hex is clipped: " + levelId
+  );
+  assert(
+    Object.keys(occupied).sort().join(",") === Object.keys(expected).sort().join(","),
+    "Remote rescue board must be a complete radius-five regular hex: " + levelId
+  );
+
+  var visited = {};
+  var largestComponent = 0;
+  Object.keys(colors).forEach(function (startKey) {
+    if (visited[startKey]) {
+      return;
+    }
+    var color = colors[startKey];
+    var queue = [startKey];
+    visited[startKey] = true;
+    var componentSize = 0;
+    while (queue.length > 0) {
+      var currentKey = queue.shift();
+      var coordinates = currentKey.split(":").map(Number);
+      componentSize += 1;
+      getHexNeighbors(coordinates[0], coordinates[1]).forEach(function (neighbor) {
+        var neighborKey = cellKey(neighbor.row, neighbor.col);
+        if (!visited[neighborKey] && colors[neighborKey] === color) {
+          visited[neighborKey] = true;
+          queue.push(neighborKey);
+        }
+      });
+    }
+    largestComponent = Math.max(largestComponent, componentSize);
+  });
+  assert(
+    largestComponent <= CampaignLevelGenerationConfig.TRAPPED_SPRITE_RESCUE_MAX_SAME_COLOR_COMPONENT,
+    "Remote rescue same-color component exceeds five: " + levelId + " got " + largestComponent
+  );
+  var anchorNeighborRun = getMaximumCyclicRun(
+    getClockwiseHexNeighbors(anchor.row, anchor.col).map(function (neighbor) {
+      return colors[cellKey(neighbor.row, neighbor.col)] || null;
+    })
+  );
+  assert(
+    anchorNeighborRun <= CampaignLevelGenerationConfig.TRAPPED_SPRITE_RESCUE_MAX_ANCHOR_NEIGHBOR_RUN,
+    "Remote rescue anchor-neighbor same-color run exceeds two: " + levelId + " got " + anchorNeighborRun
+  );
+}
+
 function expectThrow(action, expectedText) {
   var error = null;
   try {
@@ -107,6 +253,16 @@ function expectThrow(action, expectedText) {
 function loadConfig() {
   var raw = JSON.parse(fs.readFileSync(LEVEL_PATH, "utf8"));
   return LevelConfigLoader.normalizeLevelConfig(raw, "level_trapped_sprite_test");
+}
+
+function loadLevel63Config() {
+  var compactPack = JSON.parse(fs.readFileSync(LEVEL_63_PACK_PATH, "utf8"));
+  var expandedPack = LevelPackCompactCodec.expandPack(compactPack);
+  var config = expandedPack.levels.level_063;
+  if (!config || !config.level || config.level.levelId !== 63) {
+    throw new Error("Remote level pack must contain rescue level 63.");
+  }
+  return LevelConfigLoader.normalizeLevelConfig(config, "level_063");
 }
 
 function createPlainRescueConfig(config) {
@@ -401,6 +557,7 @@ function validateRemoteRescueIdentitySchedule() {
         !Object.prototype.hasOwnProperty.call(config.level.trappedSpriteRescue, "spriteId"),
         "Remote rescue level must not retain legacy spriteId: " + levelId
       );
+      validateGeneratedRescueBoardDesign(config.level, levelId);
       validatedLevelIds.push(levelId);
     });
   });
@@ -584,15 +741,24 @@ function validateRuntime(config) {
 
   var plainConfig = createPlainRescueConfig(config);
   var missManager = createGameManager(plainConfig);
+  var missGrid = missManager.systems.bubbleGrid;
+  var missAnchor = missManager.systems.trappedSpriteRescueSystem.getAnchorCell();
+  var retainedSupportCell = missGrid.getNeighborCoordinates(missAnchor.row, missAnchor.col).map(function (coordinate) {
+    return missGrid.getCell(coordinate.row, coordinate.col);
+  }).filter(Boolean)[0];
+  assert(retainedSupportCell, "Rescue miss regression requires one direct support cell.");
   missManager.systems.bubbleGrid.removeCells(
-    missManager.systems.bubbleGrid.getCells()
+    missManager.systems.bubbleGrid.getCells().filter(function (cell) {
+      return cell.id !== retainedSupportCell.id;
+    })
   );
   var cellsBeforeMiss = missManager.systems.bubbleGrid.getCells().length;
   missManager.beginAim({ x: 280, y: 300 });
   var missPlan = missManager.pendingShotPlan;
   var topAttachY = missManager.systems.bubbleGrid.getTopAttachY();
   var shooterOriginY = missManager.systems.shooterController.origin.y;
-  assert(missPlan.hitType === "miss", "Empty rescue board shot must resolve as miss.");
+  assert(cellsBeforeMiss === 1, "Rescue miss regression must keep the board logically non-empty.");
+  assert(missPlan.hitType === "miss", "Sparse rescue board shot must resolve as miss.");
   assert(missPlan.targetCell === null, "Rescue exit miss must not have targetCell.");
   assert(
     missPlan.wallPoints.some(function (point) {
@@ -633,7 +799,7 @@ function validateRuntime(config) {
   assert(grid.getCells().length === 0, "Unsupported cells must not remain on the board.");
 }
 
-function validateBlockedBoundaryCollisionDoesNotAbortAim() {
+function validateSealedBoundaryCollisionAttachesToExtendedNeighbor() {
   var remotePackPath = path.join(ROOT, "remote-level-packs", "levels_pack_501_600.json");
   var remotePack = LevelPackCompactCodec.expandPack(JSON.parse(fs.readFileSync(remotePackPath, "utf8")));
   var levelConfig = LevelConfigLoader.normalizeLevelConfig(remotePack.levels.level_599, "level_599");
@@ -642,21 +808,49 @@ function validateBlockedBoundaryCollisionDoesNotAbortAim() {
   var grid = manager.systems.bubbleGrid;
   var origin = manager.systems.shooterController.origin;
 
-  rescueSystem.angleRad = 0.3;
+  rescueSystem.angleRad = -0.9;
   grid.notifyWorldTransformChanged();
-  manager.beginAim({ x: origin.x - 900, y: 100 });
+  manager.beginAim({ x: origin.x + 900, y: 100 });
 
   var plan = manager.pendingShotPlan;
-  assert(plan && plan.valid, "Blocked rescue boundary collision must produce a valid aiming plan.");
-  assert(plan.hitType === "blocked", "Fully packed rescue boundary collision must be reported as blocked.");
-  assert(plan.collidedCell, "Blocked rescue plan must preserve the real collided bubble.");
-  assert(plan.targetCell === null, "Blocked rescue plan must not invent an attachment cell.");
-  assert(plan.targetCellPosition === null, "Blocked rescue plan must not expose a ghost target position.");
+  assert(plan && plan.valid, "Sealed rescue boundary collision must produce a valid aiming plan.");
+  assert(plan.hitType === "bubble", "A real rescue-board bubble collision must remain an attachment hit.");
+  assert(plan.collidedCell, "Rescue boundary plan must preserve the real collided bubble.");
+  assert(plan.targetCell, "Rescue boundary collision must resolve a six-neighbor attachment cell.");
+  assert(plan.targetCellPosition, "Rescue boundary collision must expose the extended ghost target position.");
+  assert(
+    grid.getNeighborCoordinates(plan.collidedCell.row, plan.collidedCell.col).some(function (coordinate) {
+      return coordinate.row === plan.targetCell.row && coordinate.col === plan.targetCell.col;
+    }),
+    "Rescue boundary target must be a direct hex neighbor of the collided bubble."
+  );
+  assert(
+    !grid._isLayoutBackedCell(plan.targetCell.row, plan.targetCell.col),
+    "Level 599 regression must attach outside the authored 11/10-column boundary."
+  );
+  assert(
+    plan.targetCell.col >= grid.getColumnCountForRow(plan.targetCell.row),
+    "Level 599 regression must cover the sealed right-edge attachment cell."
+  );
 
   var shotsBefore = manager.remainingShots;
+  var angleBefore = rescueSystem.angleRad;
   manager.fireShot();
-  assert(manager.remainingShots === shotsBefore, "Blocked rescue aim must not consume a shot.");
-  assert(manager.activeProjectile === null, "Blocked rescue aim must not launch a projectile.");
+  assert(manager.remainingShots === shotsBefore - 1, "Rescue boundary attachment must consume exactly one shot.");
+  assert(manager.activeProjectile !== null, "Rescue boundary attachment must launch along the visible guide.");
+  runProjectileUntilSettled(manager);
+  assert(
+    manager.lastResolution.attachedCell &&
+      manager.lastResolution.attachedCell.row === plan.targetCell.row &&
+      manager.lastResolution.attachedCell.col === plan.targetCell.col,
+    "Rescue boundary shot must settle at the same extended cell shown by the ghost bubble."
+  );
+  assert(
+    manager.lastResolution.trappedSpriteRotation &&
+      manager.lastResolution.trappedSpriteRotation.started === true &&
+      !nearlyEqual(rescueSystem.angleRad, angleBefore, 0.000001),
+    "Rescue boundary attachment must apply its real impact to board rotation."
+  );
 }
 
 function validateRotatedRescueSlotDiscovery(config) {
@@ -855,6 +1049,7 @@ function validateTrappedSpriteSupportAttachment(config) {
   );
 
   grid.removeCells(grid.getCells());
+  grid.addBubble({ row: 3, col: 4 }, "R");
   manager.systems.trappedSpriteRescueSystem.angleRad = 0;
   grid.notifyWorldTransformChanged();
   manager.beginAim({
@@ -958,6 +1153,28 @@ function validateRescueCompletionAudio(config) {
   );
 }
 
+function validateLevel63BoardEmptyRescue(level63Config) {
+  var manager = createGameManager(level63Config);
+  var grid = manager.systems.bubbleGrid;
+  var removedCells = grid.removeFloatingCells(grid.getCells());
+  assert(removedCells.length > 0, "Level 63 rescue regression requires board cells to drop.");
+  manager.systems.fallingMarbleSystem.registerDrops(removedCells, grid);
+
+  var snapshot = manager.update(0);
+  assert(snapshot, "Level 63 board-empty rescue must emit a runtime snapshot.");
+  var rescueEvents = snapshot.runtimeEvents.filter(function (event) {
+    return event.type === "trapped_sprite_rescued";
+  });
+  assert(
+    rescueEvents.length === 1 && rescueEvents[0].spiritId === "noya",
+    "Level 63 must emit its rescued-spirit event immediately when all board balls drop."
+  );
+  assert(
+    manager.state === "won_pending",
+    "Level 63 must wait for falling-ball settlement only after emitting its rescue event."
+  );
+}
+
 function validateWiring() {
   var rendererSource = fs.readFileSync(
     path.join(ROOT, "gameplay-src", "render", "LevelRenderer.js"),
@@ -1024,6 +1241,14 @@ function validateWiring() {
     bootstrapSource.indexOf("_startTrappedSpriteTestLevelEntry") !== -1,
     "GameBootstrap trapped sprite test entry mapping is missing."
   );
+  var specialIntroduceFlowSource = fs.readFileSync(
+    path.join(ROOT, "assets", "scripts", "bootstrap", "GameBootstrapSpecialIntroduceFlowMethods.js"),
+    "utf8"
+  );
+  assert(
+    specialIntroduceFlowSource.indexOf("if (snapshot.board.trappedSpriteRescueActive === true) {") !== -1,
+    "Top-slot tips must not validate authored-grid coordinates during trapped sprite rescue."
+  );
   var routeEditorFlowSource = fs.readFileSync(
     path.join(ROOT, "assets", "scripts", "bootstrap", "GameBootstrapRouteEditorFlowMethods.js"),
     "utf8"
@@ -1051,16 +1276,18 @@ function validateWiring() {
 }
 
 var config = loadConfig();
+var level63Config = loadLevel63Config();
 validateAssets();
 validateFloatingMapLandmarkRule();
 validateRemoteRescueIdentitySchedule();
 validateConfigContract(config);
 validateRuntime(config);
-validateBlockedBoundaryCollisionDoesNotAbortAim();
+validateSealedBoundaryCollisionAttachesToExtendedNeighbor();
 validateRotatedRescueSlotDiscovery(config);
 validateSupportedSpecialEntities(config);
 validateTrappedSpriteSupportAttachment(config);
 validateRescueCompletionAudio(config);
+validateLevel63BoardEmptyRescue(level63Config);
 validateFirstClearRescueFragmentRewards();
 validateWiring();
 console.log("Trapped sprite rescue validation passed.");

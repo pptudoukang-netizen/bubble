@@ -1291,8 +1291,8 @@ function listRemotePackEntries() {
       if (pack.schemaVersion !== 1) {
         throw new Error("remote level pack schemaVersion must be 1: " + fileName);
       }
-      if (pack.format !== LevelPackCompactCodec.PACK_FORMAT_COMPACT_V1) {
-        throw new Error("remote level pack format must be " + LevelPackCompactCodec.PACK_FORMAT_COMPACT_V1 + ": " + fileName);
+      if (pack.format !== LevelPackCompactCodec.PACK_FORMAT_COMPACT_V2) {
+        throw new Error("remote level pack format must be " + LevelPackCompactCodec.PACK_FORMAT_COMPACT_V2 + ": " + fileName);
       }
       if (typeof pack.packId !== "string" || !pack.packId) {
         throw new Error("remote level pack packId is required: " + fileName);

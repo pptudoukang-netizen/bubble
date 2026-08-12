@@ -8,7 +8,11 @@ var ShopStateService = Shared.ShopStateService;
 var StrictStorage = require("../utils/StrictStorage");
 var STARTUP_BUNDLE_PROGRESS_SPAN = 0.75;
 var STARTUP_PREFAB_PROGRESS_BASE = 0.75;
-var STARTUP_PREFAB_PROGRESS_SPAN = 0.25;
+var STARTUP_PREFAB_PROGRESS_SPAN = 0.1;
+var STARTUP_ONLINE_TASK_PROGRESS_BASE = 0.85;
+var STARTUP_ONLINE_CLOUD_SYNC_PROGRESS_SPAN = 0.03;
+var STARTUP_ONLINE_REMOTE_PACK_PROGRESS_SPAN = 0.12;
+var LEVEL_SELECT_IDLE_BEFORE_BACKGROUND_WORK_MS = 5000;
 var STARTUP_SUBPACKAGE_PHASE_WEIGHT = 0.9;
 var STARTUP_BUNDLE_PHASE_WEIGHT = 0.1;
 var STARTUP_BUNDLE_WEIGHTS = {
@@ -171,6 +175,57 @@ function createStartupBundleProgressReporter(host) {
   };
 }
 
+function schedulePostLevelSelectBackgroundWork(host) {
+  if (host._postLevelSelectBackgroundWorkPromise) {
+    return host._postLevelSelectBackgroundWorkPromise;
+  }
+  if (typeof host._delay !== "function") {
+    throw new Error("Post level-select background work requires _delay.");
+  }
+
+  host._postLevelSelectBackgroundWorkPromise = host._delay(
+    LEVEL_SELECT_IDLE_BEFORE_BACKGROUND_WORK_MS
+  ).then(function () {
+    if (host.isSelectingLevel !== true || host.isRestarting === true) {
+      return;
+    }
+    return host._scheduleDeferredFriendStaminaGiftClaim();
+  }).then(function () {
+    if (host.isSelectingLevel !== true || host.isRestarting === true) {
+      return;
+    }
+    return host._scheduleDeferredUiBundleWarmup();
+  });
+
+  return host._postLevelSelectBackgroundWorkPromise;
+}
+
+function buildInitialLevelSelectOptions(host) {
+  if (!host.newUserGuideStore || typeof host.newUserGuideStore.consumeInitialPreparation !== "function") {
+    throw new Error("Startup initial preparation requires NewUserGuideStore.consumeInitialPreparation.");
+  }
+  if (!host.newUserGuideState || typeof host.newUserGuideState !== "object" || Array.isArray(host.newUserGuideState)) {
+    throw new Error("Startup initial preparation requires new user guide state.");
+  }
+  if (typeof host._saveNewUserGuideState !== "function") {
+    throw new Error("Startup initial preparation requires _saveNewUserGuideState.");
+  }
+
+  var result = host.newUserGuideStore.consumeInitialPreparation(host.newUserGuideState);
+  if (!result || typeof result !== "object" || Array.isArray(result) || typeof result.shouldOpen !== "boolean") {
+    throw new Error("Startup initial preparation result is invalid.");
+  }
+  if (result.shouldOpen !== true) {
+    return {};
+  }
+  host.newUserGuideState = result.state;
+  host._saveNewUserGuideState();
+  host._advanceNewUserGuideToStartGame();
+  return {
+    prepareLevelId: host.levelProgress.highestUnlockedLevel
+  };
+}
+
 module.exports = {
   start: function () {
     this._applyViewportLayout();
@@ -187,7 +242,9 @@ module.exports = {
         return this._runWeightedStartupTasks();
       }.bind(this)).then(function () {
         this._initializePostLoadingServices();
-        return this._showLevelSelectView();
+        return this._runStartupCloudSyncAndRemotePackPreload();
+      }.bind(this)).then(function () {
+        return this._showLevelSelectView(buildInitialLevelSelectOptions(this));
       }.bind(this)).then(function () {
         return this._waitForNextRenderedFrame();
       }.bind(this)).then(function () {
@@ -195,10 +252,7 @@ module.exports = {
       }.bind(this)).then(function () {
         return this._waitForNextRenderedFrame();
       }.bind(this)).then(function () {
-        this._scheduleBackgroundRemoteLevelPackPreload();
-        this._scheduleDeferredUiBundleWarmup();
-        this._scheduleDeferredFriendStaminaGiftClaim();
-        this._scheduleDeferredPlayerCloudProfileSync();
+        schedulePostLevelSelectBackgroundWork(this);
       }.bind(this)).catch(function (error) {
         Logger.error("Startup resource loading failed", error && error.stack ? error.stack : error);
         this._setStatus("Startup resource loading failed. Check console logs.");
@@ -218,6 +272,7 @@ module.exports = {
       return this._runWeightedStartupTasks();
     }.bind(this)).then(function () {
       this._initializePostLoadingServices();
+      return this._runStartupCloudSyncAndRemotePackPreload();
     }.bind(this)).then(function () {
       if (!this._loadingViewController) {
         return;
@@ -236,7 +291,7 @@ module.exports = {
         this._loadingViewNode = null;
       }.bind(this));
     }.bind(this)).then(function () {
-      return this._showLevelSelectView();
+      return this._showLevelSelectView(buildInitialLevelSelectOptions(this));
     }.bind(this)).then(function () {
       return this._waitForNextRenderedFrame();
     }.bind(this)).then(function () {
@@ -244,10 +299,7 @@ module.exports = {
     }.bind(this)).then(function () {
       return this._waitForNextRenderedFrame();
     }.bind(this)).then(function () {
-      this._scheduleBackgroundRemoteLevelPackPreload();
-      this._scheduleDeferredUiBundleWarmup();
-      this._scheduleDeferredFriendStaminaGiftClaim();
-      this._scheduleDeferredPlayerCloudProfileSync();
+      schedulePostLevelSelectBackgroundWork(this);
     }.bind(this)).catch(function (error) {
       Logger.error("Startup loading flow failed", error && error.stack ? error.stack : error);
       this._setStatus("Startup resource loading failed. Check console logs.");
@@ -384,10 +436,60 @@ module.exports = {
       });
     }).then(function () {
       if (host._loadingViewController && host._loadingViewController.setProgress) {
-        host._loadingViewController.setProgress(1, false);
+        host._loadingViewController.setProgress(STARTUP_ONLINE_TASK_PROGRESS_BASE, false);
       }
-      setStartupStage(host, "准备进入关卡...");
+      setStartupStage(host, "准备同步云端数据...");
       return null;
+    });
+  },
+
+  _runStartupCloudSyncAndRemotePackPreload: function () {
+    var cloudSyncEndProgress =
+      STARTUP_ONLINE_TASK_PROGRESS_BASE + STARTUP_ONLINE_CLOUD_SYNC_PROGRESS_SPAN;
+    var remotePackEndProgress = cloudSyncEndProgress + STARTUP_ONLINE_REMOTE_PACK_PROGRESS_SPAN;
+    var updateProgress = function (progress, stage) {
+      if (!Number.isFinite(progress) || progress < STARTUP_ONLINE_TASK_PROGRESS_BASE || progress > remotePackEndProgress) {
+        throw new Error("Startup online task progress is out of range.");
+      }
+      if (stage) {
+        setStartupStage(this, stage);
+      }
+      if (this._loadingViewController && this._loadingViewController.setProgress) {
+        this._loadingViewController.setProgress(progress, false);
+      }
+    }.bind(this);
+
+    updateProgress(STARTUP_ONLINE_TASK_PROGRESS_BASE, "同步玩家云端数据...");
+    return this._syncPlayerProfileFromCloud({
+      applyDuringStartup: true
+    }).then(function () {
+      updateProgress(cloudSyncEndProgress, "缓存远端关卡 0%...");
+      return this._scheduleBackgroundRemoteLevelPackPreload({
+        onProgress: function (event) {
+          if (!event || typeof event !== "object" || Array.isArray(event)) {
+            throw new Error("Startup remote pack preload progress event is required.");
+          }
+          var completedPackCount = Number(event.completedPackCount);
+          var totalPackCount = Number(event.totalPackCount);
+          if (
+            !Number.isInteger(completedPackCount) ||
+            !Number.isInteger(totalPackCount) ||
+            totalPackCount <= 0 ||
+            completedPackCount < 0 ||
+            completedPackCount > totalPackCount
+          ) {
+            throw new Error("Startup remote pack preload progress event is invalid.");
+          }
+          var ratio = completedPackCount / totalPackCount;
+          updateProgress(
+            cloudSyncEndProgress + STARTUP_ONLINE_REMOTE_PACK_PROGRESS_SPAN * ratio,
+            "缓存远端关卡 " + completedPackCount + "/" + totalPackCount + "..."
+          );
+        }
+      });
+    }.bind(this)).then(function (result) {
+      updateProgress(remotePackEndProgress, "远端关卡缓存完成");
+      return result;
     });
   },
 
@@ -428,7 +530,17 @@ module.exports = {
     return this._deferredUiBundleWarmupPromise;
   },
 
-  _scheduleBackgroundRemoteLevelPackPreload: function () {
+  _scheduleBackgroundRemoteLevelPackPreload: function (options) {
+    var preloadOptions = options;
+    if (preloadOptions === undefined) {
+      preloadOptions = {};
+    }
+    if (!preloadOptions || typeof preloadOptions !== "object" || Array.isArray(preloadOptions)) {
+      throw new Error("Background remote level pack preload options must be an object.");
+    }
+    if (preloadOptions.onProgress !== undefined && typeof preloadOptions.onProgress !== "function") {
+      throw new Error("Background remote level pack preload onProgress must be a function.");
+    }
     if (this._backgroundRemoteLevelPackPreloadPromise) {
       return this._backgroundRemoteLevelPackPreloadPromise;
     }
@@ -441,7 +553,8 @@ module.exports = {
 
     this._backgroundRemoteLevelPackPreloadError = null;
     this._backgroundRemoteLevelPackPreloadPromise = this.levelManager.preloadAllRemotePacks(
-      this.levelProgress.highestUnlockedLevel
+      this.levelProgress.highestUnlockedLevel,
+      preloadOptions
     ).then(function (result) {
       if (!result || typeof result !== "object" || Array.isArray(result)) {
         throw new Error("Background remote level pack preload result is invalid.");
@@ -460,9 +573,9 @@ module.exports = {
       this._backgroundRemoteLevelPackPreloadError = error;
       this._backgroundRemoteLevelPackPreloadPromise = null;
       Logger.error("Background remote level pack preload failed", error && error.stack ? error.stack : error);
-      this._setStatus("远端关卡后台下载失败");
+      this._setStatus("远端关卡缓存失败");
       if (this.tipsPresenter && typeof this.tipsPresenter.showText === "function") {
-        this.tipsPresenter.showText("远端关卡后台下载失败");
+        this.tipsPresenter.showText("远端关卡缓存失败");
       }
     }.bind(this));
 
@@ -557,7 +670,18 @@ module.exports = {
     }
   },
 
-  _syncPlayerProfileFromCloud: function () {
+  _syncPlayerProfileFromCloud: function (options) {
+    var syncOptions = options;
+    if (syncOptions === undefined) {
+      syncOptions = {};
+    }
+    if (!syncOptions || typeof syncOptions !== "object" || Array.isArray(syncOptions)) {
+      throw new Error("Player cloud profile sync options must be an object.");
+    }
+    if (syncOptions.applyDuringStartup !== undefined && typeof syncOptions.applyDuringStartup !== "boolean") {
+      throw new Error("Player cloud profile sync applyDuringStartup must be boolean.");
+    }
+    var applyDuringStartup = syncOptions.applyDuringStartup === true;
     if (this.enablePlayerCloudProfile !== true) {
       return Promise.resolve(null);
     }
@@ -574,7 +698,7 @@ module.exports = {
     }
     return this.playerCloudProfileService.syncFromCloudOrUploadLocal({
       shouldApplyCloudProfile: function () {
-        return this.isSelectingLevel === true;
+        return applyDuringStartup || this.isSelectingLevel === true;
       }.bind(this)
     }).then(function (result) {
       if (!result || typeof result !== "object") {

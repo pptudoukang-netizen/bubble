@@ -310,6 +310,13 @@ function isSkillBall(cellOrBall) {
   return !!(cellOrBall && cellOrBall.entityCategory === "skill_ball");
 }
 
+function isPowerupShotBall(ball) {
+  return !!(
+    isSkillBall(ball) ||
+    (ball && ball.sourceSkillBallType === "rainbow")
+  );
+}
+
 function isIceBall(cellOrBall) {
   return !!(
     cellOrBall &&
@@ -1938,6 +1945,24 @@ GameManager.prototype._isBoardCleared = function (grid) {
   return cells.every(isWormholeBall);
 };
 
+GameManager.prototype._resolveTrappedSpriteRescueBoardEmpty = function () {
+  var trappedSpriteRescueSystem = this.systems.trappedSpriteRescueSystem;
+  if (!trappedSpriteRescueSystem.isActive()) {
+    return false;
+  }
+  if (this.state !== "running" && this.state !== "out_of_shots_pending") {
+    return false;
+  }
+  if (!this._isBoardCleared(this.systems.bubbleGrid)) {
+    return false;
+  }
+
+  // A rescue clear is authoritative as soon as the support scan has removed the
+  // final board cells. Do not depend on an individual resolution branch to report it.
+  this._resolveBoardClearedOutcome();
+  return true;
+};
+
 GameManager.prototype._resolveOutOfShotsOutcome = function () {
   if (this._isBoardCleared(this.systems.bubbleGrid)) {
     this._resolveBoardClearedOutcome();
@@ -2365,7 +2390,7 @@ GameManager.prototype._resolveClearWinOutcome = function () {
   }
 
   if (this.remainingShots > 0) {
-    this._beginSurplusShotBonus();
+    this._beginSurplusShotBonus("clear_win");
     return;
   }
 
@@ -2493,31 +2518,20 @@ GameManager.prototype.fireShot = function () {
       this.systems.trappedSpriteRescueSystem.isActive()
     );
   }.bind(this);
-  var rescueBlocked = function (plan) {
-    return !!(
-      plan &&
-      plan.valid &&
-      plan.hitType === "blocked" &&
-      this.systems.trappedSpriteRescueSystem.isActive()
-    );
-  }.bind(this);
-  if (rescueBlocked(shotPlan)) {
-    return this.getRuntimeSnapshot();
-  }
   if (!shotPlan || !shotPlan.valid || (!shotPlan.targetCell && !rescueMissAllowed(shotPlan))) {
     // 发射优先沿用当前幽灵球路线；仅在缺失时才临时重算。
     this._refreshShotPlan(true);
     shotPlan = this.pendingShotPlan;
-  }
-  if (rescueBlocked(shotPlan)) {
-    return this.getRuntimeSnapshot();
   }
   if (!shotPlan || !shotPlan.valid || (!shotPlan.targetCell && !rescueMissAllowed(shotPlan))) {
     Logger.warn("Missing valid shot plan, fire aborted");
     return this.getRuntimeSnapshot();
   }
 
-  var remainingShotsAfterFire = this.isTimedInfiniteShots ? 0 : this.remainingShots - 1;
+  var currentBall = this.systems.shooterController.currentBall;
+  var remainingShotsAfterFire = this.isTimedInfiniteShots
+    ? 0
+    : this.remainingShots - (isPowerupShotBall(currentBall) ? 0 : 1);
   var queueResult = this.systems.shooterController.advanceQueue(
     remainingShotsAfterFire,
     this.isTimedInfiniteShots
@@ -3718,6 +3732,8 @@ GameManager.prototype.update = function (dt) {
     this._finalizePlannedShot();
   }
 
+  this._resolveTrappedSpriteRescueBoardEmpty();
+
   if (this.activeProjectile) {
     var projectile = this.activeProjectile;
     var remainingDistance = projectile.speed * dt;
@@ -3785,7 +3801,10 @@ GameManager.prototype.update = function (dt) {
   var fallingStep = this.systems.fallingMarbleSystem.update(dt);
   var surplusUpdated = !!(fallingStep && fallingStep.surplusUpdated);
   var surplusShotLaunchedCount = 0;
-  if (this.state === "won_surplus_shots_pending") {
+  if (
+    this.state === "won_surplus_shots_pending" ||
+    this.state === "board_clear_score_recheck_surplus_shots_pending"
+  ) {
     if (
       !fallingStep ||
       !Number.isInteger(fallingStep.surplusShotLaunchedCount) ||
@@ -3863,7 +3882,6 @@ GameManager.prototype.update = function (dt) {
           jarColor: drop.jarColor,
           sameColor: !!drop.sameColor,
           bonusMultiplier: typeof drop.bonusMultiplier === "number" ? drop.bonusMultiplier : 1,
-          fairyBonusSteps: drop.fairyBonusSteps,
           fairyMultiplier: drop.fairyMultiplier,
           finalMultiplier: drop.finalMultiplier,
           glowStacks: drop.glowStacks,
@@ -3875,6 +3893,7 @@ GameManager.prototype.update = function (dt) {
     }
   }
   if (cleanupScoredDrops.length) {
+    this._injectCollectedSkillBalls(cleanupScoredDrops);
     this._applyJarCollectionScore(cleanupScoredDrops);
   }
   runtimeEvents = runtimeEvents.concat(this._drainRuntimeEvents());
@@ -3908,7 +3927,7 @@ GameManager.prototype.update = function (dt) {
   var hasPendingVineCast = this._hasPendingVineCast();
   var hasPendingTrappedSpritePostImpact = this._hasPendingTrappedSpritePostImpactResolution();
   if (
-    this.state === "won_surplus_shots_pending" &&
+    (this.state === "won_surplus_shots_pending" || this.state === "board_clear_score_recheck_surplus_shots_pending") &&
     !this.surplusShotAimRecentered &&
     !this.systems.fallingMarbleSystem.hasPendingSurplusShots()
   ) {
@@ -3965,7 +3984,7 @@ GameManager.prototype.update = function (dt) {
   }
 
   if (
-    this.state === "won_surplus_shots_pending" &&
+    (this.state === "won_surplus_shots_pending" || this.state === "board_clear_score_recheck_surplus_shots_pending") &&
     !hasProjectile &&
     !hasFallingDrops &&
     !hasPendingSplitterSpawns &&
@@ -3976,10 +3995,17 @@ GameManager.prototype.update = function (dt) {
     !hasPendingTrappedSpritePostImpact &&
     !this.systems.fallingMarbleSystem.hasPendingSurplusShots()
   ) {
-    if (typeof this._pushRuntimeEvent === "function") {
+    var isBoardClearScoreRecheck = this.state === "board_clear_score_recheck_surplus_shots_pending";
+    var hasReachedRequiredStar = !isBoardClearScoreRecheck || this._isClearWinCompleted();
+    if (hasReachedRequiredStar && typeof this._pushRuntimeEvent === "function") {
       this._pushRuntimeEvent("surplus_shots_finished", {});
     }
-    this._scheduleWinSettlement();
+    if (isBoardClearScoreRecheck) {
+      this._resolveBoardClearedOutcome();
+    } else {
+      this._scheduleWinSettlement();
+    }
+    runtimeEvents = runtimeEvents.concat(this._drainRuntimeEvents());
     return this.getRuntimeSnapshot(runtimeEvents);
   }
 
@@ -4313,7 +4339,10 @@ GameManager.prototype.getRuntimeSnapshot = function (runtimeEvents, renderOption
     : null;
 
   shooterSnapshot.surplusShotAimRecenterRevision = this.surplusShotAimRecenterRevision;
-  if (this.state === "won_surplus_shots_pending") {
+  if (
+    this.state === "won_surplus_shots_pending" ||
+    this.state === "board_clear_score_recheck_surplus_shots_pending"
+  ) {
     var fallingMarbleSystem = this.systems.fallingMarbleSystem;
     if (!fallingMarbleSystem || typeof fallingMarbleSystem.getSurplusTurretAimDirection !== "function") {
       throw new Error("Surplus shot render requires FallingMarbleSystem.getSurplusTurretAimDirection.");
@@ -4343,7 +4372,7 @@ GameManager.prototype.getRuntimeSnapshot = function (runtimeEvents, renderOption
 
   return {
     state: this.state,
-    surplusShotsSettling: this.state === "won_surplus_shots_pending",
+    surplusShotsSettling: this.state === "won_surplus_shots_pending" || this.state === "board_clear_score_recheck_surplus_shots_pending",
     levelCode: this.currentLevel ? this.currentLevel.level.code : null,
     remainingShots: this.remainingShots,
     infiniteShots: !!this.isTimedInfiniteShots,

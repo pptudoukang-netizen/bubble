@@ -2,6 +2,7 @@
   "scripts": {
     "validate:stamina": "node tools/validate-stamina-system.js",
     "validate:levels": "node tools/validate-level-content.js",
+    "validate:level-pack-v2": "node tools/validate-level-pack-compact-v2.js",
     "validate:level-sync": "node tools/validate-level-sync.js",
     "validate:remote-level-preload": "node tools/validate-remote-level-background-preload.js",
     "validate:level-editor": "node tools/validate-level-editor-integration.js",
@@ -34,13 +35,14 @@
     "generate:levels-first100": "node tools/rebuild-first-100-level-configs.js",
     "generate:levels101-300": "node tools/rebuild-reference-levels-101-300.js",
     "redesign:relaxed-campaign": "node tools/rebuild-relaxed-campaign-level-configs.js",
+    "redesign:trapped-rescue": "node tools/rebuild-relaxed-campaign-level-configs.js --trapped-rescue",
     "redesign:first100-clusters": "node tools/redesign-first-100-clustered-levels.js",
     "redesign:levels100-500": "node tools/redesign-levels-100-500-aesthetic.js",
     "redesign:levels501-1000": "node tools/redesign-levels-100-500-aesthetic.js --range 501 1000",
     "generate:floating-map": "node tools/generate-floating-map-config.js --target 1000",
     "clean:wechat-cloudfunctions": "node tools/clean-wechat-build-cloudfunctions.js",
     "build:wechat-gameplay-code": "node tools/build-wechat-gameplay-code.js",
-    "validate": "npm run validate:stamina && npm run validate:levels && npm run validate:level-sync && npm run validate:remote-level-preload && npm run validate:level-editor && npm run validate:random-challenge && npm run validate:aim && npm run validate:fairy-gameplay && npm run validate:swirl && npm run validate:wormhole && npm run validate:vine-spirit && npm run validate:lightning-chain && npm run validate:assist-spirit-skills && npm run validate:board-occlusion && npm run validate:trapped-sprite-rescue && npm run validate:gameplay-bundle && npm run validate:bundle-boundaries && npm run validate:spirit-hall && npm run validate:spirit-shop && npm run validate:ui-resource-lifecycle && npm run validate:boot && npm run validate:bgm && npm run validate:shots && npm run validate:release",
+    "validate": "npm run validate:stamina && npm run validate:levels && npm run validate:level-pack-v2 && npm run validate:level-sync && npm run validate:remote-level-preload && npm run validate:level-editor && npm run validate:random-challenge && npm run validate:aim && npm run validate:fairy-gameplay && npm run validate:swirl && npm run validate:wormhole && npm run validate:vine-spirit && npm run validate:lightning-chain && npm run validate:assist-spirit-skills && npm run validate:board-occlusion && npm run validate:trapped-sprite-rescue && npm run validate:gameplay-bundle && npm run validate:bundle-boundaries && npm run validate:spirit-hall && npm run validate:spirit-shop && npm run validate:ui-resource-lifecycle && npm run validate:boot && npm run validate:bgm && npm run validate:shots && npm run validate:release",
     "chatgpt:images": "node tools/chatgpt-web-image-regenerator.js"
   },
   "devDependencies": {

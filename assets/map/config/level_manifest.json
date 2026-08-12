@@ -8,7 +8,7 @@
     },
     "remoteManifest": {
         "id": "level_manifest_current",
-        "fileID": "cloud://cloud1-d7gqettx3e9249ca1.636c-cloud1-d7gqettx3e9249ca1-1428064608/level-packs/level_manifest.json",
+        "fileID": "cloud://cloud1-d7gqettx3e9249ca1.636c-cloud1-d7gqettx3e9249ca1-1428064608/level-packs/v2/level_manifest.json",
         "format": "level-pack-manifest-v1"
     }
 }

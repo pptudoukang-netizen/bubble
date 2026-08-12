@@ -350,6 +350,13 @@ function validateAssets() {
   ].forEach(function (relativePath) {
     assert(fs.existsSync(path.join(PROJECT_ROOT, relativePath)), "Missing board occlusion asset: " + relativePath);
   });
+  ["cloud", "leaves"].forEach(function (assetName) {
+    var textureMeta = readJson("assets/game/image/props/" + assetName + ".png.meta");
+    assert(
+      textureMeta.packable === false,
+      "Board occlusion " + assetName + " must not enter the dynamic atlas."
+    );
+  });
 }
 
 function validateLeavesMotionContract() {
@@ -389,10 +396,14 @@ function validateShotCountdownLayoutContract() {
     "utf8"
   );
   assert(
-    rendererSource.indexOf('labelNode.setPosition(0, 0);') >= 0 &&
+      rendererSource.indexOf('labelNode.setPosition(0, 0);') >= 0 &&
       rendererSource.indexOf('labelNode.zIndex = 2;') >= 0 &&
-      rendererSource.indexOf('label.string = zone.remainingShots + "发";') >= 0,
-    "Shot-count occlusion label must be centered above the occlusion visual."
+      rendererSource.indexOf('ensureLabel(labelNode, "", 42, 48, cc.Label.HorizontalAlign.CENTER);') >= 0 &&
+      rendererSource.indexOf('labelNode.color = cc.color(255, 138, 31);') >= 0 &&
+      rendererSource.indexOf('label.overflow = cc.Label.Overflow.NONE;') >= 0 &&
+      rendererSource.indexOf('label.enableWrapText = false;') >= 0 &&
+      rendererSource.indexOf('label.string = String(zone.remainingShots);') >= 0,
+    "Shot-count occlusion label must display only the remaining number at the center above the occlusion visual."
   );
 }
 

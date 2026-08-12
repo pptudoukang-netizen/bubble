@@ -113,6 +113,7 @@ var frames = {
   purpleMagicIcon: loadSpriteFrame("image/ui/purple_magic_icon.png", 47, 46),
   purpleProgressBar: loadSpriteFrame("image/ui/purple_progress_bar.png", 163, 17),
   purpleStarFrame: loadSpriteFrame("image/ui/purple_star_frame.png", 92, 90),
+  redNotificationDot: loadSpriteFrame("image/ui/red_notification_dot.png", 21, 20),
   redCrossedSwordsIcon: loadSpriteFrame("image/ui/red_crossed_swords_icon.png", 47, 46),
   redProgressBar: loadSpriteFrame("image/ui/red_progress_bar.png", 163, 17),
   rightArrowButton: loadSpriteFrame("image/ui/right_arrow_button.png", 38, 55),
@@ -986,6 +987,22 @@ function buildPrefab() {
   addText("GrowthActions", "upgrade_cost", "0/10", 241, 1140, 102, 26, 18, WHITE, headlineOptions());
   addText("GrowthActions", "battle_text", "出战", 544, 1117, 120, 42, 31, WHITE, actionButtonTextOptions());
 
+  roster.forEach(function (spirit) {
+    var notificationArt = addArt(
+      "SpiritRoster",
+      uiRenderLayer,
+      spirit.key + "_upgrade_notification",
+      frames.redNotificationDot,
+      spirit.x + 29,
+      949,
+      21,
+      20,
+      false
+    );
+    builder.objects[notificationArt.sourceNode]._active = false;
+    builder.objects[notificationArt.proxyNode]._active = false;
+  });
+
   return builder.objects;
 }
 
@@ -1153,7 +1170,21 @@ function validatePrefabObjects(objects) {
     source__upgrade_magic_circle: 0,
     proxy__upgrade_magic_circle: 0,
     source__upgrade_light: 0,
-    proxy__upgrade_light: 0
+    proxy__upgrade_light: 0,
+    source__milu_upgrade_notification: 0,
+    proxy__milu_upgrade_notification: 0,
+    source__lumi_upgrade_notification: 0,
+    proxy__lumi_upgrade_notification: 0,
+    source__noya_upgrade_notification: 0,
+    proxy__noya_upgrade_notification: 0,
+    source__flora_upgrade_notification: 0,
+    proxy__flora_upgrade_notification: 0,
+    source__loco_upgrade_notification: 0,
+    proxy__loco_upgrade_notification: 0,
+    source__kelu_upgrade_notification: 0,
+    proxy__kelu_upgrade_notification: 0,
+    source__yumi_upgrade_notification: 0,
+    proxy__yumi_upgrade_notification: 0
   };
   objects.forEach(function (object) {
     if (object.__type__ === "cc.LabelOutline") {
@@ -1289,6 +1320,16 @@ function validatePrefabObjects(objects) {
         fail(object._name + " must be initially inactive and transparent.");
       }
       upgradeEffectSpriteNodes += 1;
+    }
+    if (/^(?:source__|proxy__)[a-z]+_upgrade_notification$/.test(object._name)) {
+      if (
+        !spriteComponent ||
+        !spriteComponent._spriteFrame ||
+        spriteComponent._spriteFrame.__uuid__ !== frames.redNotificationDot.uuid ||
+        object._active !== false
+      ) {
+        fail(object._name + " must use the inactive Spirit Hall upgrade notification SpriteFrame.");
+      }
     }
   });
   if (sourceSprites === 0 || proxySprites === 0 || sourceSprites !== proxySprites) {

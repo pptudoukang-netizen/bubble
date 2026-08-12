@@ -83,8 +83,8 @@ function listRemotePackEntries() {
       if (!pack || typeof pack !== "object" || Array.isArray(pack)) {
         throw new Error("remote level pack invalid: " + fileName);
       }
-      if (pack.format !== LevelPackCompactCodec.PACK_FORMAT_COMPACT_V1) {
-        throw new Error("remote level pack format must be " + LevelPackCompactCodec.PACK_FORMAT_COMPACT_V1 + ": " + fileName);
+      if (pack.format !== LevelPackCompactCodec.PACK_FORMAT_COMPACT_V2) {
+        throw new Error("remote level pack format must be " + LevelPackCompactCodec.PACK_FORMAT_COMPACT_V2 + ": " + fileName);
       }
       pack = LevelPackCompactCodec.expandPack(pack);
       if (!pack.levels || typeof pack.levels !== "object" || Array.isArray(pack.levels)) {

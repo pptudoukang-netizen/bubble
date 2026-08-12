@@ -50,6 +50,16 @@ function validateStartGameResourceOwnership() {
     false,
     "StartGameView objective icons must not depend on the releasable game bundle."
   );
+  assert.ok(
+    powerupMethodsSource.indexOf("if (this._startGameViewOpeningPromise)") >= 0 &&
+      powerupMethodsSource.indexOf("this._startGameViewOpeningPromise = trackedPromise;") >= 0,
+    "StartGameView opening must coalesce duplicate level-select entry requests."
+  );
+  assert.ok(
+    powerupMethodsSource.indexOf("this._startGameViewOpeningPromise === trackedPromise") >= 0 &&
+      powerupMethodsSource.indexOf("this._startGameViewNode !== startGameViewNode") >= 0,
+    "StartGameView must release its entry lock after rendering and cancel stale post-open effects after close."
+  );
 
   propDescriptionConfig.getAllIconPaths().forEach(function (resourcePath) {
     assert.strictEqual(
@@ -115,6 +125,7 @@ function validateStartGamePrefabContract() {
   var panelNode = getPrefabChildNode(prefab, rootNode, "Panel", "Panel");
   var titleBgNode = getPrefabChildNode(prefab, panelNode, "title_bg", "Panel/title_bg");
   getPrefabChildNode(prefab, titleBgNode, "btn_close", "Panel/title_bg/btn_close");
+  getPrefabChildNode(prefab, titleBgNode, "level", "Panel/title_bg/level");
   getPrefabChildNode(prefab, panelNode, "target_score_bg", "Panel/target_score_bg");
   var targetNode = getPrefabChildNode(prefab, panelNode, "target", "Panel/target");
   var targetLayoutNode = getPrefabChildNode(prefab, targetNode, "traget_layout", "Panel/target/traget_layout");
@@ -134,6 +145,7 @@ function validateStartGamePrefabContract() {
   assert.ok(controllerSource.indexOf('requireChildNode(panelNode, "prop_node", "Panel")') >= 0, "StartGameView controller must bind Panel/prop_node.");
   assert.ok(controllerSource.indexOf('requireChildNode(panelNode, "role_node", "Panel")') >= 0, "StartGameView controller must bind Panel/role_node.");
   assert.ok(controllerSource.indexOf('requireChildNode(titleBgNode, "btn_close", "Panel/title_bg")') >= 0, "StartGameView controller must bind Panel/title_bg/btn_close.");
+  assert.ok(controllerSource.indexOf('requireChildNode(titleBgNode, "level", "Panel/title_bg")') >= 0, "StartGameView controller must bind Panel/title_bg/level.");
   assert.ok(controllerSource.indexOf("this._nodes.targetNode.active = showCollectionTarget;") >= 0, "StartGameView must hide target when the level has no collection objective.");
   assert.ok(controllerSource.indexOf("SpriteProxyLayerHelper.createProxyRoot(this.node") >= 0, "StartGameView main Sprite proxy root must not be a Panel Layout child.");
   assert.ok(controllerSource.indexOf("root.setSiblingIndex(this._nodes.panel.getSiblingIndex());") >= 0, "StartGameView main Sprite proxy root must render above mask and below Panel text.");
@@ -157,6 +169,65 @@ function validateStartGamePrefabContract() {
   assert.strictEqual(hasCollectionObjective({ ball: null, iceSnowball: null }), false, "An empty objective set must hide StartGameView target.");
   assert.strictEqual(hasCollectionObjective({ ball: { target: 1 }, iceSnowball: null }), true, "A ball objective must keep StartGameView target visible.");
   assert.strictEqual(hasCollectionObjective({ ball: null, iceSnowball: { target: 1 } }), true, "An ice objective must keep StartGameView target visible.");
+}
+
+function validateStartGameSpriteFrameLoadSerialization() {
+  var controllerSource = readProjectFile("assets/scripts/ui/StartGameViewController.js");
+  var loadOrder = [];
+  var sandbox;
+  var bundleLoader = {
+    loadRes: function (resourcePath, assetType, callback) {
+      assert.strictEqual(assetType, sandbox.cc.SpriteFrame, "StartGameView must load target icons as SpriteFrames.");
+      loadOrder.push(resourcePath);
+      setTimeout(function () {
+        callback(null, { resourcePath: resourcePath });
+      }, 0);
+    }
+  };
+  sandbox = {
+    module: { exports: {} },
+    exports: {},
+    cc: { SpriteFrame: function SpriteFrame() {} },
+    Promise: Promise,
+    setTimeout: setTimeout,
+    require: function (requestPath) {
+      if (requestPath === "../utils/BundleLoader") {
+        return bundleLoader;
+      }
+      return {};
+    }
+  };
+  vm.runInNewContext(
+    controllerSource + "\nmodule.exports.__StartGameViewControllerForValidation = StartGameViewController;\n",
+    sandbox,
+    { filename: "StartGameViewController.js" }
+  );
+  var Controller = sandbox.module.exports.__StartGameViewControllerForValidation;
+  var controller = Object.create(Controller.prototype);
+  controller._spriteFrames = {};
+  controller._spriteLoadPromise = null;
+  controller._getRequiredSpritePaths = function (options) {
+    return options.paths;
+  };
+
+  return Promise.all([
+    controller._ensureSpriteFrames({ paths: ["ui/image/preview_balls/blue_ball"] }),
+    controller._ensureSpriteFrames({ paths: ["ui/image/preview_balls/red_ball"] })
+  ]).then(function () {
+    assert.deepStrictEqual(
+      loadOrder,
+      ["ui/image/preview_balls/blue_ball", "ui/image/preview_balls/red_ball"],
+      "Overlapping StartGameView renders must load the second target icon after the first batch."
+    );
+    assert.ok(
+      controller._spriteFrames["ui/image/preview_balls/blue_ball"],
+      "First StartGameView target icon must remain loaded."
+    );
+    assert.ok(
+      controller._spriteFrames["ui/image/preview_balls/red_ball"],
+      "Second StartGameView target icon must load before rendering its proxy."
+    );
+  });
 }
 
 function validateGameplayReleaseScope() {
@@ -267,7 +338,9 @@ function main() {
   validateStartGameRescueObjectives();
   validateStartGamePrefabContract();
   validateGameplayReleaseScope();
-  return validatePrefabFactoryOwnership().then(function () {
+  return validateStartGameSpriteFrameLoadSerialization().then(function () {
+    return validatePrefabFactoryOwnership();
+  }).then(function () {
     console.log("UI resource lifecycle validation passed.");
   });
 }

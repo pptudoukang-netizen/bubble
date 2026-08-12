@@ -7,6 +7,8 @@ var LevelPackManifest = require("./LevelPackManifest");
 var LevelPackCompactCodec = require("./LevelPackCompactCodec");
 var LevelPackIntegrity = require("./LevelPackIntegrity");
 var BACKGROUND_PRELOAD_CONCURRENCY = 1;
+var PRELOAD_COMPLETION_MARKER_SCHEMA_VERSION = 1;
+var PRELOAD_COMPLETION_MARKER_FILE_NAME = "all_packs_preloaded.json";
 
 function resolvePlatform(platform) {
   if (platform) {
@@ -79,8 +81,78 @@ function prioritizePackInfos(manifest, priorityLevelId) {
   }));
 }
 
-function preloadPackInfosWithConcurrency(loader, manifest, packInfos) {
+function normalizePreloadOptions(options) {
+  if (options === undefined) {
+    return {};
+  }
+  if (!options || typeof options !== "object" || Array.isArray(options)) {
+    throw new Error("remote pack preload options must be an object.");
+  }
+  if (options.onProgress !== undefined && typeof options.onProgress !== "function") {
+    throw new Error("remote pack preload onProgress must be a function.");
+  }
+  return options;
+}
+
+function reportPreloadProgress(onProgress, completedPackCount, totalPackCount, packInfo) {
+  if (typeof onProgress !== "function") {
+    return;
+  }
+  onProgress({
+    completedPackCount: completedPackCount,
+    totalPackCount: totalPackCount,
+    packId: packInfo ? packInfo.id : null
+  });
+}
+
+function buildPreloadCompletionMarker(manifest) {
+  if (!manifest || typeof manifest.version !== "string" || !manifest.version) {
+    throw new Error("remote pack preload completion marker requires manifest version.");
+  }
+  if (!Array.isArray(manifest.packs) || manifest.packs.length === 0) {
+    throw new Error("remote pack preload completion marker requires manifest packs.");
+  }
+  return {
+    schemaVersion: PRELOAD_COMPLETION_MARKER_SCHEMA_VERSION,
+    manifestVersion: manifest.version,
+    packs: manifest.packs.map(function (packInfo) {
+      if (!packInfo || typeof packInfo.id !== "string" || !packInfo.id || typeof packInfo.sha256 !== "string" || !packInfo.sha256) {
+        throw new Error("remote pack preload completion marker pack is invalid.");
+      }
+      return {
+        id: packInfo.id,
+        sha256: packInfo.sha256
+      };
+    })
+  };
+}
+
+function isPreloadCompletionMarkerCurrent(marker, manifest) {
+  var expectedMarker = buildPreloadCompletionMarker(manifest);
+  if (!marker || typeof marker !== "object" || Array.isArray(marker)) {
+    throw new Error("remote pack preload completion marker must be an object.");
+  }
+  if (marker.schemaVersion !== PRELOAD_COMPLETION_MARKER_SCHEMA_VERSION) {
+    return false;
+  }
+  if (marker.manifestVersion !== expectedMarker.manifestVersion || !Array.isArray(marker.packs)) {
+    return false;
+  }
+  if (marker.packs.length !== expectedMarker.packs.length) {
+    return false;
+  }
+  return marker.packs.every(function (packInfo, index) {
+    var expectedPackInfo = expectedMarker.packs[index];
+    return packInfo && typeof packInfo === "object" && !Array.isArray(packInfo) &&
+      packInfo.id === expectedPackInfo.id && packInfo.sha256 === expectedPackInfo.sha256;
+  });
+}
+
+function preloadPackInfosWithConcurrency(loader, manifest, packInfos, onProgress) {
   var nextIndex = 0;
+  var completedPackCount = 0;
+
+  reportPreloadProgress(onProgress, completedPackCount, packInfos.length, null);
 
   function preloadNextPack() {
     if (nextIndex >= packInfos.length) {
@@ -89,6 +161,8 @@ function preloadPackInfosWithConcurrency(loader, manifest, packInfos) {
     var packInfo = packInfos[nextIndex];
     nextIndex += 1;
     return loader._fetchPackText(manifest, packInfo).then(function () {
+      completedPackCount += 1;
+      reportPreloadProgress(onProgress, completedPackCount, packInfos.length, packInfo);
       Logger.info("Background remote level pack cached", {
         packId: packInfo.id,
         from: packInfo.from,
@@ -254,6 +328,14 @@ RemoteLevelPackLoader.prototype._getCachePath = function (manifest, packInfo) {
   return this.platform.env.USER_DATA_PATH + "/" + this.cacheRootName + "/" + manifest.version + "/" + packInfo.id + "_" + packInfo.sha256 + ".json";
 };
 
+RemoteLevelPackLoader.prototype._getPreloadCompletionMarkerPath = function (manifest) {
+  this._getFileSystemManager();
+  if (!manifest || typeof manifest.version !== "string" || !manifest.version) {
+    throw new Error("manifest version is required for remote pack preload completion marker path.");
+  }
+  return this.platform.env.USER_DATA_PATH + "/" + this.cacheRootName + "/" + manifest.version + "/" + PRELOAD_COMPLETION_MARKER_FILE_NAME;
+};
+
 RemoteLevelPackLoader.prototype._ensureCacheDirectory = function (filePath) {
   var fs = this._getFileSystemManager();
   var dirPath = filePath.slice(0, filePath.lastIndexOf("/"));
@@ -323,6 +405,29 @@ RemoteLevelPackLoader.prototype._cacheFileExists = function (filePath) {
       }
     });
   });
+};
+
+RemoteLevelPackLoader.prototype._isManifestPreloadComplete = function (manifest) {
+  var markerPath = this._getPreloadCompletionMarkerPath(manifest);
+  return this._cacheFileExists(markerPath).then(function (exists) {
+    if (!exists) {
+      return false;
+    }
+    return this._readTextFile(markerPath).then(function (text) {
+      var marker = null;
+      try {
+        marker = JSON.parse(text);
+      } catch (error) {
+        throw new Error("Remote level preload completion marker JSON invalid: " + error.message);
+      }
+      return isPreloadCompletionMarkerCurrent(marker, manifest);
+    });
+  }.bind(this));
+};
+
+RemoteLevelPackLoader.prototype._markManifestPreloadComplete = function (manifest) {
+  var markerPath = this._getPreloadCompletionMarkerPath(manifest);
+  return this._writeTextFile(markerPath, JSON.stringify(buildPreloadCompletionMarker(manifest)));
 };
 
 RemoteLevelPackLoader.prototype._getPackTempFileURL = function (manifest, packInfo) {
@@ -413,7 +518,7 @@ RemoteLevelPackLoader.prototype._parsePack = function (packInfo, text) {
   if (parsed.from !== packInfo.from || parsed.to !== packInfo.to) {
     throw new Error("remote level pack range mismatch: " + packInfo.id);
   }
-  if (packInfo.format !== LevelPackManifest.PACK_FORMAT_COMPACT_V1) {
+  if (packInfo.format !== LevelPackManifest.PACK_FORMAT_COMPACT_V2) {
     throw new Error("remote level pack format unsupported: " + packInfo.format);
   }
   var expanded = LevelPackCompactCodec.expandPack(parsed);
@@ -466,12 +571,14 @@ RemoteLevelPackLoader.prototype._shouldAttemptRemotePreload = function () {
   return isWechatGameRuntime();
 };
 
-RemoteLevelPackLoader.prototype.preloadAllPacks = function (priorityLevelId) {
+RemoteLevelPackLoader.prototype.preloadAllPacks = function (priorityLevelId, options) {
   var safePriorityLevelId = normalizePositiveLevelId(
     priorityLevelId,
     "remote pack background preload priorityLevelId"
   );
+  var preloadOptions = normalizePreloadOptions(options);
   if (this._shouldAttemptRemotePreload() !== true) {
+    reportPreloadProgress(preloadOptions.onProgress, 1, 1, null);
     return Promise.resolve({
       preloaded: false,
       priorityLevelId: safePriorityLevelId,
@@ -484,14 +591,34 @@ RemoteLevelPackLoader.prototype.preloadAllPacks = function (priorityLevelId) {
 
   this._allPacksPreloadPromise = this.loadManifest().then(function (manifest) {
     var packInfos = prioritizePackInfos(manifest, safePriorityLevelId);
-    return preloadPackInfosWithConcurrency(this, manifest, packInfos).then(function () {
-      return {
-        preloaded: true,
-        priorityLevelId: safePriorityLevelId,
-        priorityPackId: packInfos[0].id,
-        packCount: packInfos.length
-      };
-    });
+    return this._isManifestPreloadComplete(manifest).then(function (cacheHit) {
+      if (cacheHit) {
+        reportPreloadProgress(preloadOptions.onProgress, 0, packInfos.length, null);
+        reportPreloadProgress(preloadOptions.onProgress, packInfos.length, packInfos.length, null);
+        Logger.info("Background remote level pack cache already complete", {
+          manifestVersion: manifest.version,
+          packCount: packInfos.length
+        });
+        return {
+          preloaded: true,
+          cacheHit: true,
+          priorityLevelId: safePriorityLevelId,
+          priorityPackId: packInfos[0].id,
+          packCount: packInfos.length
+        };
+      }
+      return preloadPackInfosWithConcurrency(this, manifest, packInfos, preloadOptions.onProgress).then(function () {
+        return this._markManifestPreloadComplete(manifest);
+      }.bind(this)).then(function () {
+        return {
+          preloaded: true,
+          cacheHit: false,
+          priorityLevelId: safePriorityLevelId,
+          priorityPackId: packInfos[0].id,
+          packCount: packInfos.length
+        };
+      });
+    }.bind(this));
   }.bind(this)).catch(function (error) {
     this._allPacksPreloadPromise = null;
     throw error;

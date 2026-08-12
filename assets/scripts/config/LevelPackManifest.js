@@ -3,7 +3,7 @@
 var MANIFEST_RESOURCE_PATH = "config/level_manifest";
 var LOCAL_LEVEL_MAX = 10;
 var TOTAL_LEVEL_COUNT = 1000;
-var PACK_FORMAT_COMPACT_V1 = "compact-schema-v1";
+var PACK_FORMAT_COMPACT_V2 = "compact-schema-v2";
 var MANIFEST_FORMAT_V1 = "level-pack-manifest-v1";
 
 function assertObject(value, fieldName) {
@@ -64,7 +64,7 @@ function normalizePack(pack, index) {
   }
   var bytes = assertPositiveInteger(pack.bytes, "level manifest packs[" + index + "].bytes");
   var format = assertNonEmptyString(pack.format, "level manifest packs[" + index + "].format");
-  if (format !== PACK_FORMAT_COMPACT_V1) {
+  if (format !== PACK_FORMAT_COMPACT_V2) {
     throw new Error("level manifest packs[" + index + "].format unsupported: " + format);
   }
 
@@ -181,7 +181,7 @@ module.exports = {
   MANIFEST_RESOURCE_PATH: MANIFEST_RESOURCE_PATH,
   LOCAL_LEVEL_MAX: LOCAL_LEVEL_MAX,
   TOTAL_LEVEL_COUNT: TOTAL_LEVEL_COUNT,
-  PACK_FORMAT_COMPACT_V1: PACK_FORMAT_COMPACT_V1,
+  PACK_FORMAT_COMPACT_V2: PACK_FORMAT_COMPACT_V2,
   MANIFEST_FORMAT_V1: MANIFEST_FORMAT_V1,
   normalizeManifest: normalizeManifest,
   assertRemoteManifestCompatible: assertRemoteManifestCompatible,

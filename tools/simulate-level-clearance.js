@@ -210,7 +210,7 @@ function listRemotePackEntries() {
     .reduce(function (entries, fileName) {
       var packPath = path.join(REMOTE_PACK_DIR, fileName);
       var compactPack = readJson(packPath);
-      if (!compactPack || compactPack.format !== LevelPackCompactCodec.PACK_FORMAT_COMPACT_V1) {
+      if (!compactPack || compactPack.format !== LevelPackCompactCodec.PACK_FORMAT_COMPACT_V2) {
         throw new Error("Remote pack must use compact schema: " + fileName);
       }
       var expandedPack = LevelPackCompactCodec.expandPack(compactPack);

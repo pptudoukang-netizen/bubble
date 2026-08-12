@@ -89,6 +89,57 @@ function resolvePurchaseFailureMessage(result) {
   throw new Error("Unsupported spirit shop rejection: " + result.reason);
 }
 
+function requirePositiveInteger(value, description) {
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(description + " must be a positive integer.");
+  }
+  return value;
+}
+
+function buildSpiritFragmentAwardItem(spiritId, count) {
+  if (typeof spiritId !== "string" || spiritId.length === 0) {
+    throw new Error("Spirit fragment award requires spiritId.");
+  }
+  return {
+    id: spiritId + "_fragments",
+    count: requirePositiveInteger(count, "Spirit fragment award count")
+  };
+}
+
+function buildSpiritShopProductAwardItem(result) {
+  if (!result || result.accepted !== true || !result.product || typeof result.product !== "object") {
+    throw new Error("Spirit shop product award requires an accepted purchase result.");
+  }
+
+  var product = result.product;
+  if (product.kind === "coins") {
+    return {
+      id: "coin",
+      count: requirePositiveInteger(product.grantCount, "Spirit shop coin award count")
+    };
+  }
+  if (product.kind === "inventory") {
+    if (typeof product.grantItemId !== "string" || product.grantItemId.length === 0) {
+      throw new Error("Spirit shop inventory award requires grantItemId.");
+    }
+    return {
+      id: product.grantItemId,
+      count: requirePositiveInteger(product.grantCount, "Spirit shop inventory award count")
+    };
+  }
+  if (product.kind === "random_fragments") {
+    return buildSpiritFragmentAwardItem(result.spiritId, result.quantity);
+  }
+  throw new Error("Unsupported spirit shop product award kind: " + product.kind);
+}
+
+function showSpiritShopAward(host, awardItem) {
+  if (typeof host._showAwardViewForRewardItems !== "function") {
+    throw new Error("Spirit shop purchase requires AwardView renderer.");
+  }
+  return host._showAwardViewForRewardItems([awardItem]);
+}
+
 module.exports = {
   _ensureSpiritShopViewPrefab: function () {
     if (this._spiritShopViewPrefab) {
@@ -263,6 +314,7 @@ module.exports = {
     var message = "获得" + result.quantity + "个精灵碎片";
     this._setStatusWithTip("spirit_shop_purchase_success", null, message);
     this._renderSpiritShopView();
+    showSpiritShopAward(this, buildSpiritFragmentAwardItem(result.spiritId, result.quantity));
     return true;
   },
 
@@ -285,6 +337,7 @@ module.exports = {
       : "购买" + result.product.displayName + "成功";
     this._setStatusWithTip("spirit_shop_purchase_success", null, message);
     this._renderSpiritShopView();
+    showSpiritShopAward(this, buildSpiritShopProductAwardItem(result));
     return true;
   },
 

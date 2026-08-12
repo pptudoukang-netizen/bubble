@@ -152,6 +152,23 @@ function assertAssetBundleLayout() {
   assertBundleMeta("audio", 5);
   assertBundleMeta("map", 6);
 
+  [
+    "assets/map/image/AutoAtlas.pac.meta",
+    "assets/map/image/level_view/AutoAtlas.pac.meta"
+  ].forEach(function (relativePath) {
+    var atlasMeta = readJson(path.join(PROJECT_ROOT, relativePath));
+    var minigameFormats = atlasMeta.platformSettings && atlasMeta.platformSettings.minigame
+      ? atlasMeta.platformSettings.minigame.formats
+      : null;
+    if (
+      !Array.isArray(minigameFormats) ||
+      minigameFormats.length !== 1 ||
+      minigameFormats[0].name !== "astc_8x8"
+    ) {
+      throw new Error("Map startup AutoAtlas must use minigame astc_8x8 compression: " + relativePath);
+    }
+  });
+
   var scriptsMeta = readJson(path.join(ASSETS_ROOT, "scripts.meta"));
   if (scriptsMeta.isBundle !== true || scriptsMeta.bundleName !== "core" || scriptsMeta.priority !== 7) {
     throw new Error("assets/scripts must be the priority-7 `core` asset bundle.");

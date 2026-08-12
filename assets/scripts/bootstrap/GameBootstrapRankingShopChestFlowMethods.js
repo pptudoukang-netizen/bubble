@@ -15,6 +15,44 @@ var hideGameCircleWelfareViewNode = Shared.hideGameCircleWelfareViewNode;
 var resolveStarChestFailMessage = Shared.resolveStarChestFailMessage;
 var UiModalReleaseHelper = require("../utils/UiModalReleaseHelper");
 var WORLD_RANK_LOADING_MESSAGE = "正在加载世界排行榜...";
+var STAR_CHEST_ICON_SHAKE_INTERVAL = 2;
+var STAR_CHEST_ICON_SHAKE_ANGLE = 10;
+
+function setStarChestIconShakeActive(entryNode, shouldShake) {
+  var iconNode = entryNode.getChildByName("icon");
+  if (!iconNode || !iconNode.isValid) {
+    throw new Error("LevelView star_box_btn requires icon for star chest shake animation.");
+  }
+
+  if (!shouldShake) {
+    iconNode.stopAllActions();
+    iconNode.angle = 0;
+    iconNode.__starChestShakePlaying = false;
+    return;
+  }
+
+  if (typeof cc.tween !== "function") {
+    throw new Error("Star chest icon shake animation requires cc.tween.");
+  }
+  if (iconNode.__starChestShakePlaying === true) {
+    return;
+  }
+
+  iconNode.__starChestShakePlaying = true;
+  iconNode.stopAllActions();
+  iconNode.angle = 0;
+  cc.tween(iconNode)
+    .repeatForever(
+      cc.tween()
+        .delay(STAR_CHEST_ICON_SHAKE_INTERVAL)
+        .to(0.06, { angle: -STAR_CHEST_ICON_SHAKE_ANGLE })
+        .to(0.08, { angle: STAR_CHEST_ICON_SHAKE_ANGLE })
+        .to(0.06, { angle: -STAR_CHEST_ICON_SHAKE_ANGLE * 0.65 })
+        .to(0.06, { angle: STAR_CHEST_ICON_SHAKE_ANGLE * 0.65 })
+        .to(0.05, { angle: 0 })
+    )
+    .start();
+}
 
 function resolveWorldLeaderboardFailMessage(error) {
   return "世界排行榜加载失败";
@@ -462,6 +500,9 @@ module.exports = {
     if (!Number.isInteger(summary.starsPerChest) || summary.starsPerChest <= 0) {
       throw new Error("Star chest summary starsPerChest must be a positive integer.");
     }
+    if (!Number.isInteger(summary.openableCount) || summary.openableCount < 0) {
+      throw new Error("Star chest summary openableCount must be a non-negative integer.");
+    }
 
     var labelNode = entryNode.getChildByName("satr_num") || entryNode.getChildByName("star_num");
     var label = labelNode ? labelNode.getComponent(cc.Label) : null;
@@ -475,10 +516,12 @@ module.exports = {
     }
     entryNode.opacity = summary.enabled === false ? 150 : 255;
 
+    var hasOpenableChest = summary.openableCount > 0;
     var redDotNode = this._ensureStarChestEntryRedDot(entryNode);
     if (redDotNode) {
-      redDotNode.active = Math.max(0, Math.floor(Number(summary.openableCount) || 0)) > 0;
+      redDotNode.active = hasOpenableChest;
     }
+    setStarChestIconShakeActive(entryNode, hasOpenableChest);
   },
 
   _ensureShopEntryButton: function () {

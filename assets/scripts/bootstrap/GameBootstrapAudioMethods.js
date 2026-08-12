@@ -43,6 +43,7 @@ module.exports = {
         win: this.winSfxResource,
         lose: this.loseSfxResource,
         jarCollectBottom: this.jarCollectBottomSfxResource,
+        joy: this.joySfxResource,
         break: this.breakSfxResource,
         hitBucket: this.hitBucketSfxResource,
         fairyAssistHit: fairyAssistHitPaths,
@@ -282,6 +283,11 @@ module.exports = {
 
       if (event.type === "surplus_shot_launched") {
         this._playSfx("emission");
+        return;
+      }
+
+      if (event.type === "surplus_shots_finished") {
+        this._playSfx("joy");
         return;
       }
 

@@ -341,22 +341,7 @@ TrajectoryPredictor.prototype.predictShotPlan = function (grid, origin, directio
               currentDirection
             );
           }
-          // A rotated rescue board can expose the outer face of a fully-packed
-          // boundary bubble.  It is a real collision, but has no legal hex
-          // neighbor to receive a new bubble.  Keep that state explicit for
-          // aiming instead of selecting an unrelated cell or throwing while
-          // the cannon sweeps across it.
-          return buildPlan(
-            rayOrigin,
-            rayDirection,
-            wallPoints,
-            "blocked",
-            bubbleImpactPoint,
-            collisionInfo.cell,
-            null,
-            null,
-            currentDirection
-          );
+          throw new Error("Trapped sprite bubble collision requires an attachment cell.");
         }
         return buildPlan(
           rayOrigin,

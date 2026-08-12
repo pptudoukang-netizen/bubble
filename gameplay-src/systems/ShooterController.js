@@ -449,6 +449,7 @@ ShooterController.prototype.resolveCurrentRainbowColor = function (colorCode) {
   }
 
   this.currentBall = createNormalBall(colorCode);
+  this.currentBall.sourceSkillBallType = "rainbow";
   this._syncLegacyColorFields();
 
   return {

@@ -15,6 +15,12 @@ var TIMED_LEVEL_MAX_TIME_BONUS_BALLS = 5;
 var TRAPPED_SPRITE_RESCUE_CHAPTER_OFFSETS = AssistSpiritRescueConfig.CHAPTER_OFFSETS;
 var TRAPPED_SPRITE_RESCUE_LEVEL_IDS = AssistSpiritRescueConfig.RESCUE_LEVEL_IDS.slice();
 var TRAPPED_SPRITE_SPIRIT_IDS = AssistSpiritRescueConfig.SPIRIT_IDS;
+var TRAPPED_SPRITE_RESCUE_HEX_RADIUS = 5;
+var TRAPPED_SPRITE_RESCUE_ANCHOR_ROW = 6;
+var TRAPPED_SPRITE_RESCUE_OCCUPIED_CELL_COUNT =
+  3 * TRAPPED_SPRITE_RESCUE_HEX_RADIUS * (TRAPPED_SPRITE_RESCUE_HEX_RADIUS + 1);
+var TRAPPED_SPRITE_RESCUE_MAX_SAME_COLOR_COMPONENT = 5;
+var TRAPPED_SPRITE_RESCUE_MAX_ANCHOR_NEIGHBOR_RUN = 2;
 var NORMAL_BALL_COLORS = Object.freeze(["B", "R", "G", "Y", "P", "O", "K", "W"]);
 var BASE_SPECIAL_COLORS = Object.freeze(["R", "G", "B", "Y", "P"]);
 var MAX_ACTIVE_COLOR_COUNT = 5;
@@ -635,14 +641,10 @@ function buildTrappedSpriteRescueConfig(levelId, layout) {
   if (!isTrappedSpriteRescueLevelId(levelId)) {
     throw new Error("Level is not configured for trapped sprite rescue: " + levelId);
   }
-  if (!Array.isArray(layout) || layout.length < 9) {
-    throw new Error("Trapped sprite rescue generation requires at least nine layout rows: " + levelId);
+  if (!Array.isArray(layout) || layout.length <= TRAPPED_SPRITE_RESCUE_ANCHOR_ROW + TRAPPED_SPRITE_RESCUE_HEX_RADIUS) {
+    throw new Error("Trapped sprite rescue generation requires the full radius-five hex board: " + levelId);
   }
-  var rescueIndex = TRAPPED_SPRITE_RESCUE_LEVEL_IDS.indexOf(levelId);
-  var anchorRow = 5 + (rescueIndex % 3);
-  if (anchorRow >= layout.length - 2) {
-    throw new Error("Trapped sprite rescue anchor row is outside the generated board: " + levelId);
-  }
+  var anchorRow = TRAPPED_SPRITE_RESCUE_ANCHOR_ROW;
   var anchorColumns = BoardLayout.getRowColumnCount(anchorRow, BoardLayout.defaultColumns);
   var anchorCol = Math.floor(anchorColumns / 2);
   if (typeof layout[anchorRow] !== "string" || layout[anchorRow].length !== anchorColumns) {
@@ -697,6 +699,11 @@ module.exports = Object.freeze({
   TIMED_LEVEL_TIME_BONUS_SECONDS: TIMED_LEVEL_TIME_BONUS_SECONDS,
   TIMED_LEVEL_MIN_TIME_BONUS_BALLS: TIMED_LEVEL_MIN_TIME_BONUS_BALLS,
   TIMED_LEVEL_MAX_TIME_BONUS_BALLS: TIMED_LEVEL_MAX_TIME_BONUS_BALLS,
+  TRAPPED_SPRITE_RESCUE_HEX_RADIUS: TRAPPED_SPRITE_RESCUE_HEX_RADIUS,
+  TRAPPED_SPRITE_RESCUE_ANCHOR_ROW: TRAPPED_SPRITE_RESCUE_ANCHOR_ROW,
+  TRAPPED_SPRITE_RESCUE_OCCUPIED_CELL_COUNT: TRAPPED_SPRITE_RESCUE_OCCUPIED_CELL_COUNT,
+  TRAPPED_SPRITE_RESCUE_MAX_SAME_COLOR_COMPONENT: TRAPPED_SPRITE_RESCUE_MAX_SAME_COLOR_COMPONENT,
+  TRAPPED_SPRITE_RESCUE_MAX_ANCHOR_NEIGHBOR_RUN: TRAPPED_SPRITE_RESCUE_MAX_ANCHOR_NEIGHBOR_RUN,
   MAX_TOP_ROW_SAME_COLOR_RUN: LevelBoardSupportValidator.MAX_TOP_ROW_SAME_COLOR_RUN,
   MIN_NORMAL_BALL_OCCUPANCY_RATIO: LevelBoardSupportValidator.MIN_NORMAL_BALL_OCCUPANCY_RATIO,
   TRAPPED_SPRITE_RESCUE_CHAPTER_OFFSETS: TRAPPED_SPRITE_RESCUE_CHAPTER_OFFSETS,

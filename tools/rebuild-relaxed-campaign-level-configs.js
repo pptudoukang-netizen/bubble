@@ -286,7 +286,9 @@ function buildRelaxedSpec(levelId) {
     gameplayPlan.reactiveSpecialCounts.wormhole;
   var specialSlotCount = specialCounts.ice + nonIceSpecials + reactiveSpecialSlotCount;
   var excludedGameplaySlotCount = specialSlotCount + (gameplayPlan.trappedSpriteRescue ? 1 : 0);
-  var normalCount = Math.ceil((capacity - excludedGameplaySlotCount) * normalBallOccupancyTarget);
+  var normalCount = gameplayPlan.trappedSpriteRescue
+    ? CampaignLevelGenerationConfig.TRAPPED_SPRITE_RESCUE_OCCUPIED_CELL_COUNT - specialSlotCount
+    : Math.ceil((capacity - excludedGameplaySlotCount) * normalBallOccupancyTarget);
   if (normalCount < activeColors.length * 8) {
     throw new Error("Level " + levelId + " relaxed design leaves too few normal balls.");
   }
@@ -376,9 +378,12 @@ function buildRelaxedCells(spec) {
   ].map(String);
 }
 
-function rewriteTable() {
+function rewriteTable(onlyTrappedSpriteRescue) {
   var parsed = parseTable(fs.readFileSync(TABLE_PATH, "utf8"));
   for (var levelId = 1; levelId <= TARGET_LEVEL_COUNT; levelId += 1) {
+    if (onlyTrappedSpriteRescue && !CampaignLevelGenerationConfig.isTrappedSpriteRescueLevelId(levelId)) {
+      continue;
+    }
     if (levelId <= FirstHundredLevelDesign.LAST_LEVEL_ID) {
       parsed.rows[levelId - 1] = buildFirstHundredCells(FirstHundredLevelDesign.buildLevelSpec(levelId));
     } else {
@@ -394,8 +399,12 @@ function rewriteTable() {
   fs.writeFileSync(TABLE_PATH, output, "utf8");
 }
 
-function runGenerator() {
-  var result = childProcess.spawnSync(process.execPath, [GENERATOR_PATH], {
+function runGenerator(onlyTrappedSpriteRescue) {
+  var generatorArgs = [GENERATOR_PATH];
+  if (onlyTrappedSpriteRescue) {
+    generatorArgs.push("--trapped-rescue");
+  }
+  var result = childProcess.spawnSync(process.execPath, generatorArgs, {
     cwd: PROJECT_ROOT,
     stdio: "inherit"
   });
@@ -408,8 +417,13 @@ function runGenerator() {
 }
 
 function main() {
-  rewriteTable();
-  runGenerator();
+  var args = process.argv.slice(2);
+  if (args.length > 1 || (args.length === 1 && args[0] !== "--trapped-rescue")) {
+    throw new Error("Unsupported relaxed campaign rebuild arguments: " + args.join(" "));
+  }
+  var onlyTrappedSpriteRescue = args[0] === "--trapped-rescue";
+  rewriteTable(onlyTrappedSpriteRescue);
+  runGenerator(onlyTrappedSpriteRescue);
 }
 
 main();

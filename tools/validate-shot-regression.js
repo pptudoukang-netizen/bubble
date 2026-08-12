@@ -393,7 +393,7 @@ function loadLevelRaw(levelId) {
   if (packData.format !== pack.format) {
     throw new Error("Remote pack format mismatch: " + pack.id);
   }
-  if (pack.format !== LevelPackManifest.PACK_FORMAT_COMPACT_V1) {
+  if (pack.format !== LevelPackManifest.PACK_FORMAT_COMPACT_V2) {
     throw new Error("Remote pack format unsupported: " + pack.format);
   }
   packData = LevelPackCompactCodec.expandPack(packData);
@@ -2822,6 +2822,81 @@ function runCollectedSkillPowerupsEmitInventoryEventsCase() {
   }
 }
 
+function runTimedOutSkillPowerupsIncreaseInventoryCase() {
+  var manager = new GameManager();
+  var hadCc = Object.prototype.hasOwnProperty.call(global, "cc");
+  var previousCc = global.cc;
+  var levelConfig = createLevelConfig(1);
+  global.cc = {
+    log: function () {},
+    warn: function () {},
+    error: function () {}
+  };
+
+  try {
+    manager.startLevel(levelConfig, {
+      runMode: "shot_regression",
+      attemptIndex: 1,
+      seed: "shot-regression-timeout-skill-powerups"
+    });
+
+    var fallingSystem = manager.systems.fallingMarbleSystem;
+    var timedOutDrops = fallingSystem.registerDrops([
+      {
+        id: "rainbow_timeout",
+        entityCategory: "skill_ball",
+        entityType: "rainbow",
+        row: 0,
+        col: 0
+      },
+      {
+        id: "blast_timeout",
+        entityCategory: "skill_ball",
+        entityType: "blast",
+        row: 0,
+        col: 1
+      }
+    ], manager.systems.bubbleGrid);
+    if (timedOutDrops.length !== 2) {
+      throw new Error("Timeout skill powerup regression requires two active falling drops.");
+    }
+    timedOutDrops.forEach(function (drop) {
+      drop.lifeTime = fallingSystem.maxDropLifeTime;
+    });
+
+    var snapshot = manager.update(0.016);
+    if (manager.systems.shooterController.skillInventory.rainbow !== 1) {
+      throw new Error("Timed-out rainbow drop must increase runtime rainbow inventory.");
+    }
+    if (manager.systems.shooterController.skillInventory.blast !== 1) {
+      throw new Error("Timed-out blast drop must increase runtime blast inventory.");
+    }
+    if (manager.lastResolution.injectedSkills.length !== 2) {
+      throw new Error("Timed-out skill drops must be recorded in resolution injectedSkills.");
+    }
+
+    var collectedEvents = snapshot.runtimeEvents.filter(function (event) {
+      return event && event.type === "skill_powerup_collected";
+    });
+    var collectedEntityTypes = collectedEvents.map(function (event) {
+      return event.entityType;
+    }).sort();
+    if (
+      collectedEvents.length !== 2 ||
+      collectedEntityTypes[0] !== "blast" ||
+      collectedEntityTypes[1] !== "rainbow"
+    ) {
+      throw new Error("Timed-out rainbow and blast drops must each emit one inventory sync event.");
+    }
+  } finally {
+    if (hadCc) {
+      global.cc = previousCc;
+    } else {
+      delete global.cc;
+    }
+  }
+}
+
 function runCollectedSkillPowerupHudFeedbackQueueCase() {
   function ValidationRenderer() {}
   attachLevelRendererSceneHudMethods(ValidationRenderer, {
@@ -3020,6 +3095,150 @@ function runAuthoredOpeningShotQueueCase() {
   revivedShooter.setUpcomingRandomNormalBalls(2);
   if (revivedShooter.getShooterState().authoredOpeningQueue.length !== 0) {
     throw new Error("Revive queue replacement must clear the remaining authored opening shots.");
+  }
+}
+
+function runSkillBallShotsDoNotConsumeRemainingShotsCase() {
+  var hadCc = Object.prototype.hasOwnProperty.call(global, "cc");
+  var previousCc = global.cc;
+  global.cc = {
+    log: function () {},
+    warn: function () {},
+    error: function () {}
+  };
+
+  try {
+  ["rainbow", "blast"].forEach(function (entityType) {
+    var manager = new GameManager();
+    manager.state = "running";
+    manager.isTimedInfiniteShots = false;
+    manager.remainingShots = 3;
+    manager.shotsFired = 0;
+    manager._isBoardAdvanceBusy = function () {
+      return false;
+    };
+    manager._resolveAssistSpiritProducedBallAfterFire = function () {};
+    manager.getRuntimeSnapshot = function (events) {
+      return {
+        remainingShots: this.remainingShots,
+        shotsFired: this.shotsFired,
+        activeProjectile: this.activeProjectile,
+        runtimeEvents: Array.isArray(events) ? events : []
+      };
+    };
+
+    var shooter = manager.systems.shooterController;
+    var levelConfig = {
+      level: {
+        levelId: 54,
+        shotLimit: 3,
+        playMode: "shot_limited",
+        colors: ["R", "B"],
+        spawnWeights: { R: 1, B: 1 },
+        initialShotBalls: ["R", "B"]
+      }
+    };
+    manager.currentLevel = levelConfig;
+    shooter.initialize({});
+    shooter.configureLevel(levelConfig);
+    shooter.skillInventory[entityType] = 1;
+
+    var useResult = manager.useSkillBall(entityType);
+    if (!useResult.accepted) {
+      throw new Error(entityType + " skill ball must equip before the shot-supply regression check.");
+    }
+    if (entityType === "rainbow") {
+      var colorResult = manager.selectRainbowColor("R");
+      if (!colorResult.accepted) {
+        throw new Error("Rainbow skill ball color selection must succeed before firing.");
+      }
+    }
+
+    manager.pendingShotPlan = {
+      valid: true,
+      hitType: "cell",
+      targetCell: { row: 0, col: 0 },
+      wallBounceCount: 0,
+      pathPoints: [
+        { x: 0, y: 0 },
+        { x: 0, y: 100 }
+      ]
+    };
+    var snapshot = manager.fireShot();
+    if (manager.remainingShots !== 3 || snapshot.remainingShots !== 3) {
+      throw new Error(entityType + " skill ball shot must not consume remaining normal shots.");
+    }
+    if (manager.shotsFired !== 1 || snapshot.shotsFired !== 1) {
+      throw new Error(entityType + " skill ball shot must still count as a real fired shot.");
+    }
+    if (
+      !manager.activeProjectile ||
+      !manager.activeProjectile.ball ||
+      (
+        entityType === "rainbow" &&
+        manager.activeProjectile.ball.sourceSkillBallType !== "rainbow"
+      ) ||
+      (
+        entityType === "blast" &&
+        (
+          manager.activeProjectile.ball.entityCategory !== "skill_ball" ||
+          manager.activeProjectile.ball.entityType !== "blast"
+        )
+      )
+    ) {
+      throw new Error(entityType + " skill ball shot must create the matching skill projectile.");
+    }
+    if (!shooter.currentBall || shooter.currentBall.entityCategory !== "normal_ball" || !shooter.nextBall) {
+      throw new Error(entityType + " skill ball shot must preserve all three remaining normal shots in the queue.");
+    }
+  });
+
+  var normalManager = new GameManager();
+  normalManager.state = "running";
+  normalManager.isTimedInfiniteShots = false;
+  normalManager.remainingShots = 3;
+  normalManager.shotsFired = 0;
+  normalManager._isBoardAdvanceBusy = function () {
+    return false;
+  };
+  normalManager._resolveAssistSpiritProducedBallAfterFire = function () {};
+  normalManager.getRuntimeSnapshot = function () {
+    return {
+      remainingShots: this.remainingShots,
+      shotsFired: this.shotsFired
+    };
+  };
+  normalManager.systems.shooterController.initialize({});
+  normalManager.systems.shooterController.configureLevel({
+    level: {
+      levelId: 55,
+      shotLimit: 3,
+      playMode: "shot_limited",
+      colors: ["R", "B"],
+      spawnWeights: { R: 1, B: 1 },
+      initialShotBalls: ["R", "B"]
+    }
+  });
+  normalManager.pendingShotPlan = {
+    valid: true,
+    hitType: "cell",
+    targetCell: { row: 0, col: 0 },
+    wallBounceCount: 0,
+    pathPoints: [
+      { x: 0, y: 0 },
+      { x: 0, y: 100 }
+    ]
+  };
+  normalManager.fireShot();
+  if (normalManager.remainingShots !== 2 || normalManager.shotsFired !== 1) {
+    throw new Error("Normal ball shots must continue consuming exactly one remaining shot.");
+  }
+  } finally {
+    if (hadCc) {
+      global.cc = previousCc;
+    } else {
+      delete global.cc;
+    }
   }
 }
 
@@ -3585,6 +3804,13 @@ function runShooterHandoffInputLockCase() {
   if (gameplayInputSource.indexOf("GameBootstrap shot input requires LevelRenderer.isShooterHandoffInProgress.") < 0) {
     throw new Error("Shooter handoff input lock must fail fast when renderer contract is missing.");
   }
+  if (
+    gameplayInputSource.indexOf('this.node.on(cc.Node.EventType.TOUCH_CANCEL, this._onAimCancel, this)') < 0 ||
+    gameplayInputSource.indexOf("this.gameManager.isAiming && event && typeof event.getLocation === \"function\"") < 0 ||
+    gameplayInputSource.indexOf("this._onFireTouch(event)") < 0
+  ) {
+    throw new Error("Aiming touch cancellation above the shooter must fire the visible trajectory at the node boundary.");
+  }
   var handoffLockCheckCount = (gameplayInputSource.match(/this\._isShooterHandoffInputLocked\(\)\)/g) || []).length;
   if (handoffLockCheckCount < 3) {
     throw new Error("Aim and fire input must not advance shooter queue while handoff is still animating.");
@@ -3808,6 +4034,129 @@ function runOutsideJarCleanupScoreCase() {
     }
     if (runtimeEvents.length !== 1 || runtimeEvents[0].type !== "jar_collect_scored") {
       throw new Error("Outside-jar cleanup score must emit the jar floating-score event.");
+    }
+  } finally {
+    if (hadCc) {
+      global.cc = previousCc;
+    } else {
+      delete global.cc;
+    }
+  }
+}
+
+function runBlackAndWhiteJarScoreCase() {
+  var GameManagerCtor = require("../gameplay-src/core/GameManager");
+  var JarCollectorSystem = require("../gameplay-src/systems/JarCollectorSystem");
+  var hadCc = Object.prototype.hasOwnProperty.call(global, "cc");
+  var previousCc = global.cc;
+  global.cc = {
+    log: function () {},
+    warn: function () {},
+    error: function () {}
+  };
+
+  try {
+    var manager = new GameManagerCtor();
+    manager.score = 0;
+    manager.lastResolution = { scoreDelta: 0, scoreEvents: [] };
+    manager.systems = {
+      trappedSpriteRescueSystem: createInactiveTrappedSpriteRescueSystemFixture(),
+      jarCollectorSystem: new JarCollectorSystem()
+    };
+    manager.systems.jarCollectorSystem.jarCount = 1;
+    manager.systems.jarCollectorSystem.jarColors = ["R"];
+    manager._getScoreRule = function () {
+      return 0;
+    };
+    var runtimeEvents = [];
+    manager._pushRuntimeEvent = function (type, payload) {
+      runtimeEvents.push({ type: type, payload: payload });
+    };
+
+    var gained = manager._applyJarCollectionScore([
+      {
+        id: "black_drop_1",
+        color: "K",
+        jarIndex: 0,
+        bonusMultiplier: 1,
+        fairyMultiplier: 1,
+        position: { x: 0, y: -320 }
+      },
+      {
+        id: "white_drop_1",
+        color: "W",
+        jarIndex: 0,
+        bonusMultiplier: 1,
+        fairyMultiplier: 1,
+        position: { x: 0, y: -320 }
+      }
+    ]);
+
+    if (gained <= 0 || manager.score !== gained || manager.lastResolution.scoreDelta !== gained) {
+      throw new Error("Black and white balls entering jars must receive normal jar score.");
+    }
+    if (
+      runtimeEvents.length !== 1 ||
+      runtimeEvents[0].type !== "jar_collect_scored" ||
+      runtimeEvents[0].payload.count !== 2
+    ) {
+      throw new Error("Black and white jar scores must emit one normal jar score event.");
+    }
+  } finally {
+    if (hadCc) {
+      global.cc = previousCc;
+    } else {
+      delete global.cc;
+    }
+  }
+}
+
+function runJarScoreIntegerRoundingCase() {
+  var GameManagerCtor = require("../gameplay-src/core/GameManager");
+  var JarCollectorSystem = require("../gameplay-src/systems/JarCollectorSystem");
+  var hadCc = Object.prototype.hasOwnProperty.call(global, "cc");
+  var previousCc = global.cc;
+  global.cc = {
+    log: function () {},
+    warn: function () {},
+    error: function () {}
+  };
+
+  try {
+    var manager = new GameManagerCtor();
+    manager.score = 0;
+    manager.lastResolution = { scoreDelta: 0, scoreEvents: [] };
+    manager.systems = {
+      trappedSpriteRescueSystem: createInactiveTrappedSpriteRescueSystemFixture(),
+      jarCollectorSystem: new JarCollectorSystem()
+    };
+    manager.systems.jarCollectorSystem.jarCount = 3;
+    manager.systems.jarCollectorSystem.jarColors = ["R", "G", "B"];
+    manager._getScoreRule = function () {
+      return 0;
+    };
+    var runtimeEvents = [];
+    manager._pushRuntimeEvent = function (type, payload) {
+      runtimeEvents.push({ type: type, payload: payload });
+    };
+
+    var gained = manager._applyJarCollectionScore([{
+      id: "rounded_fairy_drop",
+      color: "R",
+      jarIndex: 0,
+      bonusMultiplier: 2.3,
+      fairyMultiplier: 1.25,
+      position: { x: 0, y: -320 }
+    }]);
+    if (gained !== 173 || !Number.isInteger(gained) || manager.score !== 173) {
+      throw new Error("Jar score must round the final fairy multiplier result to one integer score.");
+    }
+    if (
+      runtimeEvents.length !== 1 ||
+      runtimeEvents[0].payload.drop_entries[0].final_score !== 173 ||
+      !Number.isInteger(runtimeEvents[0].payload.drop_entries[0].final_score)
+    ) {
+      throw new Error("Jar score floating event must expose the final integer score.");
     }
   } finally {
     if (hadCc) {
@@ -5051,6 +5400,8 @@ function main() {
   console.log("[OK]", "precise_aim_inventory_activates_guide", "precise aim inventory activates ricochet guide and consumes one item");
   runCollectedSkillPowerupsEmitInventoryEventsCase();
   console.log("[OK]", "collected_skill_powerups_emit_inventory_events", "collected rainbow and blast emit inventory sync events");
+  runTimedOutSkillPowerupsIncreaseInventoryCase();
+  console.log("[OK]", "timed_out_skill_powerups_increase_inventory", "timed-out rainbow and blast drops still increase runtime inventory");
   runCollectedSkillPowerupHudFeedbackQueueCase();
   console.log("[OK]", "collected_skill_powerup_hud_feedback_queue", "collected rainbow and blast queue one-shot bottom-toolbar feedback in event order");
   runClearWinRequiresStarAndEmptyBoardCase();
@@ -5059,6 +5410,8 @@ function main() {
   console.log("[OK]", "one_star_target_score", "uses the same one-star threshold policy as runtime scoring");
   runAuthoredOpeningShotQueueCase();
   console.log("[OK]", "authored_opening_shot_queue", "plays six authored colors in order and clears them on revive override");
+  runSkillBallShotsDoNotConsumeRemainingShotsCase();
+  console.log("[OK]", "skill_ball_shots_do_not_consume_remaining_shots", "rainbow and blast shots preserve normal shot supply while normal shots still consume one");
   runRandomShotColorStreakLimitCase();
   console.log("[OK]", "random_shot_color_streak_limit", "random normal balls never select the same color more than twice in a row");
   runStoneBallJarScoreZeroCase();
@@ -5067,6 +5420,10 @@ function main() {
   console.log("[OK]", "jar_collection_floating_score_event", "scored jar drops emit floating score events at jar mouth position");
   runOutsideJarCleanupScoreCase();
   console.log("[OK]", "outside_jar_cleanup_score", "outside-jar cleanup adds score without collection progress");
+  runBlackAndWhiteJarScoreCase();
+  console.log("[OK]", "black_and_white_jar_score", "black and white balls score normally when entering jars");
+  runJarScoreIntegerRoundingCase();
+  console.log("[OK]", "jar_score_integer_rounding", "fairy glow multiplier rounds only the final jar score to an integer");
   runColorPermutationJarScoreCase();
   console.log("[OK]", "color_permutation_jar_score", "permuted jar colors and collect_color targets keep non-same-color jar score");
   runComboMatchedBallScoreDisplayCase();

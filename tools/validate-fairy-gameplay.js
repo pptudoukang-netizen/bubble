@@ -108,7 +108,6 @@ function buildDrop(id, fairy, splitGeneration) {
     active: true,
     rootDropId: id,
     hitFairyIds: [],
-    fairyBonusSteps: 0,
     finalMultiplier: 1,
     glowStacks: 0,
     splitGeneration: splitGeneration
@@ -286,7 +285,6 @@ function buildJarProbeDrop(id, x, y) {
     active: true,
     rootDropId: id,
     hitFairyIds: [],
-    fairyBonusSteps: 0,
     finalMultiplier: 1,
     glowStacks: 0,
     splitGeneration: 0
@@ -475,7 +473,8 @@ function testGreenSplitAndCollisionDedupe() {
   assert.strictEqual(update.splits.length, 1);
   assert.strictEqual(systems.falling.activeDrops.length, 2);
   systems.falling.activeDrops.forEach(function (drop) {
-    assert.strictEqual(drop.finalMultiplier, 4);
+    assert.strictEqual(drop.glowStacks, 3);
+    assert.strictEqual(drop.finalMultiplier, 2);
     assert.strictEqual(drop.splitGeneration, 1);
     assert.deepStrictEqual(drop.hitFairyIds, [greenFairy.id]);
   });
@@ -488,7 +487,8 @@ function testGreenSplitAndCollisionDedupe() {
   var repeatUpdate = systems.falling.update(0.01);
   assert.strictEqual(repeatUpdate.splits.length, 0);
   assert.strictEqual(repeatUpdate.fairyHits.length, 1);
-  assert.strictEqual(child.finalMultiplier, 7);
+  assert.strictEqual(child.glowStacks, 6);
+  assert.strictEqual(child.finalMultiplier, 4);
   assert.deepStrictEqual(child.hitFairyIds, [greenFairy.id, greenFairy.id]);
 }
 
@@ -507,8 +507,8 @@ function testMaxCollisionsPerFairyCap() {
     var update = systems.falling.update(0.01);
     assert.strictEqual(update.fairyHits.length, 1, "fairy hit " + (hitIndex + 1));
     assert.strictEqual(drop.hitFairyIds.length, hitIndex + 1);
-    assert.strictEqual(drop.fairyBonusSteps, hitIndex + 1);
-    assert.strictEqual(drop.finalMultiplier, hitIndex + 2);
+    assert.strictEqual(drop.glowStacks, hitIndex + 1);
+    assert.strictEqual(drop.finalMultiplier, FairyAssistConfig.getScoreMultiplierForGlowStacks(hitIndex + 1));
   }
 
   drop.position.x = redFairy.position.x;
@@ -518,8 +518,37 @@ function testMaxCollisionsPerFairyCap() {
   var cappedUpdate = systems.falling.update(0.01);
   assert.strictEqual(cappedUpdate.fairyHits.length, 0);
   assert.strictEqual(drop.hitFairyIds.length, FairyAssistConfig.maxCollisionsPerFairy);
-  assert.strictEqual(drop.fairyBonusSteps, FairyAssistConfig.maxCollisionsPerFairy);
-  assert.strictEqual(drop.finalMultiplier, FairyAssistConfig.maxCollisionsPerFairy + 1);
+  assert.strictEqual(drop.glowStacks, FairyAssistConfig.maxGlowStacks);
+  assert.strictEqual(drop.finalMultiplier, FairyAssistConfig.getScoreMultiplierForGlowStacks(FairyAssistConfig.maxGlowStacks));
+}
+
+function testColorWeightedGlowScoreTiers() {
+  var systems = createSystems(20);
+  var grid = buildGrid();
+  [1, 6, 10].forEach(function (matchedCount) {
+    systems.fairy.resolveAfterShot(buildResolution(matchedCount, 0), grid);
+  });
+  var redFairy = findFairyByColor(systems.fairy, "red");
+  var yellowFairy = findFairyByColor(systems.fairy, "yellow");
+  var greenFairy = findFairyByColor(systems.fairy, "green");
+  var drop = buildDrop("weighted_glow", redFairy, 1);
+  systems.falling.activeDrops = [drop];
+
+  [
+    { fairy: redFairy, glowStacks: 1 },
+    { fairy: yellowFairy, glowStacks: 3 },
+    { fairy: greenFairy, glowStacks: 6 },
+    { fairy: redFairy, glowStacks: 7 }
+  ].forEach(function (step) {
+    drop.position.x = step.fairy.position.x;
+    drop.position.y = resolveFairyCollisionProbeY(step.fairy);
+    drop.velocity.x = 0;
+    drop.velocity.y = -100;
+    var update = systems.falling.update(0.01);
+    assert.strictEqual(update.fairyHits.length, 1);
+    assert.strictEqual(drop.glowStacks, step.glowStacks);
+    assert.strictEqual(drop.finalMultiplier, FairyAssistConfig.getScoreMultiplierForGlowStacks(step.glowStacks));
+  });
 }
 
 function testDropGlowStacksCap() {
@@ -754,7 +783,7 @@ function testDeferredVictoryDropActivationKeepsHorizontalSpeed() {
   );
 }
 
-function testVictoryBoardDropIgnoresFairyBounce() {
+function testVictoryBoardDropHitsFairyAndBounces() {
   var systems = createSystems(20);
   systems.fairy.resolveAfterShot(buildResolution(1, 0), buildGrid());
   var fairy = findFairyByColor(systems.fairy, "red");
@@ -776,12 +805,15 @@ function testVictoryBoardDropIgnoresFairyBounce() {
   };
 
   systems.falling.registerDrops([cell], grid, { dropKind: "victory_board_drop" });
-  systems.falling.update(0.01);
+  var update = systems.falling.update(0.01);
   var drop = systems.falling.activeDrops[0];
   assert(drop, "victory board drop should remain active after first update.");
-  assert.strictEqual(drop.fairyBonusSteps, 0);
-  assert.deepStrictEqual(drop.hitFairyIds, []);
-  assert.ok(drop.velocity.y < 0, "victory board drop must keep falling through fairies.");
+  assert.strictEqual(update.fairyHits.length, 1);
+  assert.strictEqual(update.fairyHits[0].fairyId, fairy.id);
+  assert.strictEqual(drop.glowStacks, fairy.bonusStep);
+  assert.strictEqual(drop.finalMultiplier, FairyAssistConfig.getScoreMultiplierForGlowStacks(fairy.bonusStep));
+  assert.deepStrictEqual(drop.hitFairyIds, [fairy.id]);
+  assert.ok(drop.velocity.y > 0, "victory board drop must bounce upward after hitting a fairy.");
 }
 
 function testVictoryBoardDropRimBounces() {
@@ -1002,7 +1034,6 @@ function testVictoryBoardDropSkipsWallBounce() {
     dropKind: "victory_board_drop",
     rootDropId: "victory_board_wall",
     hitFairyIds: [],
-    fairyBonusSteps: 0,
     finalMultiplier: 1,
     glowStacks: 0,
     splitGeneration: 0
@@ -1044,7 +1075,6 @@ function buildSideWallDrop(id, x, velocityX, remainingBounces) {
     dropKind: null,
     rootDropId: id,
     hitFairyIds: [],
-    fairyBonusSteps: 0,
     finalMultiplier: 1,
     glowStacks: 0,
     splitGeneration: 0
@@ -1253,7 +1283,8 @@ function testTopAnchorCollapseStartsSurplusVolley() {
   manager.isTimedInfiniteShots = false;
   manager.remainingShots = 6;
   manager.lastResolution = { topAnchorCollapse: true };
-  manager._beginSurplusShotBonus = function () {
+  manager._beginSurplusShotBonus = function (settlementReason) {
+    assert.strictEqual(settlementReason, "clear_win");
     manager.state = "won_surplus_shots_pending";
   };
   manager._scheduleWinSettlement = function () {
@@ -1261,6 +1292,58 @@ function testTopAnchorCollapseStartsSurplusVolley() {
   };
   manager._resolveClearWinOutcome();
   assert.strictEqual(manager.state, "won_surplus_shots_pending");
+}
+
+function testBoardClearBelowOneStarSpendsRemainingShotsBeforeLoss() {
+  var GameManager = require("../gameplay-src/core/GameManager");
+  var manager = new GameManager();
+  manager.isTimedInfiniteShots = false;
+  manager.remainingShots = 2;
+  manager._emitTrappedSpriteRescueEvent = function () {};
+  manager._isClearWinCompleted = function () {
+    return false;
+  };
+  manager._hasPendingSplitterSpawns = function () {
+    return false;
+  };
+  manager._hasPendingMolotovBlasts = function () {
+    return false;
+  };
+  manager._hasPendingSwirlRotation = function () {
+    return false;
+  };
+  manager._hasPendingWormholeShift = function () {
+    return false;
+  };
+  manager._hasPendingVineCast = function () {
+    return false;
+  };
+  manager._hasPendingTrappedSpritePostImpactResolution = function () {
+    return false;
+  };
+  manager.systems = {
+    fallingMarbleSystem: {
+      hasActiveDrops: function () {
+        return false;
+      }
+    },
+    trappedSpriteRescueSystem: {
+      isRotating: function () {
+        return false;
+      }
+    }
+  };
+  manager._beginSurplusShotBonus = function (settlementReason) {
+    assert.strictEqual(settlementReason, "board_clear_score_recheck");
+    manager.state = "board_clear_score_recheck_surplus_shots_pending";
+  };
+
+  manager._resolveBoardClearedOutcome();
+  assert.strictEqual(
+    manager.state,
+    "board_clear_score_recheck_surplus_shots_pending",
+    "A cleared board below one star must launch every remaining shot before the final score check."
+  );
 }
 
 function assertSurplusDropVelocityMatchesTurretAim(fallingSystem, drop) {
@@ -1349,9 +1432,13 @@ function testSurplusShotEmissionAudioRouting() {
     },
     _parseAudioResourceList: GameBootstrapAudioMethods._parseAudioResourceList,
     fairyAssistHitSfxResources: FAIRY_ASSIST_HIT_SFX_PATHS.join(","),
-    emissionSfxResource: "sound/emission"
+    emissionSfxResource: "sound/emission",
+    joySfxResource: "sound/joy"
   });
   assert.strictEqual(audioConfig.sfxMap.emission, "sound/emission");
+  assert.strictEqual(audioConfig.sfxMap.joy, "sound/joy");
+  assert(fs.existsSync(path.join(__dirname, "../assets/audio/sound/joy.mp3")), "Missing joy SFX asset.");
+  assert(fs.existsSync(path.join(__dirname, "../assets/audio/sound/joy.mp3.meta")), "Missing joy SFX meta.");
 
   var playedSfx = [];
   GameBootstrapAudioMethods._playRuntimeAudioEvents.call({
@@ -1362,10 +1449,11 @@ function testSurplusShotEmissionAudioRouting() {
   }, {
     runtimeEvents: [
       { type: "surplus_shot_launched" },
-      { type: "surplus_shot_launched" }
+      { type: "surplus_shot_launched" },
+      { type: "surplus_shots_finished" }
     ]
   });
-  assert.deepStrictEqual(playedSfx, ["emission", "emission"]);
+  assert.deepStrictEqual(playedSfx, ["emission", "emission", "joy"]);
 }
 
 function testFairyAssistHitRandomAudioRouting() {
@@ -1545,7 +1633,7 @@ function testSurplusShotBonusEmitsInitialLaunchEvent() {
     }
   };
 
-  manager._beginSurplusShotBonus();
+  manager._beginSurplusShotBonus("clear_win");
   if (originalCc === undefined) {
     delete global.cc;
   } else {
@@ -1569,15 +1657,15 @@ function testCollectedMultiplierContract() {
   var drop = buildDrop("red_root", redFairy, 1);
   systems.falling.activeDrops = [drop];
   systems.falling.update(0.01);
-  assert.strictEqual(drop.fairyBonusSteps, 1);
-  assert.strictEqual(drop.finalMultiplier, 2);
+  assert.strictEqual(drop.glowStacks, 1);
+  assert.strictEqual(drop.finalMultiplier, 1.25);
 
   var collected = systems.falling._createCollectedEvent(drop, {
     index: 0,
     color: "R",
     sameColorBonus: 1.6
   });
-  assert.strictEqual(collected.fairyMultiplier, 2);
+  assert.strictEqual(collected.fairyMultiplier, 1.25);
   assert.strictEqual(collected.bonusMultiplier, 1.6);
   assert.strictEqual(collected.glowStacks, 1);
   assert.deepStrictEqual(collected.hitFairyIds, [redFairy.id]);
@@ -1591,6 +1679,16 @@ assert.strictEqual(
 );
 assert.strictEqual(FairyAssistConfig.maxCollisionsPerFairy, 7);
 assert.strictEqual(FairyAssistConfig.maxGlowStacks, 7);
+assert.deepStrictEqual(FairyAssistConfig.glowScoreMultipliers, [
+  { numerator: 1, denominator: 1 },
+  { numerator: 5, denominator: 4 },
+  { numerator: 3, denominator: 2 },
+  { numerator: 2, denominator: 1 },
+  { numerator: 5, denominator: 2 },
+  { numerator: 16, denominator: 5 },
+  { numerator: 4, denominator: 1 },
+  { numerator: 5, denominator: 1 }
+]);
 testPrefabAndAssetContract();
 testJarOcclusionCopiesRenderedJarTransform();
 testRandomEmptySlotSelection();
@@ -1600,6 +1698,7 @@ testReplacementPriority();
 testGreenSplitAndCollisionDedupe();
 testMaxCollisionsPerFairyCap();
 testDropGlowStacksCap();
+testColorWeightedGlowScoreTiers();
 testCollisionDiameterContract();
 testGreenSplitCapacityFailure();
 testDeferredDropCapacity();
@@ -1609,7 +1708,7 @@ testUnsupportedDropStartsFallingDownward();
 testDropLaunchUsesDownwardAngleCone();
 testVictoryBoardDropLaunchesDownward();
 testDeferredVictoryDropActivationKeepsHorizontalSpeed();
-testVictoryBoardDropIgnoresFairyBounce();
+testVictoryBoardDropHitsFairyAndBounces();
 testVictoryBoardDropRimBounces();
 testJarCollectionRequiresFullBallInsideMouth();
 testJarCollisionPartitionsCoverWallsAndInterJarSpace();
@@ -1622,6 +1721,7 @@ testFiveJarAdaptiveMouthLayout();
 testLeftmostJarOuterRimBounce();
 testRightmostJarOuterRimBounceStaysInsideScreen();
 testTopAnchorCollapseStartsSurplusVolley();
+testBoardClearBelowOneStarSpendsRemainingShotsBeforeLoss();
 testSurplusShotVelocityMatchesTurretAim();
 testSurplusShotTurretAngleStaysWithinThirtyDegrees();
 testSurplusShotPendingCountFollowsVolleyLaunch();

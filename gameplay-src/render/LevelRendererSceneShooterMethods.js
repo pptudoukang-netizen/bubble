@@ -48,9 +48,11 @@ function attachLevelRendererSceneShooterMethods(LevelRenderer, deps) {
     "NextBallAnchor",
     "TurretNumBg",
     "Surplus",
-    "Skill"
+    "Skill",
+    "SkillHalo"
   ];
   var ASSIST_SKILL_GRAY_COLOR = cc.color(116, 116, 116, 255);
+  var ASSIST_SKILL_HALO_ROTATION_DURATION = 1.6;
 
   function requireAssistSkillChargeValue(value, fieldName) {
     if (!Number.isInteger(value) || value < 0) {
@@ -115,6 +117,31 @@ function attachLevelRendererSceneShooterMethods(LevelRenderer, deps) {
       fill.node.color = cc.color(255, 255, 255, 255);
     }
     adNode.active = ratio < 1;
+  }
+
+  function syncAssistSkillHalo(skillHaloNode, enabled) {
+    skillHaloNode.active = enabled;
+    if (!enabled) {
+      if (skillHaloNode.__assistSkillHaloRotationActive) {
+        skillHaloNode.stopAllActions();
+        skillHaloNode.__assistSkillHaloRotationActive = false;
+        skillHaloNode.angle = 0;
+      }
+      return;
+    }
+
+    if (skillHaloNode.__assistSkillHaloRotationActive) {
+      return;
+    }
+
+    skillHaloNode.stopAllActions();
+    skillHaloNode.angle = 0;
+    skillHaloNode.__assistSkillHaloRotationActive = true;
+    skillHaloNode.runAction(
+      cc.repeatForever(
+        cc.rotateBy(ASSIST_SKILL_HALO_ROTATION_DURATION, -360)
+      )
+    );
   }
 
   function syncShooterPrefabLayout(shooterPanel, aimOrigin) {
@@ -460,7 +487,12 @@ LevelRenderer.prototype._renderShooter = function (shooterSnapshot, activeProjec
   }
   var assistSkillConfig = AssistSpiritSkillConfig.getBySpiritId(shooterSnapshot.assistSpiritId);
   var assistSkillNode = layoutNodes.Skill;
+  var assistSkillHaloNode = layoutNodes.SkillHalo;
   assistSkillNode.active = !!assistSkillConfig.skillId;
+  syncAssistSkillHalo(
+    assistSkillHaloNode,
+    assistSkillNode.active && shooterSnapshot.assistSpiritSkillAvailable === true
+  );
   if (assistSkillNode.active) {
     var assistSkillSprite = assistSkillNode.getComponent(cc.Sprite);
     if (!assistSkillSprite) {

@@ -269,6 +269,12 @@ function validateSpiritHallPrefab() {
     });
   });
   var expectedRosterOrder = ["milu", "lumi", "noya", "flora", "loco", "kelu", "yumi"];
+  var redNotificationDotMeta = readJson("assets/spirit_system/image/ui/red_notification_dot.png.meta");
+  var redNotificationDotSubMetaNames = Object.keys(redNotificationDotMeta.subMetas);
+  if (redNotificationDotSubMetaNames.length !== 1) {
+    fail("Spirit Hall upgrade notification texture must expose exactly one SpriteFrame.");
+  }
+  var redNotificationDotUuid = redNotificationDotMeta.subMetas[redNotificationDotSubMetaNames[0]].uuid;
   var previousRosterX = -Infinity;
   expectedRosterOrder.forEach(function (spiritId) {
     var rosterFrame = requireNodeByName(
@@ -288,6 +294,26 @@ function validateSpiritHallPrefab() {
       fail("SpiritHallView roster order must start with Milu and follow configured catalog order.");
     }
     previousRosterX = rosterX;
+    ["source__", "proxy__"].forEach(function (nodePrefix) {
+      var notificationNode = requireNodeByName(
+        nodes,
+        nodePrefix + spiritId + "_upgrade_notification",
+        "SpiritHallView roster upgrade notification"
+      );
+      var notificationSprite = notificationNode._components.map(function (reference) {
+        return objects[reference.__id__];
+      }).find(function (component) {
+        return component && component.__type__ === "cc.Sprite";
+      });
+      if (
+        !notificationSprite ||
+        !notificationSprite._spriteFrame ||
+        notificationSprite._spriteFrame.__uuid__ !== redNotificationDotUuid ||
+        notificationNode._active !== false
+      ) {
+        fail("SpiritHallView roster upgrade notification contract is invalid: " + notificationNode._name);
+      }
+    });
   });
 
   ["ability_kind", "current_probability", "next_probability", "fragment_count"].forEach(function (key) {
@@ -793,6 +819,15 @@ function validateRuntimeWiring() {
     "this._setSpriteGrayState(\"proxy__\" + spirit.id + \"_avatar\", entry.owned !== true);",
     "Locked assist spirit roster avatar gray rendering"
   );
+  [
+    "_canUpgradeSpirit",
+    "entry.owned !== true",
+    "levelCost !== null && entry.fragments >= levelCost",
+    "source__\" + spirit.id + \"_upgrade_notification",
+    "proxy__\" + spirit.id + \"_upgrade_notification"
+  ].forEach(function (requiredToken) {
+    requireContains(controller, requiredToken, "Spirit hall roster upgrade notification contract");
+  });
   requireContains(
     controller,
     "entry.owned !== true || levelCost !== null",

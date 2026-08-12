@@ -8,8 +8,8 @@
   "premultiplyAlpha": false,
   "genMipmaps": false,
   "packable": true,
-  "width": 91,
-  "height": 118,
+  "width": 48,
+  "height": 62,
   "platformSettings": {},
   "subMetas": {
     "lock": {
@@ -17,7 +17,7 @@
       "uuid": "0200660e-3321-432f-81f3-baf9c7264c1f",
       "importer": "sprite-frame",
       "rawTextureUuid": "3584365d-3851-4b0e-b522-d983ee8ded53",
-      "trimType": "auto",
+      "trimType": "custom",
       "trimThreshold": 1,
       "rotated": false,
       "offsetX": 0,

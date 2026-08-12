@@ -297,6 +297,7 @@ function analyzeGeneratedBoardRules(levelConfig, levelKey) {
     normalBallCount: normalBallCount,
     normalBallSlotCount: normalBallSlotCount,
     normalBallOccupancyRatio: normalBallCount / normalBallSlotCount,
+    enforceMinimumNormalBallOccupancy: levelConfig.levelType !== "trapped_sprite_rescue",
     topRowSameColorRun: topRowSameColorRun
   };
 }
@@ -309,7 +310,8 @@ function assertGeneratedBoardRules(levelConfig, levelKey) {
       ", got " + metrics.topRowSameColorRun + ": " + levelKey
     );
   }
-  if (metrics.normalBallOccupancyRatio + Number.EPSILON < MIN_NORMAL_BALL_OCCUPANCY_RATIO) {
+  if (metrics.enforceMinimumNormalBallOccupancy &&
+      metrics.normalBallOccupancyRatio + Number.EPSILON < MIN_NORMAL_BALL_OCCUPANCY_RATIO) {
     throw new Error(
       "level normal-ball occupancy must be >= " +
       Math.round(MIN_NORMAL_BALL_OCCUPANCY_RATIO * 100) + "% after excluding " +

@@ -186,7 +186,7 @@ assets/map/config/app_level_manifest.json
   "url": "https://636c-cloud1-d7gqettx3e9249ca1-1428064608.tcb.qcloud.la/app-level-packs/v1/levels_pack_011_100.json",
   "sha256": "64 位小写十六进制 SHA-256",
   "bytes": 123456,
-  "format": "compact-schema-v1"
+  "format": "compact-schema-v2"
 }
 ```
 

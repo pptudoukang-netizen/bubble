@@ -111,6 +111,7 @@ module.exports = {
     this._startupResolvedLevelIds = null;
     this._startupPrefabWarmupPromise = null;
     this._startupBundlePrefetchPromise = null;
+    this._postLevelSelectBackgroundWorkPromise = null;
     this._backgroundRemoteLevelPackPreloadPromise = null;
     this._backgroundRemoteLevelPackPreloadError = null;
     this._deferredUiBundleWarmupPromise = null;
@@ -141,6 +142,7 @@ module.exports = {
     this._interstitialReturnHideObserved = false;
     this._interstitialReturnHideHandler = null;
     this._interstitialReturnShowHandler = null;
+    this._startGameViewOpeningPromise = null;
     this._startGameNativeTemplateAdHeightPx = 0;
     this._startGameNativeTemplateAdShowing = false;
     this._resultNativeTemplateAdPlacement = "";
@@ -171,6 +173,7 @@ module.exports = {
       this.levelProgress.completedLevels
     );
     this.spiritShopStore = new SpiritShopStore();
+    this.spiritShopStore.load(new Date());
     this.spiritShopService = new SpiritShopService({
       shopStore: this.spiritShopStore,
       playerResourceStore: this.playerResourceStore,

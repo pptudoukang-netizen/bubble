@@ -1,6 +1,6 @@
 {
     "schemaVersion": 1,
-    "version": "levels-1000-compact-v1",
+    "version": "levels-1000-compact-v2",
     "totalLevelCount": 1000,
     "localLevelMax": 10,
     "cloud": {
@@ -11,91 +11,91 @@
             "id": "levels_pack_011_100",
             "from": 11,
             "to": 100,
-            "fileID": "cloud://cloud1-d7gqettx3e9249ca1.636c-cloud1-d7gqettx3e9249ca1-1428064608/level-packs/levels_pack_011_100.json",
-            "sha256": "fabfa141f387520d52b3a0612cded44eb3f792e9d5fdb52e70ca32c2773a7974",
-            "bytes": 193650,
-            "format": "compact-schema-v1"
+            "fileID": "cloud://cloud1-d7gqettx3e9249ca1.636c-cloud1-d7gqettx3e9249ca1-1428064608/level-packs/v2/levels_pack_011_100.json",
+            "sha256": "54e412a81a992a993e3cd12f8d6f8197653c34badca2d12dd0100b2fe854b93c",
+            "bytes": 132023,
+            "format": "compact-schema-v2"
         },
         {
             "id": "levels_pack_101_200",
             "from": 101,
             "to": 200,
-            "fileID": "cloud://cloud1-d7gqettx3e9249ca1.636c-cloud1-d7gqettx3e9249ca1-1428064608/level-packs/levels_pack_101_200.json",
-            "sha256": "53ce2de771605749254f3b315e90bfc8e8df9b3d1cbe17b3cf1e9d41da147dda",
-            "bytes": 319128,
-            "format": "compact-schema-v1"
+            "fileID": "cloud://cloud1-d7gqettx3e9249ca1.636c-cloud1-d7gqettx3e9249ca1-1428064608/level-packs/v2/levels_pack_101_200.json",
+            "sha256": "9407e16f3f2356bf10e384e2d991347e9eff91060acec2c2f0cbf51b42d25f9c",
+            "bytes": 180023,
+            "format": "compact-schema-v2"
         },
         {
             "id": "levels_pack_201_300",
             "from": 201,
             "to": 300,
-            "fileID": "cloud://cloud1-d7gqettx3e9249ca1.636c-cloud1-d7gqettx3e9249ca1-1428064608/level-packs/levels_pack_201_300.json",
-            "sha256": "082429f705e48a1056b1132b6ec21161148c4fd111fa1b107387281d41bdcf7d",
-            "bytes": 320619,
-            "format": "compact-schema-v1"
+            "fileID": "cloud://cloud1-d7gqettx3e9249ca1.636c-cloud1-d7gqettx3e9249ca1-1428064608/level-packs/v2/levels_pack_201_300.json",
+            "sha256": "ac9955c851eeb298fa25893a258131b4481761293ef8239197daefcfacdf43c4",
+            "bytes": 179388,
+            "format": "compact-schema-v2"
         },
         {
             "id": "levels_pack_301_400",
             "from": 301,
             "to": 400,
-            "fileID": "cloud://cloud1-d7gqettx3e9249ca1.636c-cloud1-d7gqettx3e9249ca1-1428064608/level-packs/levels_pack_301_400.json",
-            "sha256": "393d6ae40a3af3baa0b6c53f4270cd96be396f2172552bdd223e3b3225dd122c",
-            "bytes": 328578,
-            "format": "compact-schema-v1"
+            "fileID": "cloud://cloud1-d7gqettx3e9249ca1.636c-cloud1-d7gqettx3e9249ca1-1428064608/level-packs/v2/levels_pack_301_400.json",
+            "sha256": "0f0add345ebf6a1b724c95c34dbcc0525568a5447ce16389d6f246ede8e495aa",
+            "bytes": 187347,
+            "format": "compact-schema-v2"
         },
         {
             "id": "levels_pack_401_500",
             "from": 401,
             "to": 500,
-            "fileID": "cloud://cloud1-d7gqettx3e9249ca1.636c-cloud1-d7gqettx3e9249ca1-1428064608/level-packs/levels_pack_401_500.json",
-            "sha256": "c2109417faeb02dfcc9298145de793197dadd54a4d1b0e8c0c33bd47f532b308",
-            "bytes": 325173,
-            "format": "compact-schema-v1"
+            "fileID": "cloud://cloud1-d7gqettx3e9249ca1.636c-cloud1-d7gqettx3e9249ca1-1428064608/level-packs/v2/levels_pack_401_500.json",
+            "sha256": "d2ef624e09e193894a24f4585a2bb39b2988c74008ce582078e70e4909836158",
+            "bytes": 183941,
+            "format": "compact-schema-v2"
         },
         {
             "id": "levels_pack_501_600",
             "from": 501,
             "to": 600,
-            "fileID": "cloud://cloud1-d7gqettx3e9249ca1.636c-cloud1-d7gqettx3e9249ca1-1428064608/level-packs/levels_pack_501_600.json",
-            "sha256": "64218cb89535110a2deae40b8cabbe6dec5a90bbd446aaf31c421952de6d3dde",
-            "bytes": 332102,
-            "format": "compact-schema-v1"
+            "fileID": "cloud://cloud1-d7gqettx3e9249ca1.636c-cloud1-d7gqettx3e9249ca1-1428064608/level-packs/v2/levels_pack_501_600.json",
+            "sha256": "ed8e32c009add272d31751a8d10df2cb23f324e4f021e286637822b9f66c9891",
+            "bytes": 190870,
+            "format": "compact-schema-v2"
         },
         {
             "id": "levels_pack_601_700",
             "from": 601,
             "to": 700,
-            "fileID": "cloud://cloud1-d7gqettx3e9249ca1.636c-cloud1-d7gqettx3e9249ca1-1428064608/level-packs/levels_pack_601_700.json",
-            "sha256": "423a6e2cfacad57082511ba6c55a7f82adfe136bd01ff73f51d50cc5cf52dbc2",
-            "bytes": 330804,
-            "format": "compact-schema-v1"
+            "fileID": "cloud://cloud1-d7gqettx3e9249ca1.636c-cloud1-d7gqettx3e9249ca1-1428064608/level-packs/v2/levels_pack_601_700.json",
+            "sha256": "859674114535827b0eea64abefdf60b483c25b42c0941a070e0ad0f2ed3262e5",
+            "bytes": 189572,
+            "format": "compact-schema-v2"
         },
         {
             "id": "levels_pack_701_800",
             "from": 701,
             "to": 800,
-            "fileID": "cloud://cloud1-d7gqettx3e9249ca1.636c-cloud1-d7gqettx3e9249ca1-1428064608/level-packs/levels_pack_701_800.json",
-            "sha256": "ae82ac63539053d0183485cf41ec74744440d516aa9c16eeb7b63ff0d68e55a8",
-            "bytes": 338822,
-            "format": "compact-schema-v1"
+            "fileID": "cloud://cloud1-d7gqettx3e9249ca1.636c-cloud1-d7gqettx3e9249ca1-1428064608/level-packs/v2/levels_pack_701_800.json",
+            "sha256": "bdcbf8e61a5339a8f6870779cea748ce15e1269fb012611b5ab4a7ee961ec0f6",
+            "bytes": 197588,
+            "format": "compact-schema-v2"
         },
         {
             "id": "levels_pack_801_900",
             "from": 801,
             "to": 900,
-            "fileID": "cloud://cloud1-d7gqettx3e9249ca1.636c-cloud1-d7gqettx3e9249ca1-1428064608/level-packs/levels_pack_801_900.json",
-            "sha256": "9b7f58c8903e261042edf380ed1c84af15ab7075ee700380a4f37ca749b4b8b3",
-            "bytes": 336805,
-            "format": "compact-schema-v1"
+            "fileID": "cloud://cloud1-d7gqettx3e9249ca1.636c-cloud1-d7gqettx3e9249ca1-1428064608/level-packs/v2/levels_pack_801_900.json",
+            "sha256": "5f56820510a661bfd3922a4e77437905f53e3dd7f3510bbd5c3bf2af9ddb9670",
+            "bytes": 195572,
+            "format": "compact-schema-v2"
         },
         {
             "id": "levels_pack_901_1000",
             "from": 901,
             "to": 1000,
-            "fileID": "cloud://cloud1-d7gqettx3e9249ca1.636c-cloud1-d7gqettx3e9249ca1-1428064608/level-packs/levels_pack_901_1000.json",
-            "sha256": "015db78332baaac27c8f97720b6d32f0067eef043ed8eef227ac00156afb33c9",
-            "bytes": 341861,
-            "format": "compact-schema-v1"
+            "fileID": "cloud://cloud1-d7gqettx3e9249ca1.636c-cloud1-d7gqettx3e9249ca1-1428064608/level-packs/v2/levels_pack_901_1000.json",
+            "sha256": "a37bb7fa1f148b47b9c0a0002267389f6b9c4ad985edfaa6047396f5c9e4419f",
+            "bytes": 200628,
+            "format": "compact-schema-v2"
         }
     ]
 }

@@ -77,21 +77,17 @@ function attachLevelRendererSceneOcclusionMethods(LevelRenderer, deps) {
     labelNode.parent = rootNode;
     labelNode.setPosition(0, 0);
     labelNode.zIndex = 2;
-    labelNode.setContentSize(120, 34);
-    var label = ensureLabel(labelNode, "", 25, 29, cc.Label.HorizontalAlign.CENTER);
-    labelNode.color = cc.color(255, 249, 212);
-    var outline = labelNode.getComponent(cc.LabelOutline);
-    if (!outline) {
-      outline = labelNode.addComponent(cc.LabelOutline);
-    }
-    outline.color = cc.color(66, 74, 63);
-    outline.width = 3;
+    labelNode.setContentSize(72, 56);
+    var label = ensureLabel(labelNode, "", 42, 48, cc.Label.HorizontalAlign.CENTER);
+    labelNode.color = cc.color(255, 138, 31);
 
     if (zone.remainingShots !== null) {
       if (!Number.isInteger(zone.remainingShots) || zone.remainingShots <= 0) {
         throw new Error("Board occlusion remainingShots must be a positive integer while active.");
       }
-      label.string = zone.remainingShots + "发";
+      label.overflow = cc.Label.Overflow.NONE;
+      label.enableWrapText = false;
+      label.string = String(zone.remainingShots);
       return;
     }
     if (zone.remainingTimeMs !== null) {
@@ -107,7 +103,12 @@ function attachLevelRendererSceneOcclusionMethods(LevelRenderer, deps) {
       labelNode.setContentSize(clockLayout.labelWidth, clockLayout.labelHeight);
       label.fontSize = 16;
       label.lineHeight = 18;
-      outline.width = 2;
+      var timedOutline = labelNode.getComponent(cc.LabelOutline);
+      if (!timedOutline) {
+        timedOutline = labelNode.addComponent(cc.LabelOutline);
+      }
+      timedOutline.color = cc.color(66, 74, 63);
+      timedOutline.width = 2;
       label.string = Math.ceil(zone.remainingTimeMs / 1000) + "秒";
       return;
     }

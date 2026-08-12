@@ -767,7 +767,12 @@ function buildLevelSpec(levelId) {
   var specialCounts = buildSpecialCounts(levelId, targetColor);
   var specialCount = countSpecials(specialCounts);
   var rowCount = resolveRowCount(levelId);
-  var normalBallCount = resolveNormalBallCount(levelId, rowCount, specialCount);
+  var normalBallCount = CampaignLevelGenerationConfig.isTrappedSpriteRescueLevelId(levelId)
+    ? CampaignLevelGenerationConfig.TRAPPED_SPRITE_RESCUE_OCCUPIED_CELL_COUNT - specialCount
+    : resolveNormalBallCount(levelId, rowCount, specialCount);
+  if (normalBallCount <= 0) {
+    throw new Error("Trapped sprite rescue special balls fill the entire hex board: " + levelId);
+  }
   var colorCounts = buildColorCounts(levelId, activeColors, targetColor, normalBallCount);
   var splitterCount = specialCounts.splitters[targetColor];
   var target1 = {
@@ -2222,6 +2227,9 @@ function validateGeneratedLevelSet(levels) {
       throw new Error("First-100 silhouette set level order mismatch at " + expectedLevelId + ".");
     }
     validateGeneratedLevel(level);
+    if (CampaignLevelGenerationConfig.isTrappedSpriteRescueLevelId(level.levelId)) {
+      return;
+    }
     var signature = buildSilhouetteSignature(level);
     if (signatures[signature] !== undefined) {
       throw new Error(

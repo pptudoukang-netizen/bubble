@@ -262,6 +262,10 @@ cc.Class({
       default: "sound/score",
       tooltip: "球落入缸底被收集时播放的音效资源路径。"
     },
+    joySfxResource: {
+      default: "sound/joy",
+      tooltip: "全部剩余球落入缸后播放的音效资源路径。"
+    },
     breakSfxResource: {
       default: "sound/break",
       tooltip: "棋盘中球消除时播放的音效资源路径。"
@@ -403,6 +407,7 @@ cc.Class({
   _findSceneLoadingViewNode: GameBootstrapStartupMethods._findSceneLoadingViewNode,
   _createFallbackLoadingViewNode: GameBootstrapStartupMethods._createFallbackLoadingViewNode,
   _runWeightedStartupTasks: GameBootstrapStartupMethods._runWeightedStartupTasks,
+  _runStartupCloudSyncAndRemotePackPreload: GameBootstrapStartupMethods._runStartupCloudSyncAndRemotePackPreload,
   _beginStartupBundlePrefetch: GameBootstrapStartupMethods._beginStartupBundlePrefetch,
   _scheduleBackgroundRemoteLevelPackPreload: GameBootstrapStartupMethods._scheduleBackgroundRemoteLevelPackPreload,
   _scheduleDeferredUiBundleWarmup: GameBootstrapStartupMethods._scheduleDeferredUiBundleWarmup,

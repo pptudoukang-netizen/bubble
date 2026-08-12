@@ -687,7 +687,6 @@ FallingMarbleSystem.prototype._buildDropFromCell = function (
       ? String(cell.rootDropId)
       : String(cell.id),
     hitFairyIds: [],
-    fairyBonusSteps: 0,
     finalMultiplier: 1,
     glowStacks: 0,
     splitGeneration: 0
@@ -864,7 +863,6 @@ FallingMarbleSystem.prototype._createSurplusShotDrop = function (ball, spawnInde
     turretAngleDeg: this.surplusTurretAngleDeg,
     rootDropId: "surplus_shot_" + spawnIndex,
     hitFairyIds: [],
-    fairyBonusSteps: 0,
     finalMultiplier: 1,
     glowStacks: 0,
     splitGeneration: 0
@@ -1214,7 +1212,6 @@ FallingMarbleSystem.prototype._createCollectedEvent = function (drop, zone) {
     jarColor: zone ? zone.color : null,
     sameColor: sameColor,
     bonusMultiplier: sameColor ? zone.sameColorBonus : 1,
-    fairyBonusSteps: drop.fairyBonusSteps,
     fairyMultiplier: drop.finalMultiplier,
     finalMultiplier: drop.finalMultiplier,
     glowStacks: drop.glowStacks,
@@ -1256,9 +1253,6 @@ FallingMarbleSystem.prototype._createSplitChildren = function (drop) {
 };
 
 FallingMarbleSystem.prototype._applyFairyCollision = function (drop, activeDropCount) {
-  if (drop && drop.dropKind === "victory_board_drop") {
-    return null;
-  }
   if (!this.fairyAssistSystem) {
     throw new Error("FallingMarbleSystem fairy collision requires FairyAssistSystem.");
   }
@@ -1292,12 +1286,14 @@ FallingMarbleSystem.prototype._applyFairyCollision = function (drop, activeDropC
   );
   drop.position.x = collision.fairy.position.x + normal.x * collision.collisionDistance;
   drop.position.y = collision.fairy.position.y + normal.y * collision.collisionDistance;
-  drop.fairyBonusSteps += collision.fairy.bonusStep;
-  drop.finalMultiplier = 1 + drop.fairyBonusSteps;
   if (!Number.isInteger(drop.glowStacks) || drop.glowStacks < 0) {
     throw new Error("Falling drop glowStacks must be a non-negative integer.");
   }
-  drop.glowStacks = Math.min(FairyAssistConfig.maxGlowStacks, drop.glowStacks + 1);
+  drop.glowStacks = Math.min(
+    FairyAssistConfig.maxGlowStacks,
+    drop.glowStacks + collision.fairy.bonusStep
+  );
+  drop.finalMultiplier = FairyAssistConfig.getScoreMultiplierForGlowStacks(drop.glowStacks);
 
   var result = {
     fairyId: collision.fairy.id,

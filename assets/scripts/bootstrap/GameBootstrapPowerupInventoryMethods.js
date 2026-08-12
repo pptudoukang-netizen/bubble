@@ -1706,6 +1706,9 @@ module.exports = {
   },
 
   _showStartGameView: function (levelId, options) {
+    if (this._startGameViewOpeningPromise) {
+      return this._startGameViewOpeningPromise;
+    }
     var safeLevelId = normalizeStartGameLevelId(levelId);
     if (options !== undefined && (!options || typeof options !== "object" || Array.isArray(options))) {
       throw new Error("StartGameView options must be an object when provided.");
@@ -1731,7 +1734,8 @@ module.exports = {
       this._hideInventoryView();
     }
 
-    return Promise.all([
+    var trackedPromise;
+    var openPromise = Promise.all([
       this._ensureStartGameViewPrefab(),
       this.levelManager.loadLevel(safeLevelId)
     ]).then(function (results) {
@@ -1778,7 +1782,7 @@ module.exports = {
             if (this._equipSelectedSpirit(spiritId) !== true) {
               throw new Error("StartGameView equip must succeed for an unlocked assist spirit: " + spiritId);
             }
-            return this._renderStartGameView();
+            return this._renderStartGameView(false);
           }.bind(this),
           onOpenPropDescription: function () {
             this._playSfx("uiClick");
@@ -1805,7 +1809,7 @@ module.exports = {
         if (this._equipSelectedSpirit(spiritId) !== true) {
           throw new Error("StartGameView equip must succeed for an unlocked assist spirit: " + spiritId);
         }
-        return this._renderStartGameView();
+        return this._renderStartGameView(false);
       }.bind(this);
       this._startGameViewController.onOpenPropDescription = function () {
         this._playSfx("uiClick");
@@ -1814,10 +1818,19 @@ module.exports = {
       this._startGameLevelConfig = levelConfig;
       startGameViewNode.active = true;
       PopupPanelAnimator.play(startGameViewNode);
-      return this._renderStartGameView().then(function () {
+      return this._renderStartGameView(true).then(function () {
+        if (this._startGameViewOpeningPromise === trackedPromise) {
+          this._startGameViewOpeningPromise = null;
+        }
         return waitMilliseconds(PopupPanelAnimator.getOpenDurationMilliseconds());
-      }).then(function () {
+      }.bind(this)).then(function () {
+        if (this._startGameViewNode !== startGameViewNode) {
+          return false;
+        }
         return Promise.resolve(this._showNewUserGuideForStartGame()).then(function () {
+          if (this._startGameViewNode !== startGameViewNode) {
+            return false;
+          }
           return this._showStartGameNativeTemplateAd();
         }.bind(this));
       }.bind(this));
@@ -1825,14 +1838,30 @@ module.exports = {
       Logger.error("Show StartGameView failed", error && error.stack ? error.stack : String(error));
       throw error;
     });
+    trackedPromise = openPromise.then(function (result) {
+      if (this._startGameViewOpeningPromise === trackedPromise) {
+        this._startGameViewOpeningPromise = null;
+      }
+      return result;
+    }.bind(this), function (error) {
+      if (this._startGameViewOpeningPromise === trackedPromise) {
+        this._startGameViewOpeningPromise = null;
+      }
+      throw error;
+    }.bind(this));
+    this._startGameViewOpeningPromise = trackedPromise;
+    return trackedPromise;
   },
 
-  _renderStartGameView: function () {
+  _renderStartGameView: function (shouldResetScrollPosition) {
     if (!this._startGameViewController || !this._startGameViewNode || !this._startGameViewNode.isValid) {
       throw new Error("StartGameView controller is required before rendering.");
     }
     if (!this._startGameLevelConfig) {
       throw new Error("StartGameView level config is required before rendering.");
+    }
+    if (typeof shouldResetScrollPosition !== "boolean") {
+      throw new Error("StartGameView shouldResetScrollPosition must be boolean.");
     }
 
     var level = getLevelBody(this._startGameLevelConfig);
@@ -1855,7 +1884,7 @@ module.exports = {
       selectedItems: this._pendingStartGamePowerups,
       temporaryPurchasesByItemId: normalizeStartGameTemporaryPowerups(this._pendingStartGameTemporaryPowerups),
       purchaseOptionsByItemId: buildStartGamePurchaseOptions(this, this._startGameLevelConfig)
-    });
+    }, shouldResetScrollPosition);
   },
 
   _resolveStartGameNativeTemplateAdUnitId: function () {

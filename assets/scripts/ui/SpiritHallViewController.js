@@ -328,6 +328,24 @@ SpiritHallViewController.prototype._setButtonInteractable = function (nodeName, 
   button.target.opacity = interactable ? 255 : 150;
 };
 
+SpiritHallViewController.prototype._setNodeActive = function (nodeName, active) {
+  if (typeof active !== "boolean") {
+    throw new Error("SpiritHallView node active state must be boolean: " + nodeName);
+  }
+  requireNamedNode(this.nodeMap, nodeName).active = active;
+};
+
+SpiritHallViewController.prototype._canUpgradeSpirit = function (entry) {
+  if (entry.owned !== true) {
+    return false;
+  }
+  if (!Number.isInteger(entry.fragments) || entry.fragments < 0) {
+    throw new Error("SpiritHallView spirit fragments must be a non-negative integer.");
+  }
+  var levelCost = AssistSpiritConfig.getLevelUpFragmentCost(entry.level);
+  return levelCost !== null && entry.fragments >= levelCost;
+};
+
 SpiritHallViewController.prototype._requireUpgradeEffectNodes = function () {
   return {
     magicCircleNodes: UPGRADE_EFFECT_MAGIC_CIRCLE_NODES.map(function (nodeName) {
@@ -409,6 +427,9 @@ SpiritHallViewController.prototype._renderRosterSelection = function () {
     avatarNode.scale = selected ? 1.1 : 1;
     nameNode.color = selected ? SELECTED_COLOR : NORMAL_COLOR;
     this._setSpriteGrayState("proxy__" + spirit.id + "_avatar", entry.owned !== true);
+    var showUpgradeNotification = this._canUpgradeSpirit(entry);
+    this._setNodeActive("source__" + spirit.id + "_upgrade_notification", showUpgradeNotification);
+    this._setNodeActive("proxy__" + spirit.id + "_upgrade_notification", showUpgradeNotification);
   }, this);
 };
 

@@ -40,18 +40,14 @@ function requireStep(step, fieldName) {
 
 function createInitialState(initialActive) {
   return {
-    version: 1,
+    version: 2,
     completed: !initialActive,
-    step: initialActive ? STEP_QUICK_START : STEP_DONE
+    step: initialActive ? STEP_QUICK_START : STEP_DONE,
+    initialPreparationShown: !initialActive
   };
 }
 
-function normalizeState(raw) {
-  assertObject(raw, "New user guide state must be an object.");
-  if (raw.version !== 1) {
-    throw new Error("New user guide state version must be 1.");
-  }
-
+function normalizeStateFields(raw, version, initialPreparationShown) {
   var completed = requireBoolean(raw.completed, "New user guide completed");
   var step = requireStep(raw.step, "New user guide step");
   if (completed && step !== STEP_DONE) {
@@ -62,10 +58,28 @@ function normalizeState(raw) {
   }
 
   return {
-    version: 1,
+    version: version,
     completed: completed,
-    step: step
+    step: step,
+    initialPreparationShown: initialPreparationShown
   };
+}
+
+function normalizeState(raw) {
+  assertObject(raw, "New user guide state must be an object.");
+  if (raw.version === 1) {
+    var legacyCompleted = requireBoolean(raw.completed, "New user guide completed");
+    var legacyStep = requireStep(raw.step, "New user guide step");
+    return normalizeStateFields(raw, 2, legacyCompleted || legacyStep !== STEP_QUICK_START);
+  }
+  if (raw.version !== 2) {
+    throw new Error("New user guide state version must be 1 or 2.");
+  }
+  return normalizeStateFields(
+    raw,
+    2,
+    requireBoolean(raw.initialPreparationShown, "New user guide initialPreparationShown")
+  );
 }
 
 function NewUserGuideStore(options) {
@@ -111,13 +125,32 @@ NewUserGuideStore.prototype.markStep = function (state, step) {
 };
 
 NewUserGuideStore.prototype.markCompleted = function (state) {
-  normalizeState(state);
+  var normalized = normalizeState(state);
   return {
     state: {
-      version: 1,
+      version: 2,
       completed: true,
-      step: STEP_DONE
+      step: STEP_DONE,
+      initialPreparationShown: normalized.initialPreparationShown
     }
+  };
+};
+
+NewUserGuideStore.prototype.consumeInitialPreparation = function (state) {
+  var normalized = normalizeState(state);
+  if (normalized.initialPreparationShown === true) {
+    return {
+      shouldOpen: false,
+      state: clone(normalized)
+    };
+  }
+  if (normalized.completed === true || normalized.step !== STEP_QUICK_START) {
+    throw new Error("Initial StartGameView preparation requires an active quick_start guide state.");
+  }
+  normalized.initialPreparationShown = true;
+  return {
+    shouldOpen: true,
+    state: clone(normalized)
   };
 };
 

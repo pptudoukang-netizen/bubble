@@ -145,6 +145,7 @@ function BubbleGrid() {
   this.trappedSpriteRescueSystem = null;
   this._cellMap = {};
   this._cellsByRow = {};
+  this._rescueExtendedNormalCellMap = {};
   this._specialCellMap = {};
   this._timeBonusByCell = {};
   this._vineOwnerByCell = {};
@@ -219,6 +220,7 @@ BubbleGrid.prototype.configureLevel = function (levelConfig) {
     throw new Error("BubbleGrid requires level.initialDropSpaceRows >= 8.");
   }
   this.layout = levelConfig.level.layout.slice();
+  this._rescueExtendedNormalCellMap = {};
   this.specialEntities = Array.isArray(levelConfig.level.specialEntities)
     ? clone(levelConfig.level.specialEntities)
     : [];
@@ -262,8 +264,16 @@ BubbleGrid.prototype.getColumnCountForRow = function (row) {
   return BoardLayout.getRowColumnCount(row, this.maxColumns);
 };
 
+BubbleGrid.prototype._isLayoutBackedCell = function (row, col) {
+  return Number.isInteger(row) && row >= 0 &&
+    Number.isInteger(col) && col >= 0 && col < this.getColumnCountForRow(row);
+};
+
 BubbleGrid.prototype.isValidCell = function (row, col) {
-  return row >= 0 && col >= 0 && col < this.getColumnCountForRow(row);
+  if (this.isTrappedSpriteRescueActive()) {
+    return Number.isInteger(row) && Number.isInteger(col);
+  }
+  return this._isLayoutBackedCell(row, col);
 };
 
 BubbleGrid.prototype._normalizeRowString = function (rowIndex, rowString) {
@@ -387,6 +397,24 @@ BubbleGrid.prototype._rebuildCaches = function () {
       this._cellMap[keyFor(rowIndex, columnIndex)] = cell;
       this._pushCellToRowBucket(cell);
     }, this);
+  }, this);
+
+  Object.keys(this._rescueExtendedNormalCellMap).forEach(function (key) {
+    var extendedCell = this._rescueExtendedNormalCellMap[key];
+    if (!this.isTrappedSpriteRescueActive()) {
+      throw new Error("BubbleGrid extended cells require active trapped sprite rescue mode.");
+    }
+    if (this._isLayoutBackedCell(extendedCell.row, extendedCell.col)) {
+      throw new Error("BubbleGrid extended cell must remain outside authored layout coordinates: " + key);
+    }
+    if (this._cellMap[key]) {
+      throw new Error("BubbleGrid extended cell overlaps an authored layout cell: " + key);
+    }
+
+    var normalCell = this._createNormalCell(extendedCell.row, extendedCell.col, extendedCell.color);
+    this.cells.push(normalCell);
+    this._cellMap[key] = normalCell;
+    this._pushCellToRowBucket(normalCell);
   }, this);
 
   Object.keys(this._specialCellMap).forEach(function (key) {
@@ -553,6 +581,25 @@ BubbleGrid.prototype._ensureRow = function (rowIndex) {
 };
 
 BubbleGrid.prototype._setCell = function (row, col, color) {
+  if (!Number.isInteger(row) || !Number.isInteger(col)) {
+    throw new Error("BubbleGrid._setCell requires integer coordinates.");
+  }
+  if (!this._isLayoutBackedCell(row, col)) {
+    if (!this.isTrappedSpriteRescueActive()) {
+      throw new Error("BubbleGrid cannot write outside authored layout coordinates.");
+    }
+    var extendedKey = keyFor(row, col);
+    if (color === ".") {
+      delete this._rescueExtendedNormalCellMap[extendedKey];
+    } else {
+      this._rescueExtendedNormalCellMap[extendedKey] = {
+        row: row,
+        col: col,
+        color: color
+      };
+    }
+    return;
+  }
   this._ensureRow(row);
   var normalizedRow = this._normalizeRowString(row, this.layout[row]);
   var chars = normalizedRow.split("");
@@ -878,7 +925,7 @@ BubbleGrid.prototype.notifyWorldTransformChanged = function () {
 };
 
 BubbleGrid.prototype.getNeighborCoordinates = function (row, col) {
-  var offsets = row % 2 === 1 ? [
+  var offsets = row % 2 !== 0 ? [
     { row: -1, col: 0 },
     { row: -1, col: 1 },
     { row: 0, col: -1 },

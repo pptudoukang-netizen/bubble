@@ -30,8 +30,8 @@ var REMOTE_PACK_SIZE = 100;
 var START_GENERATED_LEVEL_ID = 41;
 var CLOUD_ENV_ID = "cloud1-d7gqettx3e9249ca1";
 var CLOUD_FILE_ID_PREFIX = "cloud://cloud1-d7gqettx3e9249ca1.636c-cloud1-d7gqettx3e9249ca1-1428064608";
-var CLOUD_PACK_ROOT = "level-packs";
-var MANIFEST_VERSION = "levels-1000-compact-v1";
+var CLOUD_PACK_ROOT = "level-packs/v2";
+var MANIFEST_VERSION = "levels-1000-compact-v2";
 var BOOTSTRAP_MANIFEST_VERSION = "levels-1000-bootstrap-v1";
 var REMOTE_MANIFEST_FILE_NAME = "level_manifest.json";
 var COLORS = CampaignLevelGenerationConfig.NORMAL_BALL_COLORS.slice();
@@ -375,106 +375,62 @@ function getHexNeighborCoordinates(row, col) {
   });
 }
 
+function getClockwiseHexNeighborCoordinates(row, col) {
+  var offsets = row % 2 === 1 ? [
+    [-1, 0], [-1, 1], [0, 1], [1, 1], [1, 0], [0, -1]
+  ] : [
+    [-1, -1], [-1, 0], [0, 1], [1, 0], [1, -1], [0, -1]
+  ];
+  return offsets.map(function (offset) {
+    return {
+      row: row + offset[0],
+      col: col + offset[1]
+    };
+  });
+}
+
+function getOddRHexDistance(left, right) {
+  var leftQ = left.col - (left.row - (left.row & 1)) / 2;
+  var rightQ = right.col - (right.row - (right.row & 1)) / 2;
+  var leftS = -leftQ - left.row;
+  var rightS = -rightQ - right.row;
+  return Math.max(
+    Math.abs(leftQ - rightQ),
+    Math.abs(left.row - right.row),
+    Math.abs(leftS - rightS)
+  );
+}
+
 function buildTrappedSpriteRescueShapeSlots(rows, occupiedCellCount, rescueConfig, levelId) {
-  if (!Array.isArray(rows) || rows.length < 9) {
-    throw new Error("Trapped sprite rescue board requires at least nine rows: " + levelId);
+  if (!Array.isArray(rows) || rows.length <=
+      CampaignLevelGenerationConfig.TRAPPED_SPRITE_RESCUE_ANCHOR_ROW +
+      CampaignLevelGenerationConfig.TRAPPED_SPRITE_RESCUE_HEX_RADIUS) {
+    throw new Error("Trapped sprite rescue board requires the full radius-five hex board: " + levelId);
   }
-  if (!Number.isInteger(occupiedCellCount) || occupiedCellCount <= 0) {
-    throw new Error("Trapped sprite rescue occupiedCellCount must be positive: " + levelId);
+  if (occupiedCellCount !== CampaignLevelGenerationConfig.TRAPPED_SPRITE_RESCUE_OCCUPIED_CELL_COUNT) {
+    throw new Error(
+      "Trapped sprite rescue occupiedCellCount must equal " +
+      CampaignLevelGenerationConfig.TRAPPED_SPRITE_RESCUE_OCCUPIED_CELL_COUNT + ": " + levelId
+    );
   }
   if (!rescueConfig || !rescueConfig.anchorCell) {
     throw new Error("Trapped sprite rescue board requires anchorCell: " + levelId);
   }
   var anchor = rescueConfig.anchorCell;
-  var anchorKey = anchor.row + ":" + anchor.col;
-  var candidates = {};
+  var slots = [];
   rows.forEach(function (rowString, rowIndex) {
-    if (rowIndex === TOP_BOARD_ROW_INDEX) {
-      return;
-    }
     for (var colIndex = 0; colIndex < rowString.length; colIndex += 1) {
-      var key = rowIndex + ":" + colIndex;
-      if (key !== anchorKey) {
-        candidates[key] = { row: rowIndex, col: colIndex };
+      var cell = { row: rowIndex, col: colIndex };
+      var distance = getOddRHexDistance(anchor, cell);
+      if (distance >= 1 && distance <= CampaignLevelGenerationConfig.TRAPPED_SPRITE_RESCUE_HEX_RADIUS) {
+        slots.push(cell);
       }
     }
   });
-  if (occupiedCellCount > Object.keys(candidates).length) {
-    throw new Error("Trapped sprite rescue occupied cells exceed available non-anchor slots: " + levelId);
+  if (slots.length !== CampaignLevelGenerationConfig.TRAPPED_SPRITE_RESCUE_OCCUPIED_CELL_COUNT) {
+    throw new Error("Trapped sprite rescue radius-five hex is clipped by the authored board: " + levelId);
   }
-
-  var selected = [];
-  var selectedMap = {};
-  var frontierMap = {};
-  var anchorPosition = BoardLayout.getCellPosition(
-    anchor.row,
-    anchor.col,
-    BoardLayout.defaultColumns,
-    0
-  );
-  function pushFrontier(cell) {
-    var key = cell.row + ":" + cell.col;
-    if (candidates[key] && !selectedMap[key]) {
-      frontierMap[key] = candidates[key];
-    }
-  }
-  function scoreCell(cell) {
-    var position = BoardLayout.getCellPosition(cell.row, cell.col, BoardLayout.defaultColumns, 0);
-    var dx = position.x - anchorPosition.x;
-    var dy = position.y - anchorPosition.y;
-    var horizontalBias = levelId % 2 === 0 ? position.x : -position.x;
-    return dx * dx + dy * dy + Math.abs(position.x) * 18 + horizontalBias * 0.001 +
-      cell.row * 0.0001 + cell.col * 0.00001;
-  }
-  function selectCell(cell) {
-    var key = cell.row + ":" + cell.col;
-    if (!candidates[key] || selectedMap[key]) {
-      throw new Error("Trapped sprite rescue support spine selected an invalid cell `" + key + "`: " + levelId);
-    }
-    delete frontierMap[key];
-    selectedMap[key] = true;
-    selected.push(candidates[key]);
-    getHexNeighborCoordinates(cell.row, cell.col).forEach(pushFrontier);
-    return candidates[key];
-  }
-  function extendSupportSpine(startCell, firstRow, lastRow, step) {
-    var current = startCell;
-    for (var targetRow = firstRow; step > 0 ? targetRow <= lastRow : targetRow >= lastRow; targetRow += step) {
-      var nextCandidates = getHexNeighborCoordinates(current.row, current.col).filter(function (cell) {
-        var key = cell.row + ":" + cell.col;
-        return cell.row === targetRow && candidates[key] && !selectedMap[key];
-      });
-      if (nextCandidates.length === 0) {
-        throw new Error("Trapped sprite rescue support spine cannot reach row " + targetRow + ": " + levelId);
-      }
-      nextCandidates.sort(function (left, right) {
-        return scoreCell(left) - scoreCell(right);
-      });
-      current = selectCell(nextCandidates[0]);
-    }
-  }
-
-  var requiredOccupiedRows = levelId >= 400 ? 13 : (levelId >= 300 ? 12 : (levelId >= 200 ? 11 : 10));
-  if (requiredOccupiedRows >= rows.length) {
-    throw new Error("Trapped sprite rescue required occupied rows exceed board rows: " + levelId);
-  }
-  extendSupportSpine(anchor, anchor.row - 1, 1, -1);
-  extendSupportSpine(anchor, anchor.row + 1, requiredOccupiedRows, 1);
-  getHexNeighborCoordinates(anchor.row, anchor.col).forEach(pushFrontier);
-
-  while (selected.length < occupiedCellCount) {
-    var frontier = Object.keys(frontierMap).map(function (key) {
-      return frontierMap[key];
-    });
-    if (frontier.length === 0) {
-      throw new Error("Trapped sprite rescue connected shape frontier exhausted: " + levelId);
-    }
-    frontier.sort(function (left, right) {
-      return scoreCell(left) - scoreCell(right);
-    });
-    selectCell(frontier[0]);
-  }
-  return selected.sort(function (left, right) {
+  return slots.sort(function (left, right) {
     if (left.row !== right.row) {
       return left.row - right.row;
     }
@@ -500,20 +456,152 @@ function seedTrappedSpriteRescueLayout(rows, slots, specialEntities, tableRow, a
   activeColors.forEach(function (color) {
     remaining[color] = tableRow.colorCounts[color];
   });
-  normalSlots.forEach(function (slot, slotIndex) {
-    var selectedColor = null;
-    for (var offset = 0; offset < activeColors.length; offset += 1) {
-      var color = activeColors[(tableRow.levelId + slotIndex + offset) % activeColors.length];
-      if (remaining[color] > 0) {
-        selectedColor = color;
-        break;
+  var normalSlotMap = {};
+  normalSlots.forEach(function (slot) {
+    normalSlotMap[buildSlotKey(slot)] = slot;
+  });
+  var anchor = {
+    row: CampaignLevelGenerationConfig.TRAPPED_SPRITE_RESCUE_ANCHOR_ROW,
+    col: Math.floor(getColumnCount(CampaignLevelGenerationConfig.TRAPPED_SPRITE_RESCUE_ANCHOR_ROW) / 2)
+  };
+  var anchorRing = getClockwiseHexNeighborCoordinates(anchor.row, anchor.col);
+  var anchorNormalSlots = anchorRing.filter(function (slot) {
+    return normalSlotMap[buildSlotKey(slot)] !== undefined;
+  });
+  var anchorNormalMap = {};
+  anchorNormalSlots.forEach(function (slot) {
+    anchorNormalMap[buildSlotKey(slot)] = true;
+  });
+  var otherSlots = normalSlots.filter(function (slot) {
+    return anchorNormalMap[buildSlotKey(slot)] !== true;
+  }).sort(function (left, right) {
+    var leftDistance = getOddRHexDistance(anchor, left);
+    var rightDistance = getOddRHexDistance(anchor, right);
+    if (leftDistance !== rightDistance) {
+      return leftDistance - rightDistance;
+    }
+    var leftOrder = (left.row * 17 + left.col * 31 + tableRow.levelId) % 97;
+    var rightOrder = (right.row * 17 + right.col * 31 + tableRow.levelId) % 97;
+    if (leftOrder !== rightOrder) {
+      return leftOrder - rightOrder;
+    }
+    return left.row !== right.row ? left.row - right.row : left.col - right.col;
+  });
+  var orderedSlots = anchorNormalSlots.concat(otherSlots);
+  var assignments = {};
+  var searchSteps = 0;
+
+  function getAnchorNeighborRun() {
+    var colors = anchorRing.map(function (slot) {
+      return assignments[buildSlotKey(slot)] || null;
+    });
+    var hasBreak = colors.some(function (color) { return color === null; });
+    var maxRun = 0;
+    var run = 0;
+    var previous = null;
+    var iterationCount = hasBreak ? colors.length : colors.length * 2;
+    var startIndex = hasBreak ? (colors.indexOf(null) + 1) % colors.length : 0;
+    for (var index = 0; index < iterationCount; index += 1) {
+      var color = colors[(startIndex + index) % colors.length];
+      if (color === null) {
+        previous = null;
+        run = 0;
+      } else if (color === previous) {
+        run += 1;
+      } else {
+        previous = color;
+        run = 1;
       }
+      maxRun = Math.max(maxRun, Math.min(run, colors.length));
     }
-    if (selectedColor === null) {
-      throw new Error("Trapped sprite rescue color supply exhausted early: " + tableRow.levelId);
+    return maxRun;
+  }
+
+  function getAssignedComponentSize(slot, color) {
+    var startKey = buildSlotKey(slot);
+    assignments[startKey] = color;
+    var queue = [slot];
+    var visited = {};
+    visited[startKey] = true;
+    var size = 0;
+    while (queue.length > 0) {
+      var current = queue.shift();
+      size += 1;
+      getHexNeighborCoordinates(current.row, current.col).forEach(function (neighbor) {
+        var key = buildSlotKey(neighbor);
+        if (!visited[key] && assignments[key] === color) {
+          visited[key] = true;
+          queue.push(normalSlotMap[key]);
+        }
+      });
     }
-    setCell(rows, slot.row, slot.col, selectedColor);
-    remaining[selectedColor] -= 1;
+    delete assignments[startKey];
+    return size;
+  }
+
+  function assignSlot(slotIndex) {
+    searchSteps += 1;
+    if (searchSteps > 2000000) {
+      throw new Error("Trapped sprite rescue color search exceeded its strict limit: " + tableRow.levelId);
+    }
+    if (slotIndex === orderedSlots.length) {
+      return activeColors.every(function (color) { return remaining[color] === 0; }) &&
+        getAnchorNeighborRun() <= CampaignLevelGenerationConfig.TRAPPED_SPRITE_RESCUE_MAX_ANCHOR_NEIGHBOR_RUN;
+    }
+    var slot = orderedSlots[slotIndex];
+    var slotKey = buildSlotKey(slot);
+    var isAnchorNeighbor = anchorNormalMap[slotKey] === true;
+    var candidates = activeColors.filter(function (color) {
+      if (remaining[color] <= 0) {
+        return false;
+      }
+      var componentSize = getAssignedComponentSize(slot, color);
+      return componentSize <= CampaignLevelGenerationConfig.TRAPPED_SPRITE_RESCUE_MAX_SAME_COLOR_COMPONENT;
+    }).map(function (color) {
+      return {
+        color: color,
+        componentSize: getAssignedComponentSize(slot, color),
+        remaining: remaining[color],
+        tie: (activeColors.indexOf(color) - tableRow.levelId + activeColors.length * 100) % activeColors.length
+      };
+    }).sort(function (left, right) {
+      var leftGrouped = left.componentSize > 1 ? 1 : 0;
+      var rightGrouped = right.componentSize > 1 ? 1 : 0;
+      if (leftGrouped !== rightGrouped) {
+        return rightGrouped - leftGrouped;
+      }
+      if (left.componentSize !== right.componentSize) {
+        return right.componentSize - left.componentSize;
+      }
+      if (left.remaining !== right.remaining) {
+        return right.remaining - left.remaining;
+      }
+      return left.tie - right.tie;
+    });
+    for (var candidateIndex = 0; candidateIndex < candidates.length; candidateIndex += 1) {
+      var color = candidates[candidateIndex].color;
+      assignments[slotKey] = color;
+      remaining[color] -= 1;
+      var anchorRunValid = !isAnchorNeighbor ||
+        getAnchorNeighborRun() <= CampaignLevelGenerationConfig.TRAPPED_SPRITE_RESCUE_MAX_ANCHOR_NEIGHBOR_RUN;
+      if (anchorRunValid && assignSlot(slotIndex + 1)) {
+        return true;
+      }
+      remaining[color] += 1;
+      delete assignments[slotKey];
+    }
+    return false;
+  }
+
+  if (!assignSlot(0)) {
+    throw new Error("Trapped sprite rescue color constraints are unsatisfiable: " + tableRow.levelId);
+  }
+  normalSlots.forEach(function (slot) {
+    var color = assignments[buildSlotKey(slot)];
+    if (!color) {
+      throw new Error("Trapped sprite rescue color assignment is missing: " + tableRow.levelId);
+    }
+    setCell(rows, slot.row, slot.col, color);
   });
   activeColors.forEach(function (color) {
     if (remaining[color] !== 0) {
@@ -1685,18 +1773,6 @@ function makeLevel(levelId, placementVariant) {
       "Trapped sprite rescue"
     );
     seedTrappedSpriteRescueLayout(rows, rescueShapeSlots, specialEntities, tableRow, colors);
-    fillTableLayoutColors(
-      rows,
-      specialEntities,
-      tableRow,
-      colors,
-      firstHundredSpec,
-      true,
-      {
-        levelType: levelMode.levelType,
-        trappedSpriteRescue: trappedSpriteRescueConfig
-      }
-    );
   } else if (levelId <= FirstHundredLevelDesign.LAST_LEVEL_ID) {
     FirstHundredLevelDesign.buildBoard({
       levelId: levelId,
@@ -1859,7 +1935,7 @@ function makeLevel(levelId, placementVariant) {
       clearRewardItems: buildRewardItemsFromTable(levelId),
       layout: rows,
       designNotes: isTrappedSpriteRescue
-        ? "Generated trapped sprite rescue level. All ordinary balls are connected to the center anchor; the top row is not a support source."
+        ? "Generated trapped sprite rescue level. The center anchor is surrounded by a complete radius-five regular hex; same-color components are capped at five and the anchor ring run is capped at two."
         : (referenceLayout
         ? "Gameplay is generated from the current LEVEL_CONFIG_TABLE_1_1000.csv rules; only the occupancy silhouette " +
           "is projected from E:\\kxppm\\decrypted_config\\all_levels.json level " +
@@ -1894,7 +1970,8 @@ function makeLevel(levelId, placementVariant) {
   if (gameplayPlan.boardOcclusionEnabled !== (config.level.boardOcclusionPlan.mode !== BoardOcclusionConfig.MODE_NONE)) {
     throw new Error("Generated board occlusion plan differs from campaign gameplay plan: " + levelId);
   }
-  if (generatedBoardMetrics.normalBallOccupancyRatio + Number.EPSILON <
+  if (generatedBoardMetrics.enforceMinimumNormalBallOccupancy &&
+      generatedBoardMetrics.normalBallOccupancyRatio + Number.EPSILON <
       CampaignLevelGenerationConfig.getNormalBallOccupancyTarget(levelId)) {
     throw new Error("Generated normal-ball occupancy is below the configured target: " + levelId);
   }
@@ -2282,15 +2359,55 @@ function buildRemotePack(range) {
   var packFileName = getPackFileName(from, to);
   fs.writeFileSync(path.join(REMOTE_PACK_DIR, packFileName), packText, "utf8");
   console.log("Built " + packId + ".");
+  return buildRemotePackManifestEntry(from, to, packText);
+}
+
+function buildRemotePackManifestEntry(from, to, packText) {
+  var packFileName = getPackFileName(from, to);
   return {
-    id: packId,
+    id: getPackId(from, to),
     from: from,
     to: to,
     fileID: CLOUD_FILE_ID_PREFIX + "/" + CLOUD_PACK_ROOT + "/" + packFileName,
     sha256: sha256Text(packText),
     bytes: Buffer.byteLength(packText, "utf8"),
-    format: LevelPackCompactCodec.PACK_FORMAT_COMPACT_V1
+    format: LevelPackCompactCodec.PACK_FORMAT_COMPACT_V2
   };
+}
+
+function updateSelectedManifestPacks(packEntries, rebuildLabel) {
+  if (!Array.isArray(packEntries) || packEntries.length === 0) {
+    throw new Error(rebuildLabel + " requires at least one pack entry.");
+  }
+  var entriesById = {};
+  packEntries.forEach(function (entry) {
+    if (!entry || typeof entry.id !== "string" || entriesById[entry.id]) {
+      throw new Error(rebuildLabel + " pack entry is invalid or duplicated.");
+    }
+    entriesById[entry.id] = entry;
+  });
+  var manifest = JSON.parse(stripBom(fs.readFileSync(REMOTE_MANIFEST_PATH, "utf8")));
+  if (!Array.isArray(manifest.packs)) {
+    throw new Error("Level manifest packs must be an array.");
+  }
+  var matchCounts = {};
+  Object.keys(entriesById).forEach(function (packId) {
+    matchCounts[packId] = 0;
+  });
+  manifest.packs = manifest.packs.map(function (pack) {
+    if (!entriesById[pack.id]) {
+      return pack;
+    }
+    matchCounts[pack.id] += 1;
+    return entriesById[pack.id];
+  });
+  Object.keys(matchCounts).forEach(function (packId) {
+    if (matchCounts[packId] !== 1) {
+      throw new Error("Level manifest must contain exactly one " + packId + " entry.");
+    }
+  });
+  writeJson(REMOTE_MANIFEST_PATH, manifest);
+  writeManifestMeta();
 }
 
 function buildRemotePacks() {
@@ -2544,6 +2661,46 @@ function rebuildReferenceLevels101To300() {
   console.log("Rebuilt levels 101-300 and updated their two remote pack manifest entries.");
 }
 
+function rebuildTrappedSpriteRescueLevels() {
+  ensureDirectory(REMOTE_PACK_DIR);
+  var packStates = buildRemotePackRanges().map(function (range) {
+    var packPath = path.join(REMOTE_PACK_DIR, getPackFileName(range.from, range.to));
+    if (!fs.existsSync(packPath)) {
+      throw new Error("Trapped sprite rescue rebuild is missing remote pack: " + packPath);
+    }
+    var pack = LevelPackCompactCodec.expandPack(JSON.parse(stripBom(fs.readFileSync(packPath, "utf8"))));
+    if (pack.from !== range.from || pack.to !== range.to || !pack.levels) {
+      throw new Error("Trapped sprite rescue rebuild found an invalid remote pack: " + packPath);
+    }
+    return { range: range, pack: pack, changed: false };
+  });
+
+  CampaignLevelGenerationConfig.TRAPPED_SPRITE_RESCUE_LEVEL_IDS.forEach(function (levelId) {
+    resetGeneratedSpecialPositionState();
+    var generatedConfig = makeValidatedLevel(levelId);
+    var state = packStates.filter(function (candidate) {
+      return levelId >= candidate.range.from && levelId <= candidate.range.to;
+    })[0];
+    if (!state) {
+      throw new Error("Trapped sprite rescue level has no remote pack: " + levelId);
+    }
+    state.pack.levels["level_" + padLevelId(levelId)] = generatedConfig;
+    state.changed = true;
+  });
+
+  var packEntries = packStates.filter(function (state) {
+    return state.changed;
+  }).map(function (state) {
+    var compactPack = LevelPackCompactCodec.compactPack(state.pack);
+    var packText = toCompactJsonText(compactPack);
+    var packPath = path.join(REMOTE_PACK_DIR, getPackFileName(state.range.from, state.range.to));
+    fs.writeFileSync(packPath, packText, "utf8");
+    return buildRemotePackManifestEntry(state.range.from, state.range.to, packText);
+  });
+  updateSelectedManifestPacks(packEntries, "Trapped sprite rescue rebuild");
+  console.log("Rebuilt all trapped sprite rescue levels and updated their remote pack manifest entries.");
+}
+
 function main() {
   if (!fs.existsSync(RESOURCE_LEVEL_DIR)) {
     throw new Error("Missing resources level directory.");
@@ -2562,6 +2719,10 @@ function main() {
   }
   if (args.length === 1 && args[0] === "--reference101-300") {
     rebuildReferenceLevels101To300();
+    return;
+  }
+  if (args.length === 1 && args[0] === "--trapped-rescue") {
+    rebuildTrappedSpriteRescueLevels();
     return;
   }
   if (args.length !== 0) {

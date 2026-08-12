@@ -36,6 +36,17 @@ var SLOTS = [
   { index: 5, nodeName: "genius6" }
 ];
 
+var GLOW_SCORE_MULTIPLIERS = [
+  { numerator: 1, denominator: 1 },
+  { numerator: 5, denominator: 4 },
+  { numerator: 3, denominator: 2 },
+  { numerator: 2, denominator: 1 },
+  { numerator: 5, denominator: 2 },
+  { numerator: 16, denominator: 5 },
+  { numerator: 4, denominator: 1 },
+  { numerator: 5, denominator: 1 }
+];
+
 function requirePositiveFiniteNumber(value, fieldName) {
   if (typeof value !== "number" || !isFinite(value) || value <= 0) {
     throw new Error(fieldName + " must be a positive finite number.");
@@ -106,6 +117,23 @@ function validateSlots(slots) {
   });
 }
 
+function validateGlowScoreMultipliers(multipliers, maxGlowStacks) {
+  if (!Array.isArray(multipliers) || multipliers.length !== maxGlowStacks + 1) {
+    throw new Error("FairyAssistConfig glow score multipliers must cover every glow stack.");
+  }
+  multipliers.forEach(function (multiplier, glowStacks) {
+    if (!multiplier || !Number.isInteger(multiplier.numerator) || multiplier.numerator <= 0) {
+      throw new Error("FairyAssistConfig glow score multiplier numerator is invalid at glow stack " + glowStacks + ".");
+    }
+    if (!Number.isInteger(multiplier.denominator) || multiplier.denominator <= 0) {
+      throw new Error("FairyAssistConfig glow score multiplier denominator is invalid at glow stack " + glowStacks + ".");
+    }
+    if (glowStacks === 0 && multiplier.numerator !== multiplier.denominator) {
+      throw new Error("FairyAssistConfig zero-glow score multiplier must equal one.");
+    }
+  });
+}
+
 validateColorRules(COLOR_RULES);
 validateSlots(SLOTS);
 
@@ -121,7 +149,8 @@ var CONFIG = {
   spriteWidth: 200,
   spriteHeight: 160,
   dropCollisionGlowScale: 86 / 72,
-  maxGlowStacks: 7
+  maxGlowStacks: 7,
+  glowScoreMultipliers: GLOW_SCORE_MULTIPLIERS
 };
 
 if (!Number.isInteger(CONFIG.removeCountOnMiss) || CONFIG.removeCountOnMiss <= 0) {
@@ -140,10 +169,21 @@ requirePositiveFiniteNumber(CONFIG.dropCollisionGlowScale, "FairyAssistConfig.dr
 if (!Number.isInteger(CONFIG.maxGlowStacks) || CONFIG.maxGlowStacks <= 0) {
   throw new Error("FairyAssistConfig.maxGlowStacks must be a positive integer.");
 }
+validateGlowScoreMultipliers(CONFIG.glowScoreMultipliers, CONFIG.maxGlowStacks);
+
+CONFIG.getScoreMultiplierForGlowStacks = function (glowStacks) {
+  if (!Number.isInteger(glowStacks) || glowStacks < 0 || glowStacks > CONFIG.maxGlowStacks) {
+    throw new Error("FairyAssistConfig glow stack score lookup is out of range: " + glowStacks + ".");
+  }
+  var multiplier = CONFIG.glowScoreMultipliers[glowStacks];
+  return multiplier.numerator / multiplier.denominator;
+};
 
 COLOR_RULES.forEach(Object.freeze);
 SLOTS.forEach(Object.freeze);
+GLOW_SCORE_MULTIPLIERS.forEach(Object.freeze);
 Object.freeze(COLOR_RULES);
 Object.freeze(SLOTS);
+Object.freeze(GLOW_SCORE_MULTIPLIERS);
 
 module.exports = Object.freeze(CONFIG);

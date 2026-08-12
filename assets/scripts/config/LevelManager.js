@@ -102,11 +102,11 @@ LevelManager.prototype.preloadLevels = function (levelIds) {
   }, this));
 };
 
-LevelManager.prototype.preloadAllRemotePacks = function (priorityLevelId) {
+LevelManager.prototype.preloadAllRemotePacks = function (priorityLevelId, options) {
   if (!this._remoteLoader || typeof this._remoteLoader.preloadAllPacks !== "function") {
     throw new Error("Remote level loader missing preloadAllPacks.");
   }
-  return this._remoteLoader.preloadAllPacks(priorityLevelId);
+  return this._remoteLoader.preloadAllPacks(priorityLevelId, options);
 };
 
 LevelManager.prototype.loadAvailableLevelIds = function () {

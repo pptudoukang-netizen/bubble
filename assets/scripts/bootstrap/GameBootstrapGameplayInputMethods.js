@@ -299,7 +299,7 @@ module.exports = {
     this._setStatus(this._formatStatus(this.currentLevelConfig, snapshot));
   },
 
-  _onAimCancel: function () {
+  _onAimCancel: function (event) {
     if (!this.currentLevelConfig || this.isRestarting || this.isSelectingLevel || this.isGameplayPaused) {
       return;
     }
@@ -310,6 +310,15 @@ module.exports = {
     }
     if (this._isBarrierHammerTargeting()) {
       return;
+    }
+
+    if (this.gameManager.isAiming && event && typeof event.getLocation === "function") {
+      var touchLocation = event.getLocation();
+      var localPoint = this.node.convertToNodeSpaceAR(touchLocation);
+      if (this._isShotTouchPointValid(localPoint)) {
+        this._onFireTouch(event);
+        return;
+      }
     }
 
     var snapshot = this.gameManager.endAim();

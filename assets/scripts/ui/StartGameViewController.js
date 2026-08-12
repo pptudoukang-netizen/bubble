@@ -17,7 +17,7 @@ var POWERUP_DEFINITIONS = [
 var LOCK_ICON_PATH = "image/commone/lock";
 var PROP_ITEM_HORIZONTAL_PADDING = 12;
 var PROP_ITEM_SPACING = 16;
-var PROP_ITEM_WIDTH = 90;
+var PROP_ITEM_WIDTH = 144;
 var PROP_ITEM_ICON_NODE_NAME = "icon";
 var ROLE_ITEM_HORIZONTAL_PADDING = 12;
 var ROLE_ITEM_SPACING = 16;
@@ -29,7 +29,7 @@ var START_GAME_SPIRIT_AVATAR_PATH_BY_ID = {
   flora: "ui/image/start_view/flora",
   loco: "ui/image/start_view/loco",
   kelu: "ui/image/start_view/kelu",
-  yumi: "spirit_system/image/ui/yumi_avatar"
+  yumi: "ui/image/start_view/yumi"
 };
 var START_GAME_RENDER_PROXY_ROOT_NAME = "start_game_render_proxy_root";
 var START_GAME_PROP_RENDER_PROXY_ROOT_NAME = "start_game_prop_render_proxy_root";
@@ -265,6 +265,21 @@ function getSprite(node, description) {
   return sprite;
 }
 
+function setRawPropIconSpriteFrame(iconNode, spriteFrame, description) {
+  requireValidNode(iconNode, description);
+  if (!spriteFrame || typeof spriteFrame.getRect !== "function") {
+    throw new Error("StartGameView " + description + " spriteFrame is invalid.");
+  }
+  var rect = spriteFrame.getRect();
+  if (!rect || !Number.isFinite(rect.width) || rect.width <= 0 ||
+      !Number.isFinite(rect.height) || rect.height <= 0) {
+    throw new Error("StartGameView " + description + " spriteFrame size is invalid.");
+  }
+  var sprite = getSprite(iconNode, description);
+  sprite.spriteFrame = spriteFrame;
+  sprite.sizeMode = cc.Sprite.SizeMode.RAW;
+}
+
 function setPropIconSpriteFrame(iconNode, spriteFrame, targetWidth, description) {
   requireValidNode(iconNode, description);
   if (!spriteFrame || typeof spriteFrame.getRect !== "function") {
@@ -497,7 +512,6 @@ function StartGameViewController(options) {
   this._renderState = null;
   this._selectedItems = [];
   this._propItemLayoutSize = null;
-  this._propItemIconWidth = 0;
   this._purchaseInProgressItemId = "";
   this._renderProxyRoot = null;
   this._renderProxyLayers = {};
@@ -956,11 +970,6 @@ StartGameViewController.prototype._initPropNodes = function () {
   var propTemplateNode = requireValidNode(this._nodes.propTemplateNode, "Panel/prop_listview/view/content/prop");
   var referenceSize = getValidSize(propTemplateNode, "Panel/prop_listview/view/content/prop");
   this._propItemLayoutSize = applyPropItemLayoutSize(propTemplateNode, referenceSize, PROP_ITEM_WIDTH);
-  this._propItemIconWidth = getValidSize(
-    requireChildNode(propTemplateNode, PROP_ITEM_ICON_NODE_NAME, "Panel/prop_listview/view/content/prop"),
-    "Panel/prop_listview/view/content/prop/" + PROP_ITEM_ICON_NODE_NAME
-  ).width;
-
   POWERUP_DEFINITIONS.forEach(function (definition, index) {
     var propNode = index === 0 ? propTemplateNode : cc.instantiate(propTemplateNode);
     if (index > 0) {
@@ -1083,7 +1092,9 @@ StartGameViewController.prototype._ensureSpriteFrames = function (options) {
     return Promise.resolve(this._spriteFrames);
   }
   if (this._spriteLoadPromise) {
-    return this._spriteLoadPromise;
+    return this._spriteLoadPromise.then(function () {
+      return this._ensureSpriteFrames(options);
+    }.bind(this));
   }
 
   this._spriteLoadPromise = Promise.all(missingPaths.map(function (path) {
@@ -1213,13 +1224,8 @@ StartGameViewController.prototype._renderPropItems = function () {
   if (!this._renderState) {
     throw new Error("StartGameView render state is required before rendering props.");
   }
-  if (!this._propItemIconWidth || !Number.isFinite(this._propItemIconWidth) || this._propItemIconWidth <= 0) {
-    throw new Error("StartGameView prop icon width is required before rendering props.");
-  }
-
   var levelId = this._renderState.levelId;
   var purchaseOptionsByItemId = this._renderState.purchaseOptionsByItemId;
-  var iconWidth = this._propItemIconWidth;
   this._propNodes.forEach(function (entry) {
     var definition = entry.definition;
     var unlocked = levelId >= definition.unlockLevel;
@@ -1228,10 +1234,9 @@ StartGameViewController.prototype._renderPropItems = function () {
     if (!spriteFrame) {
       throw new Error("StartGameView prop icon sprite frame is missing: " + iconPath);
     }
-    setPropIconSpriteFrame(
+    setRawPropIconSpriteFrame(
       entry.iconNode,
       spriteFrame,
-      iconWidth,
       entry.node.name + "/icon"
     );
     entry.numNode.active = unlocked;
@@ -1277,7 +1282,7 @@ StartGameViewController.prototype._renderPropSelectionState = function () {
   }, this);
 };
 
-StartGameViewController.prototype._renderContent = function (options) {
+StartGameViewController.prototype._renderContent = function (options, shouldResetScrollPosition) {
   var levelId = requirePositiveInteger(options.levelId, "StartGameView levelId");
   var staminaCost = requirePositiveInteger(options.staminaCost, "StartGameView staminaCost");
   var oneStarTargetScore = requirePositiveInteger(options.oneStarTargetScore, "StartGameView one-star target score");
@@ -1357,17 +1362,22 @@ StartGameViewController.prototype._renderContent = function (options) {
   this._renderPropItems();
   this._renderPropSelectionState();
   this._rebuildRenderProxies();
-  this._resetPropListScrollPosition();
-  this._resetRoleListScrollPosition();
+  if (shouldResetScrollPosition) {
+    this._resetPropListScrollPosition();
+    this._resetRoleListScrollPosition();
+  }
 };
 
-StartGameViewController.prototype.render = function (options) {
+StartGameViewController.prototype.render = function (options, shouldResetScrollPosition) {
   requireObject(options, "StartGameView render options");
+  if (typeof shouldResetScrollPosition !== "boolean") {
+    throw new Error("StartGameView shouldResetScrollPosition must be boolean.");
+  }
   if (typeof options.showAwardTips !== "boolean") {
     throw new Error("StartGameView showAwardTips must be boolean.");
   }
   return this._ensureSpriteFrames(options).then(function () {
-    this._renderContent(options);
+    this._renderContent(options, shouldResetScrollPosition);
   }.bind(this));
 };
 
