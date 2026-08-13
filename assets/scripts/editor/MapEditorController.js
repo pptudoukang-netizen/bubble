@@ -9,7 +9,7 @@ var MapEditorLevelPicker = require("./MapEditorLevelPicker");
 var MapEditorBoardImport = require("./MapEditorBoardImport");
 
 var MAX_COLUMNS = BoardLayout.defaultColumns;
-var WORMHOLE_RENDER_SIZE = 70;
+var WORMHOLE_RENDER_SIZE = 80;
 var PALETTE_SELECTED_SCALE = 1.12;
 var PALETTE_NORMAL_SCALE = 1;
 var TOP_BOARD_ROW_INDEX = 0;

@@ -14,7 +14,7 @@
 - `assets/game/scens/editor.fire`：位于 `game` Asset Bundle 的关卡底图编辑场景，挂载 `MapEditorController`；只允许由 `LevelView/test_btn` 加载并切入，复用 `game` 分包内的球与道具图片。
 - `assets/boot/BootLoader.js`：首包内的启动组件，仅由 `boot.fire/Canvas` 挂载；`boot.fire` 首帧绘制后下载并加载 `core`，确认业务代码执行标记后预加载并切换到 `game.fire`。它不是全局插件，因此模拟器直接预览其他场景时不会误触发；该文件禁止同步 `require` 业务模块。
 - `assets/scripts/`：`core` Asset Bundle（微信 `subpackage`），包含完整业务启动、选关、UI、服务、存储、共享配置和工具；不再进入内置 `main` 分包。
-- `gameplay-src/`：局内玩法内核源码，不直接交给 Cocos 编译；`tools/build-wechat-gameplay-code.js` 将该目录合并成唯一生成资产 `assets/game/generated/lazy-gameplay-code.js`，由 `game` Asset Bundle 编入微信 `subpackages/game/game.js`。
+- `gameplay-src/`：局内玩法内核源码，不直接交给 Cocos 编译，因此与 `assets/` 同级，避免源码和生成文件被 Creator 重复编译；`tools/build-wechat-gameplay-code.js` 将该目录合并成唯一生成资产 `assets/game/generated/lazy-gameplay-code.js`，由 `game` Asset Bundle 编入微信 `subpackages/game/game.js`。
 - `assets/map/`：地图分包资源，包含本地关卡配置、远程关卡 bootstrap manifest、提示文案、`LevelView`、选关大背景、`image/level_view/` 选关专用图片、顶部金币/体力图标、无限浮岛选关地图配置、浮岛预制体、地标预制体、传送阵、主角图片，以及 `image/trapped_spirit/{spiritId}` 七名救援角色地图小图；救援关 `landmark1/spirit` 按浮岛节点的 `rescueSpiritId` 动态换图，选关销毁后这些资源可随 `map` 一起释放。
 - `assets/ui/`：局内与选关共用、按会话生命周期持有的公共 UI 分包，包含弹窗预制体与 UI 图片；返回选关后的 `game`/`animation` 空闲释放不得清理 `ui` prefab 或 `ui/` SpriteFrame。`image/props/` 保存 UI 生命周期独立使用的金币、体力和道具图副本，`image/preview_balls/` 保存选关目标与道具说明使用的球图标，避免返回选关后 `game` bundle 延迟释放造成黑块或失效 SpriteFrame；`image/commone/` 存放多个弹窗共用图片，`fnt/` 保存 UI 自有字体。
 - `assets/game/`：局内资源、关卡底图编辑场景与玩法代码分包（微信 `subpackage`），包含 `GameView`、`scens/editor.fire`、球/罐子/道具图片、`trapped_spirit/{spiritId}` 七名角色的局内被困形象、编辑器蜂窝底图、局内 HUD 图片与字体、射手 hero 动画、局内 prefab、Shader effect 与生成的 `generated/lazy-gameplay-code.js`；进入局内或关卡编辑器前由 `BundleLoader.ensureGameplayBundleLoaded()` 加载并校验玩法代码标记。
@@ -108,11 +108,13 @@
 
 路径：`gameplay-src/core`
 
-- `GameManager.js`：玩法状态机和运行时核心。负责开局、瞄准、发射、技能、结算、胜负、分数、运行时事件、runtime snapshot。过关要求为星级达到 1 星且棋盘全部球自然消除或掉落；`bonusObjectives` / `winConditions` 中的收集目标只决定本次过关奖励是否翻倍，不再触发胜利或强制全盘掉落。清屏后进入 `won_pending` 等待掉落球全部结算，再进入 `won_surplus_shots_pending`（剩余发射球抛物线入缸，可选）、`won_settlement_pending`（入缸后 1 秒）并最终切到 `won` 触发 `WinView`。
+- `GameManager.js`：稳定的玩法状态机门面，只保留共享规则、构造器、显式依赖上下文和子模块挂载，对外仍导出同一个 `GameManager` 构造器。过关要求为星级达到 1 星且棋盘全部球自然消除或掉落；`bonusObjectives` / `winConditions` 中的收集目标只决定本次过关奖励是否翻倍，不再触发胜利或强制全盘掉落。清屏后进入 `won_pending` 等待掉落球全部结算，再进入 `won_surplus_shots_pending`（剩余发射球抛物线入缸，可选）、`won_settlement_pending`（入缸后 1 秒）并最终切到 `won` 触发 `WinView`。
+- `GameManagerLifecycleMethods.js` / `GameManagerSnapshotMethods.js`：分别负责启动与关卡初始化、运行时快照与调试快照；渲染层仍只消费 `getRuntimeSnapshot()` 的权威结果。
+- `GameManagerBoardPhaseMethods.js` / `GameManagerSpecialPhaseMethods.js` / `GameManagerRuntimeStateMethods.js` / `GameManagerInputMethods.js` / `GameManagerAdPowerupMethods.js` / `GameManagerPowerupMethods.js` / `GameManagerUpdateMethods.js`：按棋盘阶段、特殊实体阶段、运行状态、发射输入、广告道具、局内道具和逐帧推进拆分的状态机扩展。所有扩展通过显式 context 注入共享依赖，不读取隐式全局变量。
 - `GameManagerAssistSpiritSkillMethods.js` / `AssistSpiritSkillConfig.js`：ShooterPanel 出战精灵全局技能的权威配置与结算。Milu/Lumi 不显示全局技能；Noya 使用“本局种子 + 技能成功释放序号”生成可复现的随机三次贝塞尔路径，并让路径影响半径内的合法球按配置概率、最大数量进入掉落；只要棋盘仍有内容，即使没有合法掉落对象、曲线附近候选为0或全部概率未命中，也会正常播放技能且不强制补目标。Flora/Loco/Kelu 分别执行全盘解除藤蔓、按真实发射次数临时融雪、闪电链；Yumi 按藤蔓、雪块、闪电、龙卷风的固定优先级选择当前合法技能。玩法层先确定曲线和概率结果，表现层只播放已确定结果。
-- `GameManagerShotResolutionMethods.js`：发射命中后的消除、掉落、收集等结算扩展；`_resolveBoardClearedOutcome` / `_beginSurplusShotBonus` 处理自然清屏后的星级校验、剩余球奖励与终局结算。
+- `GameManagerShotResolutionMethods.js`：发射命中结算的薄聚合层；下挂 `GameManagerShotScoreMethods.js`、`GameManagerShotPlanningMethods.js`、`GameManagerShotDropMethods.js`、`GameManagerShotMolotovMethods.js`、`GameManagerShotReactiveMethods.js`、`GameManagerShotFinalizeMethods.js`，分别负责计分、落点规划、悬空掉落、燃烧瓶、反应型特殊球和最终结算；`_resolveBoardClearedOutcome` / `_beginSurplusShotBonus` 处理自然清屏后的星级校验、剩余球奖励与终局结算。
 - 漩涡泡泡由 `GameManager` 在每次发射落位结算后启动：`BubbleGrid.rotateSwirlNeighborsClockwise()` 将中心周围六格严格顺时针轮换一格，`SpecialAnimationTiming.swirlRotation` 统一 60° / 0.4 秒时序；动画结束后 `SupportSystem.findFloatingCells()` 立即重算顶部连接并复用正常掉落链路。
-- 虫洞由 `GameManager` 在漩涡阶段之后、藤蔓阶段之前处理：`BubbleGrid.getWormholePairs()` 按行严格配对，要求每个虫洞行恰好两个同方向端点；`shiftWormholeInteriors()` 在同一0.35秒阶段内将每对端点之间的普通球、特殊球与空位分别按 `moveDirection` 循环移动一格。虫洞端点是独立棋盘特效实体，不进入 `BubbleGrid.cells`、不占用蜂窝格、不参与支撑、下压边界或发射碰撞，同一坐标允许正常放置和吸附球。`WormholeShaderRenderer` 为全部端点绑定 `effects/WormholeFlow`，端点以70×70显示在独立 `WormholeLayer`，该层位于普通球 `BoardLayer` 下方；方向层为每对通道分别绘制箭头，结算位移动画不会中断材质。移动不调用颜色匹配，动画结束后统一重算支撑并让无支撑球进入掉落链路；虫洞显示不参与清屏与顶部崩塌判定。
+- 虫洞由 `GameManager` 在漩涡阶段之后、藤蔓阶段之前处理：`BubbleGrid.getWormholePairs()` 按行严格配对，要求每个虫洞行恰好两个同方向端点；`shiftWormholeInteriors()` 在同一0.35秒阶段内将左右虫洞所在坐标及两者之间的普通球、特殊球与空位组成闭区间，并按 `moveDirection` 循环移动一格。虫洞端点是独立棋盘特效实体，不进入 `BubbleGrid.cells`、不占用蜂窝格、不参与支撑、下压边界或发射碰撞，同一坐标允许正常放置和吸附球。`WormholeShaderRenderer` 为全部端点绑定 `effects/WormholeFlow`，端点以80×80显示在独立 `WormholeLayer`（zIndex 24），低于包含发射瞄准线的 `ShooterLayer`（zIndex 25）和普通球 `BoardLayer`（zIndex 40）；方向层为每对通道分别绘制箭头，结算位移动画不会中断材质。移动不调用颜色匹配，动画结束后统一重算支撑并让无支撑球进入掉落链路；虫洞显示不参与清屏与顶部崩塌判定。
 - 藤蔓魔灵由 `GameManager` 在发射结算链中统一处理：魔灵固定 3 点生命，直接命中、爆炸范围命中或相邻格完成消除时每次结算只受 1 点伤害；缠绕球只有在六邻格内存在本次实际消除的球时才解除藤蔓并保留底层普通球，直接命中但未消除、或爆炸只覆盖缠绕球本身都不会解除。每 3 次真实发射后，存活魔灵按距离选择最近的未缠绕普通球，先预告 0.65 秒再写入归属藤蔓状态。魔灵死亡或因无支撑掉落时，`BubbleGrid` 按 owner id 同步清除其全部藤蔓；缠绕球自身掉落前也会解除藤蔓。
 - 被困精灵救援关使用独立 `trapped_sprite_rescue` 类型：`TrappedSpriteRescueSystem` 以 `anchorCell` 六邻格作为唯一支撑种子，保存权威任意角旋转状态，并根据最终入射方向、命中半径和实时转动惯量计算阻尼转角；中心精灵是吸附支撑点而不是反弹点，发射球命中精灵后吸附到接触方向对应的锚点六邻合法空格，中心保留格本身不放球。吸附确实启动整盘旋转时会抑制同一击的邻居局部反弹。救援关允许彩虹球、爆破球、石球、冰块、漩涡和藤蔓魔灵；即时技能/障碍结算先进入支撑扫描，漩涡轮换和藤蔓预告等待整盘受力旋转停止后再执行，禁止双重拓扑动画并行。`BubbleGrid` 保留 `row/col` 拓扑但把碰撞、吸附、特殊实体和快照坐标转换到旋转后的世界坐标。第0行不提供支撑或吸附，发射球触碰顶部会反弹，只有球心低于炮台位置才消失；支撑扫描清空棋盘后立即发出被困精灵获救飞离事件，不等待掉落球入缸，但最终胜利结算仍等待掉落计分完成。燃烧瓶、分裂球、虫洞、锁定球、钥匙球、普通棋盘视口推进、顶部空槽崩塌、危险线和额外固定锚点全部禁用。测试关 `assets/map/config/levels/level_trapped_sprite_test.json` 已同时配置六类兼容实体，隐藏测试模式下通过选关页“精灵”按钮进入。
 - `AdRevivePolicy.js`：广告复活策略；普通限球关统一补 10 球并选择目标色，计时关失败复活统一增加 10 秒，LoseView 按模式切换描述、位置与赠球图标。
@@ -125,14 +127,14 @@
 
 玩法底层系统：
 
-- `BubbleGrid.js`：棋盘格与格子状态；普通模式几何坐标通过附着的 `BoardViewportSystem.offsetY` 计算，被困精灵模式则通过 `TrappedSpriteRescueSystem` 将局部蜂窝坐标绕中心转为权威世界坐标，分段碰撞改为扫描实时旋转位置；中心精灵命中通过 `findTrappedSpriteAttachmentCell()` 选择锚点六邻合法吸附格，并禁止中心保留格吸附。漩涡泡泡使用互不重叠的六格顺时针轨道；虫洞按行形成一个或多个严格双端点对，但端点保存在独立虫洞集合而非占格集合，并在各自通道循环移动时保留特殊球字段、藤蔓归属和空位；藤蔓球在格子快照中保存 `vineOwnerId`，预告阶段保存 `vinePreviewOwnerId`，魔灵生命与藤蔓归属都由棋盘运行时状态维护。
+- `BubbleGrid.js`：棋盘格与格子状态门面；`BubbleGridSpecialEntityMethods.js`、`BubbleGridCollisionMethods.js`、`BubbleGridMutationMethods.js` 分别承载特殊实体拓扑、碰撞/吸附和棋盘变更。普通模式几何坐标通过附着的 `BoardViewportSystem.offsetY` 计算，被困精灵模式则通过 `TrappedSpriteRescueSystem` 将局部蜂窝坐标绕中心转为权威世界坐标，分段碰撞改为扫描实时旋转位置；中心精灵命中通过 `findTrappedSpriteAttachmentCell()` 选择锚点六邻合法吸附格，并禁止中心保留格吸附。漩涡泡泡使用互不重叠的六格顺时针轨道；虫洞按行形成一个或多个严格双端点对，但端点保存在独立虫洞集合而非占格集合，并在各自通道循环移动时保留特殊球字段、藤蔓归属和空位；藤蔓球在格子快照中保存 `vineOwnerId`，预告阶段保存 `vinePreviewOwnerId`，魔灵生命与藤蔓归属都由棋盘运行时状态维护。
 - `BoardViewportSystem.js`：普通棋盘不超过 10 行时顶部贴 HUD 下沿；超过 10 行时开场和局内吸附结算后都匀速上移到 HUD 下方保留 10 行，移动期间锁定发射；逻辑第 0 行空槽 ≥6 时，结算后立即触发全盘崩塌判定。被困精灵模式固定 `offsetY=0`，调用 settle 或行偏移直接报错。
 - `TrappedSpriteRescueSystem.js`：加载与精灵大厅同源的七名 `spiritId`、锚点、世界中心、显示比例和全部旋转参数；局内被困形象严格派生为 `game/trapped_spirit/{spiritId}`，以指数阻尼积分保存任意最终角，向棋盘提供格子世界坐标，并在旋转期间参与全局输入锁。
 - `MatchSystem.js`：同色匹配消除；藤蔓球不进入同色连通组。
 - `SupportSystem.js`：连通/悬空判断；普通模式仅由顶部和锁定球提供锚点，虫洞不提供支撑；被困精灵模式只从中心锚点六邻格开始搜索，第0行不再提供支撑。结构变化后无支撑球在当前发射周期进入掉落链路。
 - `FairyAssistSystem.js`：管理 `GameView/geniuses` 六个固定协助精灵槽位；只要本次发射产生消除，就按匹配消除数量生成红/黄/绿精灵，未消除时移除最早两只；碰撞中心由 `LevelRenderer.syncFairyAssistCollisionCenters` 从槽位节点转换到棋盘坐标后再参与判定，并维护每精灵最多 7 次碰撞计数与光效层数 snapshot。
 - `BoardOcclusionSystem.js`：管理棋盘云朵/树叶视觉遮挡；普通关按持久化关卡尝试序号在4个预校验变体间循环且连续不重复，随机挑战按Run种子固定。系统独立维护活动区域和渲染版本，普通`shot_limited`关只维护剩余发射次数，`timed_infinite_shots`限时关只维护剩余秒数；配置类型与关卡模式不一致时直接报错。遮挡不写入`BubbleGrid`，除雪剂可优先清理全部活动遮挡。
-- `FallingMarbleSystem.js`：掉落球运动（默认重力 900）；`maxDynamicMarbles` 当前由 `FallingRulesDefaults.maxDynamicMarbles`（9999，试验值）统一控制，暂忽略关卡 `fallingRules.maxDynamicMarbles: 10`，一次注册的全部掉落球会立即进入物理模拟；固定精灵反弹、红黄绿倍率、绿色精灵单次一分为二；清屏后余球每 0.2s 连续抛射入缸（不等上一颗入缸），炮台每 0.2s 在 15°～165° 间按 15° 步进往返旋转。
+- `FallingMarbleSystem.js`：掉落球状态门面；`FallingMarbleSurplusMethods.js`、`FallingMarbleJarPhysicsMethods.js`、`FallingMarbleRuntimeMethods.js` 分别负责清屏余球、罐口物理/计分和逐帧运行快照。掉落球默认重力 900；`maxDynamicMarbles` 当前由 `FallingRulesDefaults.maxDynamicMarbles`（9999，试验值）统一控制，暂忽略关卡 `fallingRules.maxDynamicMarbles: 10`，一次注册的全部掉落球会立即进入物理模拟；固定精灵反弹、红黄绿倍率、绿色精灵单次一分为二；清屏后余球每 0.2s 连续抛射入缸（不等上一颗入缸），炮台每 0.2s 在 15°～165° 间按 15° 步进往返旋转。
 - `JarCollectorSystem.js`：底部罐子收集。
 - `ShooterController.js`：射手和待发球；前 100 关的 `openingShotBalls` 会按配置顺序先进入炮台，序列耗尽后才进入权重随机球；广告复活覆盖炮台时会明确清空未消费的开局序列；`drainRemainingShotBalls` 在剩余球奖励阶段排空炮台队列。露米出战时，`GameManager.fireShot()` 在真实队列推进后使用本局 seed、真实发射序号和当前精灵等级执行一次受控概率判定，仅当新装填 `currentBall` 为普通球时通过 `convertCurrentNormalBallToSkillBall("blast")` 转成权威炸弹球，不消费道具库存、不修改 `nextBall` 或剩余发射数。
 - `TrajectoryPredictor.js`：瞄准轨迹预测；被困精灵模式使用旋转后的格子世界坐标，保留边界反弹后的最终入射方向，不计算顶部吸附；发射球触碰顶部会反弹，只有运动到炮台位置以下才返回无目标格的 `miss` 计划并消失。
@@ -144,17 +146,17 @@
 
 渲染层只根据关卡配置和 runtime snapshot 同步 Cocos 节点：
 
-- `LevelRenderer.js`：渲染入口、资源预加载、事件 handler、公共节点/资源逻辑；`TrappedSpriteLayer` 固定使用层级49，位于棋盘泡泡、碎裂和掉落泡泡层之上、HUD之下；收到一次性 `trapped_sprite_rescued` 后按真实屏幕上边界播放获救飞离，完整出屏后隐藏且不会被后续刷新拉回中心。
+- `LevelRenderer.js`：稳定渲染门面，只保留实例状态初始化和子模块挂载，对外仍导出同一个 `LevelRenderer` 构造器。`LevelRendererResourceConfig.js` 集中资源路径、渲染常量和引擎依赖，`LevelRendererStateSelectors.js` 集中纯快照选择/显示计算，`LevelRendererCoreContext.js` 组合显式共享上下文；`LevelRendererActionMethods.js`、`LevelRendererRuntimeMethods.js`、`LevelRendererResourceMethods.js`、`LevelRendererSharedVisualMethods.js` 分别负责交互入口、运行刷新、资源生命周期和共享视觉逻辑。`TrappedSpriteLayer` 固定使用层级49，位于棋盘泡泡、碎裂和掉落泡泡层之上、HUD之下；收到一次性 `trapped_sprite_rescued` 后按真实屏幕上边界播放获救飞离，完整出屏后隐藏且不会被后续刷新拉回中心。
 - `LevelRendererSceneMethods.js`：场景渲染薄编排层，按域挂载下列子模块。
 - `LevelRendererSceneShared.js`：场景渲染跨域公共节点 helper（`requireChildNode`、Label 写入等）。
 - `LevelRendererSceneScaffoldMethods.js`：`GameView` 脚手架、背景/大陆/渐变层、开局倒计时与 HUD 底线同步。
 - `LevelRendererSceneBoardMethods.js`：棋盘球池、掉落球、调试网格与棋盘格视觉状态。
 - `LevelRendererSceneOcclusionMethods.js`：在`BoardOcclusionLayer`（z=43）按格坐标与视口偏移渲染等比云朵/树叶，并显示剩余“发/秒”；普通关发射次数固定显示在遮挡正中且层级高于遮挡Sprite，限时关秒数显示在正中钟表底部框内。云朵使用4.8秒完整周期、236至252透明度范围的缓慢呼吸，树叶保持静止且不旋转。限时关`timer`局部刷新只更新现有遮挡Label与渲染版本键，不重建遮挡节点或重启呼吸动画。
 - `LevelRendererSceneShooterMethods.js`：炮台、瞄准辅助线、彩虹选色、路线编辑器与飞行球视觉缓存；通过 `AssistSpiritPresentationConfig` 按 `shooterSnapshot.assistSpiritId` 安装当前出战精灵的待机/递球动画，ID 来自精灵大厅持久化的 `AssistSpiritStore.equippedSpiritId`。
-- `LevelRendererSceneFxMethods.js`：钥匙/分裂/燃烧瓶/冰球等一次性动画、障碍锤提示、震屏与冲击反弹。
-- `LevelRendererSceneHudMethods.js`：HUD 目标、星级进度、连击/分数飘字、定时器与底部道具栏；道具按钮由 `prefabs/game/PropsBtn` 动态实例化到 `GameView/BttomPanel/props_scroll/view/content`。
+- `LevelRendererSceneFxMethods.js`：FX 聚合层，下挂障碍提示、钥匙/分裂、棋盘变换、爆炸/冰球和屏幕反馈五个领域模块。
+- `LevelRendererSceneHudMethods.js`：HUD 聚合层，下挂基础 HUD、分数飘字、罐子分数、底栏、道具反馈、目标和星级七个领域模块；道具按钮由 `prefabs/game/PropsBtn` 动态实例化到 `GameView/BttomPanel/props_scroll/view/content`。
 - `LevelRendererSceneJarMethods.js`：底部罐子、罐内掉落遮挡与碰撞遮罩。
-- `LevelRendererScenePopupMethods.js`：胜/负/暂停/道具说明弹窗与结果浮层渲染（含 Sprite 代理分层）。
+- `LevelRendererScenePopupMethods.js`：弹窗聚合层，下挂胜利、通用模态和结果弹窗三个领域模块（含 Sprite 代理分层）。
 - `LevelRendererFairyMethods.js`：严格绑定 `GameView/geniuses/genius1...6`，从 `animation` 分包实例化三色精灵动画 prefab，保留飞入/替换/离场动画，并用同 prefab 的后置克隆表达碰撞层数。
 - `BubbleShatterRenderer.js`：普通匹配球消除时的 Shader 碎裂渲染器；在棋盘节点回收前复制球的 SpriteFrame 与位置，以单球单 Sprite 的片元 Shader 生成中心块和八个放射碎片，不参与棋盘状态与掉落结算。
 - `WormholeShaderRenderer.js`：从 `game/effects/WormholeFlow` 预加载虫洞 effect，为虫洞 Sprite 创建材质实例并维护节点池中的绑定/还原生命周期；效果使用引擎全局时间驱动，不依赖节点 Action 或脚本逐帧更新。
@@ -362,6 +364,7 @@
 - `npm run validate:swirl`
 - `npm run validate:wormhole`
 - `npm run validate:vine-spirit`
+- `npm run validate:gameplay-modules`
 - `npm run validate:gameplay-bundle`
 - `npm run validate:release`
 - `npm run generate:levels1000`

@@ -3,6 +3,7 @@
 var assert = require("assert");
 var fs = require("fs");
 var path = require("path");
+var readGameplaySourceFamily = require("./read-gameplay-source-family").readGameplaySourceFamily;
 
 var projectRoot = path.resolve(__dirname, "..");
 var LightningChainRenderer = require(path.join(
@@ -114,7 +115,11 @@ function validateGeometryAndContract() {
 }
 
 function validateLevelRendererIntegration() {
-  var levelRendererSource = readProjectFile("gameplay-src/render/LevelRenderer.js");
+  var levelRendererSource = readGameplaySourceFamily(
+    projectRoot,
+    "gameplay-src/render",
+    "LevelRenderer"
+  );
   [
     "new LightningChainRenderer()",
     "preloadLightningChainEffect",

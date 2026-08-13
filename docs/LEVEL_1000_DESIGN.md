@@ -84,7 +84,7 @@ Rule:
 - The 0.35-second shift locks input. Support is recalculated when the animation finishes, and every newly unsupported non-wormhole cell immediately enters the normal falling-marble pipeline.
 - The shift never invokes color matching. Even if the new arrangement forms a valid same-color group, it remains until a later player shot resolves that match.
 - Wormhole overlays never participate in clear-state or top-anchor-collapse occupancy. The top-anchor collapse rule remains active on wormhole levels and only real board cells are dropped; the top mainland and gradient alignment are derived only from real board cells.
-- Rendering and introduction UI use `image/ball/wormhole`; each endpoint renders at 70x70 in a dedicated layer below the ball layer, board rendering applies `effects/WormholeFlow`, and the texture is excluded from dynamic-atlas packing so its distortion UV domain remains stable. Remote compact packs encode wormholes with type code `h` plus the explicit move direction.
+- Rendering and introduction UI use `image/ball/wormhole`; each endpoint renders at 80x80 in a dedicated zIndex 24 layer below both the shooter aim-guide layer (zIndex 25) and ball layer (zIndex 40), board rendering applies `effects/WormholeFlow`, and the texture is excluded from dynamic-atlas packing so its distortion UV domain remains stable. The cyclic channel includes both endpoint coordinates and every coordinate between them. Remote compact packs encode wormholes with type code `h` plus the explicit move direction.
 
 ### Vine Spirit
 

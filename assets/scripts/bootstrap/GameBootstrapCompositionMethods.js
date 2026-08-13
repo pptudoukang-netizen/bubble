@@ -667,6 +667,9 @@ module.exports = {
         onExitLevel: this._exitPausedLevel.bind(this)
       });
       this.levelRenderer.setResultViewLifecycleHandlers({
+        onRescueSuccessfulViewShow: function () {
+          this._playSfx("congratulations");
+        }.bind(this),
         onWinViewShow: this._showWinNativeTemplateAd.bind(this),
         onWinViewHide: this._hideWinNativeTemplateAd.bind(this),
         onLoseViewShow: this._showLoseNativeTemplateAd.bind(this),

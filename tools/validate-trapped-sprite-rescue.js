@@ -2,6 +2,7 @@
 
 var fs = require("fs");
 var path = require("path");
+var readGameplaySourceFamily = require("./read-gameplay-source-family").readGameplaySourceFamily;
 
 global.cc = {
   macro: {
@@ -383,6 +384,9 @@ function validateAssets() {
   var rescueSfxPath = path.join(ROOT, "assets", "audio", "sound", "cute_laughter.mp3");
   assert(fs.existsSync(rescueSfxPath), "Missing trapped sprite rescue sfx: " + rescueSfxPath);
   assert(fs.existsSync(rescueSfxPath + ".meta"), "Missing trapped sprite rescue sfx meta: " + rescueSfxPath + ".meta");
+  var rescuePopupSfxPath = path.join(ROOT, "assets", "audio", "sound", "congratulations.mp3");
+  assert(fs.existsSync(rescuePopupSfxPath), "Missing RescueSuccessfulView sfx: " + rescuePopupSfxPath);
+  assert(fs.existsSync(rescuePopupSfxPath + ".meta"), "Missing RescueSuccessfulView sfx meta: " + rescuePopupSfxPath + ".meta");
 }
 
 function validateRescueSuccessfulPrefab() {
@@ -1221,8 +1225,13 @@ function validateRescueCompletionAudio(config) {
     },
     _parseAudioResourceList: GameBootstrapAudioMethods._parseAudioResourceList,
     fairyAssistHitSfxResources: "sound/hit_spirit_1,sound/hit_spirit_2,sound/hit_spirit_3,sound/hit_spirit_4,sound/hit_spirit_5",
+    congratulationsSfxResource: "sound/congratulations",
     trappedSpriteRescuedSfxResource: "sound/cute_laughter"
   });
+  assert(
+    audioConfig.sfxMap.congratulations === "sound/congratulations",
+    "RescueSuccessfulView sfx must map to sound/congratulations."
+  );
   assert(
     audioConfig.sfxMap.trappedSpriteRescued === "sound/cute_laughter",
     "Trapped sprite rescue sfx must map to sound/cute_laughter."
@@ -1266,14 +1275,8 @@ function validateLevel63BoardEmptyRescue(level63Config) {
 }
 
 function validateWiring() {
-  var rendererSource = fs.readFileSync(
-    path.join(ROOT, "gameplay-src", "render", "LevelRenderer.js"),
-    "utf8"
-  );
-  var hudSource = fs.readFileSync(
-    path.join(ROOT, "gameplay-src", "render", "LevelRendererSceneHudMethods.js"),
-    "utf8"
-  );
+  var rendererSource = readGameplaySourceFamily(ROOT, "gameplay-src/render", "LevelRenderer");
+  var hudSource = readGameplaySourceFamily(ROOT, "gameplay-src/render", "LevelRenderer");
   var gameViewPrefab = JSON.parse(fs.readFileSync(
     path.join(ROOT, "assets", "game", "prefabs", "ui", "GameView.prefab"),
     "utf8"
@@ -1327,10 +1330,7 @@ function validateWiring() {
     rendererSource.indexOf('"ui/image/props/" + spiritId + "_fragments"') !== -1,
     "Renderer rescue fragment reward resource mapping is missing."
   );
-  var popupSource = fs.readFileSync(
-    path.join(ROOT, "gameplay-src", "render", "LevelRendererScenePopupMethods.js"),
-    "utf8"
-  );
+  var popupSource = readGameplaySourceFamily(ROOT, "gameplay-src/render", "LevelRenderer");
   assert(
     popupSource.indexOf('rewardItem.id === "spirit_fragment"') !== -1 &&
       popupSource.indexOf("buildSpiritFragmentRewardResourcePath(rewardItem.spiritId)") !== -1,
@@ -1358,7 +1358,8 @@ function validateWiring() {
     "RESCUE_SUCCESSFUL_VIEW_PROXY_ROOT_NAME",
     "var RESCUE_SUCCESSFUL_MIN_DISPLAY_DURATION_SEC = 2;",
     ".delay(RESCUE_SUCCESSFUL_MIN_DISPLAY_DURATION_SEC)",
-    "viewNode.__minimumDisplayCompleted = true;"
+    "viewNode.__minimumDisplayCompleted = true;",
+    'this._notifyResultViewLifecycle("onRescueSuccessfulViewShow");'
   ].forEach(function (requiredToken) {
     assert(
       popupSource.indexOf(requiredToken) !== -1,
@@ -1392,6 +1393,27 @@ function validateWiring() {
   assert(
     bundleLoaderSource.indexOf("RescueSuccessfulView: true") !== -1,
     "BundleLoader must route RescueSuccessfulView through the UI bundle."
+  );
+  assert(
+    rendererSource.indexOf("onRescueSuccessfulViewShow:") !== -1,
+    "LevelRenderer lifecycle handlers must expose RescueSuccessfulView show."
+  );
+  var compositionSource = fs.readFileSync(
+    path.join(ROOT, "assets", "scripts", "bootstrap", "GameBootstrapCompositionMethods.js"),
+    "utf8"
+  );
+  assert(
+    compositionSource.indexOf("onRescueSuccessfulViewShow: function () {") !== -1 &&
+      compositionSource.indexOf('this._playSfx("congratulations");') !== -1,
+    "RescueSuccessfulView show must play congratulations through GameBootstrap audio."
+  );
+  var audioMethodsSource = fs.readFileSync(
+    path.join(ROOT, "assets", "scripts", "bootstrap", "GameBootstrapAudioMethods.js"),
+    "utf8"
+  );
+  assert(
+    audioMethodsSource.indexOf("congratulations: this.congratulationsSfxResource") !== -1,
+    "GameBootstrap audio config must map congratulations sfx."
   );
   assert(
     rendererSource.indexOf("var TRAPPED_SPRITE_LAYER_Z_INDEX = 49;") !== -1 &&
@@ -1453,10 +1475,7 @@ function validateWiring() {
     routeEditorFlowSource.indexOf('options.testSource !== "trapped_sprite"') !== -1,
     "GameBootstrap level entry must accept the trapped_sprite testSource."
   );
-  var sceneFxSource = fs.readFileSync(
-    path.join(ROOT, "gameplay-src", "render", "LevelRendererSceneFxMethods.js"),
-    "utf8"
-  );
+  var sceneFxSource = readGameplaySourceFamily(ROOT, "gameplay-src/render", "LevelRenderer");
   [
     "resolveBoardCellWorldPosition",
     "rescueSnapshot.angleRad",

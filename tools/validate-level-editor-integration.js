@@ -3,6 +3,7 @@
 var assert = require("assert");
 var fs = require("fs");
 var path = require("path");
+var readGameplaySourceFamily = require("./read-gameplay-source-family").readGameplaySourceFamily;
 
 var PROJECT_ROOT = path.resolve(__dirname, "..");
 
@@ -52,6 +53,7 @@ function assertSourceContract() {
   assert(controllerSource.indexOf("this._paintBoardSegment(this._boardPaintPreviousPoint, point)") >= 0, "Editor drag painting must interpolate fast pointer movement.");
   assert(controllerSource.indexOf('requireNode(this.node, "input_ball_num")') >= 0, "Editor must bind input_ball_num.");
   assert(controllerSource.indexOf("this._applyBallCountInputToLevel(config.level)") >= 0, "Editor save must apply input_ball_num to shotLimit.");
+  assert(controllerSource.indexOf("WORMHOLE_RENDER_SIZE = 80") >= 0, "Map editor wormhole overlay must render at exactly 80x80.");
   assert.strictEqual(controllerSource.indexOf("destroy requires input_level EditBox"), -1, "Editor destroy must tolerate input_level being destroyed before the component.");
   [
     'black: "K"',
@@ -855,7 +857,11 @@ function assertCloudDraftIsolation() {
 }
 
 function assertExtendedColorRuntimeContracts() {
-  var rendererSource = read("gameplay-src/render/LevelRenderer.js");
+  var rendererSource = readGameplaySourceFamily(
+    PROJECT_ROOT,
+    "gameplay-src/render",
+    "LevelRenderer"
+  );
   var reviveSource = read("gameplay-src/core/AdRevivePolicy.js");
   var startGameSource = read("assets/scripts/bootstrap/GameBootstrapPowerupInventoryMethods.js");
   var expectedPaths = {

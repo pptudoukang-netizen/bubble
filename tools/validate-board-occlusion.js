@@ -2,6 +2,7 @@
 
 var fs = require("fs");
 var path = require("path");
+var readGameplaySourceFamily = require("./read-gameplay-source-family").readGameplaySourceFamily;
 
 global.cc = {
   log: function () {},
@@ -482,9 +483,10 @@ function validateCountdownRenderRefresh() {
     "Timed occlusion countdown refresh did not synchronize the render key."
   );
 
-  var levelRendererSource = fs.readFileSync(
-    path.join(PROJECT_ROOT, "gameplay-src/render/LevelRenderer.js"),
-    "utf8"
+  var levelRendererSource = readGameplaySourceFamily(
+    PROJECT_ROOT,
+    "gameplay-src/render",
+    "LevelRenderer"
   );
   assert(
     levelRendererSource.indexOf(

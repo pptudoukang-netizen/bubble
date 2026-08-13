@@ -2,6 +2,7 @@
 
 var fs = require("fs");
 var path = require("path");
+var readGameplaySourceFamily = require("./read-gameplay-source-family").readGameplaySourceFamily;
 
 global.cc = {
   log: function () {},
@@ -210,9 +211,10 @@ function validateResourcesAndPrefab() {
       assistSkillButtonSource.indexOf("dimWhenDisabled: false") < 0,
     "ShooterPanel Skill must keep the charging state tappable for its rewarded-ad flow while dimming unavailable full-charge states."
   );
-  var levelRendererSource = fs.readFileSync(
-    path.join(projectRoot, "gameplay-src/render/LevelRenderer.js"),
-    "utf8"
+  var levelRendererSource = readGameplaySourceFamily(
+    projectRoot,
+    "gameplay-src/render",
+    "LevelRenderer"
   );
   var shooterRenderKeyStart = levelRendererSource.indexOf("function buildShooterRenderKey(runtimeSnapshot)");
   var shooterRenderKeyEnd = levelRendererSource.indexOf("function buildTimerRenderKey", shooterRenderKeyStart);

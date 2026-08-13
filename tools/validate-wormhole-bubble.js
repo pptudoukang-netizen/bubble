@@ -2,6 +2,7 @@
 
 var fs = require("fs");
 var path = require("path");
+var readGameplaySourceFamily = require("./read-gameplay-source-family").readGameplaySourceFamily;
 
 var BoardLayout = require("../assets/scripts/config/BoardLayout");
 var LevelConfigLoader = require("../assets/scripts/config/LevelConfigLoader");
@@ -157,14 +158,14 @@ function validateMixedCellShiftAndProtection() {
   var shifts = grid.shiftWormholeInteriors();
   assert(shifts.length === 1, "Single wormhole pair fixture must produce one shift.");
   var shifted = shifts[0];
-  assert(shifted && shifted.slotCount === 7, "Wormhole shift must expose all seven interior slots.");
-  assert(grid.getCell(3, 1) === null, "Wrapped empty slot must move into the first interior position.");
+  assert(shifted && shifted.slotCount === 9, "Wormhole shift must expose the inclusive nine-slot channel.");
+  assert(grid.getCell(3, 0) === null, "Wrapped empty slot must move into the left wormhole coordinate.");
+  assert(grid.getCell(3, 1).color === "R", "The ball on the left wormhole coordinate must enter the cycle.");
   assert(grid.getCell(3, 2).color === "R", "Normal ball must move right by one slot.");
   assert(grid.getCell(3, 3).id === "locked_moving", "Locked special ball must move with the wormhole segment.");
   assert(grid.getCell(3, 4).color === "B", "Second normal ball must move right by one slot.");
   assert(grid.getCell(3, 6).id === "vine_moving" && grid.getCell(3, 6).health === 2, "Moving vine spirit must preserve id and runtime health.");
   assert(grid.getCell(3, 7).color === "G", "Last occupied slot must move right without losing color.");
-  assert(grid.getCell(3, 0).color === "R", "A normal ball must be allowed to occupy a wormhole coordinate.");
   assert(grid.getCell(3, 8) === null, "An empty wormhole coordinate must remain an empty board grid slot.");
   assert(grid.getCells().every(function (cell) { return cell.entityType !== "wormhole"; }), "Wormholes must not enter BubbleGrid.cells.");
   assert(grid.getSpecialEntities().filter(function (entity) { return entity.entityType === "wormhole"; }).length === 2, "Wormhole overlays must remain fixed special entities.");
@@ -206,7 +207,7 @@ function validateMultiplePairShift() {
   var shifts = grid.shiftWormholeInteriors();
   assert(shifts.length === 2 && shifts[0].row === 2 && shifts[1].row === 4, "Both wormhole rows must shift in one phase.");
   assert(grid.getCell(2, 2).color === "R" && grid.getCell(2, 4).color === "B", "Right-moving pair must rotate its own interior.");
-  assert(grid.getCell(4, 1) === null && grid.getCell(4, 6) === null, "Second pair endpoints must leave their board grid slots empty.");
+  assert(grid.getCell(4, 1).color === "G" && grid.getCell(4, 6) === null, "Left-moving pair must cycle through both wormhole coordinates.");
   assert(grid.getWormholePairs()[1][0].row === 4 && grid.getWormholePairs()[1][1].row === 4, "Second overlay pair must remain isolated on its row.");
 }
 
@@ -365,13 +366,12 @@ function validateFlowShaderAndShiftCompatibility() {
   var effectMetaPath = effectPath + ".meta";
   var wormholeTextureMetaPath = path.resolve(__dirname, "../assets/game/image/ball/wormhole.png.meta");
   var directionArrowMetaPath = path.resolve(__dirname, "../assets/game/image/ball/arrow.png.meta");
-  var levelRendererSourcePath = path.resolve(__dirname, "../gameplay-src/render/LevelRenderer.js");
   var boardRendererSourcePath = path.resolve(__dirname, "../gameplay-src/render/LevelRendererSceneBoardMethods.js");
-  var sceneFxSourcePath = path.resolve(__dirname, "../gameplay-src/render/LevelRendererSceneFxMethods.js");
   var effectText = fs.readFileSync(effectPath, "utf8");
-  var levelRendererSource = fs.readFileSync(levelRendererSourcePath, "utf8");
+  var projectRoot = path.resolve(__dirname, "..");
+  var levelRendererSource = readGameplaySourceFamily(projectRoot, "gameplay-src/render", "LevelRenderer");
   var boardRendererSource = fs.readFileSync(boardRendererSourcePath, "utf8");
-  var sceneFxSource = fs.readFileSync(sceneFxSourcePath, "utf8");
+  var sceneFxSource = readGameplaySourceFamily(projectRoot, "gameplay-src/render", "LevelRenderer");
   var effectMeta = readJson(effectMetaPath);
   var wormholeTextureMeta = readJson(wormholeTextureMetaPath);
   var directionArrowMeta = readJson(directionArrowMetaPath);
@@ -390,11 +390,12 @@ function validateFlowShaderAndShiftCompatibility() {
   assert(directionArrowMeta.importer === "texture" && directionArrowMeta.type === "sprite", "Wormhole direction arrow must import as Sprite texture.");
   assert(directionArrowMeta.width > 0 && directionArrowMeta.height > 0, "Wormhole direction arrow texture size must be positive.");
   assert(levelRendererSource.indexOf('"game/image/ball/arrow"') >= 0, "LevelRenderer must preload the wormhole direction arrow resource.");
-  assert(levelRendererSource.indexOf("new cc.Size(70, 70)") >= 0, "Wormhole endpoints must render at exactly 70x70.");
+  assert(levelRendererSource.indexOf("new cc.Size(80, 80)") >= 0, "Wormhole endpoints must render at exactly 80x80.");
   assert(
-    levelRendererSource.indexOf('wormhole: this._getOrCreateLayer("WormholeLayer", 39)') >= 0 &&
+    levelRendererSource.indexOf('wormhole: this._getOrCreateLayer("WormholeLayer", 24)') >= 0 &&
+      levelRendererSource.indexOf('shooter: this._getOrCreateLayer("ShooterLayer", 25)') >= 0 &&
       levelRendererSource.indexOf('board: this._getOrCreateLayer("BoardLayer", 40)') >= 0,
-    "Wormhole endpoints must use a dedicated layer directly below board balls."
+    "Wormhole endpoints must use a dedicated layer below both the shooter aim guide and board balls."
   );
   assert(boardRendererSource.indexOf("isWormholeEntity(cell) ? WORMHOLE_RENDER_SIZE : BOARD_BUBBLE_SIZE") >= 0, "Board rendering must apply the dedicated wormhole size.");
   assert(sceneFxSource.indexOf("boardSnapshot.specialEntities.filter") >= 0, "Wormhole direction guide must use non-grid special entities.");
@@ -619,7 +620,7 @@ function validateFlowShaderAndShiftCompatibility() {
           leftCol: 0,
           rightWormholeId: "wormhole_right",
           rightCol: 4,
-          slotCount: 3,
+          slotCount: 5,
           moves: [{
             fromRow: 3,
             fromCol: 1,
@@ -628,9 +629,9 @@ function validateFlowShaderAndShiftCompatibility() {
             targetCellId: "moving"
           }, {
             fromRow: 3,
-            fromCol: 3,
+            fromCol: 4,
             toRow: 3,
-            toCol: 1,
+            toCol: 0,
             targetCellId: "right_wrapped"
           }]
         }, {
@@ -642,20 +643,20 @@ function validateFlowShaderAndShiftCompatibility() {
           leftCol: 0,
           rightWormholeId: "wormhole_right",
           rightCol: 4,
-          slotCount: 3,
+          slotCount: 5,
           moves: [{
             fromRow: 3,
-            fromCol: 1,
+            fromCol: 0,
             toRow: 3,
-            toCol: 3,
+            toCol: 4,
             targetCellId: "left_wrapped"
           }]
         }]
       }
     });
     assert(movingNode.stopCount === 1 && movingNode.action.type === "moveTo", "Interior bubble must still play the shift movement.");
-    assert(leftWrappedNode.stopCount === 1 && leftWrappedNode.action === null && leftWrappedNode.x === 30 && leftWrappedNode.y === 30, "Left-moving wrapped bubble must stay aligned to the rightmost interior slot without crossing the endpoint.");
-    assert(rightWrappedNode.stopCount === 1 && rightWrappedNode.action === null && rightWrappedNode.x === 10 && rightWrappedNode.y === 30, "Right-moving wrapped bubble must stay aligned to the leftmost interior slot without crossing the endpoint.");
+    assert(leftWrappedNode.stopCount === 1 && leftWrappedNode.action === null && leftWrappedNode.x === 40 && leftWrappedNode.y === 30, "Left-moving wrapped bubble must emerge at the right wormhole coordinate.");
+    assert(rightWrappedNode.stopCount === 1 && rightWrappedNode.action === null && rightWrappedNode.x === 0 && rightWrappedNode.y === 30, "Right-moving wrapped bubble must emerge at the left wormhole coordinate.");
     assert(leftEndpoint.stopCount === 0 && rightEndpoint.stopCount === 0, "Wormhole shift must not interrupt endpoint flow shaders.");
 
     fxRenderer.layers = {
@@ -726,4 +727,4 @@ validateMultiplePairShift();
 validateDeferredSupportDropAndNoAutoMatch();
 validateTopAnchorCollapsePreservesWormholes();
 validateFlowShaderAndShiftCompatibility();
-console.log("[OK] wormhole config, compact codec, grid-overlay occupancy, pass-through collision, non-support rules, cyclic shift, 70x70 below-ball rendering, direction guide, top-anchor collapse, deferred drop and clear-state rules");
+console.log("[OK] wormhole config, compact codec, grid-overlay occupancy, pass-through collision, non-support rules, endpoint-inclusive cyclic shift, 80x80 below-ball rendering, direction guide, top-anchor collapse, deferred drop and clear-state rules");

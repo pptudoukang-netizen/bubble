@@ -4,6 +4,7 @@ var assert = require("assert");
 var fs = require("fs");
 var path = require("path");
 var vm = require("vm");
+var readGameplaySourceFamily = require("./read-gameplay-source-family").readGameplaySourceFamily;
 
 var PROJECT_ROOT = path.resolve(__dirname, "..");
 
@@ -231,7 +232,11 @@ function validateStartGameSpriteFrameLoadSerialization() {
 }
 
 function validateGameplayReleaseScope() {
-  var levelRendererSource = readProjectFile("gameplay-src/render/LevelRenderer.js");
+  var levelRendererSource = readGameplaySourceFamily(
+    PROJECT_ROOT,
+    "gameplay-src/render",
+    "LevelRenderer"
+  );
   var releaseBlock = levelRendererSource.match(
     /LevelRenderer\.prototype\.releaseAfterGameplayBundleUnload = function \(\) \{([\s\S]*?)\n\};/
   );

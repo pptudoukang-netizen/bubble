@@ -2,6 +2,7 @@
 
 var fs = require("fs");
 var path = require("path");
+var readGameplaySourceFamily = require("./read-gameplay-source-family").readGameplaySourceFamily;
 
 var BoardLayout = require("../assets/scripts/config/BoardLayout");
 var AimTuningProfiles = require("../assets/scripts/config/AimTuningProfiles");
@@ -2953,6 +2954,98 @@ function runCollectedSkillPowerupHudFeedbackQueueCase() {
   }
 }
 
+function runCollectedSkillPowerupHudFeedbackRevealToleranceCase() {
+  var previousCc = global.cc;
+  var hadCc = Object.prototype.hasOwnProperty.call(global, "cc");
+  function ScrollView() {}
+  global.cc = {
+    ScrollView: ScrollView,
+    v2: function (x, y) {
+      return { x: x, y: y };
+    }
+  };
+  try {
+    function ValidationRenderer() {}
+    attachLevelRendererSceneHudMethods(ValidationRenderer, {
+      BoardLayout: BoardLayout
+    });
+    var renderer = Object.create(ValidationRenderer.prototype);
+    var buttonRect = { xMin: 620, xMax: 700 };
+    var viewRect = { xMin: 0, xMax: 614 };
+    var scrollStopped = false;
+    var contentNode = {
+      x: 0,
+      y: 0,
+      parent: {
+        isValid: true,
+        convertToNodeSpaceAR: function (point) {
+          return { x: point.x, y: point.y };
+        }
+      },
+      setPosition: function (x, y) {
+        var appliedDelta = x - this.x + 6.3;
+        this.x = x;
+        this.y = y;
+        buttonRect = {
+          xMin: buttonRect.xMin + appliedDelta,
+          xMax: buttonRect.xMax + appliedDelta
+        };
+      }
+    };
+    var nodes = {
+      scrollNode: {
+        getComponent: function (componentType) {
+          if (componentType !== ScrollView) {
+            throw new Error("Collected feedback reveal requested an unexpected component.");
+          }
+          return {
+            stopAutoScroll: function () {
+              scrollStopped = true;
+            }
+          };
+        }
+      },
+      viewNode: {
+        getBoundingBoxToWorld: function () {
+          return viewRect;
+        }
+      },
+      contentNode: contentNode,
+      buttonNode: {
+        getBoundingBoxToWorld: function () {
+          return buttonRect;
+        }
+      }
+    };
+    renderer._revealSkillPowerupCollectedFeedbackButton(nodes);
+    if (!scrollStopped || Math.abs(buttonRect.xMax - (viewRect.xMax - 16 + 6.3)) > 0.001 || buttonRect.xMax > viewRect.xMax) {
+      throw new Error("Collected skill feedback reveal must accept padding shortfall when the button is inside the viewport.");
+    }
+
+    buttonRect = { xMin: 620, xMax: 700 };
+    contentNode.x = 0;
+    contentNode.setPosition = function (x, y) {
+      this.x = x;
+      this.y = y;
+    };
+    var rejectedRealOverflow = false;
+    try {
+      renderer._revealSkillPowerupCollectedFeedbackButton(nodes);
+    } catch (error) {
+      rejectedRealOverflow = /leftOverflow=.*rightOverflow=/.test(error.message);
+    }
+    if (!rejectedRealOverflow) {
+      throw new Error("Collected skill feedback reveal must still fail fast on real post-scroll overflow.");
+    }
+  } finally {
+    if (hadCc) {
+      global.cc = previousCc;
+    } else {
+      delete global.cc;
+    }
+  }
+}
+
 function runClearWinRequiresStarAndEmptyBoardCase() {
   var manager = new GameManager();
   manager.currentLevel = {
@@ -3753,9 +3846,11 @@ function runBoardViewportFireLockCase() {
 }
 
 function runBoardViewportRenderRefreshCase() {
-  var levelRendererSource = fs.readFileSync(
-    path.resolve(__dirname, "../gameplay-src/render/LevelRenderer.js"),
-    "utf8"
+  var projectRoot = path.resolve(__dirname, "..");
+  var levelRendererSource = readGameplaySourceFamily(
+    projectRoot,
+    "gameplay-src/render",
+    "LevelRenderer"
   );
   var levelRendererSceneBoardSource = fs.readFileSync(
     path.resolve(__dirname, "../gameplay-src/render/LevelRendererSceneBoardMethods.js"),
@@ -3773,9 +3868,10 @@ function runBoardViewportRenderRefreshCase() {
   if (levelRendererSceneBoardSource.indexOf("Number.isInteger(boardSnapshot.viewportOffsetY)") >= 0) {
     throw new Error("Board viewport render paths must accept fractional viewportOffsetY during linear movement.");
   }
-  var gameManagerSource = fs.readFileSync(
-    path.resolve(__dirname, "../gameplay-src/core/GameManager.js"),
-    "utf8"
+  var gameManagerSource = readGameplaySourceFamily(
+    projectRoot,
+    "gameplay-src/core",
+    "GameManager"
   );
   if (gameManagerSource.indexOf("var viewportWasMoving = this.systems.boardViewportSystem.isMoving()") < 0) {
     throw new Error("GameManager.update must detect in-progress board viewport movement before update.");
@@ -5406,6 +5502,7 @@ function main() {
   runTimedOutSkillPowerupsIncreaseInventoryCase();
   console.log("[OK]", "timed_out_skill_powerups_increase_inventory", "timed-out rainbow and blast drops still increase runtime inventory");
   runCollectedSkillPowerupHudFeedbackQueueCase();
+  runCollectedSkillPowerupHudFeedbackRevealToleranceCase();
   console.log("[OK]", "collected_skill_powerup_hud_feedback_queue", "collected rainbow and blast queue one-shot bottom-toolbar feedback in event order");
   runClearWinRequiresStarAndEmptyBoardCase();
   console.log("[OK]", "clear_win_requires_star_and_empty_board", "ignores collection targets for pass and requires an empty board");

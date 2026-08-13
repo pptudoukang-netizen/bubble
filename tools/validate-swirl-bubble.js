@@ -144,6 +144,13 @@ function validateRotationAndDeferredDrop() {
           row: 2,
           col: 4
         }
+      ],
+      timeBonusBalls: [
+        {
+          row: 1,
+          col: 3,
+          bonusSeconds: 5
+        }
       ]
     }
   };
@@ -189,6 +196,9 @@ function validateRotationAndDeferredDrop() {
   }
   if (grid.getCell(1, 3).color !== "B" || grid.getCell(1, 4).color !== "R") {
     throw new Error("Swirl track must move colors one cell clockwise.");
+  }
+  if (grid.getCell(1, 3).timeBonusSeconds !== null || grid.getCell(1, 4).timeBonusSeconds !== 5) {
+    throw new Error("Swirl track must move the time bonus property with its source bubble.");
   }
   if (resolution.swirlRotations.length !== 1 || resolution.swirlRotations[0].moves.length !== 2) {
     throw new Error("Swirl resolution must expose the exact occupied track moves.");
@@ -458,7 +468,7 @@ function validateSwirlRotationCarriesTimeBonusLabel() {
       movingNode.action.type !== "moveTo" ||
       movingNode.action.duration !== SpecialAnimationTiming.swirlRotation.duration
     ) {
-      throw new Error("Swirl track bubble must preserve its orientation and only follow the swirl position change.");
+      throw new Error("Swirl track bubble and its TimeBonus child must orbit without self-rotation.");
     }
     if (
       centerNode.angle !== 17 ||

@@ -18,6 +18,7 @@
     "validate:assist-spirit-skills": "node tools/validate-assist-spirit-skills.js",
     "validate:board-occlusion": "node tools/validate-board-occlusion.js",
     "validate:trapped-sprite-rescue": "node tools/validate-trapped-sprite-rescue.js",
+    "validate:gameplay-modules": "node tools/validate-gameplay-module-structure.js",
     "validate:gameplay-bundle": "node tools/validate-gameplay-code-bundle.js",
     "validate:bundle-boundaries": "node tools/validate-bundle-boundaries.js",
     "generate:spirit-hall": "node tools/generate-spirit-hall-prefab.js",
@@ -42,7 +43,7 @@
     "generate:floating-map": "node tools/generate-floating-map-config.js --target 1000",
     "clean:wechat-cloudfunctions": "node tools/clean-wechat-build-cloudfunctions.js",
     "build:wechat-gameplay-code": "node tools/build-wechat-gameplay-code.js",
-    "validate": "npm run validate:stamina && npm run validate:levels && npm run validate:level-pack-v2 && npm run validate:level-sync && npm run validate:remote-level-preload && npm run validate:level-editor && npm run validate:random-challenge && npm run validate:aim && npm run validate:fairy-gameplay && npm run validate:swirl && npm run validate:wormhole && npm run validate:vine-spirit && npm run validate:lightning-chain && npm run validate:assist-spirit-skills && npm run validate:board-occlusion && npm run validate:trapped-sprite-rescue && npm run validate:gameplay-bundle && npm run validate:bundle-boundaries && npm run validate:spirit-hall && npm run validate:spirit-shop && npm run validate:ui-resource-lifecycle && npm run validate:boot && npm run validate:bgm && npm run validate:shots && npm run validate:release",
+    "validate": "npm run validate:stamina && npm run validate:levels && npm run validate:level-pack-v2 && npm run validate:level-sync && npm run validate:remote-level-preload && npm run validate:level-editor && npm run validate:random-challenge && npm run validate:aim && npm run validate:fairy-gameplay && npm run validate:swirl && npm run validate:wormhole && npm run validate:vine-spirit && npm run validate:lightning-chain && npm run validate:assist-spirit-skills && npm run validate:board-occlusion && npm run validate:trapped-sprite-rescue && npm run validate:gameplay-modules && npm run validate:gameplay-bundle && npm run validate:bundle-boundaries && npm run validate:spirit-hall && npm run validate:spirit-shop && npm run validate:ui-resource-lifecycle && npm run validate:boot && npm run validate:bgm && npm run validate:shots && npm run validate:release",
     "chatgpt:images": "node tools/chatgpt-web-image-regenerator.js"
   },
   "devDependencies": {
