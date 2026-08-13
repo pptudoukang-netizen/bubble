@@ -43,7 +43,7 @@
     return null;
   }
   var previousRequire = resolvePreviousRequire();
-  var gameplayCodeHash = "6f7f88d1f66834ad1eb548d1c1ddf7ccf346ac0a234cb8cdca73ebd89aef4b6a";
+  var gameplayCodeHash = "a63cd01186da7b11d7b5225e20949262a0cc35121c88c87d16307dd411db6cd9";
   var lazyRequire = (function (modules, cache, entries) {
     function load(moduleId, jumped) {
       if (!cache[moduleId]) {
@@ -1343,6 +1343,7 @@ function BubbleGrid() {
   this._cellsByRow = {};
   this._rescueExtendedNormalCellMap = {};
   this._specialCellMap = {};
+  this._wormholeMap = {};
   this._timeBonusByCell = {};
   this._vineOwnerByCell = {};
   this._vinePreviewOwnerByCell = {};
@@ -1492,13 +1493,20 @@ BubbleGrid.prototype._normalizeLayoutRows = function () {
 
 BubbleGrid.prototype._rebuildSpecialCellMap = function () {
   this._specialCellMap = {};
+  this._wormholeMap = {};
 
   (this.specialEntities || []).forEach(function (entity) {
     if (!entity || !this.isValidCell(entity.row, entity.col)) {
       return;
     }
 
-    this._specialCellMap[keyFor(entity.row, entity.col)] = createSpecialEntityRecord(entity, entity.row, entity.col);
+    var entityKey = keyFor(entity.row, entity.col);
+    var record = createSpecialEntityRecord(entity, entity.row, entity.col);
+    if (isWormholeCell(record)) {
+      this._wormholeMap[entityKey] = record;
+      return;
+    }
+    this._specialCellMap[entityKey] = record;
   }, this);
 };
 
@@ -1808,9 +1816,13 @@ BubbleGrid.prototype._clearSpecialCell = function (row, col) {
 };
 
 BubbleGrid.prototype.getSpecialEntities = function () {
-  return Object.keys(this._specialCellMap).map(function (key) {
+  var cellEntities = Object.keys(this._specialCellMap).map(function (key) {
     return clone(this._specialCellMap[key]);
   }, this);
+  var wormholes = Object.keys(this._wormholeMap).map(function (key) {
+    return clone(this._wormholeMap[key]);
+  }, this);
+  return cellEntities.concat(wormholes);
 };
 
 BubbleGrid.prototype.getRowCount = function () {
@@ -1822,14 +1834,14 @@ BubbleGrid.prototype.getCells = function () {
 };
 
 BubbleGrid.prototype.getClearableCells = function () {
-  return clone(this.cells.filter(function (cell) {
-    return !isWormholeCell(cell);
-  }));
+  return clone(this.cells);
 };
 
 BubbleGrid.prototype.getWormholePairs = function () {
   var wormholesByRow = {};
-  this.cells.filter(isWormholeCell).forEach(function (wormhole) {
+  Object.keys(this._wormholeMap).map(function (key) {
+    return this._wormholeMap[key];
+  }, this).forEach(function (wormhole) {
     if (!wormholesByRow[wormhole.row]) {
       wormholesByRow[wormhole.row] = [];
     }
@@ -3220,7 +3232,7 @@ BubbleGrid.prototype._removeCellsByMode = function (cells, allowVineDrop) {
     }
 
     var liveCell = this.getCell(cell.row, cell.col);
-    if (isWormholeCell(liveCell) || (!allowVineDrop && isVineProtectedCell(liveCell))) {
+    if (!allowVineDrop && isVineProtectedCell(liveCell)) {
       return;
     }
 
@@ -3289,7 +3301,10 @@ BubbleGrid.prototype.snapshot = function () {
     cell.position = this.getCellPosition(cell.row, cell.col);
     return cell;
   }, this);
-  snapshot.specialEntities = this.getSpecialEntities();
+  snapshot.specialEntities = this.getSpecialEntities().map(function (entity) {
+    entity.position = this.getCellPosition(entity.row, entity.col);
+    return entity;
+  }, this);
   snapshot.version = this.version;
   return snapshot;
 };
@@ -7936,10 +7951,10 @@ GameManager.prototype._beginWormholeShiftForResolution = function (resolution) {
     throw new Error("Wormhole shift cannot start while another shift is pending.");
   }
   var grid = this.systems.bubbleGrid;
-  if (!grid || typeof grid.getCells !== "function") {
-    throw new Error("Wormhole shift requires BubbleGrid.getCells.");
+  if (!grid || typeof grid.getSpecialEntities !== "function") {
+    throw new Error("Wormhole shift requires BubbleGrid.getSpecialEntities.");
   }
-  var wormholes = grid.getCells().filter(isWormholeBall);
+  var wormholes = grid.getSpecialEntities().filter(isWormholeBall);
   if (!wormholes.length) {
     return false;
   }
@@ -8471,7 +8486,7 @@ GameManager.prototype._isBoardCleared = function (grid) {
   if (!Array.isArray(cells)) {
     throw new Error("Board cleared check requires BubbleGrid.getCells array.");
   }
-  return cells.every(isWormholeBall);
+  return cells.length === 0;
 };
 
 GameManager.prototype._resolveTrappedSpriteRescueBoardEmpty = function () {
@@ -15288,11 +15303,17 @@ var BALL_RESOURCES = {
 };
 var TIME_BONUS_FONT_RESOURCE = "game/fnt/num_b";
 var TRAPPED_SPIRIT_PATH_PREFIX = "game/trapped_spirit/";
+var RESCUE_SUCCESSFUL_SPIRIT_PATH_PREFIX = "image/rescue_successful/";
 var TRAPPED_SPRITE_LAYER_Z_INDEX = 49;
 
 function buildTrappedSpriteResourcePath(spiritId) {
   AssistSpiritConfig.getSpirit(spiritId);
   return TRAPPED_SPIRIT_PATH_PREFIX + spiritId;
+}
+
+function buildRescueSuccessfulSpiritResourcePath(spiritId) {
+  AssistSpiritConfig.getSpirit(spiritId);
+  return RESCUE_SUCCESSFUL_SPIRIT_PATH_PREFIX + spiritId;
 }
 
 function buildSpiritFragmentRewardResourcePath(spiritId) {
@@ -15307,6 +15328,7 @@ var BOARD_OCCLUSION_RESOURCES = {
 var BOARD_OCCLUSION_CLOCK_RESOURCE = "game/image/props/clock";
 
 var WORMHOLE_DIRECTION_ARROW_RESOURCE = "game/image/ball/arrow";
+var WORMHOLE_RENDER_SIZE = new cc.Size(70, 70);
 var WORMHOLE_DIRECTION_ARROW_SIZE = new cc.Size(42, 42);
 var WORMHOLE_DIRECTION_ARROW_TRAVEL_DISTANCE = 18;
 var WORMHOLE_DIRECTION_ARROW_STAGGER = 0.12;
@@ -15395,6 +15417,7 @@ var PREFAB_PATHS = {
   gameView: "game/prefabs/ui/GameView",
   hudPanel: "prefabs/ui/HudPanel",
   winView: "prefabs/ui/WinView",
+  rescueSuccessfulView: "prefabs/ui/RescueSuccessfulView",
   loseView: "prefabs/ui/LoseView",
   addBallTipsView: "prefabs/ui/AddBallTipsView",
   pauseView: "prefabs/ui/PauseView",
@@ -15790,6 +15813,7 @@ function buildHudTargetDisplayData(levelConfig, runtimeSnapshot) {
   var objectives = getCollectionObjectiveList(levelConfig);
   var ballObjective = null;
   var iceSnowballObjective = null;
+  var spiritDisplay = null;
 
   for (var i = 0; i < objectives.length; i += 1) {
     var objective = objectives[i];
@@ -15807,9 +15831,45 @@ function buildHudTargetDisplayData(levelConfig, runtimeSnapshot) {
     }
   }
 
+  var level = levelConfig.level;
+  if (level.levelType === "trapped_sprite_rescue") {
+    if (
+      !level.trappedSpriteRescue ||
+      typeof level.trappedSpriteRescue.spiritId !== "string" ||
+      !level.trappedSpriteRescue.spiritId
+    ) {
+      throw new Error("Trapped sprite rescue HUD target requires level.trappedSpriteRescue.spiritId.");
+    }
+    if (
+      !runtimeSnapshot ||
+      !runtimeSnapshot.systems ||
+      !runtimeSnapshot.systems.trappedSpriteRescueSystem ||
+      runtimeSnapshot.systems.trappedSpriteRescueSystem.active !== true
+    ) {
+      throw new Error("Trapped sprite rescue HUD target requires active rescue system snapshot.");
+    }
+    if (runtimeSnapshot.systems.trappedSpriteRescueSystem.spiritId !== level.trappedSpriteRescue.spiritId) {
+      throw new Error("Trapped sprite rescue HUD target spiritId does not match runtime snapshot.");
+    }
+    if (!runtimeSnapshot.board || !Array.isArray(runtimeSnapshot.board.cells)) {
+      throw new Error("Trapped sprite rescue HUD target requires runtime board cells.");
+    }
+    var spiritRescued = runtimeSnapshot.board.cells.length === 0;
+    spiritDisplay = {
+      spiritId: level.trappedSpriteRescue.spiritId,
+      spritePath: buildTrappedSpriteResourcePath(level.trappedSpriteRescue.spiritId),
+      progress: spiritRescued ? 1 : 0,
+      target: 1,
+      remaining: spiritRescued ? 0 : 1,
+      remainingText: spiritRescued ? "0" : "1",
+      progressText: spiritRescued ? "1/1" : "0/1"
+    };
+  }
+
   return {
     ball: ballObjective ? buildObjectiveDisplayForObjective(ballObjective, runtimeSnapshot) : null,
-    iceSnowball: iceSnowballObjective ? buildObjectiveDisplayForObjective(iceSnowballObjective, runtimeSnapshot) : null
+    iceSnowball: iceSnowballObjective ? buildObjectiveDisplayForObjective(iceSnowballObjective, runtimeSnapshot) : null,
+    spirit: spiritDisplay
   };
 }
 
@@ -15830,6 +15890,7 @@ function applyIceSnowballHudDisplayProgress(hudTargetDisplay, displayProgress) {
   var remaining = Math.max(0, target - progress);
   return {
     ball: hudTargetDisplay.ball,
+    spirit: hudTargetDisplay.spirit,
     iceSnowball: {
       iconCode: hudTargetDisplay.iceSnowball.iconCode,
       progress: progress,
@@ -15927,7 +15988,10 @@ function buildHudRenderKey(levelConfig, runtimeSnapshot, iceSnowballDisplayProgr
     hudTargetDisplay.ball ? hudTargetDisplay.ball.iconCode : "",
     hudTargetDisplay.iceSnowball ? hudTargetDisplay.iceSnowball.remainingText : "",
     hudTargetDisplay.iceSnowball ? hudTargetDisplay.iceSnowball.progressText : "",
-    hudTargetDisplay.iceSnowball ? hudTargetDisplay.iceSnowball.iconCode : ""
+    hudTargetDisplay.iceSnowball ? hudTargetDisplay.iceSnowball.iconCode : "",
+    hudTargetDisplay.spirit ? hudTargetDisplay.spirit.remainingText : "",
+    hudTargetDisplay.spirit ? hudTargetDisplay.spirit.progressText : "",
+    hudTargetDisplay.spirit ? hudTargetDisplay.spirit.spritePath : ""
   ].join("|");
 }
 
@@ -17025,8 +17089,9 @@ LevelRenderer.prototype.renderLevel = function (levelConfig, runtimeSnapshot) {
       this._preloadSprites(spritePaths)
     ]);
   }.bind(this)).then(function () {
-    clearChildren(this.layers.background);
-    clearChildren(this.layers.board);
+      clearChildren(this.layers.background);
+      clearChildren(this.layers.wormhole);
+      clearChildren(this.layers.board);
     clearChildren(this.layers.trappedSprite);
     clearChildren(this.layers.boardOcclusion);
     this.wormholeDirectionGuideRoot = null;
@@ -17354,6 +17419,7 @@ LevelRenderer.prototype._ensureLayers = function () {
     jars: this._getOrCreateLayer("JarLayer", 20),
     shooter: this._getOrCreateLayer("ShooterLayer", 25),
     overlay: this._getOrCreateLayer("OverlayLayer", 30),
+    wormhole: this._getOrCreateLayer("WormholeLayer", 39),
     board: this._getOrCreateLayer("BoardLayer", 40),
     boardOcclusion: this._getOrCreateLayer("BoardOcclusionLayer", 43),
     shatter: this._getOrCreateLayer("BubbleShatterLayer", 44),
@@ -17412,6 +17478,11 @@ LevelRenderer.prototype._collectSpritePaths = function (levelConfig, runtimeSnap
       paths,
       buildSpiritFragmentRewardResourcePath(level.trappedSpriteRescue.spiritId),
       "trapped sprite rescue fragment reward"
+    );
+    pushUniqueSpritePath(
+      paths,
+      buildRescueSuccessfulSpiritResourcePath(level.trappedSpriteRescue.spiritId),
+      "rescue successful popup spirit"
     );
   }
   if (!Array.isArray(level.colors)) {
@@ -17731,6 +17802,7 @@ LevelRenderer.prototype._playTrappedSpriteRescueDeparture = function (runtimeSna
       node.active = false;
       this.trappedSpriteDepartureActive = false;
       this.trappedSpriteDepartureCompleted = true;
+      this._showRescueSuccessfulView(rescueEvent.spiritId);
     }.bind(this))
     .start();
 };
@@ -17889,6 +17961,7 @@ LevelRenderer.prototype._collectPrefabPaths = function () {
   var preloadPaths = [
     PREFAB_PATHS.gameView,
     PREFAB_PATHS.winView,
+    PREFAB_PATHS.rescueSuccessfulView,
     PREFAB_PATHS.loseView,
     PREFAB_PATHS.addBallTipsView,
     PREFAB_PATHS.pauseView,
@@ -18116,6 +18189,7 @@ var LEVEL_RENDERER_SCENE_DEPS = {
   BALL_RESOURCES: BALL_RESOURCES,
   TIME_BONUS_FONT_RESOURCE: TIME_BONUS_FONT_RESOURCE,
   WORMHOLE_DIRECTION_ARROW_RESOURCE: WORMHOLE_DIRECTION_ARROW_RESOURCE,
+  WORMHOLE_RENDER_SIZE: WORMHOLE_RENDER_SIZE,
   WORMHOLE_DIRECTION_ARROW_SIZE: WORMHOLE_DIRECTION_ARROW_SIZE,
   WORMHOLE_DIRECTION_ARROW_TRAVEL_DISTANCE: WORMHOLE_DIRECTION_ARROW_TRAVEL_DISTANCE,
   WORMHOLE_DIRECTION_ARROW_STAGGER: WORMHOLE_DIRECTION_ARROW_STAGGER,
@@ -18128,6 +18202,7 @@ var LEVEL_RENDERER_SCENE_DEPS = {
   resolveJarScoreSpritePath: resolveJarScoreSpritePath,
   REWARD_ITEM_RESOURCES: REWARD_ITEM_RESOURCES,
   buildTrappedSpriteResourcePath: buildTrappedSpriteResourcePath,
+  buildRescueSuccessfulSpiritResourcePath: buildRescueSuccessfulSpiritResourcePath,
   buildSpiritFragmentRewardResourcePath: buildSpiritFragmentRewardResourcePath,
   POWERUP_ICON_RESOURCES: POWERUP_ICON_RESOURCES,
   HUD_STAR_RESOURCES: HUD_STAR_RESOURCES,
@@ -19138,6 +19213,7 @@ function attachLevelRendererSceneBoardMethods(LevelRenderer, deps) {
   var PREFAB_PATHS = deps.PREFAB_PATHS;
   var ICE_OVERLAY_OPACITY = deps.ICE_OVERLAY_OPACITY;
   var BOARD_BUBBLE_SIZE = deps.BOARD_BUBBLE_SIZE;
+  var WORMHOLE_RENDER_SIZE = deps.WORMHOLE_RENDER_SIZE;
   var VINE_VISUAL_SIZE = deps.VINE_VISUAL_SIZE;
   var TEST_SLOT_RADIUS = deps.TEST_SLOT_RADIUS;
   var FairyAssistConfig = deps.FairyAssistConfig;
@@ -19330,6 +19406,27 @@ function attachLevelRendererSceneBoardMethods(LevelRenderer, deps) {
       typeof cell.vineOwnerId === "string" ? cell.vineOwnerId : "",
       typeof cell.vinePreviewOwnerId === "string" ? cell.vinePreviewOwnerId : ""
     ].join("|");
+  }
+
+  function isWormholeEntity(entity) {
+    return !!(
+      entity &&
+      entity.entityCategory === "reactive_ball" &&
+      entity.entityType === "wormhole"
+    );
+  }
+
+  function collectBoardRenderEntities(boardSnapshot) {
+    if (!boardSnapshot || !Array.isArray(boardSnapshot.cells) || !Array.isArray(boardSnapshot.specialEntities)) {
+      throw new Error("Board rendering requires cells and specialEntities arrays.");
+    }
+    var wormholes = boardSnapshot.specialEntities.filter(isWormholeEntity);
+    wormholes.forEach(function (wormhole) {
+      if (!wormhole.position) {
+        throw new Error("Wormhole rendering requires endpoint position.");
+      }
+    });
+    return wormholes.concat(boardSnapshot.cells);
   }
 
   function resolveBoardBubblePrefabPath(cell) {
@@ -19670,7 +19767,7 @@ LevelRenderer.prototype._renderBoard = function (boardSnapshot) {
     this.boardCellRenderKeys = {};
   }
 
-  boardSnapshot.cells.forEach(function (cell) {
+  collectBoardRenderEntities(boardSnapshot).forEach(function (cell) {
     if (
       !cell.position ||
       typeof cell.position.x !== "number" ||
@@ -19684,11 +19781,15 @@ LevelRenderer.prototype._renderBoard = function (boardSnapshot) {
     var renderKey = buildBoardCellRenderKey(cell, boardSnapshot);
     var cachedRenderKey = this.boardCellRenderKeys[cellId];
     var existingNode = this.boardBubbleNodes[cellId];
+    var renderLayer = isWormholeEntity(cell) ? this.layers.wormhole : this.layers.board;
+    if (!renderLayer || !renderLayer.isValid) {
+      throw new Error("Board entity render layer is missing: " + cellId);
+    }
     if (existingNode && cachedRenderKey === renderKey) {
       existingNode.__boardTick = currentTick;
       existingNode.setPosition(cell.position.x, cell.position.y);
-      if (!existingNode.parent || existingNode.parent !== this.layers.board) {
-        existingNode.parent = this.layers.board;
+      if (!existingNode.parent || existingNode.parent !== renderLayer) {
+        existingNode.parent = renderLayer;
       }
       restoreBoardBubbleVisualState(this, existingNode, cell);
       this.wormholeShaderRenderer.syncNode(existingNode, cell);
@@ -19702,11 +19803,18 @@ LevelRenderer.prototype._renderBoard = function (boardSnapshot) {
 
     this.boardCellRenderKeys[cellId] = renderKey;
     var bubbleNode = this._acquireBoardBubbleNode(cell);
+    if (bubbleNode.parent !== renderLayer) {
+      bubbleNode.parent = renderLayer;
+    }
     bubbleNode.__boardTick = currentTick;
     bubbleNode.setPosition(cell.position.x, cell.position.y);
     bubbleNode.setScale(1);
     bubbleNode.opacity = 255;
-    this._applyBoardBubbleVisualCached(bubbleNode, cell, BOARD_BUBBLE_SIZE);
+    this._applyBoardBubbleVisualCached(
+      bubbleNode,
+      cell,
+      isWormholeEntity(cell) ? WORMHOLE_RENDER_SIZE : BOARD_BUBBLE_SIZE
+    );
     this.wormholeShaderRenderer.syncNode(bubbleNode, cell);
     syncVineOverlay(this, bubbleNode, cell);
     syncVineSpiritHealth(bubbleNode, cell);
@@ -21228,8 +21336,7 @@ LevelRenderer.prototype._playSwirlRotationAnimation = function (runtimeSnapshot)
   }
   if (
     typeof cc.moveTo !== "function" ||
-    typeof cc.rotateBy !== "function" ||
-    typeof cc.spawn !== "function"
+    typeof cc.rotateBy !== "function"
   ) {
     throw new Error("Swirl animation requires Cocos action APIs.");
   }
@@ -21289,10 +21396,7 @@ LevelRenderer.prototype._playSwirlRotationAnimation = function (runtimeSnapshot)
       );
       bubbleNode.stopAllActions();
       bubbleNode.setPosition(startPosition.x, startPosition.y);
-      bubbleNode.runAction(cc.spawn(
-        cc.moveTo(rotation.duration, targetPosition.x, targetPosition.y),
-        cc.rotateBy(rotation.duration, rotation.angleDegrees)
-      ));
+      bubbleNode.runAction(cc.moveTo(rotation.duration, targetPosition.x, targetPosition.y));
     }, this);
 
     if (typeof rotation.centerId !== "string" && typeof rotation.centerId !== "number") {
@@ -21443,17 +21547,17 @@ LevelRenderer.prototype._destroyWormholeDirectionGuide = function () {
 };
 
 LevelRenderer.prototype._syncWormholeDirectionGuide = function (boardSnapshot) {
-  if (!boardSnapshot || !Array.isArray(boardSnapshot.cells) || !Number.isInteger(boardSnapshot.maxColumns)) {
+  if (!boardSnapshot || !Array.isArray(boardSnapshot.specialEntities) || !Number.isInteger(boardSnapshot.maxColumns)) {
     throw new Error("Wormhole direction guide requires board snapshot geometry.");
   }
   if (typeof boardSnapshot.viewportOffsetY !== "number" || !isFinite(boardSnapshot.viewportOffsetY)) {
     throw new Error("Wormhole direction guide requires finite board viewportOffsetY.");
   }
-  if (!this.layers || !this.layers.board || !this.layers.board.isValid) {
-    throw new Error("Wormhole direction guide requires board layer.");
+  if (!this.layers || !this.layers.wormhole || !this.layers.wormhole.isValid) {
+    throw new Error("Wormhole direction guide requires wormhole layer.");
   }
 
-  var wormholes = boardSnapshot.cells.filter(function (cell) {
+  var wormholes = boardSnapshot.specialEntities.filter(function (cell) {
     return !!(cell && cell.entityCategory === "reactive_ball" && cell.entityType === "wormhole");
   });
 
@@ -21540,7 +21644,7 @@ LevelRenderer.prototype._syncWormholeDirectionGuide = function (boardSnapshot) {
   this._destroyWormholeDirectionGuide();
 
   var guideRoot = new cc.Node("WormholeDirectionGuide");
-  guideRoot.parent = this.layers.board;
+  guideRoot.parent = this.layers.wormhole;
   guideRoot.zIndex = 1000;
   this.wormholeDirectionGuideRoot = guideRoot;
   this.lastWormholeDirectionGuideKey = guideKey;
@@ -22322,6 +22426,7 @@ function attachLevelRendererSceneHudMethods(LevelRenderer, deps) {
   var WIN_STAR_SHRINK_DURATION = deps.WIN_STAR_SHRINK_DURATION;
   var WIN_STAR_RECOVER_DURATION = deps.WIN_STAR_RECOVER_DURATION;
   var BOARD_BUBBLE_SIZE = deps.BOARD_BUBBLE_SIZE;
+  var buildTrappedSpriteResourcePath = deps.buildTrappedSpriteResourcePath;
   var ensureSprite = deps.ensureSprite;
   var ensureLabel = deps.ensureLabel;
   var ensureOutline = deps.ensureOutline;
@@ -22372,6 +22477,7 @@ function attachLevelRendererSceneHudMethods(LevelRenderer, deps) {
   var SKILL_POWERUP_COLLECT_FEEDBACK_REBOUND_DURATION = 0.1;
   var SKILL_POWERUP_COLLECT_FEEDBACK_RECOVER_DURATION = 0.12;
   var SKILL_POWERUP_COLLECT_FEEDBACK_GAP_DURATION = 0.08;
+  var HUD_SPIRIT_ICON_HEIGHT = 37.9;
 
   function resolveBottomPanelBoardTargets(runtimeSnapshot) {
     if (!runtimeSnapshot.board || typeof runtimeSnapshot.board !== "object") {
@@ -24459,6 +24565,8 @@ LevelRenderer.prototype._resolveHudTargetSlot = function (targetLayout, slotName
     cardName = "item_ball";
   } else if (slotName === "ice_ball") {
     cardName = "item_ice_ball";
+  } else if (slotName === "spirit") {
+    cardName = "item_spirit";
   } else {
     throw new Error("Unsupported HUD target slot: " + slotName);
   }
@@ -24480,6 +24588,7 @@ LevelRenderer.prototype._renderHudTargets = function (panel, targetDisplay) {
   var targetLayout = this._getHudTargetLayout(panel);
   this._renderHudTargetSlot(targetLayout, "ball", targetDisplay.ball);
   this._renderHudTargetSlot(targetLayout, "ice_ball", targetDisplay.iceSnowball);
+  this._renderHudTargetSlot(targetLayout, "spirit", targetDisplay.spirit);
 
   var layout = targetLayout.getComponent(cc.Layout);
   if (layout && typeof layout.updateLayout === "function") {
@@ -24507,9 +24616,6 @@ LevelRenderer.prototype._renderHudTargetSlot = function (targetLayout, slotName,
     return;
   }
 
-  if (typeof displayData.iconCode !== "string" || !displayData.iconCode) {
-    throw new Error("HUD target display iconCode is required: " + slotName);
-  }
   if (typeof displayData.remaining !== "number" || !isFinite(displayData.remaining) || displayData.remaining < 0) {
     throw new Error("HUD target display remaining is required: " + slotName);
   }
@@ -24517,9 +24623,23 @@ LevelRenderer.prototype._renderHudTargetSlot = function (targetLayout, slotName,
     throw new Error("HUD target display remainingText is required: " + slotName);
   }
 
-  var spritePath = BALL_RESOURCES[displayData.iconCode];
-  if (!spritePath) {
-    throw new Error("Unsupported HUD target icon code: " + displayData.iconCode);
+  var spritePath = "";
+  if (slotName === "spirit") {
+    if (typeof displayData.spiritId !== "string" || !displayData.spiritId) {
+      throw new Error("HUD spirit target requires spiritId.");
+    }
+    spritePath = buildTrappedSpriteResourcePath(displayData.spiritId);
+    if (displayData.spritePath !== spritePath) {
+      throw new Error("HUD spirit target spritePath does not match spiritId.");
+    }
+  } else {
+    if (typeof displayData.iconCode !== "string" || !displayData.iconCode) {
+      throw new Error("HUD target display iconCode is required: " + slotName);
+    }
+    spritePath = BALL_RESOURCES[displayData.iconCode];
+    if (!spritePath) {
+      throw new Error("Unsupported HUD target icon code: " + displayData.iconCode);
+    }
   }
   var spriteFrame = this.spriteFrameCache[spritePath];
   if (!spriteFrame) {
@@ -24528,7 +24648,29 @@ LevelRenderer.prototype._renderHudTargetSlot = function (targetLayout, slotName,
 
   cardNode.active = true;
   targetNode.active = true;
-  ensureSprite(targetNode, spriteFrame);
+  var sprite = ensureSprite(targetNode, spriteFrame);
+  if (slotName === "spirit") {
+    if (!spriteFrame || typeof spriteFrame.getOriginalSize !== "function") {
+      throw new Error("HUD spirit target requires SpriteFrame.getOriginalSize.");
+    }
+    var originalSize = spriteFrame.getOriginalSize();
+    if (
+      !originalSize ||
+      typeof originalSize.width !== "number" ||
+      !isFinite(originalSize.width) ||
+      originalSize.width <= 0 ||
+      typeof originalSize.height !== "number" ||
+      !isFinite(originalSize.height) ||
+      originalSize.height <= 0
+    ) {
+      throw new Error("HUD spirit target SpriteFrame original size is invalid.");
+    }
+    sprite.trim = false;
+    targetNode.setContentSize(
+      HUD_SPIRIT_ICON_HEIGHT * originalSize.width / originalSize.height,
+      HUD_SPIRIT_ICON_HEIGHT
+    );
+  }
   var targetComplete = displayData.remaining <= 0;
   valueNode.active = !targetComplete;
   completeNode.active = targetComplete;
@@ -25797,12 +25939,15 @@ function attachLevelRendererScenePopupMethods(LevelRenderer, deps) {
   var LOSE_STATUS_RESOURCES = deps.LOSE_STATUS_RESOURCES;
   var REWARD_ITEM_RESOURCES = deps.REWARD_ITEM_RESOURCES;
   var buildTrappedSpriteResourcePath = deps.buildTrappedSpriteResourcePath;
+  var buildRescueSuccessfulSpiritResourcePath = deps.buildRescueSuccessfulSpiritResourcePath;
   var buildSpiritFragmentRewardResourcePath = deps.buildSpiritFragmentRewardResourcePath;
   var PREFAB_PATHS = deps.PREFAB_PATHS;
   var SpriteProxyLayerHelper = deps.SpriteProxyLayerHelper;
   var PropDescriptionViewController = deps.PropDescriptionViewController;
   var POPUP_CONTENT_CONTAINER_NAME = deps.POPUP_CONTENT_CONTAINER_NAME;
   var WIN_VIEW_PROXY_ROOT_NAME = "win_view_auto_proxy_root";
+  var RESCUE_SUCCESSFUL_VIEW_PROXY_ROOT_NAME = "rescue_successful_view_auto_proxy_root";
+  var RESCUE_SUCCESSFUL_MIN_DISPLAY_DURATION_SEC = 2;
   var LOSE_VIEW_PROXY_ROOT_NAME = "lose_view_auto_proxy_root";
   var ADD_BALL_TIPS_VIEW_PROXY_ROOT_NAME = "add_ball_tips_view_auto_proxy_root";
   var PAUSE_VIEW_PROXY_ROOT_NAME = "pause_view_auto_proxy_root";
@@ -26335,6 +26480,128 @@ LevelRenderer.prototype._bindWinButton = function (buttonNode, action) {
   }, this);
 };
 
+LevelRenderer.prototype._bindRescueSuccessfulCloseButton = function (buttonNode) {
+  if (!buttonNode || !buttonNode.isValid) {
+    throw new Error("RescueSuccessfulView close button is required.");
+  }
+  if (!buttonNode.getComponent(cc.Button)) {
+    throw new Error("RescueSuccessfulView/Panel/btn_close must contain cc.Button.");
+  }
+  if (buttonNode.__rescueSuccessfulCloseBound === true) {
+    throw new Error("RescueSuccessfulView close button must be bound exactly once.");
+  }
+
+  buttonNode.__rescueSuccessfulCloseBound = true;
+  buttonNode.on(cc.Node.EventType.TOUCH_END, function (event) {
+    if (event) {
+      event.stopPropagation();
+    }
+    this.hideRescueSuccessfulView();
+  }, this);
+};
+
+LevelRenderer.prototype.hideRescueSuccessfulView = function () {
+  if (!this.layers || !this.layers.modal || !this.layers.modal.isValid) {
+    throw new Error("RescueSuccessfulView hide requires the gameplay modal layer.");
+  }
+  var viewNode = this.layers.modal.getChildByName("RescueSuccessfulView");
+  if (!viewNode || !viewNode.isValid || !viewNode.active) {
+    throw new Error("Cannot hide an inactive RescueSuccessfulView.");
+  }
+  viewNode.removeFromParent(false);
+  viewNode.destroy();
+  if (this.lastRuntimeSnapshot && this.lastRuntimeSnapshot.state === "won") {
+    this._renderWinView(this.lastRuntimeSnapshot);
+  }
+};
+
+LevelRenderer.prototype._dismissRescueSuccessfulViewForWin = function () {
+  if (!this.layers || !this.layers.modal || !this.layers.modal.isValid) {
+    throw new Error("WinView rescue-popup dismissal requires the gameplay modal layer.");
+  }
+  var viewNode = this.layers.modal.getChildByName("RescueSuccessfulView");
+  if (viewNode && viewNode.isValid && viewNode.active) {
+    if (viewNode.__minimumDisplayCompleted !== true) {
+      throw new Error("WinView cannot dismiss RescueSuccessfulView before its two-second minimum display completes.");
+    }
+    viewNode.removeFromParent(false);
+    viewNode.destroy();
+  }
+};
+
+LevelRenderer.prototype._showRescueSuccessfulView = function (spiritId) {
+  var spritePath = buildRescueSuccessfulSpiritResourcePath(spiritId);
+  if (!this.layers || !this.layers.modal || !this.layers.modal.isValid) {
+    throw new Error("RescueSuccessfulView show requires the gameplay modal layer.");
+  }
+  var existing = this.layers.modal.getChildByName("RescueSuccessfulView");
+  if (existing && existing.isValid) {
+    throw new Error("RescueSuccessfulView must be shown exactly once per rescue.");
+  }
+  var activeWinView = this.layers.modal.getChildByName("WinView");
+  if (activeWinView && activeWinView.isValid && activeWinView.active) {
+    throw new Error("RescueSuccessfulView cannot open after WinView is active.");
+  }
+
+  var spriteFrame = this.spriteFrameCache[spritePath];
+  if (!spriteFrame) {
+    throw new Error("RescueSuccessfulView spirit SpriteFrame was not preloaded: " + spritePath);
+  }
+  var viewNode = this._instantiateOrCreate(
+    PREFAB_PATHS.rescueSuccessfulView,
+    this.layers.modal,
+    "RescueSuccessfulView"
+  );
+  if (!viewNode || !viewNode.isValid) {
+    throw new Error("RescueSuccessfulView prefab could not be instantiated.");
+  }
+
+  viewNode.active = true;
+  viewNode.setPosition(0, 0);
+  viewNode.__minimumDisplayCompleted = false;
+  SpriteProxyLayerHelper.destroyProxyRoot(viewNode, RESCUE_SUCCESSFUL_VIEW_PROXY_ROOT_NAME);
+  this._ensurePopupMaskVisible(viewNode, 200);
+  var content = this._ensurePopupContentContainer(viewNode);
+  var panel = requireChildNode(content, "Panel", "RescueSuccessfulView content");
+  var roleNode = requireChildNode(panel, "role", "RescueSuccessfulView/Panel");
+  var authoredRoleSize = roleNode.getContentSize();
+  if (
+    !authoredRoleSize ||
+    typeof authoredRoleSize.width !== "number" ||
+    !isFinite(authoredRoleSize.width) ||
+    authoredRoleSize.width <= 0 ||
+    typeof authoredRoleSize.height !== "number" ||
+    !isFinite(authoredRoleSize.height) ||
+    authoredRoleSize.height <= 0
+  ) {
+    throw new Error("RescueSuccessfulView/Panel/role authored size must be positive.");
+  }
+  var roleSprite = ensureSprite(roleNode, spriteFrame);
+  roleSprite.trim = false;
+  roleNode.setContentSize(authoredRoleSize);
+  var closeButtonNode = requireChildNode(panel, "btn_close", "RescueSuccessfulView/Panel");
+  this._bindRescueSuccessfulCloseButton(closeButtonNode);
+  SpriteProxyLayerHelper.rebuildAutoProxyTree({
+    rootNode: viewNode,
+    proxyRootName: RESCUE_SUCCESSFUL_VIEW_PROXY_ROOT_NAME
+  });
+  this._playPopupContentOpenAnimation(content);
+  if (typeof cc.tween !== "function") {
+    throw new Error("RescueSuccessfulView minimum display requires cc.tween.");
+  }
+  cc.tween(viewNode)
+    .delay(RESCUE_SUCCESSFUL_MIN_DISPLAY_DURATION_SEC)
+    .call(function () {
+      if (viewNode.isValid && viewNode.parent === this.layers.modal) {
+        viewNode.__minimumDisplayCompleted = true;
+        if (this.lastRuntimeSnapshot && this.lastRuntimeSnapshot.state === "won") {
+          this._renderWinView(this.lastRuntimeSnapshot);
+        }
+      }
+    }.bind(this))
+    .start();
+};
+
 LevelRenderer.prototype._getWinStarNodes = function (winContent) {
   if (!winContent) {
     return [];
@@ -26663,6 +26930,21 @@ LevelRenderer.prototype._renderWinView = function (runtimeSnapshot) {
     this.lastWinViewRenderKey = "";
     return;
   }
+
+  var rescueSuccessfulView = this.layers.modal.getChildByName("RescueSuccessfulView");
+  if (
+    rescueSuccessfulView &&
+    rescueSuccessfulView.isValid &&
+    rescueSuccessfulView.active &&
+    rescueSuccessfulView.__minimumDisplayCompleted !== true
+  ) {
+    if (wasActive) {
+      throw new Error("WinView became active before RescueSuccessfulView completed its minimum display.");
+    }
+    return;
+  }
+
+  this._dismissRescueSuccessfulViewForWin();
 
   var renderKey = buildWinViewRenderKey(this.currentLevelConfig, runtimeSnapshot);
   if (
@@ -30500,14 +30782,6 @@ function isLockedAnchor(cell) {
   );
 }
 
-function isWormholeAnchor(cell) {
-  return !!(
-    cell &&
-    cell.entityCategory === "reactive_ball" &&
-    cell.entityType === "wormhole"
-  );
-}
-
 function SupportSystem() {
   BaseSystem.call(this, "SupportSystem");
   this.anchorRows = 1;
@@ -30560,7 +30834,6 @@ SupportSystem.prototype.findFloatingCells = function (grid) {
     if (
       (this.trappedSpriteAnchorCell === null && seedCell.row < this.anchorRows) ||
       isLockedAnchor(seedCell) ||
-      isWormholeAnchor(seedCell) ||
       touchesTrappedSprite
     ) {
       queue.push({

@@ -16,6 +16,7 @@ function attachLevelRendererSceneHudMethods(LevelRenderer, deps) {
   var WIN_STAR_SHRINK_DURATION = deps.WIN_STAR_SHRINK_DURATION;
   var WIN_STAR_RECOVER_DURATION = deps.WIN_STAR_RECOVER_DURATION;
   var BOARD_BUBBLE_SIZE = deps.BOARD_BUBBLE_SIZE;
+  var buildTrappedSpriteResourcePath = deps.buildTrappedSpriteResourcePath;
   var ensureSprite = deps.ensureSprite;
   var ensureLabel = deps.ensureLabel;
   var ensureOutline = deps.ensureOutline;
@@ -66,6 +67,7 @@ function attachLevelRendererSceneHudMethods(LevelRenderer, deps) {
   var SKILL_POWERUP_COLLECT_FEEDBACK_REBOUND_DURATION = 0.1;
   var SKILL_POWERUP_COLLECT_FEEDBACK_RECOVER_DURATION = 0.12;
   var SKILL_POWERUP_COLLECT_FEEDBACK_GAP_DURATION = 0.08;
+  var HUD_SPIRIT_ICON_HEIGHT = 37.9;
 
   function resolveBottomPanelBoardTargets(runtimeSnapshot) {
     if (!runtimeSnapshot.board || typeof runtimeSnapshot.board !== "object") {
@@ -2153,6 +2155,8 @@ LevelRenderer.prototype._resolveHudTargetSlot = function (targetLayout, slotName
     cardName = "item_ball";
   } else if (slotName === "ice_ball") {
     cardName = "item_ice_ball";
+  } else if (slotName === "spirit") {
+    cardName = "item_spirit";
   } else {
     throw new Error("Unsupported HUD target slot: " + slotName);
   }
@@ -2174,6 +2178,7 @@ LevelRenderer.prototype._renderHudTargets = function (panel, targetDisplay) {
   var targetLayout = this._getHudTargetLayout(panel);
   this._renderHudTargetSlot(targetLayout, "ball", targetDisplay.ball);
   this._renderHudTargetSlot(targetLayout, "ice_ball", targetDisplay.iceSnowball);
+  this._renderHudTargetSlot(targetLayout, "spirit", targetDisplay.spirit);
 
   var layout = targetLayout.getComponent(cc.Layout);
   if (layout && typeof layout.updateLayout === "function") {
@@ -2201,9 +2206,6 @@ LevelRenderer.prototype._renderHudTargetSlot = function (targetLayout, slotName,
     return;
   }
 
-  if (typeof displayData.iconCode !== "string" || !displayData.iconCode) {
-    throw new Error("HUD target display iconCode is required: " + slotName);
-  }
   if (typeof displayData.remaining !== "number" || !isFinite(displayData.remaining) || displayData.remaining < 0) {
     throw new Error("HUD target display remaining is required: " + slotName);
   }
@@ -2211,9 +2213,23 @@ LevelRenderer.prototype._renderHudTargetSlot = function (targetLayout, slotName,
     throw new Error("HUD target display remainingText is required: " + slotName);
   }
 
-  var spritePath = BALL_RESOURCES[displayData.iconCode];
-  if (!spritePath) {
-    throw new Error("Unsupported HUD target icon code: " + displayData.iconCode);
+  var spritePath = "";
+  if (slotName === "spirit") {
+    if (typeof displayData.spiritId !== "string" || !displayData.spiritId) {
+      throw new Error("HUD spirit target requires spiritId.");
+    }
+    spritePath = buildTrappedSpriteResourcePath(displayData.spiritId);
+    if (displayData.spritePath !== spritePath) {
+      throw new Error("HUD spirit target spritePath does not match spiritId.");
+    }
+  } else {
+    if (typeof displayData.iconCode !== "string" || !displayData.iconCode) {
+      throw new Error("HUD target display iconCode is required: " + slotName);
+    }
+    spritePath = BALL_RESOURCES[displayData.iconCode];
+    if (!spritePath) {
+      throw new Error("Unsupported HUD target icon code: " + displayData.iconCode);
+    }
   }
   var spriteFrame = this.spriteFrameCache[spritePath];
   if (!spriteFrame) {
@@ -2222,7 +2238,29 @@ LevelRenderer.prototype._renderHudTargetSlot = function (targetLayout, slotName,
 
   cardNode.active = true;
   targetNode.active = true;
-  ensureSprite(targetNode, spriteFrame);
+  var sprite = ensureSprite(targetNode, spriteFrame);
+  if (slotName === "spirit") {
+    if (!spriteFrame || typeof spriteFrame.getOriginalSize !== "function") {
+      throw new Error("HUD spirit target requires SpriteFrame.getOriginalSize.");
+    }
+    var originalSize = spriteFrame.getOriginalSize();
+    if (
+      !originalSize ||
+      typeof originalSize.width !== "number" ||
+      !isFinite(originalSize.width) ||
+      originalSize.width <= 0 ||
+      typeof originalSize.height !== "number" ||
+      !isFinite(originalSize.height) ||
+      originalSize.height <= 0
+    ) {
+      throw new Error("HUD spirit target SpriteFrame original size is invalid.");
+    }
+    sprite.trim = false;
+    targetNode.setContentSize(
+      HUD_SPIRIT_ICON_HEIGHT * originalSize.width / originalSize.height,
+      HUD_SPIRIT_ICON_HEIGHT
+    );
+  }
   var targetComplete = displayData.remaining <= 0;
   valueNode.active = !targetComplete;
   completeNode.active = targetComplete;

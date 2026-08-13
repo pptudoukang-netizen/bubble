@@ -98,6 +98,9 @@ function buildSpecialCellMap(specialEntities, rows, levelId) {
     if (row >= rows.length || col >= rows[row].length) {
       throw new Error("Level " + levelId + " special entity cell is outside layout: " + row + ":" + col);
     }
+    if (entity.entityCategory === "reactive_ball" && entity.entityType === "wormhole") {
+      return;
+    }
     var key = row + ":" + col;
     if (specialCells[key]) {
       throw new Error("Level " + levelId + " has duplicated special entity cell: " + key);

@@ -347,6 +347,7 @@ module.exports = {
     }
 
     this.assistSpiritState = this.assistSpiritStore.save(result.state);
+    this._playSfx("upgrade");
     this._updateLevelSelectTopStatus();
     if (this._spiritHallViewController) {
       this._renderSpiritHallView();

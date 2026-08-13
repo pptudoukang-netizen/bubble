@@ -30,6 +30,14 @@ var ALLOWED_SPLITTER_COLORS = ["R", "G", "B", "Y", "P"];
 var ALLOWED_CLEAR_REWARD_ITEM_IDS = ["coin", "stamina"];
 var TOP_BOARD_ROW_INDEX = 0;
 var WORMHOLE_MOVE_DIRECTIONS = ["left", "right"];
+
+function isWormholeEntity(entity) {
+  return !!(
+    entity &&
+    entity.entityCategory === "reactive_ball" &&
+    entity.entityType === "wormhole"
+  );
+}
 var COLLECTION_OBJECTIVE_TYPES = {
   collect_any: true,
   collect_color: true,
@@ -138,7 +146,12 @@ function validateTopRowAnchored(layout, specialEntities, levelKey) {
     return cellCode !== ".";
   }).length;
   (specialEntities || []).forEach(function (entity) {
-    if (entity && entity.row === TOP_BOARD_ROW_INDEX && Number.isInteger(entity.col)) {
+    if (
+      entity &&
+      !isWormholeEntity(entity) &&
+      entity.row === TOP_BOARD_ROW_INDEX &&
+      Number.isInteger(entity.col)
+    ) {
       occupiedCount += 1;
     }
   });
@@ -248,7 +261,9 @@ function countOccupiedLayoutRows(layout, specialEntities) {
     }
   });
   specialEntities.forEach(function (entity) {
-    occupiedRows[entity.row] = true;
+    if (!isWormholeEntity(entity)) {
+      occupiedRows[entity.row] = true;
+    }
   });
   return Object.keys(occupiedRows).length;
 }
@@ -502,7 +517,7 @@ function normalizeSpecialEntities(levelConfig, levelKey) {
     }
     seenCoordinates[coordinateKey] = true;
 
-    if (rowString[col] !== ".") {
+    if (rowString[col] !== "." && !(category === "reactive_ball" && entityType === "wormhole")) {
       throw new Error("special entity must be placed on `.` layout slot at `" + coordinateKey + "`: " + levelKey);
     }
 

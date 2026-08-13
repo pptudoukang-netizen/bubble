@@ -242,6 +242,14 @@ cc.Class({
       default: "sound/ding0",
       tooltip: "按钮/界面点击音效资源路径。"
     },
+    congratulationsSfxResource: {
+      default: "sound/congratulations",
+      tooltip: "“恭喜获得”奖励弹窗弹出时播放的音效资源路径（Resources 相对路径）。"
+    },
+    upgradeSfxResource: {
+      default: "sound/upgrade",
+      tooltip: "精灵大厅中精灵升级成功时播放的音效资源路径（Resources 相对路径）。"
+    },
     shotSfxResource: {
       default: "sound/ding2",
       tooltip: "发射音效资源路径。"
@@ -304,7 +312,11 @@ cc.Class({
     },
     vinesSfxResource: {
       default: "sound/vines",
-      tooltip: "藤蔓完成缠绕普通球或技能解除藤蔓时播放的音效资源路径（Resources 相对路径）。"
+      tooltip: "藤蔓完成缠绕普通球时播放的音效资源路径（Resources 相对路径）。"
+    },
+    releaseVinesSfxResource: {
+      default: "sound/release_vines",
+      tooltip: "精灵技能解除藤蔓时播放的音效资源路径（Resources 相对路径）。"
     },
     tornadoSfxResource: {
       default: "sound/tornado",

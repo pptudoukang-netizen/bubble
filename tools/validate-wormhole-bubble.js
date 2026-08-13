@@ -112,6 +112,19 @@ function validateConfigAndCompactCodec() {
   });
   assert(expandedWormholes.length === 2, "Expanded compact pack must restore two wormholes.");
   assert(expandedWormholes.every(function (entity) { return entity.moveDirection === "right"; }), "Expanded wormholes must restore moveDirection.");
+
+  var overlapFixture = readJson(levelPath);
+  var overlapEndpoint = overlapFixture.level.specialEntities.filter(function (entity) {
+    return entity.entityType === "wormhole";
+  })[0];
+  var overlapRow = overlapFixture.level.layout[overlapEndpoint.row].split("");
+  overlapRow[overlapEndpoint.col] = overlapFixture.level.colors[0];
+  overlapFixture.level.layout[overlapEndpoint.row] = overlapRow.join("");
+  var normalizedOverlap = LevelConfigLoader.normalizeLevelConfig(overlapFixture, "level_test");
+  assert(
+    normalizedOverlap.level.layout[overlapEndpoint.row].charAt(overlapEndpoint.col) === overlapFixture.level.colors[0],
+    "Wormhole config must allow a board ball in the same grid coordinate."
+  );
 }
 
 function validateMixedCellShiftAndProtection() {
@@ -125,7 +138,7 @@ function validateMixedCellShiftAndProtection() {
         "R.........",
         ".........",
         "..........",
-        ".R.B..G..",
+        "RR.B..G..",
         "..........",
         ".........",
         "..........",
@@ -151,9 +164,15 @@ function validateMixedCellShiftAndProtection() {
   assert(grid.getCell(3, 4).color === "B", "Second normal ball must move right by one slot.");
   assert(grid.getCell(3, 6).id === "vine_moving" && grid.getCell(3, 6).health === 2, "Moving vine spirit must preserve id and runtime health.");
   assert(grid.getCell(3, 7).color === "G", "Last occupied slot must move right without losing color.");
-  assert(grid.getCell(3, 0).id === "wormhole_left" && grid.getCell(3, 8).id === "wormhole_right", "Wormhole endpoints must remain fixed.");
-  assert(grid.removeCells([grid.getCell(3, 0), grid.getCell(3, 8)]).length === 0, "Wormholes must reject removal.");
-  assert(grid.getClearableCells().length === grid.getCells().length - 2, "Wormholes must be excluded from clearable board cells.");
+  assert(grid.getCell(3, 0).color === "R", "A normal ball must be allowed to occupy a wormhole coordinate.");
+  assert(grid.getCell(3, 8) === null, "An empty wormhole coordinate must remain an empty board grid slot.");
+  assert(grid.getCells().every(function (cell) { return cell.entityType !== "wormhole"; }), "Wormholes must not enter BubbleGrid.cells.");
+  assert(grid.getSpecialEntities().filter(function (entity) { return entity.entityType === "wormhole"; }).length === 2, "Wormhole overlays must remain fixed special entities.");
+  assert(grid.getClearableCells().length === grid.getCells().length, "Every occupied board cell must remain clearable independently of wormhole overlays.");
+  var emptyEndpointPosition = grid.getCellPosition(3, 8);
+  assert(grid.findCollision(emptyEndpointPosition, 1) === null, "An empty wormhole endpoint must not block the shot collision path.");
+  grid.addBubble({ row: 3, col: 8 }, "B");
+  assert(grid.getCell(3, 8).color === "B" && grid.hasWormholePair(), "Attaching at a wormhole coordinate must preserve the overlay pair.");
 }
 
 function validateMultiplePairShift() {
@@ -187,8 +206,8 @@ function validateMultiplePairShift() {
   var shifts = grid.shiftWormholeInteriors();
   assert(shifts.length === 2 && shifts[0].row === 2 && shifts[1].row === 4, "Both wormhole rows must shift in one phase.");
   assert(grid.getCell(2, 2).color === "R" && grid.getCell(2, 4).color === "B", "Right-moving pair must rotate its own interior.");
-  assert(grid.getCell(4, 1).id === "pair_02_left" && grid.getCell(4, 6).id === "pair_02_right", "Second pair endpoints must remain fixed.");
-  assert(grid.getCell(4, 1).row === 4 && grid.getCell(4, 6).row === 4, "Second pair must remain isolated on its row.");
+  assert(grid.getCell(4, 1) === null && grid.getCell(4, 6) === null, "Second pair endpoints must leave their board grid slots empty.");
+  assert(grid.getWormholePairs()[1][0].row === 4 && grid.getWormholePairs()[1][1].row === 4, "Second overlay pair must remain isolated on its row.");
 }
 
 function validateDeferredSupportDropAndNoAutoMatch() {
@@ -199,8 +218,8 @@ function validateDeferredSupportDropAndNoAutoMatch() {
       code: "WORMHOLE_SUPPORT_DROP",
       initialDropSpaceRows: 8,
       layout: [
-        "..........",
-        ".........",
+        ".R........",
+        ".R.......",
         "..RRR.....",
         "...R.....",
         "..........",
@@ -218,7 +237,10 @@ function validateDeferredSupportDropAndNoAutoMatch() {
   var support = new SupportSystem();
   support.initialize({});
   support.configureLevel(levelConfig);
-  assert(support.findFloatingCells(grid).length === 0, "Balls connected to a wormhole must be supported before shifting.");
+  assert(support.findFloatingCells(grid).length === 0, "Top-connected balls must be supported before the shot removes their real support.");
+  var removedSupport = grid.removeCells([grid.getCell(0, 1), grid.getCell(1, 1)]);
+  assert(removedSupport.length === 2, "Wormhole support regression fixture must remove both real top supports.");
+  assert(support.findFloatingCells(grid).length === 4, "Wormholes must not keep the disconnected chain supported.");
 
   var dropped = [];
   var dropRegisterOptions = [];
@@ -246,14 +268,7 @@ function validateDeferredSupportDropAndNoAutoMatch() {
   manager.isTimedInfiniteShots = false;
   manager.state = "running";
   var resolution = createResolution();
-  resolution.matched = [{
-    id: "matched_before_wormhole",
-    entityCategory: "normal_ball",
-    entityType: null,
-    color: "R",
-    row: 1,
-    col: 1
-  }];
+  resolution.matched = removedSupport;
   var inheritedDropOptions = manager._buildResolutionDropRegisterOptions(
     resolution,
     undefined,
@@ -268,7 +283,7 @@ function validateDeferredSupportDropAndNoAutoMatch() {
   };
 
   assert(manager._beginWormholeShiftForResolution(resolution), "Wormhole phase must start after a shot resolution.");
-  assert(resolution.matched.length === 1 && resolution.matched[0].id === "matched_before_wormhole", "Wormhole movement must not create an automatic color match.");
+  assert(resolution.matched.length === 2, "Wormhole movement must not create an automatic color match.");
   assert(grid.getCell(2, 3).color === "R" && grid.getCell(2, 5).color === "R", "Wormhole shift must move the three-ball row without resolving it.");
   manager._updatePendingWormholeShift(SpecialAnimationTiming.wormholeShift.duration * 0.5);
   assert(dropped.length === 0 && continued === false, "Support drops must wait until the wormhole movement animation finishes.");
@@ -280,7 +295,7 @@ function validateDeferredSupportDropAndNoAutoMatch() {
   assert(dropRegisterOptions.length === 1, "Wormhole completion must register one immediate floating-drop batch.");
   assert(dropRegisterOptions[0].startDelay === 0, "Wormhole floating drops must not add a start delay.");
   assert(dropRegisterOptions[0].holdUntilEliminationPresentationComplete !== true, "Wormhole floating drops must not wait for an elimination callback that already completed.");
-  assert(manager._isBoardCleared(grid), "A board containing only fixed wormholes must count as cleared.");
+  assert(manager._isBoardCleared(grid), "Wormhole overlays must not prevent an empty board from counting as cleared.");
   assert(continued, "Wormhole completion must resume the post-shot state machine.");
 }
 
@@ -331,7 +346,7 @@ function validateTopAnchorCollapsePreservesWormholes() {
   assert(registeredDrops.length === 5, "Top-anchor collapse must drop every non-wormhole board cell.");
   assert(registeredDropOptions.startDelay === 0, "Top-anchor collapse drops must start without delay.");
   assert(registeredDropOptions.holdUntilEliminationPresentationComplete !== true, "Top-anchor collapse drops must not wait for an elimination callback that already completed.");
-  assert(grid.getCells().length === 2 && grid.hasWormholePair(), "Top-anchor collapse must preserve both fixed wormhole endpoints.");
+  assert(grid.getCells().length === 0 && grid.hasWormholePair(), "Top-anchor collapse must leave an empty grid while preserving both wormhole overlays.");
   assert(manager.lastResolution.topAnchorCollapse === true, "Top-anchor collapse must be recorded on the active resolution.");
   assert(manager.state === "won_pending", "Top-anchor collapse must enter pending win settlement.");
 
@@ -375,6 +390,14 @@ function validateFlowShaderAndShiftCompatibility() {
   assert(directionArrowMeta.importer === "texture" && directionArrowMeta.type === "sprite", "Wormhole direction arrow must import as Sprite texture.");
   assert(directionArrowMeta.width > 0 && directionArrowMeta.height > 0, "Wormhole direction arrow texture size must be positive.");
   assert(levelRendererSource.indexOf('"game/image/ball/arrow"') >= 0, "LevelRenderer must preload the wormhole direction arrow resource.");
+  assert(levelRendererSource.indexOf("new cc.Size(70, 70)") >= 0, "Wormhole endpoints must render at exactly 70x70.");
+  assert(
+    levelRendererSource.indexOf('wormhole: this._getOrCreateLayer("WormholeLayer", 39)') >= 0 &&
+      levelRendererSource.indexOf('board: this._getOrCreateLayer("BoardLayer", 40)') >= 0,
+    "Wormhole endpoints must use a dedicated layer directly below board balls."
+  );
+  assert(boardRendererSource.indexOf("isWormholeEntity(cell) ? WORMHOLE_RENDER_SIZE : BOARD_BUBBLE_SIZE") >= 0, "Board rendering must apply the dedicated wormhole size.");
+  assert(sceneFxSource.indexOf("boardSnapshot.specialEntities.filter") >= 0, "Wormhole direction guide must use non-grid special entities.");
   assert(boardRendererSource.indexOf("this._syncWormholeDirectionGuide(boardSnapshot);") >= 0, "Board rendering must synchronize the wormhole direction guide.");
   [
     "WormholeDirectionGuide",
@@ -636,7 +659,7 @@ function validateFlowShaderAndShiftCompatibility() {
     assert(leftEndpoint.stopCount === 0 && rightEndpoint.stopCount === 0, "Wormhole shift must not interrupt endpoint flow shaders.");
 
     fxRenderer.layers = {
-      board: new MockNode("BoardLayer")
+      wormhole: new MockNode("WormholeLayer")
     };
     fxRenderer.spriteFrameCache = {
       "game/image/ball/arrow": { isValid: true }
@@ -646,7 +669,7 @@ function validateFlowShaderAndShiftCompatibility() {
     fxRenderer._syncWormholeDirectionGuide({
       maxColumns: 10,
       viewportOffsetY: 0,
-      cells: [
+      specialEntities: [
         { entityCategory: "reactive_ball", entityType: "wormhole", row: 3, col: 1, moveDirection: "right" },
         { entityCategory: "reactive_ball", entityType: "wormhole", row: 3, col: 4, moveDirection: "right" }
       ]
@@ -659,7 +682,7 @@ function validateFlowShaderAndShiftCompatibility() {
     fxRenderer._syncWormholeDirectionGuide({
       maxColumns: 10,
       viewportOffsetY: 0,
-      cells: [
+      specialEntities: [
         { entityCategory: "reactive_ball", entityType: "wormhole", row: 2, col: 1, moveDirection: "right" },
         { entityCategory: "reactive_ball", entityType: "wormhole", row: 2, col: 4, moveDirection: "right" },
         { entityCategory: "reactive_ball", entityType: "wormhole", row: 5, col: 2, moveDirection: "left" },
@@ -673,7 +696,7 @@ function validateFlowShaderAndShiftCompatibility() {
     fxRenderer._syncWormholeDirectionGuide({
       maxColumns: 10,
       viewportOffsetY: 0,
-      cells: [
+      specialEntities: [
         { entityCategory: "reactive_ball", entityType: "wormhole", row: 3, col: 1, moveDirection: "left" },
         { entityCategory: "reactive_ball", entityType: "wormhole", row: 3, col: 4, moveDirection: "left" }
       ]
@@ -685,7 +708,7 @@ function validateFlowShaderAndShiftCompatibility() {
     fxRenderer._syncWormholeDirectionGuide({
       maxColumns: 10,
       viewportOffsetY: 0,
-      cells: []
+      specialEntities: []
     });
     assert(fxRenderer.wormholeDirectionGuideRoot === null, "Non-wormhole boards must remove the direction guide.");
   } finally {
@@ -703,4 +726,4 @@ validateMultiplePairShift();
 validateDeferredSupportDropAndNoAutoMatch();
 validateTopAnchorCollapsePreservesWormholes();
 validateFlowShaderAndShiftCompatibility();
-console.log("[OK] wormhole config, compact codec, multi-pair mixed-cell cyclic shift, direction guide, fixed support, top-anchor collapse, deferred drop, clear-state and layered flow shader rules");
+console.log("[OK] wormhole config, compact codec, grid-overlay occupancy, pass-through collision, non-support rules, cyclic shift, 70x70 below-ball rendering, direction guide, top-anchor collapse, deferred drop and clear-state rules");

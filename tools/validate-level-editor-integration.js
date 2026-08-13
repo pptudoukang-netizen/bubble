@@ -784,6 +784,59 @@ function assertAllOnlineLevelsAreImportable() {
   assert.strictEqual(importedCount, 1000, "Map editor must import all 1000 current online levels.");
 }
 
+function assertWormholeOverlayImportContract() {
+  var previousCc = global.cc;
+  global.cc = {
+    Class: function (definition) {
+      return definition;
+    },
+    Component: function () {}
+  };
+  var LevelConfigLoader = require(path.join(PROJECT_ROOT, "assets/scripts/config/LevelConfigLoader"));
+  var MapEditorBoardImport = require(path.join(PROJECT_ROOT, "assets/scripts/editor/MapEditorBoardImport"));
+  var controllerPath = path.join(PROJECT_ROOT, "assets/scripts/editor/MapEditorController");
+  delete require.cache[require.resolve(controllerPath)];
+  var controllerDefinition = require(controllerPath);
+  var raw = JSON.parse(read("assets/map/config/levels/level_001.json"));
+  raw.level.layout[0] = "R" + raw.level.layout[0].slice(1);
+  raw.level.specialEntities = [
+    {
+      id: "editor_wormhole_overlay_left",
+      entityCategory: "reactive_ball",
+      entityType: "wormhole",
+      row: 0,
+      col: 0,
+      moveDirection: "right"
+    },
+    {
+      id: "editor_wormhole_overlay_right",
+      entityCategory: "reactive_ball",
+      entityType: "wormhole",
+      row: 0,
+      col: raw.level.layout[0].length - 1,
+      moveDirection: "right"
+    }
+  ];
+  var imported = MapEditorBoardImport.importLevelToCellStates(
+    LevelConfigLoader.normalizeLevelConfig(raw, "level_001")
+  );
+  assert.strictEqual(imported.cells["0:0"].kind, "color", "Wormhole import must preserve the layout ball.");
+  assert.strictEqual(imported.cells["0:0"].colorCode, "R", "Wormhole import must preserve the layout color.");
+  assert.strictEqual(imported.wormholeOverlays["0:0"].entityType, "wormhole", "Wormhole must import into the overlay map.");
+  assert.strictEqual(imported.wormholeOverlays["0:0"].moveDirection, "right", "Wormhole overlay direction must be preserved.");
+  var exported = controllerDefinition._collectBoardData.call({
+    _rowCount: imported.rowCount,
+    _cells: imported.cells,
+    _wormholeOverlays: imported.wormholeOverlays,
+    _buildSpecialEntityExport: controllerDefinition._buildSpecialEntityExport
+  });
+  assert.strictEqual(exported.layout[0].charAt(0), "R", "Wormhole export must preserve the underlying layout ball.");
+  assert.strictEqual(exported.specialEntities.filter(function (entity) {
+    return entity.entityType === "wormhole" && entity.row === 0 && entity.col === 0;
+  }).length, 1, "Wormhole export must preserve the overlay at the same coordinate.");
+  global.cc = previousCc;
+}
+
 function assertCloudDraftIsolation() {
   var clientSource = read("assets/scripts/services/LevelEditorCloudSyncService.js");
   var cloudSource = read("cloudfunctions/levelEditorDrafts/index.js");
@@ -840,6 +893,7 @@ assertSaveValidationUsesVisibleTip();
 assertLocalDraftPriorityDecision();
 assertInputLevelParsing();
 assertLocalStore();
+assertWormholeOverlayImportContract();
 assertAllOnlineLevelsAreImportable();
 assertCloudDraftIsolation();
 assertExtendedColorRuntimeContracts();

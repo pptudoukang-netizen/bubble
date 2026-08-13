@@ -66,11 +66,17 @@ var BALL_RESOURCES = {
 };
 var TIME_BONUS_FONT_RESOURCE = "game/fnt/num_b";
 var TRAPPED_SPIRIT_PATH_PREFIX = "game/trapped_spirit/";
+var RESCUE_SUCCESSFUL_SPIRIT_PATH_PREFIX = "image/rescue_successful/";
 var TRAPPED_SPRITE_LAYER_Z_INDEX = 49;
 
 function buildTrappedSpriteResourcePath(spiritId) {
   AssistSpiritConfig.getSpirit(spiritId);
   return TRAPPED_SPIRIT_PATH_PREFIX + spiritId;
+}
+
+function buildRescueSuccessfulSpiritResourcePath(spiritId) {
+  AssistSpiritConfig.getSpirit(spiritId);
+  return RESCUE_SUCCESSFUL_SPIRIT_PATH_PREFIX + spiritId;
 }
 
 function buildSpiritFragmentRewardResourcePath(spiritId) {
@@ -85,6 +91,7 @@ var BOARD_OCCLUSION_RESOURCES = {
 var BOARD_OCCLUSION_CLOCK_RESOURCE = "game/image/props/clock";
 
 var WORMHOLE_DIRECTION_ARROW_RESOURCE = "game/image/ball/arrow";
+var WORMHOLE_RENDER_SIZE = new cc.Size(70, 70);
 var WORMHOLE_DIRECTION_ARROW_SIZE = new cc.Size(42, 42);
 var WORMHOLE_DIRECTION_ARROW_TRAVEL_DISTANCE = 18;
 var WORMHOLE_DIRECTION_ARROW_STAGGER = 0.12;
@@ -173,6 +180,7 @@ var PREFAB_PATHS = {
   gameView: "game/prefabs/ui/GameView",
   hudPanel: "prefabs/ui/HudPanel",
   winView: "prefabs/ui/WinView",
+  rescueSuccessfulView: "prefabs/ui/RescueSuccessfulView",
   loseView: "prefabs/ui/LoseView",
   addBallTipsView: "prefabs/ui/AddBallTipsView",
   pauseView: "prefabs/ui/PauseView",
@@ -568,6 +576,7 @@ function buildHudTargetDisplayData(levelConfig, runtimeSnapshot) {
   var objectives = getCollectionObjectiveList(levelConfig);
   var ballObjective = null;
   var iceSnowballObjective = null;
+  var spiritDisplay = null;
 
   for (var i = 0; i < objectives.length; i += 1) {
     var objective = objectives[i];
@@ -585,9 +594,45 @@ function buildHudTargetDisplayData(levelConfig, runtimeSnapshot) {
     }
   }
 
+  var level = levelConfig.level;
+  if (level.levelType === "trapped_sprite_rescue") {
+    if (
+      !level.trappedSpriteRescue ||
+      typeof level.trappedSpriteRescue.spiritId !== "string" ||
+      !level.trappedSpriteRescue.spiritId
+    ) {
+      throw new Error("Trapped sprite rescue HUD target requires level.trappedSpriteRescue.spiritId.");
+    }
+    if (
+      !runtimeSnapshot ||
+      !runtimeSnapshot.systems ||
+      !runtimeSnapshot.systems.trappedSpriteRescueSystem ||
+      runtimeSnapshot.systems.trappedSpriteRescueSystem.active !== true
+    ) {
+      throw new Error("Trapped sprite rescue HUD target requires active rescue system snapshot.");
+    }
+    if (runtimeSnapshot.systems.trappedSpriteRescueSystem.spiritId !== level.trappedSpriteRescue.spiritId) {
+      throw new Error("Trapped sprite rescue HUD target spiritId does not match runtime snapshot.");
+    }
+    if (!runtimeSnapshot.board || !Array.isArray(runtimeSnapshot.board.cells)) {
+      throw new Error("Trapped sprite rescue HUD target requires runtime board cells.");
+    }
+    var spiritRescued = runtimeSnapshot.board.cells.length === 0;
+    spiritDisplay = {
+      spiritId: level.trappedSpriteRescue.spiritId,
+      spritePath: buildTrappedSpriteResourcePath(level.trappedSpriteRescue.spiritId),
+      progress: spiritRescued ? 1 : 0,
+      target: 1,
+      remaining: spiritRescued ? 0 : 1,
+      remainingText: spiritRescued ? "0" : "1",
+      progressText: spiritRescued ? "1/1" : "0/1"
+    };
+  }
+
   return {
     ball: ballObjective ? buildObjectiveDisplayForObjective(ballObjective, runtimeSnapshot) : null,
-    iceSnowball: iceSnowballObjective ? buildObjectiveDisplayForObjective(iceSnowballObjective, runtimeSnapshot) : null
+    iceSnowball: iceSnowballObjective ? buildObjectiveDisplayForObjective(iceSnowballObjective, runtimeSnapshot) : null,
+    spirit: spiritDisplay
   };
 }
 
@@ -608,6 +653,7 @@ function applyIceSnowballHudDisplayProgress(hudTargetDisplay, displayProgress) {
   var remaining = Math.max(0, target - progress);
   return {
     ball: hudTargetDisplay.ball,
+    spirit: hudTargetDisplay.spirit,
     iceSnowball: {
       iconCode: hudTargetDisplay.iceSnowball.iconCode,
       progress: progress,
@@ -705,7 +751,10 @@ function buildHudRenderKey(levelConfig, runtimeSnapshot, iceSnowballDisplayProgr
     hudTargetDisplay.ball ? hudTargetDisplay.ball.iconCode : "",
     hudTargetDisplay.iceSnowball ? hudTargetDisplay.iceSnowball.remainingText : "",
     hudTargetDisplay.iceSnowball ? hudTargetDisplay.iceSnowball.progressText : "",
-    hudTargetDisplay.iceSnowball ? hudTargetDisplay.iceSnowball.iconCode : ""
+    hudTargetDisplay.iceSnowball ? hudTargetDisplay.iceSnowball.iconCode : "",
+    hudTargetDisplay.spirit ? hudTargetDisplay.spirit.remainingText : "",
+    hudTargetDisplay.spirit ? hudTargetDisplay.spirit.progressText : "",
+    hudTargetDisplay.spirit ? hudTargetDisplay.spirit.spritePath : ""
   ].join("|");
 }
 
@@ -1803,8 +1852,9 @@ LevelRenderer.prototype.renderLevel = function (levelConfig, runtimeSnapshot) {
       this._preloadSprites(spritePaths)
     ]);
   }.bind(this)).then(function () {
-    clearChildren(this.layers.background);
-    clearChildren(this.layers.board);
+      clearChildren(this.layers.background);
+      clearChildren(this.layers.wormhole);
+      clearChildren(this.layers.board);
     clearChildren(this.layers.trappedSprite);
     clearChildren(this.layers.boardOcclusion);
     this.wormholeDirectionGuideRoot = null;
@@ -2132,6 +2182,7 @@ LevelRenderer.prototype._ensureLayers = function () {
     jars: this._getOrCreateLayer("JarLayer", 20),
     shooter: this._getOrCreateLayer("ShooterLayer", 25),
     overlay: this._getOrCreateLayer("OverlayLayer", 30),
+    wormhole: this._getOrCreateLayer("WormholeLayer", 39),
     board: this._getOrCreateLayer("BoardLayer", 40),
     boardOcclusion: this._getOrCreateLayer("BoardOcclusionLayer", 43),
     shatter: this._getOrCreateLayer("BubbleShatterLayer", 44),
@@ -2190,6 +2241,11 @@ LevelRenderer.prototype._collectSpritePaths = function (levelConfig, runtimeSnap
       paths,
       buildSpiritFragmentRewardResourcePath(level.trappedSpriteRescue.spiritId),
       "trapped sprite rescue fragment reward"
+    );
+    pushUniqueSpritePath(
+      paths,
+      buildRescueSuccessfulSpiritResourcePath(level.trappedSpriteRescue.spiritId),
+      "rescue successful popup spirit"
     );
   }
   if (!Array.isArray(level.colors)) {
@@ -2509,6 +2565,7 @@ LevelRenderer.prototype._playTrappedSpriteRescueDeparture = function (runtimeSna
       node.active = false;
       this.trappedSpriteDepartureActive = false;
       this.trappedSpriteDepartureCompleted = true;
+      this._showRescueSuccessfulView(rescueEvent.spiritId);
     }.bind(this))
     .start();
 };
@@ -2667,6 +2724,7 @@ LevelRenderer.prototype._collectPrefabPaths = function () {
   var preloadPaths = [
     PREFAB_PATHS.gameView,
     PREFAB_PATHS.winView,
+    PREFAB_PATHS.rescueSuccessfulView,
     PREFAB_PATHS.loseView,
     PREFAB_PATHS.addBallTipsView,
     PREFAB_PATHS.pauseView,
@@ -2894,6 +2952,7 @@ var LEVEL_RENDERER_SCENE_DEPS = {
   BALL_RESOURCES: BALL_RESOURCES,
   TIME_BONUS_FONT_RESOURCE: TIME_BONUS_FONT_RESOURCE,
   WORMHOLE_DIRECTION_ARROW_RESOURCE: WORMHOLE_DIRECTION_ARROW_RESOURCE,
+  WORMHOLE_RENDER_SIZE: WORMHOLE_RENDER_SIZE,
   WORMHOLE_DIRECTION_ARROW_SIZE: WORMHOLE_DIRECTION_ARROW_SIZE,
   WORMHOLE_DIRECTION_ARROW_TRAVEL_DISTANCE: WORMHOLE_DIRECTION_ARROW_TRAVEL_DISTANCE,
   WORMHOLE_DIRECTION_ARROW_STAGGER: WORMHOLE_DIRECTION_ARROW_STAGGER,
@@ -2906,6 +2965,7 @@ var LEVEL_RENDERER_SCENE_DEPS = {
   resolveJarScoreSpritePath: resolveJarScoreSpritePath,
   REWARD_ITEM_RESOURCES: REWARD_ITEM_RESOURCES,
   buildTrappedSpriteResourcePath: buildTrappedSpriteResourcePath,
+  buildRescueSuccessfulSpiritResourcePath: buildRescueSuccessfulSpiritResourcePath,
   buildSpiritFragmentRewardResourcePath: buildSpiritFragmentRewardResourcePath,
   POWERUP_ICON_RESOURCES: POWERUP_ICON_RESOURCES,
   HUD_STAR_RESOURCES: HUD_STAR_RESOURCES,

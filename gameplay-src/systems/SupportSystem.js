@@ -18,14 +18,6 @@ function isLockedAnchor(cell) {
   );
 }
 
-function isWormholeAnchor(cell) {
-  return !!(
-    cell &&
-    cell.entityCategory === "reactive_ball" &&
-    cell.entityType === "wormhole"
-  );
-}
-
 function SupportSystem() {
   BaseSystem.call(this, "SupportSystem");
   this.anchorRows = 1;
@@ -78,7 +70,6 @@ SupportSystem.prototype.findFloatingCells = function (grid) {
     if (
       (this.trappedSpriteAnchorCell === null && seedCell.row < this.anchorRows) ||
       isLockedAnchor(seedCell) ||
-      isWormholeAnchor(seedCell) ||
       touchesTrappedSprite
     ) {
       queue.push({

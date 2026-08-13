@@ -1137,6 +1137,7 @@ module.exports = {
       }
 
       awardViewNode.active = true;
+      this._playSfx("congratulations");
       PopupPanelAnimator.play(awardViewNode);
       return this._renderAwardView(normalizedItems);
     }.bind(this));

@@ -82,12 +82,15 @@ function attachLevelRendererScenePopupMethods(LevelRenderer, deps) {
   var LOSE_STATUS_RESOURCES = deps.LOSE_STATUS_RESOURCES;
   var REWARD_ITEM_RESOURCES = deps.REWARD_ITEM_RESOURCES;
   var buildTrappedSpriteResourcePath = deps.buildTrappedSpriteResourcePath;
+  var buildRescueSuccessfulSpiritResourcePath = deps.buildRescueSuccessfulSpiritResourcePath;
   var buildSpiritFragmentRewardResourcePath = deps.buildSpiritFragmentRewardResourcePath;
   var PREFAB_PATHS = deps.PREFAB_PATHS;
   var SpriteProxyLayerHelper = deps.SpriteProxyLayerHelper;
   var PropDescriptionViewController = deps.PropDescriptionViewController;
   var POPUP_CONTENT_CONTAINER_NAME = deps.POPUP_CONTENT_CONTAINER_NAME;
   var WIN_VIEW_PROXY_ROOT_NAME = "win_view_auto_proxy_root";
+  var RESCUE_SUCCESSFUL_VIEW_PROXY_ROOT_NAME = "rescue_successful_view_auto_proxy_root";
+  var RESCUE_SUCCESSFUL_MIN_DISPLAY_DURATION_SEC = 2;
   var LOSE_VIEW_PROXY_ROOT_NAME = "lose_view_auto_proxy_root";
   var ADD_BALL_TIPS_VIEW_PROXY_ROOT_NAME = "add_ball_tips_view_auto_proxy_root";
   var PAUSE_VIEW_PROXY_ROOT_NAME = "pause_view_auto_proxy_root";
@@ -620,6 +623,128 @@ LevelRenderer.prototype._bindWinButton = function (buttonNode, action) {
   }, this);
 };
 
+LevelRenderer.prototype._bindRescueSuccessfulCloseButton = function (buttonNode) {
+  if (!buttonNode || !buttonNode.isValid) {
+    throw new Error("RescueSuccessfulView close button is required.");
+  }
+  if (!buttonNode.getComponent(cc.Button)) {
+    throw new Error("RescueSuccessfulView/Panel/btn_close must contain cc.Button.");
+  }
+  if (buttonNode.__rescueSuccessfulCloseBound === true) {
+    throw new Error("RescueSuccessfulView close button must be bound exactly once.");
+  }
+
+  buttonNode.__rescueSuccessfulCloseBound = true;
+  buttonNode.on(cc.Node.EventType.TOUCH_END, function (event) {
+    if (event) {
+      event.stopPropagation();
+    }
+    this.hideRescueSuccessfulView();
+  }, this);
+};
+
+LevelRenderer.prototype.hideRescueSuccessfulView = function () {
+  if (!this.layers || !this.layers.modal || !this.layers.modal.isValid) {
+    throw new Error("RescueSuccessfulView hide requires the gameplay modal layer.");
+  }
+  var viewNode = this.layers.modal.getChildByName("RescueSuccessfulView");
+  if (!viewNode || !viewNode.isValid || !viewNode.active) {
+    throw new Error("Cannot hide an inactive RescueSuccessfulView.");
+  }
+  viewNode.removeFromParent(false);
+  viewNode.destroy();
+  if (this.lastRuntimeSnapshot && this.lastRuntimeSnapshot.state === "won") {
+    this._renderWinView(this.lastRuntimeSnapshot);
+  }
+};
+
+LevelRenderer.prototype._dismissRescueSuccessfulViewForWin = function () {
+  if (!this.layers || !this.layers.modal || !this.layers.modal.isValid) {
+    throw new Error("WinView rescue-popup dismissal requires the gameplay modal layer.");
+  }
+  var viewNode = this.layers.modal.getChildByName("RescueSuccessfulView");
+  if (viewNode && viewNode.isValid && viewNode.active) {
+    if (viewNode.__minimumDisplayCompleted !== true) {
+      throw new Error("WinView cannot dismiss RescueSuccessfulView before its two-second minimum display completes.");
+    }
+    viewNode.removeFromParent(false);
+    viewNode.destroy();
+  }
+};
+
+LevelRenderer.prototype._showRescueSuccessfulView = function (spiritId) {
+  var spritePath = buildRescueSuccessfulSpiritResourcePath(spiritId);
+  if (!this.layers || !this.layers.modal || !this.layers.modal.isValid) {
+    throw new Error("RescueSuccessfulView show requires the gameplay modal layer.");
+  }
+  var existing = this.layers.modal.getChildByName("RescueSuccessfulView");
+  if (existing && existing.isValid) {
+    throw new Error("RescueSuccessfulView must be shown exactly once per rescue.");
+  }
+  var activeWinView = this.layers.modal.getChildByName("WinView");
+  if (activeWinView && activeWinView.isValid && activeWinView.active) {
+    throw new Error("RescueSuccessfulView cannot open after WinView is active.");
+  }
+
+  var spriteFrame = this.spriteFrameCache[spritePath];
+  if (!spriteFrame) {
+    throw new Error("RescueSuccessfulView spirit SpriteFrame was not preloaded: " + spritePath);
+  }
+  var viewNode = this._instantiateOrCreate(
+    PREFAB_PATHS.rescueSuccessfulView,
+    this.layers.modal,
+    "RescueSuccessfulView"
+  );
+  if (!viewNode || !viewNode.isValid) {
+    throw new Error("RescueSuccessfulView prefab could not be instantiated.");
+  }
+
+  viewNode.active = true;
+  viewNode.setPosition(0, 0);
+  viewNode.__minimumDisplayCompleted = false;
+  SpriteProxyLayerHelper.destroyProxyRoot(viewNode, RESCUE_SUCCESSFUL_VIEW_PROXY_ROOT_NAME);
+  this._ensurePopupMaskVisible(viewNode, 200);
+  var content = this._ensurePopupContentContainer(viewNode);
+  var panel = requireChildNode(content, "Panel", "RescueSuccessfulView content");
+  var roleNode = requireChildNode(panel, "role", "RescueSuccessfulView/Panel");
+  var authoredRoleSize = roleNode.getContentSize();
+  if (
+    !authoredRoleSize ||
+    typeof authoredRoleSize.width !== "number" ||
+    !isFinite(authoredRoleSize.width) ||
+    authoredRoleSize.width <= 0 ||
+    typeof authoredRoleSize.height !== "number" ||
+    !isFinite(authoredRoleSize.height) ||
+    authoredRoleSize.height <= 0
+  ) {
+    throw new Error("RescueSuccessfulView/Panel/role authored size must be positive.");
+  }
+  var roleSprite = ensureSprite(roleNode, spriteFrame);
+  roleSprite.trim = false;
+  roleNode.setContentSize(authoredRoleSize);
+  var closeButtonNode = requireChildNode(panel, "btn_close", "RescueSuccessfulView/Panel");
+  this._bindRescueSuccessfulCloseButton(closeButtonNode);
+  SpriteProxyLayerHelper.rebuildAutoProxyTree({
+    rootNode: viewNode,
+    proxyRootName: RESCUE_SUCCESSFUL_VIEW_PROXY_ROOT_NAME
+  });
+  this._playPopupContentOpenAnimation(content);
+  if (typeof cc.tween !== "function") {
+    throw new Error("RescueSuccessfulView minimum display requires cc.tween.");
+  }
+  cc.tween(viewNode)
+    .delay(RESCUE_SUCCESSFUL_MIN_DISPLAY_DURATION_SEC)
+    .call(function () {
+      if (viewNode.isValid && viewNode.parent === this.layers.modal) {
+        viewNode.__minimumDisplayCompleted = true;
+        if (this.lastRuntimeSnapshot && this.lastRuntimeSnapshot.state === "won") {
+          this._renderWinView(this.lastRuntimeSnapshot);
+        }
+      }
+    }.bind(this))
+    .start();
+};
+
 LevelRenderer.prototype._getWinStarNodes = function (winContent) {
   if (!winContent) {
     return [];
@@ -948,6 +1073,21 @@ LevelRenderer.prototype._renderWinView = function (runtimeSnapshot) {
     this.lastWinViewRenderKey = "";
     return;
   }
+
+  var rescueSuccessfulView = this.layers.modal.getChildByName("RescueSuccessfulView");
+  if (
+    rescueSuccessfulView &&
+    rescueSuccessfulView.isValid &&
+    rescueSuccessfulView.active &&
+    rescueSuccessfulView.__minimumDisplayCompleted !== true
+  ) {
+    if (wasActive) {
+      throw new Error("WinView became active before RescueSuccessfulView completed its minimum display.");
+    }
+    return;
+  }
+
+  this._dismissRescueSuccessfulViewForWin();
 
   var renderKey = buildWinViewRenderKey(this.currentLevelConfig, runtimeSnapshot);
   if (

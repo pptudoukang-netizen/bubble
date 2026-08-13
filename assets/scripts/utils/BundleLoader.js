@@ -36,6 +36,7 @@ var UI_BUNDLE_PREFABS = {
   PowerTipsView: true,
   RankingItem: true,
   RankingView: true,
+  RescueSuccessfulView: true,
   SettingView: true,
   ShopView: true,
   "SignInView ": true,

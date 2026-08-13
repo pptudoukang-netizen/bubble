@@ -385,9 +385,6 @@ function validateSwirlRotationCarriesTimeBonusLabel() {
     },
     rotateBy: function (duration, angle) {
       return { type: "rotateBy", duration: duration, angle: angle };
-    },
-    spawn: function () {
-      return { type: "spawn", actions: Array.prototype.slice.call(arguments) };
     }
   };
 
@@ -455,18 +452,13 @@ function validateSwirlRotationCarriesTimeBonusLabel() {
     if (timeBonusNode.parent !== movingNode) {
       throw new Error("Time bonus label must remain a child of its moving bubble node.");
     }
-    if (movingNode.angle !== 23 || !movingNode.action || movingNode.action.type !== "spawn") {
-      throw new Error("Swirl track bubble must preserve its current angle and animate on its root node.");
-    }
-    var compositeAction = movingNode.action;
-    if (compositeAction.actions.length !== 2) {
-      throw new Error("Swirl track bubble must move and rotate as one composite action.");
-    }
-    var rotationAction = compositeAction.actions.filter(function (action) {
-      return action.type === "rotateBy";
-    })[0];
-    if (!rotationAction || rotationAction.duration !== SpecialAnimationTiming.swirlRotation.duration || rotationAction.angle !== 60) {
-      throw new Error("Time bonus bubble and its label must rotate in the swirl movement direction.");
+    if (
+      movingNode.angle !== 23 ||
+      !movingNode.action ||
+      movingNode.action.type !== "moveTo" ||
+      movingNode.action.duration !== SpecialAnimationTiming.swirlRotation.duration
+    ) {
+      throw new Error("Swirl track bubble must preserve its orientation and only follow the swirl position change.");
     }
     if (
       centerNode.angle !== 17 ||

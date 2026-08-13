@@ -1076,8 +1076,7 @@ LevelRenderer.prototype._playSwirlRotationAnimation = function (runtimeSnapshot)
   }
   if (
     typeof cc.moveTo !== "function" ||
-    typeof cc.rotateBy !== "function" ||
-    typeof cc.spawn !== "function"
+    typeof cc.rotateBy !== "function"
   ) {
     throw new Error("Swirl animation requires Cocos action APIs.");
   }
@@ -1137,10 +1136,7 @@ LevelRenderer.prototype._playSwirlRotationAnimation = function (runtimeSnapshot)
       );
       bubbleNode.stopAllActions();
       bubbleNode.setPosition(startPosition.x, startPosition.y);
-      bubbleNode.runAction(cc.spawn(
-        cc.moveTo(rotation.duration, targetPosition.x, targetPosition.y),
-        cc.rotateBy(rotation.duration, rotation.angleDegrees)
-      ));
+      bubbleNode.runAction(cc.moveTo(rotation.duration, targetPosition.x, targetPosition.y));
     }, this);
 
     if (typeof rotation.centerId !== "string" && typeof rotation.centerId !== "number") {
@@ -1291,17 +1287,17 @@ LevelRenderer.prototype._destroyWormholeDirectionGuide = function () {
 };
 
 LevelRenderer.prototype._syncWormholeDirectionGuide = function (boardSnapshot) {
-  if (!boardSnapshot || !Array.isArray(boardSnapshot.cells) || !Number.isInteger(boardSnapshot.maxColumns)) {
+  if (!boardSnapshot || !Array.isArray(boardSnapshot.specialEntities) || !Number.isInteger(boardSnapshot.maxColumns)) {
     throw new Error("Wormhole direction guide requires board snapshot geometry.");
   }
   if (typeof boardSnapshot.viewportOffsetY !== "number" || !isFinite(boardSnapshot.viewportOffsetY)) {
     throw new Error("Wormhole direction guide requires finite board viewportOffsetY.");
   }
-  if (!this.layers || !this.layers.board || !this.layers.board.isValid) {
-    throw new Error("Wormhole direction guide requires board layer.");
+  if (!this.layers || !this.layers.wormhole || !this.layers.wormhole.isValid) {
+    throw new Error("Wormhole direction guide requires wormhole layer.");
   }
 
-  var wormholes = boardSnapshot.cells.filter(function (cell) {
+  var wormholes = boardSnapshot.specialEntities.filter(function (cell) {
     return !!(cell && cell.entityCategory === "reactive_ball" && cell.entityType === "wormhole");
   });
 
@@ -1388,7 +1384,7 @@ LevelRenderer.prototype._syncWormholeDirectionGuide = function (boardSnapshot) {
   this._destroyWormholeDirectionGuide();
 
   var guideRoot = new cc.Node("WormholeDirectionGuide");
-  guideRoot.parent = this.layers.board;
+  guideRoot.parent = this.layers.wormhole;
   guideRoot.zIndex = 1000;
   this.wormholeDirectionGuideRoot = guideRoot;
   this.lastWormholeDirectionGuideKey = guideKey;

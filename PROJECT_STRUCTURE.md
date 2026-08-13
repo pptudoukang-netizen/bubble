@@ -112,7 +112,7 @@
 - `GameManagerAssistSpiritSkillMethods.js` / `AssistSpiritSkillConfig.js`：ShooterPanel 出战精灵全局技能的权威配置与结算。Milu/Lumi 不显示全局技能；Noya 使用“本局种子 + 技能成功释放序号”生成可复现的随机三次贝塞尔路径，并让路径影响半径内的合法球按配置概率、最大数量进入掉落；只要棋盘仍有内容，即使没有合法掉落对象、曲线附近候选为0或全部概率未命中，也会正常播放技能且不强制补目标。Flora/Loco/Kelu 分别执行全盘解除藤蔓、按真实发射次数临时融雪、闪电链；Yumi 按藤蔓、雪块、闪电、龙卷风的固定优先级选择当前合法技能。玩法层先确定曲线和概率结果，表现层只播放已确定结果。
 - `GameManagerShotResolutionMethods.js`：发射命中后的消除、掉落、收集等结算扩展；`_resolveBoardClearedOutcome` / `_beginSurplusShotBonus` 处理自然清屏后的星级校验、剩余球奖励与终局结算。
 - 漩涡泡泡由 `GameManager` 在每次发射落位结算后启动：`BubbleGrid.rotateSwirlNeighborsClockwise()` 将中心周围六格严格顺时针轮换一格，`SpecialAnimationTiming.swirlRotation` 统一 60° / 0.4 秒时序；动画结束后 `SupportSystem.findFloatingCells()` 立即重算顶部连接并复用正常掉落链路。
-- 虫洞泡泡由 `GameManager` 在漩涡阶段之后、藤蔓阶段之前处理：`BubbleGrid.getWormholePairs()` 按行严格配对，要求每个虫洞行恰好两个同方向端点；`shiftWormholeInteriors()` 在同一0.35秒阶段内将每对端点之间的普通球、特殊球与空位分别按 `moveDirection` 循环移动一格。`WormholeShaderRenderer` 为所有固定端点绑定 `effects/WormholeFlow`，方向层为每对通道分别绘制箭头；结算位移动画不会中断材质。移动不调用颜色匹配，动画结束后统一重算支撑并让无支撑球进入掉落链路。虫洞自身不可移除、作为永久锚点，清屏和顶部崩塌保留全部虫洞端点，顶部陆地与渐变层定位忽略所有虫洞。
+- 虫洞由 `GameManager` 在漩涡阶段之后、藤蔓阶段之前处理：`BubbleGrid.getWormholePairs()` 按行严格配对，要求每个虫洞行恰好两个同方向端点；`shiftWormholeInteriors()` 在同一0.35秒阶段内将每对端点之间的普通球、特殊球与空位分别按 `moveDirection` 循环移动一格。虫洞端点是独立棋盘特效实体，不进入 `BubbleGrid.cells`、不占用蜂窝格、不参与支撑、下压边界或发射碰撞，同一坐标允许正常放置和吸附球。`WormholeShaderRenderer` 为全部端点绑定 `effects/WormholeFlow`，端点以70×70显示在独立 `WormholeLayer`，该层位于普通球 `BoardLayer` 下方；方向层为每对通道分别绘制箭头，结算位移动画不会中断材质。移动不调用颜色匹配，动画结束后统一重算支撑并让无支撑球进入掉落链路；虫洞显示不参与清屏与顶部崩塌判定。
 - 藤蔓魔灵由 `GameManager` 在发射结算链中统一处理：魔灵固定 3 点生命，直接命中、爆炸范围命中或相邻格完成消除时每次结算只受 1 点伤害；缠绕球只有在六邻格内存在本次实际消除的球时才解除藤蔓并保留底层普通球，直接命中但未消除、或爆炸只覆盖缠绕球本身都不会解除。每 3 次真实发射后，存活魔灵按距离选择最近的未缠绕普通球，先预告 0.65 秒再写入归属藤蔓状态。魔灵死亡或因无支撑掉落时，`BubbleGrid` 按 owner id 同步清除其全部藤蔓；缠绕球自身掉落前也会解除藤蔓。
 - 被困精灵救援关使用独立 `trapped_sprite_rescue` 类型：`TrappedSpriteRescueSystem` 以 `anchorCell` 六邻格作为唯一支撑种子，保存权威任意角旋转状态，并根据最终入射方向、命中半径和实时转动惯量计算阻尼转角；中心精灵是吸附支撑点而不是反弹点，发射球命中精灵后吸附到接触方向对应的锚点六邻合法空格，中心保留格本身不放球。吸附确实启动整盘旋转时会抑制同一击的邻居局部反弹。救援关允许彩虹球、爆破球、石球、冰块、漩涡和藤蔓魔灵；即时技能/障碍结算先进入支撑扫描，漩涡轮换和藤蔓预告等待整盘受力旋转停止后再执行，禁止双重拓扑动画并行。`BubbleGrid` 保留 `row/col` 拓扑但把碰撞、吸附、特殊实体和快照坐标转换到旋转后的世界坐标。第0行不提供支撑或吸附，发射球触碰顶部会反弹，只有球心低于炮台位置才消失；支撑扫描清空棋盘后立即发出被困精灵获救飞离事件，不等待掉落球入缸，但最终胜利结算仍等待掉落计分完成。燃烧瓶、分裂球、虫洞、锁定球、钥匙球、普通棋盘视口推进、顶部空槽崩塌、危险线和额外固定锚点全部禁用。测试关 `assets/map/config/levels/level_trapped_sprite_test.json` 已同时配置六类兼容实体，隐藏测试模式下通过选关页“精灵”按钮进入。
 - `AdRevivePolicy.js`：广告复活策略；普通限球关统一补 10 球并选择目标色，计时关失败复活统一增加 10 秒，LoseView 按模式切换描述、位置与赠球图标。
@@ -125,11 +125,11 @@
 
 玩法底层系统：
 
-- `BubbleGrid.js`：棋盘格与格子状态；普通模式几何坐标通过附着的 `BoardViewportSystem.offsetY` 计算，被困精灵模式则通过 `TrappedSpriteRescueSystem` 将局部蜂窝坐标绕中心转为权威世界坐标，分段碰撞改为扫描实时旋转位置；中心精灵命中通过 `findTrappedSpriteAttachmentCell()` 选择锚点六邻合法吸附格，并禁止中心保留格吸附。漩涡泡泡使用互不重叠的六格顺时针轨道；虫洞按行形成一个或多个严格双端点对，并在各自通道循环移动时保留特殊球字段、藤蔓归属和空位；藤蔓球在格子快照中保存 `vineOwnerId`，预告阶段保存 `vinePreviewOwnerId`，魔灵生命与藤蔓归属都由棋盘运行时状态维护。
+- `BubbleGrid.js`：棋盘格与格子状态；普通模式几何坐标通过附着的 `BoardViewportSystem.offsetY` 计算，被困精灵模式则通过 `TrappedSpriteRescueSystem` 将局部蜂窝坐标绕中心转为权威世界坐标，分段碰撞改为扫描实时旋转位置；中心精灵命中通过 `findTrappedSpriteAttachmentCell()` 选择锚点六邻合法吸附格，并禁止中心保留格吸附。漩涡泡泡使用互不重叠的六格顺时针轨道；虫洞按行形成一个或多个严格双端点对，但端点保存在独立虫洞集合而非占格集合，并在各自通道循环移动时保留特殊球字段、藤蔓归属和空位；藤蔓球在格子快照中保存 `vineOwnerId`，预告阶段保存 `vinePreviewOwnerId`，魔灵生命与藤蔓归属都由棋盘运行时状态维护。
 - `BoardViewportSystem.js`：普通棋盘不超过 10 行时顶部贴 HUD 下沿；超过 10 行时开场和局内吸附结算后都匀速上移到 HUD 下方保留 10 行，移动期间锁定发射；逻辑第 0 行空槽 ≥6 时，结算后立即触发全盘崩塌判定。被困精灵模式固定 `offsetY=0`，调用 settle 或行偏移直接报错。
 - `TrappedSpriteRescueSystem.js`：加载与精灵大厅同源的七名 `spiritId`、锚点、世界中心、显示比例和全部旋转参数；局内被困形象严格派生为 `game/trapped_spirit/{spiritId}`，以指数阻尼积分保存任意最终角，向棋盘提供格子世界坐标，并在旋转期间参与全局输入锁。
 - `MatchSystem.js`：同色匹配消除；藤蔓球不进入同色连通组。
-- `SupportSystem.js`：连通/悬空判断；普通模式由顶部、锁定球和虫洞提供锚点；被困精灵模式只从中心锚点六邻格开始搜索，第0行不再提供支撑。结构变化后无支撑球在当前发射周期进入掉落链路。
+- `SupportSystem.js`：连通/悬空判断；普通模式仅由顶部和锁定球提供锚点，虫洞不提供支撑；被困精灵模式只从中心锚点六邻格开始搜索，第0行不再提供支撑。结构变化后无支撑球在当前发射周期进入掉落链路。
 - `FairyAssistSystem.js`：管理 `GameView/geniuses` 六个固定协助精灵槽位；只要本次发射产生消除，就按匹配消除数量生成红/黄/绿精灵，未消除时移除最早两只；碰撞中心由 `LevelRenderer.syncFairyAssistCollisionCenters` 从槽位节点转换到棋盘坐标后再参与判定，并维护每精灵最多 7 次碰撞计数与光效层数 snapshot。
 - `BoardOcclusionSystem.js`：管理棋盘云朵/树叶视觉遮挡；普通关按持久化关卡尝试序号在4个预校验变体间循环且连续不重复，随机挑战按Run种子固定。系统独立维护活动区域和渲染版本，普通`shot_limited`关只维护剩余发射次数，`timed_infinite_shots`限时关只维护剩余秒数；配置类型与关卡模式不一致时直接报错。遮挡不写入`BubbleGrid`，除雪剂可优先清理全部活动遮挡。
 - `FallingMarbleSystem.js`：掉落球运动（默认重力 900）；`maxDynamicMarbles` 当前由 `FallingRulesDefaults.maxDynamicMarbles`（9999，试验值）统一控制，暂忽略关卡 `fallingRules.maxDynamicMarbles: 10`，一次注册的全部掉落球会立即进入物理模拟；固定精灵反弹、红黄绿倍率、绿色精灵单次一分为二；清屏后余球每 0.2s 连续抛射入缸（不等上一颗入缸），炮台每 0.2s 在 15°～165° 间按 15° 步进往返旋转。

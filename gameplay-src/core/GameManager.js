@@ -1407,10 +1407,10 @@ GameManager.prototype._beginWormholeShiftForResolution = function (resolution) {
     throw new Error("Wormhole shift cannot start while another shift is pending.");
   }
   var grid = this.systems.bubbleGrid;
-  if (!grid || typeof grid.getCells !== "function") {
-    throw new Error("Wormhole shift requires BubbleGrid.getCells.");
+  if (!grid || typeof grid.getSpecialEntities !== "function") {
+    throw new Error("Wormhole shift requires BubbleGrid.getSpecialEntities.");
   }
-  var wormholes = grid.getCells().filter(isWormholeBall);
+  var wormholes = grid.getSpecialEntities().filter(isWormholeBall);
   if (!wormholes.length) {
     return false;
   }
@@ -1942,7 +1942,7 @@ GameManager.prototype._isBoardCleared = function (grid) {
   if (!Array.isArray(cells)) {
     throw new Error("Board cleared check requires BubbleGrid.getCells array.");
   }
-  return cells.every(isWormholeBall);
+  return cells.length === 0;
 };
 
 GameManager.prototype._resolveTrappedSpriteRescueBoardEmpty = function () {

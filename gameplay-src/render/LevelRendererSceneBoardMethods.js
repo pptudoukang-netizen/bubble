@@ -9,6 +9,7 @@ function attachLevelRendererSceneBoardMethods(LevelRenderer, deps) {
   var PREFAB_PATHS = deps.PREFAB_PATHS;
   var ICE_OVERLAY_OPACITY = deps.ICE_OVERLAY_OPACITY;
   var BOARD_BUBBLE_SIZE = deps.BOARD_BUBBLE_SIZE;
+  var WORMHOLE_RENDER_SIZE = deps.WORMHOLE_RENDER_SIZE;
   var VINE_VISUAL_SIZE = deps.VINE_VISUAL_SIZE;
   var TEST_SLOT_RADIUS = deps.TEST_SLOT_RADIUS;
   var FairyAssistConfig = deps.FairyAssistConfig;
@@ -201,6 +202,27 @@ function attachLevelRendererSceneBoardMethods(LevelRenderer, deps) {
       typeof cell.vineOwnerId === "string" ? cell.vineOwnerId : "",
       typeof cell.vinePreviewOwnerId === "string" ? cell.vinePreviewOwnerId : ""
     ].join("|");
+  }
+
+  function isWormholeEntity(entity) {
+    return !!(
+      entity &&
+      entity.entityCategory === "reactive_ball" &&
+      entity.entityType === "wormhole"
+    );
+  }
+
+  function collectBoardRenderEntities(boardSnapshot) {
+    if (!boardSnapshot || !Array.isArray(boardSnapshot.cells) || !Array.isArray(boardSnapshot.specialEntities)) {
+      throw new Error("Board rendering requires cells and specialEntities arrays.");
+    }
+    var wormholes = boardSnapshot.specialEntities.filter(isWormholeEntity);
+    wormholes.forEach(function (wormhole) {
+      if (!wormhole.position) {
+        throw new Error("Wormhole rendering requires endpoint position.");
+      }
+    });
+    return wormholes.concat(boardSnapshot.cells);
   }
 
   function resolveBoardBubblePrefabPath(cell) {
@@ -541,7 +563,7 @@ LevelRenderer.prototype._renderBoard = function (boardSnapshot) {
     this.boardCellRenderKeys = {};
   }
 
-  boardSnapshot.cells.forEach(function (cell) {
+  collectBoardRenderEntities(boardSnapshot).forEach(function (cell) {
     if (
       !cell.position ||
       typeof cell.position.x !== "number" ||
@@ -555,11 +577,15 @@ LevelRenderer.prototype._renderBoard = function (boardSnapshot) {
     var renderKey = buildBoardCellRenderKey(cell, boardSnapshot);
     var cachedRenderKey = this.boardCellRenderKeys[cellId];
     var existingNode = this.boardBubbleNodes[cellId];
+    var renderLayer = isWormholeEntity(cell) ? this.layers.wormhole : this.layers.board;
+    if (!renderLayer || !renderLayer.isValid) {
+      throw new Error("Board entity render layer is missing: " + cellId);
+    }
     if (existingNode && cachedRenderKey === renderKey) {
       existingNode.__boardTick = currentTick;
       existingNode.setPosition(cell.position.x, cell.position.y);
-      if (!existingNode.parent || existingNode.parent !== this.layers.board) {
-        existingNode.parent = this.layers.board;
+      if (!existingNode.parent || existingNode.parent !== renderLayer) {
+        existingNode.parent = renderLayer;
       }
       restoreBoardBubbleVisualState(this, existingNode, cell);
       this.wormholeShaderRenderer.syncNode(existingNode, cell);
@@ -573,11 +599,18 @@ LevelRenderer.prototype._renderBoard = function (boardSnapshot) {
 
     this.boardCellRenderKeys[cellId] = renderKey;
     var bubbleNode = this._acquireBoardBubbleNode(cell);
+    if (bubbleNode.parent !== renderLayer) {
+      bubbleNode.parent = renderLayer;
+    }
     bubbleNode.__boardTick = currentTick;
     bubbleNode.setPosition(cell.position.x, cell.position.y);
     bubbleNode.setScale(1);
     bubbleNode.opacity = 255;
-    this._applyBoardBubbleVisualCached(bubbleNode, cell, BOARD_BUBBLE_SIZE);
+    this._applyBoardBubbleVisualCached(
+      bubbleNode,
+      cell,
+      isWormholeEntity(cell) ? WORMHOLE_RENDER_SIZE : BOARD_BUBBLE_SIZE
+    );
     this.wormholeShaderRenderer.syncNode(bubbleNode, cell);
     syncVineOverlay(this, bubbleNode, cell);
     syncVineSpiritHealth(bubbleNode, cell);

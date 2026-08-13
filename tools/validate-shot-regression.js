@@ -2082,6 +2082,9 @@ function runMolotovPendingResolutionFinalizeCase() {
         { id: "anchored_survivor", row: 0, col: 0, color: "B", entityCategory: "normal_ball", entityType: null }
       ];
     },
+    getSpecialEntities: function () {
+      return [];
+    },
     getVineSpirits: function () {
       return [];
     },

@@ -49,6 +49,14 @@ var CLEAR_REWARD_START_LEVEL_ID = 1;
 var TOP_BOARD_ROW_INDEX = 0;
 var WORMHOLE_MOVE_DIRECTIONS = ["left", "right"];
 
+function isWormholeEntity(entity) {
+  return !!(
+    entity &&
+    entity.entityCategory === "reactive_ball" &&
+    entity.entityType === "wormhole"
+  );
+}
+
 function readJson(filePath) {
   var raw = fs.readFileSync(filePath, "utf8");
   if (raw.charCodeAt(0) === 0xfeff) {
@@ -89,7 +97,13 @@ function countOccupiedLayoutRows(layout, specialEntities) {
   });
   if (Array.isArray(specialEntities)) {
     specialEntities.forEach(function (entity) {
-      if (entity && Number.isInteger(entity.row) && entity.row >= 0 && entity.row < layout.length) {
+      if (
+        entity &&
+        !isWormholeEntity(entity) &&
+        Number.isInteger(entity.row) &&
+        entity.row >= 0 &&
+        entity.row < layout.length
+      ) {
         occupiedRows[entity.row] = true;
       }
     });
@@ -250,7 +264,7 @@ function validateSpecialEntities(level, normalizedLayoutRows, issues) {
       seenCells[cellKey] = true;
     }
 
-    if (rowString[entity.col] !== ".") {
+    if (rowString[entity.col] !== "." && !isWormholeEntity(entity)) {
       issues.push("specialEntities[" + index + "] must be placed on `.` layout slot at " + cellKey);
     }
   });
@@ -1060,7 +1074,7 @@ function validateLevelData(data, expectedLevelId) {
         return cellCode !== ".";
       }).length;
       (level.specialEntities || []).forEach(function (entity) {
-        if (entity && entity.row === 0 && Number.isInteger(entity.col)) {
+        if (entity && !isWormholeEntity(entity) && entity.row === 0 && Number.isInteger(entity.col)) {
           topOccupiedCount += 1;
         }
       });

@@ -52,6 +52,10 @@ function buildSpecialEntityIndex(specialEntities) {
   return indexMap;
 }
 
+function isWormholeEntity(entity) {
+  return entity.entityCategory === "reactive_ball" && entity.entityType === "wormhole";
+}
+
 function cellStateFromSpecialEntity(entity, levelColors) {
   if (entity.entityCategory === "reactive_ball" && entity.entityType === "splitter") {
     if (typeof entity.splitColor !== "string" || levelColors.indexOf(entity.splitColor) === -1) {
@@ -173,6 +177,7 @@ function importLevelToCellStates(levelConfig) {
 
   var specialIndex = buildSpecialEntityIndex(level.specialEntities);
   var cells = {};
+  var wormholeOverlays = {};
   var rowCount = level.layout.length;
 
   for (var row = 0; row < rowCount; row += 1) {
@@ -183,9 +188,13 @@ function importLevelToCellStates(levelConfig) {
     for (var col = 0; col < rowString.length; col += 1) {
       var key = row + ":" + col;
       var cellCode = rowString[col];
+      var specialEntity = specialIndex[key];
+      if (specialEntity && isWormholeEntity(specialEntity)) {
+        wormholeOverlays[key] = cellStateFromSpecialEntity(specialEntity, level.colors);
+      }
       if (cellCode === ".") {
-        if (specialIndex[key]) {
-          cells[key] = cellStateFromSpecialEntity(specialIndex[key], level.colors);
+        if (specialEntity && !isWormholeEntity(specialEntity)) {
+          cells[key] = cellStateFromSpecialEntity(specialEntity, level.colors);
         } else {
           cells[key] = { kind: "empty" };
         }
@@ -194,7 +203,7 @@ function importLevelToCellStates(levelConfig) {
       if (level.colors.indexOf(cellCode) === -1) {
         throw new Error("layout 含非法颜色 `" + cellCode + "` at " + row + ":" + col);
       }
-      if (specialIndex[key]) {
+      if (specialEntity && !isWormholeEntity(specialEntity)) {
         throw new Error("layout 与 specialEntities 冲突 at " + row + ":" + col);
       }
       cells[key] = {
@@ -206,7 +215,8 @@ function importLevelToCellStates(levelConfig) {
 
   return {
     rowCount: rowCount,
-    cells: cells
+    cells: cells,
+    wormholeOverlays: wormholeOverlays
   };
 }
 

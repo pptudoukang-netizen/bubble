@@ -282,8 +282,7 @@ function buildRelaxedSpec(levelId) {
   }
   var nonIceSpecials = countNonIceSpecials(specialCounts);
   var reactiveSpecialSlotCount = gameplayPlan.reactiveSpecialCounts.swirl +
-    gameplayPlan.reactiveSpecialCounts.vine_spirit +
-    gameplayPlan.reactiveSpecialCounts.wormhole;
+    gameplayPlan.reactiveSpecialCounts.vine_spirit;
   var specialSlotCount = specialCounts.ice + nonIceSpecials + reactiveSpecialSlotCount;
   var excludedGameplaySlotCount = specialSlotCount + (gameplayPlan.trappedSpriteRescue ? 1 : 0);
   var normalCount = gameplayPlan.trappedSpriteRescue

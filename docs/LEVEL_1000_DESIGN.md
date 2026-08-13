@@ -79,12 +79,12 @@ Rule:
 
 - A level can contain multiple wormhole pairs. Pairing is deterministic by row: every wormhole row must contain exactly two endpoints, use one shared `moveDirection` (`left` or `right`), and contain at least one interior slot. Different pairs must occupy different rows.
 - After each fired bubble finishes its normal shot resolution, every pair shifts simultaneously. Every interior slot between that pair's fixed endpoints moves exactly one slot in `moveDirection`, wrapping at the opposite end. Normal balls, special balls, vine ownership state and empty slots all move together.
-- Wormholes never move with their own cycle, never participate in color matching, cannot be eliminated or dropped, and act as permanent support anchors.
+- Wormhole endpoints never move with their own cycle and never participate in color matching. They are non-grid overlays: they do not occupy a cell, provide support, block a shot, or contribute to the board's bottom pressure limit. A normal or special ball can occupy the same coordinate.
 - The wormhole node and outer ring stay fixed. `effects/WormholeFlow` rotates only the inner UV field with stronger distortion toward the center, adds a fast blue-purple highlight sweeping around a circular band, softly breathes the star and rim brightness, and pulses the dark center. The shader remains active during the interior-slot shift animation; the complete texture never rotates mechanically.
 - The 0.35-second shift locks input. Support is recalculated when the animation finishes, and every newly unsupported non-wormhole cell immediately enters the normal falling-marble pipeline.
 - The shift never invokes color matching. Even if the new arrangement forms a valid same-color group, it remains until a later player shot resolves that match.
-- A board containing only permanent wormhole endpoints counts as cleared. The top-anchor collapse rule remains active on wormhole levels: once the top-row empty-slot threshold is reached, every non-wormhole cell drops while all fixed endpoints remain on the board. The top mainland and gradient alignment ignore wormhole endpoints, so they stay at the board boundary instead of pressing down to the surviving wormhole rows.
-- Rendering and introduction UI use `image/ball/wormhole`; board rendering applies `effects/WormholeFlow`, and the texture is excluded from dynamic-atlas packing so its distortion UV domain remains stable. Remote compact packs encode wormholes with type code `h` plus the explicit move direction.
+- Wormhole overlays never participate in clear-state or top-anchor-collapse occupancy. The top-anchor collapse rule remains active on wormhole levels and only real board cells are dropped; the top mainland and gradient alignment are derived only from real board cells.
+- Rendering and introduction UI use `image/ball/wormhole`; each endpoint renders at 70x70 in a dedicated layer below the ball layer, board rendering applies `effects/WormholeFlow`, and the texture is excluded from dynamic-atlas packing so its distortion UV domain remains stable. Remote compact packs encode wormholes with type code `h` plus the explicit move direction.
 
 ### Vine Spirit
 

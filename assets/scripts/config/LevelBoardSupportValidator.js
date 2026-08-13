@@ -6,6 +6,14 @@ var TOP_BOARD_ROW_INDEX = 0;
 var MAX_TOP_ROW_SAME_COLOR_RUN = 3;
 var MIN_NORMAL_BALL_OCCUPANCY_RATIO = 0.7;
 
+function isWormholeEntity(entity) {
+  return !!(
+    entity &&
+    entity.entityCategory === "reactive_ball" &&
+    entity.entityType === "wormhole"
+  );
+}
+
 function keyFor(row, col) {
   return row + ":" + col;
 }
@@ -112,12 +120,13 @@ function collectOccupiedCells(levelConfig, levelKey) {
     if (!Number.isInteger(entity.row) || !Number.isInteger(entity.col) || !isValidCell(levelConfig.layout, entity.row, entity.col)) {
       throw new Error("specialEntities[" + index + "] row/col invalid for initial board support validation: " + levelKey);
     }
+    if (isWormholeEntity(entity)) {
+      return;
+    }
     if (levelConfig.layout[entity.row].charAt(entity.col) !== ".") {
       throw new Error("specialEntities[" + index + "] overlaps layout for initial board support validation: " + levelKey);
     }
     addCell(entity.row, entity.col, "specialEntities[" + index + "]");
-    occupiedMap[keyFor(entity.row, entity.col)].fixedAnchor =
-      entity.entityCategory === "reactive_ball" && entity.entityType === "wormhole";
   });
 
   return {
@@ -155,7 +164,6 @@ function findUnsupportedInitialCells(levelConfig, levelKey) {
     });
     if (
       (rescueAnchor === null && cell.row === TOP_BOARD_ROW_INDEX) ||
-      cell.fixedAnchor === true ||
       touchesRescueAnchor
     ) {
       queue.push(cell);
@@ -239,6 +247,9 @@ function analyzeGeneratedBoardRules(levelConfig, levelKey) {
     }
     if (!Number.isInteger(entity.row) || !Number.isInteger(entity.col) || !isValidCell(levelConfig.layout, entity.row, entity.col)) {
       throw new Error("specialEntities[" + index + "] row/col invalid for generated board rule validation: " + levelKey);
+    }
+    if (isWormholeEntity(entity)) {
+      return;
     }
     if (levelConfig.layout[entity.row].charAt(entity.col) !== ".") {
       throw new Error("specialEntities[" + index + "] overlaps a normal ball for generated board rule validation: " + levelKey);

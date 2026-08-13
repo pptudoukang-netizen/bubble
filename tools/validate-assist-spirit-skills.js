@@ -299,6 +299,7 @@ function validateSkillAudio() {
     "assets/audio/sound/lighting.mp3",
     "assets/audio/sound/ablation.mp3",
     "assets/audio/sound/vines.mp3",
+    "assets/audio/sound/release_vines.mp3",
     "assets/audio/sound/skill_completed.mp3"
   ].forEach(function (relativePath) {
     assert(fs.existsSync(path.join(projectRoot, relativePath)), "Missing assist spirit skill audio: " + relativePath);
@@ -306,7 +307,7 @@ function validateSkillAudio() {
 
   var expectedSfxKeyBySkillId = {
     permanent_thaw: "ablation",
-    release_vines: "vines"
+    release_vines: "releaseVines"
   };
   Object.keys(expectedSfxKeyBySkillId).forEach(function (skillId) {
     var playedSfxKeys = [];
@@ -401,7 +402,17 @@ function validateSkillAudio() {
   });
   assert(
     vineEntangleSfxKeys.length === 1 && vineEntangleSfxKeys[0] === "vines",
-    "Vine release and vine entanglement start must share the vines sound."
+    "Vine entanglement start must keep the vines sound instead of using the release sound."
+  );
+
+  var gameBootstrapSource = fs.readFileSync(
+    path.join(projectRoot, "assets/scripts/bootstrap/GameBootstrap.js"),
+    "utf8"
+  );
+  assert(
+    gameBootstrapSource.indexOf('releaseVinesSfxResource: {') >= 0 &&
+      gameBootstrapSource.indexOf('default: "sound/release_vines"') >= 0,
+    "Vine release SFX property must default to sound/release_vines."
   );
 }
 

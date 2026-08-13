@@ -337,7 +337,8 @@ function validateAssets() {
     [
       path.join(ROOT, "assets", "game", "trapped_spirit", spiritId + ".png"),
       path.join(ROOT, "assets", "map", "image", "trapped_spirit", spiritId + ".png"),
-      path.join(ROOT, "assets", "ui", "image", "props", spiritId + "_fragments.png")
+      path.join(ROOT, "assets", "ui", "image", "props", spiritId + "_fragments.png"),
+      path.join(ROOT, "assets", "ui", "image", "rescue_successful", spiritId + ".png")
     ].forEach(function (pngPath) {
       assert(fs.existsSync(pngPath), "Missing trapped spirit art: " + pngPath);
       assert(fs.existsSync(pngPath + ".meta"), "Missing trapped spirit art meta: " + pngPath + ".meta");
@@ -382,6 +383,95 @@ function validateAssets() {
   var rescueSfxPath = path.join(ROOT, "assets", "audio", "sound", "cute_laughter.mp3");
   assert(fs.existsSync(rescueSfxPath), "Missing trapped sprite rescue sfx: " + rescueSfxPath);
   assert(fs.existsSync(rescueSfxPath + ".meta"), "Missing trapped sprite rescue sfx meta: " + rescueSfxPath + ".meta");
+}
+
+function validateRescueSuccessfulPrefab() {
+  var prefabPath = path.join(ROOT, "assets", "ui", "prefabs", "RescueSuccessfulView.prefab");
+  assert(fs.existsSync(prefabPath), "Missing RescueSuccessfulView prefab.");
+  assert(fs.existsSync(prefabPath + ".meta"), "Missing RescueSuccessfulView prefab meta.");
+  var prefab = JSON.parse(fs.readFileSync(prefabPath, "utf8"));
+
+  function resolveNode(reference, description) {
+    assert(reference && Number.isInteger(reference.__id__), description + " reference is invalid.");
+    var node = prefab[reference.__id__];
+    assert(node && node.__type__ === "cc.Node", description + " must be a cc.Node.");
+    return node;
+  }
+
+  function requireChild(parentNode, name, description) {
+    var matches = parentNode._children.map(function (reference) {
+      return resolveNode(reference, description + "/" + name);
+    }).filter(function (node) {
+      return node._name === name;
+    });
+    assert(matches.length === 1, description + " must contain exactly one child named " + name + ".");
+    return matches[0];
+  }
+
+  function requireComponent(node, componentType, description) {
+    var matches = node._components.map(function (reference) {
+      assert(reference && Number.isInteger(reference.__id__), description + " component reference is invalid.");
+      return prefab[reference.__id__];
+    }).filter(function (component) {
+      return component && component.__type__ === componentType;
+    });
+    assert(matches.length === 1, description + " must contain exactly one " + componentType + ".");
+    return matches[0];
+  }
+
+  var root = resolveNode(prefab[0].data, "RescueSuccessfulView");
+  assert(root._name === "RescueSuccessfulView", "RescueSuccessfulView root name mismatch.");
+  requireChild(root, "mask", "RescueSuccessfulView");
+  var panel = requireChild(root, "Panel", "RescueSuccessfulView");
+  var role = requireChild(panel, "role", "RescueSuccessfulView/Panel");
+  var closeButton = requireChild(panel, "btn_close", "RescueSuccessfulView/Panel");
+  var panelSprite = requireComponent(panel, "cc.Sprite", "RescueSuccessfulView/Panel");
+  var roleSprite = requireComponent(role, "cc.Sprite", "RescueSuccessfulView/Panel/role");
+  var closeButtonSprite = requireComponent(closeButton, "cc.Sprite", "RescueSuccessfulView/Panel/btn_close");
+  requireComponent(closeButton, "cc.Button", "RescueSuccessfulView/Panel/btn_close");
+
+  function readPopupSpriteFrameUuid(assetName) {
+    var metaPath = path.join(
+      ROOT,
+      "assets",
+      "ui",
+      "image",
+      "rescue_successful",
+      assetName + ".png.meta"
+    );
+    var meta = JSON.parse(fs.readFileSync(metaPath, "utf8"));
+    assert(
+      meta.subMetas &&
+      meta.subMetas[assetName] &&
+      typeof meta.subMetas[assetName].uuid === "string" &&
+      meta.subMetas[assetName].uuid.length > 0,
+      "Rescue successful popup SpriteFrame meta is invalid: " + assetName
+    );
+    return meta.subMetas[assetName].uuid;
+  }
+
+  assert(
+    panelSprite._spriteFrame && panelSprite._spriteFrame.__uuid__ === readPopupSpriteFrameUuid("bg"),
+    "RescueSuccessfulView Panel must use rescue_successful/bg."
+  );
+  assert(
+    closeButtonSprite._spriteFrame && closeButtonSprite._spriteFrame.__uuid__ === readPopupSpriteFrameUuid("sure_btn"),
+    "RescueSuccessfulView close button must use rescue_successful/sure_btn."
+  );
+
+  var popupSpiritFrameUuids = AssistSpiritConfig.getCatalog().map(function (spirit) {
+    return readPopupSpriteFrameUuid(spirit.id);
+  });
+  assert(
+    popupSpiritFrameUuids.filter(function (uuid, index, values) {
+      return values.indexOf(uuid) === index;
+    }).length === popupSpiritFrameUuids.length,
+    "Rescue successful popup spirit SpriteFrame UUIDs must be unique."
+  );
+  assert(
+    roleSprite._spriteFrame && popupSpiritFrameUuids.indexOf(roleSprite._spriteFrame.__uuid__) >= 0,
+    "RescueSuccessfulView role must reference one of the seven popup spirit assets."
+  );
 }
 
 function validateFirstClearRescueFragmentRewards() {
@@ -1180,10 +1270,59 @@ function validateWiring() {
     path.join(ROOT, "gameplay-src", "render", "LevelRenderer.js"),
     "utf8"
   );
+  var hudSource = fs.readFileSync(
+    path.join(ROOT, "gameplay-src", "render", "LevelRendererSceneHudMethods.js"),
+    "utf8"
+  );
+  var gameViewPrefab = JSON.parse(fs.readFileSync(
+    path.join(ROOT, "assets", "game", "prefabs", "ui", "GameView.prefab"),
+    "utf8"
+  ));
+  function resolvePrefabNode(reference, description) {
+    assert(reference && Number.isInteger(reference.__id__), description + " reference is invalid.");
+    var node = gameViewPrefab[reference.__id__];
+    assert(node && node.__type__ === "cc.Node", description + " node is invalid.");
+    return node;
+  }
+  function requirePrefabChild(parentNode, childName, description) {
+    var child = null;
+    parentNode._children.forEach(function (reference) {
+      var candidate = resolvePrefabNode(reference, description + "/" + childName);
+      if (candidate._name === childName) {
+        child = candidate;
+      }
+    });
+    assert(child, description + " is missing child " + childName + ".");
+    return child;
+  }
+  var gameViewNode = resolvePrefabNode(gameViewPrefab[0].data, "GameView");
+  var hudPanelNode = requirePrefabChild(gameViewNode, "HudPanel", "GameView");
+  var targetLayoutNode = requirePrefabChild(hudPanelNode, "target_layout", "GameView/HudPanel");
+  var spiritItemNode = requirePrefabChild(targetLayoutNode, "item_spirit", "GameView/HudPanel/target_layout");
+  var spiritNode = requirePrefabChild(spiritItemNode, "spirit", "GameView/HudPanel/target_layout/item_spirit");
+  requirePrefabChild(spiritNode, "TargetValue", "GameView/HudPanel/target_layout/item_spirit/spirit");
+  requirePrefabChild(spiritNode, "complete", "GameView/HudPanel/target_layout/item_spirit/spirit");
   assert(
     rendererSource.indexOf("game/trapped_spirit/") !== -1,
     "Renderer trapped sprite resource mapping is missing."
   );
+  assert(
+    rendererSource.indexOf("spiritDisplay = {") !== -1 &&
+      rendererSource.indexOf("spritePath: buildTrappedSpriteResourcePath(level.trappedSpriteRescue.spiritId)") !== -1 &&
+      rendererSource.indexOf("var spiritRescued = runtimeSnapshot.board.cells.length === 0;") !== -1,
+    "Rescue HUD target must use the configured trapped-spirit image and board-empty completion state."
+  );
+  [
+    'cardName = "item_spirit";',
+    'this._renderHudTargetSlot(targetLayout, "spirit", targetDisplay.spirit);',
+    "sprite.trim = false;",
+    "HUD_SPIRIT_ICON_HEIGHT * originalSize.width / originalSize.height"
+  ].forEach(function (requiredToken) {
+    assert(
+      hudSource.indexOf(requiredToken) !== -1,
+      "Rescue HUD target renderer token is missing: " + requiredToken
+    );
+  });
   assert(
     rendererSource.indexOf('"ui/image/props/" + spiritId + "_fragments"') !== -1,
     "Renderer rescue fragment reward resource mapping is missing."
@@ -1196,6 +1335,63 @@ function validateWiring() {
     popupSource.indexOf('rewardItem.id === "spirit_fragment"') !== -1 &&
       popupSource.indexOf("buildSpiritFragmentRewardResourcePath(rewardItem.spiritId)") !== -1,
     "WinView spirit fragment reward rendering is missing."
+  );
+  [
+    'rescueSuccessfulView: "prefabs/ui/RescueSuccessfulView"',
+    'var RESCUE_SUCCESSFUL_SPIRIT_PATH_PREFIX = "image/rescue_successful/";',
+    "buildRescueSuccessfulSpiritResourcePath(level.trappedSpriteRescue.spiritId)",
+    "this._showRescueSuccessfulView(rescueEvent.spiritId);",
+    "PREFAB_PATHS.rescueSuccessfulView"
+  ].forEach(function (requiredToken) {
+    assert(
+      rendererSource.indexOf(requiredToken) !== -1,
+      "RescueSuccessfulView renderer token is missing: " + requiredToken
+    );
+  });
+  [
+    "LevelRenderer.prototype._showRescueSuccessfulView",
+    "LevelRenderer.prototype.hideRescueSuccessfulView",
+    "LevelRenderer.prototype._dismissRescueSuccessfulViewForWin",
+    "buildRescueSuccessfulSpiritResourcePath(spiritId)",
+    "roleSprite.trim = false;",
+    "roleNode.setContentSize(authoredRoleSize);",
+    "RESCUE_SUCCESSFUL_VIEW_PROXY_ROOT_NAME",
+    "var RESCUE_SUCCESSFUL_MIN_DISPLAY_DURATION_SEC = 2;",
+    ".delay(RESCUE_SUCCESSFUL_MIN_DISPLAY_DURATION_SEC)",
+    "viewNode.__minimumDisplayCompleted = true;"
+  ].forEach(function (requiredToken) {
+    assert(
+      popupSource.indexOf(requiredToken) !== -1,
+      "RescueSuccessfulView popup token is missing: " + requiredToken
+    );
+  });
+  assert(
+    popupSource.indexOf("closeButton.interactable = false;") === -1 &&
+      popupSource.indexOf("cannot close before its two-second minimum display completes") === -1,
+    "Player-initiated RescueSuccessfulView close must remain available before two seconds."
+  );
+  assert(
+    popupSource.indexOf('LevelRenderer.prototype.hideRescueSuccessfulView = function () {') <
+      popupSource.indexOf('this._renderWinView(this.lastRuntimeSnapshot);'),
+    "Player-initiated rescue popup close must immediately resume a pending WinView render."
+  );
+  assert(
+    popupSource.indexOf("rescueSuccessfulView.__minimumDisplayCompleted !== true") <
+      popupSource.indexOf("this._dismissRescueSuccessfulViewForWin();"),
+    "WinView must wait until RescueSuccessfulView has displayed for two seconds."
+  );
+  assert(
+    popupSource.indexOf("this._dismissRescueSuccessfulViewForWin();") <
+      popupSource.indexOf("var renderKey = buildWinViewRenderKey(this.currentLevelConfig, runtimeSnapshot);"),
+    "WinView must dismiss RescueSuccessfulView before rendering or returning from its active render path."
+  );
+  var bundleLoaderSource = fs.readFileSync(
+    path.join(ROOT, "assets", "scripts", "utils", "BundleLoader.js"),
+    "utf8"
+  );
+  assert(
+    bundleLoaderSource.indexOf("RescueSuccessfulView: true") !== -1,
+    "BundleLoader must route RescueSuccessfulView through the UI bundle."
   );
   assert(
     rendererSource.indexOf("var TRAPPED_SPRITE_LAYER_Z_INDEX = 49;") !== -1 &&
@@ -1278,6 +1474,7 @@ function validateWiring() {
 var config = loadConfig();
 var level63Config = loadLevel63Config();
 validateAssets();
+validateRescueSuccessfulPrefab();
 validateFloatingMapLandmarkRule();
 validateRemoteRescueIdentitySchedule();
 validateConfigContract(config);

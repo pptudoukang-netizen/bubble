@@ -13,7 +13,7 @@ var FAIRY_ASSIST_HIT_SFX_PATHS = Object.freeze([
 ]);
 var ASSIST_SPIRIT_SKILL_SFX_BY_ID = Object.freeze({
   permanent_thaw: "ablation",
-  release_vines: "vines"
+  release_vines: "releaseVines"
 });
 
 function requireFairyAssistHitSfxPaths(paths) {
@@ -38,6 +38,8 @@ module.exports = {
       bgmPath: this._getGameplayBgmPath(),
       sfxMap: {
         uiClick: this.uiClickSfxResource,
+        congratulations: this.congratulationsSfxResource,
+        upgrade: this.upgradeSfxResource,
         shot: this.shotSfxResource,
         emission: this.emissionSfxResource,
         win: this.winSfxResource,
@@ -54,6 +56,7 @@ module.exports = {
         fireworks: this.fireworksSfxResource,
         iceBreak: this.iceBreakSfxResource,
         vines: this.vinesSfxResource,
+        releaseVines: this.releaseVinesSfxResource,
         tornado: this.tornadoSfxResource,
         lighting: this.lightingSfxResource,
         ablation: this.ablationSfxResource,

@@ -639,6 +639,7 @@ function validateRuntimeWiring() {
   requireContains(bundleLoader, "bundleName: SPIRIT_SYSTEM_BUNDLE_NAME", "Spirit system bundle name route");
 
   var bootstrap = readText("assets/scripts/bootstrap/GameBootstrap.js");
+  var audioMethods = readText("assets/scripts/bootstrap/GameBootstrapAudioMethods.js");
   var levelSelectFlow = readText("assets/scripts/bootstrap/GameBootstrapLevelSelectFlowMethods.js");
   var spiritHallMethods = readText("assets/scripts/bootstrap/GameBootstrapSpiritHallMethods.js");
   var lazyRegistry = require(path.join(
@@ -762,6 +763,24 @@ function validateRuntimeWiring() {
     "this._setStatusWithTip(\"spirit_upgrade_fragment_not_enough\", null, \"精灵碎片不足\")",
     "Spirit level-up insufficient-fragment tip route"
   );
+  requireContains(
+    bootstrap,
+    'default: "sound/upgrade"',
+    "Spirit level-up sfx resource"
+  );
+  requireContains(
+    audioMethods,
+    "upgrade: this.upgradeSfxResource",
+    "Spirit level-up sfx mapping"
+  );
+  requireContains(
+    spiritHallMethods,
+    'this.assistSpiritState = this.assistSpiritStore.save(result.state);\n    this._playSfx("upgrade");',
+    "Spirit level-up success sfx ordering"
+  );
+  if (!fs.existsSync(path.join(projectRoot, "assets/audio/sound/upgrade.mp3"))) {
+    fail("Missing spirit level-up sfx asset: assets/audio/sound/upgrade.mp3");
+  }
   requireContains(
     spiritHallMethods,
     "SPIRIT_NOT_UNLOCKED_TIP = \"该精灵尚未解锁，请先完成对应救援关卡\"",

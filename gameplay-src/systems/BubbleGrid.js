@@ -147,6 +147,7 @@ function BubbleGrid() {
   this._cellsByRow = {};
   this._rescueExtendedNormalCellMap = {};
   this._specialCellMap = {};
+  this._wormholeMap = {};
   this._timeBonusByCell = {};
   this._vineOwnerByCell = {};
   this._vinePreviewOwnerByCell = {};
@@ -296,13 +297,20 @@ BubbleGrid.prototype._normalizeLayoutRows = function () {
 
 BubbleGrid.prototype._rebuildSpecialCellMap = function () {
   this._specialCellMap = {};
+  this._wormholeMap = {};
 
   (this.specialEntities || []).forEach(function (entity) {
     if (!entity || !this.isValidCell(entity.row, entity.col)) {
       return;
     }
 
-    this._specialCellMap[keyFor(entity.row, entity.col)] = createSpecialEntityRecord(entity, entity.row, entity.col);
+    var entityKey = keyFor(entity.row, entity.col);
+    var record = createSpecialEntityRecord(entity, entity.row, entity.col);
+    if (isWormholeCell(record)) {
+      this._wormholeMap[entityKey] = record;
+      return;
+    }
+    this._specialCellMap[entityKey] = record;
   }, this);
 };
 
@@ -612,9 +620,13 @@ BubbleGrid.prototype._clearSpecialCell = function (row, col) {
 };
 
 BubbleGrid.prototype.getSpecialEntities = function () {
-  return Object.keys(this._specialCellMap).map(function (key) {
+  var cellEntities = Object.keys(this._specialCellMap).map(function (key) {
     return clone(this._specialCellMap[key]);
   }, this);
+  var wormholes = Object.keys(this._wormholeMap).map(function (key) {
+    return clone(this._wormholeMap[key]);
+  }, this);
+  return cellEntities.concat(wormholes);
 };
 
 BubbleGrid.prototype.getRowCount = function () {
@@ -626,14 +638,14 @@ BubbleGrid.prototype.getCells = function () {
 };
 
 BubbleGrid.prototype.getClearableCells = function () {
-  return clone(this.cells.filter(function (cell) {
-    return !isWormholeCell(cell);
-  }));
+  return clone(this.cells);
 };
 
 BubbleGrid.prototype.getWormholePairs = function () {
   var wormholesByRow = {};
-  this.cells.filter(isWormholeCell).forEach(function (wormhole) {
+  Object.keys(this._wormholeMap).map(function (key) {
+    return this._wormholeMap[key];
+  }, this).forEach(function (wormhole) {
     if (!wormholesByRow[wormhole.row]) {
       wormholesByRow[wormhole.row] = [];
     }
@@ -2024,7 +2036,7 @@ BubbleGrid.prototype._removeCellsByMode = function (cells, allowVineDrop) {
     }
 
     var liveCell = this.getCell(cell.row, cell.col);
-    if (isWormholeCell(liveCell) || (!allowVineDrop && isVineProtectedCell(liveCell))) {
+    if (!allowVineDrop && isVineProtectedCell(liveCell)) {
       return;
     }
 
@@ -2093,7 +2105,10 @@ BubbleGrid.prototype.snapshot = function () {
     cell.position = this.getCellPosition(cell.row, cell.col);
     return cell;
   }, this);
-  snapshot.specialEntities = this.getSpecialEntities();
+  snapshot.specialEntities = this.getSpecialEntities().map(function (entity) {
+    entity.position = this.getCellPosition(entity.row, entity.col);
+    return entity;
+  }, this);
   snapshot.version = this.version;
   return snapshot;
 };
