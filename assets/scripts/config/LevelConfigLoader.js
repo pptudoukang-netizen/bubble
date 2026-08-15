@@ -9,9 +9,10 @@ var LevelBoardSupportValidator = require("./LevelBoardSupportValidator");
 var AssistSpiritConfig = require("./AssistSpiritConfig");
 
 var SPECIAL_ENTITY_TYPES = {
+  hazard_ball: ["black_hole"],
   skill_ball: ["rainbow", "blast"],
   obstacle_ball: ["stone", "ice"],
-  reactive_ball: ["molotov", "splitter", "swirl", "vine_spirit", "wormhole"],
+  reactive_ball: ["breeder", "molotov", "spirit_cocoon", "splitter", "swirl", "transparent_ball", "vine_spirit", "wormhole"],
   locked_ball: ["locked"],
   key_ball: ["key"]
 };
@@ -30,12 +31,21 @@ var ALLOWED_SPLITTER_COLORS = ["R", "G", "B", "Y", "P"];
 var ALLOWED_CLEAR_REWARD_ITEM_IDS = ["coin", "stamina"];
 var TOP_BOARD_ROW_INDEX = 0;
 var WORMHOLE_MOVE_DIRECTIONS = ["left", "right"];
+var POISON_PARTICLE_COUNT = 3;
 
 function isWormholeEntity(entity) {
   return !!(
     entity &&
     entity.entityCategory === "reactive_ball" &&
     entity.entityType === "wormhole"
+  );
+}
+
+function isBlackHoleEntity(entity) {
+  return !!(
+    entity &&
+    entity.entityCategory === "hazard_ball" &&
+    entity.entityType === "black_hole"
   );
 }
 var COLLECTION_OBJECTIVE_TYPES = {
@@ -60,7 +70,8 @@ var BONUS_OBJECTIVE_TYPES = {
 var LEVEL_TYPES = {
   normal: true,
   special_floating_island: true,
-  trapped_sprite_rescue: true
+  trapped_sprite_rescue: true,
+  multi_trapped_spirit_rescue: true
 };
 var PLAY_MODES = {
   shot_limited: true,
@@ -134,6 +145,60 @@ function normalizeLayoutRows(layout, levelColors, levelKey) {
 
   return layout.map(function (rowString, rowIndex) {
     return validateRowString(rowIndex, rowString, levelColors, levelKey, maxColumns);
+  });
+}
+
+function normalizeCellAttachments(levelConfig, levelKey) {
+  if (levelConfig.cellAttachments === undefined) {
+    return [];
+  }
+  if (!Array.isArray(levelConfig.cellAttachments)) {
+    throw new Error("level.cellAttachments must be an array: " + levelKey);
+  }
+
+  var seenIds = {};
+  var seenCoordinates = {};
+  return levelConfig.cellAttachments.map(function (attachment, index) {
+    var fieldName = "level.cellAttachments[" + index + "]";
+    if (!attachment || typeof attachment !== "object" || Array.isArray(attachment)) {
+      throw new Error(fieldName + " must be an object: " + levelKey);
+    }
+    if (typeof attachment.id !== "string" || !attachment.id.trim()) {
+      throw new Error(fieldName + ".id must be non-empty: " + levelKey);
+    }
+    var id = attachment.id.trim();
+    if (seenIds[id]) {
+      throw new Error("level.cellAttachments contains duplicate id `" + id + "`: " + levelKey);
+    }
+    seenIds[id] = true;
+    if (attachment.type !== "poison") {
+      throw new Error(fieldName + ".type must be `poison`: " + levelKey);
+    }
+    if (!Number.isInteger(attachment.row) || attachment.row < 0 || attachment.row >= levelConfig.layout.length) {
+      throw new Error(fieldName + ".row is outside level.layout: " + levelKey);
+    }
+    var row = levelConfig.layout[attachment.row];
+    if (!Number.isInteger(attachment.col) || attachment.col < 0 || attachment.col >= row.length) {
+      throw new Error(fieldName + ".col is outside level.layout row: " + levelKey);
+    }
+    if (row.charAt(attachment.col) === ".") {
+      throw new Error(fieldName + " poison target must be an ordinary ball: " + levelKey);
+    }
+    if (attachment.particleCount !== POISON_PARTICLE_COUNT) {
+      throw new Error(fieldName + ".particleCount must equal " + POISON_PARTICLE_COUNT + ": " + levelKey);
+    }
+    var coordinateKey = attachment.row + ":" + attachment.col;
+    if (seenCoordinates[coordinateKey]) {
+      throw new Error("level.cellAttachments contains duplicate target `" + coordinateKey + "`: " + levelKey);
+    }
+    seenCoordinates[coordinateKey] = true;
+    return {
+      id: id,
+      type: "poison",
+      row: attachment.row,
+      col: attachment.col,
+      particleCount: POISON_PARTICLE_COUNT
+    };
   });
 }
 
@@ -247,6 +312,94 @@ function normalizeTrappedSpriteRescue(levelConfig, levelKey) {
     return cellCode !== ".";
   })) {
     throw new Error("trapped_sprite_rescue top row must be empty: " + levelKey);
+  }
+}
+
+function normalizeMultiTrappedSpiritRescue(levelConfig, levelKey) {
+  var isMultiRescueLevel = levelConfig.levelType === "multi_trapped_spirit_rescue";
+  var rescue = levelConfig.multiTrappedSpiritRescue;
+  if (!isMultiRescueLevel) {
+    if (rescue !== undefined) {
+      throw new Error("level.multiTrappedSpiritRescue is only valid for multi_trapped_spirit_rescue: " + levelKey);
+    }
+    return;
+  }
+  if (levelConfig.trappedSpriteRescue !== undefined) {
+    throw new Error("multi_trapped_spirit_rescue must not configure level.trappedSpriteRescue: " + levelKey);
+  }
+  if (!rescue || typeof rescue !== "object" || Array.isArray(rescue)) {
+    throw new Error("multi_trapped_spirit_rescue requires level.multiTrappedSpiritRescue: " + levelKey);
+  }
+  if (!Array.isArray(rescue.targets) || rescue.targets.length < 2) {
+    throw new Error("level.multiTrappedSpiritRescue.targets must contain at least two targets: " + levelKey);
+  }
+  if (!Array.isArray(levelConfig.specialEntities)) {
+    throw new Error("multi_trapped_spirit_rescue requires normalized level.specialEntities: " + levelKey);
+  }
+  var targetCoordinates = {};
+  var targetSpiritIds = {};
+  rescue.targets = rescue.targets.map(function (target, index) {
+    if (!target || typeof target !== "object" || Array.isArray(target)) {
+      throw new Error("level.multiTrappedSpiritRescue.targets[" + index + "] must be an object: " + levelKey);
+    }
+    try {
+      AssistSpiritConfig.getSpirit(target.spiritId);
+    } catch (error) {
+      throw new Error("level.multiTrappedSpiritRescue.targets[" + index + "].spiritId is invalid: " + levelKey + ": " + error.message);
+    }
+    if (targetSpiritIds[target.spiritId]) {
+      throw new Error("level.multiTrappedSpiritRescue.targets must not duplicate spiritId `" + target.spiritId + "`: " + levelKey);
+    }
+    if (
+      !Number.isInteger(target.row) ||
+      !Number.isInteger(target.col) ||
+      target.row <= TOP_BOARD_ROW_INDEX ||
+      target.row >= levelConfig.layout.length ||
+      target.col < 0 ||
+      target.col >= BoardLayout.getRowColumnCount(target.row, BoardLayout.defaultColumns)
+    ) {
+      throw new Error("level.multiTrappedSpiritRescue.targets[" + index + "] must be a non-top-row board coordinate: " + levelKey);
+    }
+    var coordinateKey = target.row + ":" + target.col;
+    if (targetCoordinates[coordinateKey]) {
+      throw new Error("level.multiTrappedSpiritRescue.targets contains duplicate coordinate `" + coordinateKey + "`: " + levelKey);
+    }
+    if (levelConfig.layout[target.row].charAt(target.col) !== ".") {
+      throw new Error("level.multiTrappedSpiritRescue target cell must remain empty at `" + coordinateKey + "`: " + levelKey);
+    }
+    if (levelConfig.specialEntities.some(function (entity) {
+      return entity.row === target.row && entity.col === target.col;
+    })) {
+      throw new Error("level.multiTrappedSpiritRescue target overlaps a special entity at `" + coordinateKey + "`: " + levelKey);
+    }
+    var hasAdjacentNormalSupport = getHexNeighborCoordinates(target.row, target.col).some(function (neighbor) {
+      return neighbor.row >= 0 &&
+        neighbor.row < levelConfig.layout.length &&
+        neighbor.col >= 0 &&
+        neighbor.col < levelConfig.layout[neighbor.row].length &&
+        levelConfig.layout[neighbor.row].charAt(neighbor.col) !== ".";
+    });
+    if (!hasAdjacentNormalSupport) {
+      throw new Error("level.multiTrappedSpiritRescue target requires adjacent eliminable normal support at `" + coordinateKey + "`: " + levelKey);
+    }
+    targetCoordinates[coordinateKey] = true;
+    targetSpiritIds[target.spiritId] = true;
+    return {
+      spiritId: target.spiritId,
+      row: target.row,
+      col: target.col
+    };
+  });
+  if (
+    !Array.isArray(levelConfig.winConditions) ||
+    levelConfig.winConditions.length !== 1 ||
+    levelConfig.winConditions[0].type !== "clear_all" ||
+    levelConfig.winConditions[0].value !== 1
+  ) {
+    throw new Error("multi_trapped_spirit_rescue must use one clear_all win condition: " + levelKey);
+  }
+  if (levelConfig.starThresholds.star1 > rescue.targets.length * 1000) {
+    throw new Error("multi_trapped_spirit_rescue star1 must not exceed guaranteed rescue score: " + levelKey);
   }
 }
 
@@ -379,6 +532,42 @@ function validateWormholePair(normalizedEntities, levelKey) {
   });
 }
 
+function validateBreederInitialSpaces(normalizedLayout, normalizedEntities, levelKey) {
+  var occupiedCells = {};
+  normalizedLayout.forEach(function (rowString, row) {
+    rowString.split("").forEach(function (cellCode, col) {
+      if (cellCode !== ".") {
+        occupiedCells[row + ":" + col] = true;
+      }
+    });
+  });
+  normalizedEntities.forEach(function (entity) {
+    occupiedCells[entity.row + ":" + entity.col] = true;
+  });
+
+  normalizedEntities.forEach(function (entity, entityIndex) {
+    if (entity.entityCategory !== "reactive_ball" || entity.entityType !== "breeder") {
+      return;
+    }
+    var hasInitialEmptyNeighbor = getHexNeighborCoordinates(entity.row, entity.col).some(function (coordinate) {
+      if (
+        coordinate.row < 0 ||
+        coordinate.row >= normalizedLayout.length ||
+        coordinate.col < 0 ||
+        coordinate.col >= normalizedLayout[coordinate.row].length
+      ) {
+        return false;
+      }
+      return occupiedCells[coordinate.row + ":" + coordinate.col] !== true;
+    });
+    if (!hasInitialEmptyNeighbor) {
+      throw new Error(
+        "specialEntities[" + entityIndex + "] breeder requires at least one initial empty neighbor: " + levelKey
+      );
+    }
+  });
+}
+
 function hasUniqueItems(items) {
   return new Set(items).size === items.length;
 }
@@ -390,6 +579,11 @@ function resolveExpectedLevelId(rawConfig, levelKey) {
   if (
     levelKey === "level_test" ||
     levelKey === "level_trapped_sprite_test" ||
+    levelKey === "level_black_hole_test" ||
+    levelKey === "level_spirit_cocoon_test" ||
+    levelKey === "level_multi_trapped_spirit_test" ||
+    levelKey === "level_transparent_ball_test" ||
+    levelKey === "level_breeder_ball_test" ||
     levelKey === "level_board_occlusion_test"
   ) {
     if (!rawConfig || typeof rawConfig !== "object" || !rawConfig.level) {
@@ -517,7 +711,7 @@ function normalizeSpecialEntities(levelConfig, levelKey) {
     }
     seenCoordinates[coordinateKey] = true;
 
-    if (rowString[col] !== "." && !(category === "reactive_ball" && entityType === "wormhole")) {
+    if (rowString[col] !== ".") {
       throw new Error("special entity must be placed on `.` layout slot at `" + coordinateKey + "`: " + levelKey);
     }
 
@@ -525,6 +719,7 @@ function normalizeSpecialEntities(levelConfig, levelKey) {
     var splitColor = null;
     var lockedColor = null;
     var blastRadius = null;
+    var capacity = null;
     var moveDirection = null;
     if (category === "obstacle_ball" && entityType === "ice") {
       innerColor = typeof entity.innerColor === "string" ? entity.innerColor.trim() : "";
@@ -556,6 +751,12 @@ function normalizeSpecialEntities(levelConfig, levelKey) {
         throw new Error("specialEntities[" + index + "].moveDirection must be left or right for wormhole: " + levelKey);
       }
     }
+    if (isBlackHoleEntity(entity)) {
+      capacity = entity.capacity;
+      if (!Number.isInteger(capacity) || capacity !== 3) {
+        throw new Error("specialEntities[" + index + "].capacity must be exactly 3 for black_hole: " + levelKey);
+      }
+    }
     if (category === "locked_ball" && entityType === "locked") {
       lockedColor = typeof entity.lockedColor === "string" ? entity.lockedColor.trim() : "";
       if (levelConfig.colors.indexOf(lockedColor) === -1) {
@@ -573,11 +774,13 @@ function normalizeSpecialEntities(levelConfig, levelKey) {
       splitColor: splitColor,
       lockedColor: lockedColor,
       blastRadius: blastRadius,
+      capacity: capacity,
       moveDirection: moveDirection
     };
   });
   validateSwirlTracks(normalizedLayout, normalizedEntities, levelKey);
   validateWormholePair(normalizedEntities, levelKey);
+  validateBreederInitialSpaces(normalizedLayout, normalizedEntities, levelKey);
   return normalizedEntities;
 }
 
@@ -720,8 +923,11 @@ function normalizeOpeningShotBalls(levelConfig, levelKey) {
   if (levelConfig.initialShotBalls !== undefined) {
     throw new Error("level.openingShotBalls and level.initialShotBalls cannot both be configured: " + levelKey);
   }
-  if (levelConfig.levelType !== "normal" || levelConfig.playMode !== "shot_limited") {
-    throw new Error("level.openingShotBalls is only supported by normal shot_limited levels: " + levelKey);
+  if (
+    (levelConfig.levelType !== "normal" && levelConfig.levelType !== "multi_trapped_spirit_rescue") ||
+    levelConfig.playMode !== "shot_limited"
+  ) {
+    throw new Error("level.openingShotBalls is only supported by ordinary-board shot_limited levels: " + levelKey);
   }
   if (!Array.isArray(levelConfig.openingShotBalls) || levelConfig.openingShotBalls.length < 3 || levelConfig.openingShotBalls.length > 6) {
     throw new Error("level.openingShotBalls must contain 3 to 6 colors: " + levelKey);
@@ -787,8 +993,11 @@ function normalizeLevelMode(levelConfig, levelKey) {
   if (levelType === "special_floating_island" && playMode !== "timed_infinite_shots") {
     throw new Error("special_floating_island must use timed_infinite_shots: " + levelKey);
   }
-  if (levelType === "trapped_sprite_rescue" && playMode !== "shot_limited") {
-    throw new Error("trapped_sprite_rescue must use shot_limited: " + levelKey);
+  if (
+    (levelType === "trapped_sprite_rescue" || levelType === "multi_trapped_spirit_rescue") &&
+    playMode !== "shot_limited"
+  ) {
+    throw new Error(levelType + " must use shot_limited: " + levelKey);
   }
   if (playMode === "timed_infinite_shots") {
     if (levelType !== "special_floating_island") {
@@ -936,6 +1145,7 @@ function normalizeLevelConfig(rawConfig, levelKey) {
   });
 
   config.level.layout = normalizeLayoutRows(config.level.layout, config.level.colors, levelKey);
+  config.level.cellAttachments = normalizeCellAttachments(config.level, levelKey);
 
   if (!Number.isInteger(config.level.colorCount) || config.level.colorCount !== config.level.colors.length) {
     throw new Error("level.colorCount must equal level.colors.length: " + levelKey);
@@ -1020,6 +1230,7 @@ function normalizeLevelConfig(rawConfig, levelKey) {
   config.level.bonusObjectives = normalizeObjectiveList(config.level.bonusObjectives, BONUS_OBJECTIVE_TYPES, "bonusObjectives", config.level, levelKey);
   config.level.specialEntities = normalizeSpecialEntities(config.level, levelKey);
   normalizeTrappedSpriteRescue(config.level, levelKey);
+  normalizeMultiTrappedSpiritRescue(config.level, levelKey);
   config.level.boardOcclusionPlan = BoardOcclusionConfig.normalizePlan(
     config.level.boardOcclusionPlan,
     config.level,

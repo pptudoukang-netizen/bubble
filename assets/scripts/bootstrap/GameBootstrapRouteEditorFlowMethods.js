@@ -34,9 +34,14 @@ function normalizeLevelEntryOptions(options) {
     options.testSource !== "bundled" &&
     options.testSource !== "local" &&
     options.testSource !== "trapped_sprite" &&
-    options.testSource !== "board_occlusion"
+    options.testSource !== "board_occlusion" &&
+    options.testSource !== "black_hole" &&
+    options.testSource !== "spirit_cocoon" &&
+    options.testSource !== "multi_trapped_spirit" &&
+    options.testSource !== "transparent_ball" &&
+    options.testSource !== "breeder_ball"
   ) {
-    throw new Error("Test level entry testSource must be bundled, local, trapped_sprite, or board_occlusion.");
+    throw new Error("Test level entry testSource is unsupported: " + options.testSource + ".");
   }
   return {
     mode: "test",

@@ -61,6 +61,54 @@ LevelRenderer.prototype._applySplitterSpawnHiddenBoardState = function (bubbleNo
   bubbleNode.active = false;
 };
 
+LevelRenderer.prototype._hideBreederSpawnTarget = function (cellId) {
+  if (typeof cellId !== "string" && typeof cellId !== "number") {
+    throw new Error("Breeder spawn hide requires cell id.");
+  }
+  var normalizedId = String(cellId);
+  this.breederSpawnHiddenCellIds[normalizedId] = true;
+  var targetNode = this.boardBubbleNodes[normalizedId];
+  if (targetNode && targetNode.isValid) {
+    targetNode.stopAllActions();
+    targetNode.opacity = 0;
+    targetNode.active = false;
+  }
+};
+
+LevelRenderer.prototype._revealBreederSpawnTarget = function (cellId) {
+  if (typeof cellId !== "string" && typeof cellId !== "number") {
+    throw new Error("Breeder spawn reveal requires cell id.");
+  }
+  var normalizedId = String(cellId);
+  delete this.breederSpawnHiddenCellIds[normalizedId];
+  var targetNode = this.boardBubbleNodes[normalizedId];
+  if (!targetNode || !targetNode.isValid) {
+    return;
+  }
+  targetNode.active = true;
+  targetNode.opacity = 255;
+  targetNode.setScale(1);
+  if (typeof cc === "undefined" || !cc || typeof cc.tween !== "function") {
+    throw new Error("Breeder spawn reveal requires cc.tween.");
+  }
+  cc.tween(targetNode)
+    .to(0.08, { scale: 1.12 }, { easing: "quadOut" })
+    .to(0.1, { scale: 1 }, { easing: "quadIn" })
+    .start();
+};
+
+LevelRenderer.prototype._applyBreederSpawnHiddenBoardState = function (bubbleNode, cellId) {
+  if (!bubbleNode || !bubbleNode.isValid) {
+    return;
+  }
+  if (!this.breederSpawnHiddenCellIds[String(cellId)]) {
+    return;
+  }
+  bubbleNode.stopAllActions();
+  bubbleNode.opacity = 0;
+  bubbleNode.active = false;
+};
+
 LevelRenderer.prototype._hideMolotovBlastSource = function (cellId) {
   if (typeof cellId !== "string" && typeof cellId !== "number") {
     throw new Error("Molotov blast hide requires cell id.");

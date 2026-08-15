@@ -13,6 +13,7 @@ GameManager.prototype.setAim = function (point) {
     this._isBoardAdvanceBusy() ||
     this._hasPendingSplitterSpawns() ||
     this._hasPendingMolotovBlasts() ||
+    this._hasPendingSpiritCocoonOpenings() ||
     this._hasPendingSwirlRotation() ||
     this._hasPendingWormholeShift() ||
     this._hasPendingVineCast() ||
@@ -34,6 +35,7 @@ GameManager.prototype.beginAim = function (point) {
     this._isBoardAdvanceBusy() ||
     this._hasPendingSplitterSpawns() ||
     this._hasPendingMolotovBlasts() ||
+    this._hasPendingSpiritCocoonOpenings() ||
     this._hasPendingSwirlRotation() ||
     this._hasPendingWormholeShift() ||
     this._hasPendingVineCast() ||
@@ -65,6 +67,7 @@ GameManager.prototype.fireShot = function () {
     this._isBoardAdvanceBusy() ||
     this._hasPendingSplitterSpawns() ||
     this._hasPendingMolotovBlasts() ||
+    this._hasPendingSpiritCocoonOpenings() ||
     this._hasPendingSwirlRotation() ||
     this._hasPendingWormholeShift() ||
     this._hasPendingVineCast() ||
@@ -80,6 +83,24 @@ GameManager.prototype.fireShot = function () {
   }
 
   var shotPlan = this.pendingShotPlan;
+  var wormholeAbsorptionAllowed = function (plan) {
+    return !!(
+      plan &&
+      plan.valid &&
+      plan.hitType === "wormhole" &&
+      plan.absorbingWormhole &&
+      !plan.targetCell
+    );
+  };
+  var blackHoleAbsorptionAllowed = function (plan) {
+    return !!(
+      plan &&
+      plan.valid &&
+      plan.hitType === "black_hole" &&
+      plan.absorbingBlackHole &&
+      !plan.targetCell
+    );
+  };
   var rescueMissAllowed = function (plan) {
     return !!(
       plan &&
@@ -88,12 +109,12 @@ GameManager.prototype.fireShot = function () {
       this.systems.trappedSpriteRescueSystem.isActive()
     );
   }.bind(this);
-  if (!shotPlan || !shotPlan.valid || (!shotPlan.targetCell && !rescueMissAllowed(shotPlan))) {
+  if (!shotPlan || !shotPlan.valid || (!shotPlan.targetCell && !rescueMissAllowed(shotPlan) && !wormholeAbsorptionAllowed(shotPlan) && !blackHoleAbsorptionAllowed(shotPlan))) {
     // 发射优先沿用当前幽灵球路线；仅在缺失时才临时重算。
     this._refreshShotPlan(true);
     shotPlan = this.pendingShotPlan;
   }
-  if (!shotPlan || !shotPlan.valid || (!shotPlan.targetCell && !rescueMissAllowed(shotPlan))) {
+  if (!shotPlan || !shotPlan.valid || (!shotPlan.targetCell && !rescueMissAllowed(shotPlan) && !wormholeAbsorptionAllowed(shotPlan) && !blackHoleAbsorptionAllowed(shotPlan))) {
     Logger.warn("Missing valid shot plan, fire aborted");
     return this.getRuntimeSnapshot();
   }
@@ -115,6 +136,7 @@ GameManager.prototype.fireShot = function () {
   this._resolveAssistSpiritProducedBallAfterFire();
   this.lastFiredColor = queueResult.firedColor;
   this.lastResolution = createEmptyResolution();
+  this.lastResolution.spiritMistCleared = this.systems.bubbleGrid.clearExpiredSpiritMist(this.shotsFired);
   this.activeProjectile = buildActiveProjectile(queueResult.firedBall, shotPlan);
   this.pendingProjectileFinalize = false;
   this.pendingShotPlan = null;

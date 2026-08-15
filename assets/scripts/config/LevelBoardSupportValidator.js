@@ -120,11 +120,11 @@ function collectOccupiedCells(levelConfig, levelKey) {
     if (!Number.isInteger(entity.row) || !Number.isInteger(entity.col) || !isValidCell(levelConfig.layout, entity.row, entity.col)) {
       throw new Error("specialEntities[" + index + "] row/col invalid for initial board support validation: " + levelKey);
     }
-    if (isWormholeEntity(entity)) {
-      return;
-    }
     if (levelConfig.layout[entity.row].charAt(entity.col) !== ".") {
       throw new Error("specialEntities[" + index + "] overlaps layout for initial board support validation: " + levelKey);
+    }
+    if (isWormholeEntity(entity)) {
+      return;
     }
     addCell(entity.row, entity.col, "specialEntities[" + index + "]");
   });
@@ -247,9 +247,6 @@ function analyzeGeneratedBoardRules(levelConfig, levelKey) {
     }
     if (!Number.isInteger(entity.row) || !Number.isInteger(entity.col) || !isValidCell(levelConfig.layout, entity.row, entity.col)) {
       throw new Error("specialEntities[" + index + "] row/col invalid for generated board rule validation: " + levelKey);
-    }
-    if (isWormholeEntity(entity)) {
-      return;
     }
     if (levelConfig.layout[entity.row].charAt(entity.col) !== ".") {
       throw new Error("specialEntities[" + index + "] overlaps a normal ball for generated board rule validation: " + levelKey);

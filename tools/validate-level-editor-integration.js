@@ -794,49 +794,63 @@ function assertWormholeOverlayImportContract() {
     },
     Component: function () {}
   };
-  var LevelConfigLoader = require(path.join(PROJECT_ROOT, "assets/scripts/config/LevelConfigLoader"));
-  var MapEditorBoardImport = require(path.join(PROJECT_ROOT, "assets/scripts/editor/MapEditorBoardImport"));
-  var controllerPath = path.join(PROJECT_ROOT, "assets/scripts/editor/MapEditorController");
-  delete require.cache[require.resolve(controllerPath)];
-  var controllerDefinition = require(controllerPath);
-  var raw = JSON.parse(read("assets/map/config/levels/level_001.json"));
-  raw.level.layout[0] = "R" + raw.level.layout[0].slice(1);
-  raw.level.specialEntities = [
-    {
-      id: "editor_wormhole_overlay_left",
-      entityCategory: "reactive_ball",
-      entityType: "wormhole",
-      row: 0,
-      col: 0,
-      moveDirection: "right"
-    },
-    {
-      id: "editor_wormhole_overlay_right",
-      entityCategory: "reactive_ball",
-      entityType: "wormhole",
-      row: 0,
-      col: raw.level.layout[0].length - 1,
-      moveDirection: "right"
+  try {
+    var LevelConfigLoader = require(path.join(PROJECT_ROOT, "assets/scripts/config/LevelConfigLoader"));
+    var MapEditorBoardImport = require(path.join(PROJECT_ROOT, "assets/scripts/editor/MapEditorBoardImport"));
+    var controllerPath = path.join(PROJECT_ROOT, "assets/scripts/editor/MapEditorController");
+    delete require.cache[require.resolve(controllerPath)];
+    var controllerDefinition = require(controllerPath);
+    var raw = JSON.parse(read("assets/map/config/levels/level_001.json"));
+    var wormholeRow = 5;
+    var rightCol = raw.level.layout[wormholeRow].length - 1;
+    raw.level.specialEntities = [
+      {
+        id: "editor_wormhole_overlay_left",
+        entityCategory: "reactive_ball",
+        entityType: "wormhole",
+        row: wormholeRow,
+        col: 0,
+        moveDirection: "right"
+      },
+      {
+        id: "editor_wormhole_overlay_right",
+        entityCategory: "reactive_ball",
+        entityType: "wormhole",
+        row: wormholeRow,
+        col: rightCol,
+        moveDirection: "right"
+      }
+    ];
+    var imported = MapEditorBoardImport.importLevelToCellStates(
+      LevelConfigLoader.normalizeLevelConfig(raw, "level_001")
+    );
+    var leftKey = wormholeRow + ":0";
+    assert.strictEqual(imported.cells[leftKey].kind, "empty", "Wormhole import must preserve its reserved empty layout slot.");
+    assert.strictEqual(imported.wormholeOverlays[leftKey].entityType, "wormhole", "Wormhole must import into the overlay map.");
+    assert.strictEqual(imported.wormholeOverlays[leftKey].moveDirection, "right", "Wormhole overlay direction must be preserved.");
+    var exported = controllerDefinition._collectBoardData.call({
+      _rowCount: imported.rowCount,
+      _cells: imported.cells,
+      _wormholeOverlays: imported.wormholeOverlays,
+      _buildSpecialEntityExport: controllerDefinition._buildSpecialEntityExport
+    });
+    assert.strictEqual(exported.layout[wormholeRow].charAt(0), ".", "Wormhole export must keep its reserved layout slot empty.");
+    assert.strictEqual(exported.specialEntities.filter(function (entity) {
+      return entity.entityType === "wormhole" && entity.row === wormholeRow && entity.col === 0;
+    }).length, 1, "Wormhole export must preserve the overlay at the same coordinate.");
+
+    var overlappingRaw = JSON.parse(JSON.stringify(raw));
+    overlappingRaw.level.layout[wormholeRow] = "R" + overlappingRaw.level.layout[wormholeRow].slice(1);
+    assert.throws(function () {
+      LevelConfigLoader.normalizeLevelConfig(overlappingRaw, "level_001");
+    }, /special entity must be placed on `\.` layout slot/, "Level normalization must reject a normal ball occupying a wormhole coordinate.");
+  } finally {
+    if (previousCc === undefined) {
+      delete global.cc;
+    } else {
+      global.cc = previousCc;
     }
-  ];
-  var imported = MapEditorBoardImport.importLevelToCellStates(
-    LevelConfigLoader.normalizeLevelConfig(raw, "level_001")
-  );
-  assert.strictEqual(imported.cells["0:0"].kind, "color", "Wormhole import must preserve the layout ball.");
-  assert.strictEqual(imported.cells["0:0"].colorCode, "R", "Wormhole import must preserve the layout color.");
-  assert.strictEqual(imported.wormholeOverlays["0:0"].entityType, "wormhole", "Wormhole must import into the overlay map.");
-  assert.strictEqual(imported.wormholeOverlays["0:0"].moveDirection, "right", "Wormhole overlay direction must be preserved.");
-  var exported = controllerDefinition._collectBoardData.call({
-    _rowCount: imported.rowCount,
-    _cells: imported.cells,
-    _wormholeOverlays: imported.wormholeOverlays,
-    _buildSpecialEntityExport: controllerDefinition._buildSpecialEntityExport
-  });
-  assert.strictEqual(exported.layout[0].charAt(0), "R", "Wormhole export must preserve the underlying layout ball.");
-  assert.strictEqual(exported.specialEntities.filter(function (entity) {
-    return entity.entityType === "wormhole" && entity.row === 0 && entity.col === 0;
-  }).length, 1, "Wormhole export must preserve the overlay at the same coordinate.");
-  global.cc = previousCc;
+  }
 }
 
 function assertCloudDraftIsolation() {

@@ -151,6 +151,29 @@ FairyAssistSystem.prototype._removeByDeparturePriority = function (count) {
   return events;
 };
 
+FairyAssistSystem.prototype.removeFairyByPoison = function (fairyId) {
+  if (typeof fairyId !== "string" || !fairyId) {
+    throw new Error("Poison fairy removal requires fairyId.");
+  }
+  for (var index = 0; index < this.slots.length; index += 1) {
+    var slot = this.slots[index];
+    if (!slot.fairy || slot.fairy.id !== fairyId) {
+      continue;
+    }
+    var fairy = slot.fairy;
+    slot.fairy = null;
+    this.revision += 1;
+    return {
+      type: "remove",
+      reason: "poison",
+      fairyId: fairy.id,
+      color: fairy.color,
+      slotIndex: fairy.slotIndex
+    };
+  }
+  throw new Error("Poison fairy removal requires a live fairy: " + fairyId + ".");
+};
+
 FairyAssistSystem.prototype._resolveDestinationSlot = function () {
   var emptySlots = [];
   for (var index = 0; index < this.slots.length; index += 1) {

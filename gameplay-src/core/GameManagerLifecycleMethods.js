@@ -98,6 +98,7 @@ GameManager.prototype.startLevel = function (levelConfig, startContext) {
   this.pendingBoardAdvanceScheduledUpdateSerial = -1;
   this.pendingWinSettlementDelay = 0;
   this.pendingSplitterSpawns = [];
+  this.pendingSpiritCocoonOpenings = [];
   this.pendingMolotovBlastQueue = [];
   this.activeMolotovBlast = null;
   this.molotovBlastTriggeredIds = {};

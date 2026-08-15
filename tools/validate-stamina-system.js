@@ -11,7 +11,14 @@ var STRICT_STORAGE_PATH = path.join(PROJECT_ROOT, "assets/scripts/utils/StrictSt
 var LEVEL_ATTEMPT_STATS_STORE_PATH = path.join(PROJECT_ROOT, "assets/scripts/utils/LevelAttemptStatsStore.js");
 var ASSIST_SPIRIT_STORE_PATH = path.join(PROJECT_ROOT, "assets/scripts/utils/AssistSpiritStore.js");
 var SPIRIT_SHOP_STORE_PATH = path.join(PROJECT_ROOT, "assets/scripts/utils/SpiritShopStore.js");
+var SHOP_STATE_STORE_PATH = path.join(PROJECT_ROOT, "assets/scripts/utils/ShopStateStore.js");
+var SHOP_STATE_SERVICE_PATH = path.join(PROJECT_ROOT, "assets/scripts/services/ShopStateService.js");
 var PLAYER_CLOUD_PROFILE_SERVICE_PATH = path.join(PROJECT_ROOT, "assets/scripts/services/PlayerCloudProfileService.js");
+var PLAYER_PROFILE_CLOUD_PATH = path.join(PROJECT_ROOT, "cloudfunctions/playerProfile/index.js");
+var PLAYER_PROFILE_CLOUD_TEMPLATE_PATH = path.join(
+  PROJECT_ROOT,
+  "build-templates/wechatgame/cloudfunctions/playerProfile/index.js"
+);
 var BOOTSTRAP_PATH = path.join(PROJECT_ROOT, "assets/scripts/bootstrap/GameBootstrap.js");
 var BOOTSTRAP_COMPOSITION_PATH = path.join(PROJECT_ROOT, "assets/scripts/bootstrap/GameBootstrapCompositionMethods.js");
 var STATUS_RESOURCE_FLOW_PATH = path.join(PROJECT_ROOT, "assets/scripts/bootstrap/GameBootstrapStatusResourceFlowMethods.js");
@@ -551,7 +558,217 @@ function buildProfileStorageValue(entry, LevelAttemptStatsStore, attemptState) {
   if (entry.storageKey === SpiritShopStore.STORAGE_KEY) {
     return SpiritShopStore.createInitialState(new Date("2026-05-25T08:00:00"));
   }
+  var ShopStateStore = require(SHOP_STATE_STORE_PATH);
+  if (entry.storageKey === ShopStateStore.STORAGE_KEY) {
+    return ShopStateStore.createInitialState("2026-05-25", {
+      test_sku: 0
+    });
+  }
   return {};
+}
+
+function createPurchaseLog(index) {
+  return {
+    orderId: "order_" + index,
+    skuId: "test_sku",
+    itemId: "test_item",
+    itemCount: 1,
+    currency: "coin",
+    cost: 10,
+    coinBefore: 100,
+    coinAfter: 90,
+    timestamp: 1000 + index
+  };
+}
+
+function createCompletedAttempt(index) {
+  var attempt = createAttempt("attempt_" + index, index, 1, "win");
+  attempt.startedAt = 1000 + index;
+  attempt.endedAt = 2000 + index;
+  return attempt;
+}
+
+function loadCloudProfileNormalizer() {
+  var source = readText(PLAYER_PROFILE_CLOUD_PATH);
+  var cloudStub = {
+    DYNAMIC_CURRENT_ENV: "test",
+    init: function () {}
+  };
+  var sandbox = {
+    Buffer: Buffer,
+    console: console,
+    exports: {},
+    module: {
+      exports: {}
+    },
+    require: function (request) {
+      if (request === "crypto") {
+        return require("crypto");
+      }
+      if (request === "wx-server-sdk") {
+        return cloudStub;
+      }
+      throw new Error("Unexpected playerProfile cloud dependency: " + request);
+    }
+  };
+  vm.runInNewContext(
+    source + "\nmodule.exports.__normalizeProfile = normalizeProfile;",
+    sandbox,
+    {
+      filename: PLAYER_PROFILE_CLOUD_PATH
+    }
+  );
+  return sandbox.module.exports.__normalizeProfile;
+}
+
+function assertPlayerProfileSizeCaps() {
+  var ShopStateStore = require(SHOP_STATE_STORE_PATH);
+  var ShopStateService = require(SHOP_STATE_SERVICE_PATH);
+  var LevelAttemptStatsStore = require(LEVEL_ATTEMPT_STATS_STORE_PATH);
+  var PlayerCloudProfileService = require(PLAYER_CLOUD_PROFILE_SERVICE_PATH);
+  var oversizedShopState = ShopStateStore.createInitialState(
+    ShopStateService.toDateKey(new Date()),
+    { test_sku: 0 }
+  );
+  oversizedShopState.shopState.purchaseLogs = [];
+  for (var logIndex = 0; logIndex < 75; logIndex += 1) {
+    oversizedShopState.shopState.purchaseLogs.push(createPurchaseLog(logIndex));
+  }
+
+  var normalizedShopState = ShopStateStore.normalizeState(oversizedShopState);
+  assert(
+    normalizedShopState.shopState.purchaseLogs.length === ShopStateStore.MAX_PURCHASE_LOGS,
+    "Shop state normalization must cap purchaseLogs."
+  );
+  assert(
+    normalizedShopState.shopState.purchaseLogs[0].orderId === "order_25",
+    "Shop state normalization must retain the newest purchase logs."
+  );
+
+  var savedShopState = null;
+  var shopService = new ShopStateService({
+    store: {
+      load: function () {
+        return JSON.parse(JSON.stringify(normalizedShopState));
+      },
+      save: function (state) {
+        savedShopState = ShopStateStore.normalizeState(state);
+      }
+    },
+    configService: {
+      getAllGoodsList: function () {
+        return [{ skuId: "test_sku", dailyLimit: 0 }];
+      },
+      getGoodsBySkuId: function (skuId) {
+        assert(skuId === "test_sku", "Shop size validation received an unexpected skuId.");
+        return { skuId: skuId, dailyLimit: 0 };
+      }
+    }
+  });
+  shopService.appendPurchaseLog(createPurchaseLog(75));
+  assert(
+    shopService.state.shopState.purchaseLogs.length === ShopStateStore.MAX_PURCHASE_LOGS,
+    "Shop service must cap its in-memory purchaseLogs immediately."
+  );
+  assert(
+    savedShopState.shopState.purchaseLogs.length === ShopStateStore.MAX_PURCHASE_LOGS,
+    "Shop service must persist capped purchaseLogs."
+  );
+
+  var attemptStore = new LevelAttemptStatsStore();
+  var attemptState = LevelAttemptStatsStore.createInitialState();
+  for (var levelId = 1; levelId <= LevelAttemptStatsStore.MAX_LAST_ATTEMPT_BY_LEVEL; levelId += 1) {
+    attemptState.lastAttemptByLevel[String(levelId)] = createCompletedAttempt(levelId);
+  }
+  attemptState = attemptStore.recordStart(attemptState, {
+    attemptId: "attempt_51",
+    levelId: 51,
+    levelCode: "L051_SIZE_CAP",
+    runMode: "normal",
+    startedAt: 3000,
+    startState: "aiming",
+    initialShots: 20
+  });
+  attemptState = attemptStore.recordResult(attemptState, {
+    attemptId: "attempt_51",
+    result: "win",
+    endedAt: 4000,
+    shotsUsed: 10,
+    shotsRemaining: 10,
+    failReason: null,
+    quitReason: null,
+    powerupsUsed: {},
+    reviveUsed: false,
+    reviveCount: 0
+  });
+  assert(
+    Object.keys(attemptState.lastAttemptByLevel).length === LevelAttemptStatsStore.MAX_LAST_ATTEMPT_BY_LEVEL,
+    "Recording a result must not persist a transient 51st lastAttemptByLevel entry."
+  );
+  assert(attemptState.lastAttemptByLevel["51"], "The newest lastAttemptByLevel entry must be retained.");
+
+  var oversizedAttemptState = LevelAttemptStatsStore.createInitialState();
+  var recentEventSource = attemptState.recentEvents[attemptState.recentEvents.length - 1];
+  oversizedAttemptState.recentEvents = [];
+  oversizedAttemptState.lastAttemptByLevel = {};
+  for (var historyIndex = 1; historyIndex <= 75; historyIndex += 1) {
+    var event = JSON.parse(JSON.stringify(recentEventSource));
+    event.eventTimeMs = 5000 + historyIndex;
+    oversizedAttemptState.recentEvents.push(event);
+    oversizedAttemptState.lastAttemptByLevel[String(historyIndex)] = createCompletedAttempt(historyIndex);
+  }
+  var cloudProfile = buildProfileWithAttemptState(
+    PlayerCloudProfileService,
+    LevelAttemptStatsStore,
+    oversizedAttemptState
+  );
+  cloudProfile.storage[ShopStateStore.STORAGE_KEY].value = oversizedShopState;
+
+  var clientProfileService = new PlayerCloudProfileService({
+    platform: null,
+    cloudEnvId: "cloud-test",
+    functionName: "playerProfile",
+    syncDebounceMs: 1,
+    logger: null
+  });
+  clientProfileService.applyCloudProfile(cloudProfile);
+  var clientAttemptState = JSON.parse(cc.sys.localStorage.getItem(LevelAttemptStatsStore.STORAGE_KEY));
+  var clientShopState = JSON.parse(cc.sys.localStorage.getItem(ShopStateStore.STORAGE_KEY));
+  assert(
+    clientAttemptState.recentEvents.length === LevelAttemptStatsStore.MAX_RECENT_EVENTS,
+    "Client cloud profile apply must cap recent attempt events."
+  );
+  assert(
+    Object.keys(clientAttemptState.lastAttemptByLevel).length ===
+      LevelAttemptStatsStore.MAX_LAST_ATTEMPT_BY_LEVEL,
+    "Client cloud profile apply must cap lastAttemptByLevel."
+  );
+  assert(
+    clientShopState.shopState.purchaseLogs.length === ShopStateStore.MAX_PURCHASE_LOGS,
+    "Client cloud profile apply must cap shop purchaseLogs."
+  );
+
+  var normalizeCloudProfile = loadCloudProfileNormalizer();
+  var normalizedCloudProfile = normalizeCloudProfile(cloudProfile);
+  assert(
+    normalizedCloudProfile.storage[LevelAttemptStatsStore.STORAGE_KEY].value.recentEvents.length ===
+      LevelAttemptStatsStore.MAX_RECENT_EVENTS,
+    "Cloud profile normalization must cap recent attempt events."
+  );
+  assert(
+    Object.keys(normalizedCloudProfile.storage[LevelAttemptStatsStore.STORAGE_KEY].value.lastAttemptByLevel).length ===
+      LevelAttemptStatsStore.MAX_LAST_ATTEMPT_BY_LEVEL,
+    "Cloud profile normalization must cap lastAttemptByLevel."
+  );
+  assert(
+    normalizedCloudProfile.storage[ShopStateStore.STORAGE_KEY].value.shopState.purchaseLogs.length ===
+      ShopStateStore.MAX_PURCHASE_LOGS,
+    "Cloud profile normalization must cap shop purchaseLogs."
+  );
+  assert(
+    readText(PLAYER_PROFILE_CLOUD_PATH) === readText(PLAYER_PROFILE_CLOUD_TEMPLATE_PATH),
+    "playerProfile cloud source and WeChat build template must match."
+  );
 }
 
 function buildProfileWithAttemptState(PlayerCloudProfileService, LevelAttemptStatsStore, attemptState) {
@@ -734,7 +951,13 @@ global.cc = {
   }
 };
 
+var playerProfileSizeOnly = process.argv.indexOf("--player-profile-size-only") >= 0;
+
 Promise.resolve().then(function () {
+  if (playerProfileSizeOnly) {
+    assertPlayerProfileSizeCaps();
+    return;
+  }
   assertSourceConfig();
   assertInitialResources();
   assertDailyBaselineRefill();
@@ -742,13 +965,16 @@ Promise.resolve().then(function () {
   assertSameDayDoesNotRefill();
   assertConsumeRules();
   assertTestRunPowerupAttemptTrackingRules();
+  assertPlayerProfileSizeCaps();
   assertFirstAttemptStaminaRewardRules();
   assertFinalCampaignLevelNextAction();
   assertFinalCampaignLevelProgressBoundary();
   assertWinRewardStaminaItemsMergeForDisplay();
   return assertCloudProfileSyncDefersGameplayApply();
 }).then(function () {
-  console.log("Stamina system validation passed.");
+  console.log(playerProfileSizeOnly
+    ? "Player profile size validation passed."
+    : "Stamina system validation passed.");
 }).catch(function (error) {
   setTimeout(function () {
     throw error;

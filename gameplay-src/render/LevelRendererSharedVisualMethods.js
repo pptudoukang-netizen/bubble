@@ -3,6 +3,7 @@
 function attachLevelRendererSharedVisualMethods(LevelRenderer, context) {
   var AssistSpiritConfig = context.AssistSpiritConfig;
   var BALL_RESOURCES = context.BALL_RESOURCES;
+  var BoardLayout = context.BoardLayout;
   var BOARD_BUBBLE_SIZE = context.BOARD_BUBBLE_SIZE;
   var COMMENT_ANIMATION_HOLD_DURATION = context.COMMENT_ANIMATION_HOLD_DURATION;
   var COMMENT_ANIMATION_IN_DURATION = context.COMMENT_ANIMATION_IN_DURATION;
@@ -26,6 +27,189 @@ function attachLevelRendererSharedVisualMethods(LevelRenderer, context) {
   var resolveBallCode = context.resolveBallCode;
   var resolveCommentAnimationKey = context.resolveCommentAnimationKey;
   var resolveIceInnerColor = context.resolveIceInnerColor;
+
+LevelRenderer.prototype._renderMultiTrappedSpiritRescue = function (runtimeSnapshot) {
+  if (!runtimeSnapshot || !runtimeSnapshot.systems || !runtimeSnapshot.systems.trappedSpriteRescueSystem) {
+    throw new Error("Multi trapped spirit rendering requires runtime system snapshot.");
+  }
+  var rescue = runtimeSnapshot.systems.trappedSpriteRescueSystem;
+  if (rescue.multiTargetActive !== true) {
+    Object.keys(this.multiTrappedSpiritNodes).forEach(function (targetId) {
+      var staleNode = this.multiTrappedSpiritNodes[targetId];
+      if (staleNode && staleNode.isValid) {
+        staleNode.destroy();
+      }
+    }, this);
+    this.multiTrappedSpiritNodes = {};
+    return;
+  }
+  if (!Array.isArray(rescue.targets) || rescue.targets.length < 2) {
+    throw new Error("Multi trapped spirit rendering requires at least two runtime targets.");
+  }
+  if (
+    !runtimeSnapshot.board ||
+    !Number.isInteger(runtimeSnapshot.board.maxColumns) ||
+    runtimeSnapshot.board.maxColumns <= 0 ||
+    typeof runtimeSnapshot.board.viewportOffsetY !== "number" ||
+    !isFinite(runtimeSnapshot.board.viewportOffsetY)
+  ) {
+    throw new Error("Multi trapped spirit rendering requires board columns and viewport offset.");
+  }
+  var liveTargetIds = {};
+  rescue.targets.forEach(function (target, index) {
+    if (
+      !target ||
+      typeof target.id !== "string" ||
+      !target.id ||
+      typeof target.spiritId !== "string" ||
+      !target.spiritId ||
+      !Number.isInteger(target.row) ||
+      !Number.isInteger(target.col) ||
+      typeof target.rescued !== "boolean"
+    ) {
+      throw new Error("Multi trapped spirit runtime target is invalid at index " + index + ".");
+    }
+    liveTargetIds[target.id] = true;
+    if (this.multiTrappedSpiritDepartedTargetIds[target.id] === true) {
+      if (target.rescued !== true) {
+        throw new Error("Departed multi trapped spirit target must remain rescued: " + target.id);
+      }
+      return;
+    }
+    var node = this.multiTrappedSpiritNodes[target.id];
+    if (target.rescued === true && (!node || !node.isValid)) {
+      throw new Error("Rescued multi trapped spirit target requires its render node until departure: " + target.id);
+    }
+    if (!node || !node.isValid) {
+      node = new cc.Node("TrappedSpiritTarget_" + target.id);
+      this.multiTrappedSpiritNodes[target.id] = node;
+    }
+    if (this.multiTrappedSpiritDepartingTargetIds[target.id] === true) {
+      return;
+    }
+    if (node.parent !== this.layers.trappedSprite) {
+      node.parent = this.layers.trappedSprite;
+    }
+    var expectedPath = buildTrappedSpriteResourcePath(target.spiritId);
+    if (target.spriteResourcePath !== expectedPath) {
+      throw new Error("Multi trapped spirit runtime resource path mismatch: " + target.id);
+    }
+    var spriteFrame = this.spriteFrameCache[expectedPath];
+    if (!spriteFrame) {
+      throw new Error("Multi trapped spirit SpriteFrame was not preloaded: " + expectedPath);
+    }
+    var position = BoardLayout.getCellPosition(
+      target.row,
+      target.col,
+      runtimeSnapshot.board.maxColumns,
+      runtimeSnapshot.board.viewportOffsetY
+    );
+    node.active = true;
+    node.opacity = 255;
+    node.setPosition(position.x, position.y);
+    node.setScale(1);
+    var sprite = ensureSprite(node, spriteFrame);
+    sprite.trim = false;
+    sprite.sizeMode = cc.Sprite.SizeMode.CUSTOM;
+    node.setContentSize(BOARD_BUBBLE_SIZE);
+  }, this);
+  Object.keys(this.multiTrappedSpiritNodes).forEach(function (targetId) {
+    if (liveTargetIds[targetId]) {
+      return;
+    }
+    var staleNode = this.multiTrappedSpiritNodes[targetId];
+    if (staleNode && staleNode.isValid) {
+      staleNode.destroy();
+    }
+    delete this.multiTrappedSpiritNodes[targetId];
+  }, this);
+};
+
+LevelRenderer.prototype._playMultiTrappedSpiritDepartures = function (runtimeSnapshot) {
+  if (!runtimeSnapshot || !Array.isArray(runtimeSnapshot.runtimeEvents)) {
+    throw new Error("Multi trapped spirit departure requires runtimeEvents array.");
+  }
+  var rescue = runtimeSnapshot.systems && runtimeSnapshot.systems.trappedSpriteRescueSystem;
+  var events = runtimeSnapshot.runtimeEvents.filter(function (event) {
+    return event && event.type === "trapped_spirit_target_rescued";
+  });
+  if (!events.length) {
+    return;
+  }
+  if (!rescue || rescue.multiTargetActive !== true || !Array.isArray(rescue.targets)) {
+    throw new Error("Multi trapped spirit departure requires active target snapshot.");
+  }
+  var layer = this.layers && this.layers.trappedSprite;
+  if (!layer || !layer.isValid || typeof cc.tween !== "function") {
+    throw new Error("Multi trapped spirit departure requires valid layer and cc.tween.");
+  }
+  var layerSize = layer.getContentSize();
+  if (!layerSize || typeof layerSize.height !== "number" || !isFinite(layerSize.height) || layerSize.height <= 0) {
+    throw new Error("Multi trapped spirit departure requires positive layer height.");
+  }
+  if (typeof layer.anchorY !== "number" || !isFinite(layer.anchorY)) {
+    throw new Error("Multi trapped spirit departure requires finite layer anchorY.");
+  }
+  var timing = SpecialAnimationTiming.trappedSpriteRescue;
+  if (
+    !timing ||
+    typeof timing.flyOutDuration !== "number" ||
+    !isFinite(timing.flyOutDuration) ||
+    timing.flyOutDuration <= 0 ||
+    typeof timing.exitMargin !== "number" ||
+    !isFinite(timing.exitMargin) ||
+    timing.exitMargin <= 0
+  ) {
+    throw new Error("Multi trapped spirit departure requires trapped sprite animation timing.");
+  }
+  events.forEach(function (event) {
+    if (!Number.isInteger(event.id) || event.id < 1) {
+      throw new Error("trapped_spirit_target_rescued requires positive integer event id.");
+    }
+    if (this.multiTrappedSpiritHandledEventIds[event.id] === true) {
+      return;
+    }
+    var target = rescue.targets.filter(function (entry) {
+      return entry.id === event.targetId;
+    })[0];
+    if (
+      !target ||
+      target.rescued !== true ||
+      target.spiritId !== event.spiritId ||
+      target.row !== event.row ||
+      target.col !== event.col
+    ) {
+      throw new Error("Multi trapped spirit departure event does not match runtime target: " + event.targetId);
+    }
+    if (event.finalTarget === true && rescue.completed !== true) {
+      throw new Error("Final multi trapped spirit departure requires completed runtime target state.");
+    }
+    var node = this.multiTrappedSpiritNodes[target.id];
+    if (!node || !node.isValid || node.parent !== layer) {
+      throw new Error("Multi trapped spirit departure requires target render node: " + target.id);
+    }
+    var nodeSize = node.getContentSize();
+    if (!nodeSize || typeof nodeSize.height !== "number" || !isFinite(nodeSize.height) || nodeSize.height <= 0) {
+      throw new Error("Multi trapped spirit departure requires positive target height.");
+    }
+    var targetY = (1 - layer.anchorY) * layerSize.height + nodeSize.height * 0.5 + timing.exitMargin;
+    this.multiTrappedSpiritHandledEventIds[event.id] = true;
+    this.multiTrappedSpiritDepartingTargetIds[target.id] = true;
+    node.stopAllActions();
+    cc.tween(node)
+      .to(timing.flyOutDuration, { y: targetY }, { easing: "quadIn" })
+      .call(function () {
+        if (!node.isValid) {
+          return;
+        }
+        node.destroy();
+        delete this.multiTrappedSpiritNodes[target.id];
+        delete this.multiTrappedSpiritDepartingTargetIds[target.id];
+        this.multiTrappedSpiritDepartedTargetIds[target.id] = true;
+      }.bind(this))
+      .start();
+  }, this);
+};
 
 LevelRenderer.prototype._renderTrappedSpriteRescue = function (runtimeSnapshot) {
   if (

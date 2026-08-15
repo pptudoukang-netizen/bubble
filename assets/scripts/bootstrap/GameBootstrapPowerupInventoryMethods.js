@@ -68,6 +68,7 @@ var START_GAME_COLLECTION_OBJECTIVE_TYPES = {
   collect_ice_snowball: true
 };
 var TRAPPED_SPRITE_RESCUE_LEVEL_TYPE = "trapped_sprite_rescue";
+var MULTI_TRAPPED_SPIRIT_RESCUE_LEVEL_TYPE = "multi_trapped_spirit_rescue";
 var START_GAME_NATIVE_TEMPLATE_AD_SHOW_DELAY_SEC = 0.3;
 var START_GAME_AD_LOG_LABEL = "StartGameAd";
 var START_GAME_PROP_DESCRIPTION_VIEW_Z_INDEX = 350;
@@ -309,7 +310,8 @@ function buildStartGameObjectives(levelConfig) {
   if (
     !ballObjective &&
     !iceSnowballObjective &&
-    level.levelType !== TRAPPED_SPRITE_RESCUE_LEVEL_TYPE
+    level.levelType !== TRAPPED_SPRITE_RESCUE_LEVEL_TYPE &&
+    level.levelType !== MULTI_TRAPPED_SPIRIT_RESCUE_LEVEL_TYPE
   ) {
     throw new Error("StartGameView requires at least one collection objective.");
   }
@@ -568,6 +570,22 @@ function waitMilliseconds(durationMs) {
   }
   return new Promise(function (resolve) {
     setTimeout(resolve, durationMs);
+  });
+}
+
+function waitForStartGameRenderedFrame() {
+  if (
+    typeof cc === "undefined" ||
+    !cc ||
+    !cc.director ||
+    typeof cc.director.once !== "function" ||
+    !cc.Director ||
+    typeof cc.Director.EVENT_AFTER_DRAW !== "string"
+  ) {
+    return Promise.reject(new Error("StartGameView gameplay warmup requires cc.Director.EVENT_AFTER_DRAW."));
+  }
+  return new Promise(function (resolve) {
+    cc.director.once(cc.Director.EVENT_AFTER_DRAW, resolve);
   });
 }
 
@@ -1706,6 +1724,7 @@ module.exports = {
   },
 
   _showStartGameView: function (levelId, options) {
+    this._cancelGameplayBundleIdleRelease();
     if (this._startGameViewOpeningPromise) {
       return this._startGameViewOpeningPromise;
     }
@@ -1822,17 +1841,51 @@ module.exports = {
         if (this._startGameViewOpeningPromise === trackedPromise) {
           this._startGameViewOpeningPromise = null;
         }
-        return waitMilliseconds(PopupPanelAnimator.getOpenDurationMilliseconds());
-      }.bind(this)).then(function () {
-        if (this._startGameViewNode !== startGameViewNode) {
-          return false;
-        }
-        return Promise.resolve(this._showNewUserGuideForStartGame()).then(function () {
+        var presentationPromise = waitMilliseconds(PopupPanelAnimator.getOpenDurationMilliseconds()).then(function () {
           if (this._startGameViewNode !== startGameViewNode) {
             return false;
           }
-          return this._showStartGameNativeTemplateAd();
+          return Promise.resolve(this._showNewUserGuideForStartGame()).then(function () {
+            if (this._startGameViewNode !== startGameViewNode) {
+              return false;
+            }
+            return this._showStartGameNativeTemplateAd();
+          }.bind(this));
         }.bind(this));
+        var gameplayKernelWarmupPromise = waitForStartGameRenderedFrame().then(function () {
+          return this._ensureGameplayKernel();
+        }.bind(this)).then(function () {
+          if (!this.levelRenderer || typeof this.levelRenderer.warmupPreparedGameplayAssets !== "function") {
+            throw new Error("StartGameView gameplay warmup requires LevelRenderer.warmupPreparedGameplayAssets.");
+          }
+          if (!this.assistSpiritState || typeof this.assistSpiritState.equippedSpiritId !== "string") {
+            throw new Error("StartGameView gameplay warmup requires equipped assist spirit state.");
+          }
+          return this.levelRenderer.warmupPreparedGameplayAssets(this.assistSpiritState.equippedSpiritId);
+        }.bind(this));
+        this._startGameGameplayWarmupPromise = gameplayKernelWarmupPromise;
+        gameplayKernelWarmupPromise = gameplayKernelWarmupPromise.then(function (result) {
+          if (this._startGameGameplayWarmupPromise === gameplayKernelWarmupPromise) {
+            this._startGameGameplayWarmupPromise = null;
+          }
+          if (
+            this._startGameViewNode !== startGameViewNode &&
+            this.isSelectingLevel === true &&
+            this.isRestarting !== true
+          ) {
+            this._scheduleGameplayBundleIdleRelease();
+          }
+          return result;
+        }.bind(this), function (error) {
+          if (this._startGameGameplayWarmupPromise === gameplayKernelWarmupPromise) {
+            this._startGameGameplayWarmupPromise = null;
+          }
+          throw error;
+        }.bind(this));
+        this._startGameGameplayWarmupPromise = gameplayKernelWarmupPromise;
+        return Promise.all([presentationPromise, gameplayKernelWarmupPromise]).then(function (results) {
+          return results[0];
+        });
       }.bind(this));
     }.bind(this)).catch(function (error) {
       Logger.error("Show StartGameView failed", error && error.stack ? error.stack : String(error));
@@ -1877,6 +1930,9 @@ module.exports = {
       playMode: level.playMode,
       levelType: level.levelType,
       timeLimitSeconds: level.timeLimitSeconds,
+      rescueTargetCount: level.levelType === MULTI_TRAPPED_SPIRIT_RESCUE_LEVEL_TYPE
+        ? level.multiTrappedSpiritRescue.targets.length
+        : undefined,
       inventory: this.playerInventory,
       assistSpiritState: this.assistSpiritState,
       objectives: buildStartGameObjectives(this._startGameLevelConfig),
@@ -2170,6 +2226,13 @@ module.exports = {
     });
     destroyStartGamePropDescriptionView(this);
     releaseStartGamePropDescriptionSpriteFrameCache(this);
+    if (
+      this.isSelectingLevel === true &&
+      this.isRestarting !== true &&
+      !this._startGameGameplayWarmupPromise
+    ) {
+      this._scheduleGameplayBundleIdleRelease();
+    }
   },
 
   _ensureStartGamePropDescriptionViewPrefab: function () {

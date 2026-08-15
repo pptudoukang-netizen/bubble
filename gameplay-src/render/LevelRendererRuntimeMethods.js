@@ -57,10 +57,14 @@ LevelRenderer.prototype.renderLevel = function (levelConfig, runtimeSnapshot) {
   this.lastKeyUnlockAnimationKey = "";
   this.splitterSpawnAnimatedEntryKeys = {};
   this.splitterSpawnHiddenCellIds = {};
+  this.breederSpawnAnimatedEntryKeys = {};
+  this.breederSpawnHiddenCellIds = {};
   this.molotovBlastHiddenCellIds = {};
   this.molotovBlastAnimatedIds = {};
   this.swirlRotationAnimatedIds = {};
+  this.spiritCocoonAnimatedIds = {};
   this.wormholeShiftAnimatedIds = {};
+  this.wormholeProjectileAbsorptionAnimatedIds = {};
   this.wormholeDirectionGuideRoot = null;
   this.lastWormholeDirectionGuideKey = "";
   this.blastExplosionAnimatedIds = {};
@@ -87,12 +91,13 @@ LevelRenderer.prototype.renderLevel = function (levelConfig, runtimeSnapshot) {
 
   return BundleLoader.ensureGameplayBundleLoaded().then(function () {
     return Promise.all([
-      this.warmupSharedAssets(),
+      this.warmupSharedAssets(runtimeSnapshot),
       this._preloadSprites(spritePaths)
     ]);
   }.bind(this)).then(function () {
       clearChildren(this.layers.background);
       clearChildren(this.layers.wormhole);
+      clearChildren(this.layers.wormholeDirection);
       clearChildren(this.layers.board);
     clearChildren(this.layers.trappedSprite);
     clearChildren(this.layers.boardOcclusion);
@@ -106,6 +111,10 @@ LevelRenderer.prototype.renderLevel = function (levelConfig, runtimeSnapshot) {
     this.trappedSpriteDepartureActive = false;
     this.trappedSpriteDepartureCompleted = false;
     this.trappedSpriteDepartureToken += 1;
+    this.multiTrappedSpiritNodes = {};
+    this.multiTrappedSpiritHandledEventIds = {};
+    this.multiTrappedSpiritDepartingTargetIds = {};
+    this.multiTrappedSpiritDepartedTargetIds = {};
     this.topSlotStarNodes = {};
     this.topSlotStarNodePool = [];
     this.barrierHammerHintNodes = {};
@@ -147,8 +156,11 @@ LevelRenderer.prototype.renderLevel = function (levelConfig, runtimeSnapshot) {
     this._renderBottomPanel(runtimeSnapshot);
     this._queueSkillPowerupCollectedFeedback(runtimeSnapshot);
     this._renderBoard(runtimeSnapshot.board);
+    this._playSpiritCocoonAnimations(runtimeSnapshot);
     this._renderTrappedSpriteRescue(runtimeSnapshot);
+    this._renderMultiTrappedSpiritRescue(runtimeSnapshot);
     this._playTrappedSpriteRescueDeparture(runtimeSnapshot);
+    this._playMultiTrappedSpiritDepartures(runtimeSnapshot);
     this._renderBoardOcclusions(runtimeSnapshot);
     this._syncBarrierHammerStoneHints(runtimeSnapshot);
     this._renderMainland(runtimeSnapshot.board);
@@ -289,12 +301,15 @@ LevelRenderer.prototype._refreshRuntimeFull = function (levelConfig, runtimeSnap
   if (boardChanged) {
     this._renderBoard(runtimeSnapshot.board);
     this._renderTrappedSpriteRescue(runtimeSnapshot);
+    this._renderMultiTrappedSpiritRescue(runtimeSnapshot);
     this._renderTestGrid(runtimeSnapshot.board);
     this._renderMainland(runtimeSnapshot.board);
     this._renderJianbian(runtimeSnapshot.board);
   }
+  this._playSpiritCocoonAnimations(runtimeSnapshot);
   this._renderBoardOcclusions(runtimeSnapshot);
   this._playSwirlRotationAnimation(runtimeSnapshot);
+  this._playWormholeProjectileAbsorptionAnimation(runtimeSnapshot);
   this._playWormholeShiftAnimation(runtimeSnapshot);
   this._syncBarrierHammerStoneHints(runtimeSnapshot);
 
@@ -347,9 +362,11 @@ LevelRenderer.prototype._refreshRuntimeFull = function (levelConfig, runtimeSnap
   this._playImpactBounce(runtimeSnapshot);
   this._playKeyUnlockAnimation(runtimeSnapshot);
   this._playSplitterSpawnAnimation(runtimeSnapshot);
+  this._playBreederSpawnAnimation(runtimeSnapshot);
   this._playMolotovBlastAnimation(runtimeSnapshot);
   this._playBlastExplosionAnimation(runtimeSnapshot);
   this._playTrappedSpriteRescueDeparture(runtimeSnapshot);
+  this._playMultiTrappedSpiritDepartures(runtimeSnapshot);
   this._playCommentAnimation(runtimeSnapshot);
 
   var hasActiveProjectile = !!(runtimeSnapshot.activeProjectile);
@@ -421,6 +438,7 @@ LevelRenderer.prototype._ensureLayers = function () {
     overlay: this._getOrCreateLayer("OverlayLayer", 30),
     wormhole: this._getOrCreateLayer("WormholeLayer", 24),
     board: this._getOrCreateLayer("BoardLayer", 40),
+    wormholeDirection: this._getOrCreateLayer("WormholeDirectionLayer", 42),
     boardOcclusion: this._getOrCreateLayer("BoardOcclusionLayer", 43),
     shatter: this._getOrCreateLayer("BubbleShatterLayer", 44),
     // 掉落球前置到固定球前方，提升层次与动效可见度。

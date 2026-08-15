@@ -7,6 +7,13 @@ var RandomChallengeManager = require("./RandomChallengeManager");
 var TEST_LEVEL_KEY = "level_test";
 var TRAPPED_SPRITE_TEST_LEVEL_KEY = "level_trapped_sprite_test";
 var BOARD_OCCLUSION_TEST_LEVEL_KEY = "level_board_occlusion_test";
+var FEATURE_TEST_LEVEL_KEYS = {
+  black_hole: "level_black_hole_test",
+  spirit_cocoon: "level_spirit_cocoon_test",
+  multi_trapped_spirit: "level_multi_trapped_spirit_test",
+  transparent_ball: "level_transparent_ball_test",
+  breeder_ball: "level_breeder_ball_test"
+};
 
 function padLevelId(levelId) {
   return String(levelId).padStart(3, "0");
@@ -92,6 +99,24 @@ LevelManager.prototype.loadBoardOcclusionTestLevel = function () {
 
   return this._loader.loadLevelByKey(BOARD_OCCLUSION_TEST_LEVEL_KEY).then(function (config) {
     this._cache[BOARD_OCCLUSION_TEST_LEVEL_KEY] = config;
+    return clone(config);
+  }.bind(this));
+};
+
+LevelManager.prototype.loadFeatureTestLevel = function (featureKey) {
+  var levelKey = FEATURE_TEST_LEVEL_KEYS[featureKey];
+  if (!levelKey) {
+    throw new Error("Unsupported feature test level key: " + featureKey + ".");
+  }
+  if (this._cache[levelKey]) {
+    return Promise.resolve(clone(this._cache[levelKey]));
+  }
+  if (!this._loader || typeof this._loader.loadLevelByKey !== "function") {
+    throw new Error("Local level loader missing loadLevelByKey for " + levelKey + ".");
+  }
+
+  return this._loader.loadLevelByKey(levelKey).then(function (config) {
+    this._cache[levelKey] = config;
     return clone(config);
   }.bind(this));
 };

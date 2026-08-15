@@ -43,7 +43,7 @@
     return null;
   }
   var previousRequire = resolvePreviousRequire();
-  var gameplayCodeHash = "536c8b906be85f6b62e392f96b088314850bb58f84938a30d3e73521adbfac83";
+  var gameplayCodeHash = "ae7f2002ee2da96b18211c143984e15fe1e28c46c8a05ccd67bd7c6eb6b214e8";
   var lazyRequire = (function (modules, cache, entries) {
     function load(moduleId, jumped) {
       if (!cache[moduleId]) {
@@ -256,7 +256,10 @@ function buildRevivePlan(levelConfig, runtimeSnapshot) {
   if (level.playMode !== "shot_limited") {
     throw new Error("Ad revive level.playMode is unsupported: " + level.playMode);
   }
-  if (level.levelType === "trapped_sprite_rescue") {
+  if (
+    level.levelType === "trapped_sprite_rescue" ||
+    level.levelType === "multi_trapped_spirit_rescue"
+  ) {
     return {
       grantedShots: AD_REVIVE_GRANTED_SHOTS,
       grantedTimeSeconds: 0,
@@ -951,6 +954,17 @@ BoardViewportSystem.prototype.getTopAttachY = function () {
   return BoardLayout.boardStartY + this.offsetY;
 };
 
+BoardViewportSystem.prototype.resetToZeroForCompletion = function () {
+  this.offsetY = 0;
+  this.targetOffsetY = 0;
+  this.phase = "idle";
+  this.moveDurationSec = 0;
+  this.moveElapsedSec = 0;
+  this.moveStartOffsetY = 0;
+  this.introActive = false;
+  return this.offsetY;
+};
+
 BoardViewportSystem.prototype.isMoving = function () {
   return this.phase === "intro_scrolling" || this.phase === "settling";
 };
@@ -1254,6 +1268,14 @@ function isWormholeCell(cell) {
   );
 }
 
+function isBlackHoleCell(cell) {
+  return !!(
+    cell &&
+    cell.entityCategory === "hazard_ball" &&
+    cell.entityType === "black_hole"
+  );
+}
+
 function isVineProtectedCell(cell) {
   return !!(
     cell &&
@@ -1310,6 +1332,7 @@ function createSpecialEntityRecord(entity, row, col) {
     splitColor: entity.splitColor || null,
     lockedColor: lockedColor,
     blastRadius: Number.isInteger(entity.blastRadius) ? entity.blastRadius : null,
+    capacity: isBlackHoleCell(entity) ? entity.capacity : null,
     moveDirection: typeof entity.moveDirection === "string" && entity.moveDirection
       ? entity.moveDirection
       : null,
@@ -1320,6 +1343,9 @@ function createSpecialEntityRecord(entity, row, col) {
     row: row,
     col: col
   };
+  if (isBlackHoleCell(entity) && (!Number.isInteger(record.capacity) || record.capacity < 1 || record.capacity > 3)) {
+    throw new Error("Black hole special entity runtime capacity must be in [1, 3].");
+  }
   if (record.temporaryThawed && !(record.entityCategory === "obstacle_ball" && record.entityType === "ice")) {
     throw new Error("Temporary thaw state is only valid on ice obstacles.");
   }
@@ -1351,6 +1377,8 @@ function BubbleGrid() {
   this._timeBonusByCell = {};
   this._vineOwnerByCell = {};
   this._vinePreviewOwnerByCell = {};
+  this._spiritMistExpiryByCell = {};
+  this._poisonAttachmentByCell = {};
   this._cellRemovalListener = null;
 }
 
@@ -1390,6 +1418,14 @@ BubbleGrid.prototype.isTrappedSpriteRescueActive = function () {
   return !!(
     this.trappedSpriteRescueSystem &&
     this.trappedSpriteRescueSystem.isActive()
+  );
+};
+
+BubbleGrid.prototype.isTrappedSpiritReservedCell = function (row, col) {
+  return !!(
+    this.trappedSpriteRescueSystem &&
+    typeof this.trappedSpriteRescueSystem.isReservedCell === "function" &&
+    this.trappedSpriteRescueSystem.isReservedCell(row, col)
   );
 };
 
@@ -1445,6 +1481,35 @@ BubbleGrid.prototype.configureLevel = function (levelConfig) {
   this.coordinateSystem = levelConfig.coordinateSystem || this.coordinateSystem;
   this._vineOwnerByCell = {};
   this._vinePreviewOwnerByCell = {};
+  this._spiritMistExpiryByCell = {};
+  this._poisonAttachmentByCell = {};
+  var cellAttachments = levelConfig.level.cellAttachments;
+  if (cellAttachments === undefined) {
+    cellAttachments = [];
+  } else if (!Array.isArray(cellAttachments)) {
+    throw new Error("BubbleGrid level.cellAttachments must be an array when configured.");
+  }
+  cellAttachments.forEach(function (attachment, index) {
+    if (
+      !attachment ||
+      attachment.type !== "poison" ||
+      typeof attachment.id !== "string" ||
+      !attachment.id ||
+      !Number.isInteger(attachment.row) ||
+      !Number.isInteger(attachment.col) ||
+      attachment.particleCount !== 3
+    ) {
+      throw new Error("BubbleGrid poison attachment is invalid at index " + index + ".");
+    }
+    var coordinateKey = keyFor(attachment.row, attachment.col);
+    if (Object.prototype.hasOwnProperty.call(this._poisonAttachmentByCell, coordinateKey)) {
+      throw new Error("BubbleGrid poison attachment target is duplicated: " + coordinateKey + ".");
+    }
+    if (this.layout[attachment.row].charAt(attachment.col) === ".") {
+      throw new Error("BubbleGrid poison attachment target must be an ordinary ball: " + coordinateKey + ".");
+    }
+    this._poisonAttachmentByCell[coordinateKey] = clone(attachment);
+  }, this);
   var layoutMaxColumns = this.layout.reduce(function (max, row) {
     return Math.max(max, row.length);
   }, 0);
@@ -1507,6 +1572,9 @@ BubbleGrid.prototype._rebuildSpecialCellMap = function () {
     var entityKey = keyFor(entity.row, entity.col);
     var record = createSpecialEntityRecord(entity, entity.row, entity.col);
     if (isWormholeCell(record)) {
+      if (this.layout[entity.row].charAt(entity.col) !== ".") {
+        throw new Error("BubbleGrid wormhole endpoint must reserve an empty layout slot at " + entityKey + ".");
+      }
       this._wormholeMap[entityKey] = record;
       return;
     }
@@ -1532,6 +1600,15 @@ BubbleGrid.prototype._createNormalCell = function (row, col, colorCode) {
     vinePreviewOwnerId: Object.prototype.hasOwnProperty.call(this._vinePreviewOwnerByCell, cellKey)
       ? this._vinePreviewOwnerByCell[cellKey]
       : null,
+    spiritMistExpiresAfterShot: Object.prototype.hasOwnProperty.call(this._spiritMistExpiryByCell, cellKey)
+      ? this._spiritMistExpiryByCell[cellKey]
+      : null,
+    poisonAttachmentId: Object.prototype.hasOwnProperty.call(this._poisonAttachmentByCell, cellKey)
+      ? this._poisonAttachmentByCell[cellKey].id
+      : null,
+    poisonParticleCount: Object.prototype.hasOwnProperty.call(this._poisonAttachmentByCell, cellKey)
+      ? this._poisonAttachmentByCell[cellKey].particleCount
+      : null,
     isSpecial: false
   };
 };
@@ -1556,6 +1633,7 @@ BubbleGrid.prototype._createSpecialCell = function (entity, row, col) {
     splitColor: entity.splitColor || null,
     lockedColor: lockedColor,
     blastRadius: Number.isInteger(entity.blastRadius) ? entity.blastRadius : null,
+    capacity: isBlackHoleCell(entity) ? entity.capacity : null,
     moveDirection: typeof entity.moveDirection === "string" && entity.moveDirection
       ? entity.moveDirection
       : null,
@@ -1575,6 +1653,9 @@ BubbleGrid.prototype._createSpecialCell = function (entity, row, col) {
     if (!cell.temporaryThawToken) {
       throw new Error("Temporary thaw cell requires temporaryThawToken.");
     }
+  }
+  if (isBlackHoleCell(entity) && (!Number.isInteger(cell.capacity) || cell.capacity < 1 || cell.capacity > 3)) {
+    throw new Error("Black hole runtime capacity must be in [1, 3].");
   }
   if (isVineSpiritCell(entity)) {
     if (!Number.isInteger(entity.health) || entity.health <= 0 || entity.health > VINE_SPIRIT_MAX_HEALTH) {
@@ -1829,6 +1910,21 @@ BubbleGrid.prototype.getSpecialEntities = function () {
   return cellEntities.concat(wormholes);
 };
 
+BubbleGrid.prototype.getWormholes = function () {
+  return Object.keys(this._wormholeMap).map(function (key) {
+    return clone(this._wormholeMap[key]);
+  }, this).sort(function (left, right) {
+    if (left.row !== right.row) {
+      return left.row - right.row;
+    }
+    return left.col - right.col;
+  });
+};
+
+BubbleGrid.prototype.hasWormholeAt = function (row, col) {
+  return Object.prototype.hasOwnProperty.call(this._wormholeMap, keyFor(row, col));
+};
+
 BubbleGrid.prototype.getRowCount = function () {
   return this.layout.length;
 };
@@ -1856,6 +1952,7 @@ var BUBBLE_GRID_METHOD_CONTEXT = {
   dot: dot,
   isVineProtectedCell: isVineProtectedCell,
   isVineSpiritCell: isVineSpiritCell,
+  isBlackHoleCell: isBlackHoleCell,
   keyFor: keyFor,
   normalize: normalize
 };
@@ -1937,6 +2034,14 @@ function attachBubbleGridCollisionMethods(BubbleGrid, context) {
   var keyFor = context.keyFor;
   var normalize = context.normalize;
 
+  function isTransparentBallCell(cell) {
+    return !!(
+      cell &&
+      cell.entityCategory === "reactive_ball" &&
+      cell.entityType === "transparent_ball"
+    );
+  }
+
 BubbleGrid.prototype.getNeighborCells = function (row, col) {
   return this.getNeighborCoordinates(row, col).map(function (candidate) {
     return this.getCell(candidate.row, candidate.col);
@@ -1980,8 +2085,8 @@ BubbleGrid.prototype.isAttachableCell = function (row, col, direction, options) 
     return false;
   }
   if (
-    this.isTrappedSpriteRescueActive() &&
-    this.trappedSpriteRescueSystem.isReservedCell(row, col)
+    this.isTrappedSpiritReservedCell(row, col) ||
+    this.hasWormholeAt(row, col)
   ) {
     return false;
   }
@@ -2250,6 +2355,9 @@ BubbleGrid.prototype.findCollisionOnSegment = function (startPoint, endPoint, co
   var paddingRows = this._resolveSegmentPaddingRows(radius);
 
   this._iterateCellsNearSegment(startPoint, endPoint, paddingRows, function (cell) {
+    if (isTransparentBallCell(cell)) {
+      return;
+    }
     var candidate = this._testSegmentCircleHit(cell, startPoint, segment, a, radius);
     if (this._shouldReplaceSegmentHit(bestHit, candidate)) {
       bestHit = candidate;
@@ -2261,6 +2369,125 @@ BubbleGrid.prototype.findCollisionOnSegment = function (startPoint, endPoint, co
   }
 
   return this._buildSegmentCollisionResult(bestHit, startPoint, segment);
+};
+
+BubbleGrid.prototype.findWormholeCollisionOnSegment = function (startPoint, endPoint, collisionRadius) {
+  if (!startPoint || !endPoint) {
+    throw new Error("Wormhole collision requires start and end points.");
+  }
+  if (!Number.isFinite(collisionRadius) || collisionRadius <= 0) {
+    throw new Error("Wormhole collision requires positive collisionRadius.");
+  }
+  if (typeof this.getWormholes !== "function") {
+    throw new Error("Wormhole collision requires BubbleGrid.getWormholes.");
+  }
+
+  var segment = {
+    x: endPoint.x - startPoint.x,
+    y: endPoint.y - startPoint.y
+  };
+  var segmentLengthSq = dot(segment, segment);
+  if (segmentLengthSq <= EPSILON) {
+    return null;
+  }
+
+  var bestHit = null;
+  this.getWormholes().forEach(function (wormhole) {
+    var candidate = this._testSegmentCircleHit(
+      wormhole,
+      startPoint,
+      segment,
+      segmentLengthSq,
+      collisionRadius
+    );
+    if (this._shouldReplaceSegmentHit(bestHit, candidate)) {
+      bestHit = candidate;
+    }
+  }, this);
+  if (!bestHit) {
+    return null;
+  }
+  var collision = this._buildSegmentCollisionResult(bestHit, startPoint, segment);
+  collision.center = clone(bestHit.center);
+  return collision;
+};
+
+BubbleGrid.prototype.findTransparentBallCollisionsOnPath = function (pathPoints, collisionRadius) {
+  if (!Array.isArray(pathPoints) || pathPoints.length < 2) {
+    throw new Error("Transparent ball path collision requires at least two path points.");
+  }
+  if (!Number.isFinite(collisionRadius) || collisionRadius <= 0) {
+    throw new Error("Transparent ball path collision requires positive collisionRadius.");
+  }
+
+  var penetratedById = {};
+  var penetrated = [];
+  var paddingRows = this._resolveSegmentPaddingRows(collisionRadius);
+
+  for (var segmentIndex = 0; segmentIndex < pathPoints.length - 1; segmentIndex += 1) {
+    var startPoint = pathPoints[segmentIndex];
+    var endPoint = pathPoints[segmentIndex + 1];
+    if (
+      !startPoint ||
+      !endPoint ||
+      !Number.isFinite(startPoint.x) ||
+      !Number.isFinite(startPoint.y) ||
+      !Number.isFinite(endPoint.x) ||
+      !Number.isFinite(endPoint.y)
+    ) {
+      throw new Error("Transparent ball path points must contain finite coordinates.");
+    }
+    var segment = {
+      x: endPoint.x - startPoint.x,
+      y: endPoint.y - startPoint.y
+    };
+    var segmentLengthSq = dot(segment, segment);
+    if (segmentLengthSq <= EPSILON) {
+      continue;
+    }
+
+    var segmentHits = [];
+    this._iterateCellsNearSegment(startPoint, endPoint, paddingRows, function (cell) {
+      if (!isTransparentBallCell(cell)) {
+        return;
+      }
+      if (typeof cell.id !== "string" || !cell.id) {
+        throw new Error("Transparent ball collision requires a non-empty cell id.");
+      }
+      var candidate = this._testSegmentCircleHit(
+        cell,
+        startPoint,
+        segment,
+        segmentLengthSq,
+        collisionRadius
+      );
+      if (candidate) {
+        segmentHits.push(candidate);
+      }
+    });
+    segmentHits.sort(function (left, right) {
+      if (left.t !== right.t) {
+        return left.t - right.t;
+      }
+      return String(left.cell.id) < String(right.cell.id) ? -1 : 1;
+    });
+    segmentHits.forEach(function (hit) {
+      if (penetratedById[hit.cell.id]) {
+        return;
+      }
+      penetratedById[hit.cell.id] = true;
+      var entry = clone(hit.cell);
+      entry.hitPoint = {
+        x: startPoint.x + segment.x * hit.t,
+        y: startPoint.y + segment.y * hit.t
+      };
+      entry.pathSegmentIndex = segmentIndex;
+      entry.pathSegmentProgress = Math.sqrt(segmentLengthSq) * hit.t;
+      penetrated.push(entry);
+    });
+  }
+
+  return penetrated;
 };
 
 BubbleGrid.prototype.findTrappedSpriteCollisionOnSegment = function (startPoint, endPoint, collisionRadius) {
@@ -2381,6 +2608,9 @@ BubbleGrid.prototype.findCollisionsOnSegmentForRadii = function (startPoint, end
   var paddingRows = this._resolveSegmentPaddingRows(maxRadius);
 
   this._iterateCellsNearSegment(startPoint, endPoint, paddingRows, function (cell) {
+    if (isTransparentBallCell(cell)) {
+      return;
+    }
     uniqueRadii.forEach(function (radius) {
       var candidate = this._testSegmentCircleHit(cell, startPoint, segment, segmentLengthSq, radius);
       if (this._shouldReplaceSegmentHit(bestHits[radius], candidate)) {
@@ -2407,12 +2637,11 @@ BubbleGrid.prototype.findAttachmentCell = function (point, collidedCell, directi
 
   var incomingDirection = direction || { x: 0, y: 1 };
   var candidates = this.getNeighborCoordinates(collidedCell.row, collidedCell.col).filter(function (candidate) {
-    if (this.hasCell(candidate.row, candidate.col)) {
+    if (this.hasCell(candidate.row, candidate.col) || this.hasWormholeAt(candidate.row, candidate.col)) {
       return false;
     }
     if (
-      this.isTrappedSpriteRescueActive() &&
-      this.trappedSpriteRescueSystem.isReservedCell(candidate.row, candidate.col)
+      this.isTrappedSpiritReservedCell(candidate.row, candidate.col)
     ) {
       return false;
     }
@@ -2422,10 +2651,9 @@ BubbleGrid.prototype.findAttachmentCell = function (point, collidedCell, directi
 
   if (!candidates.length) {
     candidates = this.getNeighborCoordinates(collidedCell.row, collidedCell.col).filter(function (candidate) {
-      return !this.hasCell(candidate.row, candidate.col) && !(
-        this.isTrappedSpriteRescueActive() &&
-        this.trappedSpriteRescueSystem.isReservedCell(candidate.row, candidate.col)
-      );
+      return !this.hasCell(candidate.row, candidate.col) &&
+        !this.hasWormholeAt(candidate.row, candidate.col) &&
+        !this.isTrappedSpiritReservedCell(candidate.row, candidate.col);
     }, this);
   }
 
@@ -2599,7 +2827,7 @@ BubbleGrid.prototype._findTopSlot = function (impactX) {
   var bestDistance = Number.MAX_VALUE;
 
   for (var col = 0; col < this.getColumnCountForRow(row); col += 1) {
-    if (this.hasCell(row, col)) {
+    if (this.hasCell(row, col) || this.hasWormholeAt(row, col)) {
       continue;
     }
 
@@ -2713,10 +2941,12 @@ BubbleGrid.prototype.addBubble = function (cell, colorOrBall) {
   var row = cell.row;
   var col = cell.col;
   if (
-    this.isTrappedSpriteRescueActive() &&
-    this.trappedSpriteRescueSystem.isReservedCell(row, col)
+    this.isTrappedSpiritReservedCell(row, col)
   ) {
-    throw new Error("BubbleGrid cannot attach a bubble to the trapped sprite anchor cell.");
+    throw new Error("BubbleGrid cannot attach a bubble to a trapped spirit reserved cell.");
+  }
+  if (this.hasWormholeAt(row, col)) {
+    throw new Error("BubbleGrid cannot attach a bubble to a wormhole endpoint.");
   }
 
   if (typeof colorOrBall === "string") {
@@ -2725,6 +2955,7 @@ BubbleGrid.prototype.addBubble = function (cell, colorOrBall) {
   } else if (colorOrBall && typeof colorOrBall === "object") {
     if (
       colorOrBall.entityCategory === "skill_ball" ||
+      colorOrBall.entityCategory === "hazard_ball" ||
       colorOrBall.entityCategory === "obstacle_ball" ||
       colorOrBall.entityCategory === "reactive_ball" ||
       colorOrBall.entityCategory === "locked_ball" ||
@@ -2836,6 +3067,8 @@ BubbleGrid.prototype._removeCellsByMode = function (cells, allowVineDrop) {
     touchedKeys[key] = true;
     removed.push(liveCell);
     delete this._timeBonusByCell[key];
+    delete this._spiritMistExpiryByCell[key];
+    delete this._poisonAttachmentByCell[key];
     this._setCell(cell.row, cell.col, ".");
     this._clearSpecialCell(cell.row, cell.col);
   }, this);
@@ -2861,6 +3094,97 @@ BubbleGrid.prototype.removeFloatingCells = function (cells) {
     throw new Error("BubbleGrid.removeFloatingCells requires cells array.");
   }
   return this._removeCellsByMode(cells, true);
+};
+
+BubbleGrid.prototype.applySpiritMist = function (cells, expiresAfterShot) {
+  if (!Array.isArray(cells)) {
+    throw new Error("BubbleGrid.applySpiritMist requires cells array.");
+  }
+  if (!Number.isInteger(expiresAfterShot) || expiresAfterShot <= 0) {
+    throw new Error("BubbleGrid.applySpiritMist requires positive expiresAfterShot.");
+  }
+  var applied = [];
+  cells.forEach(function (cell) {
+    if (!cell || !Number.isInteger(cell.row) || !Number.isInteger(cell.col)) {
+      throw new Error("Spirit mist target requires cell coordinates.");
+    }
+    var liveCell = this.getCell(cell.row, cell.col);
+    if (!liveCell || liveCell.entityCategory !== "normal_ball") {
+      throw new Error("Spirit mist target must remain a live normal ball.");
+    }
+    this._spiritMistExpiryByCell[keyFor(cell.row, cell.col)] = expiresAfterShot;
+    applied.push({
+      id: liveCell.id,
+      row: liveCell.row,
+      col: liveCell.col,
+      expiresAfterShot: expiresAfterShot
+    });
+  }, this);
+  if (applied.length) {
+    this.version += 1;
+    this._rebuildCaches();
+  }
+  return applied;
+};
+
+BubbleGrid.prototype.clearExpiredSpiritMist = function (shotsFired) {
+  if (!Number.isInteger(shotsFired) || shotsFired < 0) {
+    throw new Error("BubbleGrid.clearExpiredSpiritMist requires non-negative shotsFired.");
+  }
+  var cleared = [];
+  Object.keys(this._spiritMistExpiryByCell).forEach(function (cellKey) {
+    var expiry = this._spiritMistExpiryByCell[cellKey];
+    if (!Number.isInteger(expiry) || expiry <= 0) {
+      throw new Error("Spirit mist expiry must be a positive integer: " + cellKey);
+    }
+    if (shotsFired < expiry) {
+      return;
+    }
+    var coordinates = cellKey.split(":").map(Number);
+    var cell = this.getCell(coordinates[0], coordinates[1]);
+    if (!cell || cell.entityCategory !== "normal_ball") {
+      throw new Error("Spirit mist expiry target must remain a live normal ball: " + cellKey);
+    }
+    cleared.push({ id: cell.id, row: cell.row, col: cell.col });
+    delete this._spiritMistExpiryByCell[cellKey];
+  }, this);
+  if (cleared.length) {
+    this.version += 1;
+    this._rebuildCaches();
+  }
+  return cleared;
+};
+
+BubbleGrid.prototype.recolorNormalCells = function (assignments) {
+  if (!Array.isArray(assignments)) {
+    throw new Error("BubbleGrid.recolorNormalCells requires assignments array.");
+  }
+  var recolored = [];
+  assignments.forEach(function (assignment) {
+    if (!assignment || !Number.isInteger(assignment.row) || !Number.isInteger(assignment.col)) {
+      throw new Error("BubbleGrid recolor assignment requires coordinates.");
+    }
+    if (typeof assignment.color !== "string" || !assignment.color) {
+      throw new Error("BubbleGrid recolor assignment requires color.");
+    }
+    var liveCell = this.getCell(assignment.row, assignment.col);
+    if (!liveCell || liveCell.entityCategory !== "normal_ball") {
+      throw new Error("BubbleGrid recolor target must be a live normal ball.");
+    }
+    this._setCell(assignment.row, assignment.col, assignment.color);
+    recolored.push({
+      id: liveCell.id,
+      row: liveCell.row,
+      col: liveCell.col,
+      fromColor: liveCell.color,
+      color: assignment.color
+    });
+  }, this);
+  if (recolored.length) {
+    this.version += 1;
+    this._rebuildCaches();
+  }
+  return recolored;
 };
 
 BubbleGrid.prototype.getTopAttachY = function () {
@@ -2904,8 +3228,60 @@ function attachBubbleGridSpecialEntityMethods(BubbleGrid, context) {
   var buildColorCountSignature = context.buildColorCountSignature;
   var clone = context.clone;
   var createSpecialEntityRecord = context.createSpecialEntityRecord;
+  var isBlackHoleCell = context.isBlackHoleCell;
   var isVineSpiritCell = context.isVineSpiritCell;
   var keyFor = context.keyFor;
+
+BubbleGrid.prototype.consumeBlackHole = function (row, col) {
+  if (!Number.isInteger(row) || !Number.isInteger(col)) {
+    throw new Error("Black hole consumption requires integer coordinates.");
+  }
+  var cellKey = keyFor(row, col);
+  var blackHole = this._specialCellMap[cellKey];
+  if (!isBlackHoleCell(blackHole)) {
+    throw new Error("Black hole consumption requires a live black_hole at " + cellKey + ".");
+  }
+  if (!Number.isInteger(blackHole.capacity) || blackHole.capacity < 1 || blackHole.capacity > 3) {
+    throw new Error("Black hole consumption found invalid capacity at " + cellKey + ".");
+  }
+  var capacityBefore = blackHole.capacity;
+  var removedCell = this.getCell(row, col);
+  if (!isBlackHoleCell(removedCell) || removedCell.id !== blackHole.id) {
+    throw new Error("Black hole consumption lost the live board cell at " + cellKey + ".");
+  }
+  blackHole.capacity -= 1;
+  var destroyed = blackHole.capacity === 0;
+  if (destroyed) {
+    delete this._specialCellMap[cellKey];
+  }
+  this.version += 1;
+  this._rebuildCaches();
+  return {
+    blackHoleId: blackHole.id,
+    row: row,
+    col: col,
+    capacityBefore: capacityBefore,
+    capacityAfter: destroyed ? 0 : blackHole.capacity,
+    destroyed: destroyed,
+    removedCell: destroyed ? removedCell : null
+  };
+};
+
+BubbleGrid.prototype.unloadBlackHole = function (row, col) {
+  if (!Number.isInteger(row) || !Number.isInteger(col)) {
+    throw new Error("Black hole unload requires integer coordinates.");
+  }
+  var cellKey = keyFor(row, col);
+  var blackHole = this._specialCellMap[cellKey];
+  var liveCell = this.getCell(row, col);
+  if (!isBlackHoleCell(blackHole) || !isBlackHoleCell(liveCell) || liveCell.id !== blackHole.id) {
+    throw new Error("Black hole unload requires a live black_hole at " + cellKey + ".");
+  }
+  delete this._specialCellMap[cellKey];
+  this.version += 1;
+  this._rebuildCaches();
+  return liveCell;
+};
 
 BubbleGrid.prototype.getWormholePairs = function () {
   var wormholesByRow = {};
@@ -3238,6 +3614,8 @@ BubbleGrid.prototype.rotateSwirlNeighborsClockwise = function (swirlCell) {
     delete this._timeBonusByCell[keyFor(coordinate.row, coordinate.col)];
     delete this._vineOwnerByCell[keyFor(coordinate.row, coordinate.col)];
     delete this._vinePreviewOwnerByCell[keyFor(coordinate.row, coordinate.col)];
+    delete this._spiritMistExpiryByCell[keyFor(coordinate.row, coordinate.col)];
+    delete this._poisonAttachmentByCell[keyFor(coordinate.row, coordinate.col)];
     this._setCell(coordinate.row, coordinate.col, ".");
   }, this);
 
@@ -3260,6 +3638,21 @@ BubbleGrid.prototype.rotateSwirlNeighborsClockwise = function (swirlCell) {
     }
     if (typeof cell.vinePreviewOwnerId === "string" && cell.vinePreviewOwnerId) {
       this._vinePreviewOwnerByCell[keyFor(target.row, target.col)] = cell.vinePreviewOwnerId;
+    }
+    if (Number.isInteger(cell.spiritMistExpiresAfterShot)) {
+      this._spiritMistExpiryByCell[keyFor(target.row, target.col)] = cell.spiritMistExpiresAfterShot;
+    }
+    if (typeof cell.poisonAttachmentId === "string" && cell.poisonAttachmentId) {
+      if (cell.poisonParticleCount !== 3) {
+        throw new Error("BubbleGrid swirl poison attachment must release exactly three particles.");
+      }
+      this._poisonAttachmentByCell[keyFor(target.row, target.col)] = {
+        id: cell.poisonAttachmentId,
+        type: "poison",
+        row: target.row,
+        col: target.col,
+        particleCount: cell.poisonParticleCount
+      };
     }
     moves.push({
       color: cell.color,
@@ -3303,7 +3696,7 @@ BubbleGrid.prototype._shiftWormholePairInterior = function (wormholes) {
   var rightWormhole = wormholes[1];
 
   var track = [];
-  for (var col = leftWormhole.col; col <= rightWormhole.col; col += 1) {
+  for (var col = leftWormhole.col + 1; col < rightWormhole.col; col += 1) {
     if (!this.isValidCell(leftWormhole.row, col)) {
       throw new Error("BubbleGrid wormhole channel contains an invalid cell.");
     }
@@ -3318,6 +3711,8 @@ BubbleGrid.prototype._shiftWormholePairInterior = function (wormholes) {
     var coordinateKey = keyFor(coordinate.row, coordinate.col);
     delete this._vineOwnerByCell[coordinateKey];
     delete this._vinePreviewOwnerByCell[coordinateKey];
+    delete this._spiritMistExpiryByCell[coordinateKey];
+    delete this._poisonAttachmentByCell[coordinateKey];
     this._clearSpecialCell(coordinate.row, coordinate.col);
     this._setCell(coordinate.row, coordinate.col, ".");
   }, this);
@@ -3344,6 +3739,21 @@ BubbleGrid.prototype._shiftWormholePairInterior = function (wormholes) {
       if (typeof cell.vinePreviewOwnerId === "string" && cell.vinePreviewOwnerId) {
         this._vinePreviewOwnerByCell[targetKey] = cell.vinePreviewOwnerId;
       }
+      if (Number.isInteger(cell.spiritMistExpiresAfterShot)) {
+        this._spiritMistExpiryByCell[targetKey] = cell.spiritMistExpiresAfterShot;
+      }
+      if (typeof cell.poisonAttachmentId === "string" && cell.poisonAttachmentId) {
+        if (cell.poisonParticleCount !== 3) {
+          throw new Error("BubbleGrid wormhole poison attachment must release exactly three particles.");
+        }
+        this._poisonAttachmentByCell[targetKey] = {
+          id: cell.poisonAttachmentId,
+          type: "poison",
+          row: target.row,
+          col: target.col,
+          particleCount: cell.poisonParticleCount
+        };
+      }
       targetCellId = target.row + "_" + target.col;
     } else {
       this._setCell(target.row, target.col, ".");
@@ -3358,7 +3768,8 @@ BubbleGrid.prototype._shiftWormholePairInterior = function (wormholes) {
       fromCol: source.col,
       toRow: target.row,
       toCol: target.col,
-      targetCellId: targetCellId
+      targetCellId: targetCellId,
+      wrapped: targetIndex !== sourceIndex + directionStep
     });
   }, this);
 
@@ -4739,6 +5150,29 @@ FairyAssistSystem.prototype._removeByDeparturePriority = function (count) {
   return events;
 };
 
+FairyAssistSystem.prototype.removeFairyByPoison = function (fairyId) {
+  if (typeof fairyId !== "string" || !fairyId) {
+    throw new Error("Poison fairy removal requires fairyId.");
+  }
+  for (var index = 0; index < this.slots.length; index += 1) {
+    var slot = this.slots[index];
+    if (!slot.fairy || slot.fairy.id !== fairyId) {
+      continue;
+    }
+    var fairy = slot.fairy;
+    slot.fairy = null;
+    this.revision += 1;
+    return {
+      type: "remove",
+      reason: "poison",
+      fairyId: fairy.id,
+      color: fairy.color,
+      slotIndex: fairy.slotIndex
+    };
+  }
+  throw new Error("Poison fairy removal requires a live fairy: " + fairyId + ".");
+};
+
 FairyAssistSystem.prototype._resolveDestinationSlot = function () {
   var emptySlots = [];
   for (var index = 0; index < this.slots.length; index += 1) {
@@ -5208,6 +5642,28 @@ FallingMarbleSystem.prototype._applyFairyCollision = function (drop, activeDropC
   return result;
 };
 
+FallingMarbleSystem.prototype._applyPoisonFairyCollision = function (drop) {
+  if (!drop || drop.dropKind !== "poison_droplet" || drop.entityType !== "poison_droplet") {
+    throw new Error("Poison fairy collision requires poison_droplet.");
+  }
+  if (!this.fairyAssistSystem || typeof this.fairyAssistSystem.removeFairyByPoison !== "function") {
+    throw new Error("Poison fairy collision requires FairyAssistSystem.removeFairyByPoison.");
+  }
+  var collision = this.fairyAssistSystem.resolveFirstCollision(drop, 8);
+  if (!collision) {
+    return null;
+  }
+  var departure = this.fairyAssistSystem.removeFairyByPoison(collision.fairy.id);
+  drop.active = false;
+  return {
+    fairyId: departure.fairyId,
+    fairyColor: departure.color,
+    slotIndex: departure.slotIndex,
+    dropId: drop.id,
+    poisonBatchId: drop.poisonBatchId
+  };
+};
+
 FallingMarbleSystem.prototype._createMissedEvent = function (drop) {
   return {
     id: drop.id,
@@ -5458,11 +5914,31 @@ FallingMarbleSystem.prototype.update = function (dt) {
     }
 
     drop.jarCooldown = Math.max(0, (drop.jarCooldown || 0) - dt);
-    this._applyGapAttraction(drop, dt);
+    if (drop.dropKind !== "poison_droplet") {
+      this._applyGapAttraction(drop, dt);
+    }
     drop.velocity.y -= this.gravity * dt;
     drop.position.x += drop.velocity.x * dt;
     drop.position.y += drop.velocity.y * dt;
     drop.rotation += drop.rotationSpeed * dt;
+
+    if (drop.dropKind === "poison_droplet") {
+      var poisonCollision = this._applyPoisonFairyCollision(drop);
+      if (poisonCollision) {
+        result.poisonFairyHits.push(poisonCollision);
+        activeDropCount -= 1;
+        continue;
+      }
+      if (drop.position.y <= this.cleanupY) {
+        drop.active = false;
+        result.missed.push(this._createMissedEvent(drop));
+        activeDropCount -= 1;
+        continue;
+      }
+      drops[writeIndex] = drop;
+      writeIndex += 1;
+      continue;
+    }
 
     var fairyCollision = this._applyFairyCollision(drop, activeDropCount + spawnedDrops.length);
     if (fairyCollision) {
@@ -5961,7 +6437,7 @@ function resolveDropKind(options) {
   if (!options || !Object.prototype.hasOwnProperty.call(options, "dropKind")) {
     return null;
   }
-  if (options.dropKind !== "victory_board_drop") {
+  if (options.dropKind !== "victory_board_drop" && options.dropKind !== "poison_droplet") {
     throw new Error("FallingMarbleSystem.registerDrops unsupported dropKind: " + options.dropKind);
   }
   return options.dropKind;
@@ -5978,6 +6454,7 @@ function createEmptyUpdateResult() {
     bounced: 0,
     bounceEvents: [],
     fairyHits: [],
+    poisonFairyHits: [],
     splits: []
   };
 }
@@ -6515,6 +6992,12 @@ FallingMarbleSystem.prototype._buildDropFromCell = function (
     launchIndex: index,
     launchDropSerial: dropSerial,
     dropKind: dropKind,
+    poisonBatchId: typeof cell.poisonBatchId === "string" && cell.poisonBatchId
+      ? cell.poisonBatchId
+      : null,
+    poisonParticleIndex: Number.isInteger(cell.poisonParticleIndex)
+      ? cell.poisonParticleIndex
+      : null,
     rootDropId: Object.prototype.hasOwnProperty.call(cell, "rootDropId")
       ? String(cell.rootDropId)
       : String(cell.id),
@@ -6675,6 +7158,7 @@ var attachGameManagerSnapshotMethods = require("./GameManagerSnapshotMethods");
 
 var attachGameManagerBoardPhaseMethods = require("./GameManagerBoardPhaseMethods");
 var attachGameManagerSpecialPhaseMethods = require("./GameManagerSpecialPhaseMethods");
+var attachGameManagerSpiritCocoonMethods = require("./GameManagerSpiritCocoonMethods");
 var attachGameManagerRuntimeStateMethods = require("./GameManagerRuntimeStateMethods");
 var attachGameManagerInputMethods = require("./GameManagerInputMethods");
 var attachGameManagerAdPowerupMethods = require("./GameManagerAdPowerupMethods");
@@ -6784,9 +7268,21 @@ function createEmptyResolution() {
     injectedSkills: [],
     reactiveTriggered: [],
     blastExplosions: [],
+    transparentBallsDestroyed: [],
+    rescuedTrappedSpirits: [],
     spawnedBySplitters: [],
+    spiritCocoonOpenings: [],
+    spiritCocoonConsumed: [],
+    spiritCocoonRecolors: [],
+    spiritMistApplied: [],
+    spiritMistCleared: [],
+    breederResolved: false,
+    breederSpawns: [],
     swirlRotations: [],
     wormholeShifts: [],
+    wormholeProjectileAbsorptions: [],
+    blackHoleProjectileAbsorptions: [],
+    blackHolesUnloaded: [],
     vineCastEvaluated: false,
     vineCasts: [],
     vineSpiritHits: [],
@@ -6794,6 +7290,7 @@ function createEmptyResolution() {
     witheredVines: [],
     collectedKeys: [],
     unlockedLockedBalls: [],
+    poisonReleases: [],
     fairyAssistEvents: [],
     fairyAssistResolved: false,
     impact: null,
@@ -6804,6 +7301,8 @@ function createEmptyResolution() {
     topAnchorCollapse: false,
     eliminationSequence: [],
     scoreEvents: [],
+    comboRegistered: false,
+    multiTrappedSpiritRescueCompleted: false,
     dangerReached: false,
     shotMissed: false,
     trappedSpriteRotation: null
@@ -6851,6 +7350,8 @@ var BASE_SCORE_RULES = {
   matchedDrop: 10,
   floatingDrop: 80,
   blastDrop: 100,
+  transparentBallBreak: 1000,
+  trappedSpiritRescue: 1000,
   jarCollectBase: 60,
   skillOverflow: 220
 };
@@ -6935,6 +7436,28 @@ if (
   SpecialAnimationTiming.wormholeShift.duration <= 0
 ) {
   throw new Error("SpecialAnimationTiming.wormholeShift.duration must be positive.");
+}
+if (
+  typeof SpecialAnimationTiming.wormholeShift.inhaleDuration !== "number" ||
+  !isFinite(SpecialAnimationTiming.wormholeShift.inhaleDuration) ||
+  SpecialAnimationTiming.wormholeShift.inhaleDuration <= 0 ||
+  typeof SpecialAnimationTiming.wormholeShift.exhaleDuration !== "number" ||
+  !isFinite(SpecialAnimationTiming.wormholeShift.exhaleDuration) ||
+  SpecialAnimationTiming.wormholeShift.exhaleDuration <= 0 ||
+  Math.abs(
+    SpecialAnimationTiming.wormholeShift.inhaleDuration +
+    SpecialAnimationTiming.wormholeShift.exhaleDuration -
+    SpecialAnimationTiming.wormholeShift.duration
+  ) > 0.000001
+) {
+  throw new Error("SpecialAnimationTiming wormhole inhale/exhale durations must be positive and sum to duration.");
+}
+if (
+  typeof SpecialAnimationTiming.wormholeShift.projectileAbsorbDuration !== "number" ||
+  !isFinite(SpecialAnimationTiming.wormholeShift.projectileAbsorbDuration) ||
+  SpecialAnimationTiming.wormholeShift.projectileAbsorbDuration <= 0
+) {
+  throw new Error("SpecialAnimationTiming.wormholeShift.projectileAbsorbDuration must be positive.");
 }
 var WORMHOLE_SHIFT_DURATION = SpecialAnimationTiming.wormholeShift.duration;
 // 最后一颗入缸后，延迟再弹出 WinView。
@@ -7034,12 +7557,20 @@ function isSplitterBall(ball) {
   return !!(ball && ball.entityCategory === "reactive_ball" && ball.entityType === "splitter");
 }
 
+function isBreederBall(ball) {
+  return !!(ball && ball.entityCategory === "reactive_ball" && ball.entityType === "breeder");
+}
+
 function isSwirlBall(ball) {
   return !!(ball && ball.entityCategory === "reactive_ball" && ball.entityType === "swirl");
 }
 
 function isWormholeBall(ball) {
   return !!(ball && ball.entityCategory === "reactive_ball" && ball.entityType === "wormhole");
+}
+
+function isBlackHoleBall(ball) {
+  return !!(ball && ball.entityCategory === "hazard_ball" && ball.entityType === "black_hole");
 }
 
 function isVineSpiritBall(ball) {
@@ -7175,6 +7706,7 @@ function buildActiveProjectile(firedBall, shotPlan) {
     pathPoints: pathPoints,
     segmentIndex: 0,
     segmentProgress: 0,
+    destroyedTransparentBalls: [],
     targetCell: shotPlan && shotPlan.targetCell ? clone(shotPlan.targetCell) : null,
     shotPlan: shotPlan ? clone(shotPlan) : null
   };
@@ -7318,7 +7850,7 @@ function buildScoreRulesForLevel(levelConfig) {
 
   var rules = cloneScoreRules(BASE_SCORE_RULES);
   Object.keys(rules).forEach(function (key) {
-    if (key === "matchedDrop") {
+    if (key === "matchedDrop" || key === "transparentBallBreak" || key === "trappedSpiritRescue") {
       return;
     }
     rules[key] = Math.max(1, Math.round(rules[key] * multiplier));
@@ -7432,6 +7964,7 @@ function GameManager(options) {
   this.pendingBoardAdvanceScheduledUpdateSerial = -1;
   this.pendingWinSettlementDelay = 0;
   this.pendingSplitterSpawns = [];
+  this.pendingSpiritCocoonOpenings = [];
   this.pendingMolotovBlastQueue = [];
   this.activeMolotovBlast = null;
   this.molotovBlastTriggeredIds = {};
@@ -7477,6 +8010,8 @@ function GameManager(options) {
     this._grantTimeBonusForRemovedCells(removedCells, removalReason);
   }.bind(this));
   this.systems.fallingMarbleSystem.attachFairyAssistSystem(this.systems.fairyAssistSystem);
+  this.spiritCocoonFirstTriggerStore = options.spiritCocoonFirstTriggerStore;
+  this.spiritCocoonRandom = Math.random;
 }
 
 var GAME_MANAGER_ENTRY_CONTEXT = {
@@ -7546,6 +8081,8 @@ var GAME_MANAGER_METHOD_CONTEXT = {
   distance: distance,
   findPrimaryCollectionObjective: findPrimaryCollectionObjective,
   isBarrierObstacleBall: isBarrierObstacleBall,
+  isBreederBall: isBreederBall,
+  isBlackHoleBall: isBlackHoleBall,
   isIceBall: isIceBall,
   isPowerupShotBall: isPowerupShotBall,
   isStoneBall: isStoneBall,
@@ -7561,6 +8098,7 @@ var GAME_MANAGER_METHOD_CONTEXT = {
 };
 attachGameManagerBoardPhaseMethods(GameManager, GAME_MANAGER_METHOD_CONTEXT);
 attachGameManagerSpecialPhaseMethods(GameManager, GAME_MANAGER_METHOD_CONTEXT);
+attachGameManagerSpiritCocoonMethods(GameManager);
 attachGameManagerRuntimeStateMethods(GameManager, GAME_MANAGER_METHOD_CONTEXT);
 attachGameManagerInputMethods(GameManager, GAME_MANAGER_METHOD_CONTEXT);
 attachGameManagerAdPowerupMethods(GameManager, GAME_MANAGER_METHOD_CONTEXT);
@@ -7578,6 +8116,7 @@ Object.assign(GameManager.prototype, createGameManagerShotResolutionMethods({
   isSkillBall: isSkillBall,
   isIceBall: isIceBall,
   isBlastBall: isBlastBall,
+  isBlackHoleBall: isBlackHoleBall,
   isRainbowBall: isRainbowBall,
   isMolotovBall: isMolotovBall,
   isSplitterBall: isSplitterBall,
@@ -7598,7 +8137,7 @@ Object.assign(GameManager.prototype, createGameManagerAssistSpiritSkillMethods({
 module.exports = GameManager;
 
 
-},{"./GameManagerLifecycleMethods":"GameManagerLifecycleMethods","./GameManagerSnapshotMethods":"GameManagerSnapshotMethods","./GameManagerBoardPhaseMethods":"GameManagerBoardPhaseMethods","./GameManagerSpecialPhaseMethods":"GameManagerSpecialPhaseMethods","./GameManagerRuntimeStateMethods":"GameManagerRuntimeStateMethods","./GameManagerInputMethods":"GameManagerInputMethods","./GameManagerAdPowerupMethods":"GameManagerAdPowerupMethods","./GameManagerPowerupMethods":"GameManagerPowerupMethods","./GameManagerUpdateMethods":"GameManagerUpdateMethods","../../assets/scripts/utils/Logger":"Logger","../../assets/scripts/config/BoardLayout":"BoardLayout","../config/FairyAssistConfig":"FairyAssistConfig","../config/SpecialAnimationTiming":"SpecialAnimationTiming","../config/AssistSpiritSkillChargeConfig":"AssistSpiritSkillChargeConfig","../config/AssistSpiritSkillConfig":"AssistSpiritSkillConfig","../systems/ShooterController":"ShooterController","../systems/TrajectoryPredictor":"TrajectoryPredictor","../systems/BubbleGrid":"BubbleGrid","../systems/MatchSystem":"MatchSystem","../systems/SupportSystem":"SupportSystem","../systems/FairyAssistSystem":"FairyAssistSystem","../systems/BoardViewportSystem":"BoardViewportSystem","../systems/FallingMarbleSystem":"FallingMarbleSystem","../systems/JarCollectorSystem":"JarCollectorSystem","../systems/BoardOcclusionSystem":"BoardOcclusionSystem","../systems/TrappedSpriteRescueSystem":"TrappedSpriteRescueSystem","./ProjectileMath":"ProjectileMath","./AdRevivePolicy":"AdRevivePolicy","../../assets/scripts/core/StarRatingPolicy":"StarRatingPolicy","./GameManagerShotResolutionMethods":"GameManagerShotResolutionMethods","./GameManagerAssistSpiritSkillMethods":"GameManagerAssistSpiritSkillMethods"}],
+},{"./GameManagerLifecycleMethods":"GameManagerLifecycleMethods","./GameManagerSnapshotMethods":"GameManagerSnapshotMethods","./GameManagerBoardPhaseMethods":"GameManagerBoardPhaseMethods","./GameManagerSpecialPhaseMethods":"GameManagerSpecialPhaseMethods","./GameManagerSpiritCocoonMethods":"GameManagerSpiritCocoonMethods","./GameManagerRuntimeStateMethods":"GameManagerRuntimeStateMethods","./GameManagerInputMethods":"GameManagerInputMethods","./GameManagerAdPowerupMethods":"GameManagerAdPowerupMethods","./GameManagerPowerupMethods":"GameManagerPowerupMethods","./GameManagerUpdateMethods":"GameManagerUpdateMethods","../../assets/scripts/utils/Logger":"Logger","../../assets/scripts/config/BoardLayout":"BoardLayout","../config/FairyAssistConfig":"FairyAssistConfig","../config/SpecialAnimationTiming":"SpecialAnimationTiming","../config/AssistSpiritSkillChargeConfig":"AssistSpiritSkillChargeConfig","../config/AssistSpiritSkillConfig":"AssistSpiritSkillConfig","../systems/ShooterController":"ShooterController","../systems/TrajectoryPredictor":"TrajectoryPredictor","../systems/BubbleGrid":"BubbleGrid","../systems/MatchSystem":"MatchSystem","../systems/SupportSystem":"SupportSystem","../systems/FairyAssistSystem":"FairyAssistSystem","../systems/BoardViewportSystem":"BoardViewportSystem","../systems/FallingMarbleSystem":"FallingMarbleSystem","../systems/JarCollectorSystem":"JarCollectorSystem","../systems/BoardOcclusionSystem":"BoardOcclusionSystem","../systems/TrappedSpriteRescueSystem":"TrappedSpriteRescueSystem","./ProjectileMath":"ProjectileMath","./AdRevivePolicy":"AdRevivePolicy","../../assets/scripts/core/StarRatingPolicy":"StarRatingPolicy","./GameManagerShotResolutionMethods":"GameManagerShotResolutionMethods","./GameManagerAssistSpiritSkillMethods":"GameManagerAssistSpiritSkillMethods"}],
 "GameManagerAdPowerupMethods":[function(require,module,exports){
 "use strict";
 
@@ -7653,6 +8192,7 @@ GameManager.prototype._isInstantAdPowerupBusy = function () {
     this._isBoardAdvanceBusy() ||
     this._hasPendingSplitterSpawns() ||
     this._hasPendingMolotovBlasts() ||
+    this._hasPendingSpiritCocoonOpenings() ||
     this._hasPendingSwirlRotation() ||
     this._hasPendingWormholeShift() ||
     this._hasPendingVineCast() ||
@@ -7958,9 +8498,10 @@ GameManager.prototype.useThreeLineElimination = function (expectedRows) {
   var lineCells = grid.getCells().filter(function (cell) {
     return targetRowMap[cell.row] === true;
   });
+  var resolution = createEmptyResolution();
+  lineCells = this._unloadBlackHolesHitByRange(lineCells, grid, resolution, "three_line_elimination");
   var removedLineCells = grid.removeCells(lineCells);
   this._pushBubbleBreakEvent(removedLineCells);
-  var resolution = createEmptyResolution();
   resolution.matched = removedLineCells;
   this._resolveVinesAfterRemoval(removedLineCells, grid, resolution);
   this._collectRemovedKeysAndResolveUnlocks(removedLineCells, grid, resolution);
@@ -8064,6 +8605,9 @@ function isDirectSkillTarget(cell) {
   if (cell.entityCategory === "skill_ball") {
     return true;
   }
+  if (cell.entityCategory === "hazard_ball" && cell.entityType === "black_hole") {
+    return true;
+  }
   return isIceCell(cell);
 }
 
@@ -8074,7 +8618,8 @@ function isTornadoTarget(cell) {
   if (cell.entityCategory === "normal_ball") {
     return !isActiveVineCell(cell);
   }
-  return cell.entityCategory === "skill_ball";
+  return cell.entityCategory === "skill_ball" ||
+    (cell.entityCategory === "hazard_ball" && cell.entityType === "black_hole");
 }
 
 function normalizeExpectedPlan(expectedPlan) {
@@ -8772,8 +9317,9 @@ function createGameManagerAssistSpiritSkillMethods(deps) {
           return this._thawIceCellAtCurrentPosition(grid, target);
         }, this);
       } else if (skillId === "lightning_chain") {
-        var removedLightning = grid.removeCells(targetCells);
-        if (removedLightning.length !== targetCells.length) {
+        var lightningCells = this._unloadBlackHolesHitByRange(targetCells, grid, resolution, "lightning_chain");
+        var removedLightning = grid.removeCells(lightningCells);
+        if (removedLightning.length !== lightningCells.length) {
           throw new Error("Lightning chain failed to remove every authoritative target.");
         }
         this._pushBubbleBreakEvent(removedLightning, undefined, "assist_spirit_skill");
@@ -8784,13 +9330,14 @@ function createGameManagerAssistSpiritSkillMethods(deps) {
         collectFloatingAfterSkill(this, grid, resolution);
         resolution.collected = removedLightning.concat(resolution.floating);
       } else if (skillId === "tornado") {
-        var removedTornado = grid.removeCells(targetCells);
-        if (removedTornado.length !== targetCells.length) {
+        var tornadoCells = this._unloadBlackHolesHitByRange(targetCells, grid, resolution, "tornado");
+        var removedTornado = grid.removeCells(tornadoCells);
+        if (removedTornado.length !== tornadoCells.length) {
           throw new Error("Tornado failed to detach every authoritative target.");
         }
         this._collectRemovedKeysAndResolveUnlocks(removedTornado, grid, resolution);
         resolution.floating = removedTornado;
-        if (removedTornado.length > 0) {
+        if (removedTornado.length > 0 || resolution.blackHolesUnloaded.length > 0) {
           collectFloatingAfterSkill(this, grid, resolution);
         this._registerResolutionDrops(removedTornado, grid, resolution, undefined, {
           skipEliminationPresentationHold: true,
@@ -9351,6 +9898,7 @@ GameManager.prototype.setAim = function (point) {
     this._isBoardAdvanceBusy() ||
     this._hasPendingSplitterSpawns() ||
     this._hasPendingMolotovBlasts() ||
+    this._hasPendingSpiritCocoonOpenings() ||
     this._hasPendingSwirlRotation() ||
     this._hasPendingWormholeShift() ||
     this._hasPendingVineCast() ||
@@ -9372,6 +9920,7 @@ GameManager.prototype.beginAim = function (point) {
     this._isBoardAdvanceBusy() ||
     this._hasPendingSplitterSpawns() ||
     this._hasPendingMolotovBlasts() ||
+    this._hasPendingSpiritCocoonOpenings() ||
     this._hasPendingSwirlRotation() ||
     this._hasPendingWormholeShift() ||
     this._hasPendingVineCast() ||
@@ -9403,6 +9952,7 @@ GameManager.prototype.fireShot = function () {
     this._isBoardAdvanceBusy() ||
     this._hasPendingSplitterSpawns() ||
     this._hasPendingMolotovBlasts() ||
+    this._hasPendingSpiritCocoonOpenings() ||
     this._hasPendingSwirlRotation() ||
     this._hasPendingWormholeShift() ||
     this._hasPendingVineCast() ||
@@ -9418,6 +9968,24 @@ GameManager.prototype.fireShot = function () {
   }
 
   var shotPlan = this.pendingShotPlan;
+  var wormholeAbsorptionAllowed = function (plan) {
+    return !!(
+      plan &&
+      plan.valid &&
+      plan.hitType === "wormhole" &&
+      plan.absorbingWormhole &&
+      !plan.targetCell
+    );
+  };
+  var blackHoleAbsorptionAllowed = function (plan) {
+    return !!(
+      plan &&
+      plan.valid &&
+      plan.hitType === "black_hole" &&
+      plan.absorbingBlackHole &&
+      !plan.targetCell
+    );
+  };
   var rescueMissAllowed = function (plan) {
     return !!(
       plan &&
@@ -9426,12 +9994,12 @@ GameManager.prototype.fireShot = function () {
       this.systems.trappedSpriteRescueSystem.isActive()
     );
   }.bind(this);
-  if (!shotPlan || !shotPlan.valid || (!shotPlan.targetCell && !rescueMissAllowed(shotPlan))) {
+  if (!shotPlan || !shotPlan.valid || (!shotPlan.targetCell && !rescueMissAllowed(shotPlan) && !wormholeAbsorptionAllowed(shotPlan) && !blackHoleAbsorptionAllowed(shotPlan))) {
     // 发射优先沿用当前幽灵球路线；仅在缺失时才临时重算。
     this._refreshShotPlan(true);
     shotPlan = this.pendingShotPlan;
   }
-  if (!shotPlan || !shotPlan.valid || (!shotPlan.targetCell && !rescueMissAllowed(shotPlan))) {
+  if (!shotPlan || !shotPlan.valid || (!shotPlan.targetCell && !rescueMissAllowed(shotPlan) && !wormholeAbsorptionAllowed(shotPlan) && !blackHoleAbsorptionAllowed(shotPlan))) {
     Logger.warn("Missing valid shot plan, fire aborted");
     return this.getRuntimeSnapshot();
   }
@@ -9453,6 +10021,7 @@ GameManager.prototype.fireShot = function () {
   this._resolveAssistSpiritProducedBallAfterFire();
   this.lastFiredColor = queueResult.firedColor;
   this.lastResolution = createEmptyResolution();
+  this.lastResolution.spiritMistCleared = this.systems.bubbleGrid.clearExpiredSpiritMist(this.shotsFired);
   this.activeProjectile = buildActiveProjectile(queueResult.firedBall, shotPlan);
   this.pendingProjectileFinalize = false;
   this.pendingShotPlan = null;
@@ -9567,6 +10136,7 @@ GameManager.prototype.startLevel = function (levelConfig, startContext) {
   this.pendingBoardAdvanceScheduledUpdateSerial = -1;
   this.pendingWinSettlementDelay = 0;
   this.pendingSplitterSpawns = [];
+  this.pendingSpiritCocoonOpenings = [];
   this.pendingMolotovBlastQueue = [];
   this.activeMolotovBlast = null;
   this.molotovBlastTriggeredIds = {};
@@ -10390,6 +10960,12 @@ GameManager.prototype._isBoardCleared = function (grid) {
   if (!Array.isArray(cells)) {
     throw new Error("Board cleared check requires BubbleGrid.getCells array.");
   }
+  if (
+    this.systems.trappedSpriteRescueSystem.isMultiTargetActive() &&
+    !this.systems.trappedSpriteRescueSystem.isMultiTargetCompleted()
+  ) {
+    return false;
+  }
   return cells.length === 0;
 };
 
@@ -10904,6 +11480,77 @@ function createGameManagerShotDropMethods(context) {
   var resolveIceInnerColor = context.resolveIceInnerColor;
 
   return {
+    _registerPoisonDropletsForEliminatedCells: function (cells, grid, resolution) {
+      if (!Array.isArray(cells)) {
+        throw new Error("Poison droplet release requires eliminated cells array.");
+      }
+      if (!grid || typeof grid.getCellPosition !== "function") {
+        throw new Error("Poison droplet release requires BubbleGrid.");
+      }
+      if (!resolution || !Array.isArray(resolution.poisonReleases)) {
+        throw new Error("Poison droplet release requires resolution.poisonReleases.");
+      }
+      if (
+        !this.systems ||
+        !this.systems.fallingMarbleSystem ||
+        typeof this.systems.fallingMarbleSystem.registerDrops !== "function"
+      ) {
+        throw new Error("Poison droplet release requires FallingMarbleSystem.registerDrops.");
+      }
+
+      cells.forEach(function (cell) {
+        if (!cell) {
+          throw new Error("Poison droplet release requires eliminated cell.");
+        }
+        if (cell.poisonAttachmentId === null || cell.poisonAttachmentId === undefined) {
+          return;
+        }
+        if (
+          cell.entityCategory !== "normal_ball" ||
+          cell.entityType !== null ||
+          typeof cell.poisonAttachmentId !== "string" ||
+          !cell.poisonAttachmentId ||
+          cell.poisonParticleCount !== 3
+        ) {
+          throw new Error("Poison attachment must belong to an ordinary ball and release exactly three particles.");
+        }
+
+        var particleCells = [];
+        for (var particleIndex = 0; particleIndex < cell.poisonParticleCount; particleIndex += 1) {
+          particleCells.push({
+            id: cell.poisonAttachmentId + "_particle_" + (particleIndex + 1),
+            row: cell.row,
+            col: cell.col,
+            color: null,
+            entityCategory: "effect_particle",
+            entityType: "poison_droplet",
+            poisonBatchId: cell.poisonAttachmentId,
+            poisonParticleIndex: particleIndex
+          });
+        }
+        var drops = this.systems.fallingMarbleSystem.registerDrops(particleCells, grid, {
+          dropKind: "poison_droplet"
+        });
+        if (!Array.isArray(drops) || drops.length !== cell.poisonParticleCount) {
+          throw new Error("Poison droplet release must register exactly three physical particles.");
+        }
+        var release = {
+          attachmentId: cell.poisonAttachmentId,
+          sourceCellId: String(cell.id),
+          row: cell.row,
+          col: cell.col,
+          particleCount: cell.poisonParticleCount,
+          dropIds: drops.map(function (drop) {
+            return drop.id;
+          })
+        };
+        resolution.poisonReleases.push(release);
+        if (typeof this._pushRuntimeEvent === "function") {
+          this._pushRuntimeEvent("poison_released", release);
+        }
+      }, this);
+    },
+
     _injectCollectedSkillBalls: function (collectedDrops) {
       var skillCells = (collectedDrops || []).filter(function (cell) {
         return isSkillBall(cell) && (cell.entityType === "rainbow" || cell.entityType === "blast");
@@ -11374,10 +12021,13 @@ function createGameManagerShotFinalizeMethods(context) {
   var BoardLayout = context.BoardLayout;
   var EliminationSequenceBuilder = context.EliminationSequenceBuilder;
   var Logger = context.Logger;
+  var SpecialAnimationTiming = context.SpecialAnimationTiming;
+  var clone = context.clone;
   var createEmptyResolution = context.createEmptyResolution;
   var createGameManagerShotFinalizeMethods = context.createGameManagerShotFinalizeMethods;
   var findPrimaryCollectionObjective = context.findPrimaryCollectionObjective;
   var isBlastBall = context.isBlastBall;
+  var isBlackHoleBall = context.isBlackHoleBall;
   var isIceBall = context.isIceBall;
   var isLockedBall = context.isLockedBall;
   var isRainbowBall = context.isRainbowBall;
@@ -11385,6 +12035,239 @@ function createGameManagerShotFinalizeMethods(context) {
   var isVineSpiritBall = context.isVineSpiritBall;
 
   return {
+    _destroyReachedTransparentBalls: function (projectile, grid) {
+      if (!projectile || !projectile.shotPlan) {
+        throw new Error("Transparent ball flight destruction requires projectile.shotPlan.");
+      }
+      if (!Array.isArray(projectile.shotPlan.penetratedTransparentBalls)) {
+        throw new Error("Shot plan requires penetratedTransparentBalls array.");
+      }
+      if (!Array.isArray(projectile.destroyedTransparentBalls)) {
+        throw new Error("Projectile requires destroyedTransparentBalls array.");
+      }
+      if (!Number.isInteger(projectile.segmentIndex) || projectile.segmentIndex < 0) {
+        throw new Error("Projectile transparent ball destruction requires non-negative segmentIndex.");
+      }
+      if (!Number.isFinite(projectile.segmentProgress) || projectile.segmentProgress < 0) {
+        throw new Error("Projectile transparent ball destruction requires non-negative segmentProgress.");
+      }
+
+      var destroyedById = {};
+      projectile.destroyedTransparentBalls.forEach(function (cell, index) {
+        if (!cell || typeof cell.id !== "string" || !cell.id) {
+          throw new Error("Destroyed transparent ball requires non-empty id at index " + index + ".");
+        }
+        destroyedById[cell.id] = true;
+      });
+      var reachedEntries = projectile.shotPlan.penetratedTransparentBalls.filter(function (entry, index) {
+        if (
+          !entry ||
+          typeof entry.id !== "string" ||
+          !entry.id ||
+          !Number.isInteger(entry.pathSegmentIndex) ||
+          entry.pathSegmentIndex < 0 ||
+          !Number.isFinite(entry.pathSegmentProgress) ||
+          entry.pathSegmentProgress < 0
+        ) {
+          throw new Error("Invalid transparent ball flight entry at index " + index + ".");
+        }
+        if (destroyedById[entry.id]) {
+          return false;
+        }
+        return entry.pathSegmentIndex < projectile.segmentIndex ||
+          (
+            entry.pathSegmentIndex === projectile.segmentIndex &&
+            entry.pathSegmentProgress <= projectile.segmentProgress + 0.000001
+          );
+      });
+      if (!reachedEntries.length) {
+        return [];
+      }
+      if (!grid || typeof grid.getCell !== "function" || typeof grid.removeCells !== "function") {
+        throw new Error("Transparent ball flight destruction requires BubbleGrid lookup and removal methods.");
+      }
+
+      var liveCells = reachedEntries.map(function (entry) {
+        var liveCell = grid.getCell(entry.row, entry.col);
+        if (
+          !liveCell ||
+          liveCell.id !== entry.id ||
+          liveCell.entityCategory !== "reactive_ball" ||
+          liveCell.entityType !== "transparent_ball"
+        ) {
+          throw new Error("Reached transparent ball is no longer live: " + entry.id + ".");
+        }
+        return liveCell;
+      });
+      var removed = grid.removeCells(liveCells);
+      if (removed.length !== liveCells.length) {
+        throw new Error("Transparent ball flight destruction did not remove every reached ball.");
+      }
+      Array.prototype.push.apply(projectile.destroyedTransparentBalls, removed);
+      if (typeof this._pushRuntimeEvent === "function") {
+        this._pushRuntimeEvent("transparent_ball_destroyed", {
+          count: removed.length,
+          gained: removed.length * 1000,
+          cell_ids: removed.map(function (cell) {
+            return cell.id;
+          })
+        });
+      }
+      return removed;
+    },
+
+    _removePlannedTransparentBalls: function (projectile, grid) {
+      if (!projectile || !projectile.shotPlan) {
+        throw new Error("Transparent ball penetration requires projectile.shotPlan.");
+      }
+      if (!Array.isArray(projectile.shotPlan.penetratedTransparentBalls)) {
+        throw new Error("Shot plan requires penetratedTransparentBalls array.");
+      }
+      var planned = projectile.shotPlan.penetratedTransparentBalls;
+      if (!planned.length) {
+        return [];
+      }
+      if (!Array.isArray(projectile.destroyedTransparentBalls)) {
+        throw new Error("Projectile requires destroyedTransparentBalls array.");
+      }
+      if (!grid || typeof grid.getCell !== "function" || typeof grid.removeCells !== "function") {
+        throw new Error("Transparent ball penetration requires BubbleGrid lookup and removal methods.");
+      }
+
+      var plannedById = {};
+      planned.forEach(function (entry, index) {
+        if (
+          !entry ||
+          typeof entry.id !== "string" ||
+          !entry.id ||
+          !Number.isInteger(entry.row) ||
+          !Number.isInteger(entry.col) ||
+          entry.entityCategory !== "reactive_ball" ||
+          entry.entityType !== "transparent_ball"
+        ) {
+          throw new Error("Invalid penetrated transparent ball at index " + index + ".");
+        }
+        if (plannedById[entry.id]) {
+          throw new Error("Shot plan contains duplicate transparent ball id: " + entry.id + ".");
+        }
+        plannedById[entry.id] = entry;
+      });
+      var destroyedById = {};
+      projectile.destroyedTransparentBalls.forEach(function (cell, index) {
+        if (!cell || typeof cell.id !== "string" || !plannedById[cell.id]) {
+          throw new Error("Destroyed transparent ball was not present in shot plan at index " + index + ".");
+        }
+        if (destroyedById[cell.id]) {
+          throw new Error("Projectile destroyed transparent ball twice: " + cell.id + ".");
+        }
+        destroyedById[cell.id] = cell;
+      });
+
+      var remainingEntries = planned.filter(function (entry) {
+        return !destroyedById[entry.id];
+      });
+      var liveTransparentBalls = remainingEntries.map(function (entry) {
+        var liveCell = grid.getCell(entry.row, entry.col);
+        if (
+          !liveCell ||
+          liveCell.id !== entry.id ||
+          liveCell.entityCategory !== "reactive_ball" ||
+          liveCell.entityType !== "transparent_ball"
+        ) {
+          throw new Error("Planned transparent ball is no longer live: " + entry.id + ".");
+        }
+        return liveCell;
+      });
+
+      var removed = grid.removeCells(liveTransparentBalls);
+      if (removed.length !== liveTransparentBalls.length) {
+        throw new Error("Transparent ball penetration did not remove every planned ball.");
+      }
+      if (removed.length && typeof this._pushRuntimeEvent === "function") {
+        this._pushRuntimeEvent("transparent_ball_destroyed", {
+          count: removed.length,
+          gained: removed.length * 1000,
+          cell_ids: removed.map(function (cell) {
+            return cell.id;
+          })
+        });
+      }
+      removed.forEach(function (cell) {
+        destroyedById[cell.id] = cell;
+      });
+      return planned.map(function (entry) {
+        return destroyedById[entry.id];
+      });
+    },
+
+    _settleTransparentBallPenetration: function (resolution, removedTransparentBalls, grid) {
+      if (!resolution || typeof resolution !== "object" || Array.isArray(resolution)) {
+        throw new Error("Transparent ball settlement requires resolution.");
+      }
+      if (!Array.isArray(removedTransparentBalls)) {
+        throw new Error("Transparent ball settlement requires removed ball array.");
+      }
+      if (!Array.isArray(resolution.transparentBallsDestroyed)) {
+        throw new Error("Transparent ball settlement requires resolution.transparentBallsDestroyed array.");
+      }
+      if (!removedTransparentBalls.length) {
+        return resolution;
+      }
+      if (this.systems.trappedSpriteRescueSystem.isActive()) {
+        throw new Error("Transparent ball is not supported in trapped sprite rescue levels.");
+      }
+
+      this._appendUniqueCells(resolution.transparentBallsDestroyed, removedTransparentBalls);
+      this._appendUniqueCells(resolution.collected, removedTransparentBalls);
+
+      var floatingCells = this.systems.supportSystem.findFloatingCells(grid);
+      var removedFloating = grid.removeFloatingCells(
+        this._filterFloatingSpiritCocoons(floatingCells, resolution)
+      );
+      if (removedFloating.length) {
+        if (resolution.matched.length > 0 || resolution.floating.length > 0) {
+          throw new Error("Transparent ball settlement found late floating cells after an existing drop resolution.");
+        }
+        this._appendUniqueCells(resolution.floating, removedFloating);
+        this._collectRemovedKeysAndResolveUnlocks(removedFloating, grid, resolution);
+        this._cancelPendingSplitterSpawnsForDroppedCells(removedFloating);
+        this._appendUniqueCells(resolution.collected, removedFloating);
+        this._registerResolutionDrops(removedFloating, grid, resolution);
+        this._applyResolutionDropScore(resolution, "matchedDrop");
+      }
+
+      var scorePerBall = this._getScoreRule("transparentBallBreak");
+      if (!Number.isInteger(scorePerBall) || scorePerBall !== 1000) {
+        throw new Error("Transparent ball break score must be exactly 1000.");
+      }
+      var gained = removedTransparentBalls.length * scorePerBall;
+      removedTransparentBalls.forEach(function (cell) {
+        var worldPosition = grid.getCellPosition(cell.row, cell.col);
+        resolution.scoreEvents.push({
+          cellId: cell.id,
+          row: cell.row,
+          col: cell.col,
+          worldPosition: worldPosition,
+          points: scorePerBall,
+          delayMs: 0,
+          scoreKind: "transparent_ball_break"
+        });
+      });
+      this.score += gained;
+      resolution.scoreDelta += gained;
+      resolution.boardCleared = this._isBoardCleared(grid);
+
+      if (resolution.comboRegistered !== true) {
+        this._registerComboElimination(resolution);
+      }
+      Logger.info("Transparent ball penetration", {
+        destroyed: removedTransparentBalls.length,
+        floating: removedFloating.length,
+        gained: gained
+      });
+      return resolution;
+    },
+
     _resolveBlastShot: function (projectile, targetCell) {
       var resolution = createEmptyResolution();
 
@@ -11440,6 +12323,8 @@ function createGameManagerShotFinalizeMethods(context) {
         }
       });
 
+      blastCells = this._unloadBlackHolesHitByRange(blastCells, grid, resolution, "blast");
+
       this._resolveVineSpiritsHitByExplosion(blastCells, grid, resolution);
       var removableBlastCells = blastCells.filter(function (cell) {
         return !isVineEntangledBall(cell) && !isVineSpiritBall(cell);
@@ -11479,7 +12364,9 @@ function createGameManagerShotFinalizeMethods(context) {
       }
 
       var floatingCells = this.systems.supportSystem.findFloatingCells(grid);
-      var removedFloating = grid.removeFloatingCells(floatingCells);
+      var removedFloating = grid.removeFloatingCells(
+        this._filterFloatingSpiritCocoons(floatingCells, resolution)
+      );
       this._appendUniqueCells(resolution.floating, removedFloating);
       this._collectRemovedKeysAndResolveUnlocks(removedFloating, grid, resolution);
       var removedAll = removedBlastCells.concat(removedReactive).concat(resolution.floating);
@@ -11517,6 +12404,284 @@ function createGameManagerShotFinalizeMethods(context) {
       return resolution;
     },
 
+    _resolveMultiTrappedSpiritTargets: function (resolution, triggerCells, grid) {
+      var rescueSystem = this.systems.trappedSpriteRescueSystem;
+      if (!rescueSystem.isMultiTargetActive()) {
+        return [];
+      }
+      if (!resolution || !Array.isArray(resolution.rescuedTrappedSpirits)) {
+        throw new Error("Multi trapped spirit rescue requires resolution.rescuedTrappedSpirits array.");
+      }
+      if (!grid || typeof grid.getCells !== "function") {
+        throw new Error("Multi trapped spirit rescue requires BubbleGrid.");
+      }
+      var rescuedTargets = rescueSystem.rescueTargetsAdjacentToCells(triggerCells);
+      if (!rescuedTargets.length) {
+        return [];
+      }
+      var completed = rescueSystem.isMultiTargetCompleted();
+      var viewport = this.systems.boardViewportSystem;
+      if (completed) {
+        if (!viewport || typeof viewport.resetToZeroForCompletion !== "function") {
+          throw new Error("Multi trapped spirit completion requires BoardViewportSystem.resetToZeroForCompletion.");
+        }
+        viewport.resetToZeroForCompletion();
+      }
+      var scorePerTarget = this._getScoreRule("trappedSpiritRescue");
+      if (!Number.isInteger(scorePerTarget) || scorePerTarget !== 1000) {
+        throw new Error("Multi trapped spirit rescue score must be exactly 1000 per target.");
+      }
+      rescuedTargets.forEach(function (target, rescuedIndex) {
+        AssistSpiritConfig.getSpirit(target.spiritId);
+        var worldPosition = BoardLayout.getCellPosition(
+          target.row,
+          target.col,
+          grid.maxColumns,
+          viewport.getOffsetY()
+        );
+        resolution.rescuedTrappedSpirits.push(target);
+        resolution.scoreEvents.push({
+          cellId: target.id,
+          row: target.row,
+          col: target.col,
+          worldPosition: worldPosition,
+          points: scorePerTarget,
+          delayMs: 0,
+          scoreKind: "trapped_spirit_rescue"
+        });
+        this._pushRuntimeEvent("trapped_spirit_target_rescued", {
+          targetId: target.id,
+          spiritId: target.spiritId,
+          row: target.row,
+          col: target.col,
+          finalTarget: completed && rescuedIndex === rescuedTargets.length - 1
+        });
+      }, this);
+      var rescueScore = rescuedTargets.length * scorePerTarget;
+      this.score += rescueScore;
+      resolution.scoreDelta += rescueScore;
+      if (resolution.comboRegistered !== true) {
+        this._registerComboElimination(resolution);
+      }
+      if (!completed) {
+        return rescuedTargets;
+      }
+
+      var remainingCells = grid.getCells();
+      var removedForVictory = grid.removeFloatingCells(remainingCells);
+      if (removedForVictory.length !== remainingCells.length) {
+        throw new Error("Multi trapped spirit completion must remove every remaining board cell.");
+      }
+      this._cancelPendingSplitterSpawnsForDroppedCells(removedForVictory);
+      this._appendUniqueCells(resolution.floating, removedForVictory);
+      this._registerResolutionDrops(removedForVictory, grid, resolution, {
+        dropKind: "victory_board_drop"
+      }, {
+        skipEliminationPresentationHold: true
+      });
+      resolution.multiTrappedSpiritRescueCompleted = true;
+      resolution.boardCleared = this._isBoardCleared(grid);
+      if (!resolution.boardCleared) {
+        throw new Error("Multi trapped spirit completion must clear the board.");
+      }
+      this.state = "won_pending";
+      return rescuedTargets;
+    },
+
+    _finalizeWormholeAbsorbedShot: function (projectile, grid) {
+      if (!projectile || !projectile.shotPlan || projectile.shotPlan.hitType !== "wormhole") {
+        throw new Error("Wormhole projectile absorption requires a wormhole shot plan.");
+      }
+      if (projectile.targetCell) {
+        throw new Error("Wormhole projectile absorption must not contain an attachment target.");
+      }
+      var absorptionTarget = projectile.shotPlan.absorbingWormhole;
+      if (
+        !absorptionTarget ||
+        typeof absorptionTarget.id !== "string" ||
+        !absorptionTarget.id ||
+        !Number.isInteger(absorptionTarget.row) ||
+        !Number.isInteger(absorptionTarget.col) ||
+        !absorptionTarget.position ||
+        !Number.isFinite(absorptionTarget.position.x) ||
+        !Number.isFinite(absorptionTarget.position.y)
+      ) {
+        throw new Error("Wormhole projectile absorption requires a valid absorbingWormhole target.");
+      }
+      if (!projectile.shotPlan.hitPoint ||
+          !Number.isFinite(projectile.shotPlan.hitPoint.x) ||
+          !Number.isFinite(projectile.shotPlan.hitPoint.y)) {
+        throw new Error("Wormhole projectile absorption requires a finite hitPoint.");
+      }
+      if (typeof grid.getWormholes !== "function") {
+        throw new Error("Wormhole projectile absorption requires BubbleGrid.getWormholes.");
+      }
+      var liveWormholes = grid.getWormholes().filter(function (wormhole) {
+        return String(wormhole.id) === absorptionTarget.id &&
+          wormhole.row === absorptionTarget.row &&
+          wormhole.col === absorptionTarget.col;
+      });
+      if (liveWormholes.length !== 1) {
+        throw new Error("Wormhole projectile absorption target is not one live endpoint: " + absorptionTarget.id);
+      }
+      var targetPosition = grid.getCellPosition(absorptionTarget.row, absorptionTarget.col);
+      if (
+        Math.abs(targetPosition.x - absorptionTarget.position.x) > 0.001 ||
+        Math.abs(targetPosition.y - absorptionTarget.position.y) > 0.001
+      ) {
+        throw new Error("Wormhole projectile absorption target position changed before finalization.");
+      }
+
+      var resolution = createEmptyResolution();
+      if (!Array.isArray(resolution.wormholeProjectileAbsorptions)) {
+        throw new Error("Wormhole projectile absorption requires resolution.wormholeProjectileAbsorptions.");
+      }
+      resolution.wormholeProjectileAbsorptions.push({
+        id: "wormhole_projectile_" + this.shotsFired,
+        wormholeId: absorptionTarget.id,
+        row: absorptionTarget.row,
+        col: absorptionTarget.col,
+        startPosition: clone(projectile.shotPlan.hitPoint),
+        targetPosition: clone(targetPosition),
+        duration: SpecialAnimationTiming.wormholeShift.projectileAbsorbDuration,
+        ball: clone(projectile.ball)
+      });
+      this.lastResolution = resolution;
+
+      var removedTransparentBalls = this._removePlannedTransparentBalls(projectile, grid);
+      this._settleTransparentBallPenetration(resolution, removedTransparentBalls, grid);
+      var eliminatedTransparentBall = resolution.transparentBallsDestroyed.length > 0;
+      if (!eliminatedTransparentBall) {
+        this._resetComboStreak();
+        this._pushRuntimeEvent("shot_no_elimination");
+        if (projectile.shotPlan.wallBounceCount > 0) {
+          this._pushRuntimeEvent("shot_wall_bounce_no_elimination", {
+            wallBounceCount: projectile.shotPlan.wallBounceCount
+          });
+        }
+      }
+      this._pushRuntimeEvent("shot_absorbed_by_wormhole", {
+        wormholeId: absorptionTarget.id,
+        row: absorptionTarget.row,
+        col: absorptionTarget.col
+      });
+
+      this.activeProjectile = null;
+      this.pendingProjectileFinalize = false;
+      this.pendingShotPlan = null;
+      var clearedOcclusionZoneIds = this.systems.boardOcclusionSystem.onShotFired();
+      if (clearedOcclusionZoneIds.length) {
+        this._pushRuntimeEvent("board_occlusion_cleared", {
+          reason: "shot_count",
+          zoneIds: clearedOcclusionZoneIds
+        });
+      }
+
+      var swirlRotationStarted = !this.molotovResolutionPending && this._beginSwirlRotationForResolution(resolution);
+      var wormholeShiftStarted = !this.molotovResolutionPending && !swirlRotationStarted && this._beginWormholeShiftForResolution(resolution);
+      var vineCastStarted = !this.molotovResolutionPending && !swirlRotationStarted && !wormholeShiftStarted && this._beginVineCastForResolution(resolution);
+      if (swirlRotationStarted || wormholeShiftStarted || vineCastStarted) {
+        if (!this.isTimedInfiniteShots && this.remainingShots <= 0) {
+          this.state = "out_of_shots_pending";
+        }
+        return;
+      }
+      this._continueAfterVineCast(resolution);
+    },
+
+    _finalizeBlackHoleAbsorbedShot: function (projectile, grid) {
+      if (!projectile || !projectile.shotPlan || projectile.shotPlan.hitType !== "black_hole") {
+        throw new Error("Black hole projectile absorption requires a black_hole shot plan.");
+      }
+      if (projectile.targetCell) {
+        throw new Error("Black hole projectile absorption must not contain an attachment target.");
+      }
+      var absorptionTarget = projectile.shotPlan.absorbingBlackHole;
+      if (!absorptionTarget || typeof absorptionTarget.id !== "string" || !absorptionTarget.id ||
+          !Number.isInteger(absorptionTarget.row) || !Number.isInteger(absorptionTarget.col)) {
+        throw new Error("Black hole projectile absorption requires a valid absorbingBlackHole target.");
+      }
+      var liveBlackHole = grid.getCell(absorptionTarget.row, absorptionTarget.col);
+      if (!isBlackHoleBall(liveBlackHole) || String(liveBlackHole.id) !== absorptionTarget.id) {
+        throw new Error("Black hole projectile absorption target is not live: " + absorptionTarget.id);
+      }
+
+      var resolution = createEmptyResolution();
+      var consumption = grid.consumeBlackHole(absorptionTarget.row, absorptionTarget.col);
+      resolution.blackHoleProjectileAbsorptions.push({
+        id: "black_hole_projectile_" + this.shotsFired,
+        blackHoleId: absorptionTarget.id,
+        row: absorptionTarget.row,
+        col: absorptionTarget.col,
+        capacityBefore: consumption.capacityBefore,
+        capacityAfter: consumption.capacityAfter,
+        destroyed: consumption.destroyed,
+        ball: clone(projectile.ball)
+      });
+      this.lastResolution = resolution;
+
+      var removedTransparentBalls = this._removePlannedTransparentBalls(projectile, grid);
+      this._settleTransparentBallPenetration(resolution, removedTransparentBalls, grid);
+      if (consumption.destroyed) {
+        resolution.blackHolesUnloaded.push({
+          id: "black_hole_unload_capacity_" + absorptionTarget.id,
+          blackHoleId: absorptionTarget.id,
+          row: absorptionTarget.row,
+          col: absorptionTarget.col,
+          capacityBefore: consumption.capacityBefore,
+          sourceType: "capacity_exhausted"
+        });
+        var floatingCells = this.systems.supportSystem.findFloatingCells(grid);
+        var removedFloating = grid.removeFloatingCells(
+          this._filterFloatingSpiritCocoons(floatingCells, resolution)
+        );
+        this._appendUniqueCells(resolution.floating, removedFloating);
+        this._collectRemovedKeysAndResolveUnlocks(removedFloating, grid, resolution);
+        this._registerResolutionDrops(removedFloating, grid, resolution, undefined, {
+          skipEliminationPresentationHold: true
+        });
+        resolution.boardCleared = this._isBoardCleared(grid);
+      }
+      if (resolution.transparentBallsDestroyed.length === 0) {
+        this._resetComboStreak();
+        this._pushRuntimeEvent("shot_no_elimination");
+        if (projectile.shotPlan.wallBounceCount > 0) {
+          this._pushRuntimeEvent("shot_wall_bounce_no_elimination", {
+            wallBounceCount: projectile.shotPlan.wallBounceCount
+          });
+        }
+      }
+      this._pushRuntimeEvent("shot_absorbed_by_black_hole", {
+        blackHoleId: absorptionTarget.id,
+        row: absorptionTarget.row,
+        col: absorptionTarget.col,
+        capacityAfter: consumption.capacityAfter,
+        destroyed: consumption.destroyed
+      });
+
+      this.activeProjectile = null;
+      this.pendingProjectileFinalize = false;
+      this.pendingShotPlan = null;
+      var clearedOcclusionZoneIds = this.systems.boardOcclusionSystem.onShotFired();
+      if (clearedOcclusionZoneIds.length) {
+        this._pushRuntimeEvent("board_occlusion_cleared", {
+          reason: "shot_count",
+          zoneIds: clearedOcclusionZoneIds
+        });
+      }
+
+      var swirlRotationStarted = !this.molotovResolutionPending && this._beginSwirlRotationForResolution(resolution);
+      var wormholeShiftStarted = !this.molotovResolutionPending && !swirlRotationStarted && this._beginWormholeShiftForResolution(resolution);
+      var vineCastStarted = !this.molotovResolutionPending && !swirlRotationStarted && !wormholeShiftStarted && this._beginVineCastForResolution(resolution);
+      if (swirlRotationStarted || wormholeShiftStarted || vineCastStarted) {
+        if (!this.isTimedInfiniteShots && this.remainingShots <= 0) {
+          this.state = "out_of_shots_pending";
+        }
+        return;
+      }
+      this._continueAfterVineCast(resolution);
+    },
+
     _finalizePlannedShot: function () {
       if (!this.activeProjectile) {
         return;
@@ -11526,6 +12691,15 @@ function createGameManagerShotFinalizeMethods(context) {
       var grid = this.systems.bubbleGrid;
       var targetCell = projectile.targetCell;
       var trappedSpriteRescueSystem = this.systems.trappedSpriteRescueSystem;
+
+      if (projectile.shotPlan && projectile.shotPlan.hitType === "wormhole") {
+        this._finalizeWormholeAbsorbedShot(projectile, grid);
+        return;
+      }
+      if (projectile.shotPlan && projectile.shotPlan.hitType === "black_hole") {
+        this._finalizeBlackHoleAbsorbedShot(projectile, grid);
+        return;
+      }
 
       if (
         projectile.shotPlan &&
@@ -11553,6 +12727,24 @@ function createGameManagerShotFinalizeMethods(context) {
           this._showOutOfShotsAddBallPrompt();
         }
         return;
+      }
+
+      var removedTransparentBalls = this._removePlannedTransparentBalls(projectile, grid);
+
+      var transparentAttachmentTarget = projectile.shotPlan
+        ? projectile.shotPlan.transparentAttachmentTarget
+        : null;
+      if (transparentAttachmentTarget) {
+        if (
+          !targetCell ||
+          targetCell.row !== transparentAttachmentTarget.row ||
+          targetCell.col !== transparentAttachmentTarget.col
+        ) {
+          throw new Error("Transparent ball attachment target changed before finalization.");
+        }
+        if (grid.hasCell(targetCell.row, targetCell.col)) {
+          throw new Error("Transparent ball attachment target remained occupied after penetration.");
+        }
       }
 
       if (!targetCell || grid.hasCell(targetCell.row, targetCell.col)) {
@@ -11587,6 +12779,7 @@ function createGameManagerShotFinalizeMethods(context) {
         var attachedBubble = grid.addBubble(targetCell, attachedColor);
         this.lastResolution = this._resolveAttachment(attachedBubble);
       }
+      this._settleTransparentBallPenetration(this.lastResolution, removedTransparentBalls, grid);
       if (trappedSpriteRescueSystem.isActive()) {
         if (
           !projectile.shotPlan ||
@@ -11608,31 +12801,48 @@ function createGameManagerShotFinalizeMethods(context) {
       ) {
         this.lastResolution.impact = null;
       }
-      this._resolveDirectVineImpact(projectile, grid, this.lastResolution);
-      if (!this.molotovResolutionPending) {
+      if (!this.lastResolution.multiTrappedSpiritRescueCompleted) {
+        this._resolveDirectVineImpact(projectile, grid, this.lastResolution);
+      }
+      if (!this.molotovResolutionPending && !this.lastResolution.multiTrappedSpiritRescueCompleted) {
         this._resolveFairyAssistsAfterResolution(this.lastResolution);
       }
       var trappedSpriteRotationStarted = !!(
         this.lastResolution.trappedSpriteRotation &&
         this.lastResolution.trappedSpriteRotation.started
       );
+      var spiritCocoonStarted = this._hasPendingSpiritCocoonOpenings();
       var swirlRotationStarted = false;
       var wormholeShiftStarted = false;
       var vineCastStarted = false;
       if (trappedSpriteRotationStarted) {
         this._deferTrappedSpritePostImpactResolution(this.lastResolution);
-      } else {
+      } else if (!spiritCocoonStarted && !this.lastResolution.multiTrappedSpiritRescueCompleted) {
         swirlRotationStarted = !this.molotovResolutionPending && this._beginSwirlRotationForResolution(this.lastResolution);
         wormholeShiftStarted = !this.molotovResolutionPending && !swirlRotationStarted && this._beginWormholeShiftForResolution(this.lastResolution);
         vineCastStarted = !this.molotovResolutionPending && !swirlRotationStarted && !wormholeShiftStarted && this._beginVineCastForResolution(this.lastResolution);
       }
-      var postShotSpecialStarted = trappedSpriteRotationStarted || swirlRotationStarted || wormholeShiftStarted || vineCastStarted;
-      var deferredBoardShift = postShotSpecialStarted ? true : this._applyPostImpactBoardShiftPolicy(this.lastResolution);
+      var postShotSpecialStarted = trappedSpriteRotationStarted || spiritCocoonStarted || swirlRotationStarted || wormholeShiftStarted || vineCastStarted;
+      if (!postShotSpecialStarted && !this.molotovResolutionPending && !this.lastResolution.multiTrappedSpiritRescueCompleted) {
+        this._resolveBreederPhase(this.lastResolution);
+      }
+      var deferredBoardShift = this.lastResolution.multiTrappedSpiritRescueCompleted
+        ? false
+        : (postShotSpecialStarted ? true : this._applyPostImpactBoardShiftPolicy(this.lastResolution));
 
       var noEliminationTriggered = !(
         this.lastResolution &&
-        Array.isArray(this.lastResolution.matched) &&
-        this.lastResolution.matched.length > 0
+        (
+          (Array.isArray(this.lastResolution.matched) && this.lastResolution.matched.length > 0) ||
+          (
+            Array.isArray(this.lastResolution.transparentBallsDestroyed) &&
+            this.lastResolution.transparentBallsDestroyed.length > 0
+          ) ||
+          (
+            Array.isArray(this.lastResolution.rescuedTrappedSpirits) &&
+            this.lastResolution.rescuedTrappedSpirits.length > 0
+          )
+        )
       );
       if (noEliminationTriggered) {
         if (
@@ -11703,7 +12913,7 @@ function createGameManagerShotFinalizeMethods(context) {
       }
 
       if (!this.isTimedInfiniteShots && this.remainingShots <= 0) {
-        if (this.systems.fallingMarbleSystem.hasActiveDrops() || this._isBoardAdvanceBusy() || this._hasPendingSplitterSpawns() || this._hasPendingMolotovBlasts() || this._hasPendingVineCast()) {
+        if (this.systems.fallingMarbleSystem.hasActiveDrops() || this._isBoardAdvanceBusy() || this._hasPendingSplitterSpawns() || this._hasPendingMolotovBlasts() || this._hasPendingSpiritCocoonOpenings() || this._hasPendingVineCast()) {
           this.state = "out_of_shots_pending";
         } else {
           this._showOutOfShotsAddBallPrompt();
@@ -11725,7 +12935,9 @@ function createGameManagerShotFinalizeMethods(context) {
       if (!matchedCells.length) {
         if (this.systems.trappedSpriteRescueSystem.isActive()) {
           var unsupportedCells = this.systems.supportSystem.findFloatingCells(grid);
-          var unsupportedRemoved = grid.removeFloatingCells(unsupportedCells);
+          var unsupportedRemoved = grid.removeFloatingCells(
+            this._filterFloatingSpiritCocoons(unsupportedCells, resolution)
+          );
           this._appendUniqueCells(resolution.floating, unsupportedRemoved);
           resolution.collected = unsupportedRemoved.slice();
           this._registerResolutionDrops(unsupportedRemoved, grid, resolution);
@@ -11735,11 +12947,13 @@ function createGameManagerShotFinalizeMethods(context) {
           this.systems.fallingMarbleSystem.registerDrops([], grid);
         }
         this.systems.jarCollectorSystem.collect([]);
+        this._resolveMultiTrappedSpiritTargets(resolution, [attachedBubble], grid);
         resolution.boardCleared = this._isBoardCleared(grid);
         return resolution;
       }
 
       var removedMatches = grid.removeCells(matchedCells);
+      this._registerPoisonDropletsForEliminatedCells(removedMatches, grid, resolution);
       var removedReactiveMatches = this._resolveReactiveEntitiesAfterRemoval(removedMatches, grid, resolution);
       if (resolution.impact) {
         resolution.impact = this._filterImpactEventSurvivors(
@@ -11768,7 +12982,9 @@ function createGameManagerShotFinalizeMethods(context) {
       }
 
       var floatingCells = this.systems.supportSystem.findFloatingCells(grid);
-      var removedFloating = grid.removeFloatingCells(floatingCells);
+      var removedFloating = grid.removeFloatingCells(
+        this._filterFloatingSpiritCocoons(floatingCells, resolution)
+      );
       this._appendUniqueCells(resolution.floating, removedFloating);
       this._collectRemovedKeysAndResolveUnlocks(removedFloating, grid, resolution);
       var collectedCells = removedMatches.concat(removedReactiveMatches).concat(resolution.floating);
@@ -11802,6 +13018,7 @@ function createGameManagerShotFinalizeMethods(context) {
         matchedScorePerBall: matchedScorePerBall
       });
       this._registerComboElimination(resolution);
+      this._resolveMultiTrappedSpiritTargets(resolution, matchedCellsForScore, grid);
 
       Logger.info("Resolution", {
         matched: removedMatches.length,
@@ -11863,7 +13080,7 @@ function createGameManagerShotFinalizeMethods(context) {
 
       // 清屏后若仍有掉落中的玻璃球，先进入等待态；
       // 等掉落完成并计分后，再决定本局最终胜负。
-      if (this.systems.fallingMarbleSystem.hasActiveDrops() || this._hasPendingSplitterSpawns() || this._hasPendingMolotovBlasts() || this._hasPendingSwirlRotation() || this._hasPendingWormholeShift() || this._hasPendingVineCast() || this._hasPendingTrappedSpritePostImpactResolution() || this.systems.trappedSpriteRescueSystem.isRotating()) {
+      if (this.systems.fallingMarbleSystem.hasActiveDrops() || this._hasPendingSplitterSpawns() || this._hasPendingMolotovBlasts() || this._hasPendingSpiritCocoonOpenings() || this._hasPendingSwirlRotation() || this._hasPendingWormholeShift() || this._hasPendingVineCast() || this._hasPendingTrappedSpritePostImpactResolution() || this.systems.trappedSpriteRescueSystem.isRotating()) {
         this.state = "won_pending";
         return;
       }
@@ -12107,6 +13324,8 @@ function createGameManagerShotMolotovMethods(context) {
         }
         blastCells.push(occupiedCell);
       });
+
+      blastCells = this._unloadBlackHolesHitByRange(blastCells, grid, resolution, "molotov");
 
       this._resolveVineSpiritsHitByExplosion(blastCells, grid, resolution);
       var removableBlastCells = blastCells.filter(function (cell) {
@@ -12362,9 +13581,14 @@ function createGameManagerShotMolotovMethods(context) {
       resolution.boardCleared = this._isBoardCleared(grid);
       this._applyResolutionDropScore(resolution, context.dropScoreRuleKey);
       this._registerComboElimination(resolution);
+      this._resolveMultiTrappedSpiritTargets(resolution, context.allRemoved, grid);
 
       this.molotovResolutionPending = false;
       this.molotovPendingResolutionContext = null;
+      if (resolution.multiTrappedSpiritRescueCompleted) {
+        this._resolveBoardClearedOutcome();
+        return;
+      }
       this._resolveFairyAssistsAfterResolution(resolution);
 
       if (this._beginSwirlRotationForResolution(resolution)) {
@@ -12377,6 +13601,7 @@ function createGameManagerShotMolotovMethods(context) {
         return;
       }
 
+      this._resolveBreederPhase(resolution);
       if (resolution.boardCleared) {
         this._resolveBoardClearedOutcome();
         return;
@@ -12395,7 +13620,7 @@ function createGameManagerShotMolotovMethods(context) {
         return;
       }
       if (!this.isTimedInfiniteShots && this.remainingShots <= 0) {
-        if (this.systems.fallingMarbleSystem.hasActiveDrops() || this._isBoardAdvanceBusy() || this._hasPendingSplitterSpawns() || this._hasPendingMolotovBlasts() || this._hasPendingVineCast()) {
+        if (this.systems.fallingMarbleSystem.hasActiveDrops() || this._isBoardAdvanceBusy() || this._hasPendingSplitterSpawns() || this._hasPendingMolotovBlasts() || this._hasPendingSpiritCocoonOpenings() || this._hasPendingVineCast()) {
           this.state = "out_of_shots_pending";
         } else {
           this._showOutOfShotsAddBallPrompt();
@@ -12410,6 +13635,83 @@ module.exports = createGameManagerShotMolotovMethods;
 },{}],
 "GameManagerShotPlanningMethods":[function(require,module,exports){
 "use strict";
+
+function isSamePathPoint(left, right) {
+  return !!(
+    left &&
+    right &&
+    Number.isFinite(left.x) &&
+    Number.isFinite(left.y) &&
+    Number.isFinite(right.x) &&
+    Number.isFinite(right.y) &&
+    Math.abs(left.x - right.x) <= 0.5 &&
+    Math.abs(left.y - right.y) <= 0.5
+  );
+}
+
+function buildPhysicalImpactPath(shotPlan) {
+  if (!shotPlan || !Array.isArray(shotPlan.pathPoints) || shotPlan.pathPoints.length < 2) {
+    throw new Error("Transparent ball planning requires an authoritative shot path.");
+  }
+  if (!shotPlan.hitPoint) {
+    throw new Error("Transparent ball planning requires shotPlan.hitPoint.");
+  }
+
+  var impactIndex = -1;
+  shotPlan.pathPoints.forEach(function (point, index) {
+    if (isSamePathPoint(point, shotPlan.hitPoint)) {
+      impactIndex = index;
+    }
+  });
+  if (impactIndex < 1 && shotPlan.hitType === "fallback") {
+    return shotPlan.pathPoints.slice();
+  }
+  if (impactIndex < 1) {
+    throw new Error("Transparent ball planning could not locate the physical impact point on the shot path.");
+  }
+  return shotPlan.pathPoints.slice(0, impactIndex + 1);
+}
+
+function applyTransparentBallAttachmentTarget(shotPlan, penetratedTransparentBalls, grid) {
+  if (shotPlan.hitType !== "bubble" || penetratedTransparentBalls.length === 0) {
+    return;
+  }
+  if (!shotPlan.collidedCell) {
+    throw new Error("Transparent ball attachment requires the rear collided cell.");
+  }
+
+  var neighborKeys = {};
+  grid.getNeighborCoordinates(shotPlan.collidedCell.row, shotPlan.collidedCell.col).forEach(function (coord) {
+    neighborKeys[coord.row + ":" + coord.col] = true;
+  });
+  var attachmentTarget = null;
+  penetratedTransparentBalls.forEach(function (cell) {
+    if (neighborKeys[cell.row + ":" + cell.col]) {
+      attachmentTarget = cell;
+    }
+  });
+  if (!attachmentTarget) {
+    return;
+  }
+
+  var targetPosition = grid.getCellPosition(attachmentTarget.row, attachmentTarget.col);
+  shotPlan.targetCell = {
+    row: attachmentTarget.row,
+    col: attachmentTarget.col
+  };
+  shotPlan.targetCellPosition = targetPosition;
+  shotPlan.transparentAttachmentTarget = {
+    id: attachmentTarget.id,
+    row: attachmentTarget.row,
+    col: attachmentTarget.col
+  };
+
+  var physicalPath = buildPhysicalImpactPath(shotPlan);
+  if (!isSamePathPoint(physicalPath[physicalPath.length - 1], targetPosition)) {
+    physicalPath.push(targetPosition);
+  }
+  shotPlan.pathPoints = physicalPath;
+}
 
 function createGameManagerShotPlanningMethods(context) {
   var BoardViewportSystem = context.BoardViewportSystem;
@@ -12454,6 +13756,12 @@ function createGameManagerShotPlanningMethods(context) {
 
     _tryTopAnchorCollapse: function () {
       if (this.systems.trappedSpriteRescueSystem.isActive()) {
+        return false;
+      }
+      if (
+        this.systems.trappedSpriteRescueSystem.isMultiTargetActive() &&
+        !this.systems.trappedSpriteRescueSystem.isMultiTargetCompleted()
+      ) {
         return false;
       }
       if (this.state !== "running" && this.state !== "out_of_shots_pending") {
@@ -12525,7 +13833,7 @@ function createGameManagerShotPlanningMethods(context) {
     },
 
     _refreshShotPlan: function (force) {
-      if (this.state !== "running" || this.activeProjectile || this._isBoardAdvanceBusy() || this._hasPendingSplitterSpawns() || this._hasPendingMolotovBlasts() || this._hasPendingSwirlRotation() || this._hasPendingWormholeShift() || this._hasPendingVineCast()) {
+      if (this.state !== "running" || this.activeProjectile || this._isBoardAdvanceBusy() || this._hasPendingSplitterSpawns() || this._hasPendingMolotovBlasts() || this._hasPendingSpiritCocoonOpenings() || this._hasPendingSwirlRotation() || this._hasPendingWormholeShift() || this._hasPendingVineCast()) {
         this.pendingShotPlan = null;
         return;
       }
@@ -12562,6 +13870,19 @@ function createGameManagerShotPlanningMethods(context) {
           );
         }
         planned.pathPoints = buildProjectilePathFromShotPlan(planned);
+        if (typeof this.systems.bubbleGrid.findTransparentBallCollisionsOnPath !== "function") {
+          throw new Error("Shot planning requires BubbleGrid.findTransparentBallCollisionsOnPath.");
+        }
+        var physicalImpactPath = buildPhysicalImpactPath(planned);
+        planned.penetratedTransparentBalls = this.systems.bubbleGrid.findTransparentBallCollisionsOnPath(
+          physicalImpactPath,
+          this.systems.trajectoryPredictor.predictionCollisionRadius
+        );
+        applyTransparentBallAttachmentTarget(
+          planned,
+          planned.penetratedTransparentBalls,
+          this.systems.bubbleGrid
+        );
         planned.totalDistance = measurePathDistance(planned.pathPoints);
       }
 
@@ -12876,6 +14197,7 @@ module.exports = createGameManagerShotPlanningMethods;
 "use strict";
 
 function createGameManagerShotReactiveMethods(context) {
+  var isBlackHoleBall = context.isBlackHoleBall;
   var KEY_UNLOCK_DROP_DELAY = context.KEY_UNLOCK_DROP_DELAY;
   var buildNearestKeyLockPairings = context.buildNearestKeyLockPairings;
   var createGameManagerShotReactiveMethods = context.createGameManagerShotReactiveMethods;
@@ -12890,6 +14212,54 @@ function createGameManagerShotReactiveMethods(context) {
   var resolveIceInnerColor = context.resolveIceInnerColor;
 
   return {
+    _unloadBlackHolesHitByRange: function (affectedCells, grid, resolution, sourceType) {
+      if (!Array.isArray(affectedCells)) {
+        throw new Error("Black hole range unload requires affectedCells array.");
+      }
+      if (!grid || typeof grid.getCell !== "function") {
+        throw new Error("Black hole range unload requires BubbleGrid.getCell.");
+      }
+      if (typeof sourceType !== "string" || !sourceType) {
+        throw new Error("Black hole range unload requires sourceType.");
+      }
+      var remainingCells = [];
+      var unloadedKeys = {};
+      affectedCells.forEach(function (affectedCell) {
+        if (!affectedCell || !Number.isInteger(affectedCell.row) || !Number.isInteger(affectedCell.col)) {
+          throw new Error("Black hole range unload requires affected cell coordinates.");
+        }
+        var liveCell = grid.getCell(affectedCell.row, affectedCell.col);
+        if (!liveCell) {
+          return;
+        }
+        if (!isBlackHoleBall(liveCell)) {
+          remainingCells.push(liveCell);
+          return;
+        }
+        if (typeof grid.unloadBlackHole !== "function") {
+          throw new Error("Black hole range unload requires BubbleGrid.unloadBlackHole when a black hole is hit.");
+        }
+        if (!resolution || !Array.isArray(resolution.blackHolesUnloaded)) {
+          throw new Error("Black hole range unload requires resolution.blackHolesUnloaded when a black hole is hit.");
+        }
+        var cellKey = liveCell.row + ":" + liveCell.col;
+        if (unloadedKeys[cellKey]) {
+          return;
+        }
+        unloadedKeys[cellKey] = true;
+        var removedBlackHole = grid.unloadBlackHole(liveCell.row, liveCell.col);
+        resolution.blackHolesUnloaded.push({
+          id: "black_hole_unload_" + sourceType + "_" + removedBlackHole.id,
+          blackHoleId: removedBlackHole.id,
+          row: removedBlackHole.row,
+          col: removedBlackHole.col,
+          capacityBefore: removedBlackHole.capacity,
+          sourceType: sourceType
+        });
+      });
+      return remainingCells;
+    },
+
     _cancelPendingSplitterSpawnsForDroppedCells: function (cells) {
       if (!Array.isArray(cells)) {
         throw new Error("Cancel pending splitter spawns requires cells array.");
@@ -13383,6 +14753,7 @@ function createGameManagerShotReactiveMethods(context) {
         return [];
       }
 
+      this._queueSpiritCocoonsAdjacentToCells(removedCells, resolution);
       this._resetMolotovBlastSequence();
       this._resolveVinesAfterRemoval(removedCells, grid, resolution);
 
@@ -13508,6 +14879,7 @@ function createGameManagerShotResolutionMethods(deps) {
   var isSkillBall = deps.isSkillBall;
   var isIceBall = deps.isIceBall;
   var isBlastBall = deps.isBlastBall;
+  var isBlackHoleBall = deps.isBlackHoleBall;
   var isRainbowBall = deps.isRainbowBall;
   var isMolotovBall = deps.isMolotovBall;
   var isSplitterBall = deps.isSplitterBall;
@@ -13870,6 +15242,7 @@ function createGameManagerShotResolutionMethods(deps) {
     MOLOTOV_BLAST_ANIMATION_DURATION: MOLOTOV_BLAST_ANIMATION_DURATION,
     MOLOTOV_BLAST_TRIGGER_DELAY: MOLOTOV_BLAST_TRIGGER_DELAY,
     NON_COLLECTIBLE_JAR_SCORE_COLORS: NON_COLLECTIBLE_JAR_SCORE_COLORS,
+    SpecialAnimationTiming: SpecialAnimationTiming,
     appendMolotovEliminationSequence: appendMolotovEliminationSequence,
     buildMolotovBlastDropVelocity: buildMolotovBlastDropVelocity,
     buildNearestKeyLockPairings: buildNearestKeyLockPairings,
@@ -13886,6 +15259,7 @@ function createGameManagerShotResolutionMethods(deps) {
     findPrimaryCollectionObjective: findPrimaryCollectionObjective,
     hasUnlockEntryForKey: hasUnlockEntryForKey,
     isBlastBall: isBlastBall,
+    isBlackHoleBall: isBlackHoleBall,
     isIceBall: isIceBall,
     isKeyBall: isKeyBall,
     isLockedBall: isLockedBall,
@@ -14006,11 +15380,18 @@ function createGameManagerShotScoreMethods(context) {
 
       var matchedCount = Array.isArray(resolution.matched) ? resolution.matched.length : 0;
       var floatingCount = Array.isArray(resolution.floating) ? resolution.floating.length : 0;
-      if (matchedCount + floatingCount <= 0) {
+      var transparentCount = Array.isArray(resolution.transparentBallsDestroyed)
+        ? resolution.transparentBallsDestroyed.length
+        : 0;
+      var rescuedTrappedSpiritCount = Array.isArray(resolution.rescuedTrappedSpirits)
+        ? resolution.rescuedTrappedSpirits.length
+        : 0;
+      if (matchedCount + floatingCount + transparentCount + rescuedTrappedSpiritCount <= 0) {
         return;
       }
 
       this.comboStreak += 1;
+      resolution.comboRegistered = true;
       if (this.comboStreak > this.maxComboStreak) {
         this.maxComboStreak = this.comboStreak;
       }
@@ -14430,6 +15811,7 @@ GameManager.prototype.getRuntimeSnapshot = function (runtimeEvents, renderOption
     this.state === "running" &&
     !this.activeProjectile &&
     !this._isBoardAdvanceBusy() &&
+    !this._hasPendingSpiritCocoonOpenings() &&
     !this._hasPendingSwirlRotation() &&
     !this._hasPendingWormholeShift() &&
     !this._hasPendingVineCast() &&
@@ -14489,7 +15871,7 @@ GameManager.prototype.getRuntimeSnapshot = function (runtimeEvents, renderOption
     jarScoreBoostRemainingMs: Math.max(0, Math.floor(Number(this.jarScoreBoostRemainingMs) || 0)),
     dropInterval: 0,
     boardViewport: this.systems.boardViewportSystem.snapshot(),
-    inputLocked: this._isBoardAdvanceBusy() || this._hasPendingSwirlRotation() || this._hasPendingWormholeShift() || this._hasPendingVineCast() || this.state !== "running",
+    inputLocked: this._isBoardAdvanceBusy() || this._hasPendingSpiritCocoonOpenings() || this._hasPendingSwirlRotation() || this._hasPendingWormholeShift() || this._hasPendingVineCast() || this.state !== "running",
     turnsUntilDrop: this.getTurnsUntilDrop(),
     lastFiredColor: this.lastFiredColor,
     // Keep runtime snapshot light during flight to avoid per-frame deep-clone spikes.
@@ -14537,8 +15919,133 @@ function attachGameManagerSpecialPhaseMethods(GameManager, context) {
   var VINE_CAST_SHOT_INTERVAL = context.VINE_CAST_SHOT_INTERVAL;
   var WORMHOLE_SHIFT_DURATION = context.WORMHOLE_SHIFT_DURATION;
   var assertFiniteNumber = context.assertFiniteNumber;
+  var isBreederBall = context.isBreederBall;
   var isSwirlBall = context.isSwirlBall;
   var isWormholeBall = context.isWormholeBall;
+
+function selectRandomIndex(length, description) {
+  if (!Number.isInteger(length) || length <= 0) {
+    throw new Error(description + " requires a positive candidate count.");
+  }
+  var randomValue = Math.random();
+  if (!Number.isFinite(randomValue) || randomValue < 0 || randomValue >= 1) {
+    throw new Error(description + " requires Math.random() in [0, 1).");
+  }
+  return Math.floor(randomValue * length);
+}
+
+GameManager.prototype._resolveBreederPhase = function (resolution) {
+  if (!resolution || typeof resolution !== "object" || Array.isArray(resolution)) {
+    throw new Error("Breeder phase requires resolution.");
+  }
+  if (typeof resolution.breederResolved !== "boolean") {
+    throw new Error("Breeder phase requires resolution.breederResolved boolean.");
+  }
+  if (!Array.isArray(resolution.breederSpawns)) {
+    throw new Error("Breeder phase requires resolution.breederSpawns array.");
+  }
+  if (!Array.isArray(resolution.matched)) {
+    throw new Error("Breeder phase requires resolution.matched array.");
+  }
+  if (resolution.breederResolved) {
+    throw new Error("Breeder phase cannot resolve the same shot twice.");
+  }
+  if (!Number.isInteger(this.shotsFired) || this.shotsFired <= 0) {
+    throw new Error("Breeder phase requires positive shotsFired.");
+  }
+
+  var grid = this.systems.bubbleGrid;
+  if (!grid || typeof grid.getSpecialEntities !== "function") {
+    throw new Error("Breeder phase requires BubbleGrid.getSpecialEntities.");
+  }
+
+  resolution.breederResolved = true;
+  var explodedCellKeys = {};
+  resolution.matched.forEach(function (cell, index) {
+    if (!cell || !Number.isInteger(cell.row) || !Number.isInteger(cell.col)) {
+      throw new Error("Breeder phase matched cell requires integer coordinates at index " + index + ".");
+    }
+    explodedCellKeys[cell.row + ":" + cell.col] = true;
+  });
+
+  var breeders = grid.getSpecialEntities().filter(isBreederBall).sort(function (left, right) {
+    if (typeof left.id !== "string" || !left.id || typeof right.id !== "string" || !right.id) {
+      throw new Error("Breeder phase requires non-empty breeder ids.");
+    }
+    return left.id < right.id ? -1 : (left.id > right.id ? 1 : 0);
+  });
+  if (!breeders.length) {
+    return [];
+  }
+  if (
+    typeof grid.getNeighborCoordinates !== "function" ||
+    typeof grid.getCell !== "function" ||
+    typeof grid.getCells !== "function" ||
+    typeof grid.hasCell !== "function" ||
+    typeof grid.addBubble !== "function"
+  ) {
+    throw new Error("Breeder phase requires BubbleGrid neighbor and mutation methods.");
+  }
+
+  breeders.forEach(function (breeder) {
+    var liveBreeder = grid.getCell(breeder.row, breeder.col);
+    if (!isBreederBall(liveBreeder) || liveBreeder.id !== breeder.id) {
+      throw new Error("Breeder phase lost live breeder: " + breeder.id + ".");
+    }
+    var neighborCoordinates = grid.getNeighborCoordinates(liveBreeder.row, liveBreeder.col);
+    var adjacentExplosion = neighborCoordinates.some(function (coordinate) {
+      return explodedCellKeys[coordinate.row + ":" + coordinate.col] === true;
+    });
+    if (adjacentExplosion) {
+      return;
+    }
+
+    var emptyNeighbors = neighborCoordinates.filter(function (coordinate) {
+      return !grid.hasCell(coordinate.row, coordinate.col);
+    });
+    if (!emptyNeighbors.length) {
+      return;
+    }
+
+    var boardColorMap = {};
+    grid.getCells().forEach(function (cell, index) {
+      if (!cell || typeof cell !== "object" || Array.isArray(cell)) {
+        throw new Error("Breeder phase board cell must be an object at index " + index + ".");
+      }
+      if (cell.entityCategory !== "normal_ball") {
+        return;
+      }
+      if (typeof cell.color !== "string" || !cell.color) {
+        throw new Error("Breeder phase normal board cell requires color at index " + index + ".");
+      }
+      boardColorMap[cell.color] = true;
+    });
+    var boardColors = Object.keys(boardColorMap).sort();
+    if (!boardColors.length) {
+      throw new Error("Breeder phase requires at least one ordinary color on the current board.");
+    }
+
+    var target = emptyNeighbors[selectRandomIndex(emptyNeighbors.length, "Breeder spawn position")];
+    var color = boardColors[selectRandomIndex(boardColors.length, "Breeder spawn color")];
+    var spawnedCell = grid.addBubble(target, color);
+    if (!spawnedCell || spawnedCell.entityCategory !== "normal_ball" || spawnedCell.color !== color) {
+      throw new Error("Breeder phase failed to create an ordinary colored bubble.");
+    }
+    resolution.breederSpawns.push({
+      id: "breeder_spawn_" + this.shotsFired + "_" + liveBreeder.id,
+      cellId: spawnedCell.id,
+      breederId: liveBreeder.id,
+      breederRow: liveBreeder.row,
+      breederCol: liveBreeder.col,
+      row: spawnedCell.row,
+      col: spawnedCell.col,
+      color: color
+    });
+    resolution.boardCleared = false;
+  }, this);
+
+  return resolution.breederSpawns.slice();
+};
 
 GameManager.prototype._beginVineCastForResolution = function (resolution) {
   if (!resolution || typeof resolution !== "object" || Array.isArray(resolution)) {
@@ -14770,6 +16277,7 @@ GameManager.prototype._continueAfterVineCast = function (resolution) {
   if (!resolution) {
     throw new Error("Vine cast completion requires resolution.");
   }
+  this._resolveBreederPhase(resolution);
   if (resolution.boardCleared) {
     this._resolveBoardClearedOutcome();
     return;
@@ -14793,6 +16301,7 @@ GameManager.prototype._continueAfterVineCast = function (resolution) {
       this._isBoardAdvanceBusy() ||
       this._hasPendingSplitterSpawns() ||
       this._hasPendingMolotovBlasts() ||
+      this._hasPendingSpiritCocoonOpenings() ||
       this._hasPendingVineCast()
     ) {
       this.state = "out_of_shots_pending";
@@ -15053,7 +16562,7 @@ GameManager.prototype._updatePendingSplitterSpawns = function (dt) {
     this.state = "running";
   }
   this._ensureMinimumVisibleBoardRows(this.lastResolution);
-  if (this.state === "out_of_shots_pending" && !this.systems.fallingMarbleSystem.hasActiveDrops() && !this._hasPendingSplitterSpawns() && !this._hasPendingMolotovBlasts() && !this._hasPendingSwirlRotation() && !this._hasPendingWormholeShift() && !this._hasPendingVineCast() && !this._isBoardAdvanceBusy()) {
+  if (this.state === "out_of_shots_pending" && !this.systems.fallingMarbleSystem.hasActiveDrops() && !this._hasPendingSplitterSpawns() && !this._hasPendingMolotovBlasts() && !this._hasPendingSpiritCocoonOpenings() && !this._hasPendingSwirlRotation() && !this._hasPendingWormholeShift() && !this._hasPendingVineCast() && !this._isBoardAdvanceBusy()) {
     this._showOutOfShotsAddBallPrompt();
   }
   if (grid && typeof grid.assertNoVisualOverlap === "function") {
@@ -15066,6 +16575,475 @@ GameManager.prototype._updatePendingSplitterSpawns = function (dt) {
 module.exports = attachGameManagerSpecialPhaseMethods;
 
 },{}],
+"GameManagerSpiritCocoonMethods":[function(require,module,exports){
+"use strict";
+
+var SpecialAnimationTiming = require("../config/SpecialAnimationTiming");
+
+var COCOON_OPEN_SCORE = 1000;
+var MIST_DURATION_SHOTS = 5;
+var TIMING_EPSILON = 0.000001;
+
+function isSpiritCocoon(cell) {
+  return !!(
+    cell &&
+    cell.entityCategory === "reactive_ball" &&
+    cell.entityType === "spirit_cocoon"
+  );
+}
+
+function requireRandomUnit(manager, description) {
+  if (typeof manager.spiritCocoonRandom !== "function") {
+    throw new Error(description + " requires GameManager.spiritCocoonRandom.");
+  }
+  var value = manager.spiritCocoonRandom();
+  if (typeof value !== "number" || !isFinite(value) || value < 0 || value >= 1) {
+    throw new Error(description + " random value must be in [0, 1).");
+  }
+  return value;
+}
+
+function resolveOutcome(roll) {
+  if (roll < 0.2) {
+    return "mist";
+  }
+  if (roll < 0.6) {
+    return "gluttony";
+  }
+  return "rainbow";
+}
+
+function appendUniqueCells(target, cells) {
+  var ids = {};
+  target.forEach(function (cell) {
+    ids[String(cell.id)] = true;
+  });
+  cells.forEach(function (cell) {
+    if (!ids[String(cell.id)]) {
+      ids[String(cell.id)] = true;
+      target.push(cell);
+    }
+  });
+}
+
+function buildCounterclockwiseMistTraversal(grid, cocoon) {
+  var center = grid.getCellPosition(cocoon.row, cocoon.col);
+  return grid.getNeighborCoordinates(cocoon.row, cocoon.col).map(function (coordinate) {
+    var cell = grid.getCell(coordinate.row, coordinate.col);
+    if (!cell || cell.entityCategory !== "normal_ball") {
+      return null;
+    }
+    var position = grid.getCellPosition(cell.row, cell.col);
+    return {
+      id: cell.id,
+      row: cell.row,
+      col: cell.col,
+      angle: Math.atan2(position.y - center.y, position.x - center.x)
+    };
+  }).filter(Boolean).sort(function (left, right) {
+    return left.angle - right.angle;
+  }).map(function (entry) {
+    return {
+      id: entry.id,
+      row: entry.row,
+      col: entry.col
+    };
+  });
+}
+
+function buildDirectionalRowTraversal(grid, cocoon, direction, normalOnly) {
+  return grid.getCells().filter(function (cell) {
+    if (cell.row !== cocoon.row || isSpiritCocoon(cell)) {
+      return false;
+    }
+    if (normalOnly && cell.entityCategory !== "normal_ball") {
+      return false;
+    }
+    return direction === "left" ? cell.col < cocoon.col : cell.col > cocoon.col;
+  }).sort(function (left, right) {
+    return direction === "left" ? right.col - left.col : left.col - right.col;
+  }).map(function (cell) {
+    return {
+      id: cell.id,
+      row: cell.row,
+      col: cell.col
+    };
+  });
+}
+
+function buildRainbowTraversal(manager, grid, cocoon, direction) {
+  var boardColors = {};
+  grid.getCells().forEach(function (cell) {
+    if (cell.entityCategory !== "normal_ball") {
+      return;
+    }
+    if (typeof cell.color !== "string" || !cell.color) {
+      throw new Error("Spirit cocoon rainbow requires normal ball colors.");
+    }
+    boardColors[cell.color] = true;
+  });
+  var colors = Object.keys(boardColors).sort();
+  if (!colors.length) {
+    throw new Error("Spirit cocoon rainbow requires at least one ordinary board color.");
+  }
+  var startIndex = Math.floor(requireRandomUnit(manager, "Spirit cocoon rainbow color") * colors.length);
+  return buildDirectionalRowTraversal(grid, cocoon, direction, true).map(function (entry, index) {
+    var liveCell = grid.getCell(entry.row, entry.col);
+    if (!liveCell || liveCell.id !== entry.id || liveCell.entityCategory !== "normal_ball") {
+      throw new Error("Spirit cocoon rainbow traversal lost normal ball: " + entry.id);
+    }
+    return {
+      id: entry.id,
+      row: entry.row,
+      col: entry.col,
+      fromColor: liveCell.color,
+      color: colors[(startIndex + index) % colors.length]
+    };
+  });
+}
+
+function attachGameManagerSpiritCocoonMethods(GameManager) {
+  GameManager.prototype._hasPendingSpiritCocoonOpenings = function () {
+    if (!Array.isArray(this.pendingSpiritCocoonOpenings)) {
+      throw new Error("GameManager pendingSpiritCocoonOpenings must be an array.");
+    }
+    return this.pendingSpiritCocoonOpenings.length > 0;
+  };
+
+  GameManager.prototype._queueSpiritCocoonsAdjacentToCells = function (removedCells, resolution) {
+    if (!Array.isArray(removedCells)) {
+      throw new Error("Spirit cocoon adjacency requires removedCells array.");
+    }
+    if (!resolution || !Array.isArray(resolution.spiritCocoonOpenings)) {
+      throw new Error("Spirit cocoon adjacency requires resolution.spiritCocoonOpenings.");
+    }
+    if (!removedCells.length) {
+      return [];
+    }
+    var grid = this.systems.bubbleGrid;
+    var candidates = {};
+    removedCells.forEach(function (cell) {
+      if (!cell || !Number.isInteger(cell.row) || !Number.isInteger(cell.col)) {
+        throw new Error("Spirit cocoon adjacency requires removed cell coordinates.");
+      }
+      grid.getNeighborCoordinates(cell.row, cell.col).forEach(function (coordinate) {
+        var cocoon = grid.getCell(coordinate.row, coordinate.col);
+        if (isSpiritCocoon(cocoon)) {
+          candidates[String(cocoon.id)] = cocoon;
+        }
+      });
+    });
+
+    var pendingIds = {};
+    this.pendingSpiritCocoonOpenings.forEach(function (opening) {
+      pendingIds[String(opening.cocoonId)] = true;
+    });
+    var queued = [];
+    Object.keys(candidates).sort().forEach(function (id) {
+      if (pendingIds[id]) {
+        return;
+      }
+      if (
+        !this.spiritCocoonFirstTriggerStore ||
+        typeof this.spiritCocoonFirstTriggerStore.consumeFirstTrigger !== "function"
+      ) {
+        throw new Error("Spirit cocoon trigger requires spiritCocoonFirstTriggerStore.consumeFirstTrigger.");
+      }
+      var firstLocalTrigger = this.spiritCocoonFirstTriggerStore.consumeFirstTrigger();
+      if (typeof firstLocalTrigger !== "boolean") {
+        throw new Error("Spirit cocoon first trigger store must return boolean.");
+      }
+      var roll = firstLocalTrigger ? 0.2 : requireRandomUnit(this, "Spirit cocoon outcome");
+      var outcome = resolveOutcome(roll);
+      var direction = null;
+      if (outcome === "gluttony" || outcome === "rainbow") {
+        direction = requireRandomUnit(this, "Spirit cocoon direction") < 0.5 ? "left" : "right";
+      }
+      var cocoon = candidates[id];
+      var mistTraversal = outcome === "mist"
+        ? buildCounterclockwiseMistTraversal(grid, cocoon)
+        : [];
+      var gluttonyTraversal = outcome === "gluttony"
+        ? buildDirectionalRowTraversal(grid, cocoon, direction, false)
+        : [];
+      var rainbowTraversal = outcome === "rainbow"
+        ? buildRainbowTraversal(this, grid, cocoon, direction)
+        : [];
+      var mistTraversalMoveCount = mistTraversal.length;
+      var duration = SpecialAnimationTiming.spiritCocoon.totalDuration +
+        mistTraversalMoveCount * SpecialAnimationTiming.spiritCocoon.mistTraversalStepDuration +
+        (gluttonyTraversal.length + rainbowTraversal.length) *
+          SpecialAnimationTiming.spiritCocoon.rowTraversalStepDuration;
+      var opening = {
+        id: "spirit_cocoon_open_" + this.shotsFired + "_" + id,
+        cocoonId: cocoon.id,
+        row: cocoon.row,
+        col: cocoon.col,
+        outcome: outcome,
+        direction: direction,
+        firstLocalTrigger: firstLocalTrigger,
+        mistTraversal: mistTraversal,
+        gluttonyTraversal: gluttonyTraversal,
+        rainbowTraversal: rainbowTraversal,
+        elapsed: 0,
+        activated: false,
+        nextTraversalIndex: 0,
+        gluttonyScorePerBall: null,
+        gluttonyGained: 0,
+        duration: duration,
+        remaining: duration
+      };
+      this.pendingSpiritCocoonOpenings.push(opening);
+      resolution.spiritCocoonOpenings.push({
+        id: opening.id,
+        cocoonId: opening.cocoonId,
+        row: opening.row,
+        col: opening.col,
+        outcome: opening.outcome,
+        direction: opening.direction,
+        firstLocalTrigger: opening.firstLocalTrigger,
+        mistTraversal: opening.mistTraversal.map(function (entry) {
+          return { id: entry.id, row: entry.row, col: entry.col };
+        }),
+        gluttonyTraversal: opening.gluttonyTraversal.map(function (entry) {
+          return { id: entry.id, row: entry.row, col: entry.col };
+        }),
+        rainbowTraversal: opening.rainbowTraversal.map(function (entry) {
+          return {
+            id: entry.id,
+            row: entry.row,
+            col: entry.col,
+            fromColor: entry.fromColor,
+            color: entry.color
+          };
+        }),
+        duration: opening.duration
+      });
+      queued.push(opening);
+    }, this);
+    return queued;
+  };
+
+  GameManager.prototype._filterFloatingSpiritCocoons = function (floatingCells, resolution) {
+    this._queueSpiritCocoonsAdjacentToCells(floatingCells, resolution);
+    var pendingIds = {};
+    this.pendingSpiritCocoonOpenings.forEach(function (opening) {
+      pendingIds[String(opening.cocoonId)] = true;
+    });
+    return floatingCells.filter(function (cell) {
+      return !isSpiritCocoon(cell) || pendingIds[String(cell.id)] !== true;
+    });
+  };
+
+  GameManager.prototype._applySpiritCocoonMist = function (opening, resolution) {
+    var grid = this.systems.bubbleGrid;
+    if (!Array.isArray(opening.mistTraversal)) {
+      throw new Error("Spirit cocoon mist opening requires mistTraversal array.");
+    }
+    var traversedNormalCells = opening.mistTraversal.map(function (entry) {
+      var cell = grid.getCell(entry.row, entry.col);
+      if (!cell || cell.id !== entry.id || cell.entityCategory !== "normal_ball") {
+        throw new Error("Spirit cocoon mist traversal lost normal ball: " + entry.id);
+      }
+      return cell;
+    });
+    var expiresAfterShot = this.shotsFired + MIST_DURATION_SHOTS;
+    var applied = grid.applySpiritMist(traversedNormalCells, expiresAfterShot);
+    Array.prototype.push.apply(resolution.spiritMistApplied, applied);
+  };
+
+  GameManager.prototype._activateSpiritCocoonOpening = function (opening, resolution) {
+    var grid = this.systems.bubbleGrid;
+    if (opening.activated) {
+      throw new Error("Spirit cocoon opening cannot activate twice: " + opening.id);
+    }
+    var liveCocoon = grid.getCell(opening.row, opening.col);
+    if (!isSpiritCocoon(liveCocoon) || liveCocoon.id !== opening.cocoonId) {
+      throw new Error("Spirit cocoon opening lost live cocoon: " + opening.cocoonId);
+    }
+    var removedCocoon = grid.removeCells([liveCocoon]);
+    if (removedCocoon.length !== 1) {
+      throw new Error("Spirit cocoon opening must remove exactly one cocoon.");
+    }
+    opening.activated = true;
+    if (opening.outcome === "gluttony") {
+      opening.gluttonyScorePerBall = this._getMatchedDropScorePerBallForNextCombo("matchedDrop");
+    }
+    this.score += COCOON_OPEN_SCORE;
+    resolution.scoreDelta += COCOON_OPEN_SCORE;
+    this._pushRuntimeEvent("spirit_cocoon_opened", {
+      cocoon_id: opening.cocoonId,
+      outcome: opening.outcome,
+      direction: opening.direction,
+      base_score: COCOON_OPEN_SCORE
+    });
+  };
+
+  GameManager.prototype._consumeSpiritCocoonGluttonyTarget = function (opening, entry, resolution) {
+    var grid = this.systems.bubbleGrid;
+    if (!Number.isInteger(opening.gluttonyScorePerBall) || opening.gluttonyScorePerBall <= 0) {
+      throw new Error("Spirit cocoon gluttony requires positive score per ball.");
+    }
+    var liveCell = grid.getCell(entry.row, entry.col);
+    if (!liveCell || liveCell.id !== entry.id || isSpiritCocoon(liveCell)) {
+      throw new Error("Spirit cocoon gluttony traversal lost target ball: " + entry.id);
+    }
+    var consumed = grid.removeFloatingCells([liveCell]);
+    if (consumed.length !== 1 || consumed[0].id !== entry.id) {
+      throw new Error("Spirit cocoon gluttony must consume exactly its reached target.");
+    }
+    appendUniqueCells(resolution.spiritCocoonConsumed, consumed);
+    this.score += opening.gluttonyScorePerBall;
+    resolution.scoreDelta += opening.gluttonyScorePerBall;
+    opening.gluttonyGained += opening.gluttonyScorePerBall;
+  };
+
+  GameManager.prototype._recolorSpiritCocoonRainbowTarget = function (entry, resolution) {
+    var grid = this.systems.bubbleGrid;
+    var liveCell = grid.getCell(entry.row, entry.col);
+    if (!liveCell || liveCell.id !== entry.id || liveCell.entityCategory !== "normal_ball") {
+      throw new Error("Spirit cocoon rainbow traversal lost normal ball: " + entry.id);
+    }
+    if (liveCell.color !== entry.fromColor) {
+      throw new Error("Spirit cocoon rainbow target color changed before sprite arrival: " + entry.id);
+    }
+    var recolored = grid.recolorNormalCells([entry]);
+    if (recolored.length !== 1 || recolored[0].id !== entry.id) {
+      throw new Error("Spirit cocoon rainbow must recolor exactly its reached target.");
+    }
+    Array.prototype.push.apply(resolution.spiritCocoonRecolors, recolored);
+  };
+
+  GameManager.prototype._resolveFloatingAfterSpiritCocoon = function (resolution) {
+    var grid = this.systems.bubbleGrid;
+    while (true) {
+      var floating = this.systems.supportSystem.findFloatingCells(grid);
+      if (!floating.length) {
+        return;
+      }
+      var removable = this._filterFloatingSpiritCocoons(floating, resolution);
+      if (!removable.length) {
+        return;
+      }
+      var removed = grid.removeFloatingCells(removable);
+      if (!removed.length) {
+        throw new Error("Spirit cocoon support scan found cells that could not be removed.");
+      }
+      appendUniqueCells(resolution.floating, removed);
+      appendUniqueCells(resolution.collected, removed);
+      this._collectRemovedKeysAndResolveUnlocks(removed, grid, resolution);
+      this._cancelPendingSplitterSpawnsForDroppedCells(removed);
+      this._registerResolutionDrops(removed, grid, resolution, undefined, {
+        skipEliminationPresentationHold: true
+      });
+    }
+  };
+
+  GameManager.prototype._completeSpiritCocoonOpening = function (opening, resolution) {
+    if (!opening.activated) {
+      throw new Error("Spirit cocoon opening must activate before completion: " + opening.id);
+    }
+    if (opening.outcome === "mist") {
+      this._applySpiritCocoonMist(opening, resolution);
+    } else if (opening.outcome === "gluttony") {
+      if (opening.nextTraversalIndex !== opening.gluttonyTraversal.length) {
+        throw new Error("Spirit cocoon gluttony completed before all targets were consumed.");
+      }
+      this._pushRuntimeEvent("spirit_cocoon_gluttony_scored", {
+        count: opening.gluttonyTraversal.length,
+        combo_streak: this.comboStreak,
+        score_per_ball: opening.gluttonyScorePerBall,
+        gained: opening.gluttonyGained
+      });
+    } else if (opening.outcome === "rainbow") {
+      if (opening.nextTraversalIndex !== opening.rainbowTraversal.length) {
+        throw new Error("Spirit cocoon rainbow completed before all targets were recolored.");
+      }
+    } else {
+      throw new Error("Unsupported spirit cocoon outcome: " + opening.outcome);
+    }
+  };
+
+  GameManager.prototype._continueAfterSpiritCocoon = function (resolution) {
+    if (this._hasPendingSpiritCocoonOpenings()) {
+      return;
+    }
+    if (this._beginSwirlRotationForResolution(resolution)) {
+      return;
+    }
+    if (this._beginWormholeShiftForResolution(resolution)) {
+      return;
+    }
+    if (this._beginVineCastForResolution(resolution)) {
+      return;
+    }
+    this._continueAfterVineCast(resolution);
+  };
+
+  GameManager.prototype._updatePendingSpiritCocoonOpenings = function (dt) {
+    if (!this._hasPendingSpiritCocoonOpenings()) {
+      return false;
+    }
+    if (typeof dt !== "number" || !isFinite(dt) || dt < 0) {
+      throw new Error("Pending spirit cocoon update requires non-negative finite dt.");
+    }
+    var resolution = this.lastResolution;
+    var completed = [];
+    var pending = [];
+    var updated = false;
+    this.pendingSpiritCocoonOpenings.forEach(function (opening) {
+      opening.elapsed = Math.min(opening.duration, opening.elapsed + dt);
+      if (opening.duration - opening.elapsed <= TIMING_EPSILON) {
+        opening.elapsed = opening.duration;
+      }
+      opening.remaining = opening.duration - opening.elapsed;
+      if (!opening.activated && opening.elapsed + TIMING_EPSILON >= SpecialAnimationTiming.spiritCocoon.totalDuration) {
+        this._activateSpiritCocoonOpening(opening, resolution);
+        updated = true;
+      }
+      var traversal = opening.outcome === "gluttony"
+        ? opening.gluttonyTraversal
+        : (opening.outcome === "rainbow" ? opening.rainbowTraversal : []);
+      while (
+        opening.nextTraversalIndex < traversal.length &&
+        opening.elapsed + TIMING_EPSILON >= SpecialAnimationTiming.spiritCocoon.totalDuration +
+          (opening.nextTraversalIndex + 1) * SpecialAnimationTiming.spiritCocoon.rowTraversalStepDuration
+      ) {
+        var entry = traversal[opening.nextTraversalIndex];
+        if (opening.outcome === "gluttony") {
+          this._consumeSpiritCocoonGluttonyTarget(opening, entry, resolution);
+        } else {
+          this._recolorSpiritCocoonRainbowTarget(entry, resolution);
+        }
+        opening.nextTraversalIndex += 1;
+        updated = true;
+      }
+      if (opening.remaining === 0) {
+        completed.push(opening);
+      } else {
+        pending.push(opening);
+      }
+    }, this);
+    this.pendingSpiritCocoonOpenings = pending;
+    completed.sort(function (left, right) {
+      return String(left.cocoonId).localeCompare(String(right.cocoonId));
+    }).forEach(function (opening) {
+      this._completeSpiritCocoonOpening(opening, resolution);
+    }, this);
+    if (completed.length && !this._hasPendingSpiritCocoonOpenings()) {
+      this._resolveFloatingAfterSpiritCocoon(resolution);
+      resolution.boardCleared = this._isBoardCleared(this.systems.bubbleGrid);
+      if (!this._hasPendingSpiritCocoonOpenings()) {
+        this._continueAfterSpiritCocoon(resolution);
+      }
+    }
+    return updated || completed.length > 0;
+  };
+}
+
+module.exports = attachGameManagerSpiritCocoonMethods;
+
+},{"../config/SpecialAnimationTiming":"SpecialAnimationTiming"}],
 "GameManagerUpdateMethods":[function(require,module,exports){
 "use strict";
 
@@ -15252,6 +17230,7 @@ GameManager.prototype.update = function (dt) {
         projectile.segmentProgress = 0;
         projectile.position = clone(toPoint);
       }
+      this._destroyReachedTransparentBalls(projectile, this.systems.bubbleGrid);
     }
 
     if (stepCount >= maxStepCount && this.activeProjectile) {
@@ -15297,6 +17276,7 @@ GameManager.prototype.update = function (dt) {
   var collectedDrops = fallingStep && Array.isArray(fallingStep.collected) ? fallingStep.collected : [];
   var cleanupScoredDrops = fallingStep && Array.isArray(fallingStep.cleanupScored) ? fallingStep.cleanupScored : [];
   var fairyHits = fallingStep && Array.isArray(fallingStep.fairyHits) ? fallingStep.fairyHits : [];
+  var poisonFairyHits = fallingStep && Array.isArray(fallingStep.poisonFairyHits) ? fallingStep.poisonFairyHits : [];
   var fairySplits = fallingStep && Array.isArray(fallingStep.splits) ? fallingStep.splits : [];
   var runtimeEvents = this._drainRuntimeEvents();
   var bounceEvents = fallingStep && Array.isArray(fallingStep.bounceEvents) ? fallingStep.bounceEvents : [];
@@ -15316,6 +17296,9 @@ GameManager.prototype.update = function (dt) {
   }, this);
   fairyHits.forEach(function (hit) {
     this._pushRuntimeEvent("fairy_assist_hit", hit);
+  }, this);
+  poisonFairyHits.forEach(function (hit) {
+    this._pushRuntimeEvent("poison_fairy_hit", hit);
   }, this);
   fairySplits.forEach(function (split) {
     this._pushRuntimeEvent("fairy_assist_split", split);
@@ -15367,8 +17350,12 @@ GameManager.prototype.update = function (dt) {
 
   var trappedSpritePostImpactContinued = this._continueAfterTrappedSpriteImpactRotation();
   var boardAdvancedThisFrame = viewportFinished || this._updatePendingBoardAdvance(dt) || this._hasBoardAdvancedThisFrame();
+  var spiritCocoonWasPending = this._hasPendingSpiritCocoonOpenings();
+  var spiritCocoonUpdated = boardAdvancedThisFrame || trappedSpritePostImpactContinued
+    ? false
+    : this._updatePendingSpiritCocoonOpenings(dt);
   var swirlRotationWasPending = this._hasPendingSwirlRotation();
-  var swirlRotationCompleted = boardAdvancedThisFrame || trappedSpritePostImpactContinued
+  var swirlRotationCompleted = boardAdvancedThisFrame || trappedSpritePostImpactContinued || spiritCocoonWasPending || this._hasPendingSpiritCocoonOpenings()
     ? false
     : this._updatePendingSwirlRotation(dt);
   var wormholeShiftWasPending = this._hasPendingWormholeShift();
@@ -15379,7 +17366,7 @@ GameManager.prototype.update = function (dt) {
   var vineCastCompleted = boardAdvancedThisFrame || swirlRotationWasPending || this._hasPendingSwirlRotation() || wormholeShiftWasPending || this._hasPendingWormholeShift()
     ? false
     : this._updatePendingVineCast(dt);
-  var blockOtherSpecialUpdates = swirlRotationWasPending || this._hasPendingSwirlRotation() || wormholeShiftWasPending || this._hasPendingWormholeShift() || vineCastWasPending || this._hasPendingVineCast();
+  var blockOtherSpecialUpdates = spiritCocoonWasPending || this._hasPendingSpiritCocoonOpenings() || swirlRotationWasPending || this._hasPendingSwirlRotation() || wormholeShiftWasPending || this._hasPendingWormholeShift() || vineCastWasPending || this._hasPendingVineCast();
   var splitterSpawned = boardAdvancedThisFrame || blockOtherSpecialUpdates ? false : this._updatePendingSplitterSpawns(dt);
   var molotovBlastUpdated = boardAdvancedThisFrame || blockOtherSpecialUpdates ? false : this._updatePendingMolotovBlasts(dt);
   runtimeEvents = runtimeEvents.concat(this._drainRuntimeEvents());
@@ -15387,6 +17374,7 @@ GameManager.prototype.update = function (dt) {
   var hasFallingDrops = this.systems.fallingMarbleSystem.hasActiveDrops();
   var hasPendingSplitterSpawns = this._hasPendingSplitterSpawns();
   var hasPendingMolotovBlasts = this._hasPendingMolotovBlasts();
+  var hasPendingSpiritCocoonOpenings = this._hasPendingSpiritCocoonOpenings();
   var hasPendingSwirlRotation = this._hasPendingSwirlRotation();
   var hasPendingWormholeShift = this._hasPendingWormholeShift();
   var hasPendingVineCast = this._hasPendingVineCast();
@@ -15408,6 +17396,7 @@ GameManager.prototype.update = function (dt) {
     !hasFallingDrops &&
     !hasPendingSplitterSpawns &&
     !hasPendingMolotovBlasts &&
+    !hasPendingSpiritCocoonOpenings &&
     !hasPendingSwirlRotation &&
     !hasPendingWormholeShift &&
     !hasPendingVineCast &&
@@ -15424,6 +17413,7 @@ GameManager.prototype.update = function (dt) {
     !hasFallingDrops &&
     !hasPendingSplitterSpawns &&
     !hasPendingMolotovBlasts &&
+    !hasPendingSpiritCocoonOpenings &&
     !hasPendingSwirlRotation &&
     !hasPendingWormholeShift &&
     !hasPendingVineCast &&
@@ -15442,7 +17432,7 @@ GameManager.prototype.update = function (dt) {
     }
   }
 
-  if (this.state === "won_pending" && !hasProjectile && !hasFallingDrops && !hasPendingSplitterSpawns && !hasPendingMolotovBlasts && !hasPendingSwirlRotation && !hasPendingWormholeShift && !hasPendingVineCast && !hasPendingTrappedSpritePostImpact && !this.systems.trappedSpriteRescueSystem.isRotating()) {
+  if (this.state === "won_pending" && !hasProjectile && !hasFallingDrops && !hasPendingSplitterSpawns && !hasPendingMolotovBlasts && !hasPendingSpiritCocoonOpenings && !hasPendingSwirlRotation && !hasPendingWormholeShift && !hasPendingVineCast && !hasPendingTrappedSpritePostImpact && !this.systems.trappedSpriteRescueSystem.isRotating()) {
     this._resolveBoardClearedOutcome();
     runtimeEvents = runtimeEvents.concat(this._drainRuntimeEvents());
     return this.getRuntimeSnapshot(runtimeEvents);
@@ -15454,6 +17444,7 @@ GameManager.prototype.update = function (dt) {
     !hasFallingDrops &&
     !hasPendingSplitterSpawns &&
     !hasPendingMolotovBlasts &&
+    !hasPendingSpiritCocoonOpenings &&
     !hasPendingSwirlRotation &&
     !hasPendingWormholeShift &&
     !hasPendingVineCast &&
@@ -15479,7 +17470,7 @@ GameManager.prototype.update = function (dt) {
     return this.getRuntimeSnapshot(runtimeEvents);
   }
 
-  if (this.state === "out_of_shots_pending" && !hasProjectile && !hasFallingDrops && !hasPendingSplitterSpawns && !hasPendingMolotovBlasts && !hasPendingSwirlRotation && !hasPendingWormholeShift && !hasPendingVineCast && !this._isBoardAdvanceBusy()) {
+  if (this.state === "out_of_shots_pending" && !hasProjectile && !hasFallingDrops && !hasPendingSplitterSpawns && !hasPendingMolotovBlasts && !hasPendingSpiritCocoonOpenings && !hasPendingSwirlRotation && !hasPendingWormholeShift && !hasPendingVineCast && !this._isBoardAdvanceBusy()) {
     this._showOutOfShotsAddBallPrompt();
     return this.getRuntimeSnapshot(runtimeEvents);
   }
@@ -15493,6 +17484,7 @@ GameManager.prototype.update = function (dt) {
     !scoreBoostChanged &&
     !splitterSpawned &&
     !molotovBlastUpdated &&
+    !spiritCocoonUpdated &&
     !swirlRotationCompleted &&
     !wormholeShiftCompleted &&
     !vineCastCompleted &&
@@ -15517,6 +17509,7 @@ GameManager.prototype.update = function (dt) {
     scoreBoostChanged ||
     splitterSpawned ||
     molotovBlastUpdated ||
+    spiritCocoonUpdated ||
     swirlRotationCompleted ||
     wormholeShiftCompleted ||
     vineCastCompleted ||
@@ -15537,6 +17530,7 @@ GameManager.prototype.update = function (dt) {
       !scoreBoostChanged &&
       !splitterSpawned &&
       !molotovBlastUpdated &&
+      !spiritCocoonUpdated &&
       !swirlRotationCompleted &&
       !wormholeShiftCompleted &&
       !vineCastCompleted &&
@@ -15558,6 +17552,7 @@ GameManager.prototype.update = function (dt) {
       !scoreBoostChanged &&
       !splitterSpawned &&
       !molotovBlastUpdated &&
+      !spiritCocoonUpdated &&
       !swirlRotationCompleted &&
       !wormholeShiftCompleted &&
       !vineCastCompleted &&
@@ -15576,6 +17571,7 @@ GameManager.prototype.update = function (dt) {
       !scoreBoostChanged &&
       !splitterSpawned &&
       !molotovBlastUpdated &&
+      !spiritCocoonUpdated &&
       !swirlRotationCompleted &&
       !wormholeShiftCompleted &&
       !vineCastCompleted &&
@@ -15850,6 +17846,7 @@ function LevelRenderer(rootNode) {
   this.wormholeShaderRenderer = new WormholeShaderRenderer();
   this.lightningChainRenderer = new LightningChainRenderer();
   this._sharedWarmupPromise = null;
+  this._interactionWarmupPromise = null;
   this.currentLevelConfig = null;
   this.lastRuntimeSnapshot = null;
   this.displayedIceSnowballCollectedTotal = 0;
@@ -15888,10 +17885,14 @@ function LevelRenderer(rootNode) {
   this.lastKeyUnlockAnimationKey = "";
   this.splitterSpawnAnimatedEntryKeys = {};
   this.splitterSpawnHiddenCellIds = {};
+  this.breederSpawnAnimatedEntryKeys = {};
+  this.breederSpawnHiddenCellIds = {};
   this.molotovBlastHiddenCellIds = {};
   this.molotovBlastAnimatedIds = {};
   this.swirlRotationAnimatedIds = {};
+  this.spiritCocoonAnimatedIds = {};
   this.wormholeShiftAnimatedIds = {};
+  this.wormholeProjectileAbsorptionAnimatedIds = {};
   this.wormholeDirectionGuideRoot = null;
   this.lastWormholeDirectionGuideKey = "";
   this.blastExplosionAnimatedIds = {};
@@ -15913,6 +17914,10 @@ function LevelRenderer(rootNode) {
   this.trappedSpriteDepartureActive = false;
   this.trappedSpriteDepartureCompleted = false;
   this.trappedSpriteDepartureToken = 0;
+  this.multiTrappedSpiritNodes = {};
+  this.multiTrappedSpiritHandledEventIds = {};
+  this.multiTrappedSpiritDepartingTargetIds = {};
+  this.multiTrappedSpiritDepartedTargetIds = {};
   this.barrierHammerHintNodes = {};
   this.lastBarrierHammerHintKey = "";
   this.testSlotNodes = {};
@@ -17108,10 +19113,25 @@ var BALL_RESOURCES = {
   SPLIT_B: "game/image/ball/split_blue_ball",
   SPLIT_Y: "game/image/ball/split_yellow_ball",
   SPLIT_P: "game/image/ball/split_purple_ball",
+  BREEDER: "game/image/ball/breeder_ball",
+  BLACK_HOLE: "game/image/ball/black_hole",
+  SPIRIT_COCOON: "game/image/ball/cocoon_1",
+  COCOON_1: "game/image/ball/cocoon_1",
+  COCOON_2: "game/image/ball/cocoon_2",
+  COCOON_3: "game/image/ball/cocoon_3",
+  COCOON_4: "game/image/ball/cocoon_4",
+  COCOON_5: "game/image/ball/cocoon_5",
+  MIST_SPRITE: "game/image/ball/mist_sprite",
+  GLUTTONY_SPRITE: "game/image/ball/gluttony_sprite",
+  RAINBOW_SPRITE: "game/image/ball/rainbow_sprite",
+  SPIRIT_MIST: "game/image/ball/sandstorm",
+  TRANSPARENT_BALL: "game/image/ball/transparent_ball",
   SWIRL: "game/image/ball/swirl_ball",
   WORMHOLE: "game/image/ball/wormhole",
   VINE_SPIRIT: "game/image/ball/vine_spirit",
   VINES: "game/image/ball/vines",
+  POISON_OVERLAY: "game/image/ball/poison_overlay",
+  POISON_DROPLET: "game/image/ball/poison_droplet",
   ICE_SNOWBALL: "game/image/ball/ice_ball",
   BLOCKADE_LINE: "game/image/ball/blockade_line",
   LIGHT: "game/image/ball/light_ball",
@@ -17582,27 +19602,90 @@ function attachLevelRendererResourceMethods(LevelRenderer, context) {
   var resolveJarScoreSpritePath = context.resolveJarScoreSpritePath;
   var retainSpriteFrame = context.retainSpriteFrame;
 
-LevelRenderer.prototype.warmupSharedAssets = function () {
-  if (this._sharedWarmupPromise) {
-    return this._sharedWarmupPromise;
+LevelRenderer.prototype.warmupPreparedGameplayAssets = function (assistSpiritId) {
+  if (typeof assistSpiritId !== "string" || !assistSpiritId) {
+    throw new Error("Prepared gameplay warmup requires assistSpiritId.");
+  }
+  AssistSpiritPresentationConfig.getBySpiritId(assistSpiritId);
+
+  if (!this._sharedWarmupPromise) {
+    this._sharedWarmupPromise = Promise.all([
+      this.prefabFactory.preload(this._collectInitialRenderPrefabPaths()),
+      this._preloadSprites(this._collectInitialCommonSpritePaths())
+    ]).catch(function (error) {
+      this._sharedWarmupPromise = null;
+      throw error;
+    }.bind(this));
   }
 
-  this._sharedWarmupPromise = Promise.all([
-    this._preloadSprites(this._collectCommonSpritePaths()),
-    this._preloadTimeBonusBitmapFont(),
+  return Promise.all([
+    this._sharedWarmupPromise,
+    this._preloadAssistSpiritAnimationClips(assistSpiritId)
+  ]).then(function () {
+    return null;
+  });
+};
+
+LevelRenderer.prototype.warmupSharedAssets = function (runtimeSnapshot) {
+  if (!runtimeSnapshot || !runtimeSnapshot.shooter) {
+    throw new Error("Shared gameplay warmup requires runtime shooter snapshot.");
+  }
+  var assistSpiritId = runtimeSnapshot.shooter.assistSpiritId;
+  return Promise.all([
+    this.warmupPreparedGameplayAssets(assistSpiritId),
+    this._preloadInitialLevelRenderAssets(runtimeSnapshot)
+  ]).then(function () {
+    return null;
+  });
+};
+
+LevelRenderer.prototype._preloadInitialLevelRenderAssets = function (runtimeSnapshot) {
+  var board = runtimeSnapshot.board;
+  if (!board || !Array.isArray(board.cells) || !Array.isArray(board.specialEntities)) {
+    throw new Error("Initial level render warmup requires board cells and specialEntities.");
+  }
+  var tasks = [];
+  var hasTimeBonus = board.cells.some(function (cell, index) {
+    if (!cell || typeof cell !== "object" || Array.isArray(cell)) {
+      throw new Error("Initial level render warmup requires board cell at index " + index + ".");
+    }
+    return Number.isInteger(cell.timeBonusSeconds) && cell.timeBonusSeconds > 0;
+  });
+  var hasWormhole = board.specialEntities.some(function (entity, index) {
+    if (!entity || typeof entity !== "object" || Array.isArray(entity)) {
+      throw new Error("Initial level render warmup requires special entity at index " + index + ".");
+    }
+    return entity.entityCategory === "reactive_ball" && entity.entityType === "wormhole";
+  });
+  if (hasTimeBonus) {
+    tasks.push(this._preloadTimeBonusBitmapFont());
+  }
+  if (hasWormhole) {
+    tasks.push(this.wormholeShaderRenderer.preload());
+  }
+  return Promise.all(tasks).then(function () {
+    return null;
+  });
+};
+
+LevelRenderer.prototype.warmupGameplayInteractionAssets = function () {
+  if (this._interactionWarmupPromise) {
+    return this._interactionWarmupPromise;
+  }
+
+  this._interactionWarmupPromise = Promise.all([
     this._preloadFairyPrefabs(),
     this._preloadExplodeAnimationClip(),
-    this._preloadAssistSpiritAnimationClips(),
     this._preloadFireworksPrefab(),
-    this.prefabFactory.preload(this._collectPrefabPaths()),
-    this.bubbleShatterRenderer.preload(),
-    this.wormholeShaderRenderer.preload()
+    this.prefabFactory.preload(this._collectInteractionPrefabPaths()),
+    this._preloadSprites(this._collectInteractionSpritePaths()),
+    this.bubbleShatterRenderer.preload()
   ]).catch(function (error) {
-    this._sharedWarmupPromise = null;
+    this._interactionWarmupPromise = null;
     throw error;
   }.bind(this));
 
-  return this._sharedWarmupPromise;
+  return this._interactionWarmupPromise;
 };
 
 LevelRenderer.prototype.preloadLightningChainEffect = function () {
@@ -17698,7 +19781,7 @@ LevelRenderer.prototype.playLightningChainEffect = function (config) {
 };
 
 LevelRenderer.prototype._collectSpritePaths = function (levelConfig, runtimeSnapshot) {
-  var paths = this._collectCommonSpritePaths().slice();
+  var paths = this._collectInitialCommonSpritePaths().slice();
 
   if (!levelConfig || !levelConfig.level || typeof levelConfig.level !== "object") {
     throw new Error("LevelRenderer sprite collection requires level config.");
@@ -17717,16 +19800,24 @@ LevelRenderer.prototype._collectSpritePaths = function (levelConfig, runtimeSnap
       buildTrappedSpriteResourcePath(level.trappedSpriteRescue.spiritId),
       "trapped sprite rescue center"
     );
-    pushUniqueSpritePath(
-      paths,
-      buildSpiritFragmentRewardResourcePath(level.trappedSpriteRescue.spiritId),
-      "trapped sprite rescue fragment reward"
-    );
-    pushUniqueSpritePath(
-      paths,
-      buildRescueSuccessfulSpiritResourcePath(level.trappedSpriteRescue.spiritId),
-      "rescue successful popup spirit"
-    );
+  } else if (level.levelType === "multi_trapped_spirit_rescue") {
+    if (
+      !level.multiTrappedSpiritRescue ||
+      !Array.isArray(level.multiTrappedSpiritRescue.targets) ||
+      level.multiTrappedSpiritRescue.targets.length < 2
+    ) {
+      throw new Error("Multi trapped spirit rescue rendering requires at least two targets.");
+    }
+    level.multiTrappedSpiritRescue.targets.forEach(function (target, index) {
+      if (!target || typeof target.spiritId !== "string" || !target.spiritId) {
+        throw new Error("Multi trapped spirit rescue target requires spiritId at index " + index + ".");
+      }
+      pushUniqueSpritePath(
+        paths,
+        buildTrappedSpriteResourcePath(target.spiritId),
+        "multi trapped spirit rescue target[" + index + "]"
+      );
+    });
   }
   if (!Array.isArray(level.colors)) {
     throw new Error("LevelRenderer sprite collection requires level.colors.");
@@ -17823,6 +19914,13 @@ LevelRenderer.prototype._collectSpritePaths = function (levelConfig, runtimeSnap
       runtimeSnapshot.shooter.nextBall !== undefined ? runtimeSnapshot.shooter.nextBall : runtimeSnapshot.shooter.nextColor,
       "runtime shooter next ball"
     );
+    if (typeof runtimeSnapshot.shooter.assistSpiritId !== "string" || !runtimeSnapshot.shooter.assistSpiritId) {
+      throw new Error("Initial gameplay sprite collection requires shooter assistSpiritId.");
+    }
+    var assistSpiritSkillConfig = AssistSpiritSkillConfig.getBySpiritId(runtimeSnapshot.shooter.assistSpiritId);
+    if (assistSpiritSkillConfig.iconPath) {
+      pushUniqueSpritePath(paths, assistSpiritSkillConfig.iconPath, "equipped assist spirit skill icon");
+    }
   }
 
   if (runtimeSnapshot && runtimeSnapshot.activeProjectile) {
@@ -17854,18 +19952,6 @@ LevelRenderer.prototype._collectSpritePaths = function (levelConfig, runtimeSnap
   if (hudTargetDisplay.iceSnowball && hudTargetDisplay.iceSnowball.iconCode) {
     pushBallSpritePath(paths, hudTargetDisplay.iceSnowball.iconCode, "HUD ice snowball target");
     pushUniqueSpritePath(paths, BALL_RESOURCES.ICE, "HUD ice snowball overlay");
-  }
-
-  if (level.clearRewardItems !== undefined) {
-    if (!Array.isArray(level.clearRewardItems)) {
-      throw new Error("LevelRenderer sprite collection requires level.clearRewardItems array when present.");
-    }
-    level.clearRewardItems.forEach(function (rewardItem) {
-      if (!rewardItem || !REWARD_ITEM_RESOURCES[rewardItem.id]) {
-        throw new Error("Unsupported level clear reward item id: " + (rewardItem && rewardItem.id));
-      }
-      pushUniqueSpritePath(paths, REWARD_ITEM_RESOURCES[rewardItem.id], "level clear reward " + rewardItem.id);
-    });
   }
 
   return paths.filter(function (path, index, list) {
@@ -17915,6 +20001,7 @@ LevelRenderer.prototype.releaseAfterGameplayBundleUnload = function () {
   this.assistSpiritAnimationClipCache = {};
   this.assistSpiritAnimationClipLoadPromises = {};
   this._sharedWarmupPromise = null;
+  this._interactionWarmupPromise = null;
   if (this.timeBonusBitmapFontLoadPromise) {
     throw new Error("Cannot unload gameplay bundle while time bonus font is loading.");
   }
@@ -17981,21 +20068,11 @@ LevelRenderer.prototype._setGuideDotsActiveCount = function (guideCanvas, count,
   }
 };
 
-LevelRenderer.prototype._collectCommonSpritePaths = function () {
+LevelRenderer.prototype._collectInitialCommonSpritePaths = function () {
   var paths = [
-    GUIDE_DOT_SPRITE_PATH,
-    BALL_RESOURCES.RAINBOW,
-    BALL_RESOURCES.BLAST,
-    BALL_RESOURCES.BLOCKADE_LINE,
-    BALL_RESOURCES.LIGHT,
-    BALL_RESOURCES.SNOW_REMOVAL_TOOLS,
     HUD_STAR_RESOURCES.lit,
     HUD_STAR_RESOURCES.unlit,
     TOP_SLOT_STAR_RESOURCE,
-    LOSE_STATUS_RESOURCES.complete,
-    LOSE_STATUS_RESOURCES.incomplete,
-    REWARD_ITEM_RESOURCES.coin,
-    REWARD_ITEM_RESOURCES.stamina,
     POWERUP_ICON_RESOURCES.rainbow,
     POWERUP_ICON_RESOURCES.swap,
     POWERUP_ICON_RESOURCES.blast,
@@ -18003,7 +20080,27 @@ LevelRenderer.prototype._collectCommonSpritePaths = function () {
     POWERUP_ICON_RESOURCES.precise_aim,
     POWERUP_ICON_RESOURCES.snow_removal,
     POWERUP_ICON_RESOURCES.three_line_elimination,
-    POWERUP_ICON_RESOURCES.plus_three_balls,
+    POWERUP_ICON_RESOURCES.plus_three_balls
+  ];
+  return paths.filter(function (path, index, list) {
+    return list.indexOf(path) === index;
+  });
+};
+
+LevelRenderer.prototype._collectInteractionCommonSpritePaths = function () {
+  var paths = [
+    GUIDE_DOT_SPRITE_PATH,
+    BALL_RESOURCES.RAINBOW,
+    BALL_RESOURCES.BLAST,
+    BALL_RESOURCES.BLOCKADE_LINE,
+    BALL_RESOURCES.LIGHT,
+    BALL_RESOURCES.SNOW_REMOVAL_TOOLS,
+    BALL_RESOURCES.POISON_OVERLAY,
+    BALL_RESOURCES.POISON_DROPLET,
+    LOSE_STATUS_RESOURCES.complete,
+    LOSE_STATUS_RESOURCES.incomplete,
+    REWARD_ITEM_RESOURCES.coin,
+    REWARD_ITEM_RESOURCES.stamina,
     COMMENT_ANIMATION_RESOURCES.good,
     COMMENT_ANIMATION_RESOURCES.great,
     COMMENT_ANIMATION_RESOURCES.excellent,
@@ -18023,15 +20120,9 @@ LevelRenderer.prototype._collectCommonSpritePaths = function () {
   });
 };
 
-LevelRenderer.prototype._collectPrefabPaths = function () {
+LevelRenderer.prototype._collectInitialRenderPrefabPaths = function () {
   var preloadPaths = [
     PREFAB_PATHS.gameView,
-    PREFAB_PATHS.winView,
-    PREFAB_PATHS.rescueSuccessfulView,
-    PREFAB_PATHS.loseView,
-    PREFAB_PATHS.addBallTipsView,
-    PREFAB_PATHS.pauseView,
-    PREFAB_PATHS.propDescriptionView,
     PREFAB_PATHS.shooterPanel,
     PREFAB_PATHS.propsBtn,
     PREFAB_PATHS.bubbleItem,
@@ -18046,6 +20137,57 @@ LevelRenderer.prototype._collectPrefabPaths = function () {
   return preloadPaths.filter(function (path, index, list) {
     return !!path && list.indexOf(path) === index;
   });
+};
+
+LevelRenderer.prototype._collectInteractionSpritePaths = function () {
+  if (!this.currentLevelConfig || !this.currentLevelConfig.level) {
+    throw new Error("Gameplay interaction sprite warmup requires current level config.");
+  }
+  var paths = this._collectInteractionCommonSpritePaths().slice();
+  var level = this.currentLevelConfig.level;
+  if (level.levelType === "trapped_sprite_rescue") {
+    if (!level.trappedSpriteRescue || typeof level.trappedSpriteRescue.spiritId !== "string") {
+      throw new Error("Trapped sprite interaction warmup requires spiritId.");
+    }
+    pushUniqueSpritePath(
+      paths,
+      buildSpiritFragmentRewardResourcePath(level.trappedSpriteRescue.spiritId),
+      "trapped sprite rescue fragment reward"
+    );
+    pushUniqueSpritePath(
+      paths,
+      buildRescueSuccessfulSpiritResourcePath(level.trappedSpriteRescue.spiritId),
+      "rescue successful popup spirit"
+    );
+  }
+  return paths.filter(function (path, index, list) {
+    return list.indexOf(path) === index;
+  });
+};
+
+LevelRenderer.prototype._collectCommonSpritePaths = function () {
+  return this._collectInitialCommonSpritePaths().concat(this._collectInteractionCommonSpritePaths()).filter(function (path, index, list) {
+    return list.indexOf(path) === index;
+  });
+};
+
+LevelRenderer.prototype._collectInteractionPrefabPaths = function () {
+  var preloadPaths = [
+    PREFAB_PATHS.winView,
+    PREFAB_PATHS.rescueSuccessfulView,
+    PREFAB_PATHS.loseView,
+    PREFAB_PATHS.addBallTipsView,
+    PREFAB_PATHS.pauseView,
+    PREFAB_PATHS.propDescriptionView
+  ];
+
+  return preloadPaths.filter(function (path, index, list) {
+    return !!path && list.indexOf(path) === index;
+  });
+};
+
+LevelRenderer.prototype._collectPrefabPaths = function () {
+  return this._collectInitialRenderPrefabPaths().concat(this._collectInteractionPrefabPaths());
 };
 
 LevelRenderer.prototype._collectFairyPrefabPaths = function () {
@@ -18137,8 +20279,10 @@ LevelRenderer.prototype._preloadExplodeAnimationClip = function () {
   return this.explodeAnimationClipPromise;
 };
 
-LevelRenderer.prototype._preloadAssistSpiritAnimationClips = function () {
-  return Promise.all(AssistSpiritPresentationConfig.getAllClipPaths().map(function (path) {
+LevelRenderer.prototype._preloadAssistSpiritAnimationClips = function (spiritId) {
+  var presentation = AssistSpiritPresentationConfig.getBySpiritId(spiritId);
+  var clipPaths = [presentation.idleClipPath, presentation.deliverClipPath];
+  return Promise.all(clipPaths.map(function (path) {
     var cachedClip = this.assistSpiritAnimationClipCache[path];
     if (cachedClip) {
       if (!cachedClip.isValid) {
@@ -18337,10 +20481,14 @@ LevelRenderer.prototype.renderLevel = function (levelConfig, runtimeSnapshot) {
   this.lastKeyUnlockAnimationKey = "";
   this.splitterSpawnAnimatedEntryKeys = {};
   this.splitterSpawnHiddenCellIds = {};
+  this.breederSpawnAnimatedEntryKeys = {};
+  this.breederSpawnHiddenCellIds = {};
   this.molotovBlastHiddenCellIds = {};
   this.molotovBlastAnimatedIds = {};
   this.swirlRotationAnimatedIds = {};
+  this.spiritCocoonAnimatedIds = {};
   this.wormholeShiftAnimatedIds = {};
+  this.wormholeProjectileAbsorptionAnimatedIds = {};
   this.wormholeDirectionGuideRoot = null;
   this.lastWormholeDirectionGuideKey = "";
   this.blastExplosionAnimatedIds = {};
@@ -18367,12 +20515,13 @@ LevelRenderer.prototype.renderLevel = function (levelConfig, runtimeSnapshot) {
 
   return BundleLoader.ensureGameplayBundleLoaded().then(function () {
     return Promise.all([
-      this.warmupSharedAssets(),
+      this.warmupSharedAssets(runtimeSnapshot),
       this._preloadSprites(spritePaths)
     ]);
   }.bind(this)).then(function () {
       clearChildren(this.layers.background);
       clearChildren(this.layers.wormhole);
+      clearChildren(this.layers.wormholeDirection);
       clearChildren(this.layers.board);
     clearChildren(this.layers.trappedSprite);
     clearChildren(this.layers.boardOcclusion);
@@ -18386,6 +20535,10 @@ LevelRenderer.prototype.renderLevel = function (levelConfig, runtimeSnapshot) {
     this.trappedSpriteDepartureActive = false;
     this.trappedSpriteDepartureCompleted = false;
     this.trappedSpriteDepartureToken += 1;
+    this.multiTrappedSpiritNodes = {};
+    this.multiTrappedSpiritHandledEventIds = {};
+    this.multiTrappedSpiritDepartingTargetIds = {};
+    this.multiTrappedSpiritDepartedTargetIds = {};
     this.topSlotStarNodes = {};
     this.topSlotStarNodePool = [];
     this.barrierHammerHintNodes = {};
@@ -18427,8 +20580,11 @@ LevelRenderer.prototype.renderLevel = function (levelConfig, runtimeSnapshot) {
     this._renderBottomPanel(runtimeSnapshot);
     this._queueSkillPowerupCollectedFeedback(runtimeSnapshot);
     this._renderBoard(runtimeSnapshot.board);
+    this._playSpiritCocoonAnimations(runtimeSnapshot);
     this._renderTrappedSpriteRescue(runtimeSnapshot);
+    this._renderMultiTrappedSpiritRescue(runtimeSnapshot);
     this._playTrappedSpriteRescueDeparture(runtimeSnapshot);
+    this._playMultiTrappedSpiritDepartures(runtimeSnapshot);
     this._renderBoardOcclusions(runtimeSnapshot);
     this._syncBarrierHammerStoneHints(runtimeSnapshot);
     this._renderMainland(runtimeSnapshot.board);
@@ -18569,12 +20725,15 @@ LevelRenderer.prototype._refreshRuntimeFull = function (levelConfig, runtimeSnap
   if (boardChanged) {
     this._renderBoard(runtimeSnapshot.board);
     this._renderTrappedSpriteRescue(runtimeSnapshot);
+    this._renderMultiTrappedSpiritRescue(runtimeSnapshot);
     this._renderTestGrid(runtimeSnapshot.board);
     this._renderMainland(runtimeSnapshot.board);
     this._renderJianbian(runtimeSnapshot.board);
   }
+  this._playSpiritCocoonAnimations(runtimeSnapshot);
   this._renderBoardOcclusions(runtimeSnapshot);
   this._playSwirlRotationAnimation(runtimeSnapshot);
+  this._playWormholeProjectileAbsorptionAnimation(runtimeSnapshot);
   this._playWormholeShiftAnimation(runtimeSnapshot);
   this._syncBarrierHammerStoneHints(runtimeSnapshot);
 
@@ -18627,9 +20786,11 @@ LevelRenderer.prototype._refreshRuntimeFull = function (levelConfig, runtimeSnap
   this._playImpactBounce(runtimeSnapshot);
   this._playKeyUnlockAnimation(runtimeSnapshot);
   this._playSplitterSpawnAnimation(runtimeSnapshot);
+  this._playBreederSpawnAnimation(runtimeSnapshot);
   this._playMolotovBlastAnimation(runtimeSnapshot);
   this._playBlastExplosionAnimation(runtimeSnapshot);
   this._playTrappedSpriteRescueDeparture(runtimeSnapshot);
+  this._playMultiTrappedSpiritDepartures(runtimeSnapshot);
   this._playCommentAnimation(runtimeSnapshot);
 
   var hasActiveProjectile = !!(runtimeSnapshot.activeProjectile);
@@ -18701,6 +20862,7 @@ LevelRenderer.prototype._ensureLayers = function () {
     overlay: this._getOrCreateLayer("OverlayLayer", 30),
     wormhole: this._getOrCreateLayer("WormholeLayer", 24),
     board: this._getOrCreateLayer("BoardLayer", 40),
+    wormholeDirection: this._getOrCreateLayer("WormholeDirectionLayer", 42),
     boardOcclusion: this._getOrCreateLayer("BoardOcclusionLayer", 43),
     shatter: this._getOrCreateLayer("BubbleShatterLayer", 44),
     // 掉落球前置到固定球前方，提升层次与动效可见度。
@@ -18796,6 +20958,54 @@ LevelRenderer.prototype._applySplitterSpawnHiddenBoardState = function (bubbleNo
     return;
   }
   if (!this.splitterSpawnHiddenCellIds[String(cellId)]) {
+    return;
+  }
+  bubbleNode.stopAllActions();
+  bubbleNode.opacity = 0;
+  bubbleNode.active = false;
+};
+
+LevelRenderer.prototype._hideBreederSpawnTarget = function (cellId) {
+  if (typeof cellId !== "string" && typeof cellId !== "number") {
+    throw new Error("Breeder spawn hide requires cell id.");
+  }
+  var normalizedId = String(cellId);
+  this.breederSpawnHiddenCellIds[normalizedId] = true;
+  var targetNode = this.boardBubbleNodes[normalizedId];
+  if (targetNode && targetNode.isValid) {
+    targetNode.stopAllActions();
+    targetNode.opacity = 0;
+    targetNode.active = false;
+  }
+};
+
+LevelRenderer.prototype._revealBreederSpawnTarget = function (cellId) {
+  if (typeof cellId !== "string" && typeof cellId !== "number") {
+    throw new Error("Breeder spawn reveal requires cell id.");
+  }
+  var normalizedId = String(cellId);
+  delete this.breederSpawnHiddenCellIds[normalizedId];
+  var targetNode = this.boardBubbleNodes[normalizedId];
+  if (!targetNode || !targetNode.isValid) {
+    return;
+  }
+  targetNode.active = true;
+  targetNode.opacity = 255;
+  targetNode.setScale(1);
+  if (typeof cc === "undefined" || !cc || typeof cc.tween !== "function") {
+    throw new Error("Breeder spawn reveal requires cc.tween.");
+  }
+  cc.tween(targetNode)
+    .to(0.08, { scale: 1.12 }, { easing: "quadOut" })
+    .to(0.1, { scale: 1 }, { easing: "quadIn" })
+    .start();
+};
+
+LevelRenderer.prototype._applyBreederSpawnHiddenBoardState = function (bubbleNode, cellId) {
+  if (!bubbleNode || !bubbleNode.isValid) {
+    return;
+  }
+  if (!this.breederSpawnHiddenCellIds[String(cellId)]) {
     return;
   }
   bubbleNode.stopAllActions();
@@ -19052,6 +21262,9 @@ function attachLevelRendererSceneBoardMethods(LevelRenderer, deps) {
   var TOP_SLOT_STAR_TWINKLE_DURATION = 0.45;
   var VINE_OVERLAY_NODE_NAME = "VinesOverlay";
   var VINE_HEALTH_NODE_NAME = "VineSpiritHealth";
+  var POISON_OVERLAY_NODE_NAME = "PoisonOverlay";
+  var POISON_OVERLAY_SIZE = { width: 69, height: 70 };
+  var POISON_DROPLET_SIZE = { width: 16, height: 21 };
   var VINE_PREVIEW_FADE_DURATION = 0.18;
   var TIME_BONUS_LABEL_NODE_NAME = "TimeBonus";
   var TIME_BONUS_LABEL_Z_INDEX = 100;
@@ -19217,9 +21430,13 @@ function attachLevelRendererSceneBoardMethods(LevelRenderer, deps) {
       resolveBallVisualKey(cell),
       lockedColorKey,
       typeof cell.health === "number" ? cell.health : "",
+      Number.isInteger(cell.capacity) ? cell.capacity : "",
       Number.isInteger(cell.timeBonusSeconds) ? cell.timeBonusSeconds : "",
+      cell.spiritMistExpiresAfterShot === null ? "" : cell.spiritMistExpiresAfterShot,
       typeof cell.vineOwnerId === "string" ? cell.vineOwnerId : "",
-      typeof cell.vinePreviewOwnerId === "string" ? cell.vinePreviewOwnerId : ""
+      typeof cell.vinePreviewOwnerId === "string" ? cell.vinePreviewOwnerId : "",
+      typeof cell.poisonAttachmentId === "string" ? cell.poisonAttachmentId : "",
+      Number.isInteger(cell.poisonParticleCount) ? cell.poisonParticleCount : ""
     ].join("|");
   }
 
@@ -19470,6 +21687,33 @@ function attachLevelRendererSceneBoardMethods(LevelRenderer, deps) {
     overlayNode.opacity = 255;
   }
 
+  function syncPoisonOverlay(renderer, node, cell) {
+    if (!node || !node.isValid) {
+      throw new Error("Poison overlay requires valid board node.");
+    }
+    var spriteTarget = node.getChildByName("Icon") || node;
+    var overlayNode = getOrCreateChild(spriteTarget, POISON_OVERLAY_NODE_NAME);
+    var hasPoison = !!(cell && typeof cell.poisonAttachmentId === "string" && cell.poisonAttachmentId);
+    if (!hasPoison) {
+      overlayNode.active = false;
+      return;
+    }
+    if (cell.entityCategory !== "normal_ball" || cell.entityType !== null || cell.poisonParticleCount !== 3) {
+      throw new Error("Poison overlay requires an ordinary ball with particleCount 3.");
+    }
+    var poisonFrame = renderer.spriteFrameCache[BALL_RESOURCES.POISON_OVERLAY];
+    if (!poisonFrame) {
+      throw new Error("Poison overlay sprite was not preloaded: " + BALL_RESOURCES.POISON_OVERLAY);
+    }
+    overlayNode.active = true;
+    overlayNode.setPosition(0, 0);
+    overlayNode.zIndex = 14;
+    overlayNode.opacity = 255;
+    var poisonSprite = ensureSprite(overlayNode, poisonFrame);
+    poisonSprite.trim = false;
+    overlayNode.setContentSize(POISON_OVERLAY_SIZE);
+  }
+
   function syncVineSpiritHealth(node, cell) {
     if (!node || !node.isValid) {
       throw new Error("Vine spirit health requires valid board node.");
@@ -19609,9 +21853,12 @@ LevelRenderer.prototype._renderBoard = function (boardSnapshot) {
       restoreBoardBubbleVisualState(this, existingNode, cell);
       this.wormholeShaderRenderer.syncNode(existingNode, cell);
       syncVineOverlay(this, existingNode, cell);
+      syncPoisonOverlay(this, existingNode, cell);
       syncVineSpiritHealth(existingNode, cell);
       syncTimeBonusLabel(this, existingNode, cell);
+      this._syncSpiritMistOverlay(existingNode, cell);
       this._applySplitterSpawnHiddenBoardState(existingNode, cell.id);
+      this._applyBreederSpawnHiddenBoardState(existingNode, cell.id);
       this._applyMolotovBlastHiddenBoardState(existingNode, cell.id);
       return;
     }
@@ -19632,9 +21879,12 @@ LevelRenderer.prototype._renderBoard = function (boardSnapshot) {
     );
     this.wormholeShaderRenderer.syncNode(bubbleNode, cell);
     syncVineOverlay(this, bubbleNode, cell);
+    syncPoisonOverlay(this, bubbleNode, cell);
     syncVineSpiritHealth(bubbleNode, cell);
     syncTimeBonusLabel(this, bubbleNode, cell);
+    this._syncSpiritMistOverlay(bubbleNode, cell);
     this._applySplitterSpawnHiddenBoardState(bubbleNode, cell.id);
+    this._applyBreederSpawnHiddenBoardState(bubbleNode, cell.id);
     this._applyMolotovBlastHiddenBoardState(bubbleNode, cell.id);
   }, this);
 
@@ -19891,7 +22141,12 @@ LevelRenderer.prototype._renderFallingDrops = function (runtimeSnapshot) {
     dropNode.setPosition(drop.position.x, drop.position.y);
     dropNode.angle = drop.rotation || 0;
     dropNode.opacity = 255;
-    this._applyBoardBubbleVisualCached(dropNode, drop, BOARD_BUBBLE_SIZE);
+    this._applyBoardBubbleVisualCached(
+      dropNode,
+      drop,
+      drop.entityType === "poison_droplet" ? POISON_DROPLET_SIZE : BOARD_BUBBLE_SIZE
+    );
+    syncPoisonOverlay(this, dropNode, drop);
     applyDropCollisionGlow(this, dropNode, drop);
   }
   this._recycleInactiveFallingDropNodes(currentTick);
@@ -20076,6 +22331,7 @@ module.exports = attachLevelRendererSceneBoardMethods;
 "use strict";
 
 function attachLevelRendererSceneBoardTransformFxMethods(LevelRenderer, context) {
+  var BOARD_BUBBLE_SIZE = context.BOARD_BUBBLE_SIZE;
   var BoardLayout = context.BoardLayout;
   var SpecialAnimationTiming = context.SpecialAnimationTiming;
   var WORMHOLE_DIRECTION_ARROW_CYCLE_PAUSE = context.WORMHOLE_DIRECTION_ARROW_CYCLE_PAUSE;
@@ -20195,7 +22451,9 @@ LevelRenderer.prototype._playWormholeShiftAnimation = function (runtimeSnapshot)
   if (!this.wormholeShiftAnimatedIds || typeof this.wormholeShiftAnimatedIds !== "object") {
     throw new Error("Wormhole animated id map is required.");
   }
-  if (typeof cc.moveTo !== "function") {
+  if (typeof cc.moveTo !== "function" || typeof cc.sequence !== "function" ||
+      typeof cc.spawn !== "function" || typeof cc.callFunc !== "function" ||
+      typeof cc.scaleTo !== "function" || typeof cc.fadeTo !== "function") {
     throw new Error("Wormhole animation requires Cocos action APIs.");
   }
   var boardSnapshot = runtimeSnapshot.board;
@@ -20224,9 +22482,9 @@ LevelRenderer.prototype._playWormholeShiftAnimation = function (runtimeSnapshot)
       !Number.isInteger(shift.rightCol) ||
       shift.rightCol - shift.leftCol < 2 ||
       !Number.isInteger(shift.slotCount) ||
-      shift.slotCount !== shift.rightCol - shift.leftCol + 1
+      shift.slotCount !== shift.rightCol - shift.leftCol - 1
     ) {
-      throw new Error("Wormhole animation requires valid inclusive channel boundaries.");
+      throw new Error("Wormhole animation requires valid strict interior channel boundaries.");
     }
     if (!Array.isArray(shift.moves)) {
       throw new Error("Wormhole animation requires moves array.");
@@ -20262,8 +22520,11 @@ LevelRenderer.prototype._playWormholeShiftAnimation = function (runtimeSnapshot)
         boardSnapshot.viewportOffsetY
       );
       var isWrappedMove = shift.moveDirection === "left"
-        ? move.fromCol === shift.leftCol && move.toCol === shift.rightCol
-        : move.fromCol === shift.rightCol && move.toCol === shift.leftCol;
+        ? move.fromCol === shift.leftCol + 1 && move.toCol === shift.rightCol - 1
+        : move.fromCol === shift.rightCol - 1 && move.toCol === shift.leftCol + 1;
+      if (move.wrapped !== isWrappedMove) {
+        throw new Error("Wormhole animation move wrapped flag does not match strict interior boundaries.");
+      }
       if (move.fromRow !== shift.row || move.toRow !== shift.row) {
         throw new Error("Wormhole animation move must stay on its pair row.");
       }
@@ -20275,12 +22536,48 @@ LevelRenderer.prototype._playWormholeShiftAnimation = function (runtimeSnapshot)
       }
       bubbleNode.stopAllActions();
       if (isWrappedMove) {
-        // The wrapped cell teleports from one wormhole coordinate to the other instead of
-        // crossing the whole channel on screen.
-        bubbleNode.setPosition(targetPosition.x, targetPosition.y);
+        var entryCol = shift.moveDirection === "right" ? shift.rightCol : shift.leftCol;
+        var exitCol = shift.moveDirection === "right" ? shift.leftCol : shift.rightCol;
+        var entryPosition = BoardLayout.getCellPosition(
+          shift.row,
+          entryCol,
+          boardSnapshot.maxColumns,
+          boardSnapshot.viewportOffsetY
+        );
+        var exitPosition = BoardLayout.getCellPosition(
+          shift.row,
+          exitCol,
+          boardSnapshot.maxColumns,
+          boardSnapshot.viewportOffsetY
+        );
+        bubbleNode.setPosition(startPosition.x, startPosition.y);
+        bubbleNode.opacity = 255;
+        bubbleNode.setScale(1);
+        bubbleNode.runAction(cc.sequence(
+          cc.spawn(
+            cc.moveTo(SpecialAnimationTiming.wormholeShift.inhaleDuration, entryPosition.x, entryPosition.y),
+            cc.scaleTo(SpecialAnimationTiming.wormholeShift.inhaleDuration, 0.08),
+            cc.fadeTo(SpecialAnimationTiming.wormholeShift.inhaleDuration, 0)
+          ),
+          cc.callFunc(function (node, data) {
+            if (!node || !node.isValid) {
+              throw new Error("Wormhole wrapped bubble was destroyed between inhale and exhale.");
+            }
+            node.setPosition(data.x, data.y);
+            node.setScale(0.08);
+            node.opacity = 0;
+          }, bubbleNode, { x: exitPosition.x, y: exitPosition.y }),
+          cc.spawn(
+            cc.moveTo(SpecialAnimationTiming.wormholeShift.exhaleDuration, targetPosition.x, targetPosition.y),
+            cc.scaleTo(SpecialAnimationTiming.wormholeShift.exhaleDuration, 1),
+            cc.fadeTo(SpecialAnimationTiming.wormholeShift.exhaleDuration, 255)
+          )
+        ));
         return;
       }
       bubbleNode.setPosition(startPosition.x, startPosition.y);
+      bubbleNode.opacity = 255;
+      bubbleNode.setScale(1);
       bubbleNode.runAction(cc.moveTo(shift.duration, targetPosition.x, targetPosition.y));
     }, this);
 
@@ -20296,6 +22593,82 @@ LevelRenderer.prototype._playWormholeShiftAnimation = function (runtimeSnapshot)
         throw new Error("Wormhole animation endpoint must keep its flow shader active: " + wormholeId);
       }
     }, this);
+  }, this);
+};
+
+LevelRenderer.prototype._playWormholeProjectileAbsorptionAnimation = function (runtimeSnapshot) {
+  var resolution = runtimeSnapshot && runtimeSnapshot.lastResolution ? runtimeSnapshot.lastResolution : null;
+  if (!resolution) {
+    return;
+  }
+  if (!Array.isArray(resolution.wormholeProjectileAbsorptions)) {
+    throw new Error("Wormhole projectile animation requires lastResolution.wormholeProjectileAbsorptions.");
+  }
+  if (!resolution.wormholeProjectileAbsorptions.length) {
+    return;
+  }
+  if (!this.wormholeProjectileAbsorptionAnimatedIds || typeof this.wormholeProjectileAbsorptionAnimatedIds !== "object") {
+    throw new Error("Wormhole projectile animated id map is required.");
+  }
+  if (!this.layers || !this.layers.board || !this.layers.board.isValid) {
+    throw new Error("Wormhole projectile animation requires board layer.");
+  }
+  if (typeof cc.Node !== "function" || typeof cc.sequence !== "function" ||
+      typeof cc.spawn !== "function" || typeof cc.moveTo !== "function" ||
+      typeof cc.scaleTo !== "function" || typeof cc.fadeTo !== "function" ||
+      typeof cc.callFunc !== "function") {
+    throw new Error("Wormhole projectile animation requires Cocos node and action APIs.");
+  }
+  if (!BOARD_BUBBLE_SIZE || BOARD_BUBBLE_SIZE.width <= 0 || BOARD_BUBBLE_SIZE.height <= 0) {
+    throw new Error("Wormhole projectile animation requires positive board bubble size.");
+  }
+
+  resolution.wormholeProjectileAbsorptions.forEach(function (absorption) {
+    if (!absorption || typeof absorption.id !== "string" || !absorption.id) {
+      throw new Error("Wormhole projectile animation requires absorption id.");
+    }
+    if (this.wormholeProjectileAbsorptionAnimatedIds[absorption.id]) {
+      return;
+    }
+    if (absorption.duration !== SpecialAnimationTiming.wormholeShift.projectileAbsorbDuration) {
+      throw new Error("Wormhole projectile absorption duration must match SpecialAnimationTiming.");
+    }
+    [absorption.startPosition, absorption.targetPosition].forEach(function (position) {
+      if (!position || !Number.isFinite(position.x) || !Number.isFinite(position.y)) {
+        throw new Error("Wormhole projectile animation requires finite start and target positions.");
+      }
+    });
+    if (!absorption.ball || typeof absorption.ball !== "object" || Array.isArray(absorption.ball)) {
+      throw new Error("Wormhole projectile animation requires fired ball data.");
+    }
+    var wormholeNode = this.boardBubbleNodes[String(absorption.wormholeId)];
+    if (!wormholeNode || !wormholeNode.isValid || wormholeNode.__wormholeShaderActive !== true) {
+      throw new Error("Wormhole projectile animation requires live shader endpoint: " + absorption.wormholeId);
+    }
+
+    this.wormholeProjectileAbsorptionAnimatedIds[absorption.id] = true;
+    var projectileFxNode = new cc.Node("WormholeAbsorbedProjectile_" + absorption.id);
+    projectileFxNode.parent = this.layers.board;
+    projectileFxNode.zIndex = 1000;
+    projectileFxNode.setContentSize(BOARD_BUBBLE_SIZE);
+    projectileFxNode.setPosition(absorption.startPosition.x, absorption.startPosition.y);
+    projectileFxNode.opacity = 255;
+    projectileFxNode.setScale(1);
+    this._applyBallVisualCached(projectileFxNode, absorption.ball, BOARD_BUBBLE_SIZE);
+    projectileFxNode.runAction(cc.sequence(
+      cc.spawn(
+        cc.moveTo(absorption.duration, absorption.targetPosition.x, absorption.targetPosition.y),
+        cc.scaleTo(absorption.duration, 0.05),
+        cc.fadeTo(absorption.duration, 0)
+      ),
+      cc.callFunc(function (node) {
+        if (!node || !node.isValid) {
+          throw new Error("Wormhole absorbed projectile node was destroyed before animation completion.");
+        }
+        node.removeFromParent(true);
+        node.destroy();
+      }, projectileFxNode)
+    ));
   }, this);
 };
 
@@ -20323,8 +22696,8 @@ LevelRenderer.prototype._syncWormholeDirectionGuide = function (boardSnapshot) {
   if (typeof boardSnapshot.viewportOffsetY !== "number" || !isFinite(boardSnapshot.viewportOffsetY)) {
     throw new Error("Wormhole direction guide requires finite board viewportOffsetY.");
   }
-  if (!this.layers || !this.layers.wormhole || !this.layers.wormhole.isValid) {
-    throw new Error("Wormhole direction guide requires wormhole layer.");
+  if (!this.layers || !this.layers.wormholeDirection || !this.layers.wormholeDirection.isValid) {
+    throw new Error("Wormhole direction guide requires wormhole direction layer.");
   }
 
   var wormholes = boardSnapshot.specialEntities.filter(function (cell) {
@@ -20414,8 +22787,7 @@ LevelRenderer.prototype._syncWormholeDirectionGuide = function (boardSnapshot) {
   this._destroyWormholeDirectionGuide();
 
   var guideRoot = new cc.Node("WormholeDirectionGuide");
-  guideRoot.parent = this.layers.wormhole;
-  guideRoot.zIndex = 1000;
+  guideRoot.parent = this.layers.wormholeDirection;
   this.wormholeDirectionGuideRoot = guideRoot;
   this.lastWormholeDirectionGuideKey = guideKey;
 
@@ -21945,6 +24317,7 @@ var attachLevelRendererSceneKeySplitterFxMethods = require("./LevelRendererScene
 var attachLevelRendererSceneBoardTransformFxMethods = require("./LevelRendererSceneBoardTransformFxMethods");
 var attachLevelRendererSceneExplosionIceFxMethods = require("./LevelRendererSceneExplosionIceFxMethods");
 var attachLevelRendererSceneScreenFxMethods = require("./LevelRendererSceneScreenFxMethods");
+var attachLevelRendererSceneSpiritCocoonFxMethods = require("./LevelRendererSceneSpiritCocoonFxMethods");
 
 function attachLevelRendererSceneFxMethods(LevelRenderer, deps) {
   var BoardLayout = deps.BoardLayout;
@@ -22456,6 +24829,13 @@ function attachLevelRendererSceneFxMethods(LevelRenderer, deps) {
     return String(cell.id) + "<-" + String(cell.sourceSplitterId) + "@" + cell.row + ":" + cell.col;
   }
 
+  function createBreederSpawnEntryKey(entry) {
+    if (!entry || !entry.id) {
+      throw new Error("Breeder spawn entry key requires event id.");
+    }
+    return String(entry.id) + "<-" + String(entry.breederId) + "@" + entry.row + ":" + entry.col;
+  }
+
   function resolveSplitterSpawnTargetNode(renderer, spawnedCell) {
     if (!spawnedCell || !spawnedCell.id) {
       throw new Error("Splitter spawn animation requires spawned cell id.");
@@ -22472,7 +24852,23 @@ function attachLevelRendererSceneFxMethods(LevelRenderer, deps) {
     return null;
   }
 
-var FX_METHOD_CONTEXT = {
+  function resolveBreederSpawnTargetNode(renderer, entry) {
+    if (!entry || (typeof entry.cellId !== "string" && typeof entry.cellId !== "number")) {
+      throw new Error("Breeder spawn animation requires target cell id.");
+    }
+    var normalizedId = String(entry.cellId);
+    var targetNode = renderer.boardBubbleNodes[normalizedId];
+    if (targetNode && targetNode.isValid) {
+      return targetNode;
+    }
+    targetNode = renderer.layers.board.getChildByName("Bubble_" + normalizedId);
+    if (targetNode && targetNode.isValid) {
+      return targetNode;
+    }
+    return null;
+  }
+
+  var FX_METHOD_CONTEXT = {
     BARRIER_HAMMER_HINT_LIFT_DURATION: BARRIER_HAMMER_HINT_LIFT_DURATION,
     BARRIER_HAMMER_HINT_OFFSET_X: BARRIER_HAMMER_HINT_OFFSET_X,
     BARRIER_HAMMER_HINT_OFFSET_Y: BARRIER_HAMMER_HINT_OFFSET_Y,
@@ -22482,6 +24878,7 @@ var FX_METHOD_CONTEXT = {
     BARRIER_HAMMER_HINT_TAP_OFFSET_X: BARRIER_HAMMER_HINT_TAP_OFFSET_X,
     BARRIER_HAMMER_HINT_TAP_OFFSET_Y: BARRIER_HAMMER_HINT_TAP_OFFSET_Y,
     BOARD_BUBBLE_SIZE: BOARD_BUBBLE_SIZE,
+    BALL_RESOURCES: BALL_RESOURCES,
     BOARD_CLEAR_FIREWORKS_INTERVAL_SEC: BOARD_CLEAR_FIREWORKS_INTERVAL_SEC,
     BoardLayout: BoardLayout,
     ICE_COLLECT_BEZIER_ARC: ICE_COLLECT_BEZIER_ARC,
@@ -22515,9 +24912,12 @@ var FX_METHOD_CONTEXT = {
     attachLevelRendererSceneExplosionIceFxMethods: attachLevelRendererSceneExplosionIceFxMethods,
     attachLevelRendererSceneKeySplitterFxMethods: attachLevelRendererSceneKeySplitterFxMethods,
     attachLevelRendererSceneScreenFxMethods: attachLevelRendererSceneScreenFxMethods,
+    attachLevelRendererSceneSpiritCocoonFxMethods: attachLevelRendererSceneSpiritCocoonFxMethods,
     createKeyUnlockAnimationKey: createKeyUnlockAnimationKey,
+    createBreederSpawnEntryKey: createBreederSpawnEntryKey,
     createSplitterSpawnEntryKey: createSplitterSpawnEntryKey,
     ensureSprite: ensureSprite,
+    getOrCreateChild: getOrCreateChild,
     findUnlockedTargetsForKey: findUnlockedTargetsForKey,
     hasIceSnowballCollectionObjective: hasIceSnowballCollectionObjective,
     instantiateRequired: instantiateRequired,
@@ -22532,6 +24932,7 @@ var FX_METHOD_CONTEXT = {
     resolveIceInnerColor: resolveIceInnerColor,
     resolveImpactBounceSpeed: resolveImpactBounceSpeed,
     resolveKeyUnlockTargetNode: resolveKeyUnlockTargetNode,
+    resolveBreederSpawnTargetNode: resolveBreederSpawnTargetNode,
     resolveSplitterSpawnTargetNode: resolveSplitterSpawnTargetNode,
     spawnBoardClearFireworksBurst: spawnBoardClearFireworksBurst,
     stopParticleSystemIfPresent: stopParticleSystemIfPresent
@@ -22541,12 +24942,13 @@ var FX_METHOD_CONTEXT = {
   attachLevelRendererSceneBoardTransformFxMethods(LevelRenderer, FX_METHOD_CONTEXT);
   attachLevelRendererSceneExplosionIceFxMethods(LevelRenderer, FX_METHOD_CONTEXT);
   attachLevelRendererSceneScreenFxMethods(LevelRenderer, FX_METHOD_CONTEXT);
+  attachLevelRendererSceneSpiritCocoonFxMethods(LevelRenderer, FX_METHOD_CONTEXT);
 
 }
 
 module.exports = attachLevelRendererSceneFxMethods;
 
-},{"./LevelRendererSceneBarrierFxMethods":"LevelRendererSceneBarrierFxMethods","./LevelRendererSceneKeySplitterFxMethods":"LevelRendererSceneKeySplitterFxMethods","./LevelRendererSceneBoardTransformFxMethods":"LevelRendererSceneBoardTransformFxMethods","./LevelRendererSceneExplosionIceFxMethods":"LevelRendererSceneExplosionIceFxMethods","./LevelRendererSceneScreenFxMethods":"LevelRendererSceneScreenFxMethods"}],
+},{"./LevelRendererSceneBarrierFxMethods":"LevelRendererSceneBarrierFxMethods","./LevelRendererSceneKeySplitterFxMethods":"LevelRendererSceneKeySplitterFxMethods","./LevelRendererSceneBoardTransformFxMethods":"LevelRendererSceneBoardTransformFxMethods","./LevelRendererSceneExplosionIceFxMethods":"LevelRendererSceneExplosionIceFxMethods","./LevelRendererSceneScreenFxMethods":"LevelRendererSceneScreenFxMethods","./LevelRendererSceneSpiritCocoonFxMethods":"LevelRendererSceneSpiritCocoonFxMethods"}],
 "LevelRendererSceneHudCoreMethods":[function(require,module,exports){
 "use strict";
 
@@ -23680,12 +26082,14 @@ function attachLevelRendererSceneKeySplitterFxMethods(LevelRenderer, context) {
   var SpecialAnimationTiming = context.SpecialAnimationTiming;
   var applyKeyUnlockFlyFrame = context.applyKeyUnlockFlyFrame;
   var attachLevelRendererSceneKeySplitterFxMethods = context.attachLevelRendererSceneKeySplitterFxMethods;
+  var createBreederSpawnEntryKey = context.createBreederSpawnEntryKey;
   var createKeyUnlockAnimationKey = context.createKeyUnlockAnimationKey;
   var createSplitterSpawnEntryKey = context.createSplitterSpawnEntryKey;
   var findUnlockedTargetsForKey = context.findUnlockedTargetsForKey;
   var instantiateRequired = context.instantiateRequired;
   var pointDistance = context.pointDistance;
   var requireVisualChild = context.requireVisualChild;
+  var resolveBreederSpawnTargetNode = context.resolveBreederSpawnTargetNode;
   var resolveKeyUnlockTargetNode = context.resolveKeyUnlockTargetNode;
   var resolveSplitterSpawnTargetNode = context.resolveSplitterSpawnTargetNode;
 
@@ -23965,6 +26369,127 @@ LevelRenderer.prototype._playSplitterSpawnAnimation = function (runtimeSnapshot)
       .start();
   }, this);
 };
+
+LevelRenderer.prototype._playBreederSpawnAnimation = function (runtimeSnapshot) {
+  var resolution = runtimeSnapshot && runtimeSnapshot.lastResolution ? runtimeSnapshot.lastResolution : null;
+  var breederSpawns = resolution && Array.isArray(resolution.breederSpawns) ? resolution.breederSpawns : [];
+  if (!breederSpawns.length) {
+    return;
+  }
+
+  if (!this.breederSpawnAnimatedEntryKeys || typeof this.breederSpawnAnimatedEntryKeys !== "object") {
+    throw new Error("Breeder spawn animated entry keys map is required.");
+  }
+  if (!this.breederSpawnHiddenCellIds || typeof this.breederSpawnHiddenCellIds !== "object") {
+    throw new Error("Breeder spawn hidden cell ids map is required.");
+  }
+
+  var pendingSpawns = breederSpawns.filter(function (entry) {
+    var entryKey = createBreederSpawnEntryKey(entry);
+    return !this.breederSpawnAnimatedEntryKeys[entryKey];
+  }, this);
+  if (!pendingSpawns.length) {
+    return;
+  }
+
+  if (!runtimeSnapshot.board || !Number.isInteger(runtimeSnapshot.board.maxColumns)) {
+    throw new Error("Breeder spawn animation requires board snapshot.");
+  }
+  if (!this.layers || !this.layers.board || !this.layers.board.isValid) {
+    throw new Error("Breeder spawn animation requires board layer.");
+  }
+  if (
+    typeof cc === "undefined" ||
+    !cc ||
+    typeof cc.Node !== "function" ||
+    typeof cc.bezierTo !== "function" ||
+    typeof cc.sequence !== "function" ||
+    typeof cc.callFunc !== "function" ||
+    typeof cc.v2 !== "function"
+  ) {
+    throw new Error("Breeder spawn animation requires Cocos bezier action APIs.");
+  }
+  if (typeof SPLITTER_SPAWN_FLY_DURATION !== "number" || !isFinite(SPLITTER_SPAWN_FLY_DURATION) || SPLITTER_SPAWN_FLY_DURATION <= 0) {
+    throw new Error("Breeder spawn animation requires positive fly duration.");
+  }
+  if (typeof SPLITTER_SPAWN_BEZIER_ARC !== "number" || !isFinite(SPLITTER_SPAWN_BEZIER_ARC) || SPLITTER_SPAWN_BEZIER_ARC <= 0) {
+    throw new Error("Breeder spawn animation requires positive bezier arc.");
+  }
+
+  var boardSnapshot = runtimeSnapshot.board;
+  pendingSpawns.forEach(function (entry) {
+    if (!entry || !entry.id) {
+      throw new Error("Breeder spawn animation requires event id.");
+    }
+    if (typeof entry.cellId !== "string" && typeof entry.cellId !== "number") {
+      throw new Error("Breeder spawn animation requires target cell id.");
+    }
+    if (typeof entry.breederId !== "string" && typeof entry.breederId !== "number") {
+      throw new Error("Breeder spawn animation requires breederId.");
+    }
+    if (!Number.isInteger(entry.breederRow) || !Number.isInteger(entry.breederCol)) {
+      throw new Error("Breeder spawn animation requires breeder coordinates.");
+    }
+    if (!Number.isInteger(entry.row) || !Number.isInteger(entry.col)) {
+      throw new Error("Breeder spawn animation requires target coordinates.");
+    }
+    if (typeof entry.color !== "string" || !entry.color) {
+      throw new Error("Breeder spawn animation requires spawned ball color.");
+    }
+
+    var entryKey = createBreederSpawnEntryKey(entry);
+    this.breederSpawnAnimatedEntryKeys[entryKey] = true;
+
+    var targetNode = resolveBreederSpawnTargetNode(this, entry);
+    if (!targetNode || !targetNode.isValid) {
+      throw new Error("Breeder spawn animation target node missing: " + entry.cellId);
+    }
+    this._hideBreederSpawnTarget(entry.cellId);
+
+    var startPosition = BoardLayout.getCellPosition(
+      entry.breederRow,
+      entry.breederCol,
+      boardSnapshot.maxColumns,
+      boardSnapshot.viewportOffsetY
+    );
+    var endPosition = BoardLayout.getCellPosition(
+      entry.row,
+      entry.col,
+      boardSnapshot.maxColumns,
+      boardSnapshot.viewportOffsetY
+    );
+
+    var fxNode = new cc.Node("BreederSpawnFx_" + entry.id);
+    fxNode.parent = this.layers.board;
+    fxNode.zIndex = (targetNode.zIndex || 0) + 2;
+    fxNode.setPosition(startPosition.x, startPosition.y);
+    fxNode.setScale(0.82);
+    fxNode.opacity = 255;
+    this._applyBallVisualCached(fxNode, {
+      color: entry.color
+    }, BOARD_BUBBLE_SIZE);
+
+    var finishFx = function () {
+      if (fxNode && fxNode.isValid) {
+        fxNode.removeFromParent(true);
+      }
+      this._revealBreederSpawnTarget(entry.cellId);
+    }.bind(this);
+    var controlX = (startPosition.x + endPosition.x) * 0.5;
+    var controlY = Math.max(startPosition.y, endPosition.y) + SPLITTER_SPAWN_BEZIER_ARC;
+    var bezier = [
+      cc.v2(controlX, controlY),
+      cc.v2(controlX, controlY),
+      cc.v2(endPosition.x, endPosition.y)
+    ];
+
+    fxNode.stopAllActions();
+    fxNode.runAction(cc.sequence(
+      cc.bezierTo(SPLITTER_SPAWN_FLY_DURATION, bezier),
+      cc.callFunc(finishFx)
+    ));
+  }, this);
+};
 }
 
 module.exports = attachLevelRendererSceneKeySplitterFxMethods;
@@ -24205,28 +26730,176 @@ function attachLevelRendererSceneObjectiveHudMethods(LevelRenderer, context) {
   var ensureSprite = context.ensureSprite;
   var requireChildNode = context.requireChildNode;
 
+  var HUD_TARGET_TEMPLATE_NAME = "item";
+  var HUD_TARGET_ICON_NAME = "icon";
+  var HUD_TARGET_RUNTIME_CARD_PREFIX = "hud_target_";
+  var HUD_TARGET_BALL_CARD_NAME = HUD_TARGET_RUNTIME_CARD_PREFIX + "ball";
+  var HUD_TARGET_ICE_BALL_CARD_NAME = HUD_TARGET_RUNTIME_CARD_PREFIX + "ice_ball";
+
+function requireHudTargetSlotName(slotName) {
+  if (slotName === "ball" || slotName === "ice_ball" || slotName === "spirit") {
+    return slotName;
+  }
+  throw new Error("Unsupported HUD target slot: " + slotName);
+}
+
+function buildHudSpiritCardName(targetId) {
+  if (typeof targetId !== "string" || !/^[A-Za-z0-9_-]+$/.test(targetId)) {
+    throw new Error("HUD spirit targetId must contain only letters, numbers, underscores, or hyphens.");
+  }
+  return HUD_TARGET_RUNTIME_CARD_PREFIX + "spirit_" + targetId;
+}
+
 LevelRenderer.prototype._getHudTargetLayout = function (panel) {
   return requireChildNode(panel, "target_layout", "HudPanel");
 };
 
-LevelRenderer.prototype._resolveHudTargetSlot = function (targetLayout, slotName) {
-  var cardName = "";
-  if (slotName === "ball") {
-    cardName = "item_ball";
-  } else if (slotName === "ice_ball") {
-    cardName = "item_ice_ball";
-  } else if (slotName === "spirit") {
-    cardName = "item_spirit";
-  } else {
-    throw new Error("Unsupported HUD target slot: " + slotName);
+LevelRenderer.prototype._getHudTargetTemplate = function (targetLayout) {
+  var templateNode = requireChildNode(targetLayout, HUD_TARGET_TEMPLATE_NAME, "HudPanel/target_layout");
+  var templateDescription = "HudPanel/target_layout/" + HUD_TARGET_TEMPLATE_NAME;
+  var iconNode = requireChildNode(templateNode, HUD_TARGET_ICON_NAME, templateDescription);
+  requireChildNode(templateNode, "card_line", templateDescription);
+  requireChildNode(iconNode, "TargetValue", templateDescription + "/" + HUD_TARGET_ICON_NAME);
+  requireChildNode(iconNode, "complete", templateDescription + "/" + HUD_TARGET_ICON_NAME);
+  if (!templateNode.getComponent(cc.Sprite)) {
+    throw new Error(templateDescription + " requires cc.Sprite.");
+  }
+  if (!iconNode.getComponent(cc.Sprite)) {
+    throw new Error(templateDescription + "/" + HUD_TARGET_ICON_NAME + " requires cc.Sprite.");
+  }
+  return templateNode;
+};
+
+LevelRenderer.prototype._findHudTargetCard = function (targetLayout, cardName) {
+  if (typeof cardName !== "string" || cardName.indexOf(HUD_TARGET_RUNTIME_CARD_PREFIX) !== 0) {
+    throw new Error("HUD target runtime card name is invalid.");
+  }
+  var matchedCard = null;
+  targetLayout.children.forEach(function (childNode) {
+    if (childNode.name !== cardName) {
+      return;
+    }
+    if (matchedCard) {
+      throw new Error("Duplicated HUD target card: " + cardName);
+    }
+    matchedCard = childNode;
+  });
+  return matchedCard;
+};
+
+LevelRenderer.prototype._buildHudTargetEntries = function (targetDisplay) {
+  if (!targetDisplay || typeof targetDisplay !== "object" || Array.isArray(targetDisplay)) {
+    throw new Error("HUD target display data must be an object.");
+  }
+  var entries = [];
+  [
+    {
+      slotName: "ball",
+      cardName: HUD_TARGET_BALL_CARD_NAME,
+      displayData: targetDisplay.ball
+    },
+    {
+      slotName: "ice_ball",
+      cardName: HUD_TARGET_ICE_BALL_CARD_NAME,
+      displayData: targetDisplay.iceSnowball
+    }
+  ].forEach(function (entry) {
+    if (entry.displayData !== null && (typeof entry.displayData !== "object" || Array.isArray(entry.displayData))) {
+      throw new Error("HUD target display entry must be an object or null: " + entry.slotName);
+    }
+    if (entry.displayData !== null) {
+      entries.push(entry);
+    }
+  });
+
+  if (!Array.isArray(targetDisplay.spirits)) {
+    throw new Error("HUD target display spirits must be an array.");
+  }
+  var spiritCardNames = {};
+  targetDisplay.spirits.forEach(function (displayData, index) {
+    if (!displayData || typeof displayData !== "object" || Array.isArray(displayData)) {
+      throw new Error("HUD spirit target display entry is invalid at index " + index + ".");
+    }
+    var cardName = buildHudSpiritCardName(displayData.targetId);
+    if (spiritCardNames[cardName] === true) {
+      throw new Error("Duplicated HUD spirit target card: " + cardName);
+    }
+    spiritCardNames[cardName] = true;
+    entries.push({
+      slotName: "spirit",
+      cardName: cardName,
+      displayData: displayData
+    });
+  });
+  return entries;
+};
+
+LevelRenderer.prototype._syncHudTargetCards = function (targetLayout, entries) {
+  if (typeof cc.instantiate !== "function") {
+    throw new Error("HUD target dynamic creation requires cc.instantiate.");
+  }
+  if (!Array.isArray(entries)) {
+    throw new Error("HUD target entries must be an array.");
+  }
+  var templateNode = this._getHudTargetTemplate(targetLayout);
+  templateNode.active = false;
+  var activeCardNames = {};
+  entries.forEach(function (entry) {
+    if (activeCardNames[entry.cardName] === true) {
+      throw new Error("Duplicated HUD target entry card: " + entry.cardName);
+    }
+    activeCardNames[entry.cardName] = true;
+  });
+
+  targetLayout.children.slice().forEach(function (childNode) {
+    if (childNode === templateNode) {
+      return;
+    }
+    if (childNode.name.indexOf(HUD_TARGET_RUNTIME_CARD_PREFIX) !== 0) {
+      throw new Error("HudPanel/target_layout contains unexpected runtime child: " + childNode.name);
+    }
+    if (activeCardNames[childNode.name] !== true) {
+      childNode.active = false;
+      if (typeof childNode.removeFromParent !== "function" || typeof childNode.destroy !== "function") {
+        throw new Error("HUD target card cannot be removed: " + childNode.name);
+      }
+      childNode.removeFromParent(false);
+      childNode.destroy();
+    }
+  });
+
+  entries.forEach(function (entry, index) {
+    var cardNode = this._findHudTargetCard(targetLayout, entry.cardName);
+    if (!cardNode) {
+      cardNode = cc.instantiate(templateNode);
+      if (!cardNode || !cardNode.isValid) {
+        throw new Error("Failed to clone HUD target template for card: " + entry.cardName);
+      }
+      cardNode.name = entry.cardName;
+      cardNode.parent = targetLayout;
+    }
+    cardNode.active = true;
+    if (typeof cardNode.setSiblingIndex !== "function") {
+      throw new Error("HUD target card requires setSiblingIndex: " + entry.cardName);
+    }
+    cardNode.setSiblingIndex(index + 1);
+  }, this);
+
+  return entries;
+};
+
+LevelRenderer.prototype._resolveHudTargetSlot = function (targetLayout, slotName, cardName) {
+  requireHudTargetSlotName(slotName);
+  var cardNode = this._findHudTargetCard(targetLayout, cardName);
+  if (!cardNode) {
+    throw new Error("HUD target card is missing: " + cardName);
   }
 
-  var cardNode = requireChildNode(targetLayout, cardName, "HudPanel/target_layout");
-  var targetNode = requireChildNode(cardNode, slotName, "HudPanel/target_layout/" + cardName);
+  var targetNode = requireChildNode(cardNode, HUD_TARGET_ICON_NAME, "HudPanel/target_layout/" + cardName);
   return {
     cardNode: cardNode,
     targetNode: targetNode,
-    description: "HudPanel/target_layout/" + cardName + "/" + slotName
+    description: "HudPanel/target_layout/" + cardName + "/" + HUD_TARGET_ICON_NAME
   };
 };
 
@@ -24236,18 +26909,26 @@ LevelRenderer.prototype._renderHudTargets = function (panel, targetDisplay) {
   }
 
   var targetLayout = this._getHudTargetLayout(panel);
-  this._renderHudTargetSlot(targetLayout, "ball", targetDisplay.ball);
-  this._renderHudTargetSlot(targetLayout, "ice_ball", targetDisplay.iceSnowball);
-  this._renderHudTargetSlot(targetLayout, "spirit", targetDisplay.spirit);
+  var entries = this._buildHudTargetEntries(targetDisplay);
+  this._syncHudTargetCards(targetLayout, entries);
+  entries.forEach(function (entry) {
+    this._renderHudTargetSlot(
+      targetLayout,
+      entry.slotName,
+      entry.displayData,
+      entry.cardName
+    );
+  }, this);
 
   var layout = targetLayout.getComponent(cc.Layout);
-  if (layout && typeof layout.updateLayout === "function") {
-    layout.updateLayout();
+  if (!layout || typeof layout.updateLayout !== "function") {
+    throw new Error("HudPanel/target_layout requires cc.Layout.updateLayout.");
   }
+  layout.updateLayout();
 };
 
-LevelRenderer.prototype._renderHudTargetSlot = function (targetLayout, slotName, displayData) {
-  var slot = this._resolveHudTargetSlot(targetLayout, slotName);
+LevelRenderer.prototype._renderHudTargetSlot = function (targetLayout, slotName, displayData, cardName) {
+  var slot = this._resolveHudTargetSlot(targetLayout, slotName, cardName);
   var cardNode = slot.cardNode;
   var targetNode = slot.targetNode;
   var valueNode = requireChildNode(targetNode, "TargetValue", slot.description);
@@ -24257,13 +26938,8 @@ LevelRenderer.prototype._renderHudTargetSlot = function (targetLayout, slotName,
     throw new Error(slot.description + "/TargetValue requires cc.Label.");
   }
 
-  if (!displayData) {
-    cardNode.active = false;
-    targetNode.active = false;
-    valueNode.active = false;
-    completeNode.active = false;
-    valueLabel.string = "";
-    return;
+  if (!displayData || typeof displayData !== "object" || Array.isArray(displayData)) {
+    throw new Error("HUD target display data is required: " + slotName);
   }
 
   if (typeof displayData.remaining !== "number" || !isFinite(displayData.remaining) || displayData.remaining < 0) {
@@ -24376,11 +27052,17 @@ LevelRenderer.prototype._refreshIceSnowballHudTarget = function () {
 
   var targetLayout = this._getHudTargetLayout(panel);
   var hudTargetDisplay = this._buildHudTargetDisplayForRender(this.currentLevelConfig, this.lastRuntimeSnapshot);
-  this._renderHudTargetSlot(targetLayout, "ice_ball", hudTargetDisplay.iceSnowball);
+  this._renderHudTargetSlot(
+    targetLayout,
+    "ice_ball",
+    hudTargetDisplay.iceSnowball,
+    HUD_TARGET_ICE_BALL_CARD_NAME
+  );
   var layout = targetLayout.getComponent(cc.Layout);
-  if (layout && typeof layout.updateLayout === "function") {
-    layout.updateLayout();
+  if (!layout || typeof layout.updateLayout !== "function") {
+    throw new Error("HudPanel/target_layout requires cc.Layout.updateLayout.");
   }
+  layout.updateLayout();
   this.lastHudRenderKey = buildHudRenderKey(
     this.currentLevelConfig,
     this.lastRuntimeSnapshot,
@@ -24391,8 +27073,8 @@ LevelRenderer.prototype._refreshIceSnowballHudTarget = function () {
 LevelRenderer.prototype._getHudTargetIceBallPositionInGameView = function () {
   var panel = this._getMountedHudPanel();
   var targetLayout = panel ? panel.getChildByName("target_layout") : null;
-  var iceCardNode = targetLayout ? targetLayout.getChildByName("item_ice_ball") : null;
-  var ballNode = iceCardNode ? iceCardNode.getChildByName("ice_ball") : null;
+  var iceCardNode = targetLayout ? this._findHudTargetCard(targetLayout, HUD_TARGET_ICE_BALL_CARD_NAME) : null;
+  var ballNode = iceCardNode ? requireChildNode(iceCardNode, HUD_TARGET_ICON_NAME, "HudPanel/target_layout/hud_target_ice_ball") : null;
   if (!iceCardNode || !iceCardNode.active || !ballNode || !ballNode.active || !ballNode.parent) {
     return null;
   }
@@ -24403,8 +27085,8 @@ LevelRenderer.prototype._getHudTargetIceBallPositionInGameView = function () {
 LevelRenderer.prototype._getHudTargetBallNode = function () {
   var panel = this._getMountedHudPanel();
   var targetLayout = panel ? panel.getChildByName("target_layout") : null;
-  var ballCardNode = targetLayout ? targetLayout.getChildByName("item_ball") : null;
-  var ballNode = ballCardNode ? ballCardNode.getChildByName("ball") : null;
+  var ballCardNode = targetLayout ? this._findHudTargetCard(targetLayout, HUD_TARGET_BALL_CARD_NAME) : null;
+  var ballNode = ballCardNode ? requireChildNode(ballCardNode, HUD_TARGET_ICON_NAME, "HudPanel/target_layout/hud_target_ball") : null;
   if (!ballCardNode || !ballCardNode.active || !ballNode || !ballNode.active || !ballNode.parent) {
     return null;
   }
@@ -24995,8 +27677,24 @@ function buildLoseClearanceTargetPresentation(levelConfig) {
     throw new Error("LoseView clearance target presentation requires level config.");
   }
   var level = levelConfig.level;
-  if (level.levelType !== "trapped_sprite_rescue") {
+  if (
+    level.levelType !== "trapped_sprite_rescue" &&
+    level.levelType !== "multi_trapped_spirit_rescue"
+  ) {
     return null;
+  }
+  if (level.levelType === "multi_trapped_spirit_rescue") {
+    if (
+      !level.multiTrappedSpiritRescue ||
+      !Array.isArray(level.multiTrappedSpiritRescue.targets) ||
+      level.multiTrappedSpiritRescue.targets.length < 2
+    ) {
+      throw new Error("Multi trapped spirit rescue LoseView requires at least two targets.");
+    }
+    return {
+      description: "救出全部精灵",
+      spiritId: level.multiTrappedSpiritRescue.targets[0].spiritId
+    };
   }
   if (!level.trappedSpriteRescue || typeof level.trappedSpriteRescue.spiritId !== "string" || !level.trappedSpriteRescue.spiritId) {
     throw new Error("Trapped sprite rescue LoseView clearance target requires level.trappedSpriteRescue.spiritId.");
@@ -28269,6 +30967,211 @@ LevelRenderer.prototype.renderRouteEditor = function (editorState) {
 module.exports = attachLevelRendererSceneShooterMethods;
 
 },{"./LevelRendererSceneShared":"LevelRendererSceneShared"}],
+"LevelRendererSceneSpiritCocoonFxMethods":[function(require,module,exports){
+"use strict";
+
+function attachLevelRendererSceneSpiritCocoonFxMethods(LevelRenderer, context) {
+  var BALL_RESOURCES = context.BALL_RESOURCES;
+  var BOARD_BUBBLE_SIZE = context.BOARD_BUBBLE_SIZE;
+  var SpecialAnimationTiming = context.SpecialAnimationTiming;
+  var ensureSprite = context.ensureSprite;
+  var getOrCreateChild = context.getOrCreateChild;
+  var MIST_OVERLAY_NODE_NAME = "SpiritMistOverlay";
+
+  function requireCachedFrame(renderer, path, ownerName) {
+    var frame = renderer.spriteFrameCache[path];
+    if (!frame) {
+      throw new Error(ownerName + " SpriteFrame was not preloaded: " + path);
+    }
+    return frame;
+  }
+
+  function resolveVisualNode(node, ownerName) {
+    if (!node || !node.isValid) {
+      throw new Error(ownerName + " requires valid node.");
+    }
+    var icon = node.getChildByName("Icon");
+    return icon && icon.isValid ? icon : node;
+  }
+
+  function setNodeSpriteFrame(renderer, node, path, ownerName) {
+    var visualNode = resolveVisualNode(node, ownerName);
+    ensureSprite(visualNode, requireCachedFrame(renderer, path, ownerName));
+    visualNode.setContentSize(BOARD_BUBBLE_SIZE);
+    visualNode.active = true;
+    node.active = true;
+  }
+
+  function collectTraversalTargets(renderer, entries, ownerName) {
+    if (!Array.isArray(entries)) {
+      throw new Error(ownerName + " requires traversal array.");
+    }
+    return entries.map(function (entry) {
+      if (!entry || !Number.isInteger(entry.row) || !Number.isInteger(entry.col)) {
+        throw new Error(ownerName + " entry requires board coordinates.");
+      }
+      var targetNode = renderer.boardBubbleNodes[String(entry.id)];
+      if (!targetNode || !targetNode.isValid) {
+        throw new Error(ownerName + " cannot find board node: " + entry.id);
+      }
+      return {
+        entry: entry,
+        node: targetNode,
+        x: targetNode.x,
+        y: targetNode.y
+      };
+    });
+  }
+
+  LevelRenderer.prototype._setSpiritMistOverlayVisible = function (boardNode, visible) {
+    var visualNode = resolveVisualNode(boardNode, "Spirit mist overlay");
+    var overlayNode = getOrCreateChild(visualNode, MIST_OVERLAY_NODE_NAME);
+    overlayNode.stopAllActions();
+    overlayNode.setPosition(0, 0);
+    overlayNode.setContentSize(BOARD_BUBBLE_SIZE);
+    overlayNode.zIndex = 80;
+    overlayNode.opacity = 255;
+    overlayNode.active = visible === true;
+    if (visible === true) {
+      ensureSprite(
+        overlayNode,
+        requireCachedFrame(this, BALL_RESOURCES.SPIRIT_MIST, "Spirit mist overlay")
+      );
+    }
+  };
+
+  LevelRenderer.prototype._syncSpiritMistOverlay = function (boardNode, cell) {
+    if (!cell || typeof cell !== "object" || Array.isArray(cell)) {
+      throw new Error("Spirit mist overlay sync requires board cell.");
+    }
+    if (cell.entityCategory !== "normal_ball") {
+      this._setSpiritMistOverlayVisible(boardNode, false);
+      return;
+    }
+    var expiry = cell.spiritMistExpiresAfterShot;
+    if (expiry !== null && (!Number.isInteger(expiry) || expiry < 0)) {
+      throw new Error("spiritMistExpiresAfterShot must be null or a non-negative integer.");
+    }
+    this._setSpiritMistOverlayVisible(boardNode, expiry !== null);
+  };
+
+  LevelRenderer.prototype._playSpiritCocoonAnimations = function (runtimeSnapshot) {
+    var resolution = runtimeSnapshot && runtimeSnapshot.lastResolution;
+    if (!resolution || !Array.isArray(resolution.spiritCocoonOpenings)) {
+      throw new Error("Spirit cocoon animation requires lastResolution.spiritCocoonOpenings.");
+    }
+    if (!this.spiritCocoonAnimatedIds || typeof this.spiritCocoonAnimatedIds !== "object") {
+      throw new Error("LevelRenderer spiritCocoonAnimatedIds must be initialized.");
+    }
+    resolution.spiritCocoonOpenings.forEach(function (opening) {
+      if (!opening || typeof opening.id !== "string" || !opening.id) {
+        throw new Error("Spirit cocoon opening animation requires id.");
+      }
+      if (this.spiritCocoonAnimatedIds[opening.id]) {
+        return;
+      }
+      if (!Array.isArray(opening.mistTraversal) ||
+          !Array.isArray(opening.gluttonyTraversal) ||
+          !Array.isArray(opening.rainbowTraversal)) {
+        throw new Error("Spirit cocoon animation requires all traversal arrays.");
+      }
+      var cocoonNode = this.boardBubbleNodes[String(opening.cocoonId)];
+      if (!cocoonNode || !cocoonNode.isValid) {
+        throw new Error("Spirit cocoon animation cannot find cocoon node: " + opening.cocoonId);
+      }
+      var outcomeResourceKey = {
+        mist: "MIST_SPRITE",
+        gluttony: "GLUTTONY_SPRITE",
+        rainbow: "RAINBOW_SPRITE"
+      }[opening.outcome];
+      if (!outcomeResourceKey) {
+        throw new Error("Unsupported spirit cocoon animation outcome: " + opening.outcome);
+      }
+      if (
+        (opening.outcome === "gluttony" || opening.outcome === "rainbow") &&
+        opening.direction !== "left" &&
+        opening.direction !== "right"
+      ) {
+        throw new Error("Spirit cocoon row animation requires left or right direction.");
+      }
+      var mistTraversalMoveCount = opening.mistTraversal.length;
+      var rowTraversal = opening.outcome === "gluttony"
+        ? opening.gluttonyTraversal
+        : (opening.outcome === "rainbow" ? opening.rainbowTraversal : []);
+      var expectedDuration = SpecialAnimationTiming.spiritCocoon.totalDuration +
+        mistTraversalMoveCount * SpecialAnimationTiming.spiritCocoon.mistTraversalStepDuration +
+        rowTraversal.length * SpecialAnimationTiming.spiritCocoon.rowTraversalStepDuration;
+      if (typeof opening.duration !== "number" || Math.abs(opening.duration - expectedDuration) > 0.000001) {
+        throw new Error("Spirit cocoon animation duration does not match timing contract.");
+      }
+
+      var renderer = this;
+      var mistTargets = collectTraversalTargets(this, opening.mistTraversal, "Spirit cocoon mist traversal");
+      var rowTargets = collectTraversalTargets(this, rowTraversal, "Spirit cocoon row traversal");
+      var fxLayer = this.layers.board;
+      if (!fxLayer || !fxLayer.isValid) {
+        throw new Error("Spirit cocoon animation requires board layer.");
+      }
+      var fxNode = new cc.Node("SpiritCocoonFx_" + opening.id);
+      fxNode.parent = fxLayer;
+      fxNode.setPosition(cocoonNode.x, cocoonNode.y);
+      fxNode.setContentSize(BOARD_BUBBLE_SIZE);
+      fxNode.zIndex = 120;
+      fxNode.opacity = 0;
+      fxNode.scaleX = opening.direction === "right" ? -1 : 1;
+      fxNode.scaleY = 1;
+
+      var actions = [];
+      for (var frameIndex = 1; frameIndex <= SpecialAnimationTiming.spiritCocoon.frameCount; frameIndex += 1) {
+        (function (resourceKey) {
+          actions.push(cc.callFunc(function () {
+            setNodeSpriteFrame(renderer, cocoonNode, BALL_RESOURCES[resourceKey], "Spirit cocoon frame");
+          }));
+        }("COCOON_" + frameIndex));
+        actions.push(cc.delayTime(SpecialAnimationTiming.spiritCocoon.frameDuration));
+      }
+      actions.push(cc.callFunc(function () {
+        setNodeSpriteFrame(renderer, fxNode, BALL_RESOURCES[outcomeResourceKey], "Spirit cocoon outcome");
+        fxNode.opacity = 255;
+        if (!cocoonNode || !cocoonNode.isValid) {
+          throw new Error("Spirit cocoon node disappeared before outcome reveal.");
+        }
+        cocoonNode.active = false;
+      }));
+      actions.push(cc.delayTime(SpecialAnimationTiming.spiritCocoon.revealDuration));
+
+      mistTargets.forEach(function (target) {
+        actions.push(cc.moveTo(
+          SpecialAnimationTiming.spiritCocoon.mistTraversalStepDuration,
+          target.x,
+          target.y
+        ));
+        actions.push(cc.callFunc(function () {
+          renderer._setSpiritMistOverlayVisible(target.node, true);
+        }));
+      });
+      rowTargets.forEach(function (target) {
+        actions.push(cc.moveTo(
+          SpecialAnimationTiming.spiritCocoon.rowTraversalStepDuration,
+          target.x,
+          target.y
+        ));
+      });
+      actions.push(cc.callFunc(function () {
+        if (fxNode && fxNode.isValid) {
+          fxNode.destroy();
+        }
+      }));
+      this.spiritCocoonAnimatedIds[opening.id] = true;
+      cocoonNode.stopAllActions();
+      fxNode.runAction(cc.sequence.apply(null, actions));
+    }, this);
+  };
+}
+
+module.exports = attachLevelRendererSceneSpiritCocoonFxMethods;
+
+},{}],
 "LevelRendererSceneStarHudMethods":[function(require,module,exports){
 "use strict";
 
@@ -29075,6 +31978,7 @@ module.exports = attachLevelRendererSceneWinPopupMethods;
 function attachLevelRendererSharedVisualMethods(LevelRenderer, context) {
   var AssistSpiritConfig = context.AssistSpiritConfig;
   var BALL_RESOURCES = context.BALL_RESOURCES;
+  var BoardLayout = context.BoardLayout;
   var BOARD_BUBBLE_SIZE = context.BOARD_BUBBLE_SIZE;
   var COMMENT_ANIMATION_HOLD_DURATION = context.COMMENT_ANIMATION_HOLD_DURATION;
   var COMMENT_ANIMATION_IN_DURATION = context.COMMENT_ANIMATION_IN_DURATION;
@@ -29098,6 +32002,189 @@ function attachLevelRendererSharedVisualMethods(LevelRenderer, context) {
   var resolveBallCode = context.resolveBallCode;
   var resolveCommentAnimationKey = context.resolveCommentAnimationKey;
   var resolveIceInnerColor = context.resolveIceInnerColor;
+
+LevelRenderer.prototype._renderMultiTrappedSpiritRescue = function (runtimeSnapshot) {
+  if (!runtimeSnapshot || !runtimeSnapshot.systems || !runtimeSnapshot.systems.trappedSpriteRescueSystem) {
+    throw new Error("Multi trapped spirit rendering requires runtime system snapshot.");
+  }
+  var rescue = runtimeSnapshot.systems.trappedSpriteRescueSystem;
+  if (rescue.multiTargetActive !== true) {
+    Object.keys(this.multiTrappedSpiritNodes).forEach(function (targetId) {
+      var staleNode = this.multiTrappedSpiritNodes[targetId];
+      if (staleNode && staleNode.isValid) {
+        staleNode.destroy();
+      }
+    }, this);
+    this.multiTrappedSpiritNodes = {};
+    return;
+  }
+  if (!Array.isArray(rescue.targets) || rescue.targets.length < 2) {
+    throw new Error("Multi trapped spirit rendering requires at least two runtime targets.");
+  }
+  if (
+    !runtimeSnapshot.board ||
+    !Number.isInteger(runtimeSnapshot.board.maxColumns) ||
+    runtimeSnapshot.board.maxColumns <= 0 ||
+    typeof runtimeSnapshot.board.viewportOffsetY !== "number" ||
+    !isFinite(runtimeSnapshot.board.viewportOffsetY)
+  ) {
+    throw new Error("Multi trapped spirit rendering requires board columns and viewport offset.");
+  }
+  var liveTargetIds = {};
+  rescue.targets.forEach(function (target, index) {
+    if (
+      !target ||
+      typeof target.id !== "string" ||
+      !target.id ||
+      typeof target.spiritId !== "string" ||
+      !target.spiritId ||
+      !Number.isInteger(target.row) ||
+      !Number.isInteger(target.col) ||
+      typeof target.rescued !== "boolean"
+    ) {
+      throw new Error("Multi trapped spirit runtime target is invalid at index " + index + ".");
+    }
+    liveTargetIds[target.id] = true;
+    if (this.multiTrappedSpiritDepartedTargetIds[target.id] === true) {
+      if (target.rescued !== true) {
+        throw new Error("Departed multi trapped spirit target must remain rescued: " + target.id);
+      }
+      return;
+    }
+    var node = this.multiTrappedSpiritNodes[target.id];
+    if (target.rescued === true && (!node || !node.isValid)) {
+      throw new Error("Rescued multi trapped spirit target requires its render node until departure: " + target.id);
+    }
+    if (!node || !node.isValid) {
+      node = new cc.Node("TrappedSpiritTarget_" + target.id);
+      this.multiTrappedSpiritNodes[target.id] = node;
+    }
+    if (this.multiTrappedSpiritDepartingTargetIds[target.id] === true) {
+      return;
+    }
+    if (node.parent !== this.layers.trappedSprite) {
+      node.parent = this.layers.trappedSprite;
+    }
+    var expectedPath = buildTrappedSpriteResourcePath(target.spiritId);
+    if (target.spriteResourcePath !== expectedPath) {
+      throw new Error("Multi trapped spirit runtime resource path mismatch: " + target.id);
+    }
+    var spriteFrame = this.spriteFrameCache[expectedPath];
+    if (!spriteFrame) {
+      throw new Error("Multi trapped spirit SpriteFrame was not preloaded: " + expectedPath);
+    }
+    var position = BoardLayout.getCellPosition(
+      target.row,
+      target.col,
+      runtimeSnapshot.board.maxColumns,
+      runtimeSnapshot.board.viewportOffsetY
+    );
+    node.active = true;
+    node.opacity = 255;
+    node.setPosition(position.x, position.y);
+    node.setScale(1);
+    var sprite = ensureSprite(node, spriteFrame);
+    sprite.trim = false;
+    sprite.sizeMode = cc.Sprite.SizeMode.CUSTOM;
+    node.setContentSize(BOARD_BUBBLE_SIZE);
+  }, this);
+  Object.keys(this.multiTrappedSpiritNodes).forEach(function (targetId) {
+    if (liveTargetIds[targetId]) {
+      return;
+    }
+    var staleNode = this.multiTrappedSpiritNodes[targetId];
+    if (staleNode && staleNode.isValid) {
+      staleNode.destroy();
+    }
+    delete this.multiTrappedSpiritNodes[targetId];
+  }, this);
+};
+
+LevelRenderer.prototype._playMultiTrappedSpiritDepartures = function (runtimeSnapshot) {
+  if (!runtimeSnapshot || !Array.isArray(runtimeSnapshot.runtimeEvents)) {
+    throw new Error("Multi trapped spirit departure requires runtimeEvents array.");
+  }
+  var rescue = runtimeSnapshot.systems && runtimeSnapshot.systems.trappedSpriteRescueSystem;
+  var events = runtimeSnapshot.runtimeEvents.filter(function (event) {
+    return event && event.type === "trapped_spirit_target_rescued";
+  });
+  if (!events.length) {
+    return;
+  }
+  if (!rescue || rescue.multiTargetActive !== true || !Array.isArray(rescue.targets)) {
+    throw new Error("Multi trapped spirit departure requires active target snapshot.");
+  }
+  var layer = this.layers && this.layers.trappedSprite;
+  if (!layer || !layer.isValid || typeof cc.tween !== "function") {
+    throw new Error("Multi trapped spirit departure requires valid layer and cc.tween.");
+  }
+  var layerSize = layer.getContentSize();
+  if (!layerSize || typeof layerSize.height !== "number" || !isFinite(layerSize.height) || layerSize.height <= 0) {
+    throw new Error("Multi trapped spirit departure requires positive layer height.");
+  }
+  if (typeof layer.anchorY !== "number" || !isFinite(layer.anchorY)) {
+    throw new Error("Multi trapped spirit departure requires finite layer anchorY.");
+  }
+  var timing = SpecialAnimationTiming.trappedSpriteRescue;
+  if (
+    !timing ||
+    typeof timing.flyOutDuration !== "number" ||
+    !isFinite(timing.flyOutDuration) ||
+    timing.flyOutDuration <= 0 ||
+    typeof timing.exitMargin !== "number" ||
+    !isFinite(timing.exitMargin) ||
+    timing.exitMargin <= 0
+  ) {
+    throw new Error("Multi trapped spirit departure requires trapped sprite animation timing.");
+  }
+  events.forEach(function (event) {
+    if (!Number.isInteger(event.id) || event.id < 1) {
+      throw new Error("trapped_spirit_target_rescued requires positive integer event id.");
+    }
+    if (this.multiTrappedSpiritHandledEventIds[event.id] === true) {
+      return;
+    }
+    var target = rescue.targets.filter(function (entry) {
+      return entry.id === event.targetId;
+    })[0];
+    if (
+      !target ||
+      target.rescued !== true ||
+      target.spiritId !== event.spiritId ||
+      target.row !== event.row ||
+      target.col !== event.col
+    ) {
+      throw new Error("Multi trapped spirit departure event does not match runtime target: " + event.targetId);
+    }
+    if (event.finalTarget === true && rescue.completed !== true) {
+      throw new Error("Final multi trapped spirit departure requires completed runtime target state.");
+    }
+    var node = this.multiTrappedSpiritNodes[target.id];
+    if (!node || !node.isValid || node.parent !== layer) {
+      throw new Error("Multi trapped spirit departure requires target render node: " + target.id);
+    }
+    var nodeSize = node.getContentSize();
+    if (!nodeSize || typeof nodeSize.height !== "number" || !isFinite(nodeSize.height) || nodeSize.height <= 0) {
+      throw new Error("Multi trapped spirit departure requires positive target height.");
+    }
+    var targetY = (1 - layer.anchorY) * layerSize.height + nodeSize.height * 0.5 + timing.exitMargin;
+    this.multiTrappedSpiritHandledEventIds[event.id] = true;
+    this.multiTrappedSpiritDepartingTargetIds[target.id] = true;
+    node.stopAllActions();
+    cc.tween(node)
+      .to(timing.flyOutDuration, { y: targetY }, { easing: "quadIn" })
+      .call(function () {
+        if (!node.isValid) {
+          return;
+        }
+        node.destroy();
+        delete this.multiTrappedSpiritNodes[target.id];
+        delete this.multiTrappedSpiritDepartingTargetIds[target.id];
+        this.multiTrappedSpiritDepartedTargetIds[target.id] = true;
+      }.bind(this))
+      .start();
+  }, this);
+};
 
 LevelRenderer.prototype._renderTrappedSpriteRescue = function (runtimeSnapshot) {
   if (
@@ -29586,6 +32673,24 @@ function collectBallVisualSpritePaths(paths, ballLike, label) {
   if (isIceBallLike(ballLike)) {
     pushUniqueSpritePath(paths, BALL_RESOURCES.ICE, label + "/ice_overlay");
   }
+  if (ballLike && typeof ballLike.poisonAttachmentId === "string" && ballLike.poisonAttachmentId) {
+    pushUniqueSpritePath(paths, BALL_RESOURCES.POISON_OVERLAY, label + "/poison_overlay");
+  }
+  if (ballLike && ballLike.entityType === "spirit_cocoon") {
+    [
+      "COCOON_1",
+      "COCOON_2",
+      "COCOON_3",
+      "COCOON_4",
+      "COCOON_5",
+      "MIST_SPRITE",
+      "GLUTTONY_SPRITE",
+      "RAINBOW_SPRITE",
+      "SPIRIT_MIST"
+    ].forEach(function (resourceKey) {
+      pushUniqueSpritePath(paths, BALL_RESOURCES[resourceKey], label + "/" + resourceKey);
+    });
+  }
 }
 
 function collectRuntimeBoardSpritePaths(paths, runtimeSnapshot) {
@@ -29699,7 +32804,7 @@ function buildHudTargetDisplayData(levelConfig, runtimeSnapshot) {
   var objectives = getCollectionObjectiveList(levelConfig);
   var ballObjective = null;
   var iceSnowballObjective = null;
-  var spiritDisplay = null;
+  var spiritDisplays = [];
 
   for (var i = 0; i < objectives.length; i += 1) {
     var objective = objectives[i];
@@ -29741,7 +32846,8 @@ function buildHudTargetDisplayData(levelConfig, runtimeSnapshot) {
       throw new Error("Trapped sprite rescue HUD target requires runtime board cells.");
     }
     var spiritRescued = runtimeSnapshot.board.cells.length === 0;
-    spiritDisplay = {
+    spiritDisplays.push({
+      targetId: "single_trapped_spirit",
       spiritId: level.trappedSpriteRescue.spiritId,
       spritePath: buildTrappedSpriteResourcePath(level.trappedSpriteRescue.spiritId),
       progress: spiritRescued ? 1 : 0,
@@ -29749,13 +32855,82 @@ function buildHudTargetDisplayData(levelConfig, runtimeSnapshot) {
       remaining: spiritRescued ? 0 : 1,
       remainingText: spiritRescued ? "0" : "1",
       progressText: spiritRescued ? "1/1" : "0/1"
-    };
+    });
+  } else if (level.levelType === "multi_trapped_spirit_rescue") {
+    if (
+      !level.multiTrappedSpiritRescue ||
+      !Array.isArray(level.multiTrappedSpiritRescue.targets) ||
+      level.multiTrappedSpiritRescue.targets.length < 2
+    ) {
+      throw new Error("Multi trapped spirit rescue HUD target requires at least two configured targets.");
+    }
+    if (
+      !runtimeSnapshot ||
+      !runtimeSnapshot.systems ||
+      !runtimeSnapshot.systems.trappedSpriteRescueSystem ||
+      runtimeSnapshot.systems.trappedSpriteRescueSystem.multiTargetActive !== true
+    ) {
+      throw new Error("Multi trapped spirit rescue HUD target requires active multi-target snapshot.");
+    }
+    var multiRescue = runtimeSnapshot.systems.trappedSpriteRescueSystem;
+    if (!Array.isArray(multiRescue.targets) || multiRescue.targets.length !== level.multiTrappedSpiritRescue.targets.length) {
+      throw new Error("Multi trapped spirit rescue HUD target count does not match runtime snapshot.");
+    }
+    var rescuedCount = multiRescue.rescuedTargetCount;
+    var targetCount = multiRescue.targetCount;
+    if (
+      !Number.isInteger(rescuedCount) ||
+      rescuedCount < 0 ||
+      !Number.isInteger(targetCount) ||
+      targetCount !== multiRescue.targets.length ||
+      targetCount < 2
+    ) {
+      throw new Error("Multi trapped spirit rescue HUD target progress is invalid.");
+    }
+    var countedRescuedTargets = 0;
+    spiritDisplays = multiRescue.targets.map(function (target, index) {
+      var configuredTarget = level.multiTrappedSpiritRescue.targets[index];
+      if (
+        !target ||
+        typeof target.id !== "string" ||
+        !target.id ||
+        typeof target.spiritId !== "string" ||
+        !target.spiritId ||
+        typeof target.rescued !== "boolean" ||
+        !configuredTarget ||
+        target.spiritId !== configuredTarget.spiritId ||
+        target.row !== configuredTarget.row ||
+        target.col !== configuredTarget.col
+      ) {
+        throw new Error("Multi trapped spirit rescue HUD target does not match level config at index " + index + ".");
+      }
+      if (target.rescued) {
+        countedRescuedTargets += 1;
+      }
+      var remaining = target.rescued ? 0 : 1;
+      return {
+        targetId: target.id,
+        spiritId: target.spiritId,
+        spritePath: buildTrappedSpriteResourcePath(target.spiritId),
+        progress: target.rescued ? 1 : 0,
+        target: 1,
+        remaining: remaining,
+        remainingText: String(remaining),
+        progressText: target.rescued ? "1/1" : "0/1"
+      };
+    });
+    if (countedRescuedTargets !== rescuedCount) {
+      throw new Error("Multi trapped spirit rescue HUD rescued count does not match targets.");
+    }
+    if (multiRescue.completed !== (rescuedCount === targetCount)) {
+      throw new Error("Multi trapped spirit rescue HUD completion state does not match target progress.");
+    }
   }
 
   return {
     ball: ballObjective ? buildObjectiveDisplayForObjective(ballObjective, runtimeSnapshot) : null,
     iceSnowball: iceSnowballObjective ? buildObjectiveDisplayForObjective(iceSnowballObjective, runtimeSnapshot) : null,
-    spirit: spiritDisplay
+    spirits: spiritDisplays
   };
 }
 
@@ -29776,7 +32951,7 @@ function applyIceSnowballHudDisplayProgress(hudTargetDisplay, displayProgress) {
   var remaining = Math.max(0, target - progress);
   return {
     ball: hudTargetDisplay.ball,
-    spirit: hudTargetDisplay.spirit,
+    spirits: hudTargetDisplay.spirits,
     iceSnowball: {
       iconCode: hudTargetDisplay.iceSnowball.iconCode,
       progress: progress,
@@ -29858,6 +33033,28 @@ function buildHudRenderKey(levelConfig, runtimeSnapshot, iceSnowballDisplayProgr
   if (Number.isInteger(iceSnowballDisplayProgress) && iceSnowballDisplayProgress >= 0) {
     hudTargetDisplay = applyIceSnowballHudDisplayProgress(hudTargetDisplay, iceSnowballDisplayProgress);
   }
+  if (!Array.isArray(hudTargetDisplay.spirits)) {
+    throw new Error("HUD target display spirits must be an array.");
+  }
+  var spiritRenderKey = hudTargetDisplay.spirits.map(function (spiritDisplay, index) {
+    if (
+      !spiritDisplay ||
+      typeof spiritDisplay.targetId !== "string" ||
+      !spiritDisplay.targetId ||
+      typeof spiritDisplay.remainingText !== "string" ||
+      typeof spiritDisplay.progressText !== "string" ||
+      typeof spiritDisplay.spritePath !== "string" ||
+      !spiritDisplay.spritePath
+    ) {
+      throw new Error("HUD spirit target render key entry is invalid at index " + index + ".");
+    }
+    return [
+      spiritDisplay.targetId,
+      spiritDisplay.remainingText,
+      spiritDisplay.progressText,
+      spiritDisplay.spritePath
+    ].join(":");
+  }).join(",");
 
   return [
     levelCode,
@@ -29875,9 +33072,7 @@ function buildHudRenderKey(levelConfig, runtimeSnapshot, iceSnowballDisplayProgr
     hudTargetDisplay.iceSnowball ? hudTargetDisplay.iceSnowball.remainingText : "",
     hudTargetDisplay.iceSnowball ? hudTargetDisplay.iceSnowball.progressText : "",
     hudTargetDisplay.iceSnowball ? hudTargetDisplay.iceSnowball.iconCode : "",
-    hudTargetDisplay.spirit ? hudTargetDisplay.spirit.remainingText : "",
-    hudTargetDisplay.spirit ? hudTargetDisplay.spirit.progressText : "",
-    hudTargetDisplay.spirit ? hudTargetDisplay.spirit.spritePath : ""
+    spiritRenderKey
   ].join("|");
 }
 
@@ -30230,6 +33425,22 @@ function resolveBallCode(ballLike) {
       return "SPLIT_" + ballLike.splitColor;
     }
 
+    if (ballLike.entityType === "breeder") {
+      return "BREEDER";
+    }
+
+    if (ballLike.entityType === "black_hole") {
+      return "BLACK_HOLE";
+    }
+
+    if (ballLike.entityType === "spirit_cocoon") {
+      return "SPIRIT_COCOON";
+    }
+
+    if (ballLike.entityType === "transparent_ball") {
+      return "TRANSPARENT_BALL";
+    }
+
     if (ballLike.entityType === "swirl") {
       return "SWIRL";
     }
@@ -30240,6 +33451,10 @@ function resolveBallCode(ballLike) {
 
     if (ballLike.entityType === "vine_spirit") {
       return "VINE_SPIRIT";
+    }
+
+    if (ballLike.entityType === "poison_droplet") {
+      return "POISON_DROPLET";
     }
   }
 
@@ -32098,12 +35313,27 @@ var swirlRotation = {
 };
 
 var wormholeShift = {
-  duration: 0.35
+  duration: 0.35,
+  inhaleDuration: 0.175,
+  exhaleDuration: 0.175,
+  projectileAbsorbDuration: 0.22
 };
 
 var vineCast = {
   previewDuration: 0.65
 };
+
+var spiritCocoon = {
+  frameDuration: 0.1,
+  frameCount: 5,
+  revealDuration: 0.3,
+  mistTraversalStepDuration: 0.2,
+  rowTraversalStepDuration: 0.35
+};
+
+spiritCocoon.totalDuration =
+  spiritCocoon.frameDuration * spiritCocoon.frameCount +
+  spiritCocoon.revealDuration;
 
 var fairyAssist = {
   flyInDuration: 0.45,
@@ -32172,6 +35402,7 @@ module.exports = Object.freeze({
   swirlRotation: Object.freeze(swirlRotation),
   wormholeShift: Object.freeze(wormholeShift),
   vineCast: Object.freeze(vineCast),
+  spiritCocoon: Object.freeze(spiritCocoon),
   fairyAssist: Object.freeze(fairyAssist),
   trappedSpriteRescue: Object.freeze(trappedSpriteRescue),
   impactBounce: Object.freeze(impactBounce),
@@ -32387,6 +35618,10 @@ function buildFallbackPlan(grid, origin, direction) {
   };
 }
 
+function isBlackHoleCell(cell) {
+  return !!(cell && cell.entityCategory === "hazard_ball" && cell.entityType === "black_hole");
+}
+
 function buildPlan(origin, direction, wallPoints, hitType, hitPoint, collidedCell, targetCell, targetCellPosition, impactDirection) {
   var pathPoints = [];
   pushPathPoint(pathPoints, origin);
@@ -32522,8 +35757,27 @@ TrajectoryPredictor.prototype.predictShotPlan = function (grid, origin, directio
 
     var collisionInfo = grid.findCollisionOnSegment(currentPoint, probeEnd, this.predictionCollisionRadius);
     var distanceToBubble = Number.POSITIVE_INFINITY;
+    var blackHoleCollision = null;
+    var distanceToBlackHole = Number.POSITIVE_INFINITY;
     if (collisionInfo) {
-      distanceToBubble = collisionInfo.t * probeDistance;
+      if (isBlackHoleCell(collisionInfo.cell)) {
+        blackHoleCollision = collisionInfo;
+        distanceToBlackHole = collisionInfo.t * probeDistance;
+      } else {
+        distanceToBubble = collisionInfo.t * probeDistance;
+      }
+    }
+    if (typeof grid.findWormholeCollisionOnSegment !== "function") {
+      throw new Error("Trajectory prediction requires BubbleGrid.findWormholeCollisionOnSegment.");
+    }
+    var wormholeCollision = grid.findWormholeCollisionOnSegment(
+      currentPoint,
+      probeEnd,
+      this.predictionCollisionRadius
+    );
+    var distanceToWormhole = Number.POSITIVE_INFINITY;
+    if (wormholeCollision) {
+      distanceToWormhole = wormholeCollision.t * probeDistance;
     }
     var trappedSpriteCollision = rescueActive
       ? grid.findTrappedSpriteCollisionOnSegment(currentPoint, probeEnd, this.predictionCollisionRadius)
@@ -32570,6 +35824,8 @@ TrajectoryPredictor.prototype.predictShotPlan = function (grid, origin, directio
     var effectiveSlotDistance = preferSlot ? distanceToSlot : Number.POSITIVE_INFINITY;
     var minDistance = Math.min(
       distanceToBubble,
+      distanceToBlackHole,
+      distanceToWormhole,
       distanceToTrappedSprite,
       effectiveSlotDistance,
       distanceToTop,
@@ -32582,6 +35838,52 @@ TrajectoryPredictor.prototype.predictShotPlan = function (grid, origin, directio
         throw new Error("Trapped sprite rescue trajectory cannot reach a bubble or the cannon exit line.");
       }
       return buildFallbackPlan(grid, rayOrigin, rayDirection);
+    }
+
+    if (distanceToBlackHole <= minDistance + EPSILON && blackHoleCollision) {
+      var blackHoleImpactPoint = clone(blackHoleCollision.point);
+      var blackHolePlan = buildPlan(
+        rayOrigin,
+        rayDirection,
+        wallPoints,
+        "black_hole",
+        blackHoleImpactPoint,
+        blackHoleCollision.cell,
+        null,
+        blackHoleImpactPoint,
+        currentDirection
+      );
+      blackHolePlan.targetCellPosition = null;
+      blackHolePlan.absorbingBlackHole = {
+        id: String(blackHoleCollision.cell.id),
+        row: blackHoleCollision.cell.row,
+        col: blackHoleCollision.cell.col,
+        position: clone(grid.getCellPosition(blackHoleCollision.cell.row, blackHoleCollision.cell.col))
+      };
+      return blackHolePlan;
+    }
+
+    if (distanceToWormhole <= minDistance + EPSILON && wormholeCollision) {
+      var wormholeImpactPoint = clone(wormholeCollision.point);
+      var wormholePlan = buildPlan(
+        rayOrigin,
+        rayDirection,
+        wallPoints,
+        "wormhole",
+        wormholeImpactPoint,
+        wormholeCollision.cell,
+        null,
+        wormholeImpactPoint,
+        currentDirection
+      );
+      wormholePlan.targetCellPosition = null;
+      wormholePlan.absorbingWormhole = {
+        id: String(wormholeCollision.cell.id),
+        row: wormholeCollision.cell.row,
+        col: wormholeCollision.cell.col,
+        position: clone(wormholeCollision.center)
+      };
+      return wormholePlan;
     }
 
     if (preferSlot && distanceToSlot <= minDistance + EPSILON && slotInfo) {
@@ -32911,6 +36213,7 @@ var BoardLayout = require("../../assets/scripts/config/BoardLayout");
 var AssistSpiritConfig = require("../../assets/scripts/config/AssistSpiritConfig");
 
 var LEVEL_TYPE = "trapped_sprite_rescue";
+var MULTI_TARGET_LEVEL_TYPE = "multi_trapped_spirit_rescue";
 var PHASE_IDLE = "idle";
 var PHASE_ROTATING = "rotating";
 var DEG_TO_RAD = Math.PI / 180;
@@ -33003,6 +36306,9 @@ function TrappedSpriteRescueSystem() {
   this.initialAngularVelocityDeg = 0;
   this.revision = 0;
   this.lastRotation = null;
+  this.multiTargetActive = false;
+  this.targets = [];
+  this.rescuedTargetCount = 0;
 }
 
 TrappedSpriteRescueSystem.prototype = Object.create(BaseSystem.prototype);
@@ -33031,11 +36337,44 @@ TrappedSpriteRescueSystem.prototype.configureLevel = function (levelConfig) {
   this.initialAngularVelocityDeg = 0;
   this.revision = 0;
   this.lastRotation = null;
+  this.multiTargetActive = false;
+  this.targets = [];
+  this.rescuedTargetCount = 0;
 
-  if (!this.active) {
+  if (!this.active && level.levelType !== MULTI_TARGET_LEVEL_TYPE) {
     if (level.trappedSpriteRescue !== undefined) {
       throw new Error("Non-rescue level must not configure level.trappedSpriteRescue.");
     }
+    if (level.multiTrappedSpiritRescue !== undefined) {
+      throw new Error("Non-multi-rescue level must not configure level.multiTrappedSpiritRescue.");
+    }
+    return this;
+  }
+
+  if (level.levelType === MULTI_TARGET_LEVEL_TYPE) {
+    if (level.trappedSpriteRescue !== undefined) {
+      throw new Error("Multi trapped spirit rescue level must not configure level.trappedSpriteRescue.");
+    }
+    var multiConfig = level.multiTrappedSpiritRescue;
+    if (!multiConfig || typeof multiConfig !== "object" || Array.isArray(multiConfig)) {
+      throw new Error("Multi trapped spirit rescue level requires level.multiTrappedSpiritRescue.");
+    }
+    if (!Array.isArray(multiConfig.targets) || multiConfig.targets.length < 2) {
+      throw new Error("Multi trapped spirit rescue level requires at least two targets.");
+    }
+    this.multiTargetActive = true;
+    this.targets = multiConfig.targets.map(function (target, index) {
+      var coordinate = requireCoordinate(target, "Multi trapped spirit target[" + index + "]");
+      var spiritId = target.spiritId;
+      return {
+        id: "multi_trapped_spirit_" + (index + 1),
+        spiritId: spiritId,
+        spriteResourcePath: buildSpriteResourcePath(spiritId),
+        row: coordinate.row,
+        col: coordinate.col,
+        rescued: false
+      };
+    });
     return this;
   }
 
@@ -33064,13 +36403,67 @@ TrappedSpriteRescueSystem.prototype.isRotating = function () {
   return this.active === true && this.phase === PHASE_ROTATING;
 };
 
+TrappedSpriteRescueSystem.prototype.isMultiTargetActive = function () {
+  return this.multiTargetActive === true;
+};
+
+TrappedSpriteRescueSystem.prototype.isMultiTargetCompleted = function () {
+  return this.multiTargetActive === true && this.rescuedTargetCount === this.targets.length;
+};
+
 TrappedSpriteRescueSystem.prototype.isReservedCell = function (row, col) {
-  return !!(
-    this.active &&
-    this.anchorCell &&
-    row === this.anchorCell.row &&
-    col === this.anchorCell.col
-  );
+  if (this.active && this.anchorCell && row === this.anchorCell.row && col === this.anchorCell.col) {
+    return true;
+  }
+  if (!this.multiTargetActive) {
+    return false;
+  }
+  return this.targets.some(function (target) {
+    return target.rescued !== true && target.row === row && target.col === col;
+  });
+};
+
+TrappedSpriteRescueSystem.prototype.rescueTargetsAdjacentToCells = function (cells) {
+  if (!this.multiTargetActive) {
+    throw new Error("Multi trapped spirit rescue requires active multi-target mode.");
+  }
+  if (!Array.isArray(cells) || cells.length === 0) {
+    throw new Error("Multi trapped spirit rescue requires at least one trigger cell.");
+  }
+  var triggerKeys = {};
+  cells.forEach(function (cell, index) {
+    if (!cell || !Number.isInteger(cell.row) || !Number.isInteger(cell.col)) {
+      throw new Error("Multi trapped spirit trigger cell is invalid at index " + index + ".");
+    }
+    triggerKeys[cell.row + ":" + cell.col] = true;
+  });
+  var rescued = [];
+  this.targets.forEach(function (target) {
+    if (target.rescued) {
+      return;
+    }
+    var offsets = target.row % 2 !== 0 ? [
+      [-1, 0], [-1, 1], [0, -1], [0, 1], [1, 0], [1, 1]
+    ] : [
+      [-1, -1], [-1, 0], [0, -1], [0, 1], [1, -1], [1, 0]
+    ];
+    var adjacent = offsets.some(function (offset) {
+      return triggerKeys[(target.row + offset[0]) + ":" + (target.col + offset[1])] === true;
+    });
+    if (!adjacent) {
+      return;
+    }
+    target.rescued = true;
+    this.rescuedTargetCount += 1;
+    rescued.push(clone(target));
+  }, this);
+  if (this.rescuedTargetCount > this.targets.length) {
+    throw new Error("Multi trapped spirit rescued target count exceeded target count.");
+  }
+  if (rescued.length) {
+    this.revision += 1;
+  }
+  return rescued;
 };
 
 TrappedSpriteRescueSystem.prototype.getAnchorCell = function () {
@@ -33307,9 +36700,22 @@ TrappedSpriteRescueSystem.prototype.update = function (dt) {
 };
 
 TrappedSpriteRescueSystem.prototype.snapshotForRender = function () {
+  if (this.multiTargetActive) {
+    return {
+      active: false,
+      multiTargetActive: true,
+      targets: clone(this.targets),
+      rescuedTargetCount: this.rescuedTargetCount,
+      targetCount: this.targets.length,
+      completed: this.isMultiTargetCompleted(),
+      phase: PHASE_IDLE,
+      revision: this.revision
+    };
+  }
   if (!this.active) {
     return {
       active: false,
+      multiTargetActive: false,
       phase: PHASE_IDLE,
       revision: this.revision
     };
@@ -33340,6 +36746,7 @@ TrappedSpriteRescueSystem.prototype.snapshot = function () {
 };
 
 TrappedSpriteRescueSystem.LEVEL_TYPE = LEVEL_TYPE;
+TrappedSpriteRescueSystem.MULTI_TARGET_LEVEL_TYPE = MULTI_TARGET_LEVEL_TYPE;
 TrappedSpriteRescueSystem.buildSpriteResourcePath = buildSpriteResourcePath;
 
 module.exports = TrappedSpriteRescueSystem;

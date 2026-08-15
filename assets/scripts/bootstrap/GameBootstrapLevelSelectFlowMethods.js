@@ -891,6 +891,7 @@ module.exports = {
       onTestLevel: this._onLevelSelectTestTap.bind(this),
       onTrappedSpriteTest: this._onLevelSelectTrappedSpriteTestTap.bind(this),
       onBoardOcclusionTest: this._onLevelSelectBoardOcclusionTestTap.bind(this),
+      onFeatureTestLevel: this._onLevelSelectFeatureTestTap.bind(this),
       onLocalEditedLevel: this._onLevelSelectLocalEditedLevelTap.bind(this),
       onBackToCurrentLevel: this._onLevelSelectBackToCurrentLevelTap.bind(this)
     });
@@ -1358,6 +1359,46 @@ module.exports = {
     }
     this._playSfx("uiClick");
     this._startBoardOcclusionTestLevelEntry();
+  },
+
+  _startFeatureTestLevelEntry: function (featureKey) {
+    if (!this.levelManager || typeof this.levelManager.loadFeatureTestLevel !== "function") {
+      throw new Error("Feature test level entry requires LevelManager.loadFeatureTestLevel.");
+    }
+    if (!Array.isArray(this._pendingStartGamePowerups)) {
+      throw new Error("Feature test level entry requires pending StartGameView powerups array.");
+    }
+    this._pendingStartGamePowerups = [];
+    this._pendingStartGamePreciseAimActivation = false;
+    this.isRestarting = true;
+    this._setStatus("Loading feature test " + featureKey + "...");
+    return this.levelManager.loadFeatureTestLevel(featureKey).then(function (levelConfig) {
+      if (!levelConfig || !levelConfig.level || !Number.isInteger(levelConfig.level.levelId) || levelConfig.level.levelId <= 0) {
+        throw new Error("Feature test level requires a positive integer level.levelId: " + featureKey + ".");
+      }
+      this._pendingPreparedLevelConfig = {
+        levelId: levelConfig.level.levelId,
+        levelConfig: levelConfig
+      };
+      return this._loadLevelById(
+        levelConfig.level.levelId,
+        "Feature test level started: " + featureKey,
+        "Load feature test level failed: " + featureKey + ". Check console logs.",
+        { mode: "test", testSource: featureKey }
+      );
+    }.bind(this)).catch(function (error) {
+      this.isRestarting = false;
+      this._setStatus("Load feature test level failed: " + featureKey + ". Check console logs.");
+      throw error;
+    }.bind(this));
+  },
+
+  _onLevelSelectFeatureTestTap: function (featureKey) {
+    if (this.isRestarting) {
+      return;
+    }
+    this._playSfx("uiClick");
+    this._startFeatureTestLevelEntry(featureKey);
   },
 
   _onLevelSelectTestTap: function () {

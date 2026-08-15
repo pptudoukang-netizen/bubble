@@ -70,6 +70,10 @@ function buildFallbackPlan(grid, origin, direction) {
   };
 }
 
+function isBlackHoleCell(cell) {
+  return !!(cell && cell.entityCategory === "hazard_ball" && cell.entityType === "black_hole");
+}
+
 function buildPlan(origin, direction, wallPoints, hitType, hitPoint, collidedCell, targetCell, targetCellPosition, impactDirection) {
   var pathPoints = [];
   pushPathPoint(pathPoints, origin);
@@ -205,8 +209,27 @@ TrajectoryPredictor.prototype.predictShotPlan = function (grid, origin, directio
 
     var collisionInfo = grid.findCollisionOnSegment(currentPoint, probeEnd, this.predictionCollisionRadius);
     var distanceToBubble = Number.POSITIVE_INFINITY;
+    var blackHoleCollision = null;
+    var distanceToBlackHole = Number.POSITIVE_INFINITY;
     if (collisionInfo) {
-      distanceToBubble = collisionInfo.t * probeDistance;
+      if (isBlackHoleCell(collisionInfo.cell)) {
+        blackHoleCollision = collisionInfo;
+        distanceToBlackHole = collisionInfo.t * probeDistance;
+      } else {
+        distanceToBubble = collisionInfo.t * probeDistance;
+      }
+    }
+    if (typeof grid.findWormholeCollisionOnSegment !== "function") {
+      throw new Error("Trajectory prediction requires BubbleGrid.findWormholeCollisionOnSegment.");
+    }
+    var wormholeCollision = grid.findWormholeCollisionOnSegment(
+      currentPoint,
+      probeEnd,
+      this.predictionCollisionRadius
+    );
+    var distanceToWormhole = Number.POSITIVE_INFINITY;
+    if (wormholeCollision) {
+      distanceToWormhole = wormholeCollision.t * probeDistance;
     }
     var trappedSpriteCollision = rescueActive
       ? grid.findTrappedSpriteCollisionOnSegment(currentPoint, probeEnd, this.predictionCollisionRadius)
@@ -253,6 +276,8 @@ TrajectoryPredictor.prototype.predictShotPlan = function (grid, origin, directio
     var effectiveSlotDistance = preferSlot ? distanceToSlot : Number.POSITIVE_INFINITY;
     var minDistance = Math.min(
       distanceToBubble,
+      distanceToBlackHole,
+      distanceToWormhole,
       distanceToTrappedSprite,
       effectiveSlotDistance,
       distanceToTop,
@@ -265,6 +290,52 @@ TrajectoryPredictor.prototype.predictShotPlan = function (grid, origin, directio
         throw new Error("Trapped sprite rescue trajectory cannot reach a bubble or the cannon exit line.");
       }
       return buildFallbackPlan(grid, rayOrigin, rayDirection);
+    }
+
+    if (distanceToBlackHole <= minDistance + EPSILON && blackHoleCollision) {
+      var blackHoleImpactPoint = clone(blackHoleCollision.point);
+      var blackHolePlan = buildPlan(
+        rayOrigin,
+        rayDirection,
+        wallPoints,
+        "black_hole",
+        blackHoleImpactPoint,
+        blackHoleCollision.cell,
+        null,
+        blackHoleImpactPoint,
+        currentDirection
+      );
+      blackHolePlan.targetCellPosition = null;
+      blackHolePlan.absorbingBlackHole = {
+        id: String(blackHoleCollision.cell.id),
+        row: blackHoleCollision.cell.row,
+        col: blackHoleCollision.cell.col,
+        position: clone(grid.getCellPosition(blackHoleCollision.cell.row, blackHoleCollision.cell.col))
+      };
+      return blackHolePlan;
+    }
+
+    if (distanceToWormhole <= minDistance + EPSILON && wormholeCollision) {
+      var wormholeImpactPoint = clone(wormholeCollision.point);
+      var wormholePlan = buildPlan(
+        rayOrigin,
+        rayDirection,
+        wallPoints,
+        "wormhole",
+        wormholeImpactPoint,
+        wormholeCollision.cell,
+        null,
+        wormholeImpactPoint,
+        currentDirection
+      );
+      wormholePlan.targetCellPosition = null;
+      wormholePlan.absorbingWormhole = {
+        id: String(wormholeCollision.cell.id),
+        row: wormholeCollision.cell.row,
+        col: wormholeCollision.cell.col,
+        position: clone(wormholeCollision.center)
+      };
+      return wormholePlan;
     }
 
     if (preferSlot && distanceToSlot <= minDistance + EPSILON && slotInfo) {

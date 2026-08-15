@@ -320,6 +320,7 @@ LevelAttemptStatsStore.prototype.recordResult = function (state, payload) {
   attempt.reviveCount = requireNonNegativeInteger(payload.reviveCount, "Level attempt result reviveCount");
   normalized.lastAttempt = clone(attempt);
   normalized.lastAttemptByLevel[String(attempt.levelId)] = clone(attempt);
+  normalized.lastAttemptByLevel = normalizeLastAttemptByLevel(normalized.lastAttemptByLevel);
   normalized.activeAttempt = null;
   normalized = appendEvent(normalized, EVENT_LEVEL_RESULT, attempt);
   return clone(normalized);

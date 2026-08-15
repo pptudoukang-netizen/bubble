@@ -185,6 +185,7 @@ GameManager.prototype.getRuntimeSnapshot = function (runtimeEvents, renderOption
     this.state === "running" &&
     !this.activeProjectile &&
     !this._isBoardAdvanceBusy() &&
+    !this._hasPendingSpiritCocoonOpenings() &&
     !this._hasPendingSwirlRotation() &&
     !this._hasPendingWormholeShift() &&
     !this._hasPendingVineCast() &&
@@ -244,7 +245,7 @@ GameManager.prototype.getRuntimeSnapshot = function (runtimeEvents, renderOption
     jarScoreBoostRemainingMs: Math.max(0, Math.floor(Number(this.jarScoreBoostRemainingMs) || 0)),
     dropInterval: 0,
     boardViewport: this.systems.boardViewportSystem.snapshot(),
-    inputLocked: this._isBoardAdvanceBusy() || this._hasPendingSwirlRotation() || this._hasPendingWormholeShift() || this._hasPendingVineCast() || this.state !== "running",
+    inputLocked: this._isBoardAdvanceBusy() || this._hasPendingSpiritCocoonOpenings() || this._hasPendingSwirlRotation() || this._hasPendingWormholeShift() || this._hasPendingVineCast() || this.state !== "running",
     turnsUntilDrop: this.getTurnsUntilDrop(),
     lastFiredColor: this.lastFiredColor,
     // Keep runtime snapshot light during flight to avoid per-frame deep-clone spikes.

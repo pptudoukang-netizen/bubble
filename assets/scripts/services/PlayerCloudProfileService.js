@@ -4,14 +4,16 @@ var StrictStorage = require("../utils/StrictStorage");
 var LevelAttemptStatsStore = require("../utils/LevelAttemptStatsStore");
 var AssistSpiritStore = require("../utils/AssistSpiritStore");
 var SpiritShopStore = require("../utils/SpiritShopStore");
+var ShopStateStore = require("../utils/ShopStateStore");
 
 var PROFILE_VERSION = 1;
-var EXPECTED_DEPLOYMENT_MARKER = "playerProfile_v20260809_assist_spirit_level_only_v5";
+var EXPECTED_DEPLOYMENT_MARKER = "playerProfile_v20260814_profile_size_caps_v6";
 var SYNC_SOURCE_CLOUD = "cloud";
 var SYNC_SOURCE_LOCAL = "local";
 var LEVEL_ATTEMPT_STATS_STORAGE_KEY = LevelAttemptStatsStore.STORAGE_KEY;
 var ASSIST_SPIRIT_STORAGE_KEY = AssistSpiritStore.STORAGE_KEY;
 var SPIRIT_SHOP_STORAGE_KEY = SpiritShopStore.STORAGE_KEY;
+var SHOP_STATE_STORAGE_KEY = ShopStateStore.STORAGE_KEY;
 var STORAGE_ENTRIES = [
   { storageKey: "bubble_level_progress_v1", namespace: "LevelProgressStore" },
   { storageKey: LEVEL_ATTEMPT_STATS_STORAGE_KEY, namespace: LevelAttemptStatsStore.NAMESPACE },
@@ -25,7 +27,7 @@ var STORAGE_ENTRIES = [
   { storageKey: "bubble_sign_in_state_v1", namespace: "SignInStore" },
   { storageKey: "bubble_new_gift_state_v1", namespace: "NewGiftStore" },
   { storageKey: "bubble_star_chest_state_v1", namespace: "StarChestStore" },
-  { storageKey: "bubble_shop_state_v1", namespace: "ShopStateStore" },
+  { storageKey: SHOP_STATE_STORAGE_KEY, namespace: ShopStateStore.NAMESPACE },
   { storageKey: "bubble_game_circle_welfare_state_v1", namespace: "GameCircleWelfareStore" }
 ];
 
@@ -168,6 +170,9 @@ function normalizeStorageValue(storageKey, value) {
   if (storageKey === SPIRIT_SHOP_STORAGE_KEY) {
     return SpiritShopStore.normalizeState(value);
   }
+  if (storageKey === SHOP_STATE_STORAGE_KEY) {
+    return ShopStateStore.normalizeState(value);
+  }
   return value;
 }
 
@@ -220,7 +225,7 @@ function normalizeProfile(profile, entryMap) {
     assertObject(entry.value, "Player cloud profile value `" + storageKey + "`");
     normalizedStorage[storageKey] = {
       namespace: entry.namespace,
-      value: clone(entry.value)
+      value: normalizeStorageValue(storageKey, entry.value)
     };
   });
 
@@ -310,7 +315,7 @@ PlayerCloudProfileService.prototype.collectLocalProfile = function () {
     }
     profileStorage[entry.storageKey] = {
       namespace: entry.namespace,
-      value: normalizeStorageValue(entry.storageKey, parseStoredValue(rawText, entry.storageKey))
+      value: parseStoredValue(rawText, entry.storageKey)
     };
   });
   return normalizeProfile({

@@ -1303,7 +1303,7 @@ function buildRequiredReactiveNormalSlots(rows, entities, levelId) {
     if (pair.length !== 2) {
       throw new Error("Level " + levelId + " requires exactly two wormhole endpoints on row " + rowKey + ".");
     }
-    for (var col = pair[0].col; col <= pair[1].col; col += 1) {
+    for (var col = pair[0].col + 1; col < pair[1].col; col += 1) {
       var slot = { row: pair[0].row, col: col };
       required[buildSlotKey(slot)] = slot;
     }
@@ -1324,9 +1324,6 @@ function fillTableLayoutColors(
 ) {
   var specialCells = {};
   entities.forEach(function (entity) {
-    if (entity.entityType === "wormhole") {
-      return;
-    }
     specialCells[entity.row + ":" + entity.col] = true;
   });
 
@@ -2516,9 +2513,6 @@ function buildLevelOccupancySignature(level) {
   level.specialEntities.forEach(function (entity) {
     if (!rows[entity.row] || rows[entity.row][entity.col] === undefined) {
       throw new Error("Level " + level.levelId + " special entity is outside its layout.");
-    }
-    if (entity.entityType === "wormhole") {
-      return;
     }
     if (rows[entity.row][entity.col] !== ".") {
       throw new Error("Level " + level.levelId + " normal ball overlaps special entity.");

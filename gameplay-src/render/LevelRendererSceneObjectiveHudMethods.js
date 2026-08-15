@@ -19,28 +19,176 @@ function attachLevelRendererSceneObjectiveHudMethods(LevelRenderer, context) {
   var ensureSprite = context.ensureSprite;
   var requireChildNode = context.requireChildNode;
 
+  var HUD_TARGET_TEMPLATE_NAME = "item";
+  var HUD_TARGET_ICON_NAME = "icon";
+  var HUD_TARGET_RUNTIME_CARD_PREFIX = "hud_target_";
+  var HUD_TARGET_BALL_CARD_NAME = HUD_TARGET_RUNTIME_CARD_PREFIX + "ball";
+  var HUD_TARGET_ICE_BALL_CARD_NAME = HUD_TARGET_RUNTIME_CARD_PREFIX + "ice_ball";
+
+function requireHudTargetSlotName(slotName) {
+  if (slotName === "ball" || slotName === "ice_ball" || slotName === "spirit") {
+    return slotName;
+  }
+  throw new Error("Unsupported HUD target slot: " + slotName);
+}
+
+function buildHudSpiritCardName(targetId) {
+  if (typeof targetId !== "string" || !/^[A-Za-z0-9_-]+$/.test(targetId)) {
+    throw new Error("HUD spirit targetId must contain only letters, numbers, underscores, or hyphens.");
+  }
+  return HUD_TARGET_RUNTIME_CARD_PREFIX + "spirit_" + targetId;
+}
+
 LevelRenderer.prototype._getHudTargetLayout = function (panel) {
   return requireChildNode(panel, "target_layout", "HudPanel");
 };
 
-LevelRenderer.prototype._resolveHudTargetSlot = function (targetLayout, slotName) {
-  var cardName = "";
-  if (slotName === "ball") {
-    cardName = "item_ball";
-  } else if (slotName === "ice_ball") {
-    cardName = "item_ice_ball";
-  } else if (slotName === "spirit") {
-    cardName = "item_spirit";
-  } else {
-    throw new Error("Unsupported HUD target slot: " + slotName);
+LevelRenderer.prototype._getHudTargetTemplate = function (targetLayout) {
+  var templateNode = requireChildNode(targetLayout, HUD_TARGET_TEMPLATE_NAME, "HudPanel/target_layout");
+  var templateDescription = "HudPanel/target_layout/" + HUD_TARGET_TEMPLATE_NAME;
+  var iconNode = requireChildNode(templateNode, HUD_TARGET_ICON_NAME, templateDescription);
+  requireChildNode(templateNode, "card_line", templateDescription);
+  requireChildNode(iconNode, "TargetValue", templateDescription + "/" + HUD_TARGET_ICON_NAME);
+  requireChildNode(iconNode, "complete", templateDescription + "/" + HUD_TARGET_ICON_NAME);
+  if (!templateNode.getComponent(cc.Sprite)) {
+    throw new Error(templateDescription + " requires cc.Sprite.");
+  }
+  if (!iconNode.getComponent(cc.Sprite)) {
+    throw new Error(templateDescription + "/" + HUD_TARGET_ICON_NAME + " requires cc.Sprite.");
+  }
+  return templateNode;
+};
+
+LevelRenderer.prototype._findHudTargetCard = function (targetLayout, cardName) {
+  if (typeof cardName !== "string" || cardName.indexOf(HUD_TARGET_RUNTIME_CARD_PREFIX) !== 0) {
+    throw new Error("HUD target runtime card name is invalid.");
+  }
+  var matchedCard = null;
+  targetLayout.children.forEach(function (childNode) {
+    if (childNode.name !== cardName) {
+      return;
+    }
+    if (matchedCard) {
+      throw new Error("Duplicated HUD target card: " + cardName);
+    }
+    matchedCard = childNode;
+  });
+  return matchedCard;
+};
+
+LevelRenderer.prototype._buildHudTargetEntries = function (targetDisplay) {
+  if (!targetDisplay || typeof targetDisplay !== "object" || Array.isArray(targetDisplay)) {
+    throw new Error("HUD target display data must be an object.");
+  }
+  var entries = [];
+  [
+    {
+      slotName: "ball",
+      cardName: HUD_TARGET_BALL_CARD_NAME,
+      displayData: targetDisplay.ball
+    },
+    {
+      slotName: "ice_ball",
+      cardName: HUD_TARGET_ICE_BALL_CARD_NAME,
+      displayData: targetDisplay.iceSnowball
+    }
+  ].forEach(function (entry) {
+    if (entry.displayData !== null && (typeof entry.displayData !== "object" || Array.isArray(entry.displayData))) {
+      throw new Error("HUD target display entry must be an object or null: " + entry.slotName);
+    }
+    if (entry.displayData !== null) {
+      entries.push(entry);
+    }
+  });
+
+  if (!Array.isArray(targetDisplay.spirits)) {
+    throw new Error("HUD target display spirits must be an array.");
+  }
+  var spiritCardNames = {};
+  targetDisplay.spirits.forEach(function (displayData, index) {
+    if (!displayData || typeof displayData !== "object" || Array.isArray(displayData)) {
+      throw new Error("HUD spirit target display entry is invalid at index " + index + ".");
+    }
+    var cardName = buildHudSpiritCardName(displayData.targetId);
+    if (spiritCardNames[cardName] === true) {
+      throw new Error("Duplicated HUD spirit target card: " + cardName);
+    }
+    spiritCardNames[cardName] = true;
+    entries.push({
+      slotName: "spirit",
+      cardName: cardName,
+      displayData: displayData
+    });
+  });
+  return entries;
+};
+
+LevelRenderer.prototype._syncHudTargetCards = function (targetLayout, entries) {
+  if (typeof cc.instantiate !== "function") {
+    throw new Error("HUD target dynamic creation requires cc.instantiate.");
+  }
+  if (!Array.isArray(entries)) {
+    throw new Error("HUD target entries must be an array.");
+  }
+  var templateNode = this._getHudTargetTemplate(targetLayout);
+  templateNode.active = false;
+  var activeCardNames = {};
+  entries.forEach(function (entry) {
+    if (activeCardNames[entry.cardName] === true) {
+      throw new Error("Duplicated HUD target entry card: " + entry.cardName);
+    }
+    activeCardNames[entry.cardName] = true;
+  });
+
+  targetLayout.children.slice().forEach(function (childNode) {
+    if (childNode === templateNode) {
+      return;
+    }
+    if (childNode.name.indexOf(HUD_TARGET_RUNTIME_CARD_PREFIX) !== 0) {
+      throw new Error("HudPanel/target_layout contains unexpected runtime child: " + childNode.name);
+    }
+    if (activeCardNames[childNode.name] !== true) {
+      childNode.active = false;
+      if (typeof childNode.removeFromParent !== "function" || typeof childNode.destroy !== "function") {
+        throw new Error("HUD target card cannot be removed: " + childNode.name);
+      }
+      childNode.removeFromParent(false);
+      childNode.destroy();
+    }
+  });
+
+  entries.forEach(function (entry, index) {
+    var cardNode = this._findHudTargetCard(targetLayout, entry.cardName);
+    if (!cardNode) {
+      cardNode = cc.instantiate(templateNode);
+      if (!cardNode || !cardNode.isValid) {
+        throw new Error("Failed to clone HUD target template for card: " + entry.cardName);
+      }
+      cardNode.name = entry.cardName;
+      cardNode.parent = targetLayout;
+    }
+    cardNode.active = true;
+    if (typeof cardNode.setSiblingIndex !== "function") {
+      throw new Error("HUD target card requires setSiblingIndex: " + entry.cardName);
+    }
+    cardNode.setSiblingIndex(index + 1);
+  }, this);
+
+  return entries;
+};
+
+LevelRenderer.prototype._resolveHudTargetSlot = function (targetLayout, slotName, cardName) {
+  requireHudTargetSlotName(slotName);
+  var cardNode = this._findHudTargetCard(targetLayout, cardName);
+  if (!cardNode) {
+    throw new Error("HUD target card is missing: " + cardName);
   }
 
-  var cardNode = requireChildNode(targetLayout, cardName, "HudPanel/target_layout");
-  var targetNode = requireChildNode(cardNode, slotName, "HudPanel/target_layout/" + cardName);
+  var targetNode = requireChildNode(cardNode, HUD_TARGET_ICON_NAME, "HudPanel/target_layout/" + cardName);
   return {
     cardNode: cardNode,
     targetNode: targetNode,
-    description: "HudPanel/target_layout/" + cardName + "/" + slotName
+    description: "HudPanel/target_layout/" + cardName + "/" + HUD_TARGET_ICON_NAME
   };
 };
 
@@ -50,18 +198,26 @@ LevelRenderer.prototype._renderHudTargets = function (panel, targetDisplay) {
   }
 
   var targetLayout = this._getHudTargetLayout(panel);
-  this._renderHudTargetSlot(targetLayout, "ball", targetDisplay.ball);
-  this._renderHudTargetSlot(targetLayout, "ice_ball", targetDisplay.iceSnowball);
-  this._renderHudTargetSlot(targetLayout, "spirit", targetDisplay.spirit);
+  var entries = this._buildHudTargetEntries(targetDisplay);
+  this._syncHudTargetCards(targetLayout, entries);
+  entries.forEach(function (entry) {
+    this._renderHudTargetSlot(
+      targetLayout,
+      entry.slotName,
+      entry.displayData,
+      entry.cardName
+    );
+  }, this);
 
   var layout = targetLayout.getComponent(cc.Layout);
-  if (layout && typeof layout.updateLayout === "function") {
-    layout.updateLayout();
+  if (!layout || typeof layout.updateLayout !== "function") {
+    throw new Error("HudPanel/target_layout requires cc.Layout.updateLayout.");
   }
+  layout.updateLayout();
 };
 
-LevelRenderer.prototype._renderHudTargetSlot = function (targetLayout, slotName, displayData) {
-  var slot = this._resolveHudTargetSlot(targetLayout, slotName);
+LevelRenderer.prototype._renderHudTargetSlot = function (targetLayout, slotName, displayData, cardName) {
+  var slot = this._resolveHudTargetSlot(targetLayout, slotName, cardName);
   var cardNode = slot.cardNode;
   var targetNode = slot.targetNode;
   var valueNode = requireChildNode(targetNode, "TargetValue", slot.description);
@@ -71,13 +227,8 @@ LevelRenderer.prototype._renderHudTargetSlot = function (targetLayout, slotName,
     throw new Error(slot.description + "/TargetValue requires cc.Label.");
   }
 
-  if (!displayData) {
-    cardNode.active = false;
-    targetNode.active = false;
-    valueNode.active = false;
-    completeNode.active = false;
-    valueLabel.string = "";
-    return;
+  if (!displayData || typeof displayData !== "object" || Array.isArray(displayData)) {
+    throw new Error("HUD target display data is required: " + slotName);
   }
 
   if (typeof displayData.remaining !== "number" || !isFinite(displayData.remaining) || displayData.remaining < 0) {
@@ -190,11 +341,17 @@ LevelRenderer.prototype._refreshIceSnowballHudTarget = function () {
 
   var targetLayout = this._getHudTargetLayout(panel);
   var hudTargetDisplay = this._buildHudTargetDisplayForRender(this.currentLevelConfig, this.lastRuntimeSnapshot);
-  this._renderHudTargetSlot(targetLayout, "ice_ball", hudTargetDisplay.iceSnowball);
+  this._renderHudTargetSlot(
+    targetLayout,
+    "ice_ball",
+    hudTargetDisplay.iceSnowball,
+    HUD_TARGET_ICE_BALL_CARD_NAME
+  );
   var layout = targetLayout.getComponent(cc.Layout);
-  if (layout && typeof layout.updateLayout === "function") {
-    layout.updateLayout();
+  if (!layout || typeof layout.updateLayout !== "function") {
+    throw new Error("HudPanel/target_layout requires cc.Layout.updateLayout.");
   }
+  layout.updateLayout();
   this.lastHudRenderKey = buildHudRenderKey(
     this.currentLevelConfig,
     this.lastRuntimeSnapshot,
@@ -205,8 +362,8 @@ LevelRenderer.prototype._refreshIceSnowballHudTarget = function () {
 LevelRenderer.prototype._getHudTargetIceBallPositionInGameView = function () {
   var panel = this._getMountedHudPanel();
   var targetLayout = panel ? panel.getChildByName("target_layout") : null;
-  var iceCardNode = targetLayout ? targetLayout.getChildByName("item_ice_ball") : null;
-  var ballNode = iceCardNode ? iceCardNode.getChildByName("ice_ball") : null;
+  var iceCardNode = targetLayout ? this._findHudTargetCard(targetLayout, HUD_TARGET_ICE_BALL_CARD_NAME) : null;
+  var ballNode = iceCardNode ? requireChildNode(iceCardNode, HUD_TARGET_ICON_NAME, "HudPanel/target_layout/hud_target_ice_ball") : null;
   if (!iceCardNode || !iceCardNode.active || !ballNode || !ballNode.active || !ballNode.parent) {
     return null;
   }
@@ -217,8 +374,8 @@ LevelRenderer.prototype._getHudTargetIceBallPositionInGameView = function () {
 LevelRenderer.prototype._getHudTargetBallNode = function () {
   var panel = this._getMountedHudPanel();
   var targetLayout = panel ? panel.getChildByName("target_layout") : null;
-  var ballCardNode = targetLayout ? targetLayout.getChildByName("item_ball") : null;
-  var ballNode = ballCardNode ? ballCardNode.getChildByName("ball") : null;
+  var ballCardNode = targetLayout ? this._findHudTargetCard(targetLayout, HUD_TARGET_BALL_CARD_NAME) : null;
+  var ballNode = ballCardNode ? requireChildNode(ballCardNode, HUD_TARGET_ICON_NAME, "HudPanel/target_layout/hud_target_ball") : null;
   if (!ballCardNode || !ballCardNode.active || !ballNode || !ballNode.active || !ballNode.parent) {
     return null;
   }

@@ -67,8 +67,24 @@ function buildLoseClearanceTargetPresentation(levelConfig) {
     throw new Error("LoseView clearance target presentation requires level config.");
   }
   var level = levelConfig.level;
-  if (level.levelType !== "trapped_sprite_rescue") {
+  if (
+    level.levelType !== "trapped_sprite_rescue" &&
+    level.levelType !== "multi_trapped_spirit_rescue"
+  ) {
     return null;
+  }
+  if (level.levelType === "multi_trapped_spirit_rescue") {
+    if (
+      !level.multiTrappedSpiritRescue ||
+      !Array.isArray(level.multiTrappedSpiritRescue.targets) ||
+      level.multiTrappedSpiritRescue.targets.length < 2
+    ) {
+      throw new Error("Multi trapped spirit rescue LoseView requires at least two targets.");
+    }
+    return {
+      description: "救出全部精灵",
+      spiritId: level.multiTrappedSpiritRescue.targets[0].spiritId
+    };
   }
   if (!level.trappedSpriteRescue || typeof level.trappedSpriteRescue.spiritId !== "string" || !level.trappedSpriteRescue.spiritId) {
     throw new Error("Trapped sprite rescue LoseView clearance target requires level.trappedSpriteRescue.spiritId.");

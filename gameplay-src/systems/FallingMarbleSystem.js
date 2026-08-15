@@ -133,7 +133,7 @@ function resolveDropKind(options) {
   if (!options || !Object.prototype.hasOwnProperty.call(options, "dropKind")) {
     return null;
   }
-  if (options.dropKind !== "victory_board_drop") {
+  if (options.dropKind !== "victory_board_drop" && options.dropKind !== "poison_droplet") {
     throw new Error("FallingMarbleSystem.registerDrops unsupported dropKind: " + options.dropKind);
   }
   return options.dropKind;
@@ -150,6 +150,7 @@ function createEmptyUpdateResult() {
     bounced: 0,
     bounceEvents: [],
     fairyHits: [],
+    poisonFairyHits: [],
     splits: []
   };
 }
@@ -687,6 +688,12 @@ FallingMarbleSystem.prototype._buildDropFromCell = function (
     launchIndex: index,
     launchDropSerial: dropSerial,
     dropKind: dropKind,
+    poisonBatchId: typeof cell.poisonBatchId === "string" && cell.poisonBatchId
+      ? cell.poisonBatchId
+      : null,
+    poisonParticleIndex: Number.isInteger(cell.poisonParticleIndex)
+      ? cell.poisonParticleIndex
+      : null,
     rootDropId: Object.prototype.hasOwnProperty.call(cell, "rootDropId")
       ? String(cell.rootDropId)
       : String(cell.id),

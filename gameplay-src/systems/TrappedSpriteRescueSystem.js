@@ -5,6 +5,7 @@ var BoardLayout = require("../../assets/scripts/config/BoardLayout");
 var AssistSpiritConfig = require("../../assets/scripts/config/AssistSpiritConfig");
 
 var LEVEL_TYPE = "trapped_sprite_rescue";
+var MULTI_TARGET_LEVEL_TYPE = "multi_trapped_spirit_rescue";
 var PHASE_IDLE = "idle";
 var PHASE_ROTATING = "rotating";
 var DEG_TO_RAD = Math.PI / 180;
@@ -97,6 +98,9 @@ function TrappedSpriteRescueSystem() {
   this.initialAngularVelocityDeg = 0;
   this.revision = 0;
   this.lastRotation = null;
+  this.multiTargetActive = false;
+  this.targets = [];
+  this.rescuedTargetCount = 0;
 }
 
 TrappedSpriteRescueSystem.prototype = Object.create(BaseSystem.prototype);
@@ -125,11 +129,44 @@ TrappedSpriteRescueSystem.prototype.configureLevel = function (levelConfig) {
   this.initialAngularVelocityDeg = 0;
   this.revision = 0;
   this.lastRotation = null;
+  this.multiTargetActive = false;
+  this.targets = [];
+  this.rescuedTargetCount = 0;
 
-  if (!this.active) {
+  if (!this.active && level.levelType !== MULTI_TARGET_LEVEL_TYPE) {
     if (level.trappedSpriteRescue !== undefined) {
       throw new Error("Non-rescue level must not configure level.trappedSpriteRescue.");
     }
+    if (level.multiTrappedSpiritRescue !== undefined) {
+      throw new Error("Non-multi-rescue level must not configure level.multiTrappedSpiritRescue.");
+    }
+    return this;
+  }
+
+  if (level.levelType === MULTI_TARGET_LEVEL_TYPE) {
+    if (level.trappedSpriteRescue !== undefined) {
+      throw new Error("Multi trapped spirit rescue level must not configure level.trappedSpriteRescue.");
+    }
+    var multiConfig = level.multiTrappedSpiritRescue;
+    if (!multiConfig || typeof multiConfig !== "object" || Array.isArray(multiConfig)) {
+      throw new Error("Multi trapped spirit rescue level requires level.multiTrappedSpiritRescue.");
+    }
+    if (!Array.isArray(multiConfig.targets) || multiConfig.targets.length < 2) {
+      throw new Error("Multi trapped spirit rescue level requires at least two targets.");
+    }
+    this.multiTargetActive = true;
+    this.targets = multiConfig.targets.map(function (target, index) {
+      var coordinate = requireCoordinate(target, "Multi trapped spirit target[" + index + "]");
+      var spiritId = target.spiritId;
+      return {
+        id: "multi_trapped_spirit_" + (index + 1),
+        spiritId: spiritId,
+        spriteResourcePath: buildSpriteResourcePath(spiritId),
+        row: coordinate.row,
+        col: coordinate.col,
+        rescued: false
+      };
+    });
     return this;
   }
 
@@ -158,13 +195,67 @@ TrappedSpriteRescueSystem.prototype.isRotating = function () {
   return this.active === true && this.phase === PHASE_ROTATING;
 };
 
+TrappedSpriteRescueSystem.prototype.isMultiTargetActive = function () {
+  return this.multiTargetActive === true;
+};
+
+TrappedSpriteRescueSystem.prototype.isMultiTargetCompleted = function () {
+  return this.multiTargetActive === true && this.rescuedTargetCount === this.targets.length;
+};
+
 TrappedSpriteRescueSystem.prototype.isReservedCell = function (row, col) {
-  return !!(
-    this.active &&
-    this.anchorCell &&
-    row === this.anchorCell.row &&
-    col === this.anchorCell.col
-  );
+  if (this.active && this.anchorCell && row === this.anchorCell.row && col === this.anchorCell.col) {
+    return true;
+  }
+  if (!this.multiTargetActive) {
+    return false;
+  }
+  return this.targets.some(function (target) {
+    return target.rescued !== true && target.row === row && target.col === col;
+  });
+};
+
+TrappedSpriteRescueSystem.prototype.rescueTargetsAdjacentToCells = function (cells) {
+  if (!this.multiTargetActive) {
+    throw new Error("Multi trapped spirit rescue requires active multi-target mode.");
+  }
+  if (!Array.isArray(cells) || cells.length === 0) {
+    throw new Error("Multi trapped spirit rescue requires at least one trigger cell.");
+  }
+  var triggerKeys = {};
+  cells.forEach(function (cell, index) {
+    if (!cell || !Number.isInteger(cell.row) || !Number.isInteger(cell.col)) {
+      throw new Error("Multi trapped spirit trigger cell is invalid at index " + index + ".");
+    }
+    triggerKeys[cell.row + ":" + cell.col] = true;
+  });
+  var rescued = [];
+  this.targets.forEach(function (target) {
+    if (target.rescued) {
+      return;
+    }
+    var offsets = target.row % 2 !== 0 ? [
+      [-1, 0], [-1, 1], [0, -1], [0, 1], [1, 0], [1, 1]
+    ] : [
+      [-1, -1], [-1, 0], [0, -1], [0, 1], [1, -1], [1, 0]
+    ];
+    var adjacent = offsets.some(function (offset) {
+      return triggerKeys[(target.row + offset[0]) + ":" + (target.col + offset[1])] === true;
+    });
+    if (!adjacent) {
+      return;
+    }
+    target.rescued = true;
+    this.rescuedTargetCount += 1;
+    rescued.push(clone(target));
+  }, this);
+  if (this.rescuedTargetCount > this.targets.length) {
+    throw new Error("Multi trapped spirit rescued target count exceeded target count.");
+  }
+  if (rescued.length) {
+    this.revision += 1;
+  }
+  return rescued;
 };
 
 TrappedSpriteRescueSystem.prototype.getAnchorCell = function () {
@@ -401,9 +492,22 @@ TrappedSpriteRescueSystem.prototype.update = function (dt) {
 };
 
 TrappedSpriteRescueSystem.prototype.snapshotForRender = function () {
+  if (this.multiTargetActive) {
+    return {
+      active: false,
+      multiTargetActive: true,
+      targets: clone(this.targets),
+      rescuedTargetCount: this.rescuedTargetCount,
+      targetCount: this.targets.length,
+      completed: this.isMultiTargetCompleted(),
+      phase: PHASE_IDLE,
+      revision: this.revision
+    };
+  }
   if (!this.active) {
     return {
       active: false,
+      multiTargetActive: false,
       phase: PHASE_IDLE,
       revision: this.revision
     };
@@ -434,6 +538,7 @@ TrappedSpriteRescueSystem.prototype.snapshot = function () {
 };
 
 TrappedSpriteRescueSystem.LEVEL_TYPE = LEVEL_TYPE;
+TrappedSpriteRescueSystem.MULTI_TARGET_LEVEL_TYPE = MULTI_TARGET_LEVEL_TYPE;
 TrappedSpriteRescueSystem.buildSpriteResourcePath = buildSpriteResourcePath;
 
 module.exports = TrappedSpriteRescueSystem;

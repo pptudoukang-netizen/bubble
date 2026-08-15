@@ -6,6 +6,7 @@ var readGameplaySourceFamily = require("./read-gameplay-source-family").readGame
 
 var BoardLayout = require("../assets/scripts/config/BoardLayout");
 var AimTuningProfiles = require("../assets/scripts/config/AimTuningProfiles");
+var LevelConfigLoader = require("../assets/scripts/config/LevelConfigLoader");
 var BubbleGrid = require("../gameplay-src/systems/BubbleGrid");
 var RuntimeGameManager = require("../gameplay-src/core/GameManager");
 var EliminationSequenceBuilder = require("../gameplay-src/core/EliminationSequenceBuilder");
@@ -38,6 +39,12 @@ function createInactiveTrappedSpriteRescueSystemFixture() {
       return false;
     },
     isRotating: function () {
+      return false;
+    },
+    isMultiTargetActive: function () {
+      return false;
+    },
+    isMultiTargetCompleted: function () {
       return false;
     },
     update: function () {
@@ -342,7 +349,8 @@ function createKeyUnlockResolution() {
   return {
     collectedKeys: [],
     unlockedLockedBalls: [],
-    floating: []
+    floating: [],
+    spiritCocoonOpenings: []
   };
 }
 
@@ -535,6 +543,280 @@ function runReflectedShotDoesNotTunnelPastFirstCollisionCase() {
   }
   if (!plan.targetCell || plan.targetCell.row !== 8 || plan.targetCell.col !== 8) {
     throw new Error("Reflected shot must retain the first collision's legal attachment cell.");
+  }
+}
+
+function runTransparentBallPassThroughAndSettlementCase() {
+  var hadCc = Object.prototype.hasOwnProperty.call(global, "cc");
+  var previousCc = global.cc;
+  global.cc = {
+    log: function () {},
+    warn: function () {},
+    error: function () {}
+  };
+
+  var dedicatedRawConfig = JSON.parse(fs.readFileSync(
+    path.resolve(__dirname, "../assets/map/config/levels/level_transparent_ball_test.json"),
+    "utf8"
+  ));
+  var dedicatedConfig = LevelConfigLoader.normalizeLevelConfig(
+    dedicatedRawConfig,
+    "level_transparent_ball_test"
+  );
+  if (
+    dedicatedConfig.level.specialEntities.length !== 1 ||
+    dedicatedConfig.level.specialEntities[0].entityCategory !== "reactive_ball" ||
+    dedicatedConfig.level.specialEntities[0].entityType !== "transparent_ball"
+  ) {
+    throw new Error("Dedicated transparent ball test level must isolate one transparent ball.");
+  }
+  var dedicatedGrid = createGridWithViewport(dedicatedConfig);
+  var dedicatedTransparent = dedicatedConfig.level.specialEntities[0];
+  var dedicatedTransparentPosition = dedicatedGrid.getCellPosition(
+    dedicatedTransparent.row,
+    dedicatedTransparent.col
+  );
+  var planningManager = new GameManager();
+  planningManager.state = "running";
+  planningManager.activeProjectile = null;
+  planningManager.isAiming = true;
+  planningManager._isBoardAdvanceBusy = function () { return false; };
+  planningManager._hasPendingSplitterSpawns = function () { return false; };
+  planningManager._hasPendingMolotovBlasts = function () { return false; };
+  planningManager._hasPendingSpiritCocoonOpenings = function () { return false; };
+  planningManager._hasPendingSwirlRotation = function () { return false; };
+  planningManager._hasPendingWormholeShift = function () { return false; };
+  planningManager._hasPendingVineCast = function () { return false; };
+  planningManager.systems = {
+    bubbleGrid: dedicatedGrid,
+    trajectoryPredictor: new TrajectoryPredictor(),
+    shooterController: {
+      origin: {
+        x: BoardLayout.shooterOrigin.x,
+        y: BoardLayout.shooterOrigin.y
+      },
+      aimDirection: normalizeDirection(BoardLayout.shooterOrigin, dedicatedTransparentPosition)
+    }
+  };
+  planningManager._refreshShotPlan(true);
+  var attachmentPlan = planningManager.pendingShotPlan;
+  var collidedBehindTransparent = !!(
+    attachmentPlan &&
+    attachmentPlan.collidedCell &&
+    attachmentPlan.collidedCell.entityCategory === "normal_ball" &&
+    dedicatedGrid.getNeighborCoordinates(
+      dedicatedTransparent.row,
+      dedicatedTransparent.col
+    ).some(function (coord) {
+      return (
+        coord.row === attachmentPlan.collidedCell.row &&
+        coord.col === attachmentPlan.collidedCell.col
+      );
+    })
+  );
+  if (
+    !attachmentPlan ||
+    attachmentPlan.hitType !== "bubble" ||
+    !collidedBehindTransparent
+  ) {
+    throw new Error(
+      "Transparent ball test shot must terminate at the rear solid ball: " +
+      JSON.stringify({
+        hitType: attachmentPlan && attachmentPlan.hitType,
+        collidedCell: attachmentPlan && attachmentPlan.collidedCell,
+        targetCell: attachmentPlan && attachmentPlan.targetCell
+      })
+    );
+  }
+  if (
+    !attachmentPlan.targetCell ||
+    attachmentPlan.targetCell.row !== dedicatedTransparent.row ||
+    attachmentPlan.targetCell.col !== dedicatedTransparent.col ||
+    !attachmentPlan.transparentAttachmentTarget ||
+    attachmentPlan.transparentAttachmentTarget.id !== dedicatedTransparent.id
+  ) {
+    throw new Error("Shot through a transparent ball must attach in that transparent ball's original cell.");
+  }
+  var attachmentPathEnd = attachmentPlan.pathPoints[attachmentPlan.pathPoints.length - 1];
+  if (
+    Math.abs(attachmentPathEnd.x - dedicatedTransparentPosition.x) > 0.5 ||
+    Math.abs(attachmentPathEnd.y - dedicatedTransparentPosition.y) > 0.5
+  ) {
+    throw new Error("Transparent ball shot path must end at the destroyed transparent ball cell.");
+  }
+
+  var rawConfig = loadLevelRaw(1);
+  rawConfig.level.specialEntities.push({
+    id: "transparent_ball_validation",
+    entityCategory: "reactive_ball",
+    entityType: "transparent_ball",
+    row: 6,
+    col: 5
+  });
+  var normalizedConfig = LevelConfigLoader.normalizeLevelConfig(rawConfig, "level_001");
+  var normalizedTransparent = normalizedConfig.level.specialEntities.filter(function (entity) {
+    return entity.id === "transparent_ball_validation";
+  });
+  if (
+    normalizedTransparent.length !== 1 ||
+    normalizedTransparent[0].entityCategory !== "reactive_ball" ||
+    normalizedTransparent[0].entityType !== "transparent_ball"
+  ) {
+    throw new Error("Transparent ball level config normalization failed.");
+  }
+  var collisionConfig = createLevelConfig(1);
+  collisionConfig.level.layout = [
+    ".....R.....",
+    "..........",
+    ".....R.....",
+    "..........",
+    "...........",
+    "..........",
+    "...........",
+    ".........."
+  ];
+  collisionConfig.level.specialEntities = [{
+    id: "transparent_path",
+    entityCategory: "reactive_ball",
+    entityType: "transparent_ball",
+    row: 6,
+    col: 5
+  }];
+  var grid = createGridWithViewport(collisionConfig);
+  var transparentPosition = grid.getCellPosition(6, 5);
+  var blockerPosition = grid.getCellPosition(2, 5);
+  var startPoint = {
+    x: transparentPosition.x,
+    y: transparentPosition.y - BoardLayout.bubbleDiameter * 2
+  };
+  var endPoint = {
+    x: blockerPosition.x,
+    y: blockerPosition.y + BoardLayout.bubbleDiameter
+  };
+  var blockingCollision = grid.findCollisionOnSegment(startPoint, endPoint, BoardLayout.collisionDistance - 4);
+  if (!blockingCollision || blockingCollision.cell.entityType === "transparent_ball") {
+    throw new Error("Transparent ball must not stop the projectile collision path.");
+  }
+  var penetrated = grid.findTransparentBallCollisionsOnPath(
+    [startPoint, blockingCollision.point],
+    BoardLayout.collisionDistance - 4
+  );
+  if (penetrated.length !== 1 || penetrated[0].id !== "transparent_path") {
+    throw new Error("Projectile path must record the transparent ball it crosses.");
+  }
+  if (
+    !Number.isInteger(penetrated[0].pathSegmentIndex) ||
+    !Number.isFinite(penetrated[0].pathSegmentProgress) ||
+    penetrated[0].pathSegmentProgress <= 0
+  ) {
+    throw new Error("Transparent ball path record must include exact projectile progress.");
+  }
+
+  var manager = new GameManager();
+  manager.score = 0;
+  manager.comboStreak = 1;
+  manager.maxComboStreak = 1;
+  manager.pendingRuntimeEvents = [];
+  var liveTransparentForFlight = {
+    id: "transparent_path",
+    row: 6,
+    col: 5,
+    entityCategory: "reactive_ball",
+    entityType: "transparent_ball"
+  };
+  var flightProjectile = {
+    shotPlan: {
+      penetratedTransparentBalls: penetrated
+    },
+    segmentIndex: penetrated[0].pathSegmentIndex,
+    segmentProgress: penetrated[0].pathSegmentProgress,
+    destroyedTransparentBalls: []
+  };
+  var flightRemoved = false;
+  manager._destroyReachedTransparentBalls(flightProjectile, {
+    getCell: function () {
+      return flightRemoved ? null : liveTransparentForFlight;
+    },
+    removeCells: function (cells) {
+      if (cells.length !== 1 || cells[0] !== liveTransparentForFlight) {
+        throw new Error("Transparent flight destruction fixture received unexpected cells.");
+      }
+      flightRemoved = true;
+      return [liveTransparentForFlight];
+    }
+  });
+  if (!flightRemoved || flightProjectile.destroyedTransparentBalls.length !== 1) {
+    throw new Error("Transparent ball must be removed when projectile progress reaches the hit point.");
+  }
+  var supportChecks = 0;
+  manager.systems = {
+    trappedSpriteRescueSystem: createInactiveTrappedSpriteRescueSystemFixture(),
+    supportSystem: {
+      findFloatingCells: function () {
+        supportChecks += 1;
+        return [];
+      }
+    }
+  };
+  var settlementGrid = {
+    removeFloatingCells: function (cells) {
+      if (!Array.isArray(cells) || cells.length !== 0) {
+        throw new Error("Transparent ball settlement fixture expected no floating cells.");
+      }
+      return [];
+    },
+    getCellPosition: function (row, col) {
+      return { x: col * 70, y: row * -60 };
+    },
+    getCells: function () {
+      return [{ id: "attached", row: 7, col: 5, entityCategory: "normal_ball", entityType: null }];
+    }
+  };
+  var resolution = {
+    attachedCell: { id: "attached", row: 7, col: 5 },
+    matched: [],
+    floating: [],
+    collected: [],
+    transparentBallsDestroyed: [],
+    spiritCocoonOpenings: [],
+    eliminationSequence: [],
+    scoreEvents: [],
+    comboRegistered: false,
+    scoreDelta: 0,
+    boardCleared: false
+  };
+  manager._settleTransparentBallPenetration(
+    resolution,
+    flightProjectile.destroyedTransparentBalls,
+    settlementGrid
+  );
+
+  if (supportChecks !== 1) {
+    throw new Error("Destroying only a transparent ball must run one floating support check.");
+  }
+  if (manager.score < 1000 || resolution.scoreDelta !== manager.score) {
+    throw new Error("Transparent ball fixed score and existing combo bonus must stay synchronized.");
+  }
+  if (
+    resolution.scoreEvents.length !== 1 ||
+    resolution.scoreEvents[0].points !== 1000 ||
+    resolution.scoreEvents[0].scoreKind !== "transparent_ball_break"
+  ) {
+    throw new Error("Transparent ball destruction must create one +1000 floating score event.");
+  }
+  if (manager.comboStreak !== 2 || manager.maxComboStreak !== 2) {
+    throw new Error("Transparent-only destruction must increase combo instead of clearing it.");
+  }
+  var destroyedEvents = manager._drainRuntimeEvents().filter(function (event) {
+    return event.type === "transparent_ball_destroyed";
+  });
+  if (destroyedEvents.length !== 1 || destroyedEvents[0].gained !== 1000) {
+    throw new Error("Transparent ball destruction runtime event must report the fixed score.");
+  }
+  if (hadCc) {
+    global.cc = previousCc;
+  } else {
+    delete global.cc;
   }
 }
 
@@ -940,6 +1222,7 @@ function runKeyUnlockRemovedByExplosionCase() {
   };
   var resolution = createKeyUnlockResolution();
   var grid = createGridWithViewport(levelConfig);
+  manager.systems.bubbleGrid = grid;
   var keyCell = grid.getCell(0, 1);
   if (!keyCell || keyCell.entityCategory !== "key_ball") {
     throw new Error("Key explosion removal regression setup failed to create key cell.");
@@ -2122,6 +2405,8 @@ function runMolotovPendingResolutionFinalizeCase() {
     collected: [],
     floating: [],
     spawnedBySplitters: [],
+    breederResolved: false,
+    breederSpawns: [],
     collectedKeys: [],
     unlockedLockedBalls: [],
     fairyAssistEvents: [],
@@ -5154,8 +5439,10 @@ function runWallBounceNoEliminationAudioCase() {
       targetCell: { row: 0, col: 0 },
       shotPlan: {
         hitType: "cell",
-        wallBounceCount: wallBounceCount
-      }
+        wallBounceCount: wallBounceCount,
+        penetratedTransparentBalls: []
+      },
+      destroyedTransparentBalls: []
     };
     manager.systems = {
       bubbleGrid: {
@@ -5178,6 +5465,7 @@ function runWallBounceNoEliminationAudioCase() {
         matched: Array.from({ length: matchedCount }, function (_, index) {
           return { id: "matched_" + index, row: 0, col: index };
         }),
+        transparentBallsDestroyed: [],
         trappedSpriteRotation: null,
         boardCleared: false
       };
@@ -5436,6 +5724,9 @@ function main() {
 
   runReflectedShotDoesNotTunnelPastFirstCollisionCase();
   console.log("[OK]", "reflected_shot_first_collision", "bank shot does not tunnel to a later attachment point");
+
+  runTransparentBallPassThroughAndSettlementCase();
+  console.log("[OK]", "transparent_ball", "passes through, awards 1000, checks drops, and keeps combo");
 
   runKeyUnlockBoardAdvanceDelayCase();
   console.log("[OK]", "key_unlock_board_advance_delay", "waited for special animation before board advance");

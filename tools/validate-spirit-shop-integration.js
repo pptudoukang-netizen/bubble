@@ -901,7 +901,7 @@ function validateBootstrapAndCloudContract() {
   requireContains(clientCloud, "SpiritShopStore.STORAGE_KEY", "Client cloud spirit shop storage key");
   requireContains(serverCloud, "bubble_spirit_shop_state_v1", "Server cloud spirit shop storage key");
   requireContains(serverCloud, "fragment_bag: 0", "Server cloud fragment bag initial daily count");
-  var marker = "playerProfile_v20260805_assist_spirit_unlock_v3";
+  var marker = "playerProfile_v20260814_profile_size_caps_v6";
   requireContains(clientCloud, marker, "Client cloud deployment marker");
   requireContains(serverCloud, marker, "Server cloud deployment marker");
 }

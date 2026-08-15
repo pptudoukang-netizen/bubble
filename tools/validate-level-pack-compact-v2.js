@@ -76,6 +76,51 @@ function validateFailFastCases(sourcePack, levelKey) {
   });
 }
 
+function validateTransparentBallRoundTrip(expandedPack) {
+  var fixture = clone(expandedPack);
+  var levelKey = Object.keys(fixture.levels).sort()[0];
+  var level = fixture.levels[levelKey].level;
+  if (!Array.isArray(level.layout) || !Array.isArray(level.specialEntities)) {
+    throw new Error("Transparent ball compact fixture requires layout and specialEntities.");
+  }
+  var occupiedSpecialCells = {};
+  level.specialEntities.forEach(function (entity) {
+    occupiedSpecialCells[entity.row + ":" + entity.col] = true;
+  });
+  var target = null;
+  level.layout.some(function (rowString, row) {
+    return rowString.split("").some(function (cellCode, col) {
+      if (cellCode !== "." || occupiedSpecialCells[row + ":" + col]) {
+        return false;
+      }
+      target = { row: row, col: col };
+      return true;
+    });
+  });
+  if (!target) {
+    throw new Error("Transparent ball compact fixture requires one empty authored cell.");
+  }
+  level.specialEntities.push({
+    id: "transparent_ball_round_trip",
+    entityCategory: "reactive_ball",
+    entityType: "transparent_ball",
+    row: target.row,
+    col: target.col
+  });
+
+  var compact = LevelPackCompactCodec.compactPack(fixture);
+  var expanded = LevelPackCompactCodec.expandPack(compact);
+  var decoded = expanded.levels[levelKey].level.specialEntities.filter(function (entity) {
+    return entity.row === target.row &&
+      entity.col === target.col &&
+      entity.entityCategory === "reactive_ball" &&
+      entity.entityType === "transparent_ball";
+  });
+  if (decoded.length !== 1) {
+    throw new Error("Transparent ball compact-schema-v2 round trip failed.");
+  }
+}
+
 function main() {
   var manifest = LevelPackManifest.normalizeManifest(readJson(MANIFEST_PATH));
   var bootstrapManifest = LevelPackManifest.normalizeManifest(readJson(BOOTSTRAP_MANIFEST_PATH), {
@@ -95,6 +140,7 @@ function main() {
   var totalLevels = 0;
   var failFastFixture = null;
   var failFastLevelKey = null;
+  var transparentRoundTripValidated = false;
 
   manifest.packs.forEach(function (packInfo) {
     if (packInfo.format !== LevelPackCompactCodec.PACK_FORMAT_COMPACT_V2) {
@@ -124,6 +170,10 @@ function main() {
     if (JSON.stringify(recompressedPack) !== JSON.stringify(compactPack)) {
       throw new Error("compact-schema-v2 round trip changed pack: " + packInfo.id);
     }
+    if (!transparentRoundTripValidated) {
+      validateTransparentBallRoundTrip(expandedPack);
+      transparentRoundTripValidated = true;
+    }
 
     if (!failFastFixture) {
       failFastLevelKey = findFirstActiveOcclusionLevel(compactPack);
@@ -145,6 +195,9 @@ function main() {
   }
   if (!failFastFixture || !failFastLevelKey) {
     throw new Error("compact-schema-v2 fail-fast fixture was not found.");
+  }
+  if (!transparentRoundTripValidated) {
+    throw new Error("Transparent ball compact-schema-v2 fixture was not validated.");
   }
   validateFailFastCases(failFastFixture, failFastLevelKey);
 

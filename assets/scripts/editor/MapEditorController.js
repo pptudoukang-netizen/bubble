@@ -742,6 +742,9 @@ var MapEditorController = cc.Class({
       if (!this._cells[key]) {
         throw new Error("导入虫洞覆盖层超出棋盘范围: " + key);
       }
+      if (this._cells[key].kind !== "empty") {
+        throw new Error("导入虫洞坐标必须保持为空格: " + key);
+      }
       this._wormholeOverlays[key] = wormholeOverlays[key];
       this._syncCellVisual(key);
     }.bind(this));
@@ -1019,6 +1022,9 @@ var MapEditorController = cc.Class({
     }
 
     if (this._selectedTool.kind === "color") {
+      if (this._wormholeOverlays[key]) {
+        throw new Error("普通球不能占用虫洞坐标，请先擦除虫洞: " + key);
+      }
       this._cells[key] = {
         kind: "color",
         colorCode: this._selectedTool.colorCode
@@ -1029,8 +1035,8 @@ var MapEditorController = cc.Class({
 
     if (this._selectedTool.kind === "special") {
       if (this._selectedTool.specialDef.entityType === "wormhole") {
-        if (this._cells[key].kind === "special" || this._cells[key].kind === "splitter") {
-          throw new Error("虫洞不能与其他特殊实体占用同一坐标: " + key);
+        if (this._cells[key].kind !== "empty") {
+          throw new Error("虫洞坐标必须为空，不能与普通球或特殊实体重叠: " + key);
         }
         this._wormholeOverlays[key] = this._buildSpecialCellState(this._selectedTool, row, col);
         this._syncCellVisual(key);
@@ -1304,8 +1310,8 @@ var MapEditorController = cc.Class({
           if (wormholeOverlay.entityType !== "wormhole") {
             throw new Error("保存时虫洞覆盖层实体类型非法: " + key);
           }
-          if (cellState.kind === "special" || cellState.kind === "splitter") {
-            throw new Error("保存时虫洞与其他特殊实体坐标冲突: " + key);
+          if (cellState.kind !== "empty") {
+            throw new Error("保存时虫洞坐标必须保持为空格: " + key);
           }
           specialEntities.push(this._buildSpecialEntityExport(wormholeOverlay, row, col));
         }

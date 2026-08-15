@@ -9,6 +9,14 @@ function attachBubbleGridCollisionMethods(BubbleGrid, context) {
   var keyFor = context.keyFor;
   var normalize = context.normalize;
 
+  function isTransparentBallCell(cell) {
+    return !!(
+      cell &&
+      cell.entityCategory === "reactive_ball" &&
+      cell.entityType === "transparent_ball"
+    );
+  }
+
 BubbleGrid.prototype.getNeighborCells = function (row, col) {
   return this.getNeighborCoordinates(row, col).map(function (candidate) {
     return this.getCell(candidate.row, candidate.col);
@@ -52,8 +60,8 @@ BubbleGrid.prototype.isAttachableCell = function (row, col, direction, options) 
     return false;
   }
   if (
-    this.isTrappedSpriteRescueActive() &&
-    this.trappedSpriteRescueSystem.isReservedCell(row, col)
+    this.isTrappedSpiritReservedCell(row, col) ||
+    this.hasWormholeAt(row, col)
   ) {
     return false;
   }
@@ -322,6 +330,9 @@ BubbleGrid.prototype.findCollisionOnSegment = function (startPoint, endPoint, co
   var paddingRows = this._resolveSegmentPaddingRows(radius);
 
   this._iterateCellsNearSegment(startPoint, endPoint, paddingRows, function (cell) {
+    if (isTransparentBallCell(cell)) {
+      return;
+    }
     var candidate = this._testSegmentCircleHit(cell, startPoint, segment, a, radius);
     if (this._shouldReplaceSegmentHit(bestHit, candidate)) {
       bestHit = candidate;
@@ -333,6 +344,125 @@ BubbleGrid.prototype.findCollisionOnSegment = function (startPoint, endPoint, co
   }
 
   return this._buildSegmentCollisionResult(bestHit, startPoint, segment);
+};
+
+BubbleGrid.prototype.findWormholeCollisionOnSegment = function (startPoint, endPoint, collisionRadius) {
+  if (!startPoint || !endPoint) {
+    throw new Error("Wormhole collision requires start and end points.");
+  }
+  if (!Number.isFinite(collisionRadius) || collisionRadius <= 0) {
+    throw new Error("Wormhole collision requires positive collisionRadius.");
+  }
+  if (typeof this.getWormholes !== "function") {
+    throw new Error("Wormhole collision requires BubbleGrid.getWormholes.");
+  }
+
+  var segment = {
+    x: endPoint.x - startPoint.x,
+    y: endPoint.y - startPoint.y
+  };
+  var segmentLengthSq = dot(segment, segment);
+  if (segmentLengthSq <= EPSILON) {
+    return null;
+  }
+
+  var bestHit = null;
+  this.getWormholes().forEach(function (wormhole) {
+    var candidate = this._testSegmentCircleHit(
+      wormhole,
+      startPoint,
+      segment,
+      segmentLengthSq,
+      collisionRadius
+    );
+    if (this._shouldReplaceSegmentHit(bestHit, candidate)) {
+      bestHit = candidate;
+    }
+  }, this);
+  if (!bestHit) {
+    return null;
+  }
+  var collision = this._buildSegmentCollisionResult(bestHit, startPoint, segment);
+  collision.center = clone(bestHit.center);
+  return collision;
+};
+
+BubbleGrid.prototype.findTransparentBallCollisionsOnPath = function (pathPoints, collisionRadius) {
+  if (!Array.isArray(pathPoints) || pathPoints.length < 2) {
+    throw new Error("Transparent ball path collision requires at least two path points.");
+  }
+  if (!Number.isFinite(collisionRadius) || collisionRadius <= 0) {
+    throw new Error("Transparent ball path collision requires positive collisionRadius.");
+  }
+
+  var penetratedById = {};
+  var penetrated = [];
+  var paddingRows = this._resolveSegmentPaddingRows(collisionRadius);
+
+  for (var segmentIndex = 0; segmentIndex < pathPoints.length - 1; segmentIndex += 1) {
+    var startPoint = pathPoints[segmentIndex];
+    var endPoint = pathPoints[segmentIndex + 1];
+    if (
+      !startPoint ||
+      !endPoint ||
+      !Number.isFinite(startPoint.x) ||
+      !Number.isFinite(startPoint.y) ||
+      !Number.isFinite(endPoint.x) ||
+      !Number.isFinite(endPoint.y)
+    ) {
+      throw new Error("Transparent ball path points must contain finite coordinates.");
+    }
+    var segment = {
+      x: endPoint.x - startPoint.x,
+      y: endPoint.y - startPoint.y
+    };
+    var segmentLengthSq = dot(segment, segment);
+    if (segmentLengthSq <= EPSILON) {
+      continue;
+    }
+
+    var segmentHits = [];
+    this._iterateCellsNearSegment(startPoint, endPoint, paddingRows, function (cell) {
+      if (!isTransparentBallCell(cell)) {
+        return;
+      }
+      if (typeof cell.id !== "string" || !cell.id) {
+        throw new Error("Transparent ball collision requires a non-empty cell id.");
+      }
+      var candidate = this._testSegmentCircleHit(
+        cell,
+        startPoint,
+        segment,
+        segmentLengthSq,
+        collisionRadius
+      );
+      if (candidate) {
+        segmentHits.push(candidate);
+      }
+    });
+    segmentHits.sort(function (left, right) {
+      if (left.t !== right.t) {
+        return left.t - right.t;
+      }
+      return String(left.cell.id) < String(right.cell.id) ? -1 : 1;
+    });
+    segmentHits.forEach(function (hit) {
+      if (penetratedById[hit.cell.id]) {
+        return;
+      }
+      penetratedById[hit.cell.id] = true;
+      var entry = clone(hit.cell);
+      entry.hitPoint = {
+        x: startPoint.x + segment.x * hit.t,
+        y: startPoint.y + segment.y * hit.t
+      };
+      entry.pathSegmentIndex = segmentIndex;
+      entry.pathSegmentProgress = Math.sqrt(segmentLengthSq) * hit.t;
+      penetrated.push(entry);
+    });
+  }
+
+  return penetrated;
 };
 
 BubbleGrid.prototype.findTrappedSpriteCollisionOnSegment = function (startPoint, endPoint, collisionRadius) {
@@ -453,6 +583,9 @@ BubbleGrid.prototype.findCollisionsOnSegmentForRadii = function (startPoint, end
   var paddingRows = this._resolveSegmentPaddingRows(maxRadius);
 
   this._iterateCellsNearSegment(startPoint, endPoint, paddingRows, function (cell) {
+    if (isTransparentBallCell(cell)) {
+      return;
+    }
     uniqueRadii.forEach(function (radius) {
       var candidate = this._testSegmentCircleHit(cell, startPoint, segment, segmentLengthSq, radius);
       if (this._shouldReplaceSegmentHit(bestHits[radius], candidate)) {
@@ -479,12 +612,11 @@ BubbleGrid.prototype.findAttachmentCell = function (point, collidedCell, directi
 
   var incomingDirection = direction || { x: 0, y: 1 };
   var candidates = this.getNeighborCoordinates(collidedCell.row, collidedCell.col).filter(function (candidate) {
-    if (this.hasCell(candidate.row, candidate.col)) {
+    if (this.hasCell(candidate.row, candidate.col) || this.hasWormholeAt(candidate.row, candidate.col)) {
       return false;
     }
     if (
-      this.isTrappedSpriteRescueActive() &&
-      this.trappedSpriteRescueSystem.isReservedCell(candidate.row, candidate.col)
+      this.isTrappedSpiritReservedCell(candidate.row, candidate.col)
     ) {
       return false;
     }
@@ -494,10 +626,9 @@ BubbleGrid.prototype.findAttachmentCell = function (point, collidedCell, directi
 
   if (!candidates.length) {
     candidates = this.getNeighborCoordinates(collidedCell.row, collidedCell.col).filter(function (candidate) {
-      return !this.hasCell(candidate.row, candidate.col) && !(
-        this.isTrappedSpriteRescueActive() &&
-        this.trappedSpriteRescueSystem.isReservedCell(candidate.row, candidate.col)
-      );
+      return !this.hasCell(candidate.row, candidate.col) &&
+        !this.hasWormholeAt(candidate.row, candidate.col) &&
+        !this.isTrappedSpiritReservedCell(candidate.row, candidate.col);
     }, this);
   }
 
@@ -671,7 +802,7 @@ BubbleGrid.prototype._findTopSlot = function (impactX) {
   var bestDistance = Number.MAX_VALUE;
 
   for (var col = 0; col < this.getColumnCountForRow(row); col += 1) {
-    if (this.hasCell(row, col)) {
+    if (this.hasCell(row, col) || this.hasWormholeAt(row, col)) {
       continue;
     }
 

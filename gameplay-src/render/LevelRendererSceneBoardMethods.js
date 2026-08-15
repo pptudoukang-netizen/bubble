@@ -33,6 +33,9 @@ function attachLevelRendererSceneBoardMethods(LevelRenderer, deps) {
   var TOP_SLOT_STAR_TWINKLE_DURATION = 0.45;
   var VINE_OVERLAY_NODE_NAME = "VinesOverlay";
   var VINE_HEALTH_NODE_NAME = "VineSpiritHealth";
+  var POISON_OVERLAY_NODE_NAME = "PoisonOverlay";
+  var POISON_OVERLAY_SIZE = { width: 69, height: 70 };
+  var POISON_DROPLET_SIZE = { width: 16, height: 21 };
   var VINE_PREVIEW_FADE_DURATION = 0.18;
   var TIME_BONUS_LABEL_NODE_NAME = "TimeBonus";
   var TIME_BONUS_LABEL_Z_INDEX = 100;
@@ -198,9 +201,13 @@ function attachLevelRendererSceneBoardMethods(LevelRenderer, deps) {
       resolveBallVisualKey(cell),
       lockedColorKey,
       typeof cell.health === "number" ? cell.health : "",
+      Number.isInteger(cell.capacity) ? cell.capacity : "",
       Number.isInteger(cell.timeBonusSeconds) ? cell.timeBonusSeconds : "",
+      cell.spiritMistExpiresAfterShot === null ? "" : cell.spiritMistExpiresAfterShot,
       typeof cell.vineOwnerId === "string" ? cell.vineOwnerId : "",
-      typeof cell.vinePreviewOwnerId === "string" ? cell.vinePreviewOwnerId : ""
+      typeof cell.vinePreviewOwnerId === "string" ? cell.vinePreviewOwnerId : "",
+      typeof cell.poisonAttachmentId === "string" ? cell.poisonAttachmentId : "",
+      Number.isInteger(cell.poisonParticleCount) ? cell.poisonParticleCount : ""
     ].join("|");
   }
 
@@ -451,6 +458,33 @@ function attachLevelRendererSceneBoardMethods(LevelRenderer, deps) {
     overlayNode.opacity = 255;
   }
 
+  function syncPoisonOverlay(renderer, node, cell) {
+    if (!node || !node.isValid) {
+      throw new Error("Poison overlay requires valid board node.");
+    }
+    var spriteTarget = node.getChildByName("Icon") || node;
+    var overlayNode = getOrCreateChild(spriteTarget, POISON_OVERLAY_NODE_NAME);
+    var hasPoison = !!(cell && typeof cell.poisonAttachmentId === "string" && cell.poisonAttachmentId);
+    if (!hasPoison) {
+      overlayNode.active = false;
+      return;
+    }
+    if (cell.entityCategory !== "normal_ball" || cell.entityType !== null || cell.poisonParticleCount !== 3) {
+      throw new Error("Poison overlay requires an ordinary ball with particleCount 3.");
+    }
+    var poisonFrame = renderer.spriteFrameCache[BALL_RESOURCES.POISON_OVERLAY];
+    if (!poisonFrame) {
+      throw new Error("Poison overlay sprite was not preloaded: " + BALL_RESOURCES.POISON_OVERLAY);
+    }
+    overlayNode.active = true;
+    overlayNode.setPosition(0, 0);
+    overlayNode.zIndex = 14;
+    overlayNode.opacity = 255;
+    var poisonSprite = ensureSprite(overlayNode, poisonFrame);
+    poisonSprite.trim = false;
+    overlayNode.setContentSize(POISON_OVERLAY_SIZE);
+  }
+
   function syncVineSpiritHealth(node, cell) {
     if (!node || !node.isValid) {
       throw new Error("Vine spirit health requires valid board node.");
@@ -590,9 +624,12 @@ LevelRenderer.prototype._renderBoard = function (boardSnapshot) {
       restoreBoardBubbleVisualState(this, existingNode, cell);
       this.wormholeShaderRenderer.syncNode(existingNode, cell);
       syncVineOverlay(this, existingNode, cell);
+      syncPoisonOverlay(this, existingNode, cell);
       syncVineSpiritHealth(existingNode, cell);
       syncTimeBonusLabel(this, existingNode, cell);
+      this._syncSpiritMistOverlay(existingNode, cell);
       this._applySplitterSpawnHiddenBoardState(existingNode, cell.id);
+      this._applyBreederSpawnHiddenBoardState(existingNode, cell.id);
       this._applyMolotovBlastHiddenBoardState(existingNode, cell.id);
       return;
     }
@@ -613,9 +650,12 @@ LevelRenderer.prototype._renderBoard = function (boardSnapshot) {
     );
     this.wormholeShaderRenderer.syncNode(bubbleNode, cell);
     syncVineOverlay(this, bubbleNode, cell);
+    syncPoisonOverlay(this, bubbleNode, cell);
     syncVineSpiritHealth(bubbleNode, cell);
     syncTimeBonusLabel(this, bubbleNode, cell);
+    this._syncSpiritMistOverlay(bubbleNode, cell);
     this._applySplitterSpawnHiddenBoardState(bubbleNode, cell.id);
+    this._applyBreederSpawnHiddenBoardState(bubbleNode, cell.id);
     this._applyMolotovBlastHiddenBoardState(bubbleNode, cell.id);
   }, this);
 
@@ -872,7 +912,12 @@ LevelRenderer.prototype._renderFallingDrops = function (runtimeSnapshot) {
     dropNode.setPosition(drop.position.x, drop.position.y);
     dropNode.angle = drop.rotation || 0;
     dropNode.opacity = 255;
-    this._applyBoardBubbleVisualCached(dropNode, drop, BOARD_BUBBLE_SIZE);
+    this._applyBoardBubbleVisualCached(
+      dropNode,
+      drop,
+      drop.entityType === "poison_droplet" ? POISON_DROPLET_SIZE : BOARD_BUBBLE_SIZE
+    );
+    syncPoisonOverlay(this, dropNode, drop);
     applyDropCollisionGlow(this, dropNode, drop);
   }
   this._recycleInactiveFallingDropNodes(currentTick);

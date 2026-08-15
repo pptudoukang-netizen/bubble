@@ -23,6 +23,7 @@ function createGameManagerShotResolutionMethods(deps) {
   var isSkillBall = deps.isSkillBall;
   var isIceBall = deps.isIceBall;
   var isBlastBall = deps.isBlastBall;
+  var isBlackHoleBall = deps.isBlackHoleBall;
   var isRainbowBall = deps.isRainbowBall;
   var isMolotovBall = deps.isMolotovBall;
   var isSplitterBall = deps.isSplitterBall;
@@ -385,6 +386,7 @@ function createGameManagerShotResolutionMethods(deps) {
     MOLOTOV_BLAST_ANIMATION_DURATION: MOLOTOV_BLAST_ANIMATION_DURATION,
     MOLOTOV_BLAST_TRIGGER_DELAY: MOLOTOV_BLAST_TRIGGER_DELAY,
     NON_COLLECTIBLE_JAR_SCORE_COLORS: NON_COLLECTIBLE_JAR_SCORE_COLORS,
+    SpecialAnimationTiming: SpecialAnimationTiming,
     appendMolotovEliminationSequence: appendMolotovEliminationSequence,
     buildMolotovBlastDropVelocity: buildMolotovBlastDropVelocity,
     buildNearestKeyLockPairings: buildNearestKeyLockPairings,
@@ -401,6 +403,7 @@ function createGameManagerShotResolutionMethods(deps) {
     findPrimaryCollectionObjective: findPrimaryCollectionObjective,
     hasUnlockEntryForKey: hasUnlockEntryForKey,
     isBlastBall: isBlastBall,
+    isBlackHoleBall: isBlackHoleBall,
     isIceBall: isIceBall,
     isKeyBall: isKeyBall,
     isLockedBall: isLockedBall,

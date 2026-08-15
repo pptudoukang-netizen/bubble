@@ -5,6 +5,7 @@ var attachGameManagerSnapshotMethods = require("./GameManagerSnapshotMethods");
 
 var attachGameManagerBoardPhaseMethods = require("./GameManagerBoardPhaseMethods");
 var attachGameManagerSpecialPhaseMethods = require("./GameManagerSpecialPhaseMethods");
+var attachGameManagerSpiritCocoonMethods = require("./GameManagerSpiritCocoonMethods");
 var attachGameManagerRuntimeStateMethods = require("./GameManagerRuntimeStateMethods");
 var attachGameManagerInputMethods = require("./GameManagerInputMethods");
 var attachGameManagerAdPowerupMethods = require("./GameManagerAdPowerupMethods");
@@ -114,9 +115,21 @@ function createEmptyResolution() {
     injectedSkills: [],
     reactiveTriggered: [],
     blastExplosions: [],
+    transparentBallsDestroyed: [],
+    rescuedTrappedSpirits: [],
     spawnedBySplitters: [],
+    spiritCocoonOpenings: [],
+    spiritCocoonConsumed: [],
+    spiritCocoonRecolors: [],
+    spiritMistApplied: [],
+    spiritMistCleared: [],
+    breederResolved: false,
+    breederSpawns: [],
     swirlRotations: [],
     wormholeShifts: [],
+    wormholeProjectileAbsorptions: [],
+    blackHoleProjectileAbsorptions: [],
+    blackHolesUnloaded: [],
     vineCastEvaluated: false,
     vineCasts: [],
     vineSpiritHits: [],
@@ -124,6 +137,7 @@ function createEmptyResolution() {
     witheredVines: [],
     collectedKeys: [],
     unlockedLockedBalls: [],
+    poisonReleases: [],
     fairyAssistEvents: [],
     fairyAssistResolved: false,
     impact: null,
@@ -134,6 +148,8 @@ function createEmptyResolution() {
     topAnchorCollapse: false,
     eliminationSequence: [],
     scoreEvents: [],
+    comboRegistered: false,
+    multiTrappedSpiritRescueCompleted: false,
     dangerReached: false,
     shotMissed: false,
     trappedSpriteRotation: null
@@ -181,6 +197,8 @@ var BASE_SCORE_RULES = {
   matchedDrop: 10,
   floatingDrop: 80,
   blastDrop: 100,
+  transparentBallBreak: 1000,
+  trappedSpiritRescue: 1000,
   jarCollectBase: 60,
   skillOverflow: 220
 };
@@ -265,6 +283,28 @@ if (
   SpecialAnimationTiming.wormholeShift.duration <= 0
 ) {
   throw new Error("SpecialAnimationTiming.wormholeShift.duration must be positive.");
+}
+if (
+  typeof SpecialAnimationTiming.wormholeShift.inhaleDuration !== "number" ||
+  !isFinite(SpecialAnimationTiming.wormholeShift.inhaleDuration) ||
+  SpecialAnimationTiming.wormholeShift.inhaleDuration <= 0 ||
+  typeof SpecialAnimationTiming.wormholeShift.exhaleDuration !== "number" ||
+  !isFinite(SpecialAnimationTiming.wormholeShift.exhaleDuration) ||
+  SpecialAnimationTiming.wormholeShift.exhaleDuration <= 0 ||
+  Math.abs(
+    SpecialAnimationTiming.wormholeShift.inhaleDuration +
+    SpecialAnimationTiming.wormholeShift.exhaleDuration -
+    SpecialAnimationTiming.wormholeShift.duration
+  ) > 0.000001
+) {
+  throw new Error("SpecialAnimationTiming wormhole inhale/exhale durations must be positive and sum to duration.");
+}
+if (
+  typeof SpecialAnimationTiming.wormholeShift.projectileAbsorbDuration !== "number" ||
+  !isFinite(SpecialAnimationTiming.wormholeShift.projectileAbsorbDuration) ||
+  SpecialAnimationTiming.wormholeShift.projectileAbsorbDuration <= 0
+) {
+  throw new Error("SpecialAnimationTiming.wormholeShift.projectileAbsorbDuration must be positive.");
 }
 var WORMHOLE_SHIFT_DURATION = SpecialAnimationTiming.wormholeShift.duration;
 // 最后一颗入缸后，延迟再弹出 WinView。
@@ -364,12 +404,20 @@ function isSplitterBall(ball) {
   return !!(ball && ball.entityCategory === "reactive_ball" && ball.entityType === "splitter");
 }
 
+function isBreederBall(ball) {
+  return !!(ball && ball.entityCategory === "reactive_ball" && ball.entityType === "breeder");
+}
+
 function isSwirlBall(ball) {
   return !!(ball && ball.entityCategory === "reactive_ball" && ball.entityType === "swirl");
 }
 
 function isWormholeBall(ball) {
   return !!(ball && ball.entityCategory === "reactive_ball" && ball.entityType === "wormhole");
+}
+
+function isBlackHoleBall(ball) {
+  return !!(ball && ball.entityCategory === "hazard_ball" && ball.entityType === "black_hole");
 }
 
 function isVineSpiritBall(ball) {
@@ -505,6 +553,7 @@ function buildActiveProjectile(firedBall, shotPlan) {
     pathPoints: pathPoints,
     segmentIndex: 0,
     segmentProgress: 0,
+    destroyedTransparentBalls: [],
     targetCell: shotPlan && shotPlan.targetCell ? clone(shotPlan.targetCell) : null,
     shotPlan: shotPlan ? clone(shotPlan) : null
   };
@@ -648,7 +697,7 @@ function buildScoreRulesForLevel(levelConfig) {
 
   var rules = cloneScoreRules(BASE_SCORE_RULES);
   Object.keys(rules).forEach(function (key) {
-    if (key === "matchedDrop") {
+    if (key === "matchedDrop" || key === "transparentBallBreak" || key === "trappedSpiritRescue") {
       return;
     }
     rules[key] = Math.max(1, Math.round(rules[key] * multiplier));
@@ -762,6 +811,7 @@ function GameManager(options) {
   this.pendingBoardAdvanceScheduledUpdateSerial = -1;
   this.pendingWinSettlementDelay = 0;
   this.pendingSplitterSpawns = [];
+  this.pendingSpiritCocoonOpenings = [];
   this.pendingMolotovBlastQueue = [];
   this.activeMolotovBlast = null;
   this.molotovBlastTriggeredIds = {};
@@ -807,6 +857,8 @@ function GameManager(options) {
     this._grantTimeBonusForRemovedCells(removedCells, removalReason);
   }.bind(this));
   this.systems.fallingMarbleSystem.attachFairyAssistSystem(this.systems.fairyAssistSystem);
+  this.spiritCocoonFirstTriggerStore = options.spiritCocoonFirstTriggerStore;
+  this.spiritCocoonRandom = Math.random;
 }
 
 var GAME_MANAGER_ENTRY_CONTEXT = {
@@ -876,6 +928,8 @@ var GAME_MANAGER_METHOD_CONTEXT = {
   distance: distance,
   findPrimaryCollectionObjective: findPrimaryCollectionObjective,
   isBarrierObstacleBall: isBarrierObstacleBall,
+  isBreederBall: isBreederBall,
+  isBlackHoleBall: isBlackHoleBall,
   isIceBall: isIceBall,
   isPowerupShotBall: isPowerupShotBall,
   isStoneBall: isStoneBall,
@@ -891,6 +945,7 @@ var GAME_MANAGER_METHOD_CONTEXT = {
 };
 attachGameManagerBoardPhaseMethods(GameManager, GAME_MANAGER_METHOD_CONTEXT);
 attachGameManagerSpecialPhaseMethods(GameManager, GAME_MANAGER_METHOD_CONTEXT);
+attachGameManagerSpiritCocoonMethods(GameManager);
 attachGameManagerRuntimeStateMethods(GameManager, GAME_MANAGER_METHOD_CONTEXT);
 attachGameManagerInputMethods(GameManager, GAME_MANAGER_METHOD_CONTEXT);
 attachGameManagerAdPowerupMethods(GameManager, GAME_MANAGER_METHOD_CONTEXT);
@@ -908,6 +963,7 @@ Object.assign(GameManager.prototype, createGameManagerShotResolutionMethods({
   isSkillBall: isSkillBall,
   isIceBall: isIceBall,
   isBlastBall: isBlastBall,
+  isBlackHoleBall: isBlackHoleBall,
   isRainbowBall: isRainbowBall,
   isMolotovBall: isMolotovBall,
   isSplitterBall: isSplitterBall,

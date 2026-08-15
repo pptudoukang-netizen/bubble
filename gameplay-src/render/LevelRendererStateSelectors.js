@@ -147,6 +147,24 @@ function collectBallVisualSpritePaths(paths, ballLike, label) {
   if (isIceBallLike(ballLike)) {
     pushUniqueSpritePath(paths, BALL_RESOURCES.ICE, label + "/ice_overlay");
   }
+  if (ballLike && typeof ballLike.poisonAttachmentId === "string" && ballLike.poisonAttachmentId) {
+    pushUniqueSpritePath(paths, BALL_RESOURCES.POISON_OVERLAY, label + "/poison_overlay");
+  }
+  if (ballLike && ballLike.entityType === "spirit_cocoon") {
+    [
+      "COCOON_1",
+      "COCOON_2",
+      "COCOON_3",
+      "COCOON_4",
+      "COCOON_5",
+      "MIST_SPRITE",
+      "GLUTTONY_SPRITE",
+      "RAINBOW_SPRITE",
+      "SPIRIT_MIST"
+    ].forEach(function (resourceKey) {
+      pushUniqueSpritePath(paths, BALL_RESOURCES[resourceKey], label + "/" + resourceKey);
+    });
+  }
 }
 
 function collectRuntimeBoardSpritePaths(paths, runtimeSnapshot) {
@@ -260,7 +278,7 @@ function buildHudTargetDisplayData(levelConfig, runtimeSnapshot) {
   var objectives = getCollectionObjectiveList(levelConfig);
   var ballObjective = null;
   var iceSnowballObjective = null;
-  var spiritDisplay = null;
+  var spiritDisplays = [];
 
   for (var i = 0; i < objectives.length; i += 1) {
     var objective = objectives[i];
@@ -302,7 +320,8 @@ function buildHudTargetDisplayData(levelConfig, runtimeSnapshot) {
       throw new Error("Trapped sprite rescue HUD target requires runtime board cells.");
     }
     var spiritRescued = runtimeSnapshot.board.cells.length === 0;
-    spiritDisplay = {
+    spiritDisplays.push({
+      targetId: "single_trapped_spirit",
       spiritId: level.trappedSpriteRescue.spiritId,
       spritePath: buildTrappedSpriteResourcePath(level.trappedSpriteRescue.spiritId),
       progress: spiritRescued ? 1 : 0,
@@ -310,13 +329,82 @@ function buildHudTargetDisplayData(levelConfig, runtimeSnapshot) {
       remaining: spiritRescued ? 0 : 1,
       remainingText: spiritRescued ? "0" : "1",
       progressText: spiritRescued ? "1/1" : "0/1"
-    };
+    });
+  } else if (level.levelType === "multi_trapped_spirit_rescue") {
+    if (
+      !level.multiTrappedSpiritRescue ||
+      !Array.isArray(level.multiTrappedSpiritRescue.targets) ||
+      level.multiTrappedSpiritRescue.targets.length < 2
+    ) {
+      throw new Error("Multi trapped spirit rescue HUD target requires at least two configured targets.");
+    }
+    if (
+      !runtimeSnapshot ||
+      !runtimeSnapshot.systems ||
+      !runtimeSnapshot.systems.trappedSpriteRescueSystem ||
+      runtimeSnapshot.systems.trappedSpriteRescueSystem.multiTargetActive !== true
+    ) {
+      throw new Error("Multi trapped spirit rescue HUD target requires active multi-target snapshot.");
+    }
+    var multiRescue = runtimeSnapshot.systems.trappedSpriteRescueSystem;
+    if (!Array.isArray(multiRescue.targets) || multiRescue.targets.length !== level.multiTrappedSpiritRescue.targets.length) {
+      throw new Error("Multi trapped spirit rescue HUD target count does not match runtime snapshot.");
+    }
+    var rescuedCount = multiRescue.rescuedTargetCount;
+    var targetCount = multiRescue.targetCount;
+    if (
+      !Number.isInteger(rescuedCount) ||
+      rescuedCount < 0 ||
+      !Number.isInteger(targetCount) ||
+      targetCount !== multiRescue.targets.length ||
+      targetCount < 2
+    ) {
+      throw new Error("Multi trapped spirit rescue HUD target progress is invalid.");
+    }
+    var countedRescuedTargets = 0;
+    spiritDisplays = multiRescue.targets.map(function (target, index) {
+      var configuredTarget = level.multiTrappedSpiritRescue.targets[index];
+      if (
+        !target ||
+        typeof target.id !== "string" ||
+        !target.id ||
+        typeof target.spiritId !== "string" ||
+        !target.spiritId ||
+        typeof target.rescued !== "boolean" ||
+        !configuredTarget ||
+        target.spiritId !== configuredTarget.spiritId ||
+        target.row !== configuredTarget.row ||
+        target.col !== configuredTarget.col
+      ) {
+        throw new Error("Multi trapped spirit rescue HUD target does not match level config at index " + index + ".");
+      }
+      if (target.rescued) {
+        countedRescuedTargets += 1;
+      }
+      var remaining = target.rescued ? 0 : 1;
+      return {
+        targetId: target.id,
+        spiritId: target.spiritId,
+        spritePath: buildTrappedSpriteResourcePath(target.spiritId),
+        progress: target.rescued ? 1 : 0,
+        target: 1,
+        remaining: remaining,
+        remainingText: String(remaining),
+        progressText: target.rescued ? "1/1" : "0/1"
+      };
+    });
+    if (countedRescuedTargets !== rescuedCount) {
+      throw new Error("Multi trapped spirit rescue HUD rescued count does not match targets.");
+    }
+    if (multiRescue.completed !== (rescuedCount === targetCount)) {
+      throw new Error("Multi trapped spirit rescue HUD completion state does not match target progress.");
+    }
   }
 
   return {
     ball: ballObjective ? buildObjectiveDisplayForObjective(ballObjective, runtimeSnapshot) : null,
     iceSnowball: iceSnowballObjective ? buildObjectiveDisplayForObjective(iceSnowballObjective, runtimeSnapshot) : null,
-    spirit: spiritDisplay
+    spirits: spiritDisplays
   };
 }
 
@@ -337,7 +425,7 @@ function applyIceSnowballHudDisplayProgress(hudTargetDisplay, displayProgress) {
   var remaining = Math.max(0, target - progress);
   return {
     ball: hudTargetDisplay.ball,
-    spirit: hudTargetDisplay.spirit,
+    spirits: hudTargetDisplay.spirits,
     iceSnowball: {
       iconCode: hudTargetDisplay.iceSnowball.iconCode,
       progress: progress,
@@ -419,6 +507,28 @@ function buildHudRenderKey(levelConfig, runtimeSnapshot, iceSnowballDisplayProgr
   if (Number.isInteger(iceSnowballDisplayProgress) && iceSnowballDisplayProgress >= 0) {
     hudTargetDisplay = applyIceSnowballHudDisplayProgress(hudTargetDisplay, iceSnowballDisplayProgress);
   }
+  if (!Array.isArray(hudTargetDisplay.spirits)) {
+    throw new Error("HUD target display spirits must be an array.");
+  }
+  var spiritRenderKey = hudTargetDisplay.spirits.map(function (spiritDisplay, index) {
+    if (
+      !spiritDisplay ||
+      typeof spiritDisplay.targetId !== "string" ||
+      !spiritDisplay.targetId ||
+      typeof spiritDisplay.remainingText !== "string" ||
+      typeof spiritDisplay.progressText !== "string" ||
+      typeof spiritDisplay.spritePath !== "string" ||
+      !spiritDisplay.spritePath
+    ) {
+      throw new Error("HUD spirit target render key entry is invalid at index " + index + ".");
+    }
+    return [
+      spiritDisplay.targetId,
+      spiritDisplay.remainingText,
+      spiritDisplay.progressText,
+      spiritDisplay.spritePath
+    ].join(":");
+  }).join(",");
 
   return [
     levelCode,
@@ -436,9 +546,7 @@ function buildHudRenderKey(levelConfig, runtimeSnapshot, iceSnowballDisplayProgr
     hudTargetDisplay.iceSnowball ? hudTargetDisplay.iceSnowball.remainingText : "",
     hudTargetDisplay.iceSnowball ? hudTargetDisplay.iceSnowball.progressText : "",
     hudTargetDisplay.iceSnowball ? hudTargetDisplay.iceSnowball.iconCode : "",
-    hudTargetDisplay.spirit ? hudTargetDisplay.spirit.remainingText : "",
-    hudTargetDisplay.spirit ? hudTargetDisplay.spirit.progressText : "",
-    hudTargetDisplay.spirit ? hudTargetDisplay.spirit.spritePath : ""
+    spiritRenderKey
   ].join("|");
 }
 
@@ -791,6 +899,22 @@ function resolveBallCode(ballLike) {
       return "SPLIT_" + ballLike.splitColor;
     }
 
+    if (ballLike.entityType === "breeder") {
+      return "BREEDER";
+    }
+
+    if (ballLike.entityType === "black_hole") {
+      return "BLACK_HOLE";
+    }
+
+    if (ballLike.entityType === "spirit_cocoon") {
+      return "SPIRIT_COCOON";
+    }
+
+    if (ballLike.entityType === "transparent_ball") {
+      return "TRANSPARENT_BALL";
+    }
+
     if (ballLike.entityType === "swirl") {
       return "SWIRL";
     }
@@ -801,6 +925,10 @@ function resolveBallCode(ballLike) {
 
     if (ballLike.entityType === "vine_spirit") {
       return "VINE_SPIRIT";
+    }
+
+    if (ballLike.entityType === "poison_droplet") {
+      return "POISON_DROPLET";
     }
   }
 

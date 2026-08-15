@@ -181,7 +181,10 @@ function buildRevivePlan(levelConfig, runtimeSnapshot) {
   if (level.playMode !== "shot_limited") {
     throw new Error("Ad revive level.playMode is unsupported: " + level.playMode);
   }
-  if (level.levelType === "trapped_sprite_rescue") {
+  if (
+    level.levelType === "trapped_sprite_rescue" ||
+    level.levelType === "multi_trapped_spirit_rescue"
+  ) {
     return {
       grantedShots: AD_REVIVE_GRANTED_SHOTS,
       grantedTimeSeconds: 0,

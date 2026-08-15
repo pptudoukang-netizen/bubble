@@ -76,11 +76,31 @@ FallingMarbleSystem.prototype.update = function (dt) {
     }
 
     drop.jarCooldown = Math.max(0, (drop.jarCooldown || 0) - dt);
-    this._applyGapAttraction(drop, dt);
+    if (drop.dropKind !== "poison_droplet") {
+      this._applyGapAttraction(drop, dt);
+    }
     drop.velocity.y -= this.gravity * dt;
     drop.position.x += drop.velocity.x * dt;
     drop.position.y += drop.velocity.y * dt;
     drop.rotation += drop.rotationSpeed * dt;
+
+    if (drop.dropKind === "poison_droplet") {
+      var poisonCollision = this._applyPoisonFairyCollision(drop);
+      if (poisonCollision) {
+        result.poisonFairyHits.push(poisonCollision);
+        activeDropCount -= 1;
+        continue;
+      }
+      if (drop.position.y <= this.cleanupY) {
+        drop.active = false;
+        result.missed.push(this._createMissedEvent(drop));
+        activeDropCount -= 1;
+        continue;
+      }
+      drops[writeIndex] = drop;
+      writeIndex += 1;
+      continue;
+    }
 
     var fairyCollision = this._applyFairyCollision(drop, activeDropCount + spawnedDrops.length);
     if (fairyCollision) {

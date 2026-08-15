@@ -626,10 +626,12 @@ module.exports = {
 
       var GameManager = BundleLoader.requireGameplayModule("GameManager");
       var LevelRenderer = BundleLoader.requireGameplayModule("LevelRenderer");
+      var SpiritCocoonTriggerStore = require("../utils/SpiritCocoonTriggerStore");
 
       this.gameManager = new GameManager({
         poolManager: this.poolManager,
-        levelManager: this.levelManager
+        levelManager: this.levelManager,
+        spiritCocoonFirstTriggerStore: new SpiritCocoonTriggerStore()
       });
       this._syncEquippedAssistSpiritToGameManager();
       this.levelRenderer = new LevelRenderer(this.node);

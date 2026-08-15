@@ -11,6 +11,13 @@ var BOOT_LOADER_META_PATH = path.join(PROJECT_ROOT, "assets/boot/BootLoader.js.m
 var BOOT_LOADER_COMPONENT_ID = "5039eb1VPRG1JT+bI5uDxg1";
 var BOOT_LOADER_FILE_ID = "FyzzlN3ZBr8vGl6TOMDfM5";
 
+function isEngineComponentType(type) {
+  return typeof type === "string" && (
+    type.indexOf("cc.") === 0 ||
+    type.indexOf("sp.") === 0
+  );
+}
+
 function readJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, "utf8"));
 }
@@ -119,7 +126,7 @@ function main() {
   });
 
   var customComponents = bootScene.filter(function (entry) {
-    return entry && typeof entry.__type__ === "string" && entry.__type__.indexOf("cc.") !== 0;
+    return entry && typeof entry.__type__ === "string" && !isEngineComponentType(entry.__type__);
   });
   if (
     customComponents.length !== 1 ||

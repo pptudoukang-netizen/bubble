@@ -13,6 +13,77 @@ function createGameManagerShotDropMethods(context) {
   var resolveIceInnerColor = context.resolveIceInnerColor;
 
   return {
+    _registerPoisonDropletsForEliminatedCells: function (cells, grid, resolution) {
+      if (!Array.isArray(cells)) {
+        throw new Error("Poison droplet release requires eliminated cells array.");
+      }
+      if (!grid || typeof grid.getCellPosition !== "function") {
+        throw new Error("Poison droplet release requires BubbleGrid.");
+      }
+      if (!resolution || !Array.isArray(resolution.poisonReleases)) {
+        throw new Error("Poison droplet release requires resolution.poisonReleases.");
+      }
+      if (
+        !this.systems ||
+        !this.systems.fallingMarbleSystem ||
+        typeof this.systems.fallingMarbleSystem.registerDrops !== "function"
+      ) {
+        throw new Error("Poison droplet release requires FallingMarbleSystem.registerDrops.");
+      }
+
+      cells.forEach(function (cell) {
+        if (!cell) {
+          throw new Error("Poison droplet release requires eliminated cell.");
+        }
+        if (cell.poisonAttachmentId === null || cell.poisonAttachmentId === undefined) {
+          return;
+        }
+        if (
+          cell.entityCategory !== "normal_ball" ||
+          cell.entityType !== null ||
+          typeof cell.poisonAttachmentId !== "string" ||
+          !cell.poisonAttachmentId ||
+          cell.poisonParticleCount !== 3
+        ) {
+          throw new Error("Poison attachment must belong to an ordinary ball and release exactly three particles.");
+        }
+
+        var particleCells = [];
+        for (var particleIndex = 0; particleIndex < cell.poisonParticleCount; particleIndex += 1) {
+          particleCells.push({
+            id: cell.poisonAttachmentId + "_particle_" + (particleIndex + 1),
+            row: cell.row,
+            col: cell.col,
+            color: null,
+            entityCategory: "effect_particle",
+            entityType: "poison_droplet",
+            poisonBatchId: cell.poisonAttachmentId,
+            poisonParticleIndex: particleIndex
+          });
+        }
+        var drops = this.systems.fallingMarbleSystem.registerDrops(particleCells, grid, {
+          dropKind: "poison_droplet"
+        });
+        if (!Array.isArray(drops) || drops.length !== cell.poisonParticleCount) {
+          throw new Error("Poison droplet release must register exactly three physical particles.");
+        }
+        var release = {
+          attachmentId: cell.poisonAttachmentId,
+          sourceCellId: String(cell.id),
+          row: cell.row,
+          col: cell.col,
+          particleCount: cell.poisonParticleCount,
+          dropIds: drops.map(function (drop) {
+            return drop.id;
+          })
+        };
+        resolution.poisonReleases.push(release);
+        if (typeof this._pushRuntimeEvent === "function") {
+          this._pushRuntimeEvent("poison_released", release);
+        }
+      }, this);
+    },
+
     _injectCollectedSkillBalls: function (collectedDrops) {
       var skillCells = (collectedDrops || []).filter(function (cell) {
         return isSkillBall(cell) && (cell.entityType === "rainbow" || cell.entityType === "blast");

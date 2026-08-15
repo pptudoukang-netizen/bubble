@@ -1,6 +1,7 @@
 "use strict";
 
 function attachLevelRendererSceneBoardTransformFxMethods(LevelRenderer, context) {
+  var BOARD_BUBBLE_SIZE = context.BOARD_BUBBLE_SIZE;
   var BoardLayout = context.BoardLayout;
   var SpecialAnimationTiming = context.SpecialAnimationTiming;
   var WORMHOLE_DIRECTION_ARROW_CYCLE_PAUSE = context.WORMHOLE_DIRECTION_ARROW_CYCLE_PAUSE;
@@ -120,7 +121,9 @@ LevelRenderer.prototype._playWormholeShiftAnimation = function (runtimeSnapshot)
   if (!this.wormholeShiftAnimatedIds || typeof this.wormholeShiftAnimatedIds !== "object") {
     throw new Error("Wormhole animated id map is required.");
   }
-  if (typeof cc.moveTo !== "function") {
+  if (typeof cc.moveTo !== "function" || typeof cc.sequence !== "function" ||
+      typeof cc.spawn !== "function" || typeof cc.callFunc !== "function" ||
+      typeof cc.scaleTo !== "function" || typeof cc.fadeTo !== "function") {
     throw new Error("Wormhole animation requires Cocos action APIs.");
   }
   var boardSnapshot = runtimeSnapshot.board;
@@ -149,9 +152,9 @@ LevelRenderer.prototype._playWormholeShiftAnimation = function (runtimeSnapshot)
       !Number.isInteger(shift.rightCol) ||
       shift.rightCol - shift.leftCol < 2 ||
       !Number.isInteger(shift.slotCount) ||
-      shift.slotCount !== shift.rightCol - shift.leftCol + 1
+      shift.slotCount !== shift.rightCol - shift.leftCol - 1
     ) {
-      throw new Error("Wormhole animation requires valid inclusive channel boundaries.");
+      throw new Error("Wormhole animation requires valid strict interior channel boundaries.");
     }
     if (!Array.isArray(shift.moves)) {
       throw new Error("Wormhole animation requires moves array.");
@@ -187,8 +190,11 @@ LevelRenderer.prototype._playWormholeShiftAnimation = function (runtimeSnapshot)
         boardSnapshot.viewportOffsetY
       );
       var isWrappedMove = shift.moveDirection === "left"
-        ? move.fromCol === shift.leftCol && move.toCol === shift.rightCol
-        : move.fromCol === shift.rightCol && move.toCol === shift.leftCol;
+        ? move.fromCol === shift.leftCol + 1 && move.toCol === shift.rightCol - 1
+        : move.fromCol === shift.rightCol - 1 && move.toCol === shift.leftCol + 1;
+      if (move.wrapped !== isWrappedMove) {
+        throw new Error("Wormhole animation move wrapped flag does not match strict interior boundaries.");
+      }
       if (move.fromRow !== shift.row || move.toRow !== shift.row) {
         throw new Error("Wormhole animation move must stay on its pair row.");
       }
@@ -200,12 +206,48 @@ LevelRenderer.prototype._playWormholeShiftAnimation = function (runtimeSnapshot)
       }
       bubbleNode.stopAllActions();
       if (isWrappedMove) {
-        // The wrapped cell teleports from one wormhole coordinate to the other instead of
-        // crossing the whole channel on screen.
-        bubbleNode.setPosition(targetPosition.x, targetPosition.y);
+        var entryCol = shift.moveDirection === "right" ? shift.rightCol : shift.leftCol;
+        var exitCol = shift.moveDirection === "right" ? shift.leftCol : shift.rightCol;
+        var entryPosition = BoardLayout.getCellPosition(
+          shift.row,
+          entryCol,
+          boardSnapshot.maxColumns,
+          boardSnapshot.viewportOffsetY
+        );
+        var exitPosition = BoardLayout.getCellPosition(
+          shift.row,
+          exitCol,
+          boardSnapshot.maxColumns,
+          boardSnapshot.viewportOffsetY
+        );
+        bubbleNode.setPosition(startPosition.x, startPosition.y);
+        bubbleNode.opacity = 255;
+        bubbleNode.setScale(1);
+        bubbleNode.runAction(cc.sequence(
+          cc.spawn(
+            cc.moveTo(SpecialAnimationTiming.wormholeShift.inhaleDuration, entryPosition.x, entryPosition.y),
+            cc.scaleTo(SpecialAnimationTiming.wormholeShift.inhaleDuration, 0.08),
+            cc.fadeTo(SpecialAnimationTiming.wormholeShift.inhaleDuration, 0)
+          ),
+          cc.callFunc(function (node, data) {
+            if (!node || !node.isValid) {
+              throw new Error("Wormhole wrapped bubble was destroyed between inhale and exhale.");
+            }
+            node.setPosition(data.x, data.y);
+            node.setScale(0.08);
+            node.opacity = 0;
+          }, bubbleNode, { x: exitPosition.x, y: exitPosition.y }),
+          cc.spawn(
+            cc.moveTo(SpecialAnimationTiming.wormholeShift.exhaleDuration, targetPosition.x, targetPosition.y),
+            cc.scaleTo(SpecialAnimationTiming.wormholeShift.exhaleDuration, 1),
+            cc.fadeTo(SpecialAnimationTiming.wormholeShift.exhaleDuration, 255)
+          )
+        ));
         return;
       }
       bubbleNode.setPosition(startPosition.x, startPosition.y);
+      bubbleNode.opacity = 255;
+      bubbleNode.setScale(1);
       bubbleNode.runAction(cc.moveTo(shift.duration, targetPosition.x, targetPosition.y));
     }, this);
 
@@ -221,6 +263,82 @@ LevelRenderer.prototype._playWormholeShiftAnimation = function (runtimeSnapshot)
         throw new Error("Wormhole animation endpoint must keep its flow shader active: " + wormholeId);
       }
     }, this);
+  }, this);
+};
+
+LevelRenderer.prototype._playWormholeProjectileAbsorptionAnimation = function (runtimeSnapshot) {
+  var resolution = runtimeSnapshot && runtimeSnapshot.lastResolution ? runtimeSnapshot.lastResolution : null;
+  if (!resolution) {
+    return;
+  }
+  if (!Array.isArray(resolution.wormholeProjectileAbsorptions)) {
+    throw new Error("Wormhole projectile animation requires lastResolution.wormholeProjectileAbsorptions.");
+  }
+  if (!resolution.wormholeProjectileAbsorptions.length) {
+    return;
+  }
+  if (!this.wormholeProjectileAbsorptionAnimatedIds || typeof this.wormholeProjectileAbsorptionAnimatedIds !== "object") {
+    throw new Error("Wormhole projectile animated id map is required.");
+  }
+  if (!this.layers || !this.layers.board || !this.layers.board.isValid) {
+    throw new Error("Wormhole projectile animation requires board layer.");
+  }
+  if (typeof cc.Node !== "function" || typeof cc.sequence !== "function" ||
+      typeof cc.spawn !== "function" || typeof cc.moveTo !== "function" ||
+      typeof cc.scaleTo !== "function" || typeof cc.fadeTo !== "function" ||
+      typeof cc.callFunc !== "function") {
+    throw new Error("Wormhole projectile animation requires Cocos node and action APIs.");
+  }
+  if (!BOARD_BUBBLE_SIZE || BOARD_BUBBLE_SIZE.width <= 0 || BOARD_BUBBLE_SIZE.height <= 0) {
+    throw new Error("Wormhole projectile animation requires positive board bubble size.");
+  }
+
+  resolution.wormholeProjectileAbsorptions.forEach(function (absorption) {
+    if (!absorption || typeof absorption.id !== "string" || !absorption.id) {
+      throw new Error("Wormhole projectile animation requires absorption id.");
+    }
+    if (this.wormholeProjectileAbsorptionAnimatedIds[absorption.id]) {
+      return;
+    }
+    if (absorption.duration !== SpecialAnimationTiming.wormholeShift.projectileAbsorbDuration) {
+      throw new Error("Wormhole projectile absorption duration must match SpecialAnimationTiming.");
+    }
+    [absorption.startPosition, absorption.targetPosition].forEach(function (position) {
+      if (!position || !Number.isFinite(position.x) || !Number.isFinite(position.y)) {
+        throw new Error("Wormhole projectile animation requires finite start and target positions.");
+      }
+    });
+    if (!absorption.ball || typeof absorption.ball !== "object" || Array.isArray(absorption.ball)) {
+      throw new Error("Wormhole projectile animation requires fired ball data.");
+    }
+    var wormholeNode = this.boardBubbleNodes[String(absorption.wormholeId)];
+    if (!wormholeNode || !wormholeNode.isValid || wormholeNode.__wormholeShaderActive !== true) {
+      throw new Error("Wormhole projectile animation requires live shader endpoint: " + absorption.wormholeId);
+    }
+
+    this.wormholeProjectileAbsorptionAnimatedIds[absorption.id] = true;
+    var projectileFxNode = new cc.Node("WormholeAbsorbedProjectile_" + absorption.id);
+    projectileFxNode.parent = this.layers.board;
+    projectileFxNode.zIndex = 1000;
+    projectileFxNode.setContentSize(BOARD_BUBBLE_SIZE);
+    projectileFxNode.setPosition(absorption.startPosition.x, absorption.startPosition.y);
+    projectileFxNode.opacity = 255;
+    projectileFxNode.setScale(1);
+    this._applyBallVisualCached(projectileFxNode, absorption.ball, BOARD_BUBBLE_SIZE);
+    projectileFxNode.runAction(cc.sequence(
+      cc.spawn(
+        cc.moveTo(absorption.duration, absorption.targetPosition.x, absorption.targetPosition.y),
+        cc.scaleTo(absorption.duration, 0.05),
+        cc.fadeTo(absorption.duration, 0)
+      ),
+      cc.callFunc(function (node) {
+        if (!node || !node.isValid) {
+          throw new Error("Wormhole absorbed projectile node was destroyed before animation completion.");
+        }
+        node.removeFromParent(true);
+        node.destroy();
+      }, projectileFxNode)
+    ));
   }, this);
 };
 
@@ -248,8 +366,8 @@ LevelRenderer.prototype._syncWormholeDirectionGuide = function (boardSnapshot) {
   if (typeof boardSnapshot.viewportOffsetY !== "number" || !isFinite(boardSnapshot.viewportOffsetY)) {
     throw new Error("Wormhole direction guide requires finite board viewportOffsetY.");
   }
-  if (!this.layers || !this.layers.wormhole || !this.layers.wormhole.isValid) {
-    throw new Error("Wormhole direction guide requires wormhole layer.");
+  if (!this.layers || !this.layers.wormholeDirection || !this.layers.wormholeDirection.isValid) {
+    throw new Error("Wormhole direction guide requires wormhole direction layer.");
   }
 
   var wormholes = boardSnapshot.specialEntities.filter(function (cell) {
@@ -339,8 +457,7 @@ LevelRenderer.prototype._syncWormholeDirectionGuide = function (boardSnapshot) {
   this._destroyWormholeDirectionGuide();
 
   var guideRoot = new cc.Node("WormholeDirectionGuide");
-  guideRoot.parent = this.layers.wormhole;
-  guideRoot.zIndex = 1000;
+  guideRoot.parent = this.layers.wormholeDirection;
   this.wormholeDirectionGuideRoot = guideRoot;
   this.lastWormholeDirectionGuideKey = guideKey;
 

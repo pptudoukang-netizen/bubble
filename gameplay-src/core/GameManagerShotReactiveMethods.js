@@ -1,6 +1,7 @@
 "use strict";
 
 function createGameManagerShotReactiveMethods(context) {
+  var isBlackHoleBall = context.isBlackHoleBall;
   var KEY_UNLOCK_DROP_DELAY = context.KEY_UNLOCK_DROP_DELAY;
   var buildNearestKeyLockPairings = context.buildNearestKeyLockPairings;
   var createGameManagerShotReactiveMethods = context.createGameManagerShotReactiveMethods;
@@ -15,6 +16,54 @@ function createGameManagerShotReactiveMethods(context) {
   var resolveIceInnerColor = context.resolveIceInnerColor;
 
   return {
+    _unloadBlackHolesHitByRange: function (affectedCells, grid, resolution, sourceType) {
+      if (!Array.isArray(affectedCells)) {
+        throw new Error("Black hole range unload requires affectedCells array.");
+      }
+      if (!grid || typeof grid.getCell !== "function") {
+        throw new Error("Black hole range unload requires BubbleGrid.getCell.");
+      }
+      if (typeof sourceType !== "string" || !sourceType) {
+        throw new Error("Black hole range unload requires sourceType.");
+      }
+      var remainingCells = [];
+      var unloadedKeys = {};
+      affectedCells.forEach(function (affectedCell) {
+        if (!affectedCell || !Number.isInteger(affectedCell.row) || !Number.isInteger(affectedCell.col)) {
+          throw new Error("Black hole range unload requires affected cell coordinates.");
+        }
+        var liveCell = grid.getCell(affectedCell.row, affectedCell.col);
+        if (!liveCell) {
+          return;
+        }
+        if (!isBlackHoleBall(liveCell)) {
+          remainingCells.push(liveCell);
+          return;
+        }
+        if (typeof grid.unloadBlackHole !== "function") {
+          throw new Error("Black hole range unload requires BubbleGrid.unloadBlackHole when a black hole is hit.");
+        }
+        if (!resolution || !Array.isArray(resolution.blackHolesUnloaded)) {
+          throw new Error("Black hole range unload requires resolution.blackHolesUnloaded when a black hole is hit.");
+        }
+        var cellKey = liveCell.row + ":" + liveCell.col;
+        if (unloadedKeys[cellKey]) {
+          return;
+        }
+        unloadedKeys[cellKey] = true;
+        var removedBlackHole = grid.unloadBlackHole(liveCell.row, liveCell.col);
+        resolution.blackHolesUnloaded.push({
+          id: "black_hole_unload_" + sourceType + "_" + removedBlackHole.id,
+          blackHoleId: removedBlackHole.id,
+          row: removedBlackHole.row,
+          col: removedBlackHole.col,
+          capacityBefore: removedBlackHole.capacity,
+          sourceType: sourceType
+        });
+      });
+      return remainingCells;
+    },
+
     _cancelPendingSplitterSpawnsForDroppedCells: function (cells) {
       if (!Array.isArray(cells)) {
         throw new Error("Cancel pending splitter spawns requires cells array.");
@@ -508,6 +557,7 @@ function createGameManagerShotReactiveMethods(context) {
         return [];
       }
 
+      this._queueSpiritCocoonsAdjacentToCells(removedCells, resolution);
       this._resetMolotovBlastSequence();
       this._resolveVinesAfterRemoval(removedCells, grid, resolution);
 

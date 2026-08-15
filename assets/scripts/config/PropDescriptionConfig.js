@@ -4,6 +4,7 @@ var SPECIAL_ORDER = [
   "time_bonus",
   "ice",
   "splitter",
+  "transparent_ball",
   "swirl",
   "wormhole",
   "vine_spirit",
@@ -38,6 +39,14 @@ var SPECIAL_DEFINITIONS = {
     effectTitle: "特殊效果",
     effectDescription: "利用分裂球扩展同色区域，能更快打通棋盘结构。",
     iconPath: "ui/image/preview_balls/split_red_ball"
+  },
+  transparent_ball: {
+    title: "透明球",
+    description: "发射球会穿过并破坏透明球；撞到后方实体球后，会吸附在透明球原来的槽位。",
+    summary: "穿过透明球可直接将其破坏并获得 1000 分，透明球后方必须存在合法碰撞终点。",
+    effectTitle: "穿透规则",
+    effectDescription: "即使没有形成普通三连，破坏透明球仍会检查悬空掉落并延续连击。",
+    iconPath: "ui/image/preview_balls/transparent_ball"
   },
   swirl: {
     title: "漩涡泡泡",
@@ -108,6 +117,7 @@ var SPECIAL_DEFINITIONS = {
 var SPECIAL_KEY_BY_ENTITY_TYPE = {
   ice: "ice",
   splitter: "splitter",
+  transparent_ball: "transparent_ball",
   swirl: "swirl",
   wormhole: "wormhole",
   vine_spirit: "vine_spirit",

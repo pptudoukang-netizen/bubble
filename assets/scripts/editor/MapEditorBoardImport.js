@@ -190,6 +190,9 @@ function importLevelToCellStates(levelConfig) {
       var cellCode = rowString[col];
       var specialEntity = specialIndex[key];
       if (specialEntity && isWormholeEntity(specialEntity)) {
+        if (cellCode !== ".") {
+          throw new Error("虫洞坐标必须保持为空格 at " + row + ":" + col);
+        }
         wormholeOverlays[key] = cellStateFromSpecialEntity(specialEntity, level.colors);
       }
       if (cellCode === ".") {
@@ -203,7 +206,7 @@ function importLevelToCellStates(levelConfig) {
       if (level.colors.indexOf(cellCode) === -1) {
         throw new Error("layout 含非法颜色 `" + cellCode + "` at " + row + ":" + col);
       }
-      if (specialEntity && !isWormholeEntity(specialEntity)) {
+      if (specialEntity) {
         throw new Error("layout 与 specialEntities 冲突 at " + row + ":" + col);
       }
       cells[key] = {

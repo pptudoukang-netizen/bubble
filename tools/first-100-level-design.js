@@ -766,11 +766,10 @@ function buildLevelSpec(levelId) {
   var targetColor = getTargetColor(levelId, activeColors);
   var specialCounts = buildSpecialCounts(levelId, targetColor);
   var specialCount = countSpecials(specialCounts);
-  var gridSpecialCount = specialCount - specialCounts.wormhole;
   var rowCount = resolveRowCount(levelId);
   var normalBallCount = CampaignLevelGenerationConfig.isTrappedSpriteRescueLevelId(levelId)
     ? CampaignLevelGenerationConfig.TRAPPED_SPRITE_RESCUE_OCCUPIED_CELL_COUNT - specialCount
-    : resolveNormalBallCount(levelId, rowCount, gridSpecialCount);
+    : resolveNormalBallCount(levelId, rowCount, specialCount);
   if (normalBallCount <= 0) {
     throw new Error("Trapped sprite rescue special balls fill the entire hex board: " + levelId);
   }
@@ -1719,9 +1718,6 @@ function setCell(rows, row, col, value) {
 function seedNormalLayout(rows, shapeSlots, entities, colors, colorCounts, levelId) {
   var specialCells = {};
   entities.forEach(function (entity) {
-    if (entity.entityType === "wormhole") {
-      return;
-    }
     specialCells[entity.row + ":" + entity.col] = true;
   });
   var normalSlots = shapeSlots.filter(function (cell) {
@@ -1761,10 +1757,7 @@ function buildBoard(options) {
     throw new Error("First-100 special entities must be an array.");
   }
   var spec = buildLevelSpec(levelId);
-  var wormholeOverlayCount = options.specialEntities.filter(function (entity) {
-    return entity.entityType === "wormhole";
-  }).length;
-  var occupiedCount = spec.normalBallCount + spec.specialCount - wormholeOverlayCount;
+  var occupiedCount = spec.normalBallCount + spec.specialCount;
   var shapeSlots = buildShapeSlots(options.rows, spec.patternName, occupiedCount, levelId);
   if (!Number.isInteger(options.placementVariant) || options.placementVariant < 0) {
     throw new Error("First-100 board placementVariant must be a non-negative integer.");
@@ -1839,9 +1832,6 @@ function collectOccupiedVisualCells(level) {
     });
   });
   level.specialEntities.forEach(function (entity) {
-    if (entity.entityType === "wormhole") {
-      return;
-    }
     cells.push({ row: entity.row, col: entity.col, special: true, entity: entity });
   });
   return cells;
@@ -2021,7 +2011,7 @@ function validateVisualComposition(level, spec) {
   var metrics = analyzeVisualComposition(level, spec);
   compareNumber(
     metrics.occupiedCount,
-    spec.normalBallCount + spec.specialCount - spec.specialCounts.wormhole,
+    spec.normalBallCount + spec.specialCount,
     "reference projected occupied count",
     level.levelId
   );
@@ -2176,7 +2166,7 @@ function validateGeneratedLevel(level) {
     var expectedSlots = buildShapeSlots(
       emptyRows,
       spec.patternName,
-      spec.normalBallCount + spec.specialCount - spec.specialCounts.wormhole,
+      spec.normalBallCount + spec.specialCount,
       level.levelId
     );
     var expectedMap = {};

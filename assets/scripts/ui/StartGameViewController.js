@@ -38,6 +38,7 @@ var TIMED_INFINITE_SHOTS_PLAY_MODE = "timed_infinite_shots";
 var SHOT_LIMITED_PLAY_MODE = "shot_limited";
 var NORMAL_LEVEL_TYPE = "normal";
 var TRAPPED_SPRITE_RESCUE_LEVEL_TYPE = "trapped_sprite_rescue";
+var MULTI_TRAPPED_SPIRIT_RESCUE_LEVEL_TYPE = "multi_trapped_spirit_rescue";
 var START_GAME_RENDER_PROXY_LAYER_NAMES = {
   panel: "start_game_proxy_panel_layer",
   chrome: "start_game_proxy_chrome_layer",
@@ -146,6 +147,20 @@ function buildClearanceTargetText(options) {
       throw new Error("StartGameView rescue level must use shot_limited playMode.");
     }
     return "目标：救出精灵并达到" + oneStarTargetScore + "分";
+  }
+
+  if (options.levelType === MULTI_TRAPPED_SPIRIT_RESCUE_LEVEL_TYPE) {
+    if (options.playMode !== SHOT_LIMITED_PLAY_MODE) {
+      throw new Error("StartGameView multi rescue level must use shot_limited playMode.");
+    }
+    var rescueTargetCount = requirePositiveInteger(
+      options.rescueTargetCount,
+      "StartGameView multi rescue target count"
+    );
+    if (rescueTargetCount < 2) {
+      throw new Error("StartGameView multi rescue target count must be at least two.");
+    }
+    return "目标：救出" + rescueTargetCount + "个精灵并达到" + oneStarTargetScore + "分";
   }
 
   if (options.levelType === NORMAL_LEVEL_TYPE && options.playMode === SHOT_LIMITED_PLAY_MODE) {
@@ -1290,7 +1305,8 @@ StartGameViewController.prototype._renderContent = function (options, shouldRese
     oneStarTargetScore: oneStarTargetScore,
     playMode: options.playMode,
     levelType: options.levelType,
-    timeLimitSeconds: options.timeLimitSeconds
+    timeLimitSeconds: options.timeLimitSeconds,
+    rescueTargetCount: options.rescueTargetCount
   });
   requireObject(options.inventory, "StartGameView inventory");
   requireObject(options.objectives, "StartGameView objectives");
@@ -1299,7 +1315,8 @@ StartGameViewController.prototype._renderContent = function (options, shouldRese
   if (
     !options.objectives.ball &&
     !options.objectives.iceSnowball &&
-    options.levelType !== TRAPPED_SPRITE_RESCUE_LEVEL_TYPE
+    options.levelType !== TRAPPED_SPRITE_RESCUE_LEVEL_TYPE &&
+    options.levelType !== MULTI_TRAPPED_SPIRIT_RESCUE_LEVEL_TYPE
   ) {
     throw new Error("StartGameView requires at least one collection objective.");
   }
@@ -1331,7 +1348,8 @@ StartGameViewController.prototype._renderContent = function (options, shouldRese
 
   setLabelText(this._nodes.levelLabelNode, "第" + levelId + "关", "Panel/title_bg/level");
   setLabelText(this._nodes.staminaCostLabelNode, String(staminaCost), "Panel/play_btn/num");
-  var isRescueLevel = options.levelType === TRAPPED_SPRITE_RESCUE_LEVEL_TYPE;
+  var isRescueLevel = options.levelType === TRAPPED_SPRITE_RESCUE_LEVEL_TYPE ||
+    options.levelType === MULTI_TRAPPED_SPIRIT_RESCUE_LEVEL_TYPE;
   var showCollectionTarget = hasCollectionObjective(options.objectives);
   setLabelText(
     this._nodes.targetScoreLabelNode,

@@ -5,6 +5,7 @@ var attachLevelRendererSceneKeySplitterFxMethods = require("./LevelRendererScene
 var attachLevelRendererSceneBoardTransformFxMethods = require("./LevelRendererSceneBoardTransformFxMethods");
 var attachLevelRendererSceneExplosionIceFxMethods = require("./LevelRendererSceneExplosionIceFxMethods");
 var attachLevelRendererSceneScreenFxMethods = require("./LevelRendererSceneScreenFxMethods");
+var attachLevelRendererSceneSpiritCocoonFxMethods = require("./LevelRendererSceneSpiritCocoonFxMethods");
 
 function attachLevelRendererSceneFxMethods(LevelRenderer, deps) {
   var BoardLayout = deps.BoardLayout;
@@ -516,6 +517,13 @@ function attachLevelRendererSceneFxMethods(LevelRenderer, deps) {
     return String(cell.id) + "<-" + String(cell.sourceSplitterId) + "@" + cell.row + ":" + cell.col;
   }
 
+  function createBreederSpawnEntryKey(entry) {
+    if (!entry || !entry.id) {
+      throw new Error("Breeder spawn entry key requires event id.");
+    }
+    return String(entry.id) + "<-" + String(entry.breederId) + "@" + entry.row + ":" + entry.col;
+  }
+
   function resolveSplitterSpawnTargetNode(renderer, spawnedCell) {
     if (!spawnedCell || !spawnedCell.id) {
       throw new Error("Splitter spawn animation requires spawned cell id.");
@@ -532,7 +540,23 @@ function attachLevelRendererSceneFxMethods(LevelRenderer, deps) {
     return null;
   }
 
-var FX_METHOD_CONTEXT = {
+  function resolveBreederSpawnTargetNode(renderer, entry) {
+    if (!entry || (typeof entry.cellId !== "string" && typeof entry.cellId !== "number")) {
+      throw new Error("Breeder spawn animation requires target cell id.");
+    }
+    var normalizedId = String(entry.cellId);
+    var targetNode = renderer.boardBubbleNodes[normalizedId];
+    if (targetNode && targetNode.isValid) {
+      return targetNode;
+    }
+    targetNode = renderer.layers.board.getChildByName("Bubble_" + normalizedId);
+    if (targetNode && targetNode.isValid) {
+      return targetNode;
+    }
+    return null;
+  }
+
+  var FX_METHOD_CONTEXT = {
     BARRIER_HAMMER_HINT_LIFT_DURATION: BARRIER_HAMMER_HINT_LIFT_DURATION,
     BARRIER_HAMMER_HINT_OFFSET_X: BARRIER_HAMMER_HINT_OFFSET_X,
     BARRIER_HAMMER_HINT_OFFSET_Y: BARRIER_HAMMER_HINT_OFFSET_Y,
@@ -542,6 +566,7 @@ var FX_METHOD_CONTEXT = {
     BARRIER_HAMMER_HINT_TAP_OFFSET_X: BARRIER_HAMMER_HINT_TAP_OFFSET_X,
     BARRIER_HAMMER_HINT_TAP_OFFSET_Y: BARRIER_HAMMER_HINT_TAP_OFFSET_Y,
     BOARD_BUBBLE_SIZE: BOARD_BUBBLE_SIZE,
+    BALL_RESOURCES: BALL_RESOURCES,
     BOARD_CLEAR_FIREWORKS_INTERVAL_SEC: BOARD_CLEAR_FIREWORKS_INTERVAL_SEC,
     BoardLayout: BoardLayout,
     ICE_COLLECT_BEZIER_ARC: ICE_COLLECT_BEZIER_ARC,
@@ -575,9 +600,12 @@ var FX_METHOD_CONTEXT = {
     attachLevelRendererSceneExplosionIceFxMethods: attachLevelRendererSceneExplosionIceFxMethods,
     attachLevelRendererSceneKeySplitterFxMethods: attachLevelRendererSceneKeySplitterFxMethods,
     attachLevelRendererSceneScreenFxMethods: attachLevelRendererSceneScreenFxMethods,
+    attachLevelRendererSceneSpiritCocoonFxMethods: attachLevelRendererSceneSpiritCocoonFxMethods,
     createKeyUnlockAnimationKey: createKeyUnlockAnimationKey,
+    createBreederSpawnEntryKey: createBreederSpawnEntryKey,
     createSplitterSpawnEntryKey: createSplitterSpawnEntryKey,
     ensureSprite: ensureSprite,
+    getOrCreateChild: getOrCreateChild,
     findUnlockedTargetsForKey: findUnlockedTargetsForKey,
     hasIceSnowballCollectionObjective: hasIceSnowballCollectionObjective,
     instantiateRequired: instantiateRequired,
@@ -592,6 +620,7 @@ var FX_METHOD_CONTEXT = {
     resolveIceInnerColor: resolveIceInnerColor,
     resolveImpactBounceSpeed: resolveImpactBounceSpeed,
     resolveKeyUnlockTargetNode: resolveKeyUnlockTargetNode,
+    resolveBreederSpawnTargetNode: resolveBreederSpawnTargetNode,
     resolveSplitterSpawnTargetNode: resolveSplitterSpawnTargetNode,
     spawnBoardClearFireworksBurst: spawnBoardClearFireworksBurst,
     stopParticleSystemIfPresent: stopParticleSystemIfPresent
@@ -601,6 +630,7 @@ var FX_METHOD_CONTEXT = {
   attachLevelRendererSceneBoardTransformFxMethods(LevelRenderer, FX_METHOD_CONTEXT);
   attachLevelRendererSceneExplosionIceFxMethods(LevelRenderer, FX_METHOD_CONTEXT);
   attachLevelRendererSceneScreenFxMethods(LevelRenderer, FX_METHOD_CONTEXT);
+  attachLevelRendererSceneSpiritCocoonFxMethods(LevelRenderer, FX_METHOD_CONTEXT);
 
 }
 

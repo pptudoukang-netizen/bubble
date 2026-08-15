@@ -23,12 +23,27 @@ var swirlRotation = {
 };
 
 var wormholeShift = {
-  duration: 0.35
+  duration: 0.35,
+  inhaleDuration: 0.175,
+  exhaleDuration: 0.175,
+  projectileAbsorbDuration: 0.22
 };
 
 var vineCast = {
   previewDuration: 0.65
 };
+
+var spiritCocoon = {
+  frameDuration: 0.1,
+  frameCount: 5,
+  revealDuration: 0.3,
+  mistTraversalStepDuration: 0.2,
+  rowTraversalStepDuration: 0.35
+};
+
+spiritCocoon.totalDuration =
+  spiritCocoon.frameDuration * spiritCocoon.frameCount +
+  spiritCocoon.revealDuration;
 
 var fairyAssist = {
   flyInDuration: 0.45,
@@ -97,6 +112,7 @@ module.exports = Object.freeze({
   swirlRotation: Object.freeze(swirlRotation),
   wormholeShift: Object.freeze(wormholeShift),
   vineCast: Object.freeze(vineCast),
+  spiritCocoon: Object.freeze(spiritCocoon),
   fairyAssist: Object.freeze(fairyAssist),
   trappedSpriteRescue: Object.freeze(trappedSpriteRescue),
   impactBounce: Object.freeze(impactBounce),

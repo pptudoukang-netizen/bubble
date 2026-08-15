@@ -25,6 +25,14 @@ var LEVEL_PATH = path.join(
   "levels",
   "level_trapped_sprite_test.json"
 );
+var MULTI_TARGET_LEVEL_PATH = path.join(
+  ROOT,
+  "assets",
+  "map",
+  "config",
+  "levels",
+  "level_multi_trapped_spirit_test.json"
+);
 var LEVEL_63_PACK_PATH = path.join(
   ROOT,
   "remote-level-packs",
@@ -81,6 +89,23 @@ var GameBootstrapLevelSelectFlowMethods = require("../assets/scripts/bootstrap/G
 var GameManager = require("../gameplay-src/core/GameManager");
 var SpecialAnimationTiming = require("../gameplay-src/config/SpecialAnimationTiming");
 var TrappedSpriteRescueSystem = require("../gameplay-src/systems/TrappedSpriteRescueSystem");
+var selectorResourceConfigPath = require.resolve("../gameplay-src/render/LevelRendererResourceConfig");
+require.cache[selectorResourceConfigPath] = {
+  id: selectorResourceConfigPath,
+  filename: selectorResourceConfigPath,
+  loaded: true,
+  exports: {
+    BALL_RESOURCES: {},
+    BoardLayout: BoardLayout,
+    COMMENT_ANIMATION_TIERS: [],
+    ROUTE_EDITOR_COLORS: [],
+    SHOOTER_MAX_ROTATION: 0,
+    StarRatingPolicy: {},
+    buildTrappedSpriteResourcePath: TrappedSpriteRescueSystem.buildSpriteResourcePath
+  }
+};
+var LevelRendererStateSelectors = require("../gameplay-src/render/LevelRendererStateSelectors");
+var attachLevelRendererSceneObjectiveHudMethods = require("../gameplay-src/render/LevelRendererSceneObjectiveHudMethods");
 
 function assert(condition, message) {
   if (!condition) {
@@ -254,6 +279,178 @@ function expectThrow(action, expectedText) {
 function loadConfig() {
   var raw = JSON.parse(fs.readFileSync(LEVEL_PATH, "utf8"));
   return LevelConfigLoader.normalizeLevelConfig(raw, "level_trapped_sprite_test");
+}
+
+function loadMultiTargetConfig() {
+  var raw = JSON.parse(fs.readFileSync(MULTI_TARGET_LEVEL_PATH, "utf8"));
+  return LevelConfigLoader.normalizeLevelConfig(raw, "level_multi_trapped_spirit_test");
+}
+
+function validateMultiTargetConfigContract(config) {
+  var level = config.level;
+  assert(level.levelType === "multi_trapped_spirit_rescue", "Multi rescue test level type mismatch.");
+  assert(level.playMode === "shot_limited", "Multi rescue test must use shot_limited.");
+  assert(level.multiTrappedSpiritRescue.targets.length === 2, "Multi rescue test must configure two targets.");
+  level.multiTrappedSpiritRescue.targets.forEach(function (target) {
+    assert(target.row > 0, "Multi rescue target must not occupy the top row.");
+    assert(level.layout[target.row].charAt(target.col) === ".", "Multi rescue target cell must remain empty.");
+    assert(
+      getHexNeighbors(target.row, target.col).some(function (neighbor) {
+        return neighbor.row >= 0 &&
+          neighbor.row < level.layout.length &&
+          neighbor.col >= 0 &&
+          neighbor.col < level.layout[neighbor.row].length &&
+          level.layout[neighbor.row].charAt(neighbor.col) !== ".";
+      }),
+      "Multi rescue target must have adjacent eliminable support."
+    );
+  });
+
+  var raw = JSON.parse(fs.readFileSync(MULTI_TARGET_LEVEL_PATH, "utf8"));
+  var oneTarget = clone(raw);
+  oneTarget.level.multiTrappedSpiritRescue.targets.pop();
+  expectThrow(function () {
+    LevelConfigLoader.normalizeLevelConfig(oneTarget, "level_multi_trapped_spirit_test");
+  }, "at least two targets");
+
+  var topTarget = clone(raw);
+  topTarget.level.multiTrappedSpiritRescue.targets[0].row = 0;
+  topTarget.level.multiTrappedSpiritRescue.targets[0].col = 0;
+  expectThrow(function () {
+    LevelConfigLoader.normalizeLevelConfig(topTarget, "level_multi_trapped_spirit_test");
+  }, "non-top-row board coordinate");
+
+  var unsupportedTarget = clone(raw);
+  var target = unsupportedTarget.level.multiTrappedSpiritRescue.targets[0];
+  getHexNeighbors(target.row, target.col).forEach(function (neighbor) {
+    if (
+      neighbor.row >= 0 &&
+      neighbor.row < unsupportedTarget.level.layout.length &&
+      neighbor.col >= 0 &&
+      neighbor.col < unsupportedTarget.level.layout[neighbor.row].length
+    ) {
+      var chars = unsupportedTarget.level.layout[neighbor.row].split("");
+      chars[neighbor.col] = ".";
+      unsupportedTarget.level.layout[neighbor.row] = chars.join("");
+    }
+  });
+  expectThrow(function () {
+    LevelConfigLoader.normalizeLevelConfig(unsupportedTarget, "level_multi_trapped_spirit_test");
+  }, "adjacent eliminable normal support");
+}
+
+function validateMultiTargetRuntime(config) {
+  BoardLayout.hudBottomLineY = BoardLayout.boardStartY;
+  var manager = createGameManager(config);
+  var rescueSystem = manager.systems.trappedSpriteRescueSystem;
+  var grid = manager.systems.bubbleGrid;
+  assert(!rescueSystem.isActive(), "Multi rescue must not activate rotating rescue mode.");
+  assert(rescueSystem.isMultiTargetActive(), "Multi rescue runtime mode must be active.");
+  assert(!grid.isTrappedSpriteRescueActive(), "Multi rescue must keep ordinary board geometry.");
+  assert(grid.isTrappedSpiritReservedCell(3, 4), "First multi rescue target cell must be reserved.");
+  var initialHudDisplay = LevelRendererStateSelectors.buildHudTargetDisplayData(config, {
+    systems: {
+      trappedSpriteRescueSystem: rescueSystem.snapshotForRender()
+    }
+  });
+  assert(initialHudDisplay.spirits.length === 2, "Multi rescue HUD must expose two spirit target cards.");
+  assert(
+    initialHudDisplay.spirits[0].targetId === "multi_trapped_spirit_1" &&
+      initialHudDisplay.spirits[0].spiritId === "milu" &&
+      initialHudDisplay.spirits[0].remaining === 1 &&
+      initialHudDisplay.spirits[1].targetId === "multi_trapped_spirit_2" &&
+      initialHudDisplay.spirits[1].spiritId === "lumi" &&
+      initialHudDisplay.spirits[1].remaining === 1,
+    "Multi rescue HUD initial spirit targets mismatch."
+  );
+  function ObjectiveHudRendererHarness() {}
+  attachLevelRendererSceneObjectiveHudMethods(ObjectiveHudRendererHarness, {});
+  var hudTargetEntries = new ObjectiveHudRendererHarness()._buildHudTargetEntries(initialHudDisplay);
+  assert(
+    hudTargetEntries.length === 2 &&
+      hudTargetEntries[0].cardName === "hud_target_spirit_multi_trapped_spirit_1" &&
+      hudTargetEntries[1].cardName === "hud_target_spirit_multi_trapped_spirit_2",
+    "Multi rescue HUD renderer must create one distinct card entry per spirit target."
+  );
+  expectThrow(function () {
+    grid.addBubble({ row: 3, col: 4 }, "R");
+  }, "trapped spirit reserved cell");
+
+  manager.systems.matchSystem.findMatchGroup = function () {
+    return [];
+  };
+  manager.systems.boardViewportSystem.offsetY = 58;
+  manager.systems.boardViewportSystem.targetOffsetY = 58;
+  var firstTrigger = grid.getCell(3, 3);
+  assert(firstTrigger, "Multi rescue first trigger fixture cell is missing.");
+  var firstResolution = manager._resolveAttachment(firstTrigger);
+  assert(firstResolution.matched.length === 0, "Adjacent no-match rescue must not fabricate a match.");
+  assert(firstResolution.rescuedTrappedSpirits.length === 1, "Adjacent no-match landing must rescue one target.");
+  assert(firstResolution.scoreDelta === 1000 && manager.score === 1000, "First rescued target must award exactly 1000 points.");
+  assert(firstResolution.comboRegistered === true, "Adjacent no-match rescue must count as an effective elimination.");
+  assert(manager.systems.boardViewportSystem.getOffsetY() === 58, "Non-final rescue must preserve ordinary board offset.");
+  var firstRescueHudDisplay = LevelRendererStateSelectors.buildHudTargetDisplayData(config, {
+    systems: {
+      trappedSpriteRescueSystem: rescueSystem.snapshotForRender()
+    }
+  });
+  assert(
+    firstRescueHudDisplay.spirits.length === 2 &&
+      firstRescueHudDisplay.spirits[0].remaining === 0 &&
+      firstRescueHudDisplay.spirits[1].remaining === 1,
+    "Multi rescue HUD must complete only the rescued spirit card."
+  );
+  var firstEvents = manager._drainRuntimeEvents().filter(function (event) {
+    return event.type === "trapped_spirit_target_rescued";
+  });
+  assert(firstEvents.length === 1 && firstEvents[0].finalTarget === false, "First target rescue event mismatch.");
+
+  var secondTrigger = grid.getCell(5, 4);
+  assert(secondTrigger, "Multi rescue second trigger fixture cell is missing.");
+  var secondResolution = manager._resolveAttachment(secondTrigger);
+  assert(secondResolution.rescuedTrappedSpirits.length === 1, "Second adjacent landing must rescue the final target.");
+  assert(secondResolution.multiTrappedSpiritRescueCompleted === true, "Final rescue must mark multi-target completion.");
+  assert(secondResolution.boardCleared === true && grid.getCells().length === 0, "Final rescue must clear the remaining board.");
+  var secondRescueScore = secondResolution.scoreEvents.filter(function (event) {
+    return event.scoreKind === "trapped_spirit_rescue";
+  }).reduce(function (sum, event) {
+    return sum + event.points;
+  }, 0);
+  assert(secondRescueScore === 1000, "Final rescued target must add exactly 1000 rescue points.");
+  assert(manager.score >= 2000, "Two rescued targets must contribute at least 2000 total points before combo bonuses.");
+  assert(manager.systems.boardViewportSystem.getOffsetY() === 0, "Final rescue must reset the map to zero offset.");
+  assert(manager.systems.fallingMarbleSystem.hasActiveDrops(), "Final rescue must register remaining balls as victory drops.");
+  assert(manager.state === "won_pending", "Final rescue must enter pending victory state while drops settle.");
+  var completedHudDisplay = LevelRendererStateSelectors.buildHudTargetDisplayData(config, {
+    systems: {
+      trappedSpriteRescueSystem: rescueSystem.snapshotForRender()
+    }
+  });
+  assert(
+    completedHudDisplay.spirits.length === 2 &&
+      completedHudDisplay.spirits[0].remaining === 0 &&
+      completedHudDisplay.spirits[1].remaining === 0,
+    "Multi rescue HUD must retain both completed spirit cards."
+  );
+  var finalEvents = manager._drainRuntimeEvents().filter(function (event) {
+    return event.type === "trapped_spirit_target_rescued";
+  });
+  assert(finalEvents.length === 1 && finalEvents[0].finalTarget === true, "Final target rescue event mismatch.");
+}
+
+function validateMultiTargetWiring() {
+  var rendererSource = readGameplaySourceFamily(ROOT, "gameplay-src/render", "LevelRenderer");
+  [
+    "_renderMultiTrappedSpiritRescue",
+    "_playMultiTrappedSpiritDepartures",
+    "trapped_spirit_target_rescued",
+    "multiTrappedSpiritDepartingTargetIds",
+    "spiritDisplays = multiRescue.targets.map",
+    "buildHudSpiritCardName",
+    "game/trapped_spirit/"
+  ].forEach(function (requiredToken) {
+    assert(rendererSource.indexOf(requiredToken) !== -1, "Multi rescue renderer token is missing: " + requiredToken);
+  });
 }
 
 function loadLevel63Config() {
@@ -1301,23 +1498,30 @@ function validateWiring() {
   var gameViewNode = resolvePrefabNode(gameViewPrefab[0].data, "GameView");
   var hudPanelNode = requirePrefabChild(gameViewNode, "HudPanel", "GameView");
   var targetLayoutNode = requirePrefabChild(hudPanelNode, "target_layout", "GameView/HudPanel");
-  var spiritItemNode = requirePrefabChild(targetLayoutNode, "item_spirit", "GameView/HudPanel/target_layout");
-  var spiritNode = requirePrefabChild(spiritItemNode, "spirit", "GameView/HudPanel/target_layout/item_spirit");
-  requirePrefabChild(spiritNode, "TargetValue", "GameView/HudPanel/target_layout/item_spirit/spirit");
-  requirePrefabChild(spiritNode, "complete", "GameView/HudPanel/target_layout/item_spirit/spirit");
+  assert(
+    targetLayoutNode._children.length === 1,
+    "GameView/HudPanel/target_layout must retain exactly one HUD target template."
+  );
+  var targetTemplateNode = requirePrefabChild(targetLayoutNode, "item", "GameView/HudPanel/target_layout");
+  requirePrefabChild(targetTemplateNode, "card_line", "GameView/HudPanel/target_layout/item");
+  var targetIconNode = requirePrefabChild(targetTemplateNode, "icon", "GameView/HudPanel/target_layout/item");
+  requirePrefabChild(targetIconNode, "TargetValue", "GameView/HudPanel/target_layout/item/icon");
+  requirePrefabChild(targetIconNode, "complete", "GameView/HudPanel/target_layout/item/icon");
   assert(
     rendererSource.indexOf("game/trapped_spirit/") !== -1,
     "Renderer trapped sprite resource mapping is missing."
   );
   assert(
-    rendererSource.indexOf("spiritDisplay = {") !== -1 &&
+    rendererSource.indexOf("spiritDisplays.push({") !== -1 &&
       rendererSource.indexOf("spritePath: buildTrappedSpriteResourcePath(level.trappedSpriteRescue.spiritId)") !== -1 &&
       rendererSource.indexOf("var spiritRescued = runtimeSnapshot.board.cells.length === 0;") !== -1,
     "Rescue HUD target must use the configured trapped-spirit image and board-empty completion state."
   );
   [
-    'cardName = "item_spirit";',
-    'this._renderHudTargetSlot(targetLayout, "spirit", targetDisplay.spirit);',
+    'var HUD_TARGET_TEMPLATE_NAME = "item";',
+    'cardNode = cc.instantiate(templateNode);',
+    'buildHudSpiritCardName(displayData.targetId)',
+    'targetDisplay.spirits.forEach(function (displayData, index)',
     "sprite.trim = false;",
     "HUD_SPIRIT_ICON_HEIGHT * originalSize.width / originalSize.height"
   ].forEach(function (requiredToken) {
@@ -1491,12 +1695,16 @@ function validateWiring() {
 }
 
 var config = loadConfig();
+var multiTargetConfig = loadMultiTargetConfig();
 var level63Config = loadLevel63Config();
 validateAssets();
 validateRescueSuccessfulPrefab();
 validateFloatingMapLandmarkRule();
 validateRemoteRescueIdentitySchedule();
 validateConfigContract(config);
+validateMultiTargetConfigContract(multiTargetConfig);
+validateMultiTargetRuntime(multiTargetConfig);
+validateMultiTargetWiring();
 validateRuntime(config);
 validateSealedBoundaryCollisionAttachesToExtendedNeighbor();
 validateRotatedRescueSlotDiscovery(config);

@@ -144,6 +144,17 @@ BoardViewportSystem.prototype.getTopAttachY = function () {
   return BoardLayout.boardStartY + this.offsetY;
 };
 
+BoardViewportSystem.prototype.resetToZeroForCompletion = function () {
+  this.offsetY = 0;
+  this.targetOffsetY = 0;
+  this.phase = "idle";
+  this.moveDurationSec = 0;
+  this.moveElapsedSec = 0;
+  this.moveStartOffsetY = 0;
+  this.introActive = false;
+  return this.offsetY;
+};
+
 BoardViewportSystem.prototype.isMoving = function () {
   return this.phase === "intro_scrolling" || this.phase === "settling";
 };

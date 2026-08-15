@@ -37,11 +37,15 @@ var OCCLUSION_CODE_TO_CLEAR_RULE = {
 };
 
 var ENTITY_TYPE_TO_CODE = {
+  "hazard_ball/black_hole": "q",
   "obstacle_ball/ice": "i",
   "obstacle_ball/stone": "s",
+  "reactive_ball/breeder": "d",
   "reactive_ball/molotov": "m",
+  "reactive_ball/spirit_cocoon": "c",
   "reactive_ball/splitter": "p",
   "reactive_ball/swirl": "w",
+  "reactive_ball/transparent_ball": "t",
   "reactive_ball/vine_spirit": "v",
   "reactive_ball/wormhole": "h",
   "locked_ball/locked": "l",
@@ -51,11 +55,15 @@ var ENTITY_TYPE_TO_CODE = {
 };
 
 var ENTITY_CODE_TO_TYPE = {
+  q: { category: "hazard_ball", type: "black_hole", idPrefix: "black_hole" },
   i: { category: "obstacle_ball", type: "ice", idPrefix: "ice" },
   s: { category: "obstacle_ball", type: "stone", idPrefix: "stone" },
+  d: { category: "reactive_ball", type: "breeder", idPrefix: "breeder" },
   m: { category: "reactive_ball", type: "molotov", idPrefix: "molotov" },
+  c: { category: "reactive_ball", type: "spirit_cocoon", idPrefix: "spirit_cocoon" },
   p: { category: "reactive_ball", type: "splitter", idPrefix: "splitter" },
   w: { category: "reactive_ball", type: "swirl", idPrefix: "swirl" },
+  t: { category: "reactive_ball", type: "transparent_ball", idPrefix: "transparent_ball" },
   v: { category: "reactive_ball", type: "vine_spirit", idPrefix: "vine_spirit" },
   h: { category: "reactive_ball", type: "wormhole", idPrefix: "wormhole" },
   l: { category: "locked_ball", type: "locked", idPrefix: "locked" },
@@ -315,6 +323,8 @@ function encodeSpecialEntity(entity, index, levelKey) {
     encoded.push(assertString(entity.lockedColor, "specialEntities[" + index + "].lockedColor"));
   } else if (typeCode === "h") {
     encoded.push(assertString(entity.moveDirection, "specialEntities[" + index + "].moveDirection"));
+  } else if (typeCode === "q") {
+    encoded.push(assertInteger(entity.capacity, "specialEntities[" + index + "].capacity"));
   }
 
   return encoded;
@@ -370,6 +380,11 @@ function decodeSpecialEntity(encoded, index, levelKey) {
       throw new Error("compact wormhole specialEntities[" + index + "] must contain moveDirection: " + levelKey);
     }
     entity.moveDirection = assertString(encoded[3], "compact specialEntities[" + index + "][3]");
+  } else if (typeCode === "q") {
+    if (encoded.length !== 4) {
+      throw new Error("compact black_hole specialEntities[" + index + "] must contain capacity: " + levelKey);
+    }
+    entity.capacity = assertInteger(encoded[3], "compact specialEntities[" + index + "][3]");
   } else if (typeCode === "k") {
     if (encoded.length === 4) {
       return entity;

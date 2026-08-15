@@ -51,27 +51,90 @@ function attachLevelRendererResourceMethods(LevelRenderer, context) {
   var resolveJarScoreSpritePath = context.resolveJarScoreSpritePath;
   var retainSpriteFrame = context.retainSpriteFrame;
 
-LevelRenderer.prototype.warmupSharedAssets = function () {
-  if (this._sharedWarmupPromise) {
-    return this._sharedWarmupPromise;
+LevelRenderer.prototype.warmupPreparedGameplayAssets = function (assistSpiritId) {
+  if (typeof assistSpiritId !== "string" || !assistSpiritId) {
+    throw new Error("Prepared gameplay warmup requires assistSpiritId.");
+  }
+  AssistSpiritPresentationConfig.getBySpiritId(assistSpiritId);
+
+  if (!this._sharedWarmupPromise) {
+    this._sharedWarmupPromise = Promise.all([
+      this.prefabFactory.preload(this._collectInitialRenderPrefabPaths()),
+      this._preloadSprites(this._collectInitialCommonSpritePaths())
+    ]).catch(function (error) {
+      this._sharedWarmupPromise = null;
+      throw error;
+    }.bind(this));
   }
 
-  this._sharedWarmupPromise = Promise.all([
-    this._preloadSprites(this._collectCommonSpritePaths()),
-    this._preloadTimeBonusBitmapFont(),
+  return Promise.all([
+    this._sharedWarmupPromise,
+    this._preloadAssistSpiritAnimationClips(assistSpiritId)
+  ]).then(function () {
+    return null;
+  });
+};
+
+LevelRenderer.prototype.warmupSharedAssets = function (runtimeSnapshot) {
+  if (!runtimeSnapshot || !runtimeSnapshot.shooter) {
+    throw new Error("Shared gameplay warmup requires runtime shooter snapshot.");
+  }
+  var assistSpiritId = runtimeSnapshot.shooter.assistSpiritId;
+  return Promise.all([
+    this.warmupPreparedGameplayAssets(assistSpiritId),
+    this._preloadInitialLevelRenderAssets(runtimeSnapshot)
+  ]).then(function () {
+    return null;
+  });
+};
+
+LevelRenderer.prototype._preloadInitialLevelRenderAssets = function (runtimeSnapshot) {
+  var board = runtimeSnapshot.board;
+  if (!board || !Array.isArray(board.cells) || !Array.isArray(board.specialEntities)) {
+    throw new Error("Initial level render warmup requires board cells and specialEntities.");
+  }
+  var tasks = [];
+  var hasTimeBonus = board.cells.some(function (cell, index) {
+    if (!cell || typeof cell !== "object" || Array.isArray(cell)) {
+      throw new Error("Initial level render warmup requires board cell at index " + index + ".");
+    }
+    return Number.isInteger(cell.timeBonusSeconds) && cell.timeBonusSeconds > 0;
+  });
+  var hasWormhole = board.specialEntities.some(function (entity, index) {
+    if (!entity || typeof entity !== "object" || Array.isArray(entity)) {
+      throw new Error("Initial level render warmup requires special entity at index " + index + ".");
+    }
+    return entity.entityCategory === "reactive_ball" && entity.entityType === "wormhole";
+  });
+  if (hasTimeBonus) {
+    tasks.push(this._preloadTimeBonusBitmapFont());
+  }
+  if (hasWormhole) {
+    tasks.push(this.wormholeShaderRenderer.preload());
+  }
+  return Promise.all(tasks).then(function () {
+    return null;
+  });
+};
+
+LevelRenderer.prototype.warmupGameplayInteractionAssets = function () {
+  if (this._interactionWarmupPromise) {
+    return this._interactionWarmupPromise;
+  }
+
+  this._interactionWarmupPromise = Promise.all([
     this._preloadFairyPrefabs(),
     this._preloadExplodeAnimationClip(),
-    this._preloadAssistSpiritAnimationClips(),
     this._preloadFireworksPrefab(),
-    this.prefabFactory.preload(this._collectPrefabPaths()),
-    this.bubbleShatterRenderer.preload(),
-    this.wormholeShaderRenderer.preload()
+    this.prefabFactory.preload(this._collectInteractionPrefabPaths()),
+    this._preloadSprites(this._collectInteractionSpritePaths()),
+    this.bubbleShatterRenderer.preload()
   ]).catch(function (error) {
-    this._sharedWarmupPromise = null;
+    this._interactionWarmupPromise = null;
     throw error;
   }.bind(this));
 
-  return this._sharedWarmupPromise;
+  return this._interactionWarmupPromise;
 };
 
 LevelRenderer.prototype.preloadLightningChainEffect = function () {
@@ -167,7 +230,7 @@ LevelRenderer.prototype.playLightningChainEffect = function (config) {
 };
 
 LevelRenderer.prototype._collectSpritePaths = function (levelConfig, runtimeSnapshot) {
-  var paths = this._collectCommonSpritePaths().slice();
+  var paths = this._collectInitialCommonSpritePaths().slice();
 
   if (!levelConfig || !levelConfig.level || typeof levelConfig.level !== "object") {
     throw new Error("LevelRenderer sprite collection requires level config.");
@@ -186,16 +249,24 @@ LevelRenderer.prototype._collectSpritePaths = function (levelConfig, runtimeSnap
       buildTrappedSpriteResourcePath(level.trappedSpriteRescue.spiritId),
       "trapped sprite rescue center"
     );
-    pushUniqueSpritePath(
-      paths,
-      buildSpiritFragmentRewardResourcePath(level.trappedSpriteRescue.spiritId),
-      "trapped sprite rescue fragment reward"
-    );
-    pushUniqueSpritePath(
-      paths,
-      buildRescueSuccessfulSpiritResourcePath(level.trappedSpriteRescue.spiritId),
-      "rescue successful popup spirit"
-    );
+  } else if (level.levelType === "multi_trapped_spirit_rescue") {
+    if (
+      !level.multiTrappedSpiritRescue ||
+      !Array.isArray(level.multiTrappedSpiritRescue.targets) ||
+      level.multiTrappedSpiritRescue.targets.length < 2
+    ) {
+      throw new Error("Multi trapped spirit rescue rendering requires at least two targets.");
+    }
+    level.multiTrappedSpiritRescue.targets.forEach(function (target, index) {
+      if (!target || typeof target.spiritId !== "string" || !target.spiritId) {
+        throw new Error("Multi trapped spirit rescue target requires spiritId at index " + index + ".");
+      }
+      pushUniqueSpritePath(
+        paths,
+        buildTrappedSpriteResourcePath(target.spiritId),
+        "multi trapped spirit rescue target[" + index + "]"
+      );
+    });
   }
   if (!Array.isArray(level.colors)) {
     throw new Error("LevelRenderer sprite collection requires level.colors.");
@@ -292,6 +363,13 @@ LevelRenderer.prototype._collectSpritePaths = function (levelConfig, runtimeSnap
       runtimeSnapshot.shooter.nextBall !== undefined ? runtimeSnapshot.shooter.nextBall : runtimeSnapshot.shooter.nextColor,
       "runtime shooter next ball"
     );
+    if (typeof runtimeSnapshot.shooter.assistSpiritId !== "string" || !runtimeSnapshot.shooter.assistSpiritId) {
+      throw new Error("Initial gameplay sprite collection requires shooter assistSpiritId.");
+    }
+    var assistSpiritSkillConfig = AssistSpiritSkillConfig.getBySpiritId(runtimeSnapshot.shooter.assistSpiritId);
+    if (assistSpiritSkillConfig.iconPath) {
+      pushUniqueSpritePath(paths, assistSpiritSkillConfig.iconPath, "equipped assist spirit skill icon");
+    }
   }
 
   if (runtimeSnapshot && runtimeSnapshot.activeProjectile) {
@@ -323,18 +401,6 @@ LevelRenderer.prototype._collectSpritePaths = function (levelConfig, runtimeSnap
   if (hudTargetDisplay.iceSnowball && hudTargetDisplay.iceSnowball.iconCode) {
     pushBallSpritePath(paths, hudTargetDisplay.iceSnowball.iconCode, "HUD ice snowball target");
     pushUniqueSpritePath(paths, BALL_RESOURCES.ICE, "HUD ice snowball overlay");
-  }
-
-  if (level.clearRewardItems !== undefined) {
-    if (!Array.isArray(level.clearRewardItems)) {
-      throw new Error("LevelRenderer sprite collection requires level.clearRewardItems array when present.");
-    }
-    level.clearRewardItems.forEach(function (rewardItem) {
-      if (!rewardItem || !REWARD_ITEM_RESOURCES[rewardItem.id]) {
-        throw new Error("Unsupported level clear reward item id: " + (rewardItem && rewardItem.id));
-      }
-      pushUniqueSpritePath(paths, REWARD_ITEM_RESOURCES[rewardItem.id], "level clear reward " + rewardItem.id);
-    });
   }
 
   return paths.filter(function (path, index, list) {
@@ -384,6 +450,7 @@ LevelRenderer.prototype.releaseAfterGameplayBundleUnload = function () {
   this.assistSpiritAnimationClipCache = {};
   this.assistSpiritAnimationClipLoadPromises = {};
   this._sharedWarmupPromise = null;
+  this._interactionWarmupPromise = null;
   if (this.timeBonusBitmapFontLoadPromise) {
     throw new Error("Cannot unload gameplay bundle while time bonus font is loading.");
   }
@@ -450,21 +517,11 @@ LevelRenderer.prototype._setGuideDotsActiveCount = function (guideCanvas, count,
   }
 };
 
-LevelRenderer.prototype._collectCommonSpritePaths = function () {
+LevelRenderer.prototype._collectInitialCommonSpritePaths = function () {
   var paths = [
-    GUIDE_DOT_SPRITE_PATH,
-    BALL_RESOURCES.RAINBOW,
-    BALL_RESOURCES.BLAST,
-    BALL_RESOURCES.BLOCKADE_LINE,
-    BALL_RESOURCES.LIGHT,
-    BALL_RESOURCES.SNOW_REMOVAL_TOOLS,
     HUD_STAR_RESOURCES.lit,
     HUD_STAR_RESOURCES.unlit,
     TOP_SLOT_STAR_RESOURCE,
-    LOSE_STATUS_RESOURCES.complete,
-    LOSE_STATUS_RESOURCES.incomplete,
-    REWARD_ITEM_RESOURCES.coin,
-    REWARD_ITEM_RESOURCES.stamina,
     POWERUP_ICON_RESOURCES.rainbow,
     POWERUP_ICON_RESOURCES.swap,
     POWERUP_ICON_RESOURCES.blast,
@@ -472,7 +529,27 @@ LevelRenderer.prototype._collectCommonSpritePaths = function () {
     POWERUP_ICON_RESOURCES.precise_aim,
     POWERUP_ICON_RESOURCES.snow_removal,
     POWERUP_ICON_RESOURCES.three_line_elimination,
-    POWERUP_ICON_RESOURCES.plus_three_balls,
+    POWERUP_ICON_RESOURCES.plus_three_balls
+  ];
+  return paths.filter(function (path, index, list) {
+    return list.indexOf(path) === index;
+  });
+};
+
+LevelRenderer.prototype._collectInteractionCommonSpritePaths = function () {
+  var paths = [
+    GUIDE_DOT_SPRITE_PATH,
+    BALL_RESOURCES.RAINBOW,
+    BALL_RESOURCES.BLAST,
+    BALL_RESOURCES.BLOCKADE_LINE,
+    BALL_RESOURCES.LIGHT,
+    BALL_RESOURCES.SNOW_REMOVAL_TOOLS,
+    BALL_RESOURCES.POISON_OVERLAY,
+    BALL_RESOURCES.POISON_DROPLET,
+    LOSE_STATUS_RESOURCES.complete,
+    LOSE_STATUS_RESOURCES.incomplete,
+    REWARD_ITEM_RESOURCES.coin,
+    REWARD_ITEM_RESOURCES.stamina,
     COMMENT_ANIMATION_RESOURCES.good,
     COMMENT_ANIMATION_RESOURCES.great,
     COMMENT_ANIMATION_RESOURCES.excellent,
@@ -492,15 +569,9 @@ LevelRenderer.prototype._collectCommonSpritePaths = function () {
   });
 };
 
-LevelRenderer.prototype._collectPrefabPaths = function () {
+LevelRenderer.prototype._collectInitialRenderPrefabPaths = function () {
   var preloadPaths = [
     PREFAB_PATHS.gameView,
-    PREFAB_PATHS.winView,
-    PREFAB_PATHS.rescueSuccessfulView,
-    PREFAB_PATHS.loseView,
-    PREFAB_PATHS.addBallTipsView,
-    PREFAB_PATHS.pauseView,
-    PREFAB_PATHS.propDescriptionView,
     PREFAB_PATHS.shooterPanel,
     PREFAB_PATHS.propsBtn,
     PREFAB_PATHS.bubbleItem,
@@ -515,6 +586,57 @@ LevelRenderer.prototype._collectPrefabPaths = function () {
   return preloadPaths.filter(function (path, index, list) {
     return !!path && list.indexOf(path) === index;
   });
+};
+
+LevelRenderer.prototype._collectInteractionSpritePaths = function () {
+  if (!this.currentLevelConfig || !this.currentLevelConfig.level) {
+    throw new Error("Gameplay interaction sprite warmup requires current level config.");
+  }
+  var paths = this._collectInteractionCommonSpritePaths().slice();
+  var level = this.currentLevelConfig.level;
+  if (level.levelType === "trapped_sprite_rescue") {
+    if (!level.trappedSpriteRescue || typeof level.trappedSpriteRescue.spiritId !== "string") {
+      throw new Error("Trapped sprite interaction warmup requires spiritId.");
+    }
+    pushUniqueSpritePath(
+      paths,
+      buildSpiritFragmentRewardResourcePath(level.trappedSpriteRescue.spiritId),
+      "trapped sprite rescue fragment reward"
+    );
+    pushUniqueSpritePath(
+      paths,
+      buildRescueSuccessfulSpiritResourcePath(level.trappedSpriteRescue.spiritId),
+      "rescue successful popup spirit"
+    );
+  }
+  return paths.filter(function (path, index, list) {
+    return list.indexOf(path) === index;
+  });
+};
+
+LevelRenderer.prototype._collectCommonSpritePaths = function () {
+  return this._collectInitialCommonSpritePaths().concat(this._collectInteractionCommonSpritePaths()).filter(function (path, index, list) {
+    return list.indexOf(path) === index;
+  });
+};
+
+LevelRenderer.prototype._collectInteractionPrefabPaths = function () {
+  var preloadPaths = [
+    PREFAB_PATHS.winView,
+    PREFAB_PATHS.rescueSuccessfulView,
+    PREFAB_PATHS.loseView,
+    PREFAB_PATHS.addBallTipsView,
+    PREFAB_PATHS.pauseView,
+    PREFAB_PATHS.propDescriptionView
+  ];
+
+  return preloadPaths.filter(function (path, index, list) {
+    return !!path && list.indexOf(path) === index;
+  });
+};
+
+LevelRenderer.prototype._collectPrefabPaths = function () {
+  return this._collectInitialRenderPrefabPaths().concat(this._collectInteractionPrefabPaths());
 };
 
 LevelRenderer.prototype._collectFairyPrefabPaths = function () {
@@ -606,8 +728,10 @@ LevelRenderer.prototype._preloadExplodeAnimationClip = function () {
   return this.explodeAnimationClipPromise;
 };
 
-LevelRenderer.prototype._preloadAssistSpiritAnimationClips = function () {
-  return Promise.all(AssistSpiritPresentationConfig.getAllClipPaths().map(function (path) {
+LevelRenderer.prototype._preloadAssistSpiritAnimationClips = function (spiritId) {
+  var presentation = AssistSpiritPresentationConfig.getBySpiritId(spiritId);
+  var clipPaths = [presentation.idleClipPath, presentation.deliverClipPath];
+  return Promise.all(clipPaths.map(function (path) {
     var cachedClip = this.assistSpiritAnimationClipCache[path];
     if (cachedClip) {
       if (!cachedClip.isValid) {

@@ -10,6 +10,7 @@ var PROGRESS_COMPLETE_MIN_SECONDS = 0.3;
 var ANI_SPEED_REFRESH_INTERVAL = 1;
 var ANI_MIN_MOVE_SPEED = 40;
 var DEFAULT_ANI_MAX_MOVE_SPEED = 50;
+var ANI_MOVEMENT_FOOTPRINT_WIDTH = 272;
 
 function clamp01(value) {
   var num = Number(value);
@@ -247,18 +248,35 @@ var LoadingViewController = cc.Class({
     }
 
     this.hideImmediate();
-    var spriteFrames = [];
-    var collectSpriteFrames = function (node) {
+    if (typeof sp === "undefined" || !sp || !sp.Skeleton) {
+      throw new Error("LoadingView dispose requires the Spine runtime.");
+    }
+
+    var assetsToRelease = [];
+    var hasSkeletonData = false;
+    var collectLoadingAssets = function (node) {
       var sprite = node.getComponent(cc.Sprite);
       if (sprite && sprite.spriteFrame) {
-        if (spriteFrames.indexOf(sprite.spriteFrame) < 0) {
-          spriteFrames.push(sprite.spriteFrame);
+        if (assetsToRelease.indexOf(sprite.spriteFrame) < 0) {
+          assetsToRelease.push(sprite.spriteFrame);
         }
         sprite.spriteFrame = null;
       }
-      node.children.forEach(collectSpriteFrames);
+      var skeleton = node.getComponent(sp.Skeleton);
+      if (skeleton && skeleton.skeletonData) {
+        if (typeof skeleton.clearTracks !== "function") {
+          throw new Error("LoadingView Spine component requires clearTracks before disposal.");
+        }
+        skeleton.clearTracks();
+        skeleton.paused = true;
+        if (assetsToRelease.indexOf(skeleton.skeletonData) < 0) {
+          assetsToRelease.push(skeleton.skeletonData);
+        }
+        hasSkeletonData = true;
+      }
+      node.children.forEach(collectLoadingAssets);
     };
-    collectSpriteFrames(this.node);
+    collectLoadingAssets(this.node);
 
     var loadingNode = this.node;
     this._bgNode = null;
@@ -273,11 +291,24 @@ var LoadingViewController = cc.Class({
     this._percentLabel = null;
     this._progressBar = null;
 
+    if (
+      hasSkeletonData &&
+      (!cc.director || typeof cc.director.once !== "function" || !cc.Director.EVENT_AFTER_DRAW)
+    ) {
+      throw new Error("LoadingView Spine disposal requires EVENT_AFTER_DRAW.");
+    }
     loadingNode.destroy();
-    spriteFrames.forEach(function (spriteFrame) {
-      cc.assetManager.releaseAsset(spriteFrame);
-    });
-    return spriteFrames.length;
+    var releaseAssets = function () {
+      assetsToRelease.forEach(function (asset) {
+        cc.assetManager.releaseAsset(asset);
+      });
+    };
+    if (hasSkeletonData) {
+      cc.director.once(cc.Director.EVENT_AFTER_DRAW, releaseAssets);
+    } else {
+      releaseAssets();
+    }
+    return assetsToRelease.length;
   },
 
   _cacheNodesFromPrefab: function () {
@@ -478,12 +509,14 @@ var LoadingViewController = cc.Class({
       return 0;
     }
 
-    var width = Number(this._aniNode.width) || 0;
     var scaleX = Math.abs(Number(this._aniNode.scaleX));
     if (!Number.isFinite(scaleX) || scaleX <= 0) {
       scaleX = 1;
     }
-    return width * scaleX * 0.5;
+    // Spine's authored animation bounds are wider than the moving character.
+    // Keep the original ani node translation footprint instead of treating the
+    // full Skeleton bounds as the visible character width.
+    return ANI_MOVEMENT_FOOTPRINT_WIDTH * scaleX * 0.5;
   },
 
   _convertRootXToAniParent: function (rootX) {

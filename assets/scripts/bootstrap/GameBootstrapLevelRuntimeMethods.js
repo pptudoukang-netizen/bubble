@@ -47,6 +47,19 @@ module.exports = {
         this._startTrappedSpriteTestLevelEntry();
         return;
       }
+      if (
+        this._currentRunContext.testSource === "black_hole" ||
+        this._currentRunContext.testSource === "spirit_cocoon" ||
+        this._currentRunContext.testSource === "multi_trapped_spirit" ||
+        this._currentRunContext.testSource === "transparent_ball" ||
+        this._currentRunContext.testSource === "breeder_ball"
+      ) {
+        if (typeof this._startFeatureTestLevelEntry !== "function") {
+          throw new Error("Feature test retry requires _startFeatureTestLevelEntry.");
+        }
+        this._startFeatureTestLevelEntry(this._currentRunContext.testSource);
+        return;
+      }
       if (this._currentRunContext.testSource === "local") {
         if (typeof this._startLocalEditedLevelEntry !== "function") {
           throw new Error("Local edited level retry requires _startLocalEditedLevelEntry.");

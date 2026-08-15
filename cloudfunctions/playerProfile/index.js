@@ -5,10 +5,14 @@ var cloud = require("wx-server-sdk");
 
 var COLLECTION_NAME = "player_profiles";
 var PROFILE_VERSION = 1;
-var DEPLOYMENT_MARKER = "playerProfile_v20260809_assist_spirit_level_only_v5";
+var DEPLOYMENT_MARKER = "playerProfile_v20260814_profile_size_caps_v6";
 var LEVEL_ATTEMPT_STATS_STORAGE_KEY = "bubble_level_attempt_stats_v1";
 var ASSIST_SPIRIT_STORAGE_KEY = "bubble_assist_spirit_state_v1";
 var SPIRIT_SHOP_STORAGE_KEY = "bubble_spirit_shop_state_v1";
+var SHOP_STATE_STORAGE_KEY = "bubble_shop_state_v1";
+var MAX_RECENT_ATTEMPT_EVENTS = 50;
+var MAX_LAST_ATTEMPT_BY_LEVEL = 50;
+var MAX_SHOP_PURCHASE_LOGS = 50;
 var SUPPORTED_STORAGE_KEYS = {
   bubble_level_progress_v1: "LevelProgressStore",
   bubble_level_attempt_stats_v1: "LevelAttemptStatsStore",
@@ -82,6 +86,71 @@ function requireNonEmptyString(value, fieldName) {
 function requireNonNegativeInteger(value, fieldName) {
   if (!Number.isInteger(value) || value < 0) {
     throw new Error(fieldName + " must be a non-negative integer.");
+  }
+  return value;
+}
+
+function requirePositiveInteger(value, fieldName) {
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(fieldName + " must be a positive integer.");
+  }
+  return value;
+}
+
+function normalizeBoundedTailArray(rawValue, fieldName, maxLength) {
+  if (!Array.isArray(rawValue)) {
+    throw new Error(fieldName + " must be an array.");
+  }
+  return clone(rawValue.slice(-maxLength));
+}
+
+function normalizeLastAttemptByLevel(rawAttempts) {
+  requireObject(rawAttempts, "player profile lastAttemptByLevel");
+  var entries = Object.keys(rawAttempts).map(function (levelKey) {
+    requirePositiveInteger(Number(levelKey), "player profile lastAttemptByLevel key");
+    var attempt = requireObject(
+      rawAttempts[levelKey],
+      "player profile lastAttemptByLevel." + levelKey
+    );
+    return {
+      levelKey: levelKey,
+      attempt: attempt,
+      timestamp: Math.max(
+        requireNonNegativeInteger(attempt.endedAt, "player profile attempt endedAt"),
+        requireNonNegativeInteger(attempt.startedAt, "player profile attempt startedAt")
+      )
+    };
+  });
+  entries.sort(function (left, right) {
+    if (right.timestamp !== left.timestamp) {
+      return right.timestamp - left.timestamp;
+    }
+    return Number(right.levelKey) - Number(left.levelKey);
+  });
+  var normalized = {};
+  entries.slice(0, MAX_LAST_ATTEMPT_BY_LEVEL).forEach(function (entry) {
+    normalized[entry.levelKey] = clone(entry.attempt);
+  });
+  return normalized;
+}
+
+function normalizeStorageValue(storageKey, rawValue) {
+  var value = clone(requireObject(rawValue, "player profile value `" + storageKey + "`"));
+  if (storageKey === LEVEL_ATTEMPT_STATS_STORAGE_KEY) {
+    value.recentEvents = normalizeBoundedTailArray(
+      value.recentEvents,
+      "player profile recentEvents",
+      MAX_RECENT_ATTEMPT_EVENTS
+    );
+    value.lastAttemptByLevel = normalizeLastAttemptByLevel(value.lastAttemptByLevel);
+  }
+  if (storageKey === SHOP_STATE_STORAGE_KEY) {
+    requireObject(value.shopState, "player profile shopState");
+    value.shopState.purchaseLogs = normalizeBoundedTailArray(
+      value.shopState.purchaseLogs,
+      "player profile shop purchaseLogs",
+      MAX_SHOP_PURCHASE_LOGS
+    );
   }
   return value;
 }
@@ -221,7 +290,7 @@ function normalizeProfile(profile) {
     }
     normalizedStorage[storageKey] = {
       namespace: namespace,
-      value: requireObject(entry.value, "player profile value `" + storageKey + "`")
+      value: normalizeStorageValue(storageKey, entry.value)
     };
   });
 

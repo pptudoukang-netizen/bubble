@@ -45,6 +45,7 @@ function LevelRenderer(rootNode) {
   this.wormholeShaderRenderer = new WormholeShaderRenderer();
   this.lightningChainRenderer = new LightningChainRenderer();
   this._sharedWarmupPromise = null;
+  this._interactionWarmupPromise = null;
   this.currentLevelConfig = null;
   this.lastRuntimeSnapshot = null;
   this.displayedIceSnowballCollectedTotal = 0;
@@ -83,10 +84,14 @@ function LevelRenderer(rootNode) {
   this.lastKeyUnlockAnimationKey = "";
   this.splitterSpawnAnimatedEntryKeys = {};
   this.splitterSpawnHiddenCellIds = {};
+  this.breederSpawnAnimatedEntryKeys = {};
+  this.breederSpawnHiddenCellIds = {};
   this.molotovBlastHiddenCellIds = {};
   this.molotovBlastAnimatedIds = {};
   this.swirlRotationAnimatedIds = {};
+  this.spiritCocoonAnimatedIds = {};
   this.wormholeShiftAnimatedIds = {};
+  this.wormholeProjectileAbsorptionAnimatedIds = {};
   this.wormholeDirectionGuideRoot = null;
   this.lastWormholeDirectionGuideKey = "";
   this.blastExplosionAnimatedIds = {};
@@ -108,6 +113,10 @@ function LevelRenderer(rootNode) {
   this.trappedSpriteDepartureActive = false;
   this.trappedSpriteDepartureCompleted = false;
   this.trappedSpriteDepartureToken = 0;
+  this.multiTrappedSpiritNodes = {};
+  this.multiTrappedSpiritHandledEventIds = {};
+  this.multiTrappedSpiritDepartingTargetIds = {};
+  this.multiTrappedSpiritDepartedTargetIds = {};
   this.barrierHammerHintNodes = {};
   this.lastBarrierHammerHintKey = "";
   this.testSlotNodes = {};

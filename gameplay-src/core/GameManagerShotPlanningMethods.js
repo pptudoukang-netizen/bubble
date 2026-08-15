@@ -1,5 +1,82 @@
 "use strict";
 
+function isSamePathPoint(left, right) {
+  return !!(
+    left &&
+    right &&
+    Number.isFinite(left.x) &&
+    Number.isFinite(left.y) &&
+    Number.isFinite(right.x) &&
+    Number.isFinite(right.y) &&
+    Math.abs(left.x - right.x) <= 0.5 &&
+    Math.abs(left.y - right.y) <= 0.5
+  );
+}
+
+function buildPhysicalImpactPath(shotPlan) {
+  if (!shotPlan || !Array.isArray(shotPlan.pathPoints) || shotPlan.pathPoints.length < 2) {
+    throw new Error("Transparent ball planning requires an authoritative shot path.");
+  }
+  if (!shotPlan.hitPoint) {
+    throw new Error("Transparent ball planning requires shotPlan.hitPoint.");
+  }
+
+  var impactIndex = -1;
+  shotPlan.pathPoints.forEach(function (point, index) {
+    if (isSamePathPoint(point, shotPlan.hitPoint)) {
+      impactIndex = index;
+    }
+  });
+  if (impactIndex < 1 && shotPlan.hitType === "fallback") {
+    return shotPlan.pathPoints.slice();
+  }
+  if (impactIndex < 1) {
+    throw new Error("Transparent ball planning could not locate the physical impact point on the shot path.");
+  }
+  return shotPlan.pathPoints.slice(0, impactIndex + 1);
+}
+
+function applyTransparentBallAttachmentTarget(shotPlan, penetratedTransparentBalls, grid) {
+  if (shotPlan.hitType !== "bubble" || penetratedTransparentBalls.length === 0) {
+    return;
+  }
+  if (!shotPlan.collidedCell) {
+    throw new Error("Transparent ball attachment requires the rear collided cell.");
+  }
+
+  var neighborKeys = {};
+  grid.getNeighborCoordinates(shotPlan.collidedCell.row, shotPlan.collidedCell.col).forEach(function (coord) {
+    neighborKeys[coord.row + ":" + coord.col] = true;
+  });
+  var attachmentTarget = null;
+  penetratedTransparentBalls.forEach(function (cell) {
+    if (neighborKeys[cell.row + ":" + cell.col]) {
+      attachmentTarget = cell;
+    }
+  });
+  if (!attachmentTarget) {
+    return;
+  }
+
+  var targetPosition = grid.getCellPosition(attachmentTarget.row, attachmentTarget.col);
+  shotPlan.targetCell = {
+    row: attachmentTarget.row,
+    col: attachmentTarget.col
+  };
+  shotPlan.targetCellPosition = targetPosition;
+  shotPlan.transparentAttachmentTarget = {
+    id: attachmentTarget.id,
+    row: attachmentTarget.row,
+    col: attachmentTarget.col
+  };
+
+  var physicalPath = buildPhysicalImpactPath(shotPlan);
+  if (!isSamePathPoint(physicalPath[physicalPath.length - 1], targetPosition)) {
+    physicalPath.push(targetPosition);
+  }
+  shotPlan.pathPoints = physicalPath;
+}
+
 function createGameManagerShotPlanningMethods(context) {
   var BoardViewportSystem = context.BoardViewportSystem;
   var buildProjectilePathFromShotPlan = context.buildProjectilePathFromShotPlan;
@@ -43,6 +120,12 @@ function createGameManagerShotPlanningMethods(context) {
 
     _tryTopAnchorCollapse: function () {
       if (this.systems.trappedSpriteRescueSystem.isActive()) {
+        return false;
+      }
+      if (
+        this.systems.trappedSpriteRescueSystem.isMultiTargetActive() &&
+        !this.systems.trappedSpriteRescueSystem.isMultiTargetCompleted()
+      ) {
         return false;
       }
       if (this.state !== "running" && this.state !== "out_of_shots_pending") {
@@ -114,7 +197,7 @@ function createGameManagerShotPlanningMethods(context) {
     },
 
     _refreshShotPlan: function (force) {
-      if (this.state !== "running" || this.activeProjectile || this._isBoardAdvanceBusy() || this._hasPendingSplitterSpawns() || this._hasPendingMolotovBlasts() || this._hasPendingSwirlRotation() || this._hasPendingWormholeShift() || this._hasPendingVineCast()) {
+      if (this.state !== "running" || this.activeProjectile || this._isBoardAdvanceBusy() || this._hasPendingSplitterSpawns() || this._hasPendingMolotovBlasts() || this._hasPendingSpiritCocoonOpenings() || this._hasPendingSwirlRotation() || this._hasPendingWormholeShift() || this._hasPendingVineCast()) {
         this.pendingShotPlan = null;
         return;
       }
@@ -151,6 +234,19 @@ function createGameManagerShotPlanningMethods(context) {
           );
         }
         planned.pathPoints = buildProjectilePathFromShotPlan(planned);
+        if (typeof this.systems.bubbleGrid.findTransparentBallCollisionsOnPath !== "function") {
+          throw new Error("Shot planning requires BubbleGrid.findTransparentBallCollisionsOnPath.");
+        }
+        var physicalImpactPath = buildPhysicalImpactPath(planned);
+        planned.penetratedTransparentBalls = this.systems.bubbleGrid.findTransparentBallCollisionsOnPath(
+          physicalImpactPath,
+          this.systems.trajectoryPredictor.predictionCollisionRadius
+        );
+        applyTransparentBallAttachmentTarget(
+          planned,
+          planned.penetratedTransparentBalls,
+          this.systems.bubbleGrid
+        );
         planned.totalDistance = measurePathDistance(planned.pathPoints);
       }
 

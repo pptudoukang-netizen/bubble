@@ -9,8 +9,133 @@ function attachGameManagerSpecialPhaseMethods(GameManager, context) {
   var VINE_CAST_SHOT_INTERVAL = context.VINE_CAST_SHOT_INTERVAL;
   var WORMHOLE_SHIFT_DURATION = context.WORMHOLE_SHIFT_DURATION;
   var assertFiniteNumber = context.assertFiniteNumber;
+  var isBreederBall = context.isBreederBall;
   var isSwirlBall = context.isSwirlBall;
   var isWormholeBall = context.isWormholeBall;
+
+function selectRandomIndex(length, description) {
+  if (!Number.isInteger(length) || length <= 0) {
+    throw new Error(description + " requires a positive candidate count.");
+  }
+  var randomValue = Math.random();
+  if (!Number.isFinite(randomValue) || randomValue < 0 || randomValue >= 1) {
+    throw new Error(description + " requires Math.random() in [0, 1).");
+  }
+  return Math.floor(randomValue * length);
+}
+
+GameManager.prototype._resolveBreederPhase = function (resolution) {
+  if (!resolution || typeof resolution !== "object" || Array.isArray(resolution)) {
+    throw new Error("Breeder phase requires resolution.");
+  }
+  if (typeof resolution.breederResolved !== "boolean") {
+    throw new Error("Breeder phase requires resolution.breederResolved boolean.");
+  }
+  if (!Array.isArray(resolution.breederSpawns)) {
+    throw new Error("Breeder phase requires resolution.breederSpawns array.");
+  }
+  if (!Array.isArray(resolution.matched)) {
+    throw new Error("Breeder phase requires resolution.matched array.");
+  }
+  if (resolution.breederResolved) {
+    throw new Error("Breeder phase cannot resolve the same shot twice.");
+  }
+  if (!Number.isInteger(this.shotsFired) || this.shotsFired <= 0) {
+    throw new Error("Breeder phase requires positive shotsFired.");
+  }
+
+  var grid = this.systems.bubbleGrid;
+  if (!grid || typeof grid.getSpecialEntities !== "function") {
+    throw new Error("Breeder phase requires BubbleGrid.getSpecialEntities.");
+  }
+
+  resolution.breederResolved = true;
+  var explodedCellKeys = {};
+  resolution.matched.forEach(function (cell, index) {
+    if (!cell || !Number.isInteger(cell.row) || !Number.isInteger(cell.col)) {
+      throw new Error("Breeder phase matched cell requires integer coordinates at index " + index + ".");
+    }
+    explodedCellKeys[cell.row + ":" + cell.col] = true;
+  });
+
+  var breeders = grid.getSpecialEntities().filter(isBreederBall).sort(function (left, right) {
+    if (typeof left.id !== "string" || !left.id || typeof right.id !== "string" || !right.id) {
+      throw new Error("Breeder phase requires non-empty breeder ids.");
+    }
+    return left.id < right.id ? -1 : (left.id > right.id ? 1 : 0);
+  });
+  if (!breeders.length) {
+    return [];
+  }
+  if (
+    typeof grid.getNeighborCoordinates !== "function" ||
+    typeof grid.getCell !== "function" ||
+    typeof grid.getCells !== "function" ||
+    typeof grid.hasCell !== "function" ||
+    typeof grid.addBubble !== "function"
+  ) {
+    throw new Error("Breeder phase requires BubbleGrid neighbor and mutation methods.");
+  }
+
+  breeders.forEach(function (breeder) {
+    var liveBreeder = grid.getCell(breeder.row, breeder.col);
+    if (!isBreederBall(liveBreeder) || liveBreeder.id !== breeder.id) {
+      throw new Error("Breeder phase lost live breeder: " + breeder.id + ".");
+    }
+    var neighborCoordinates = grid.getNeighborCoordinates(liveBreeder.row, liveBreeder.col);
+    var adjacentExplosion = neighborCoordinates.some(function (coordinate) {
+      return explodedCellKeys[coordinate.row + ":" + coordinate.col] === true;
+    });
+    if (adjacentExplosion) {
+      return;
+    }
+
+    var emptyNeighbors = neighborCoordinates.filter(function (coordinate) {
+      return !grid.hasCell(coordinate.row, coordinate.col);
+    });
+    if (!emptyNeighbors.length) {
+      return;
+    }
+
+    var boardColorMap = {};
+    grid.getCells().forEach(function (cell, index) {
+      if (!cell || typeof cell !== "object" || Array.isArray(cell)) {
+        throw new Error("Breeder phase board cell must be an object at index " + index + ".");
+      }
+      if (cell.entityCategory !== "normal_ball") {
+        return;
+      }
+      if (typeof cell.color !== "string" || !cell.color) {
+        throw new Error("Breeder phase normal board cell requires color at index " + index + ".");
+      }
+      boardColorMap[cell.color] = true;
+    });
+    var boardColors = Object.keys(boardColorMap).sort();
+    if (!boardColors.length) {
+      throw new Error("Breeder phase requires at least one ordinary color on the current board.");
+    }
+
+    var target = emptyNeighbors[selectRandomIndex(emptyNeighbors.length, "Breeder spawn position")];
+    var color = boardColors[selectRandomIndex(boardColors.length, "Breeder spawn color")];
+    var spawnedCell = grid.addBubble(target, color);
+    if (!spawnedCell || spawnedCell.entityCategory !== "normal_ball" || spawnedCell.color !== color) {
+      throw new Error("Breeder phase failed to create an ordinary colored bubble.");
+    }
+    resolution.breederSpawns.push({
+      id: "breeder_spawn_" + this.shotsFired + "_" + liveBreeder.id,
+      cellId: spawnedCell.id,
+      breederId: liveBreeder.id,
+      breederRow: liveBreeder.row,
+      breederCol: liveBreeder.col,
+      row: spawnedCell.row,
+      col: spawnedCell.col,
+      color: color
+    });
+    resolution.boardCleared = false;
+  }, this);
+
+  return resolution.breederSpawns.slice();
+};
 
 GameManager.prototype._beginVineCastForResolution = function (resolution) {
   if (!resolution || typeof resolution !== "object" || Array.isArray(resolution)) {
@@ -242,6 +367,7 @@ GameManager.prototype._continueAfterVineCast = function (resolution) {
   if (!resolution) {
     throw new Error("Vine cast completion requires resolution.");
   }
+  this._resolveBreederPhase(resolution);
   if (resolution.boardCleared) {
     this._resolveBoardClearedOutcome();
     return;
@@ -265,6 +391,7 @@ GameManager.prototype._continueAfterVineCast = function (resolution) {
       this._isBoardAdvanceBusy() ||
       this._hasPendingSplitterSpawns() ||
       this._hasPendingMolotovBlasts() ||
+      this._hasPendingSpiritCocoonOpenings() ||
       this._hasPendingVineCast()
     ) {
       this.state = "out_of_shots_pending";
@@ -525,7 +652,7 @@ GameManager.prototype._updatePendingSplitterSpawns = function (dt) {
     this.state = "running";
   }
   this._ensureMinimumVisibleBoardRows(this.lastResolution);
-  if (this.state === "out_of_shots_pending" && !this.systems.fallingMarbleSystem.hasActiveDrops() && !this._hasPendingSplitterSpawns() && !this._hasPendingMolotovBlasts() && !this._hasPendingSwirlRotation() && !this._hasPendingWormholeShift() && !this._hasPendingVineCast() && !this._isBoardAdvanceBusy()) {
+  if (this.state === "out_of_shots_pending" && !this.systems.fallingMarbleSystem.hasActiveDrops() && !this._hasPendingSplitterSpawns() && !this._hasPendingMolotovBlasts() && !this._hasPendingSpiritCocoonOpenings() && !this._hasPendingSwirlRotation() && !this._hasPendingWormholeShift() && !this._hasPendingVineCast() && !this._isBoardAdvanceBusy()) {
     this._showOutOfShotsAddBallPrompt();
   }
   if (grid && typeof grid.assertNoVisualOverlap === "function") {

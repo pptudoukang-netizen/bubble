@@ -14,10 +14,12 @@ BubbleGrid.prototype.addBubble = function (cell, colorOrBall) {
   var row = cell.row;
   var col = cell.col;
   if (
-    this.isTrappedSpriteRescueActive() &&
-    this.trappedSpriteRescueSystem.isReservedCell(row, col)
+    this.isTrappedSpiritReservedCell(row, col)
   ) {
-    throw new Error("BubbleGrid cannot attach a bubble to the trapped sprite anchor cell.");
+    throw new Error("BubbleGrid cannot attach a bubble to a trapped spirit reserved cell.");
+  }
+  if (this.hasWormholeAt(row, col)) {
+    throw new Error("BubbleGrid cannot attach a bubble to a wormhole endpoint.");
   }
 
   if (typeof colorOrBall === "string") {
@@ -26,6 +28,7 @@ BubbleGrid.prototype.addBubble = function (cell, colorOrBall) {
   } else if (colorOrBall && typeof colorOrBall === "object") {
     if (
       colorOrBall.entityCategory === "skill_ball" ||
+      colorOrBall.entityCategory === "hazard_ball" ||
       colorOrBall.entityCategory === "obstacle_ball" ||
       colorOrBall.entityCategory === "reactive_ball" ||
       colorOrBall.entityCategory === "locked_ball" ||
@@ -137,6 +140,8 @@ BubbleGrid.prototype._removeCellsByMode = function (cells, allowVineDrop) {
     touchedKeys[key] = true;
     removed.push(liveCell);
     delete this._timeBonusByCell[key];
+    delete this._spiritMistExpiryByCell[key];
+    delete this._poisonAttachmentByCell[key];
     this._setCell(cell.row, cell.col, ".");
     this._clearSpecialCell(cell.row, cell.col);
   }, this);
@@ -162,6 +167,97 @@ BubbleGrid.prototype.removeFloatingCells = function (cells) {
     throw new Error("BubbleGrid.removeFloatingCells requires cells array.");
   }
   return this._removeCellsByMode(cells, true);
+};
+
+BubbleGrid.prototype.applySpiritMist = function (cells, expiresAfterShot) {
+  if (!Array.isArray(cells)) {
+    throw new Error("BubbleGrid.applySpiritMist requires cells array.");
+  }
+  if (!Number.isInteger(expiresAfterShot) || expiresAfterShot <= 0) {
+    throw new Error("BubbleGrid.applySpiritMist requires positive expiresAfterShot.");
+  }
+  var applied = [];
+  cells.forEach(function (cell) {
+    if (!cell || !Number.isInteger(cell.row) || !Number.isInteger(cell.col)) {
+      throw new Error("Spirit mist target requires cell coordinates.");
+    }
+    var liveCell = this.getCell(cell.row, cell.col);
+    if (!liveCell || liveCell.entityCategory !== "normal_ball") {
+      throw new Error("Spirit mist target must remain a live normal ball.");
+    }
+    this._spiritMistExpiryByCell[keyFor(cell.row, cell.col)] = expiresAfterShot;
+    applied.push({
+      id: liveCell.id,
+      row: liveCell.row,
+      col: liveCell.col,
+      expiresAfterShot: expiresAfterShot
+    });
+  }, this);
+  if (applied.length) {
+    this.version += 1;
+    this._rebuildCaches();
+  }
+  return applied;
+};
+
+BubbleGrid.prototype.clearExpiredSpiritMist = function (shotsFired) {
+  if (!Number.isInteger(shotsFired) || shotsFired < 0) {
+    throw new Error("BubbleGrid.clearExpiredSpiritMist requires non-negative shotsFired.");
+  }
+  var cleared = [];
+  Object.keys(this._spiritMistExpiryByCell).forEach(function (cellKey) {
+    var expiry = this._spiritMistExpiryByCell[cellKey];
+    if (!Number.isInteger(expiry) || expiry <= 0) {
+      throw new Error("Spirit mist expiry must be a positive integer: " + cellKey);
+    }
+    if (shotsFired < expiry) {
+      return;
+    }
+    var coordinates = cellKey.split(":").map(Number);
+    var cell = this.getCell(coordinates[0], coordinates[1]);
+    if (!cell || cell.entityCategory !== "normal_ball") {
+      throw new Error("Spirit mist expiry target must remain a live normal ball: " + cellKey);
+    }
+    cleared.push({ id: cell.id, row: cell.row, col: cell.col });
+    delete this._spiritMistExpiryByCell[cellKey];
+  }, this);
+  if (cleared.length) {
+    this.version += 1;
+    this._rebuildCaches();
+  }
+  return cleared;
+};
+
+BubbleGrid.prototype.recolorNormalCells = function (assignments) {
+  if (!Array.isArray(assignments)) {
+    throw new Error("BubbleGrid.recolorNormalCells requires assignments array.");
+  }
+  var recolored = [];
+  assignments.forEach(function (assignment) {
+    if (!assignment || !Number.isInteger(assignment.row) || !Number.isInteger(assignment.col)) {
+      throw new Error("BubbleGrid recolor assignment requires coordinates.");
+    }
+    if (typeof assignment.color !== "string" || !assignment.color) {
+      throw new Error("BubbleGrid recolor assignment requires color.");
+    }
+    var liveCell = this.getCell(assignment.row, assignment.col);
+    if (!liveCell || liveCell.entityCategory !== "normal_ball") {
+      throw new Error("BubbleGrid recolor target must be a live normal ball.");
+    }
+    this._setCell(assignment.row, assignment.col, assignment.color);
+    recolored.push({
+      id: liveCell.id,
+      row: liveCell.row,
+      col: liveCell.col,
+      fromColor: liveCell.color,
+      color: assignment.color
+    });
+  }, this);
+  if (recolored.length) {
+    this.version += 1;
+    this._rebuildCaches();
+  }
+  return recolored;
 };
 
 BubbleGrid.prototype.getTopAttachY = function () {

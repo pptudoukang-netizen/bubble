@@ -35,7 +35,7 @@ var ALLOWED_ENTITY_CATEGORIES = ["skill_ball", "obstacle_ball", "reactive_ball",
 var ALLOWED_ENTITY_TYPES = {
   skill_ball: ["rainbow", "blast"],
   obstacle_ball: ["stone", "ice"],
-  reactive_ball: ["molotov", "splitter", "swirl", "vine_spirit", "wormhole"],
+  reactive_ball: ["breeder", "molotov", "splitter", "swirl", "transparent_ball", "vine_spirit", "wormhole"],
   locked_ball: ["locked"],
   key_ball: ["key"]
 };
@@ -264,7 +264,7 @@ function validateSpecialEntities(level, normalizedLayoutRows, issues) {
       seenCells[cellKey] = true;
     }
 
-    if (rowString[entity.col] !== "." && !isWormholeEntity(entity)) {
+    if (rowString[entity.col] !== ".") {
       issues.push("specialEntities[" + index + "] must be placed on `.` layout slot at " + cellKey);
     }
   });
@@ -296,6 +296,39 @@ function validateSpecialEntities(level, normalizedLayoutRows, issues) {
       }
       claimedSwirlTrackCells[coordinateKey] = true;
     });
+  });
+
+  var occupiedBreederNeighborCells = {};
+  normalizedLayoutRows.forEach(function (rowString, row) {
+    rowString.split("").forEach(function (cellCode, col) {
+      if (cellCode !== ".") {
+        occupiedBreederNeighborCells[row + ":" + col] = true;
+      }
+    });
+  });
+  level.specialEntities.forEach(function (entity) {
+    if (entity && Number.isInteger(entity.row) && Number.isInteger(entity.col)) {
+      occupiedBreederNeighborCells[entity.row + ":" + entity.col] = true;
+    }
+  });
+  level.specialEntities.forEach(function (entity, index) {
+    if (!entity || entity.entityCategory !== "reactive_ball" || entity.entityType !== "breeder") {
+      return;
+    }
+    var hasInitialEmptyNeighbor = getHexNeighborCoordinates(entity.row, entity.col).some(function (coordinate) {
+      if (
+        coordinate.row < 0 ||
+        coordinate.row >= normalizedLayoutRows.length ||
+        coordinate.col < 0 ||
+        coordinate.col >= normalizedLayoutRows[coordinate.row].length
+      ) {
+        return false;
+      }
+      return occupiedBreederNeighborCells[coordinate.row + ":" + coordinate.col] !== true;
+    });
+    if (!hasInitialEmptyNeighbor) {
+      issues.push("specialEntities[" + index + "] breeder requires at least one initial empty neighbor");
+    }
   });
 
   var wormholes = level.specialEntities.filter(function (entity) {
@@ -443,7 +476,7 @@ function validateLevelMode(level, issues) {
   }
   var levelType = level.levelType;
   var playMode = level.playMode;
-  if (["normal", "special_floating_island", "trapped_sprite_rescue"].indexOf(levelType) === -1) {
+  if (["normal", "special_floating_island", "trapped_sprite_rescue", "multi_trapped_spirit_rescue"].indexOf(levelType) === -1) {
     issues.push("levelType unsupported: " + levelType);
   }
   if (["shot_limited", "timed_infinite_shots"].indexOf(playMode) === -1) {
@@ -454,6 +487,9 @@ function validateLevelMode(level, issues) {
   }
   if (levelType === "trapped_sprite_rescue" && playMode !== "shot_limited") {
     issues.push("trapped_sprite_rescue must use shot_limited");
+  }
+  if (levelType === "multi_trapped_spirit_rescue" && playMode !== "shot_limited") {
+    issues.push("multi_trapped_spirit_rescue must use shot_limited");
   }
   if (playMode === "timed_infinite_shots") {
     if (levelType !== "special_floating_island") {
@@ -606,6 +642,92 @@ function validateTrappedSpriteRescue(level, issues) {
   if (Array.isArray(level.layout) && typeof level.layout[TOP_BOARD_ROW_INDEX] === "string" &&
       level.layout[TOP_BOARD_ROW_INDEX].split("").some(function (cellCode) { return cellCode !== "."; })) {
     issues.push("trapped_sprite_rescue top row must be empty");
+  }
+}
+
+function validateMultiTrappedSpiritRescue(level, issues) {
+  var rescue = level.multiTrappedSpiritRescue;
+  if (level.levelType !== "multi_trapped_spirit_rescue") {
+    if (rescue !== undefined) {
+      issues.push("multiTrappedSpiritRescue is only valid for multi_trapped_spirit_rescue");
+    }
+    return;
+  }
+  if (!rescue || typeof rescue !== "object" || Array.isArray(rescue)) {
+    issues.push("multi_trapped_spirit_rescue requires multiTrappedSpiritRescue object");
+    return;
+  }
+  if (!Array.isArray(rescue.targets) || rescue.targets.length < 2) {
+    issues.push("multiTrappedSpiritRescue.targets must contain at least two targets");
+    return;
+  }
+  var usedCoordinates = {};
+  var usedSpiritIds = {};
+  rescue.targets.forEach(function (target, index) {
+    if (!target || typeof target !== "object" || Array.isArray(target)) {
+      issues.push("multiTrappedSpiritRescue.targets[" + index + "] must be object");
+      return;
+    }
+    try {
+      AssistSpiritConfig.getSpirit(target.spiritId);
+    } catch (error) {
+      issues.push("multiTrappedSpiritRescue.targets[" + index + "].spiritId is invalid: " + error.message);
+    }
+    if (usedSpiritIds[target.spiritId]) {
+      issues.push("multiTrappedSpiritRescue targets duplicate spiritId: " + target.spiritId);
+    }
+    usedSpiritIds[target.spiritId] = true;
+    if (
+      !Number.isInteger(target.row) ||
+      !Number.isInteger(target.col) ||
+      target.row <= TOP_BOARD_ROW_INDEX ||
+      !Array.isArray(level.layout) ||
+      target.row >= level.layout.length ||
+      target.col < 0 ||
+      target.col >= getExpectedRowColumns(target.row, BoardLayout.defaultColumns)
+    ) {
+      issues.push("multiTrappedSpiritRescue.targets[" + index + "] must be a non-top-row board coordinate");
+      return;
+    }
+    var coordinateKey = target.row + ":" + target.col;
+    if (usedCoordinates[coordinateKey]) {
+      issues.push("multiTrappedSpiritRescue targets duplicate coordinate: " + coordinateKey);
+    }
+    usedCoordinates[coordinateKey] = true;
+    if (typeof level.layout[target.row] !== "string" || level.layout[target.row].charAt(target.col) !== ".") {
+      issues.push("multiTrappedSpiritRescue target cell must remain empty: " + coordinateKey);
+    }
+    if ((Array.isArray(level.specialEntities) ? level.specialEntities : []).some(function (entity) {
+      return entity && entity.row === target.row && entity.col === target.col;
+    })) {
+      issues.push("multiTrappedSpiritRescue target overlaps special entity: " + coordinateKey);
+    }
+    var hasAdjacentNormalSupport = getHexNeighborCoordinates(target.row, target.col).some(function (neighbor) {
+      return neighbor.row >= 0 &&
+        neighbor.row < level.layout.length &&
+        neighbor.col >= 0 &&
+        neighbor.col < level.layout[neighbor.row].length &&
+        level.layout[neighbor.row].charAt(neighbor.col) !== ".";
+    });
+    if (!hasAdjacentNormalSupport) {
+      issues.push("multiTrappedSpiritRescue target requires adjacent eliminable normal support: " + coordinateKey);
+    }
+  });
+  if (
+    !Array.isArray(level.winConditions) ||
+    level.winConditions.length !== 1 ||
+    !level.winConditions[0] ||
+    level.winConditions[0].type !== "clear_all" ||
+    level.winConditions[0].value !== 1
+  ) {
+    issues.push("multi_trapped_spirit_rescue must use one clear_all win condition");
+  }
+  if (
+    level.starThresholds &&
+    Number.isInteger(level.starThresholds.star1) &&
+    level.starThresholds.star1 > rescue.targets.length * 1000
+  ) {
+    issues.push("multi_trapped_spirit_rescue star1 exceeds guaranteed rescue score");
   }
 }
 
@@ -959,6 +1081,7 @@ function validateLevelData(data, expectedLevelId) {
   validateLevelMode(level, issues);
   validateCampaignLevelModeSchedule(level, issues);
   validateTrappedSpriteRescue(level, issues);
+  validateMultiTrappedSpiritRescue(level, issues);
   validateInitialDropSpaceRows(level, issues);
 
   if (!isPositiveInteger(level.targetScore)) {

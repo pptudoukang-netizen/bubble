@@ -1626,6 +1626,57 @@ function bindBoardOcclusionTestButton(levelView, onBoardOcclusionTest, showTestL
   );
 }
 
+function bindFeatureTestButtons(levelView, onFeatureTestLevel, showTestLevelButton) {
+  if (typeof onFeatureTestLevel !== "function") {
+    throw new Error("LevelSelectView requires onFeatureTestLevel.");
+  }
+  if (typeof showTestLevelButton !== "boolean") {
+    throw new Error("LevelSelectView feature test buttons require boolean showTestLevelButton.");
+  }
+  var testLevelButtonNode = findChildByNameRecursive(levelView, "test_btn");
+  if (!testLevelButtonNode || !testLevelButtonNode.isValid || !testLevelButtonNode.parent) {
+    throw new Error("LevelSelectView feature test buttons require test_btn parent.");
+  }
+  [
+    { key: "black_hole", nodeName: "black_hole_test_btn", label: "黑洞" },
+    { key: "spirit_cocoon", nodeName: "spirit_cocoon_test_btn", label: "精灵茧" },
+    { key: "multi_trapped_spirit", nodeName: "multi_trapped_spirit_test_btn", label: "多救援" },
+    { key: "transparent_ball", nodeName: "transparent_ball_test_btn", label: "透明球" },
+    { key: "breeder_ball", nodeName: "breeder_ball_test_btn", label: "繁殖球" }
+  ].forEach(function (definition, index) {
+    var buttonNode = testLevelButtonNode.parent.getChildByName(definition.nodeName);
+    if (!buttonNode) {
+      buttonNode = cc.instantiate(testLevelButtonNode);
+      if (!buttonNode || !buttonNode.isValid) {
+        throw new Error("LevelSelectView failed to clone feature test button: " + definition.key + ".");
+      }
+      buttonNode.name = definition.nodeName;
+      buttonNode.parent = testLevelButtonNode.parent;
+      buttonNode.setPosition(testLevelButtonNode.x + index * 145, testLevelButtonNode.y + 145);
+      var iconNode = buttonNode.getChildByName("icon");
+      if (!iconNode || !iconNode.isValid) {
+        throw new Error("LevelView/" + definition.nodeName + " requires icon.");
+      }
+      var label = iconNode.getComponent(cc.Label);
+      if (!label) {
+        throw new Error("LevelView/" + definition.nodeName + "/icon requires cc.Label.");
+      }
+      label.string = definition.label;
+      label.fontSize = definition.label.length > 2 ? 30 : 40;
+      label.lineHeight = label.fontSize;
+    }
+    buttonNode.active = showTestLevelButton;
+    bindNamedButtonTap(
+      buttonNode,
+      "__featureTestTapBound",
+      "__onFeatureTestLevel",
+      function () {
+        onFeatureTestLevel(definition.key);
+      }
+    );
+  });
+}
+
 function updateDailyChallengeAttemptCount(levelView, attemptCount) {
   if (!levelView || !levelView.isValid) {
     throw new Error("LevelSelectView requires a valid level view node before updating daily challenge count.");
@@ -1747,6 +1798,10 @@ function renderLevelSelectContent(options) {
     throw new Error("LevelSelectView requires onBoardOcclusionTest.");
   }
   var onBoardOcclusionTest = options.onBoardOcclusionTest;
+  if (typeof options.onFeatureTestLevel !== "function") {
+    throw new Error("LevelSelectView requires onFeatureTestLevel.");
+  }
+  var onFeatureTestLevel = options.onFeatureTestLevel;
   if (typeof options.onLocalEditedLevel !== "function") {
     throw new Error("LevelSelectView requires onLocalEditedLevel.");
   }
@@ -1813,6 +1868,7 @@ function renderLevelSelectContent(options) {
   bindLocalEditedLevelButton(levelView, onLocalEditedLevel, showTestLevelButton);
   bindTrappedSpriteTestButton(levelView, onTrappedSpriteTest, showTestLevelButton);
   bindBoardOcclusionTestButton(levelView, onBoardOcclusionTest, showTestLevelButton);
+  bindFeatureTestButtons(levelView, onFeatureTestLevel, showTestLevelButton);
   bindTestLevelButton(levelView, onTestLevel, showTestLevelButton);
   var backToCurrentLevelButtonNode = levelView.getChildByName("back_cur_level");
   if (!backToCurrentLevelButtonNode || !backToCurrentLevelButtonNode.isValid) {

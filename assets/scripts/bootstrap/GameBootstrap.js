@@ -896,6 +896,8 @@ cc.Class({
   _onLevelSelectTrappedSpriteTestTap: GameBootstrapUiFlowMethods._onLevelSelectTrappedSpriteTestTap,
   _startBoardOcclusionTestLevelEntry: GameBootstrapUiFlowMethods._startBoardOcclusionTestLevelEntry,
   _onLevelSelectBoardOcclusionTestTap: GameBootstrapUiFlowMethods._onLevelSelectBoardOcclusionTestTap,
+  _startFeatureTestLevelEntry: GameBootstrapUiFlowMethods._startFeatureTestLevelEntry,
+  _onLevelSelectFeatureTestTap: GameBootstrapUiFlowMethods._onLevelSelectFeatureTestTap,
   _onLevelSelectTestTap: GameBootstrapUiFlowMethods._onLevelSelectTestTap,
   _openMapEditorScene: GameBootstrapUiFlowMethods._openMapEditorScene,
   _startLocalEditedLevelEntry: GameBootstrapUiFlowMethods._startLocalEditedLevelEntry,

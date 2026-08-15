@@ -4,6 +4,7 @@ var StrictStorage = require("./StrictStorage");
 
 var STORAGE_KEY = "bubble_shop_state_v1";
 var NAMESPACE = "ShopStateStore";
+var MAX_PURCHASE_LOGS = 50;
 
 function clone(data) {
   return JSON.parse(JSON.stringify(data));
@@ -76,7 +77,7 @@ function normalizeState(raw) {
         date: raw.shopState.dailyPurchases.date,
         skuCounts: skuCounts
       },
-      purchaseLogs: raw.shopState.purchaseLogs.map(normalizePurchaseLog)
+      purchaseLogs: raw.shopState.purchaseLogs.map(normalizePurchaseLog).slice(-MAX_PURCHASE_LOGS)
     }
   };
 }
@@ -110,5 +111,9 @@ ShopStateStore.prototype.save = function (state) {
 };
 
 ShopStateStore.createInitialState = createInitialState;
+ShopStateStore.normalizeState = normalizeState;
+ShopStateStore.STORAGE_KEY = STORAGE_KEY;
+ShopStateStore.NAMESPACE = NAMESPACE;
+ShopStateStore.MAX_PURCHASE_LOGS = MAX_PURCHASE_LOGS;
 
 module.exports = ShopStateStore;

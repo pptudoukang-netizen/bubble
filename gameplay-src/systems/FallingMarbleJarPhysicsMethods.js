@@ -315,6 +315,28 @@ FallingMarbleSystem.prototype._applyFairyCollision = function (drop, activeDropC
   return result;
 };
 
+FallingMarbleSystem.prototype._applyPoisonFairyCollision = function (drop) {
+  if (!drop || drop.dropKind !== "poison_droplet" || drop.entityType !== "poison_droplet") {
+    throw new Error("Poison fairy collision requires poison_droplet.");
+  }
+  if (!this.fairyAssistSystem || typeof this.fairyAssistSystem.removeFairyByPoison !== "function") {
+    throw new Error("Poison fairy collision requires FairyAssistSystem.removeFairyByPoison.");
+  }
+  var collision = this.fairyAssistSystem.resolveFirstCollision(drop, 8);
+  if (!collision) {
+    return null;
+  }
+  var departure = this.fairyAssistSystem.removeFairyByPoison(collision.fairy.id);
+  drop.active = false;
+  return {
+    fairyId: departure.fairyId,
+    fairyColor: departure.color,
+    slotIndex: departure.slotIndex,
+    dropId: drop.id,
+    poisonBatchId: drop.poisonBatchId
+  };
+};
+
 FallingMarbleSystem.prototype._createMissedEvent = function (drop) {
   return {
     id: drop.id,

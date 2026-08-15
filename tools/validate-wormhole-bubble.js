@@ -12,6 +12,7 @@ var GameManager = require("../gameplay-src/core/GameManager");
 var BubbleGrid = require("../gameplay-src/systems/BubbleGrid");
 var BoardViewportSystem = require("../gameplay-src/systems/BoardViewportSystem");
 var SupportSystem = require("../gameplay-src/systems/SupportSystem");
+var TrajectoryPredictor = require("../gameplay-src/systems/TrajectoryPredictor");
 var attachLevelRendererSceneFxMethods = require("../gameplay-src/render/LevelRendererSceneFxMethods");
 var attachLevelRendererSceneScaffoldMethods = require("../gameplay-src/render/LevelRendererSceneScaffoldMethods");
 var WormholeShaderRenderer = require("../gameplay-src/render/WormholeShaderRenderer");
@@ -58,9 +59,14 @@ function createResolution() {
     injectedSkills: [],
     reactiveTriggered: [],
     blastExplosions: [],
+    transparentBallsDestroyed: [],
+    rescuedTrappedSpirits: [],
     spawnedBySplitters: [],
+    breederResolved: false,
+    breederSpawns: [],
     swirlRotations: [],
     wormholeShifts: [],
+    wormholeProjectileAbsorptions: [],
     vineCastEvaluated: false,
     vineCasts: [],
     vineSpiritHits: [],
@@ -121,11 +127,13 @@ function validateConfigAndCompactCodec() {
   var overlapRow = overlapFixture.level.layout[overlapEndpoint.row].split("");
   overlapRow[overlapEndpoint.col] = overlapFixture.level.colors[0];
   overlapFixture.level.layout[overlapEndpoint.row] = overlapRow.join("");
-  var normalizedOverlap = LevelConfigLoader.normalizeLevelConfig(overlapFixture, "level_test");
-  assert(
-    normalizedOverlap.level.layout[overlapEndpoint.row].charAt(overlapEndpoint.col) === overlapFixture.level.colors[0],
-    "Wormhole config must allow a board ball in the same grid coordinate."
-  );
+  var overlapRejected = false;
+  try {
+    LevelConfigLoader.normalizeLevelConfig(overlapFixture, "level_test");
+  } catch (error) {
+    overlapRejected = /special entity must be placed on/.test(error.message);
+  }
+  assert(overlapRejected, "Wormhole config must reject a board ball in an endpoint coordinate.");
 }
 
 function validateMixedCellShiftAndProtection() {
@@ -139,7 +147,7 @@ function validateMixedCellShiftAndProtection() {
         "R.........",
         ".........",
         "..........",
-        "RR.B..G..",
+        ".R.B..G..",
         "..........",
         ".........",
         "..........",
@@ -158,22 +166,34 @@ function validateMixedCellShiftAndProtection() {
   var shifts = grid.shiftWormholeInteriors();
   assert(shifts.length === 1, "Single wormhole pair fixture must produce one shift.");
   var shifted = shifts[0];
-  assert(shifted && shifted.slotCount === 9, "Wormhole shift must expose the inclusive nine-slot channel.");
-  assert(grid.getCell(3, 0) === null, "Wrapped empty slot must move into the left wormhole coordinate.");
-  assert(grid.getCell(3, 1).color === "R", "The ball on the left wormhole coordinate must enter the cycle.");
-  assert(grid.getCell(3, 2).color === "R", "Normal ball must move right by one slot.");
-  assert(grid.getCell(3, 3).id === "locked_moving", "Locked special ball must move with the wormhole segment.");
-  assert(grid.getCell(3, 4).color === "B", "Second normal ball must move right by one slot.");
+  assert(shifted && shifted.slotCount === 7, "Wormhole shift must expose only the seven strict interior slots.");
+  assert(grid.getCell(3, 0) === null && grid.getCell(3, 8) === null, "Wormhole endpoint coordinates must remain empty after cycling.");
+  assert(grid.getCell(3, 1) === null, "Wrapped interior empty slot must emerge beside the left endpoint.");
+  assert(grid.getCell(3, 2).color === "R", "Normal ball must move right by one interior slot.");
+  assert(grid.getCell(3, 3).id === "locked_moving", "Locked special ball must move with the strict interior segment.");
+  assert(grid.getCell(3, 4).color === "B", "Second normal ball must move right by one interior slot.");
   assert(grid.getCell(3, 6).id === "vine_moving" && grid.getCell(3, 6).health === 2, "Moving vine spirit must preserve id and runtime health.");
   assert(grid.getCell(3, 7).color === "G", "Last occupied slot must move right without losing color.");
-  assert(grid.getCell(3, 8) === null, "An empty wormhole coordinate must remain an empty board grid slot.");
   assert(grid.getCells().every(function (cell) { return cell.entityType !== "wormhole"; }), "Wormholes must not enter BubbleGrid.cells.");
   assert(grid.getSpecialEntities().filter(function (entity) { return entity.entityType === "wormhole"; }).length === 2, "Wormhole overlays must remain fixed special entities.");
   assert(grid.getClearableCells().length === grid.getCells().length, "Every occupied board cell must remain clearable independently of wormhole overlays.");
   var emptyEndpointPosition = grid.getCellPosition(3, 8);
   assert(grid.findCollision(emptyEndpointPosition, 1) === null, "An empty wormhole endpoint must not block the shot collision path.");
-  grid.addBubble({ row: 3, col: 8 }, "B");
-  assert(grid.getCell(3, 8).color === "B" && grid.hasWormholePair(), "Attaching at a wormhole coordinate must preserve the overlay pair.");
+  assert(
+    grid.findWormholeCollisionOnSegment(
+      { x: emptyEndpointPosition.x, y: emptyEndpointPosition.y - 200 },
+      { x: emptyEndpointPosition.x, y: emptyEndpointPosition.y + 20 },
+      BoardLayout.bubbleDiameter
+    ).cell.id === "wormhole_right",
+    "Wormhole endpoints must absorb the shot path independently of BubbleGrid.cells."
+  );
+  var endpointAttachRejected = false;
+  try {
+    grid.addBubble({ row: 3, col: 8 }, "B");
+  } catch (error) {
+    endpointAttachRejected = /wormhole endpoint/.test(error.message);
+  }
+  assert(endpointAttachRejected, "Runtime attachment must reject every wormhole endpoint coordinate.");
 }
 
 function validateMultiplePairShift() {
@@ -207,8 +227,86 @@ function validateMultiplePairShift() {
   var shifts = grid.shiftWormholeInteriors();
   assert(shifts.length === 2 && shifts[0].row === 2 && shifts[1].row === 4, "Both wormhole rows must shift in one phase.");
   assert(grid.getCell(2, 2).color === "R" && grid.getCell(2, 4).color === "B", "Right-moving pair must rotate its own interior.");
-  assert(grid.getCell(4, 1).color === "G" && grid.getCell(4, 6) === null, "Left-moving pair must cycle through both wormhole coordinates.");
+  assert(grid.getCell(4, 3).color === "Y" && grid.getCell(4, 5).color === "G", "Left-moving pair must wrap only across its strict interior.");
   assert(grid.getWormholePairs()[1][0].row === 4 && grid.getWormholePairs()[1][1].row === 4, "Second overlay pair must remain isolated on its row.");
+}
+
+function validateProjectileAbsorptionPlanningAndSettlement() {
+  var levelConfig = {
+    coordinateSystem: "odd-r-hex",
+    level: {
+      levelId: 1,
+      code: "WORMHOLE_PROJECTILE_ABSORPTION",
+      initialDropSpaceRows: 8,
+      layout: [
+        "R.........",
+        ".........",
+        "..........",
+        ".........",
+        "..........",
+        ".........",
+        "..........",
+        "........."
+      ],
+      specialEntities: [
+        { id: "absorb_left", entityCategory: "reactive_ball", entityType: "wormhole", moveDirection: "right", row: 3, col: 4 },
+        { id: "absorb_right", entityCategory: "reactive_ball", entityType: "wormhole", moveDirection: "right", row: 3, col: 7 }
+      ]
+    }
+  };
+  var grid = createGrid(levelConfig);
+  var targetPosition = grid.getCellPosition(3, 4);
+  var predictor = new TrajectoryPredictor();
+  predictor.initialize({});
+  predictor.configureLevel(levelConfig);
+  var plan = predictor.predictShotPlan(
+    grid,
+    { x: targetPosition.x, y: targetPosition.y - 300 },
+    { x: 0, y: 1 }
+  );
+  assert(plan.hitType === "wormhole", "Aim prediction must stop at the first wormhole endpoint.");
+  assert(plan.targetCell === null && plan.targetCellPosition === null, "Wormhole shot plan must not expose an attachment or ghost target.");
+  assert(plan.absorbingWormhole.id === "absorb_left", "Wormhole shot plan must record the exact absorbing endpoint.");
+  assert(plan.pathPoints.length >= 2, "Wormhole shot plan must keep a finite projectile path to the contact point.");
+  plan.penetratedTransparentBalls = [];
+
+  var manager = new GameManager();
+  manager.systems.bubbleGrid = grid;
+  manager.systems.boardOcclusionSystem = {
+    onShotFired: function () {
+      return [];
+    }
+  };
+  manager.shotsFired = 1;
+  manager.remainingShots = 3;
+  manager.state = "running";
+  manager.activeProjectile = {
+    position: clone(plan.pathPoints[plan.pathPoints.length - 1]),
+    ball: {
+      ballCategory: "normal",
+      color: "R",
+      entityCategory: "normal_ball",
+      entityType: null
+    },
+    color: "R",
+    destroyedTransparentBalls: [],
+    targetCell: null,
+    shotPlan: clone(plan)
+  };
+  var continuedResolution = null;
+  manager._beginSwirlRotationForResolution = function () { return false; };
+  manager._beginWormholeShiftForResolution = function () { return false; };
+  manager._beginVineCastForResolution = function () { return false; };
+  manager._continueAfterVineCast = function (resolution) {
+    continuedResolution = resolution;
+  };
+  manager._finalizePlannedShot();
+  assert(manager.activeProjectile === null, "Absorbed projectile must disappear instead of attaching to the board.");
+  assert(manager.lastResolution.wormholeProjectileAbsorptions.length === 1, "Absorbed projectile must create exactly one visual event.");
+  var absorption = manager.lastResolution.wormholeProjectileAbsorptions[0];
+  assert(absorption.wormholeId === "absorb_left", "Absorption event must preserve the absorbing endpoint id.");
+  assert(absorption.duration === SpecialAnimationTiming.wormholeShift.projectileAbsorbDuration, "Absorption event must use authoritative timing.");
+  assert(continuedResolution === manager.lastResolution, "Absorbed shot must continue the ordinary post-shot special phase chain.");
 }
 
 function validateDeferredSupportDropAndNoAutoMatch() {
@@ -393,9 +491,9 @@ function validateFlowShaderAndShiftCompatibility() {
   assert(levelRendererSource.indexOf("new cc.Size(80, 80)") >= 0, "Wormhole endpoints must render at exactly 80x80.");
   assert(
     levelRendererSource.indexOf('wormhole: this._getOrCreateLayer("WormholeLayer", 24)') >= 0 &&
-      levelRendererSource.indexOf('shooter: this._getOrCreateLayer("ShooterLayer", 25)') >= 0 &&
-      levelRendererSource.indexOf('board: this._getOrCreateLayer("BoardLayer", 40)') >= 0,
-    "Wormhole endpoints must use a dedicated layer below both the shooter aim guide and board balls."
+      levelRendererSource.indexOf('board: this._getOrCreateLayer("BoardLayer", 40)') >= 0 &&
+      levelRendererSource.indexOf('wormholeDirection: this._getOrCreateLayer("WormholeDirectionLayer", 42)') >= 0,
+    "Wormhole endpoints must render below board balls and direction arrows must render above them."
   );
   assert(boardRendererSource.indexOf("isWormholeEntity(cell) ? WORMHOLE_RENDER_SIZE : BOARD_BUBBLE_SIZE") >= 0, "Board rendering must apply the dedicated wormhole size.");
   assert(sceneFxSource.indexOf("boardSnapshot.specialEntities.filter") >= 0, "Wormhole direction guide must use non-grid special entities.");
@@ -550,6 +648,7 @@ function validateFlowShaderAndShiftCompatibility() {
           return { x: col * 10, y: row * 10 };
         }
       },
+      BOARD_BUBBLE_SIZE: { width: 80, height: 80 },
       SpecialAnimationTiming: SpecialAnimationTiming,
       WORMHOLE_DIRECTION_ARROW_RESOURCE: "game/image/ball/arrow",
       WORMHOLE_DIRECTION_ARROW_SIZE: { width: 42, height: 42 },
@@ -577,6 +676,8 @@ function validateFlowShaderAndShiftCompatibility() {
     function createMovingNode() {
       return {
         isValid: true,
+        opacity: 255,
+        scale: 1,
         stopCount: 0,
         action: null,
         stopAllActions: function () {
@@ -585,6 +686,9 @@ function validateFlowShaderAndShiftCompatibility() {
         setPosition: function (x, y) {
           this.x = x;
           this.y = y;
+        },
+        setScale: function (scale) {
+          this.scale = scale;
         },
         runAction: function (action) {
           this.action = action;
@@ -620,19 +724,21 @@ function validateFlowShaderAndShiftCompatibility() {
           leftCol: 0,
           rightWormholeId: "wormhole_right",
           rightCol: 4,
-          slotCount: 5,
+          slotCount: 3,
           moves: [{
             fromRow: 3,
             fromCol: 1,
             toRow: 3,
             toCol: 2,
-            targetCellId: "moving"
+            targetCellId: "moving",
+            wrapped: false
           }, {
             fromRow: 3,
-            fromCol: 4,
+            fromCol: 3,
             toRow: 3,
-            toCol: 0,
-            targetCellId: "right_wrapped"
+            toCol: 1,
+            targetCellId: "right_wrapped",
+            wrapped: true
           }]
         }, {
           id: "wormhole_shift_animation_left_wrap_test",
@@ -643,25 +749,50 @@ function validateFlowShaderAndShiftCompatibility() {
           leftCol: 0,
           rightWormholeId: "wormhole_right",
           rightCol: 4,
-          slotCount: 5,
+          slotCount: 3,
           moves: [{
             fromRow: 3,
-            fromCol: 0,
+            fromCol: 1,
             toRow: 3,
-            toCol: 4,
-            targetCellId: "left_wrapped"
+            toCol: 3,
+            targetCellId: "left_wrapped",
+            wrapped: true
           }]
         }]
       }
     });
     assert(movingNode.stopCount === 1 && movingNode.action.type === "moveTo", "Interior bubble must still play the shift movement.");
-    assert(leftWrappedNode.stopCount === 1 && leftWrappedNode.action === null && leftWrappedNode.x === 40 && leftWrappedNode.y === 30, "Left-moving wrapped bubble must emerge at the right wormhole coordinate.");
-    assert(rightWrappedNode.stopCount === 1 && rightWrappedNode.action === null && rightWrappedNode.x === 0 && rightWrappedNode.y === 30, "Right-moving wrapped bubble must emerge at the left wormhole coordinate.");
+    assert(leftWrappedNode.stopCount === 1 && leftWrappedNode.action.type === "sequence", "Left-moving wrapped bubble must play inhale and exhale actions.");
+    assert(rightWrappedNode.stopCount === 1 && rightWrappedNode.action.type === "sequence", "Right-moving wrapped bubble must play inhale and exhale actions.");
+    assert(leftWrappedNode.action.actions[0].type === "spawn" && leftWrappedNode.action.actions[2].type === "spawn", "Wrapped bubble must shrink into one endpoint and grow from the other endpoint.");
+    assert(rightWrappedNode.action.actions[0].actions[1].type === "scaleTo" && rightWrappedNode.action.actions[2].actions[2].type === "fadeTo", "Wrapped bubble inhale/exhale must include scale and opacity changes.");
     assert(leftEndpoint.stopCount === 0 && rightEndpoint.stopCount === 0, "Wormhole shift must not interrupt endpoint flow shaders.");
 
     fxRenderer.layers = {
-      wormhole: new MockNode("WormholeLayer")
+      board: new MockNode("BoardLayer"),
+      wormholeDirection: new MockNode("WormholeDirectionLayer")
     };
+    fxRenderer.wormholeProjectileAbsorptionAnimatedIds = {};
+    fxRenderer._applyBallVisualCached = function (node, ball) {
+      node.renderedBall = clone(ball);
+    };
+    fxRenderer._playWormholeProjectileAbsorptionAnimation({
+      lastResolution: {
+        wormholeProjectileAbsorptions: [{
+          id: "projectile_absorption_visual",
+          wormholeId: "wormhole_left",
+          row: 3,
+          col: 0,
+          startPosition: { x: 0, y: 0 },
+          targetPosition: { x: 0, y: 30 },
+          duration: SpecialAnimationTiming.wormholeShift.projectileAbsorbDuration,
+          ball: { ballCategory: "normal", color: "R", entityCategory: "normal_ball", entityType: null }
+        }]
+      }
+    });
+    assert(fxRenderer.layers.board.children.length === 1, "Projectile absorption must create one board-layer visual node.");
+    assert(fxRenderer.layers.board.children[0].action.type === "sequence", "Projectile absorption visual must move, shrink and fade into the endpoint.");
+    assert(fxRenderer.layers.board.children[0].action.actions[0].actions.length === 3, "Projectile absorption visual must combine movement, scale and opacity actions.");
     fxRenderer.spriteFrameCache = {
       "game/image/ball/arrow": { isValid: true }
     };
@@ -724,7 +855,8 @@ function validateFlowShaderAndShiftCompatibility() {
 validateConfigAndCompactCodec();
 validateMixedCellShiftAndProtection();
 validateMultiplePairShift();
+validateProjectileAbsorptionPlanningAndSettlement();
 validateDeferredSupportDropAndNoAutoMatch();
 validateTopAnchorCollapsePreservesWormholes();
 validateFlowShaderAndShiftCompatibility();
-console.log("[OK] wormhole config, compact codec, grid-overlay occupancy, pass-through collision, non-support rules, endpoint-inclusive cyclic shift, 80x80 below-ball rendering, direction guide, top-anchor collapse, deferred drop and clear-state rules");
+console.log("[OK] wormhole reserved endpoints, absorption collision/settlement, non-support rules, strict-interior cyclic shift, inhale/exhale visuals, 80x80 below-ball rendering, above-ball arrows, top-anchor collapse, deferred drop and clear-state rules");

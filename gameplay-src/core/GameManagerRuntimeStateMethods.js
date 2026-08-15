@@ -79,6 +79,12 @@ GameManager.prototype._isBoardCleared = function (grid) {
   if (!Array.isArray(cells)) {
     throw new Error("Board cleared check requires BubbleGrid.getCells array.");
   }
+  if (
+    this.systems.trappedSpriteRescueSystem.isMultiTargetActive() &&
+    !this.systems.trappedSpriteRescueSystem.isMultiTargetCompleted()
+  ) {
+    return false;
+  }
   return cells.length === 0;
 };
 

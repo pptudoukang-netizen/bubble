@@ -50,6 +50,9 @@ function isDirectSkillTarget(cell) {
   if (cell.entityCategory === "skill_ball") {
     return true;
   }
+  if (cell.entityCategory === "hazard_ball" && cell.entityType === "black_hole") {
+    return true;
+  }
   return isIceCell(cell);
 }
 
@@ -60,7 +63,8 @@ function isTornadoTarget(cell) {
   if (cell.entityCategory === "normal_ball") {
     return !isActiveVineCell(cell);
   }
-  return cell.entityCategory === "skill_ball";
+  return cell.entityCategory === "skill_ball" ||
+    (cell.entityCategory === "hazard_ball" && cell.entityType === "black_hole");
 }
 
 function normalizeExpectedPlan(expectedPlan) {
@@ -758,8 +762,9 @@ function createGameManagerAssistSpiritSkillMethods(deps) {
           return this._thawIceCellAtCurrentPosition(grid, target);
         }, this);
       } else if (skillId === "lightning_chain") {
-        var removedLightning = grid.removeCells(targetCells);
-        if (removedLightning.length !== targetCells.length) {
+        var lightningCells = this._unloadBlackHolesHitByRange(targetCells, grid, resolution, "lightning_chain");
+        var removedLightning = grid.removeCells(lightningCells);
+        if (removedLightning.length !== lightningCells.length) {
           throw new Error("Lightning chain failed to remove every authoritative target.");
         }
         this._pushBubbleBreakEvent(removedLightning, undefined, "assist_spirit_skill");
@@ -770,13 +775,14 @@ function createGameManagerAssistSpiritSkillMethods(deps) {
         collectFloatingAfterSkill(this, grid, resolution);
         resolution.collected = removedLightning.concat(resolution.floating);
       } else if (skillId === "tornado") {
-        var removedTornado = grid.removeCells(targetCells);
-        if (removedTornado.length !== targetCells.length) {
+        var tornadoCells = this._unloadBlackHolesHitByRange(targetCells, grid, resolution, "tornado");
+        var removedTornado = grid.removeCells(tornadoCells);
+        if (removedTornado.length !== tornadoCells.length) {
           throw new Error("Tornado failed to detach every authoritative target.");
         }
         this._collectRemovedKeysAndResolveUnlocks(removedTornado, grid, resolution);
         resolution.floating = removedTornado;
-        if (removedTornado.length > 0) {
+        if (removedTornado.length > 0 || resolution.blackHolesUnloaded.length > 0) {
           collectFloatingAfterSkill(this, grid, resolution);
         this._registerResolutionDrops(removedTornado, grid, resolution, undefined, {
           skipEliminationPresentationHold: true,

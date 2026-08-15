@@ -89,11 +89,18 @@ function createGameManagerShotScoreMethods(context) {
 
       var matchedCount = Array.isArray(resolution.matched) ? resolution.matched.length : 0;
       var floatingCount = Array.isArray(resolution.floating) ? resolution.floating.length : 0;
-      if (matchedCount + floatingCount <= 0) {
+      var transparentCount = Array.isArray(resolution.transparentBallsDestroyed)
+        ? resolution.transparentBallsDestroyed.length
+        : 0;
+      var rescuedTrappedSpiritCount = Array.isArray(resolution.rescuedTrappedSpirits)
+        ? resolution.rescuedTrappedSpirits.length
+        : 0;
+      if (matchedCount + floatingCount + transparentCount + rescuedTrappedSpiritCount <= 0) {
         return;
       }
 
       this.comboStreak += 1;
+      resolution.comboRegistered = true;
       if (this.comboStreak > this.maxComboStreak) {
         this.maxComboStreak = this.comboStreak;
       }

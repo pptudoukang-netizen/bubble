@@ -58,6 +58,14 @@ function isWormholeCell(cell) {
   );
 }
 
+function isBlackHoleCell(cell) {
+  return !!(
+    cell &&
+    cell.entityCategory === "hazard_ball" &&
+    cell.entityType === "black_hole"
+  );
+}
+
 function isVineProtectedCell(cell) {
   return !!(
     cell &&
@@ -114,6 +122,7 @@ function createSpecialEntityRecord(entity, row, col) {
     splitColor: entity.splitColor || null,
     lockedColor: lockedColor,
     blastRadius: Number.isInteger(entity.blastRadius) ? entity.blastRadius : null,
+    capacity: isBlackHoleCell(entity) ? entity.capacity : null,
     moveDirection: typeof entity.moveDirection === "string" && entity.moveDirection
       ? entity.moveDirection
       : null,
@@ -124,6 +133,9 @@ function createSpecialEntityRecord(entity, row, col) {
     row: row,
     col: col
   };
+  if (isBlackHoleCell(entity) && (!Number.isInteger(record.capacity) || record.capacity < 1 || record.capacity > 3)) {
+    throw new Error("Black hole special entity runtime capacity must be in [1, 3].");
+  }
   if (record.temporaryThawed && !(record.entityCategory === "obstacle_ball" && record.entityType === "ice")) {
     throw new Error("Temporary thaw state is only valid on ice obstacles.");
   }
@@ -155,6 +167,8 @@ function BubbleGrid() {
   this._timeBonusByCell = {};
   this._vineOwnerByCell = {};
   this._vinePreviewOwnerByCell = {};
+  this._spiritMistExpiryByCell = {};
+  this._poisonAttachmentByCell = {};
   this._cellRemovalListener = null;
 }
 
@@ -194,6 +208,14 @@ BubbleGrid.prototype.isTrappedSpriteRescueActive = function () {
   return !!(
     this.trappedSpriteRescueSystem &&
     this.trappedSpriteRescueSystem.isActive()
+  );
+};
+
+BubbleGrid.prototype.isTrappedSpiritReservedCell = function (row, col) {
+  return !!(
+    this.trappedSpriteRescueSystem &&
+    typeof this.trappedSpriteRescueSystem.isReservedCell === "function" &&
+    this.trappedSpriteRescueSystem.isReservedCell(row, col)
   );
 };
 
@@ -249,6 +271,35 @@ BubbleGrid.prototype.configureLevel = function (levelConfig) {
   this.coordinateSystem = levelConfig.coordinateSystem || this.coordinateSystem;
   this._vineOwnerByCell = {};
   this._vinePreviewOwnerByCell = {};
+  this._spiritMistExpiryByCell = {};
+  this._poisonAttachmentByCell = {};
+  var cellAttachments = levelConfig.level.cellAttachments;
+  if (cellAttachments === undefined) {
+    cellAttachments = [];
+  } else if (!Array.isArray(cellAttachments)) {
+    throw new Error("BubbleGrid level.cellAttachments must be an array when configured.");
+  }
+  cellAttachments.forEach(function (attachment, index) {
+    if (
+      !attachment ||
+      attachment.type !== "poison" ||
+      typeof attachment.id !== "string" ||
+      !attachment.id ||
+      !Number.isInteger(attachment.row) ||
+      !Number.isInteger(attachment.col) ||
+      attachment.particleCount !== 3
+    ) {
+      throw new Error("BubbleGrid poison attachment is invalid at index " + index + ".");
+    }
+    var coordinateKey = keyFor(attachment.row, attachment.col);
+    if (Object.prototype.hasOwnProperty.call(this._poisonAttachmentByCell, coordinateKey)) {
+      throw new Error("BubbleGrid poison attachment target is duplicated: " + coordinateKey + ".");
+    }
+    if (this.layout[attachment.row].charAt(attachment.col) === ".") {
+      throw new Error("BubbleGrid poison attachment target must be an ordinary ball: " + coordinateKey + ".");
+    }
+    this._poisonAttachmentByCell[coordinateKey] = clone(attachment);
+  }, this);
   var layoutMaxColumns = this.layout.reduce(function (max, row) {
     return Math.max(max, row.length);
   }, 0);
@@ -311,6 +362,9 @@ BubbleGrid.prototype._rebuildSpecialCellMap = function () {
     var entityKey = keyFor(entity.row, entity.col);
     var record = createSpecialEntityRecord(entity, entity.row, entity.col);
     if (isWormholeCell(record)) {
+      if (this.layout[entity.row].charAt(entity.col) !== ".") {
+        throw new Error("BubbleGrid wormhole endpoint must reserve an empty layout slot at " + entityKey + ".");
+      }
       this._wormholeMap[entityKey] = record;
       return;
     }
@@ -336,6 +390,15 @@ BubbleGrid.prototype._createNormalCell = function (row, col, colorCode) {
     vinePreviewOwnerId: Object.prototype.hasOwnProperty.call(this._vinePreviewOwnerByCell, cellKey)
       ? this._vinePreviewOwnerByCell[cellKey]
       : null,
+    spiritMistExpiresAfterShot: Object.prototype.hasOwnProperty.call(this._spiritMistExpiryByCell, cellKey)
+      ? this._spiritMistExpiryByCell[cellKey]
+      : null,
+    poisonAttachmentId: Object.prototype.hasOwnProperty.call(this._poisonAttachmentByCell, cellKey)
+      ? this._poisonAttachmentByCell[cellKey].id
+      : null,
+    poisonParticleCount: Object.prototype.hasOwnProperty.call(this._poisonAttachmentByCell, cellKey)
+      ? this._poisonAttachmentByCell[cellKey].particleCount
+      : null,
     isSpecial: false
   };
 };
@@ -360,6 +423,7 @@ BubbleGrid.prototype._createSpecialCell = function (entity, row, col) {
     splitColor: entity.splitColor || null,
     lockedColor: lockedColor,
     blastRadius: Number.isInteger(entity.blastRadius) ? entity.blastRadius : null,
+    capacity: isBlackHoleCell(entity) ? entity.capacity : null,
     moveDirection: typeof entity.moveDirection === "string" && entity.moveDirection
       ? entity.moveDirection
       : null,
@@ -379,6 +443,9 @@ BubbleGrid.prototype._createSpecialCell = function (entity, row, col) {
     if (!cell.temporaryThawToken) {
       throw new Error("Temporary thaw cell requires temporaryThawToken.");
     }
+  }
+  if (isBlackHoleCell(entity) && (!Number.isInteger(cell.capacity) || cell.capacity < 1 || cell.capacity > 3)) {
+    throw new Error("Black hole runtime capacity must be in [1, 3].");
   }
   if (isVineSpiritCell(entity)) {
     if (!Number.isInteger(entity.health) || entity.health <= 0 || entity.health > VINE_SPIRIT_MAX_HEALTH) {
@@ -633,6 +700,21 @@ BubbleGrid.prototype.getSpecialEntities = function () {
   return cellEntities.concat(wormholes);
 };
 
+BubbleGrid.prototype.getWormholes = function () {
+  return Object.keys(this._wormholeMap).map(function (key) {
+    return clone(this._wormholeMap[key]);
+  }, this).sort(function (left, right) {
+    if (left.row !== right.row) {
+      return left.row - right.row;
+    }
+    return left.col - right.col;
+  });
+};
+
+BubbleGrid.prototype.hasWormholeAt = function (row, col) {
+  return Object.prototype.hasOwnProperty.call(this._wormholeMap, keyFor(row, col));
+};
+
 BubbleGrid.prototype.getRowCount = function () {
   return this.layout.length;
 };
@@ -660,6 +742,7 @@ var BUBBLE_GRID_METHOD_CONTEXT = {
   dot: dot,
   isVineProtectedCell: isVineProtectedCell,
   isVineSpiritCell: isVineSpiritCell,
+  isBlackHoleCell: isBlackHoleCell,
   keyFor: keyFor,
   normalize: normalize
 };

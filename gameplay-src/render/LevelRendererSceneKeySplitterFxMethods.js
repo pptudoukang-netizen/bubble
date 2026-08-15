@@ -9,12 +9,14 @@ function attachLevelRendererSceneKeySplitterFxMethods(LevelRenderer, context) {
   var SpecialAnimationTiming = context.SpecialAnimationTiming;
   var applyKeyUnlockFlyFrame = context.applyKeyUnlockFlyFrame;
   var attachLevelRendererSceneKeySplitterFxMethods = context.attachLevelRendererSceneKeySplitterFxMethods;
+  var createBreederSpawnEntryKey = context.createBreederSpawnEntryKey;
   var createKeyUnlockAnimationKey = context.createKeyUnlockAnimationKey;
   var createSplitterSpawnEntryKey = context.createSplitterSpawnEntryKey;
   var findUnlockedTargetsForKey = context.findUnlockedTargetsForKey;
   var instantiateRequired = context.instantiateRequired;
   var pointDistance = context.pointDistance;
   var requireVisualChild = context.requireVisualChild;
+  var resolveBreederSpawnTargetNode = context.resolveBreederSpawnTargetNode;
   var resolveKeyUnlockTargetNode = context.resolveKeyUnlockTargetNode;
   var resolveSplitterSpawnTargetNode = context.resolveSplitterSpawnTargetNode;
 
@@ -292,6 +294,127 @@ LevelRenderer.prototype._playSplitterSpawnAnimation = function (runtimeSnapshot)
       })
       .call(finishFx)
       .start();
+  }, this);
+};
+
+LevelRenderer.prototype._playBreederSpawnAnimation = function (runtimeSnapshot) {
+  var resolution = runtimeSnapshot && runtimeSnapshot.lastResolution ? runtimeSnapshot.lastResolution : null;
+  var breederSpawns = resolution && Array.isArray(resolution.breederSpawns) ? resolution.breederSpawns : [];
+  if (!breederSpawns.length) {
+    return;
+  }
+
+  if (!this.breederSpawnAnimatedEntryKeys || typeof this.breederSpawnAnimatedEntryKeys !== "object") {
+    throw new Error("Breeder spawn animated entry keys map is required.");
+  }
+  if (!this.breederSpawnHiddenCellIds || typeof this.breederSpawnHiddenCellIds !== "object") {
+    throw new Error("Breeder spawn hidden cell ids map is required.");
+  }
+
+  var pendingSpawns = breederSpawns.filter(function (entry) {
+    var entryKey = createBreederSpawnEntryKey(entry);
+    return !this.breederSpawnAnimatedEntryKeys[entryKey];
+  }, this);
+  if (!pendingSpawns.length) {
+    return;
+  }
+
+  if (!runtimeSnapshot.board || !Number.isInteger(runtimeSnapshot.board.maxColumns)) {
+    throw new Error("Breeder spawn animation requires board snapshot.");
+  }
+  if (!this.layers || !this.layers.board || !this.layers.board.isValid) {
+    throw new Error("Breeder spawn animation requires board layer.");
+  }
+  if (
+    typeof cc === "undefined" ||
+    !cc ||
+    typeof cc.Node !== "function" ||
+    typeof cc.bezierTo !== "function" ||
+    typeof cc.sequence !== "function" ||
+    typeof cc.callFunc !== "function" ||
+    typeof cc.v2 !== "function"
+  ) {
+    throw new Error("Breeder spawn animation requires Cocos bezier action APIs.");
+  }
+  if (typeof SPLITTER_SPAWN_FLY_DURATION !== "number" || !isFinite(SPLITTER_SPAWN_FLY_DURATION) || SPLITTER_SPAWN_FLY_DURATION <= 0) {
+    throw new Error("Breeder spawn animation requires positive fly duration.");
+  }
+  if (typeof SPLITTER_SPAWN_BEZIER_ARC !== "number" || !isFinite(SPLITTER_SPAWN_BEZIER_ARC) || SPLITTER_SPAWN_BEZIER_ARC <= 0) {
+    throw new Error("Breeder spawn animation requires positive bezier arc.");
+  }
+
+  var boardSnapshot = runtimeSnapshot.board;
+  pendingSpawns.forEach(function (entry) {
+    if (!entry || !entry.id) {
+      throw new Error("Breeder spawn animation requires event id.");
+    }
+    if (typeof entry.cellId !== "string" && typeof entry.cellId !== "number") {
+      throw new Error("Breeder spawn animation requires target cell id.");
+    }
+    if (typeof entry.breederId !== "string" && typeof entry.breederId !== "number") {
+      throw new Error("Breeder spawn animation requires breederId.");
+    }
+    if (!Number.isInteger(entry.breederRow) || !Number.isInteger(entry.breederCol)) {
+      throw new Error("Breeder spawn animation requires breeder coordinates.");
+    }
+    if (!Number.isInteger(entry.row) || !Number.isInteger(entry.col)) {
+      throw new Error("Breeder spawn animation requires target coordinates.");
+    }
+    if (typeof entry.color !== "string" || !entry.color) {
+      throw new Error("Breeder spawn animation requires spawned ball color.");
+    }
+
+    var entryKey = createBreederSpawnEntryKey(entry);
+    this.breederSpawnAnimatedEntryKeys[entryKey] = true;
+
+    var targetNode = resolveBreederSpawnTargetNode(this, entry);
+    if (!targetNode || !targetNode.isValid) {
+      throw new Error("Breeder spawn animation target node missing: " + entry.cellId);
+    }
+    this._hideBreederSpawnTarget(entry.cellId);
+
+    var startPosition = BoardLayout.getCellPosition(
+      entry.breederRow,
+      entry.breederCol,
+      boardSnapshot.maxColumns,
+      boardSnapshot.viewportOffsetY
+    );
+    var endPosition = BoardLayout.getCellPosition(
+      entry.row,
+      entry.col,
+      boardSnapshot.maxColumns,
+      boardSnapshot.viewportOffsetY
+    );
+
+    var fxNode = new cc.Node("BreederSpawnFx_" + entry.id);
+    fxNode.parent = this.layers.board;
+    fxNode.zIndex = (targetNode.zIndex || 0) + 2;
+    fxNode.setPosition(startPosition.x, startPosition.y);
+    fxNode.setScale(0.82);
+    fxNode.opacity = 255;
+    this._applyBallVisualCached(fxNode, {
+      color: entry.color
+    }, BOARD_BUBBLE_SIZE);
+
+    var finishFx = function () {
+      if (fxNode && fxNode.isValid) {
+        fxNode.removeFromParent(true);
+      }
+      this._revealBreederSpawnTarget(entry.cellId);
+    }.bind(this);
+    var controlX = (startPosition.x + endPosition.x) * 0.5;
+    var controlY = Math.max(startPosition.y, endPosition.y) + SPLITTER_SPAWN_BEZIER_ARC;
+    var bezier = [
+      cc.v2(controlX, controlY),
+      cc.v2(controlX, controlY),
+      cc.v2(endPosition.x, endPosition.y)
+    ];
+
+    fxNode.stopAllActions();
+    fxNode.runAction(cc.sequence(
+      cc.bezierTo(SPLITTER_SPAWN_FLY_DURATION, bezier),
+      cc.callFunc(finishFx)
+    ));
   }, this);
 };
 }

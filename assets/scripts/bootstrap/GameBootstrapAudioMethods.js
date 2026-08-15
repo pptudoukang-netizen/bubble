@@ -205,9 +205,17 @@ module.exports = {
     if (!this.levelRenderer || typeof this.levelRenderer.playGameEntryCountdown !== "function") {
       throw new Error("Game entry countdown requires levelRenderer.playGameEntryCountdown.");
     }
+    if (typeof this.levelRenderer.warmupGameplayInteractionAssets !== "function") {
+      throw new Error("Game entry countdown requires levelRenderer.warmupGameplayInteractionAssets.");
+    }
 
     this._playSfx("gameEntryCountdown");
-    return this.levelRenderer.playGameEntryCountdown();
+    return Promise.all([
+      this.levelRenderer.playGameEntryCountdown(),
+      this.levelRenderer.warmupGameplayInteractionAssets()
+    ]).then(function () {
+      return null;
+    });
   },
 
   _triggerShortVibration: function () {

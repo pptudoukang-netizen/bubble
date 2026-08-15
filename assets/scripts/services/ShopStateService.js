@@ -1,5 +1,6 @@
 "use strict";
 
+var ShopStateStore = require("../utils/ShopStateStore");
 var UNLIMITED_REMAINING_COUNT = Number.MAX_SAFE_INTEGER;
 
 function clone(data) {
@@ -155,6 +156,9 @@ ShopStateService.prototype.appendPurchaseLog = function (log) {
   assertObject(log, "Shop purchase log is required.");
   this.ensureDailyReset();
   this.state.shopState.purchaseLogs.push(clone(log));
+  if (this.state.shopState.purchaseLogs.length > ShopStateStore.MAX_PURCHASE_LOGS) {
+    this.state.shopState.purchaseLogs = this.state.shopState.purchaseLogs.slice(-ShopStateStore.MAX_PURCHASE_LOGS);
+  }
   this.store.save(this.state);
   return clone(this.state);
 };

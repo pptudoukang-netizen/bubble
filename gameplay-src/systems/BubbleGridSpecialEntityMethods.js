@@ -8,8 +8,60 @@ function attachBubbleGridSpecialEntityMethods(BubbleGrid, context) {
   var buildColorCountSignature = context.buildColorCountSignature;
   var clone = context.clone;
   var createSpecialEntityRecord = context.createSpecialEntityRecord;
+  var isBlackHoleCell = context.isBlackHoleCell;
   var isVineSpiritCell = context.isVineSpiritCell;
   var keyFor = context.keyFor;
+
+BubbleGrid.prototype.consumeBlackHole = function (row, col) {
+  if (!Number.isInteger(row) || !Number.isInteger(col)) {
+    throw new Error("Black hole consumption requires integer coordinates.");
+  }
+  var cellKey = keyFor(row, col);
+  var blackHole = this._specialCellMap[cellKey];
+  if (!isBlackHoleCell(blackHole)) {
+    throw new Error("Black hole consumption requires a live black_hole at " + cellKey + ".");
+  }
+  if (!Number.isInteger(blackHole.capacity) || blackHole.capacity < 1 || blackHole.capacity > 3) {
+    throw new Error("Black hole consumption found invalid capacity at " + cellKey + ".");
+  }
+  var capacityBefore = blackHole.capacity;
+  var removedCell = this.getCell(row, col);
+  if (!isBlackHoleCell(removedCell) || removedCell.id !== blackHole.id) {
+    throw new Error("Black hole consumption lost the live board cell at " + cellKey + ".");
+  }
+  blackHole.capacity -= 1;
+  var destroyed = blackHole.capacity === 0;
+  if (destroyed) {
+    delete this._specialCellMap[cellKey];
+  }
+  this.version += 1;
+  this._rebuildCaches();
+  return {
+    blackHoleId: blackHole.id,
+    row: row,
+    col: col,
+    capacityBefore: capacityBefore,
+    capacityAfter: destroyed ? 0 : blackHole.capacity,
+    destroyed: destroyed,
+    removedCell: destroyed ? removedCell : null
+  };
+};
+
+BubbleGrid.prototype.unloadBlackHole = function (row, col) {
+  if (!Number.isInteger(row) || !Number.isInteger(col)) {
+    throw new Error("Black hole unload requires integer coordinates.");
+  }
+  var cellKey = keyFor(row, col);
+  var blackHole = this._specialCellMap[cellKey];
+  var liveCell = this.getCell(row, col);
+  if (!isBlackHoleCell(blackHole) || !isBlackHoleCell(liveCell) || liveCell.id !== blackHole.id) {
+    throw new Error("Black hole unload requires a live black_hole at " + cellKey + ".");
+  }
+  delete this._specialCellMap[cellKey];
+  this.version += 1;
+  this._rebuildCaches();
+  return liveCell;
+};
 
 BubbleGrid.prototype.getWormholePairs = function () {
   var wormholesByRow = {};
@@ -342,6 +394,8 @@ BubbleGrid.prototype.rotateSwirlNeighborsClockwise = function (swirlCell) {
     delete this._timeBonusByCell[keyFor(coordinate.row, coordinate.col)];
     delete this._vineOwnerByCell[keyFor(coordinate.row, coordinate.col)];
     delete this._vinePreviewOwnerByCell[keyFor(coordinate.row, coordinate.col)];
+    delete this._spiritMistExpiryByCell[keyFor(coordinate.row, coordinate.col)];
+    delete this._poisonAttachmentByCell[keyFor(coordinate.row, coordinate.col)];
     this._setCell(coordinate.row, coordinate.col, ".");
   }, this);
 
@@ -364,6 +418,21 @@ BubbleGrid.prototype.rotateSwirlNeighborsClockwise = function (swirlCell) {
     }
     if (typeof cell.vinePreviewOwnerId === "string" && cell.vinePreviewOwnerId) {
       this._vinePreviewOwnerByCell[keyFor(target.row, target.col)] = cell.vinePreviewOwnerId;
+    }
+    if (Number.isInteger(cell.spiritMistExpiresAfterShot)) {
+      this._spiritMistExpiryByCell[keyFor(target.row, target.col)] = cell.spiritMistExpiresAfterShot;
+    }
+    if (typeof cell.poisonAttachmentId === "string" && cell.poisonAttachmentId) {
+      if (cell.poisonParticleCount !== 3) {
+        throw new Error("BubbleGrid swirl poison attachment must release exactly three particles.");
+      }
+      this._poisonAttachmentByCell[keyFor(target.row, target.col)] = {
+        id: cell.poisonAttachmentId,
+        type: "poison",
+        row: target.row,
+        col: target.col,
+        particleCount: cell.poisonParticleCount
+      };
     }
     moves.push({
       color: cell.color,
@@ -407,7 +476,7 @@ BubbleGrid.prototype._shiftWormholePairInterior = function (wormholes) {
   var rightWormhole = wormholes[1];
 
   var track = [];
-  for (var col = leftWormhole.col; col <= rightWormhole.col; col += 1) {
+  for (var col = leftWormhole.col + 1; col < rightWormhole.col; col += 1) {
     if (!this.isValidCell(leftWormhole.row, col)) {
       throw new Error("BubbleGrid wormhole channel contains an invalid cell.");
     }
@@ -422,6 +491,8 @@ BubbleGrid.prototype._shiftWormholePairInterior = function (wormholes) {
     var coordinateKey = keyFor(coordinate.row, coordinate.col);
     delete this._vineOwnerByCell[coordinateKey];
     delete this._vinePreviewOwnerByCell[coordinateKey];
+    delete this._spiritMistExpiryByCell[coordinateKey];
+    delete this._poisonAttachmentByCell[coordinateKey];
     this._clearSpecialCell(coordinate.row, coordinate.col);
     this._setCell(coordinate.row, coordinate.col, ".");
   }, this);
@@ -448,6 +519,21 @@ BubbleGrid.prototype._shiftWormholePairInterior = function (wormholes) {
       if (typeof cell.vinePreviewOwnerId === "string" && cell.vinePreviewOwnerId) {
         this._vinePreviewOwnerByCell[targetKey] = cell.vinePreviewOwnerId;
       }
+      if (Number.isInteger(cell.spiritMistExpiresAfterShot)) {
+        this._spiritMistExpiryByCell[targetKey] = cell.spiritMistExpiresAfterShot;
+      }
+      if (typeof cell.poisonAttachmentId === "string" && cell.poisonAttachmentId) {
+        if (cell.poisonParticleCount !== 3) {
+          throw new Error("BubbleGrid wormhole poison attachment must release exactly three particles.");
+        }
+        this._poisonAttachmentByCell[targetKey] = {
+          id: cell.poisonAttachmentId,
+          type: "poison",
+          row: target.row,
+          col: target.col,
+          particleCount: cell.poisonParticleCount
+        };
+      }
       targetCellId = target.row + "_" + target.col;
     } else {
       this._setCell(target.row, target.col, ".");
@@ -462,7 +548,8 @@ BubbleGrid.prototype._shiftWormholePairInterior = function (wormholes) {
       fromCol: source.col,
       toRow: target.row,
       toCol: target.col,
-      targetCellId: targetCellId
+      targetCellId: targetCellId,
+      wrapped: targetIndex !== sourceIndex + directionStep
     });
   }, this);
 

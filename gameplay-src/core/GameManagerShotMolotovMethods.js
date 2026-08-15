@@ -144,6 +144,8 @@ function createGameManagerShotMolotovMethods(context) {
         blastCells.push(occupiedCell);
       });
 
+      blastCells = this._unloadBlackHolesHitByRange(blastCells, grid, resolution, "molotov");
+
       this._resolveVineSpiritsHitByExplosion(blastCells, grid, resolution);
       var removableBlastCells = blastCells.filter(function (cell) {
         return !isVineEntangledBall(cell) && !isVineSpiritBall(cell);
@@ -398,9 +400,14 @@ function createGameManagerShotMolotovMethods(context) {
       resolution.boardCleared = this._isBoardCleared(grid);
       this._applyResolutionDropScore(resolution, context.dropScoreRuleKey);
       this._registerComboElimination(resolution);
+      this._resolveMultiTrappedSpiritTargets(resolution, context.allRemoved, grid);
 
       this.molotovResolutionPending = false;
       this.molotovPendingResolutionContext = null;
+      if (resolution.multiTrappedSpiritRescueCompleted) {
+        this._resolveBoardClearedOutcome();
+        return;
+      }
       this._resolveFairyAssistsAfterResolution(resolution);
 
       if (this._beginSwirlRotationForResolution(resolution)) {
@@ -413,6 +420,7 @@ function createGameManagerShotMolotovMethods(context) {
         return;
       }
 
+      this._resolveBreederPhase(resolution);
       if (resolution.boardCleared) {
         this._resolveBoardClearedOutcome();
         return;
@@ -431,7 +439,7 @@ function createGameManagerShotMolotovMethods(context) {
         return;
       }
       if (!this.isTimedInfiniteShots && this.remainingShots <= 0) {
-        if (this.systems.fallingMarbleSystem.hasActiveDrops() || this._isBoardAdvanceBusy() || this._hasPendingSplitterSpawns() || this._hasPendingMolotovBlasts() || this._hasPendingVineCast()) {
+        if (this.systems.fallingMarbleSystem.hasActiveDrops() || this._isBoardAdvanceBusy() || this._hasPendingSplitterSpawns() || this._hasPendingMolotovBlasts() || this._hasPendingSpiritCocoonOpenings() || this._hasPendingVineCast()) {
           this.state = "out_of_shots_pending";
         } else {
           this._showOutOfShotsAddBallPrompt();
