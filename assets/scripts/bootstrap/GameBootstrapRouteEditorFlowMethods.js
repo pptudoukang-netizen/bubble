@@ -39,7 +39,18 @@ function normalizeLevelEntryOptions(options) {
     options.testSource !== "spirit_cocoon" &&
     options.testSource !== "multi_trapped_spirit" &&
     options.testSource !== "transparent_ball" &&
-    options.testSource !== "breeder_ball"
+    options.testSource !== "breeder_ball" &&
+    options.testSource !== "mine" &&
+    options.testSource !== "bud" &&
+    options.testSource !== "crystal_gun" &&
+    options.testSource !== "rainbow_prism_ball" &&
+    options.testSource !== "poison_attachment" &&
+    options.testSource !== "ice_crystal_attachment" &&
+    options.testSource !== "bubble_shield_attachment" &&
+    options.testSource !== "lock_chain" &&
+    options.testSource !== "color_cloud" &&
+    options.testSource !== "spider" &&
+    options.testSource !== "wind_tunnel"
   ) {
     throw new Error("Test level entry testSource is unsupported: " + options.testSource + ".");
   }
@@ -136,6 +147,46 @@ module.exports = {
             }
             snapshot = occlusionTestGrantResult.snapshot;
           }
+          if (entryMode === "test" && normalizedEntryOptions.testSource === "rainbow_prism_ball") {
+            if (typeof this.gameManager.grantPowerupInventory !== "function") {
+              throw new Error("Rainbow prism ball test requires GameManager.grantPowerupInventory.");
+            }
+            var prismTestGrantResult = this.gameManager.grantPowerupInventory("rainbow_prism_ball", 6);
+            if (!prismTestGrantResult || prismTestGrantResult.accepted !== true || !prismTestGrantResult.snapshot) {
+              throw new Error("Rainbow prism ball test failed to grant six rainbow_prism_ball items.");
+            }
+            snapshot = prismTestGrantResult.snapshot;
+          }
+          if (entryMode === "test" && normalizedEntryOptions.testSource === "crystal_gun") {
+            if (typeof this.gameManager.grantPowerupInventory !== "function") {
+              throw new Error("Crystal gun test requires GameManager.grantPowerupInventory.");
+            }
+            var crystalGunTestGrantResult = this.gameManager.grantPowerupInventory("crystal_gun", 6);
+            if (!crystalGunTestGrantResult || crystalGunTestGrantResult.accepted !== true || !crystalGunTestGrantResult.snapshot) {
+              throw new Error("Crystal gun test failed to grant six crystal_gun items.");
+            }
+            snapshot = crystalGunTestGrantResult.snapshot;
+          }
+          if (entryMode === "test" && normalizedEntryOptions.testSource === "bubble_shield_attachment") {
+            if (typeof this.gameManager.grantPowerupInventory !== "function") {
+              throw new Error("Bubble shield attachment test requires GameManager.grantPowerupInventory.");
+            }
+            var bubbleShieldTestGrantResult = this.gameManager.grantPowerupInventory("blast", 6);
+            if (!bubbleShieldTestGrantResult || bubbleShieldTestGrantResult.accepted !== true || !bubbleShieldTestGrantResult.snapshot) {
+              throw new Error("Bubble shield attachment test failed to grant six blast items.");
+            }
+            snapshot = bubbleShieldTestGrantResult.snapshot;
+          }
+          if (entryMode === "test" && normalizedEntryOptions.testSource === "spider") {
+            if (typeof this.gameManager.grantPowerupInventory !== "function") {
+              throw new Error("Spider test requires GameManager.grantPowerupInventory.");
+            }
+            var spiderTestGrantResult = this.gameManager.grantPowerupInventory("blast", 6);
+            if (!spiderTestGrantResult || spiderTestGrantResult.accepted !== true || !spiderTestGrantResult.snapshot) {
+              throw new Error("Spider test failed to grant six blast items.");
+            }
+            snapshot = spiderTestGrantResult.snapshot;
+          }
           if (typeof this._applySelectedPowerupsToRuntime === "function") {
             snapshot = this._applySelectedPowerupsToRuntime(snapshot);
           }
@@ -171,6 +222,8 @@ module.exports = {
         this._logAssetManagerStats("gameplay");
         this.levelRenderer.setGameplayInteractionEnabled(false);
         return this._runGameEntryCountdown().then(function () {
+          return this._showCurrentFrontierAimingToolTipsAfterCountdown();
+        }.bind(this)).then(function () {
           this.levelRenderer.setGameplayInteractionEnabled(true);
           this.isRestarting = false;
           if (typeof this._applyPendingStartGamePreciseAimActivation === "function") {

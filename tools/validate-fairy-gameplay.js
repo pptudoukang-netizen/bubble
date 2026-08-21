@@ -171,25 +171,46 @@ function readPrefabFairySlotCenters() {
   });
 }
 
-function assertFairyAnimationPrefabContract(rule) {
-  assert(rule && typeof rule.prefabPath === "string" && rule.prefabPath, "Fairy color rule requires prefabPath.");
-  var relativePath = rule.prefabPath + ".prefab";
-  var absolutePath = path.join(__dirname, "..", "assets", "animation", relativePath.replace(/\//g, path.sep));
-  assert(fs.existsSync(absolutePath), "Missing fairy animation prefab: " + relativePath);
-  assert(fs.existsSync(absolutePath + ".meta"), "Missing fairy animation prefab meta: " + relativePath);
+function assertFairySpineContract() {
+  assert.strictEqual(FairyAssistConfig.skeletonDataPath, "bonus_sprite/Bonus Sprite");
+  assert.strictEqual(FairyAssistConfig.idleAnimationName, "idle");
+  assert.strictEqual(FairyAssistConfig.smashAnimationName, "smash");
+  assert.deepStrictEqual(FairyAssistConfig.colorRules.map(function (rule) {
+    return rule.skinName;
+  }), ["red", "yellow", "green"]);
 
-  var prefab = JSON.parse(fs.readFileSync(absolutePath, "utf8"));
-  var rootNode = prefab.find(function (entry) {
-    return entry && entry.__type__ === "cc.Node";
+  var relativeBasePath = FairyAssistConfig.skeletonDataPath.replace(/\//g, path.sep);
+  var absoluteBasePath = path.join(__dirname, "..", "assets", "animation", relativeBasePath);
+  [".skel", ".skel.meta", ".atlas", ".atlas.meta", ".png", ".png.meta"].forEach(function (suffix) {
+    assert(fs.existsSync(absoluteBasePath + suffix), "Missing fairy Spine asset: " + relativeBasePath + suffix);
   });
-  assert(rootNode, "Fairy animation prefab requires root node: " + relativePath);
-  assert(rootNode._contentSize && rootNode._contentSize.width > 0 && rootNode._contentSize.height > 0, "Fairy animation prefab requires positive size: " + relativePath);
-  var animation = prefab.find(function (entry) {
-    return entry && entry.__type__ === "cc.Animation";
+  var skeletonMeta = JSON.parse(fs.readFileSync(absoluteBasePath + ".skel.meta", "utf8"));
+  assert.strictEqual(skeletonMeta.importer, "spine", "Fairy .skel.meta must use Spine importer.");
+  assert(Array.isArray(skeletonMeta.textures) && skeletonMeta.textures.length === 1, "Fairy Spine data must bind exactly one texture.");
+
+  var skeletonBinary = fs.readFileSync(absoluteBasePath + ".skel");
+  ["green", "red", "yellow", FairyAssistConfig.idleAnimationName, FairyAssistConfig.smashAnimationName].forEach(function (name) {
+    assert(skeletonBinary.includes(Buffer.from(name, "utf8")), "Fairy Spine data is missing skin or animation: " + name);
   });
-  assert(animation, "Fairy animation prefab requires cc.Animation: " + relativePath);
-  assert(animation._defaultClip && animation._defaultClip.__uuid__, "Fairy animation prefab requires default clip: " + relativePath);
-  assert(Array.isArray(animation._clips) && animation._clips.length > 0, "Fairy animation prefab requires clips: " + relativePath);
+
+  var resourceSource = fs.readFileSync(path.join(__dirname, "../gameplay-src/render/LevelRendererResourceMethods.js"), "utf8");
+  var fairyRendererSource = fs.readFileSync(path.join(__dirname, "../gameplay-src/render/LevelRendererFairyMethods.js"), "utf8");
+  assert(resourceSource.indexOf("bundle.load(FairyAssistConfig.skeletonDataPath, sp.SkeletonData") >= 0, "Fairy renderer must load Bonus Sprite as sp.SkeletonData.");
+  assert(fairyRendererSource.indexOf("skeleton.setSkin(skinName)") >= 0, "Fairy renderer must bind the configured Spine skin.");
+  assert(fairyRendererSource.indexOf("skeletonNode.setPosition(0, -62);") >= 0, "Fairy Spine visual must use local Y offset -62.");
+  assert(fairyRendererSource.indexOf("var FAIRY_SPINE_SCALE = 0.8;") >= 0, "Fairy Spine scale must equal 0.8.");
+  assert(fairyRendererSource.indexOf("skeletonNode.scale = FAIRY_SPINE_SCALE;") >= 0, "Fairy Spine visual must use the shared 0.8 scale.");
+  assert(fairyRendererSource.indexOf("var baseScale = FAIRY_SPINE_SCALE * (1.04 + visualStacks * 0.025);") >= 0, "Fairy glow pulse must preserve the shared 0.8 scale.");
+  var configureFairyNodeIndex = fairyRendererSource.indexOf("function configureFairyNode(renderer, node, fairy)");
+  var activateSlotIndex = fairyRendererSource.indexOf("node.active = true;", configureFairyNodeIndex);
+  var createSpineVisualIndex = fairyRendererSource.indexOf("requireFairyVisualNode(renderer, node, fairy.skinName);", configureFairyNodeIndex);
+  assert(
+    configureFairyNodeIndex >= 0 && activateSlotIndex > configureFairyNodeIndex && createSpineVisualIndex > activateSlotIndex,
+    "Fairy slot must enter the active hierarchy before its Spine visual is created."
+  );
+  assert(fairyRendererSource.indexOf('event.type !== "fairy_assist_hit"') >= 0, "Fairy smash must be driven by fairy_assist_hit.");
+  assert(fairyRendererSource.indexOf("playRequiredSpineAnimation(skeleton, FairyAssistConfig.smashAnimationName, false") >= 0, "Fairy hit must play non-looping smash.");
+  assert(fairyRendererSource.indexOf("addRequiredSpineAnimation(skeleton, FairyAssistConfig.idleAnimationName, true") >= 0, "Fairy smash must return to looping idle.");
 }
 
 function getActiveFairies(fairySystem) {
@@ -304,9 +325,7 @@ function testPrefabAndAssetContract() {
   var animationMeta = readFairyAnimationBundleMeta();
   assert.strictEqual(animationMeta.isBundle, true, "assets/animation must be a bundle.");
   assert(animationMeta.compressionType && animationMeta.compressionType.wechatgame === "subpackage", "assets/animation must build as WeChat subpackage.");
-  FairyAssistConfig.colorRules.forEach(function (rule) {
-    assertFairyAnimationPrefabContract(rule);
-  });
+  assertFairySpineContract();
 }
 
 function testJarOcclusionCopiesRenderedJarTransform() {

@@ -51,6 +51,7 @@ GameManager.prototype._isInstantAdPowerupBusy = function () {
     this._isBoardAdvanceBusy() ||
     this._hasPendingSplitterSpawns() ||
     this._hasPendingMolotovBlasts() ||
+    this._hasPendingBudHatches() ||
     this._hasPendingSpiritCocoonOpenings() ||
     this._hasPendingSwirlRotation() ||
     this._hasPendingWormholeShift() ||
@@ -359,6 +360,7 @@ GameManager.prototype.useThreeLineElimination = function (expectedRows) {
   });
   var resolution = createEmptyResolution();
   lineCells = this._unloadBlackHolesHitByRange(lineCells, grid, resolution, "three_line_elimination");
+  lineCells = this._resolveBubbleShieldsHitBySpecial(lineCells, grid, resolution, "three_line_elimination");
   var removedLineCells = grid.removeCells(lineCells);
   this._pushBubbleBreakEvent(removedLineCells);
   resolution.matched = removedLineCells;

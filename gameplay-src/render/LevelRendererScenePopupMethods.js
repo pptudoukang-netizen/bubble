@@ -113,6 +113,7 @@ function attachLevelRendererScenePopupMethods(LevelRenderer, deps) {
   var RESCUE_SUCCESSFUL_MIN_DISPLAY_DURATION_SEC = 2;
   var LOSE_VIEW_PROXY_ROOT_NAME = "lose_view_auto_proxy_root";
   var ADD_BALL_TIPS_VIEW_PROXY_ROOT_NAME = "add_ball_tips_view_auto_proxy_root";
+  var AIMING_TOOL_TIPS_PROXY_ROOT_NAME = "aiming_tool_tips_auto_proxy_root";
   var PAUSE_VIEW_PROXY_ROOT_NAME = "pause_view_auto_proxy_root";
   var POPUP_OPEN_ANIM_DURATION = deps.POPUP_OPEN_ANIM_DURATION;
   var POPUP_OPEN_ANIM_FROM_SCALE = deps.POPUP_OPEN_ANIM_FROM_SCALE;
@@ -254,7 +255,9 @@ function attachLevelRendererScenePopupMethods(LevelRenderer, deps) {
     var ballComplete = runtimeSnapshot.board.cells.length === 0;
     var starComplete = starRating >= 1;
     var failTips;
-    if (starComplete && !ballComplete) {
+    if (runtimeSnapshot.state === "lost_hazard") {
+      failTips = "地雷爆炸\n挑战失败";
+    } else if (starComplete && !ballComplete) {
       failTips = "分数已达标\n但是还有球球未清空";
     } else if (ballComplete && !starComplete) {
       failTips = "球球已清空\n但是分数未达标";
@@ -484,6 +487,7 @@ function requireRuntimeWinStats(runtimeSnapshot) {
 
 var POPUP_METHOD_CONTEXT = {
     ADD_BALL_TIPS_VIEW_PROXY_ROOT_NAME: ADD_BALL_TIPS_VIEW_PROXY_ROOT_NAME,
+    AIMING_TOOL_TIPS_PROXY_ROOT_NAME: AIMING_TOOL_TIPS_PROXY_ROOT_NAME,
     LOSE_VIEW_PROXY_ROOT_NAME: LOSE_VIEW_PROXY_ROOT_NAME,
     PAUSE_VIEW_PROXY_ROOT_NAME: PAUSE_VIEW_PROXY_ROOT_NAME,
     POPUP_CONTENT_CONTAINER_NAME: POPUP_CONTENT_CONTAINER_NAME,

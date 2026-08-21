@@ -700,7 +700,7 @@
   },
   {
     "__type__": "cc.Node",
-    "_name": "score",
+    "_name": "level",
     "_objFlags": 0,
     "_parent": {
       "__id__": 1
@@ -728,7 +728,7 @@
     },
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 84.09,
+      "width": 120.09,
       "height": 49.36
     },
     "_anchorPoint": {
@@ -780,8 +780,8 @@
     ],
     "_srcBlendFactor": 770,
     "_dstBlendFactor": 771,
-    "_string": "1000",
-    "_N$string": "1000",
+    "_string": "1000关",
+    "_N$string": "1000关",
     "_fontSize": 36,
     "_lineHeight": 36,
     "_enableWrapText": true,
@@ -829,7 +829,7 @@
   },
   {
     "__type__": "cc.Node",
-    "_name": "level",
+    "_name": "score",
     "_objFlags": 0,
     "_parent": {
       "__id__": 1
@@ -854,7 +854,7 @@
     },
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 66.69,
+      "width": 77.86,
       "height": 35.28
     },
     "_anchorPoint": {
@@ -906,8 +906,8 @@
     ],
     "_srcBlendFactor": 770,
     "_dstBlendFactor": 771,
-    "_string": "(100关)",
-    "_N$string": "(100关)",
+    "_string": "1222222",
+    "_N$string": "1222222",
     "_fontSize": 20,
     "_lineHeight": 28,
     "_enableWrapText": true,

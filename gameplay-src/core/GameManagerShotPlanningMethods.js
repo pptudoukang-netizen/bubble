@@ -36,8 +36,8 @@ function buildPhysicalImpactPath(shotPlan) {
   return shotPlan.pathPoints.slice(0, impactIndex + 1);
 }
 
-function applyTransparentBallAttachmentTarget(shotPlan, penetratedTransparentBalls, grid) {
-  if (shotPlan.hitType !== "bubble" || penetratedTransparentBalls.length === 0) {
+function applyTraversableAttachmentTarget(shotPlan, traversedCells, grid) {
+  if (shotPlan.hitType !== "bubble" || traversedCells.length === 0) {
     return;
   }
   if (!shotPlan.collidedCell) {
@@ -49,7 +49,7 @@ function applyTransparentBallAttachmentTarget(shotPlan, penetratedTransparentBal
     neighborKeys[coord.row + ":" + coord.col] = true;
   });
   var attachmentTarget = null;
-  penetratedTransparentBalls.forEach(function (cell) {
+  traversedCells.forEach(function (cell) {
     if (neighborKeys[cell.row + ":" + cell.col]) {
       attachmentTarget = cell;
     }
@@ -64,11 +64,21 @@ function applyTransparentBallAttachmentTarget(shotPlan, penetratedTransparentBal
     col: attachmentTarget.col
   };
   shotPlan.targetCellPosition = targetPosition;
-  shotPlan.transparentAttachmentTarget = {
-    id: attachmentTarget.id,
-    row: attachmentTarget.row,
-    col: attachmentTarget.col
-  };
+  if (attachmentTarget.entityType === "transparent_ball") {
+    shotPlan.transparentAttachmentTarget = {
+      id: attachmentTarget.id,
+      row: attachmentTarget.row,
+      col: attachmentTarget.col
+    };
+  } else if (attachmentTarget.entityType === "wind_tunnel_exit") {
+    shotPlan.windTunnelExitAttachmentTarget = {
+      id: attachmentTarget.id,
+      row: attachmentTarget.row,
+      col: attachmentTarget.col
+    };
+  } else {
+    throw new Error("Traversable attachment target has unsupported entityType: " + attachmentTarget.entityType + ".");
+  }
 
   var physicalPath = buildPhysicalImpactPath(shotPlan);
   if (!isSamePathPoint(physicalPath[physicalPath.length - 1], targetPosition)) {
@@ -196,8 +206,47 @@ function createGameManagerShotPlanningMethods(context) {
       return this._scheduleBoardViewportSettle(resolution);
     },
 
+    _completeAuthoritativeShotPlan: function (planned, grid) {
+      if (!planned || planned.valid !== true) {
+        throw new Error("Authoritative shot plan completion requires a valid plan.");
+      }
+      if (
+        !grid ||
+        typeof grid.getCellPosition !== "function" ||
+        typeof grid.findTransparentBallCollisionsOnPath !== "function" ||
+        typeof grid.findWindTunnelExitCollisionsOnPath !== "function"
+      ) {
+        throw new Error("Authoritative shot plan completion requires BubbleGrid traversal methods.");
+      }
+      if (planned.collidedCell) {
+        planned.collidedCellPosition = grid.getCellPosition(
+          planned.collidedCell.row,
+          planned.collidedCell.col
+        );
+      }
+      planned.pathPoints = buildProjectilePathFromShotPlan(planned);
+      var physicalImpactPath = buildPhysicalImpactPath(planned);
+      planned.penetratedTransparentBalls = grid.findTransparentBallCollisionsOnPath(
+        physicalImpactPath,
+        this.systems.trajectoryPredictor.predictionCollisionRadius
+      );
+      planned.traversedWindTunnelExits = grid.findWindTunnelExitCollisionsOnPath(
+        physicalImpactPath,
+        this.systems.trajectoryPredictor.predictionCollisionRadius
+      );
+      var traversedCells = planned.penetratedTransparentBalls.concat(planned.traversedWindTunnelExits).sort(function (left, right) {
+        if (left.pathSegmentIndex !== right.pathSegmentIndex) {
+          return left.pathSegmentIndex - right.pathSegmentIndex;
+        }
+        return left.pathSegmentProgress - right.pathSegmentProgress;
+      });
+      applyTraversableAttachmentTarget(planned, traversedCells, grid);
+      planned.totalDistance = measurePathDistance(planned.pathPoints);
+      return planned;
+    },
+
     _refreshShotPlan: function (force) {
-      if (this.state !== "running" || this.activeProjectile || this._isBoardAdvanceBusy() || this._hasPendingSplitterSpawns() || this._hasPendingMolotovBlasts() || this._hasPendingSpiritCocoonOpenings() || this._hasPendingSwirlRotation() || this._hasPendingWormholeShift() || this._hasPendingVineCast()) {
+      if (this.state !== "running" || this.activeProjectile || this._isBoardAdvanceBusy() || this._hasPendingSplitterSpawns() || this._hasPendingMolotovBlasts() || this._hasPendingBudHatches() || this._hasPendingSpiritCocoonOpenings() || this._hasPendingSwirlRotation() || this._hasPendingWormholeShift() || this._hasPendingVineCast()) {
         this.pendingShotPlan = null;
         return;
       }
@@ -227,27 +276,7 @@ function createGameManagerShotPlanningMethods(context) {
       );
 
       if (planned && planned.valid) {
-        if (planned.collidedCell) {
-          planned.collidedCellPosition = this.systems.bubbleGrid.getCellPosition(
-            planned.collidedCell.row,
-            planned.collidedCell.col
-          );
-        }
-        planned.pathPoints = buildProjectilePathFromShotPlan(planned);
-        if (typeof this.systems.bubbleGrid.findTransparentBallCollisionsOnPath !== "function") {
-          throw new Error("Shot planning requires BubbleGrid.findTransparentBallCollisionsOnPath.");
-        }
-        var physicalImpactPath = buildPhysicalImpactPath(planned);
-        planned.penetratedTransparentBalls = this.systems.bubbleGrid.findTransparentBallCollisionsOnPath(
-          physicalImpactPath,
-          this.systems.trajectoryPredictor.predictionCollisionRadius
-        );
-        applyTransparentBallAttachmentTarget(
-          planned,
-          planned.penetratedTransparentBalls,
-          this.systems.bubbleGrid
-        );
-        planned.totalDistance = measurePathDistance(planned.pathPoints);
+        this._completeAuthoritativeShotPlan(planned, this.systems.bubbleGrid);
       }
 
       this.pendingShotPlan = planned || null;
@@ -320,7 +349,11 @@ function createGameManagerShotPlanningMethods(context) {
       grid.getNeighborCoordinates(targetCell.row, targetCell.col).forEach(function (coord) {
         var cell = grid.getCell(coord.row, coord.col);
         if (cell) {
-          if (typeof cell.color === "string" && cell.color) {
+          if (
+            typeof cell.color === "string" &&
+            cell.color &&
+            !(typeof cell.bubbleShieldAttachmentId === "string" && cell.bubbleShieldAttachmentId)
+          ) {
             addContactCell(cell);
             addCandidateCell(cell);
           } else if (isRainbowBall(cell)) {
@@ -334,7 +367,11 @@ function createGameManagerShotPlanningMethods(context) {
         grid.getNeighborCoordinates(rainbowCell.row, rainbowCell.col).forEach(function (coord) {
           var cell = grid.getCell(coord.row, coord.col);
           if (cell) {
-            if (typeof cell.color === "string" && cell.color) {
+            if (
+              typeof cell.color === "string" &&
+              cell.color &&
+              !(typeof cell.bubbleShieldAttachmentId === "string" && cell.bubbleShieldAttachmentId)
+            ) {
               addCandidateCell(cell);
             } else if (isRainbowBall(cell)) {
               enqueueRainbowContact(cell);
@@ -405,6 +442,13 @@ function createGameManagerShotPlanningMethods(context) {
       }
 
       var gridCell = this.systems.bubbleGrid.getCell(cell.row, cell.col);
+      if (
+        gridCell &&
+        typeof gridCell.bubbleShieldAttachmentId === "string" &&
+        gridCell.bubbleShieldAttachmentId
+      ) {
+        return null;
+      }
       return gridCell && typeof gridCell.color === "string" ? gridCell.color : null;
     },
 
@@ -549,7 +593,7 @@ function createGameManagerShotPlanningMethods(context) {
       });
 
       var attachedBubble = grid.getCell(targetCell.row, targetCell.col);
-      return this._resolveAttachment(attachedBubble);
+      return this._resolveAttachment(attachedBubble, projectile.ball);
     }
   };
 }

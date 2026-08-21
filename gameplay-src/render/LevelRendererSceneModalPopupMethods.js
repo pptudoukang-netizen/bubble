@@ -1,12 +1,44 @@
 "use strict";
 
 function attachLevelRendererSceneModalPopupMethods(LevelRenderer, context) {
+  var AIMING_TOOL_TIPS_PROXY_ROOT_NAME = context.AIMING_TOOL_TIPS_PROXY_ROOT_NAME;
   var PAUSE_VIEW_PROXY_ROOT_NAME = context.PAUSE_VIEW_PROXY_ROOT_NAME;
   var PREFAB_PATHS = context.PREFAB_PATHS;
   var PropDescriptionViewController = context.PropDescriptionViewController;
   var SpriteProxyLayerHelper = context.SpriteProxyLayerHelper;
   var attachLevelRendererSceneModalPopupMethods = context.attachLevelRendererSceneModalPopupMethods;
   var requireChildNode = context.requireChildNode;
+
+function requireAimingToolTipsComponent(node, componentType, description) {
+  if (!node || !node.isValid) {
+    throw new Error("AimingToolTips requires valid " + description + ".");
+  }
+  var component = node.getComponent(componentType);
+  if (!component) {
+    throw new Error("AimingToolTips requires " + description + ".");
+  }
+  return component;
+}
+
+function bindAimingToolTipsCloseNode(node, closeHandler) {
+  if (!node || !node.isValid) {
+    throw new Error("AimingToolTips close node is invalid.");
+  }
+  if (typeof closeHandler !== "function") {
+    throw new Error("AimingToolTips close handler is required.");
+  }
+  node.__aimingToolTipsCloseHandler = closeHandler;
+  if (node.__aimingToolTipsCloseBound === true) {
+    return;
+  }
+  node.__aimingToolTipsCloseBound = true;
+  node.on(cc.Node.EventType.TOUCH_END, function (event) {
+    if (event) {
+      event.stopPropagation();
+    }
+    node.__aimingToolTipsCloseHandler();
+  });
+}
 
 LevelRenderer.prototype._bindLoseButton = function (buttonNode, action) {
   if (!buttonNode || buttonNode.__loseBoundAction === action) {
@@ -97,6 +129,62 @@ LevelRenderer.prototype.showPauseView = function () {
     proxyRootName: PAUSE_VIEW_PROXY_ROOT_NAME
   });
   this._playPopupContentOpenAnimation(pauseContent);
+};
+
+LevelRenderer.prototype.showAimingToolTips = function () {
+  if (!this.layers || !this.layers.modal || !this.layers.modal.isValid) {
+    throw new Error("AimingToolTips requires the gameplay modal layer.");
+  }
+  var existing = this.layers.modal.getChildByName("AimingToolTips");
+  if (existing && existing.active) {
+    throw new Error("AimingToolTips is already active.");
+  }
+
+  var viewNode = existing;
+  if (!viewNode) {
+    viewNode = this._instantiateOrCreate(
+      PREFAB_PATHS.aimingToolTips,
+      this.layers.modal,
+      "AimingToolTips"
+    );
+  }
+  if (!viewNode || !viewNode.isValid) {
+    throw new Error("AimingToolTips prefab could not be instantiated.");
+  }
+  var maskNode = requireChildNode(viewNode, "mask", "AimingToolTips");
+  var panelNode = requireChildNode(viewNode, "Panel", "AimingToolTips");
+  var backgroundNode = requireChildNode(panelNode, "bg", "AimingToolTips/Panel");
+  requireAimingToolTipsComponent(viewNode, cc.BlockInputEvents, "root cc.BlockInputEvents");
+  requireAimingToolTipsComponent(panelNode, cc.BlockInputEvents, "Panel cc.BlockInputEvents");
+  requireAimingToolTipsComponent(maskNode, cc.Sprite, "mask cc.Sprite");
+  requireAimingToolTipsComponent(backgroundNode, cc.Sprite, "Panel/bg cc.Sprite");
+
+  viewNode.active = true;
+  viewNode.setPosition(0, 0);
+  SpriteProxyLayerHelper.destroyProxyRoot(viewNode, AIMING_TOOL_TIPS_PROXY_ROOT_NAME);
+  SpriteProxyLayerHelper.rebuildAutoProxyTree({
+    rootNode: viewNode,
+    proxyRootName: AIMING_TOOL_TIPS_PROXY_ROOT_NAME
+  });
+
+  var renderer = this;
+  var settled = false;
+  var closePromise = new Promise(function (resolve) {
+    var closeHandler = function () {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      viewNode.active = false;
+      renderer._aimingToolTipsClosePromise = null;
+      resolve(true);
+    };
+    bindAimingToolTipsCloseNode(viewNode, closeHandler);
+    bindAimingToolTipsCloseNode(maskNode, closeHandler);
+    bindAimingToolTipsCloseNode(panelNode, closeHandler);
+  });
+  this._aimingToolTipsClosePromise = closePromise;
+  return closePromise;
 };
 
 LevelRenderer.prototype.hidePauseView = function () {

@@ -150,6 +150,31 @@ function collectBallVisualSpritePaths(paths, ballLike, label) {
   if (ballLike && typeof ballLike.poisonAttachmentId === "string" && ballLike.poisonAttachmentId) {
     pushUniqueSpritePath(paths, BALL_RESOURCES.POISON_OVERLAY, label + "/poison_overlay");
   }
+  if (ballLike && typeof ballLike.iceCrystalAttachmentId === "string" && ballLike.iceCrystalAttachmentId) {
+    pushUniqueSpritePath(paths, BALL_RESOURCES.ICE_CRYSTAL_ATTACHMENT, label + "/ice_crystal_attachment");
+  }
+  if (ballLike && typeof ballLike.bubbleShieldAttachmentId === "string" && ballLike.bubbleShieldAttachmentId) {
+    pushUniqueSpritePath(paths, BALL_RESOURCES.BUBBLE_SHIELD, label + "/bubble_shield_attachment");
+  }
+  if (ballLike && typeof ballLike.spiderId === "string" && ballLike.spiderId) {
+    pushUniqueSpritePath(paths, BALL_RESOURCES.SPIDER, label + "/spider");
+    pushUniqueSpritePath(paths, BALL_RESOURCES.COBWEB, label + "/cobweb");
+  }
+  if (ballLike && ballLike.entityType === "spider_cocoon") {
+    [
+      "SPIDER_COCOON_01",
+      "SPIDER_COCOON_02",
+      "SPIDER_COCOON_03",
+      "SPIDER_COCOON_04",
+      "SPIDER_COCOON_05",
+      "SPIDER_COCOON_06",
+      "SPIDER_COCOON_07",
+      "SPIDER_COCOON_08",
+      "SPIDER_COCOON_09"
+    ].forEach(function (resourceKey) {
+      pushUniqueSpritePath(paths, BALL_RESOURCES[resourceKey], label + "/" + resourceKey);
+    });
+  }
   if (ballLike && ballLike.entityType === "spirit_cocoon") {
     [
       "COCOON_1",
@@ -164,6 +189,35 @@ function collectBallVisualSpritePaths(paths, ballLike, label) {
     ].forEach(function (resourceKey) {
       pushUniqueSpritePath(paths, BALL_RESOURCES[resourceKey], label + "/" + resourceKey);
     });
+  }
+  if (ballLike && ballLike.entityType === "bud") {
+    [
+      "BUD_1",
+      "BUD_2",
+      "BUD_3",
+      "BUD_4",
+      "BUD_5",
+      "BUD_6",
+      "BUD_7",
+      "BUD_8"
+    ].forEach(function (resourceKey) {
+      pushUniqueSpritePath(paths, BALL_RESOURCES[resourceKey], label + "/" + resourceKey);
+    });
+  }
+  if (ballLike && ballLike.entityType === "wind_tunnel_entrance") {
+    [
+      "AIR_INTAKE_01",
+      "AIR_INTAKE_02",
+      "AIR_INTAKE_03",
+      "AIR_INTAKE_04",
+      "AIR_INTAKE_05"
+    ].forEach(function (resourceKey) {
+      pushUniqueSpritePath(paths, BALL_RESOURCES[resourceKey], label + "/" + resourceKey);
+    });
+  }
+  if (ballLike && ballLike.entityType === "wind_tunnel_exit") {
+    pushUniqueSpritePath(paths, BALL_RESOURCES.WIND_TUNNEL_EXIT_INACTIVE, label + "/inactive");
+    pushUniqueSpritePath(paths, BALL_RESOURCES.WIND_TUNNEL_EXIT_ACTIVE, label + "/active");
   }
 }
 
@@ -446,6 +500,10 @@ function buildStateText(runtimeSnapshot) {
     return "触碰危险线";
   }
 
+  if (runtimeSnapshot.state === "lost_hazard") {
+    return "地雷爆炸";
+  }
+
   if (runtimeSnapshot.state === "lost_objective") {
     return "目标未完成";
   }
@@ -587,6 +645,13 @@ function buildBottomPanelRenderKey(runtimeSnapshot) {
   if (!Number.isInteger(snowRemovalCount) || snowRemovalCount < 0) {
     throw new Error("Bottom panel render key snow_removal count must be a non-negative integer.");
   }
+  if (!Object.prototype.hasOwnProperty.call(skillInventory, "rainbow_prism_ball")) {
+    throw new Error("Bottom panel render key requires rainbow_prism_ball count.");
+  }
+  var rainbowPrismBallCount = Number(skillInventory.rainbow_prism_ball);
+  if (!Number.isInteger(rainbowPrismBallCount) || rainbowPrismBallCount < 0) {
+    throw new Error("Bottom panel render key rainbow_prism_ball count must be a non-negative integer.");
+  }
   var adRunPowerups = runtimeSnapshot.adRunPowerups ? runtimeSnapshot.adRunPowerups : {};
   var adRunPowerupAllowed = runtimeSnapshot.adRunPowerupAllowed ? runtimeSnapshot.adRunPowerupAllowed : {};
   if (!runtimeSnapshot.systems || !runtimeSnapshot.systems.boardOcclusionSystem) {
@@ -604,6 +669,7 @@ function buildBottomPanelRenderKey(runtimeSnapshot) {
     runtimeSnapshot.infiniteShots ? 1 : 0,
     Math.max(0, Math.floor(Number(skillInventory.rainbow) || 0)),
     Math.max(0, Math.floor(Number(skillInventory.blast) || 0)),
+    rainbowPrismBallCount,
     Math.max(0, Math.floor(Number(skillInventory.swap) || 0)),
     Math.max(0, Math.floor(Number(skillInventory.barrier_hammer) || 0)),
     preciseAimCount,
@@ -876,6 +942,14 @@ function resolveBallCode(ballLike) {
       return "BLAST";
     }
 
+    if (ballLike.entityType === "crystal_gun") {
+      return "CRYSTAL_GUN";
+    }
+
+    if (ballLike.entityType === "rainbow_prism_ball") {
+      return "RAINBOW_PRISM_BALL";
+    }
+
     if (ballLike.entityType === "stone") {
       return "STONE";
     }
@@ -903,12 +977,24 @@ function resolveBallCode(ballLike) {
       return "BREEDER";
     }
 
+    if (ballLike.entityType === "bud") {
+      return "BUD";
+    }
+
     if (ballLike.entityType === "black_hole") {
       return "BLACK_HOLE";
     }
 
+    if (ballLike.entityType === "mine") {
+      return "MINE";
+    }
+
     if (ballLike.entityType === "spirit_cocoon") {
       return "SPIRIT_COCOON";
+    }
+
+    if (ballLike.entityType === "spider_cocoon") {
+      return "SPIDER_COCOON";
     }
 
     if (ballLike.entityType === "transparent_ball") {
@@ -923,12 +1009,30 @@ function resolveBallCode(ballLike) {
       return "WORMHOLE";
     }
 
+    if (ballLike.entityType === "wind_tunnel_entrance") {
+      if (ballLike.closing === true) {
+        if (!Number.isInteger(ballLike.closingFrameIndex) || ballLike.closingFrameIndex < 0 || ballLike.closingFrameIndex >= 5) {
+          throw new Error("Wind tunnel closing entrance requires closingFrameIndex in [0, 4].");
+        }
+        return "AIR_INTAKE_0" + (ballLike.closingFrameIndex + 1);
+      }
+      return "WIND_TUNNEL_ENTRANCE";
+    }
+
+    if (ballLike.entityType === "wind_tunnel_exit") {
+      return ballLike.active === true ? "WIND_TUNNEL_EXIT_ACTIVE" : "WIND_TUNNEL_EXIT_INACTIVE";
+    }
+
     if (ballLike.entityType === "vine_spirit") {
       return "VINE_SPIRIT";
     }
 
     if (ballLike.entityType === "poison_droplet") {
       return "POISON_DROPLET";
+    }
+
+    if (ballLike.entityType === "icicle") {
+      return "ICICLE";
     }
   }
 

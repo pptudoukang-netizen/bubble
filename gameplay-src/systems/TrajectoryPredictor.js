@@ -231,6 +231,18 @@ TrajectoryPredictor.prototype.predictShotPlan = function (grid, origin, directio
     if (wormholeCollision) {
       distanceToWormhole = wormholeCollision.t * probeDistance;
     }
+    if (typeof grid.findWindTunnelEntranceCollisionOnSegment !== "function") {
+      throw new Error("Trajectory prediction requires BubbleGrid.findWindTunnelEntranceCollisionOnSegment.");
+    }
+    var windTunnelCollision = grid.findWindTunnelEntranceCollisionOnSegment(
+      currentPoint,
+      probeEnd,
+      this.predictionCollisionRadius
+    );
+    var distanceToWindTunnel = Number.POSITIVE_INFINITY;
+    if (windTunnelCollision) {
+      distanceToWindTunnel = windTunnelCollision.t * probeDistance;
+    }
     var trappedSpriteCollision = rescueActive
       ? grid.findTrappedSpriteCollisionOnSegment(currentPoint, probeEnd, this.predictionCollisionRadius)
       : null;
@@ -278,6 +290,7 @@ TrajectoryPredictor.prototype.predictShotPlan = function (grid, origin, directio
       distanceToBubble,
       distanceToBlackHole,
       distanceToWormhole,
+      distanceToWindTunnel,
       distanceToTrappedSprite,
       effectiveSlotDistance,
       distanceToTop,
@@ -336,6 +349,29 @@ TrajectoryPredictor.prototype.predictShotPlan = function (grid, origin, directio
         position: clone(wormholeCollision.center)
       };
       return wormholePlan;
+    }
+
+    if (distanceToWindTunnel <= minDistance + EPSILON && windTunnelCollision) {
+      var windTunnelImpactPoint = clone(windTunnelCollision.point);
+      var windTunnelPlan = buildPlan(
+        rayOrigin,
+        rayDirection,
+        wallPoints,
+        "wind_tunnel",
+        windTunnelImpactPoint,
+        windTunnelCollision.cell,
+        null,
+        windTunnelImpactPoint,
+        currentDirection
+      );
+      windTunnelPlan.targetCellPosition = null;
+      windTunnelPlan.windTunnelEntrance = {
+        id: String(windTunnelCollision.cell.id),
+        row: windTunnelCollision.cell.row,
+        col: windTunnelCollision.cell.col,
+        position: clone(windTunnelCollision.center)
+      };
+      return windTunnelPlan;
     }
 
     if (preferSlot && distanceToSlot <= minDistance + EPSILON && slotInfo) {

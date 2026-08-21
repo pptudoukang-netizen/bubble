@@ -19,6 +19,26 @@ function isVineEntangled(cell) {
   );
 }
 
+function isBubbleShielded(cell) {
+  return !!(
+    cell &&
+    typeof cell.bubbleShieldAttachmentId === "string" &&
+    cell.bubbleShieldAttachmentId
+  );
+}
+
+function isLockChainProtected(cell) {
+  return !!(cell && cell.lockChainProtected === true);
+}
+
+function isSpiderMatchLocked(cell) {
+  return !!(
+    cell &&
+    cell.spiderLocked === true &&
+    !(typeof cell.spiderId === "string" && cell.spiderId)
+  );
+}
+
 function MatchSystem() {
   BaseSystem.call(this, "MatchSystem");
   this.matchThreshold = 3;
@@ -43,7 +63,12 @@ MatchSystem.prototype.findMatchGroup = function (grid, startCell) {
   }
 
   var startFromGrid = grid.getCell(startCell.row, startCell.col);
-  if (isVineEntangled(startFromGrid)) {
+  if (
+    isVineEntangled(startFromGrid) ||
+    isBubbleShielded(startFromGrid) ||
+    isLockChainProtected(startFromGrid) ||
+    isSpiderMatchLocked(startFromGrid)
+  ) {
     this.lastMatches = [];
     return [];
   }
@@ -70,7 +95,14 @@ MatchSystem.prototype.findMatchGroup = function (grid, startCell) {
 
     visited[key] = true;
     var gridCell = grid.getCell(current.row, current.col);
-    if (!gridCell || gridCell.color !== targetColor || isVineEntangled(gridCell)) {
+    if (
+      !gridCell ||
+      gridCell.color !== targetColor ||
+      isVineEntangled(gridCell) ||
+      isBubbleShielded(gridCell) ||
+      isLockChainProtected(gridCell) ||
+      isSpiderMatchLocked(gridCell)
+    ) {
       continue;
     }
 
@@ -83,7 +115,14 @@ MatchSystem.prototype.findMatchGroup = function (grid, startCell) {
       }
 
       var neighborCell = grid.getCell(neighbor.row, neighbor.col);
-      if (neighborCell && neighborCell.color === targetColor && !isVineEntangled(neighborCell)) {
+      if (
+        neighborCell &&
+        neighborCell.color === targetColor &&
+        !isVineEntangled(neighborCell) &&
+        !isBubbleShielded(neighborCell) &&
+        !isLockChainProtected(neighborCell) &&
+        !isSpiderMatchLocked(neighborCell)
+      ) {
         queue.push({
           row: neighbor.row,
           col: neighbor.col

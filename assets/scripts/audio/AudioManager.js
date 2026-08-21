@@ -555,7 +555,14 @@ AudioManager.prototype.playSfx = function (keyOrPath, options) {
   });
 };
 
-AudioManager.prototype.playExclusiveSfx = function (channelName, keyOrPath) {
+AudioManager.prototype.playExclusiveSfx = function (channelName, keyOrPath, options) {
+  options = options || {};
+  if (typeof options !== "object" || Array.isArray(options)) {
+    return Promise.reject(new Error("Exclusive SFX playback options must be an object."));
+  }
+  if (options.loop !== undefined && typeof options.loop !== "boolean") {
+    return Promise.reject(new Error("Exclusive SFX playback loop option must be boolean."));
+  }
   var channel = typeof channelName === "string" ? channelName.trim() : "";
   if (!channel) {
     return Promise.reject(new Error("Exclusive SFX playback requires a non-empty channel name."));
@@ -579,7 +586,8 @@ AudioManager.prototype.playExclusiveSfx = function (channelName, keyOrPath) {
 
   var playback = {
     audioId: null,
-    resourcePath: resourcePath
+    resourcePath: resourcePath,
+    loop: options.loop === true
   };
   this._exclusiveSfxPlaybacks[channel] = playback;
 
@@ -589,7 +597,7 @@ AudioManager.prototype.playExclusiveSfx = function (channelName, keyOrPath) {
     }
 
     cc.audioEngine.setEffectsVolume(this.settings.sfxVolume);
-    var audioId = cc.audioEngine.playEffect(clip, false);
+    var audioId = cc.audioEngine.playEffect(clip, playback.loop);
     if (typeof audioId !== "number" || !Number.isFinite(audioId) || audioId < 0) {
       throw new Error("Failed to start exclusive SFX: " + resourcePath);
     }
@@ -606,6 +614,29 @@ AudioManager.prototype.playExclusiveSfx = function (channelName, keyOrPath) {
     }
     throw error;
   }.bind(this));
+};
+
+AudioManager.prototype.stopExclusiveSfx = function (channelName) {
+  var channel = typeof channelName === "string" ? channelName.trim() : "";
+  if (!channel) {
+    throw new Error("Stopping exclusive SFX requires a non-empty channel name.");
+  }
+  var playback = this._exclusiveSfxPlaybacks[channel];
+  if (!playback) {
+    return false;
+  }
+  delete this._exclusiveSfxPlaybacks[channel];
+  if (playback.audioId === null) {
+    return true;
+  }
+  if (typeof playback.audioId !== "number" || !Number.isFinite(playback.audioId) || playback.audioId < 0) {
+    throw new Error("Exclusive SFX playback has an invalid audio id: " + channel + ".");
+  }
+  if (!hasAudioEngine() || typeof cc.audioEngine.stopEffect !== "function") {
+    throw new Error("Stopping exclusive SFX requires cc.audioEngine.stopEffect.");
+  }
+  cc.audioEngine.stopEffect(playback.audioId);
+  return true;
 };
 
 AudioManager.prototype.playSfxInstances = function (keyOrPath, count, options) {

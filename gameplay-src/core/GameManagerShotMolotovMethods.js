@@ -145,6 +145,7 @@ function createGameManagerShotMolotovMethods(context) {
       });
 
       blastCells = this._unloadBlackHolesHitByRange(blastCells, grid, resolution, "molotov");
+      blastCells = this._resolveBubbleShieldsHitBySpecial(blastCells, grid, resolution, "molotov");
 
       this._resolveVineSpiritsHitByExplosion(blastCells, grid, resolution);
       var removableBlastCells = blastCells.filter(function (cell) {
@@ -196,6 +197,7 @@ function createGameManagerShotMolotovMethods(context) {
       );
 
       resolution.matched = this.molotovPendingResolutionContext.allRemoved.slice();
+      resolution.eliminationPresentationComplete = false;
       resolution.collected = this.molotovPendingResolutionContext.allRemoved.slice();
       this._registerMatchedObjectiveCollection(removedByBlast, resolution.eliminationSequence, resolution, grid);
       this._resolveMolotovFloatingAfterBoardMutation(grid, resolution);
@@ -225,6 +227,7 @@ function createGameManagerShotMolotovMethods(context) {
         this._pushBubbleBreakEvent(removedMolotov, resolution.eliminationSequence);
         this._appendUniqueCells(this.molotovPendingResolutionContext.allRemoved, removedMolotov);
         resolution.matched = this.molotovPendingResolutionContext.allRemoved.slice();
+        resolution.eliminationPresentationComplete = false;
         resolution.collected = this.molotovPendingResolutionContext.allRemoved.slice();
         this._registerMatchedObjectiveCollection(removedMolotov, resolution.eliminationSequence, resolution, grid);
         this._resolveMolotovFloatingAfterBoardMutation(grid, resolution);
@@ -313,6 +316,7 @@ function createGameManagerShotMolotovMethods(context) {
       appendMolotovEliminationSequence(resolution, syncRemoved, this.systems.bubbleGrid);
       this._pushBubbleBreakEvent(syncRemoved, resolution.eliminationSequence);
       resolution.matched = syncRemoved.slice();
+      resolution.eliminationPresentationComplete = false;
       resolution.collected = syncRemoved.slice();
       this._registerMatchedObjectiveCollection(
         syncRemoved,
@@ -344,7 +348,7 @@ function createGameManagerShotMolotovMethods(context) {
           this._resolveCollectedKeyUnlocks(grid, resolution);
         }
 
-        var floatingCells = this.systems.supportSystem.findFloatingCells(grid);
+        var floatingCells = this._findFloatingCellsBeforeSwirlRotation(grid, resolution);
         if (!floatingCells.length) {
           break;
         }
@@ -420,6 +424,9 @@ function createGameManagerShotMolotovMethods(context) {
         return;
       }
 
+      if (this._resolveMineCountdownPhase(resolution)) {
+        return;
+      }
       this._resolveBreederPhase(resolution);
       if (resolution.boardCleared) {
         this._resolveBoardClearedOutcome();
@@ -431,7 +438,7 @@ function createGameManagerShotMolotovMethods(context) {
       var eliminationPresentationWasComplete = this.pendingBoardAdvanceEliminationPresentation === false;
       if (this._applyPostImpactBoardShiftPolicy(resolution)) {
         if (eliminationPresentationWasComplete) {
-          this.notifyBoardAdvanceEliminationPresentationComplete();
+          this.notifyBoardAdvanceEliminationPresentationComplete(resolution);
         }
         return;
       }
@@ -439,7 +446,7 @@ function createGameManagerShotMolotovMethods(context) {
         return;
       }
       if (!this.isTimedInfiniteShots && this.remainingShots <= 0) {
-        if (this.systems.fallingMarbleSystem.hasActiveDrops() || this._isBoardAdvanceBusy() || this._hasPendingSplitterSpawns() || this._hasPendingMolotovBlasts() || this._hasPendingSpiritCocoonOpenings() || this._hasPendingVineCast()) {
+        if (this.systems.fallingMarbleSystem.hasActiveDrops() || this._isBoardAdvanceBusy() || this._hasPendingSplitterSpawns() || this._hasPendingMolotovBlasts() || this._hasPendingBudHatches() || this._hasPendingSpiritCocoonOpenings() || this._hasPendingVineCast()) {
           this.state = "out_of_shots_pending";
         } else {
           this._showOutOfShotsAddBallPrompt();

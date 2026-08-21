@@ -110,12 +110,12 @@
             }
         ],
         "layout": [
-            "RRBRBBRRBBR",
-            ".RBRBBRRBB",
-            ".BBRRBBRBBR",
-            "RBBRRBBRBR",
-            "RBBRR..RBRR",
-            ".BBRRBBRB.",
+            "BBBRBBRBRRB",
+            ".RBRBRBBRB",
+            ".BRBRRBRBRR",
+            "BRRBRBRRBB",
+            "RRBRB..BRRR",
+            ".BRBRRBBB.",
             "........R..",
             ".......R.."
         ],

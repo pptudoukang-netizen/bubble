@@ -51,7 +51,9 @@ function attachLevelRendererSceneHudMethods(LevelRenderer, deps) {
     { nodeName: "change_btn", iconKey: "swap" },
     { nodeName: "destroy_btn", iconKey: "barrier_hammer" },
     { nodeName: "snow_removal_btn", iconKey: "snow_removal" },
-    { nodeName: "bomb_btn", iconKey: "blast" }
+    { nodeName: "bomb_btn", iconKey: "blast" },
+    { nodeName: "crystal_gun_btn", iconKey: "crystal_gun" },
+    { nodeName: "rainbow_prism_ball_btn", iconKey: "rainbow_prism_ball" }
   ];
   var POWERUP_LOAD_ANIMATION_CONFIG = {
     rainbow: {
@@ -61,6 +63,14 @@ function attachLevelRendererSceneHudMethods(LevelRenderer, deps) {
     blast: {
       buttonNodeName: "bomb_btn",
       spriteCode: "BLAST"
+    },
+    crystal_gun: {
+      buttonNodeName: "crystal_gun_btn",
+      spriteCode: "CRYSTAL_GUN"
+    },
+    rainbow_prism_ball: {
+      buttonNodeName: "rainbow_prism_ball_btn",
+      spriteCode: "RAINBOW_PRISM_BALL"
     }
   };
   var SKILL_POWERUP_COLLECT_FEEDBACK_VIEW_PADDING = 16;

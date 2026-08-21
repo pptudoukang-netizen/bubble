@@ -11,7 +11,7 @@ var PROJECT_ROOT = path.resolve(__dirname, "..");
 var REMOTE_PACK_DIR = path.join(PROJECT_ROOT, "remote-level-packs");
 var MANIFEST_PATH = path.join(REMOTE_PACK_DIR, "level_manifest.json");
 var BOOTSTRAP_MANIFEST_PATH = path.join(PROJECT_ROOT, "assets/map/config/level_manifest.json");
-var V2_CLOUD_ROOT = "/level-packs/v2/";
+var CURRENT_CLOUD_ROOT = "/level-packs/v3/";
 var MAX_TOTAL_PACK_BYTES = 2000000;
 
 function readText(filePath) {
@@ -131,9 +131,9 @@ function main() {
   }
   if (
     !bootstrapManifest.remoteManifest ||
-    bootstrapManifest.remoteManifest.fileID.indexOf(V2_CLOUD_ROOT + "level_manifest.json") === -1
+    bootstrapManifest.remoteManifest.fileID.indexOf(CURRENT_CLOUD_ROOT + "level_manifest.json") === -1
   ) {
-    throw new Error("bootstrap manifest must point to the versioned V2 cloud manifest path.");
+    throw new Error("bootstrap manifest must point to the level-packs/v3 cloud manifest path.");
   }
 
   var totalBytes = 0;
@@ -146,8 +146,8 @@ function main() {
     if (packInfo.format !== LevelPackCompactCodec.PACK_FORMAT_COMPACT_V2) {
       throw new Error("manifest pack must use compact-schema-v2: " + packInfo.id);
     }
-    if (packInfo.fileID.indexOf(V2_CLOUD_ROOT + packInfo.id + ".json") === -1) {
-      throw new Error("manifest pack must use versioned V2 cloud path: " + packInfo.id);
+    if (packInfo.fileID.indexOf(CURRENT_CLOUD_ROOT + packInfo.id + ".json") === -1) {
+      throw new Error("manifest pack must use level-packs/v3 cloud path: " + packInfo.id);
     }
     var packPath = path.join(REMOTE_PACK_DIR, packInfo.id + ".json");
     var packText = readText(packPath);

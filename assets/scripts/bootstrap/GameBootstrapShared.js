@@ -6,6 +6,7 @@ var BundleLoader = require("../utils/BundleLoader");
 var PoolManager = require("../utils/PoolManager");
 var LevelProgressStore = require("../utils/LevelProgressStore");
 var LevelAttemptStatsStore = require("../utils/LevelAttemptStatsStore");
+var CurrentFrontierFailureStore = require("../utils/CurrentFrontierFailureStore");
 var PlayerResourceStore = require("../utils/PlayerResourceStore");
 var AssistSpiritStore = require("../utils/AssistSpiritStore");
 var SpiritShopStore = require("../utils/SpiritShopStore");
@@ -204,6 +205,7 @@ module.exports = {
   PoolManager: PoolManager,
   LevelProgressStore: LevelProgressStore,
   LevelAttemptStatsStore: LevelAttemptStatsStore,
+  CurrentFrontierFailureStore: CurrentFrontierFailureStore,
   PlayerResourceStore: PlayerResourceStore,
   AssistSpiritStore: AssistSpiritStore,
   SpiritShopStore: SpiritShopStore,

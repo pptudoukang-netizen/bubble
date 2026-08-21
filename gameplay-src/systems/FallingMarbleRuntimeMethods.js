@@ -76,7 +76,7 @@ FallingMarbleSystem.prototype.update = function (dt) {
     }
 
     drop.jarCooldown = Math.max(0, (drop.jarCooldown || 0) - dt);
-    if (drop.dropKind !== "poison_droplet") {
+    if (drop.dropKind !== "poison_droplet" && drop.dropKind !== "icicle") {
       this._applyGapAttraction(drop, dt);
     }
     drop.velocity.y -= this.gravity * dt;
@@ -84,10 +84,16 @@ FallingMarbleSystem.prototype.update = function (dt) {
     drop.position.y += drop.velocity.y * dt;
     drop.rotation += drop.rotationSpeed * dt;
 
-    if (drop.dropKind === "poison_droplet") {
-      var poisonCollision = this._applyPoisonFairyCollision(drop);
-      if (poisonCollision) {
-        result.poisonFairyHits.push(poisonCollision);
+    if (drop.dropKind === "poison_droplet" || drop.dropKind === "icicle") {
+      var attachmentCollision = drop.dropKind === "poison_droplet"
+        ? this._applyPoisonFairyCollision(drop)
+        : this._applyIcicleFairyCollision(drop);
+      if (attachmentCollision) {
+        if (drop.dropKind === "poison_droplet") {
+          result.poisonFairyHits.push(attachmentCollision);
+        } else {
+          result.icicleFairyHits.push(attachmentCollision);
+        }
         activeDropCount -= 1;
         continue;
       }

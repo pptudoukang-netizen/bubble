@@ -7,12 +7,14 @@ var path = require("path");
 var BoardLayout = require("../assets/scripts/config/BoardLayout");
 var BoardOcclusionConfig = require("../assets/scripts/config/BoardOcclusionConfig");
 var LevelBoardSupportValidator = require("../assets/scripts/config/LevelBoardSupportValidator");
+var LevelConfigLoader = require("../assets/scripts/config/LevelConfigLoader");
 var LevelPackCompactCodec = require("../assets/scripts/config/LevelPackCompactCodec");
 var CampaignLevelModePolicy = require("./campaign-level-mode-policy");
 var CampaignLevelGenerationConfig = require("./campaign-level-generation-config");
 var ClusteredLevelLayout = require("./clustered-level-layout");
 var FirstHundredLevelDesign = require("./first-100-level-design");
 var ReferenceLevels101To300Design = require("./reference-levels-101-300-design");
+var SpecialMechanismSchedule = require("./campaign-special-mechanism-schedule");
 
 var PROJECT_ROOT = path.resolve(__dirname, "..");
 var RESOURCE_LEVEL_DIR = path.join(PROJECT_ROOT, "assets/map/config/levels");
@@ -30,7 +32,7 @@ var REMOTE_PACK_SIZE = 100;
 var START_GENERATED_LEVEL_ID = 41;
 var CLOUD_ENV_ID = "cloud1-d7gqettx3e9249ca1";
 var CLOUD_FILE_ID_PREFIX = "cloud://cloud1-d7gqettx3e9249ca1.636c-cloud1-d7gqettx3e9249ca1-1428064608";
-var CLOUD_PACK_ROOT = "level-packs/v2";
+var CLOUD_PACK_ROOT = "level-packs/v3";
 var MANIFEST_VERSION = "levels-1000-compact-v2";
 var BOOTSTRAP_MANIFEST_VERSION = "levels-1000-bootstrap-v1";
 var REMOTE_MANIFEST_FILE_NAME = "level_manifest.json";
@@ -163,6 +165,16 @@ function parseNonNegativeIntegerCell(row, columnName, levelId) {
   return value;
 }
 
+function parseRequiredStringCell(row, columnName, levelId) {
+  if (!Object.prototype.hasOwnProperty.call(row, columnName)) {
+    throw new Error("Level config table missing column `" + columnName + "`.");
+  }
+  if (typeof row[columnName] !== "string" || !row[columnName]) {
+    throw new Error("Level " + levelId + " table column `" + columnName + "` must be non-empty.");
+  }
+  return row[columnName];
+}
+
 function loadLevelConfigTable() {
   if (!fs.existsSync(LEVEL_CONFIG_TABLE_PATH)) {
     throw new Error("Missing level config table: " + LEVEL_CONFIG_TABLE_PATH);
@@ -286,6 +298,33 @@ function normalizeTableRow(rawRow, levelId) {
       key: parseNonNegativeIntegerCell(rawRow, "钥匙", levelId),
       locked: parseNonNegativeIntegerCell(rawRow, "锁定球", levelId)
     },
+    reactiveCounts: {
+      swirl: parseNonNegativeIntegerCell(rawRow, "漩涡球", levelId),
+      vine_spirit: parseNonNegativeIntegerCell(rawRow, "藤蔓精灵", levelId),
+      wormholePairs: parseNonNegativeIntegerCell(rawRow, "虫洞对", levelId)
+    },
+    additionalCounts: {
+      blackHole: parseNonNegativeIntegerCell(rawRow, "黑洞", levelId),
+      mine: parseNonNegativeIntegerCell(rawRow, "地雷", levelId),
+      breeder: parseNonNegativeIntegerCell(rawRow, "繁殖球", levelId),
+      bud: parseNonNegativeIntegerCell(rawRow, "花苞球", levelId),
+      spiritCocoon: parseNonNegativeIntegerCell(rawRow, "精灵茧", levelId),
+      transparentBall: parseNonNegativeIntegerCell(rawRow, "透明球", levelId),
+      crystalGun: parseNonNegativeIntegerCell(rawRow, "晶光炮", levelId),
+      windTunnelExit: parseNonNegativeIntegerCell(rawRow, "风眼出口", levelId),
+      poisonAttachment: parseNonNegativeIntegerCell(rawRow, "毒液附着", levelId),
+      iceCrystalAttachment: parseNonNegativeIntegerCell(rawRow, "冰凌附着", levelId),
+      bubbleShieldAttachment: parseNonNegativeIntegerCell(rawRow, "气泡护盾附着", levelId),
+      spider: parseNonNegativeIntegerCell(rawRow, "蜘蛛", levelId),
+      colorCloud: parseNonNegativeIntegerCell(rawRow, "彩云", levelId),
+      multiRescueTargets: parseNonNegativeIntegerCell(rawRow, "多精灵救援目标", levelId),
+      rainbowPrism: parseNonNegativeIntegerCell(rawRow, "彩虹棱镜球", levelId)
+    },
+    levelType: parseRequiredStringCell(rawRow, "关卡类型", levelId),
+    playMode: parseRequiredStringCell(rawRow, "玩法模式", levelId),
+    singleRescueSpiritId: parseRequiredStringCell(rawRow, "单精灵救援", levelId),
+    timeBonusBallCount: parseNonNegativeIntegerCell(rawRow, "限时球", levelId),
+    boardOcclusionMode: parseRequiredStringCell(rawRow, "棋盘遮挡", levelId),
     target1: target1,
     target2: target2,
     shotLimit: shotLimit
@@ -817,8 +856,44 @@ function validateTableTargets(tableRow) {
       throw new Error("Level " + tableRow.levelId + " splitter target must match split color.");
     }
   }
-  if (tableRow.specialCounts.key !== tableRow.specialCounts.locked) {
-    throw new Error("Level " + tableRow.levelId + " key and locked counts must match.");
+  var expectedLockedCount = CampaignLevelGenerationConfig.getLockChainLockedCount(
+    tableRow.levelId,
+    tableRow.rowCount,
+    tableRow.specialCounts.key
+  );
+  if (tableRow.specialCounts.locked !== expectedLockedCount) {
+    throw new Error("Level " + tableRow.levelId + " lock count must equal the selected full lock-chain rows.");
+  }
+  var gameplayPlan = CampaignLevelGenerationConfig.getLevelPlan(tableRow.levelId);
+  var expectedReactive = gameplayPlan.reactiveSpecialCounts;
+  if (tableRow.reactiveCounts.swirl !== expectedReactive.swirl ||
+      tableRow.reactiveCounts.vine_spirit !== expectedReactive.vine_spirit ||
+      tableRow.reactiveCounts.wormholePairs !== expectedReactive.wormholePairs) {
+    throw new Error("Level " + tableRow.levelId + " reactive counts differ from the authoritative schedule.");
+  }
+  SpecialMechanismSchedule.INTRODUCTIONS.forEach(function (definition) {
+    if (tableRow.additionalCounts[definition.key] !== gameplayPlan.additionalMechanismPlan[definition.key]) {
+      throw new Error("Level " + tableRow.levelId + " `" + definition.column + "` differs from the authoritative schedule.");
+    }
+  });
+  if (tableRow.levelType !== gameplayPlan.levelType || tableRow.playMode !== gameplayPlan.playMode) {
+    throw new Error("Level " + tableRow.levelId + " mode columns differ from the authoritative schedule.");
+  }
+  var expectedSpiritId = gameplayPlan.trappedSpriteRescue
+    ? CampaignLevelGenerationConfig.getTrappedSpriteRescueSpiritId(tableRow.levelId)
+    : "-";
+  if (tableRow.singleRescueSpiritId !== expectedSpiritId) {
+    throw new Error("Level " + tableRow.levelId + " single rescue identity differs from the authoritative schedule.");
+  }
+  var expectedTimeBonusCount = gameplayPlan.playMode === "timed_infinite_shots"
+    ? CampaignLevelGenerationConfig.getTimedLevelTimeBonusBallCount(tableRow.levelId)
+    : 0;
+  if (tableRow.timeBonusBallCount !== expectedTimeBonusCount) {
+    throw new Error("Level " + tableRow.levelId + " timed ball count differs from the authoritative schedule.");
+  }
+  var expectedOcclusionMode = gameplayPlan.boardOcclusionEnabled ? "per_attempt_no_repeat" : "none";
+  if (tableRow.boardOcclusionMode !== expectedOcclusionMode) {
+    throw new Error("Level " + tableRow.levelId + " board occlusion mode differs from the authoritative schedule.");
   }
 }
 
@@ -882,23 +957,73 @@ function buildTableSpecialEntities(tableRow, activeColors) {
     });
   });
 
-  pushRepeated(counts.key, function (index) {
-    return {
-      id: "key_" + String(index + 1).padStart(2, "0"),
+  var lockRows = CampaignLevelGenerationConfig.getLockChainRows(levelId, tableRow.rowCount, counts.key);
+  var lockedIndex = 0;
+  lockRows.forEach(function (row, chainIndex) {
+    var columnCount = BoardLayout.getRowColumnCount(row, BoardLayout.defaultColumns);
+    var keyCol = (Math.floor(columnCount / 2) + levelId + chainIndex * 3) % columnCount;
+    entities.push({
+      id: "key_chain_" + String(chainIndex + 1).padStart(2, "0"),
       entityCategory: "key_ball",
-      entityType: "key"
-    };
+      entityType: "key",
+      row: row,
+      col: keyCol
+    });
+    for (var col = 0; col < columnCount; col += 1) {
+      if (col === keyCol) {
+        continue;
+      }
+      lockedIndex += 1;
+      entities.push({
+        id: "locked_" + String(lockedIndex).padStart(2, "0"),
+        entityCategory: "locked_ball",
+        entityType: "locked",
+        lockedColor: activeColors[(levelId + lockedIndex) % activeColors.length],
+        row: row,
+        col: col
+      });
+    }
   });
-  pushRepeated(counts.locked, function (index) {
-    return {
-      id: "locked_" + String(index + 1).padStart(2, "0"),
-      entityCategory: "locked_ball",
-      entityType: "locked",
-      lockedColor: activeColors[(levelId + index + 1) % activeColors.length]
-    };
-  });
+  if (lockedIndex !== counts.locked) {
+    throw new Error("Level " + levelId + " generated lock-chain count differs from the table.");
+  }
 
-  entities = entities.concat(CampaignLevelGenerationConfig.buildReactiveSpecialEntities(levelId));
+  var additional = tableRow.additionalCounts;
+  pushRepeated(additional.blackHole, function (index) {
+    return { id: "black_hole_" + String(index + 1).padStart(2, "0"), entityCategory: "hazard_ball", entityType: "black_hole", capacity: 3 };
+  });
+  pushRepeated(additional.mine, function (index) {
+    return { id: "mine_" + String(index + 1).padStart(2, "0"), entityCategory: "hazard_ball", entityType: "mine", initialLife: 6 };
+  });
+  pushRepeated(additional.breeder, function (index) {
+    return { id: "breeder_" + String(index + 1).padStart(2, "0"), entityCategory: "reactive_ball", entityType: "breeder" };
+  });
+  pushRepeated(additional.bud, function (index) {
+    return { id: "bud_" + String(index + 1).padStart(2, "0"), entityCategory: "reactive_ball", entityType: "bud" };
+  });
+  pushRepeated(additional.spiritCocoon, function (index) {
+    return { id: "spirit_cocoon_" + String(index + 1).padStart(2, "0"), entityCategory: "reactive_ball", entityType: "spirit_cocoon" };
+  });
+  pushRepeated(additional.transparentBall, function (index) {
+    return { id: "transparent_ball_" + String(index + 1).padStart(2, "0"), entityCategory: "reactive_ball", entityType: "transparent_ball" };
+  });
+  pushRepeated(additional.crystalGun, function (index) {
+    return { id: "crystal_gun_" + String(index + 1).padStart(2, "0"), entityCategory: "skill_ball", entityType: "crystal_gun" };
+  });
+  if (additional.windTunnelExit > 0) {
+    entities.push({ id: "wind_tunnel_entrance_01", entityCategory: "reactive_ball", entityType: "wind_tunnel_entrance" });
+    pushRepeated(additional.windTunnelExit, function (index) {
+      return { id: "wind_tunnel_exit_" + String(index + 1).padStart(2, "0"), entityCategory: "reactive_ball", entityType: "wind_tunnel_exit" };
+    });
+  }
+
+  var scheduledReactive = CampaignLevelGenerationConfig.buildReactiveSpecialEntities(levelId);
+  if (scheduledReactive.filter(function (entity) { return entity.entityType === "swirl"; }).length !== tableRow.reactiveCounts.swirl ||
+      scheduledReactive.filter(function (entity) { return entity.entityType === "vine_spirit"; }).length !== tableRow.reactiveCounts.vine_spirit ||
+      scheduledReactive.filter(function (entity) { return entity.entityType === "wormhole"; }).length !== tableRow.reactiveCounts.wormholePairs * 2) {
+    throw new Error("Level " + levelId + " reactive entity expansion differs from the table.");
+  }
+  entities = entities.concat(scheduledReactive);
 
   return entities;
 }
@@ -1037,8 +1162,24 @@ function placeCampaignSpecialEntitiesInSlots(rows, entities, slots, levelId, pla
   var used = {};
   var forbidden = {};
   var usedWormholeRows = {};
+  entities.forEach(function (entity, index) {
+    var hasRow = Number.isInteger(entity.row);
+    var hasCol = Number.isInteger(entity.col);
+    if (hasRow !== hasCol) {
+      throw new Error(sourceName + " pre-positioned entity must define both row and col at index " + index + ".");
+    }
+    if (!hasRow) {
+      return;
+    }
+    var key = buildSlotKey(entity);
+    if (!eligible[key] || used[key]) {
+      throw new Error(sourceName + " pre-positioned entity is outside eligible slots or duplicated at " + key + ".");
+    }
+    used[key] = true;
+    setCell(rows, entity.row, entity.col, ".");
+  });
   var swirls = entities.filter(function (entity) {
-    return entity.entityType === "swirl";
+    return entity.entityType === "swirl" && !Number.isInteger(entity.row);
   }).sort(function (left, right) {
     return String(left.id).localeCompare(String(right.id));
   });
@@ -1071,7 +1212,7 @@ function placeCampaignSpecialEntitiesInSlots(rows, entities, slots, levelId, pla
   });
 
   var wormholes = entities.filter(function (entity) {
-    return entity.entityType === "wormhole";
+    return entity.entityType === "wormhole" && !Number.isInteger(entity.row);
   }).sort(function (left, right) {
     return String(left.id).localeCompare(String(right.id));
   });
@@ -1126,7 +1267,7 @@ function placeCampaignSpecialEntitiesInSlots(rows, entities, slots, levelId, pla
   }
 
   var orderedEntities = entities.filter(function (entity) {
-    return entity.entityType !== "swirl" && entity.entityType !== "wormhole";
+    return entity.entityType !== "swirl" && entity.entityType !== "wormhole" && !Number.isInteger(entity.row);
   }).sort(function (entityA, entityB) {
     var rankDelta = getRelaxedEntityRank(entityA) - getRelaxedEntityRank(entityB);
     if (rankDelta !== 0) {
@@ -1417,21 +1558,83 @@ function buildScoreDesignFromTable(tableRow, levelMode, designBeat) {
     countTableSplitters(tableRow.specialCounts.splitters) +
     tableRow.specialCounts.key +
     tableRow.specialCounts.locked;
+  var additional = tableRow.additionalCounts;
+  baseSpecialTotal += additional.blackHole + additional.mine + additional.breeder + additional.bud +
+    additional.spiritCocoon + additional.transparentBall + additional.crystalGun +
+    (additional.windTunnelExit > 0 ? additional.windTunnelExit + 1 : 0);
+  var isRescueMode = CampaignLevelGenerationConfig.isTrappedSpriteRescueLevelId(tableRow.levelId) ||
+    additional.multiRescueTargets > 0;
   return CampaignLevelGenerationConfig.buildCampaignScoreDesign({
     levelId: tableRow.levelId,
     normalBallCount: normalTotal,
     iceCount: tableRow.specialCounts.ice,
     baseSpecialCount: baseSpecialTotal,
     reactiveSpecialCounts: CampaignLevelGenerationConfig.getReactiveSpecialCounts(tableRow.levelId),
-    primaryObjectiveValue: CampaignLevelGenerationConfig.isTrappedSpriteRescueLevelId(tableRow.levelId)
+    primaryObjectiveValue: isRescueMode
       ? normalTotal
       : tableRow.target1.value,
-    secondaryObjectiveValue: CampaignLevelGenerationConfig.isTrappedSpriteRescueLevelId(tableRow.levelId)
+    secondaryObjectiveValue: isRescueMode
       ? 0
       : (tableRow.target2 ? tableRow.target2.value : 0),
     shotLimit: levelMode.playMode === "shot_limited" ? tableRow.shotLimit : undefined,
     timeLimitSeconds: levelMode.playMode === "timed_infinite_shots" ? levelMode.timeLimitSeconds : undefined,
     designBeat: designBeat
+  });
+}
+
+function ensureBreederInitialEmptyNeighbors(rows, entities, levelId, placementVariant) {
+  var occupiedSpecialCells = {};
+  entities.forEach(function (entity) {
+    occupiedSpecialCells[entity.row + ":" + entity.col] = entity;
+  });
+  entities.filter(function (entity) {
+    return entity.entityType === "breeder";
+  }).forEach(function (breeder, breederIndex) {
+    var hasEmptyNeighbor = getHexNeighborCoordinates(breeder.row, breeder.col).some(function (neighbor) {
+      return neighbor.row >= 0 && neighbor.row < rows.length &&
+        neighbor.col >= 0 && neighbor.col < rows[neighbor.row].length &&
+        rows[neighbor.row].charAt(neighbor.col) === "." &&
+        !occupiedSpecialCells[neighbor.row + ":" + neighbor.col];
+    });
+    if (hasEmptyNeighbor) {
+      return;
+    }
+    delete occupiedSpecialCells[breeder.row + ":" + breeder.col];
+    var candidates = [];
+    rows.forEach(function (rowString, row) {
+      rowString.split("").forEach(function (cellCode, col) {
+        var key = row + ":" + col;
+        if (cellCode !== "." || occupiedSpecialCells[key]) {
+          return;
+        }
+        var neighbors = getHexNeighborCoordinates(row, col).filter(function (neighbor) {
+          return neighbor.row >= 0 && neighbor.row < rows.length &&
+            neighbor.col >= 0 && neighbor.col < rows[neighbor.row].length;
+        });
+        var hasOrdinarySupport = neighbors.some(function (neighbor) {
+          return rows[neighbor.row].charAt(neighbor.col) !== ".";
+        });
+        var keepsEmptyNeighbor = neighbors.some(function (neighbor) {
+          return rows[neighbor.row].charAt(neighbor.col) === "." &&
+            !occupiedSpecialCells[neighbor.row + ":" + neighbor.col] &&
+            (neighbor.row !== breeder.row || neighbor.col !== breeder.col);
+        });
+        if (hasOrdinarySupport && keepsEmptyNeighbor) {
+          candidates.push({ row: row, col: col });
+        }
+      });
+    });
+    if (!candidates.length) {
+      throw new Error("Level " + levelId + " cannot reserve an initial empty breeder neighbor.");
+    }
+    candidates.sort(function (left, right) {
+      var leftSalt = (left.row * 17 + left.col * 11 + placementVariant * 5 + breederIndex * 7) % 97;
+      var rightSalt = (right.row * 17 + right.col * 11 + placementVariant * 5 + breederIndex * 7) % 97;
+      return leftSalt - rightSalt || left.row - right.row || left.col - right.col;
+    });
+    breeder.row = candidates[0].row;
+    breeder.col = candidates[0].col;
+    occupiedSpecialCells[breeder.row + ":" + breeder.col] = breeder;
   });
 }
 
@@ -1725,6 +1928,151 @@ function buildWinConditions(levelId, collectTarget, collectColor, splitterCollec
   ];
 }
 
+function buildAdditionalLevelFeatures(rows, specialEntities, tableRow, activeColors) {
+  var specialByCoordinate = {};
+  specialEntities.forEach(function (entity) {
+    specialByCoordinate[entity.row + ":" + entity.col] = true;
+  });
+  var ordinaryCells = [];
+  var emptyCells = [];
+  rows.forEach(function (rowString, row) {
+    rowString.split("").forEach(function (cellCode, col) {
+      var key = row + ":" + col;
+      if (cellCode !== "." && !specialByCoordinate[key]) {
+        ordinaryCells.push({ row: row, col: col });
+      } else if (cellCode === "." && !specialByCoordinate[key]) {
+        emptyCells.push({ row: row, col: col });
+      }
+    });
+  });
+  ordinaryCells.sort(function (left, right) {
+    return right.row - left.row || left.col - right.col;
+  });
+  var counts = tableRow.additionalCounts;
+  var attachmentDefinitions = [
+    { type: "poison", count: counts.poisonAttachment },
+    { type: "ice_crystal", count: counts.iceCrystalAttachment },
+    { type: "bubble_shield", count: counts.bubbleShieldAttachment }
+  ];
+  var cellAttachments = [];
+  var claimedOrdinary = {};
+  attachmentDefinitions.forEach(function (definition) {
+    for (var index = 0; index < definition.count; index += 1) {
+      var target = ordinaryCells.find(function (cell) {
+        return !claimedOrdinary[cell.row + ":" + cell.col];
+      });
+      if (!target) {
+        throw new Error("Level " + tableRow.levelId + " has too few ordinary balls for " + definition.type + " attachments.");
+      }
+      var coordinateKey = target.row + ":" + target.col;
+      claimedOrdinary[coordinateKey] = true;
+      var attachment = {
+        id: definition.type + "_campaign_" + String(index + 1).padStart(2, "0"),
+        type: definition.type,
+        row: target.row,
+        col: target.col
+      };
+      if (definition.type === "poison") {
+        attachment.particleCount = 3;
+      }
+      cellAttachments.push(attachment);
+    }
+  });
+
+  var spiderRows = [];
+  if (counts.spider > 0) {
+    var rowsWithCandidates = {};
+    ordinaryCells.forEach(function (cell) {
+      var key = cell.row + ":" + cell.col;
+      if (claimedOrdinary[key]) {
+        return;
+      }
+      if (!rowsWithCandidates[cell.row]) {
+        rowsWithCandidates[cell.row] = [];
+      }
+      rowsWithCandidates[cell.row].push(cell);
+    });
+    var spiderRow = Object.keys(rowsWithCandidates).map(Number).sort(function (left, right) {
+      return right - left;
+    }).find(function (row) {
+      return rowsWithCandidates[row].length >= counts.spider;
+    });
+    if (!Number.isInteger(spiderRow)) {
+      throw new Error("Level " + tableRow.levelId + " has no row with enough ordinary spider anchors.");
+    }
+    rowsWithCandidates[spiderRow].slice(0, counts.spider).forEach(function (cell, index) {
+      spiderRows.push({
+        id: "spider_campaign_" + String(index + 1).padStart(2, "0"),
+        lockRowId: "spider_row_" + spiderRow,
+        row: cell.row,
+        col: cell.col
+      });
+    });
+  }
+
+  var multiTrappedSpiritRescue;
+  if (counts.multiRescueTargets > 0) {
+    var targets = [];
+    var spiritIds = CampaignLevelGenerationConfig.TRAPPED_SPRITE_SPIRIT_IDS;
+    emptyCells.filter(function (cell) {
+      return cell.row > 0 && getHexNeighborCoordinates(cell.row, cell.col).some(function (neighbor) {
+        return neighbor.row >= 0 && neighbor.row < rows.length &&
+          neighbor.col >= 0 && neighbor.col < rows[neighbor.row].length &&
+          rows[neighbor.row].charAt(neighbor.col) !== "." &&
+          !specialByCoordinate[neighbor.row + ":" + neighbor.col];
+      });
+    }).sort(function (left, right) {
+      return right.row - left.row || left.col - right.col;
+    }).forEach(function (cell) {
+      if (targets.length >= counts.multiRescueTargets) {
+        return;
+      }
+      if (targets.every(function (target) {
+        return target.row !== cell.row || Math.abs(target.col - cell.col) >= 3;
+      })) {
+        targets.push({
+          spiritId: spiritIds[(tableRow.levelId + targets.length) % spiritIds.length],
+          row: cell.row,
+          col: cell.col
+        });
+      }
+    });
+    if (targets.length !== counts.multiRescueTargets) {
+      throw new Error("Level " + tableRow.levelId + " cannot place all multi-rescue targets.");
+    }
+    multiTrappedSpiritRescue = { targets: targets };
+  }
+
+  var colorClouds;
+  if (counts.colorCloud > 0) {
+    colorClouds = [];
+    for (var cloudIndex = 0; cloudIndex < counts.colorCloud; cloudIndex += 1) {
+      colorClouds.push({
+        visible: true,
+        position: { x: cloudIndex % 2 === 0 ? -120 : 120, y: -40 + cloudIndex * 120 },
+        hitDispearTime: 2,
+        startTime: cloudIndex,
+        speed: cloudIndex % 2 === 0 ? 60 : -60,
+        color: cloudIndex % 2 === 0
+          ? activeColors[(tableRow.levelId + cloudIndex) % activeColors.length]
+          : "RAINBOW"
+      });
+    }
+  }
+
+  var initialPowerups;
+  if (counts.rainbowPrism > 0) {
+    initialPowerups = { rainbow_prism_ball: counts.rainbowPrism };
+  }
+  return {
+    cellAttachments: cellAttachments.length ? cellAttachments : undefined,
+    spiderRows: spiderRows.length ? spiderRows : undefined,
+    colorClouds: colorClouds,
+    multiTrappedSpiritRescue: multiTrappedSpiritRescue,
+    initialPowerups: initialPowerups
+  };
+}
+
 
 function makeLevel(levelId, placementVariant) {
   if (!Number.isInteger(placementVariant) || placementVariant < 0) {
@@ -1787,7 +2135,12 @@ function makeLevel(levelId, placementVariant) {
       rows,
       patternName,
       sumColorCounts(tableRow.colorCounts) + specialEntities.length,
-      levelId
+      levelId,
+      specialEntities.filter(function (entity) {
+        return entity.entityType === "key" || entity.entityType === "locked";
+      }).map(function (entity) {
+        return { row: entity.row, col: entity.col };
+      })
     );
     placeReferenceLayoutSpecialEntities(
       rows,
@@ -1810,6 +2163,8 @@ function makeLevel(levelId, placementVariant) {
       referenceShapeSlots !== null
     );
   }
+  ensureBreederInitialEmptyNeighbors(rows, specialEntities, levelId, placementVariant);
+  var additionalFeatures = buildAdditionalLevelFeatures(rows, specialEntities, tableRow, colors);
   var mechanics = getMechanics(levelId).concat(gameplayPlan.teaches).filter(function (mechanic, index, allMechanics) {
     return allMechanics.indexOf(mechanic) === index;
   });
@@ -1926,7 +2281,9 @@ function makeLevel(levelId, placementVariant) {
       },
       winConditions: isTrappedSpriteRescue
         ? [{ type: "clear_all", value: 1 }]
-        : buildWinConditionsFromTable(tableRow),
+        : (gameplayPlan.multiTrappedSpiritRescue
+          ? [{ type: "clear_all", value: 1 }]
+          : buildWinConditionsFromTable(tableRow)),
       bonusObjectives: [
         isTimedLevel || levelId % 3 === 0
           ? { type: "single_turn_drop_count", value: Math.min(18, 6 + Math.floor(progress * 10)) }
@@ -1935,7 +2292,7 @@ function makeLevel(levelId, placementVariant) {
       clearRewardItems: buildRewardItemsFromTable(levelId),
       layout: rows,
       designNotes: isTrappedSpriteRescue
-        ? "Generated trapped sprite rescue level. The center anchor is surrounded by a complete radius-five regular hex; same-color components are capped at five and the anchor ring run is capped at two."
+        ? "Generated trapped sprite rescue level. The center anchor is surrounded by a complete radius-five regular hex; same-color components are capped at eight and the anchor ring run is capped at two."
         : (referenceLayout
         ? "Gameplay is generated from the current LEVEL_CONFIG_TABLE_1_1000.csv rules; only the occupancy silhouette " +
           "is projected from E:\\kxppm\\decrypted_config\\all_levels.json level " +
@@ -1947,6 +2304,11 @@ function makeLevel(levelId, placementVariant) {
         ? firstHundredTuning.difficultyScore
         : Math.min(100, 34 + Math.floor(progress * 66)),
       specialEntities: specialEntities,
+      cellAttachments: additionalFeatures.cellAttachments,
+      spiderRows: additionalFeatures.spiderRows,
+      colorClouds: additionalFeatures.colorClouds,
+      multiTrappedSpiritRescue: additionalFeatures.multiTrappedSpiritRescue,
+      initialPowerups: additionalFeatures.initialPowerups,
       levelType: levelMode.levelType,
       playMode: levelMode.playMode,
       trappedSpriteRescue: trappedSpriteRescueConfig,
@@ -2417,6 +2779,38 @@ function buildRemotePacks() {
   });
 }
 
+function finalizeExistingRemotePacks() {
+  var packEntries = buildRemotePackRanges().map(function (range) {
+    var packPath = path.join(REMOTE_PACK_DIR, getPackFileName(range.from, range.to));
+    if (!fs.existsSync(packPath)) {
+      throw new Error("Missing generated remote pack before finalization: " + packPath);
+    }
+    return buildRemotePackManifestEntry(range.from, range.to, fs.readFileSync(packPath, "utf8"));
+  });
+  validateFirstHundredGeneratedOutputs();
+  removeGeneratedRemoteLocalFiles();
+  writeManifest(packEntries);
+  syncMirror();
+  console.log("Validated and finalized the existing generated level packs.");
+}
+
+function checkScheduledMechanismLevels() {
+  var scheduled = {};
+  SpecialMechanismSchedule.INTRODUCTIONS.forEach(function (definition) {
+    SpecialMechanismSchedule.getScheduledLevelIds(definition).forEach(function (levelId) {
+      scheduled[levelId] = true;
+    });
+  });
+  Object.keys(scheduled).map(Number).sort(function (left, right) {
+    return left - right;
+  }).forEach(function (levelId) {
+    resetGeneratedSpecialPositionState();
+    var config = makeValidatedLevel(levelId);
+    LevelConfigLoader.normalizeLevelConfig(config, "level_" + padLevelId(levelId));
+  });
+  console.log("Validated all scheduled mechanism levels against the runtime loader before full generation.");
+}
+
 function writeManifest(packs) {
   var remoteManifest = {
     schemaVersion: 1,
@@ -2557,7 +2951,12 @@ function validateReferenceLevels101To300Outputs() {
       makeEmptyRows(tableRow.rowCount),
       descriptor.patternName,
       sumColorCounts(tableRow.colorCounts) + level.specialEntities.length,
-      levelId
+      levelId,
+      level.specialEntities.filter(function (entity) {
+        return entity.entityType === "key" || entity.entityType === "locked";
+      }).map(function (entity) {
+        return { row: entity.row, col: entity.col };
+      })
     );
     var expectedRows = makeEmptyRows(tableRow.rowCount).map(function (rowString) {
       return rowString.split("");
@@ -2723,6 +3122,14 @@ function main() {
   }
   if (args.length === 1 && args[0] === "--trapped-rescue") {
     rebuildTrappedSpriteRescueLevels();
+    return;
+  }
+  if (args.length === 1 && args[0] === "--finalize-existing-packs") {
+    finalizeExistingRemotePacks();
+    return;
+  }
+  if (args.length === 1 && args[0] === "--check-scheduled-mechanisms") {
+    checkScheduledMechanismLevels();
     return;
   }
   if (args.length !== 0) {

@@ -79,7 +79,24 @@ function createGameManagerShotScoreMethods(context) {
         };
       }
 
-      throw new Error("Combo attach anchor requires resolution.attachedCell or impact.center.");
+      var rainbowPrismClear = resolution.rainbowPrismClear;
+      if (rainbowPrismClear) {
+        if (
+          !rainbowPrismClear.hitPoint ||
+          typeof rainbowPrismClear.hitPoint.x !== "number" ||
+          !isFinite(rainbowPrismClear.hitPoint.x) ||
+          typeof rainbowPrismClear.hitPoint.y !== "number" ||
+          !isFinite(rainbowPrismClear.hitPoint.y)
+        ) {
+          throw new Error("Combo rainbow prism anchor requires finite hitPoint.");
+        }
+        return {
+          x: rainbowPrismClear.hitPoint.x,
+          y: rainbowPrismClear.hitPoint.y
+        };
+      }
+
+      throw new Error("Combo attach anchor requires resolution attached, impact, blast, or rainbow prism anchor.");
     },
 
     _registerComboElimination: function (resolution) {

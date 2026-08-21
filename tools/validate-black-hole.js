@@ -3,9 +3,20 @@
 var fs = require("fs");
 var path = require("path");
 
+global.cc = {
+  log: function () {},
+  warn: function () {},
+  error: function () {},
+  Class: function (definition) { return definition; },
+  Component: function () {}
+};
+
 var BoardLayout = require("../assets/scripts/config/BoardLayout");
 var LevelConfigLoader = require("../assets/scripts/config/LevelConfigLoader");
 var LevelPackCompactCodec = require("../assets/scripts/config/LevelPackCompactCodec");
+var PropDescriptionConfig = require("../assets/scripts/config/PropDescriptionConfig");
+var GameBootstrapSpecialIntroduceFlowMethods = require("../assets/scripts/bootstrap/GameBootstrapSpecialIntroduceFlowMethods");
+var SpecialAnimationTiming = require("../gameplay-src/config/SpecialAnimationTiming");
 var GameManager = require("../gameplay-src/core/GameManager");
 var BubbleGrid = require("../gameplay-src/systems/BubbleGrid");
 var BoardViewportSystem = require("../gameplay-src/systems/BoardViewportSystem");
@@ -106,6 +117,50 @@ function validateConfigCodecAndBudget() {
   assert(testBlackHoles.length === 1, "Dedicated black hole test level must contain exactly one black hole.");
   assert(testLevel.level.specialEntities.length === 1, "Dedicated black hole test level must isolate the black hole mechanism.");
   assert(testLevel.level.shotLimit === 12 + testBlackHoles.length * 3, "Dedicated black hole test level must reserve three extra shots for each black hole.");
+}
+
+function validateSpecialIntroduction() {
+  var levelConfig = LevelConfigLoader.normalizeLevelConfig(
+    readJson(path.resolve(__dirname, "../assets/map/config/levels/level_black_hole_test.json")),
+    "level_black_hole_test"
+  );
+  assert(
+    PropDescriptionConfig.SPECIAL_KEY_BY_ENTITY_TYPE.black_hole === "black_hole",
+    "Black hole entity type must resolve to its special introduction key."
+  );
+  assert(
+    PropDescriptionConfig.SPECIAL_DEFINITIONS.black_hole &&
+      PropDescriptionConfig.SPECIAL_DEFINITIONS.black_hole.iconPath === "ui/image/preview_balls/black_hole",
+    "Black hole introduction must use the UI-owned black-hole preview image."
+  );
+
+  var grid = createGrid(levelConfig);
+  var introduceHost = {
+    currentLevelConfig: levelConfig,
+    specialIntroduceStore: {
+      hasViewed: function () { return false; },
+      markViewed: function () {}
+    },
+    _specialIntroduceQueue: [],
+    _specialIntroduceQueuedKeys: {},
+    _specialIntroduceCurrentKey: "",
+    _showNextSpecialIntroduceView: function () { return Promise.resolve(false); }
+  };
+  var appended = GameBootstrapSpecialIntroduceFlowMethods._syncSpecialIntroduceForRuntimeSnapshot.call(
+    introduceHost,
+    {
+      state: "running",
+      timedLevel: false,
+      objectives: null,
+      board: { cells: grid.getCells() }
+    }
+  );
+  assert(appended === true, "Runtime black hole must enqueue its special introduction after countdown.");
+  assert(
+    introduceHost._specialIntroduceQueue.length === 1 &&
+      introduceHost._specialIntroduceQueue[0] === "black_hole",
+    "Runtime black hole must enqueue exactly one black-hole introduction."
+  );
 }
 
 function buildCapacityFixture() {
@@ -211,6 +266,87 @@ function validateThreeShotCapacityAndTurnAdvance() {
   assert(grid.getCell(2, 4) === null, "Third projectile must rerun support and drop the disconnected bubble.");
   assert(registeredDrops.length === 1 && registeredDrops[0].row === 2 && registeredDrops[0].col === 4, "Third projectile must register the newly floating bubble exactly once.");
   assert(advancedTurnCount === 3, "Every swallowed projectile must continue the ordinary post-shot turn chain.");
+}
+
+function validateUnsupportedShrinkDisappear() {
+  var levelConfig = buildCapacityFixture();
+  var grid = createGrid(levelConfig);
+  var support = new SupportSystem();
+  support.initialize({});
+  support.configureLevel(levelConfig);
+
+  var removedSupport = grid.removeCells([grid.getCell(0, 4)]);
+  assert(removedSupport.length === 1, "Unsupported black-hole fixture must remove its top support.");
+  var floating = support.findFloatingCells(grid);
+  assert(
+    floating.some(function (cell) { return cell.entityType === "black_hole"; }),
+    "Unsupported black-hole fixture must identify the black hole as floating."
+  );
+  var removedFloating = grid.removeFloatingCells(floating);
+
+  var manager = new GameManager();
+  var registeredPhysicalDrops = [];
+  var chargedFloatingDrops = [];
+  manager.systems.fallingMarbleSystem = {
+    registerDrops: function (cells) {
+      registeredPhysicalDrops = registeredPhysicalDrops.concat(clone(cells));
+      return [];
+    }
+  };
+  manager._collectAssistSpiritSkillCharge = function (cells, sourceType) {
+    assert(sourceType === "floating_drop", "Unsupported black-hole split must preserve floating-drop charge source.");
+    chargedFloatingDrops = chargedFloatingDrops.concat(clone(cells));
+  };
+  manager.lastResolution.floating = clone(removedFloating);
+  manager._registerResolutionDrops(
+    removedFloating,
+    grid,
+    manager.lastResolution,
+    undefined,
+    { skipEliminationPresentationHold: true }
+  );
+
+  var disappearEntries = manager.lastResolution.blackHoleUnsupportedDisappears;
+  assert(disappearEntries.length === 1, "Unsupported black hole must record exactly one shrink-disappear entry.");
+  assert(
+    disappearEntries[0].id === "capacity_black_hole" &&
+      disappearEntries[0].row === 1 &&
+      disappearEntries[0].col === 4 &&
+      disappearEntries[0].duration === SpecialAnimationTiming.blackHole.unsupportedDisappearDuration,
+    "Unsupported black-hole shrink-disappear entry must preserve identity, coordinates and timing."
+  );
+  assert(
+    registeredPhysicalDrops.length === 1 &&
+      registeredPhysicalDrops[0].entityCategory === "normal_ball",
+    "Only the ordinary unsupported descendant may enter FallingMarbleSystem."
+  );
+  assert(
+    registeredPhysicalDrops.every(function (cell) { return cell.entityType !== "black_hole"; }),
+    "Unsupported black hole must never enter FallingMarbleSystem."
+  );
+  assert(
+    chargedFloatingDrops.every(function (cell) { return cell.entityType !== "black_hole"; }),
+    "Unsupported black hole must not produce falling-marble assist charge."
+  );
+
+  var rendererSource = fs.readFileSync(path.resolve(__dirname, "../gameplay-src/render/LevelRendererSceneBlackHoleMethods.js"), "utf8");
+  var runtimeRendererSource = fs.readFileSync(path.resolve(__dirname, "../gameplay-src/render/LevelRendererRuntimeMethods.js"), "utf8");
+  assert(
+    rendererSource.indexOf("_playBlackHoleUnsupportedDisappearAnimations") >= 0 &&
+      rendererSource.indexOf("cc.scaleTo(entry.duration, 0)") >= 0,
+    "Unsupported black hole must animate by shrinking to zero at its board node."
+  );
+  var unsupportedAnimationCallIndex = runtimeRendererSource.indexOf(
+    "this._playBlackHoleUnsupportedDisappearAnimations(runtimeSnapshot);"
+  );
+  var boardRecycleCallIndex = runtimeRendererSource.indexOf(
+    "this._renderBoard(runtimeSnapshot.board);",
+    unsupportedAnimationCallIndex
+  );
+  assert(
+    unsupportedAnimationCallIndex >= 0 && boardRecycleCallIndex > unsupportedAnimationCallIndex,
+    "Unsupported black-hole animation must claim the live board node before board recycling."
+  );
 }
 
 function validateDirectContactTrajectory() {
@@ -324,15 +460,36 @@ function validateRangeUnloadAndRendering() {
 
   var selectorSource = fs.readFileSync(path.resolve(__dirname, "../gameplay-src/render/LevelRendererStateSelectors.js"), "utf8");
   var resourceSource = fs.readFileSync(path.resolve(__dirname, "../gameplay-src/render/LevelRendererResourceConfig.js"), "utf8");
+  var boardVisualSource = fs.readFileSync(path.resolve(__dirname, "../gameplay-src/render/LevelRendererWindTunnelBoardVisuals.js"), "utf8");
+  var sharedVisualSource = fs.readFileSync(path.resolve(__dirname, "../gameplay-src/render/LevelRendererSharedVisualMethods.js"), "utf8");
+  var blackHoleMeta = readJson(path.resolve(__dirname, "../assets/game/image/ball/black_hole.png.meta"));
+  var blackHoleFrameMeta = blackHoleMeta.subMetas.black_hole;
   assert(selectorSource.indexOf('ballLike.entityType === "black_hole"') >= 0 && selectorSource.indexOf('return "BLACK_HOLE";') >= 0, "Black hole render selector must resolve BLACK_HOLE.");
   assert(resourceSource.indexOf('BLACK_HOLE: "game/image/ball/black_hole"') >= 0, "Black hole resource must use black_hole.");
+  assert(resourceSource.indexOf("var BLACK_HOLE_RENDER_SIZE = new cc.Size(93, 73);") >= 0, "Black hole must preserve its original 93x73 render size.");
+  assert(boardVisualSource.indexOf('entity.entityType === "black_hole" ? deps.BLACK_HOLE_RENDER_SIZE') >= 0, "Board rendering must use the dedicated black hole size.");
+  assert(sharedVisualSource.indexOf('spriteCode !== "BLACK_HOLE"') >= 0, "Black hole Sprite must render with trim=false.");
+  assert(
+    blackHoleMeta.width === 93 &&
+      blackHoleMeta.height === 73 &&
+      blackHoleFrameMeta.trimType === "custom" &&
+      blackHoleFrameMeta.trimX === 0 &&
+      blackHoleFrameMeta.trimY === 0 &&
+      blackHoleFrameMeta.width === 93 &&
+      blackHoleFrameMeta.height === 73 &&
+      blackHoleFrameMeta.rawWidth === 93 &&
+      blackHoleFrameMeta.rawHeight === 73,
+    "Black hole SpriteFrame must preserve the complete untrimmed 93x73 canvas."
+  );
   assert(fs.existsSync(path.resolve(__dirname, "../assets/game/image/ball/black_hole.png")) && fs.existsSync(path.resolve(__dirname, "../assets/game/image/ball/black_hole.png.meta")), "Black hole image and meta must exist.");
 }
 
 validateConfigCodecAndBudget();
+validateSpecialIntroduction();
 validateThreeShotCapacityAndTurnAdvance();
+validateUnsupportedShrinkDisappear();
 validateDirectContactTrajectory();
 validateCapacitySurvivesWormholeShift();
 validateRangeUnloadAndRendering();
 
-console.log("[OK] black_hole", "capacity, direct absorption, support rerun, range unload, turn advance, shot budget, codec and rendering validated");
+console.log("[OK] black_hole", "introduction, unsupported shrink-disappear, capacity, direct absorption, support rerun, range unload, turn advance, shot budget, codec and rendering validated");

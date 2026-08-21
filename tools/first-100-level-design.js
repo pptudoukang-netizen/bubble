@@ -652,6 +652,13 @@ function buildSpecialCounts(levelId, targetColor) {
     compatibleCounts.wormhole = reactiveSpecialCounts.wormhole;
     return compatibleCounts;
   }
+  if (counts.key > 0) {
+    counts.locked = CampaignLevelGenerationConfig.getLockChainLockedCount(
+      levelId,
+      resolveRowCount(levelId),
+      counts.key
+    );
+  }
   return counts;
 }
 
@@ -1317,7 +1324,7 @@ function scoreReferenceLayoutCell(cell, rows, descriptor) {
   return occupiedDistance - emptyDistance * 0.72 + cell.row * 0.0001 + cell.col * 0.00001;
 }
 
-function buildShapeSlots(rows, patternName, requiredCount, levelId) {
+function buildShapeSlots(rows, patternName, requiredCount, levelId, requiredSlots) {
   assertReferenceLayoutLevelId(levelId);
   if (!Array.isArray(rows) || rows.length === 0) {
     throw new Error("First-100 reference layout rows are required.");
@@ -1407,6 +1414,64 @@ function buildShapeSlots(rows, patternName, requiredCount, levelId) {
     }
     frontier.sort(compareReferenceScore);
     pushCell(frontier[0]);
+  }
+  if (requiredSlots !== undefined) {
+    if (!Array.isArray(requiredSlots)) {
+      throw new Error("First-100 required shape slots must be an array for level " + levelId + ".");
+    }
+    var requiredMap = {};
+    requiredSlots.forEach(function (cell, index) {
+      if (!cell || !Number.isInteger(cell.row) || !Number.isInteger(cell.col) ||
+          cell.row < 0 || cell.row >= rows.length || cell.col < 0 || cell.col >= rows[cell.row].length) {
+        throw new Error("First-100 required shape slot is invalid at index " + index + " for level " + levelId + ".");
+      }
+      var key = cell.row + ":" + cell.col;
+      if (requiredMap[key]) {
+        throw new Error("First-100 required shape slots contain duplicate " + key + " for level " + levelId + ".");
+      }
+      requiredMap[key] = true;
+      if (!selectedMap[key]) {
+        selectedMap[key] = true;
+        selected.push({ row: cell.row, col: cell.col });
+      }
+    });
+    function canRemoveCell(candidate) {
+      var rowOccupancy = selected.filter(function (cell) {
+        return cell.row === candidate.row && cell !== candidate;
+      }).length;
+      if (candidate.row === 0 || rowOccupancy === 0) {
+        return false;
+      }
+      var remaining = selected.filter(function (cell) { return cell !== candidate; });
+      var visited = {};
+      var queue = [remaining[0]];
+      visited[remaining[0].row + ":" + remaining[0].col] = true;
+      while (queue.length) {
+        var current = queue.shift();
+        remaining.forEach(function (cell) {
+          var key = cell.row + ":" + cell.col;
+          if (!visited[key] && areAdjacent(current, cell)) {
+            visited[key] = true;
+            queue.push(cell);
+          }
+        });
+      }
+      return Object.keys(visited).length === remaining.length;
+    }
+    while (selected.length > requiredCount) {
+      var removable = selected.filter(function (cell) {
+        return !requiredMap[cell.row + ":" + cell.col] && canRemoveCell(cell);
+      });
+      removable.sort(function (left, right) {
+        return compareReferenceScore(right, left);
+      });
+      if (!removable.length) {
+        throw new Error("Unable to preserve required lock-chain rows in first-100 silhouette for level " + levelId + ".");
+      }
+      var removed = removable[0];
+      selected.splice(selected.indexOf(removed), 1);
+      delete selectedMap[removed.row + ":" + removed.col];
+    }
   }
   selected.sort(function (cellA, cellB) {
     if (cellA.row !== cellB.row) {
@@ -1616,11 +1681,27 @@ function placeSpecialEntities(rows, shapeSlots, entities, levelId, placementVari
   var forbiddenSpecialSlots = {};
   var usedWormholeRows = {};
   var placedMomentX = 0;
+  var shapeSlotMap = buildShapeSlotMap(shapeSlots);
+  entities.forEach(function (entity, index) {
+    var hasRow = Number.isInteger(entity.row);
+    var hasCol = Number.isInteger(entity.col);
+    if (hasRow !== hasCol) {
+      throw new Error("Pre-positioned first-100 entity must define both row and col at index " + index + ".");
+    }
+    if (!hasRow) {
+      return;
+    }
+    var key = entity.row + ":" + entity.col;
+    if (!shapeSlotMap[key] || used[key]) {
+      throw new Error("Pre-positioned first-100 entity is outside the silhouette or duplicated at " + key + ".");
+    }
+    used[key] = true;
+  });
   var swirlEntities = entities.filter(function (entity) {
-    return entity.entityType === "swirl";
+    return entity.entityType === "swirl" && !Number.isInteger(entity.row);
   });
   var wormholeEntities = entities.filter(function (entity) {
-    return entity.entityType === "wormhole";
+    return entity.entityType === "wormhole" && !Number.isInteger(entity.row);
   });
   swirlEntities.sort(function (left, right) {
     return String(left.id).localeCompare(String(right.id));
@@ -1657,7 +1738,7 @@ function placeSpecialEntities(rows, shapeSlots, entities, levelId, placementVari
     }
   }
   var orderedEntities = entities.filter(function (entity) {
-    return entity.entityType !== "swirl" && entity.entityType !== "wormhole";
+    return entity.entityType !== "swirl" && entity.entityType !== "wormhole" && !Number.isInteger(entity.row);
   }).sort(function (entityA, entityB) {
     var rankDelta = getFocalEntityRank(entityA) - getFocalEntityRank(entityB);
     if (rankDelta !== 0) {
@@ -1758,7 +1839,12 @@ function buildBoard(options) {
   }
   var spec = buildLevelSpec(levelId);
   var occupiedCount = spec.normalBallCount + spec.specialCount;
-  var shapeSlots = buildShapeSlots(options.rows, spec.patternName, occupiedCount, levelId);
+  var lockChainSlots = options.specialEntities.filter(function (entity) {
+    return entity.entityType === "key" || entity.entityType === "locked";
+  }).map(function (entity) {
+    return { row: entity.row, col: entity.col };
+  });
+  var shapeSlots = buildShapeSlots(options.rows, spec.patternName, occupiedCount, levelId, lockChainSlots);
   if (!Number.isInteger(options.placementVariant) || options.placementVariant < 0) {
     throw new Error("First-100 board placementVariant must be a non-negative integer.");
   }
@@ -2167,7 +2253,12 @@ function validateGeneratedLevel(level) {
       emptyRows,
       spec.patternName,
       spec.normalBallCount + spec.specialCount,
-      level.levelId
+      level.levelId,
+      level.specialEntities.filter(function (entity) {
+        return entity.entityType === "key" || entity.entityType === "locked";
+      }).map(function (entity) {
+        return { row: entity.row, col: entity.col };
+      })
     );
     var expectedMap = {};
     expectedSlots.forEach(function (cell) {
@@ -2179,9 +2270,11 @@ function validateGeneratedLevel(level) {
       throw new Error("Level " + level.levelId + " occupancy does not match pattern " + spec.patternName + ".");
     }
   }
-  var specialDensity = spec.specialCount / (spec.normalBallCount + spec.specialCount);
+  var lockChainCellCount = spec.specialCounts.key + spec.specialCounts.locked;
+  var nonLockSpecialCount = spec.specialCount - lockChainCellCount;
+  var specialDensity = nonLockSpecialCount / (spec.normalBallCount + nonLockSpecialCount);
   if (specialDensity > 0.3) {
-    throw new Error("Level " + level.levelId + " special density exceeds 30%.");
+    throw new Error("Level " + level.levelId + " non-lock-chain special density exceeds 30%.");
   }
   var specialTypes = {};
   level.specialEntities.forEach(function (entity) {

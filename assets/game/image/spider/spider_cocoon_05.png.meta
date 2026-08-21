@@ -1,0 +1,38 @@
+{
+  "ver": "2.3.7",
+  "uuid": "2818e2ff-1944-4b48-a56e-c849a5a38b08",
+  "importer": "texture",
+  "type": "sprite",
+  "wrapMode": "clamp",
+  "filterMode": "bilinear",
+  "premultiplyAlpha": false,
+  "genMipmaps": false,
+  "packable": true,
+  "width": 63,
+  "height": 65,
+  "platformSettings": {},
+  "subMetas": {
+    "spider_cocoon_05": {
+      "ver": "1.0.6",
+      "uuid": "39e3324e-10a3-4f9f-afcb-60df441d89ee",
+      "importer": "sprite-frame",
+      "rawTextureUuid": "2818e2ff-1944-4b48-a56e-c849a5a38b08",
+      "trimType": "auto",
+      "trimThreshold": 1,
+      "rotated": false,
+      "offsetX": 0,
+      "offsetY": 0,
+      "trimX": 6,
+      "trimY": 1,
+      "width": 51,
+      "height": 63,
+      "rawWidth": 63,
+      "rawHeight": 65,
+      "borderTop": 0,
+      "borderBottom": 0,
+      "borderLeft": 0,
+      "borderRight": 0,
+      "subMetas": {}
+    }
+  }
+}

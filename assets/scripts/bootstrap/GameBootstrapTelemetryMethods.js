@@ -32,6 +32,10 @@ var TERMINAL_RESULT_BY_STATE = {
     result: "lose",
     failReason: "danger_line"
   },
+  lost_hazard: {
+    result: "lose",
+    failReason: "mine_exploded"
+  },
   lost_objective: {
     result: "lose",
     failReason: "objective_failed"
@@ -41,6 +45,7 @@ var TELEMETRY_RESULT_STATES = {
   won: true,
   out_of_shots: true,
   lost_danger: true,
+  lost_hazard: true,
   lost_objective: true
 };
 
@@ -182,6 +187,7 @@ module.exports = {
   _beginLevelAttemptTracking: function (levelConfig, snapshot) {
     var levelData = requireLevelData(levelConfig);
     var safeSnapshot = requireSnapshot(snapshot);
+    var runMode = requireRunMode(this);
     this._attemptSequence += 1;
     this._currentAttemptId = [
       "attempt",
@@ -195,7 +201,7 @@ module.exports = {
       attemptId: this._currentAttemptId,
       levelId: levelData.levelId,
       levelCode: levelData.levelCode,
-      runMode: requireRunMode(this),
+      runMode: runMode,
       startedAt: Date.now(),
       startState: requireNonEmptyString(safeSnapshot.state, "Level attempt start state"),
       initialShots: requireNonNegativeInteger(safeSnapshot.remainingShots, "Level attempt initialShots")
@@ -210,6 +216,7 @@ module.exports = {
       "Current attempt indexForLevel"
     );
     saveAttemptStats(this, nextAttemptStats);
+    this._beginCurrentFrontierFailureTracking(levelData.levelId, runMode);
 
     this._trackTelemetry("level_start", {
       result_state: safeSnapshot.state
@@ -254,6 +261,7 @@ module.exports = {
   _recordCurrentAttemptQuit: function (quitReason, snapshot) {
     var activeAttempt = getActiveAttempt(this);
     if (activeAttempt === null) {
+      this._clearCurrentFrontierFailureTracking();
       return;
     }
     var safeQuitReason = requireNonEmptyString(quitReason, "Level attempt quitReason");
@@ -262,16 +270,19 @@ module.exports = {
         this.levelAttemptStats,
         buildResultPayloadFromAttempt(activeAttempt, "quit", null, safeQuitReason)
       ));
+      this._clearCurrentFrontierFailureTracking();
       return;
     }
     var safeSnapshot = snapshot === undefined ? readCurrentSnapshot(this) : requireSnapshot(snapshot);
     if (isTerminalState(safeSnapshot.state)) {
+      this._clearCurrentFrontierFailureTracking();
       return;
     }
     saveAttemptStats(this, requireAttemptStore(this).recordResult(
       this.levelAttemptStats,
       buildResultPayload(this, activeAttempt, safeSnapshot, "quit", null, safeQuitReason)
     ));
+    this._clearCurrentFrontierFailureTracking();
   },
 
   _onRuntimeStateTransition: function (snapshot, previousState, currentState) {
@@ -310,6 +321,7 @@ module.exports = {
       this._trackedResultAttemptId !== this._currentAttemptId
     ) {
       this._trackedResultAttemptId = this._currentAttemptId;
+      this._recordCurrentFrontierAttemptResult(this._currentAttemptLevelId, terminalResult.result);
       this._trackTelemetry("level_result", {
         result_state: currentState
       });

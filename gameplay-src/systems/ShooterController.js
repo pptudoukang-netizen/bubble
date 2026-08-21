@@ -54,6 +54,14 @@ function resolveBallDisplayCode(ball) {
     return "BLAST";
   }
 
+  if (ball.entityType === "crystal_gun") {
+    return "CRYSTAL_GUN";
+  }
+
+  if (ball.entityType === "rainbow_prism_ball") {
+    return "RAINBOW_PRISM_BALL";
+  }
+
   if (ball.entityType === "stone") {
     return "STONE";
   }
@@ -77,6 +85,8 @@ function ShooterController() {
     precise_aim: 0,
     rainbow: 0,
     blast: 0,
+    crystal_gun: 0,
+    rainbow_prism_ball: 0,
     swap: 0,
     barrier_hammer: 0,
     snow_removal: 0
@@ -104,12 +114,22 @@ ShooterController.prototype.configureLevel = function (levelConfig) {
   this.spawnWeights = Object.assign({}, levelConfig.level.spawnWeights || {});
   this.skillInventory.rainbow = 0;
   this.skillInventory.blast = 0;
+  this.skillInventory.crystal_gun = 0;
+  this.skillInventory.rainbow_prism_ball = 0;
   this.skillInventory.precise_aim = 0;
-  var initialPowerups = levelConfig && levelConfig.level && levelConfig.level.initialPowerups
-    ? levelConfig.level.initialPowerups
-    : {};
-  this.skillInventory.swap = Math.max(0, Math.floor(Number(initialPowerups.swap) || 0));
-  this.skillInventory.barrier_hammer = Math.max(0, Math.floor(Number(initialPowerups.barrier_hammer) || 0));
+  var initialPowerups = levelConfig.level.initialPowerups;
+  if (!initialPowerups || typeof initialPowerups !== "object" || Array.isArray(initialPowerups)) {
+    throw new Error("ShooterController requires normalized level.initialPowerups.");
+  }
+  ["swap", "barrier_hammer", "rainbow_prism_ball"].forEach(function (powerupType) {
+    if (!Object.prototype.hasOwnProperty.call(initialPowerups, powerupType) ||
+        !Number.isInteger(initialPowerups[powerupType]) || initialPowerups[powerupType] < 0) {
+      throw new Error("ShooterController requires non-negative integer initialPowerups." + powerupType + ".");
+    }
+  });
+  this.skillInventory.swap = initialPowerups.swap;
+  this.skillInventory.barrier_hammer = initialPowerups.barrier_hammer;
+  this.skillInventory.rainbow_prism_ball = initialPowerups.rainbow_prism_ball;
   this.skillInventory.snow_removal = 0;
   this.currentBall = null;
   this.nextBall = null;
@@ -273,7 +293,12 @@ ShooterController.prototype.advanceQueue = function (remainingShotCountAfterFire
 };
 
 ShooterController.prototype.addSkillInventory = function (entityType, count) {
-  if (entityType !== "rainbow" && entityType !== "blast") {
+  if (
+    entityType !== "rainbow" &&
+    entityType !== "blast" &&
+    entityType !== "crystal_gun" &&
+    entityType !== "rainbow_prism_ball"
+  ) {
     return {
       accepted: false,
       reason: "invalid_skill_type"
@@ -284,7 +309,7 @@ ShooterController.prototype.addSkillInventory = function (entityType, count) {
 };
 
 ShooterController.prototype.addInventory = function (entityType, count) {
-  var supportedTypes = ["precise_aim", "rainbow", "blast", "swap", "barrier_hammer", "snow_removal"];
+  var supportedTypes = ["precise_aim", "rainbow", "blast", "crystal_gun", "rainbow_prism_ball", "swap", "barrier_hammer", "snow_removal"];
   if (supportedTypes.indexOf(entityType) === -1) {
     return {
       accepted: false,
@@ -381,7 +406,12 @@ ShooterController.prototype.setUpcomingRandomNormalBalls = function (count) {
 };
 
 ShooterController.prototype.equipSkillBall = function (entityType) {
-  if (entityType !== "rainbow" && entityType !== "blast") {
+  if (
+    entityType !== "rainbow" &&
+    entityType !== "blast" &&
+    entityType !== "crystal_gun" &&
+    entityType !== "rainbow_prism_ball"
+  ) {
     return {
       accepted: false,
       reason: "invalid_skill_type"

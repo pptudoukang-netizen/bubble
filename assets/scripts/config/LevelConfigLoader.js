@@ -9,10 +9,10 @@ var LevelBoardSupportValidator = require("./LevelBoardSupportValidator");
 var AssistSpiritConfig = require("./AssistSpiritConfig");
 
 var SPECIAL_ENTITY_TYPES = {
-  hazard_ball: ["black_hole"],
-  skill_ball: ["rainbow", "blast"],
+  hazard_ball: ["black_hole", "mine"],
+  skill_ball: ["rainbow", "blast", "crystal_gun"],
   obstacle_ball: ["stone", "ice"],
-  reactive_ball: ["breeder", "molotov", "spirit_cocoon", "splitter", "swirl", "transparent_ball", "vine_spirit", "wormhole"],
+  reactive_ball: ["breeder", "bud", "molotov", "spirit_cocoon", "splitter", "swirl", "transparent_ball", "vine_spirit", "wind_tunnel_entrance", "wind_tunnel_exit", "wormhole"],
   locked_ball: ["locked"],
   key_ball: ["key"]
 };
@@ -32,6 +32,90 @@ var ALLOWED_CLEAR_REWARD_ITEM_IDS = ["coin", "stamina"];
 var TOP_BOARD_ROW_INDEX = 0;
 var WORMHOLE_MOVE_DIRECTIONS = ["left", "right"];
 var POISON_PARTICLE_COUNT = 3;
+var DEFAULT_MINE_INITIAL_LIFE = 6;
+var COLOR_CLOUD_RAINBOW_CODE = "RAINBOW";
+var COLOR_CLOUD_CONFIG_KEYS = ["color", "hitDispearTime", "position", "speed", "startTime", "visible"];
+var SPIDER_ROW_CONFIG_KEYS = ["col", "id", "lockRowId", "row"];
+var INITIAL_POWERUP_TYPES = ["swap", "barrier_hammer", "rainbow_prism_ball"];
+
+function normalizeInitialPowerups(levelConfig, levelKey) {
+  var source = levelConfig.initialPowerups;
+  if (source === undefined) {
+    return {
+      swap: 0,
+      barrier_hammer: 0,
+      rainbow_prism_ball: 0
+    };
+  }
+  if (!source || typeof source !== "object" || Array.isArray(source)) {
+    throw new Error("level.initialPowerups must be an object when configured: " + levelKey);
+  }
+  Object.keys(source).forEach(function (powerupType) {
+    if (INITIAL_POWERUP_TYPES.indexOf(powerupType) === -1) {
+      throw new Error("level.initialPowerups contains unsupported type `" + powerupType + "`: " + levelKey);
+    }
+    if (!Number.isInteger(source[powerupType]) || source[powerupType] < 0) {
+      throw new Error("level.initialPowerups." + powerupType + " must be a non-negative integer: " + levelKey);
+    }
+  });
+  var normalized = {};
+  INITIAL_POWERUP_TYPES.forEach(function (powerupType) {
+    normalized[powerupType] = Object.prototype.hasOwnProperty.call(source, powerupType)
+      ? source[powerupType]
+      : 0;
+  });
+  return normalized;
+}
+
+function normalizeColorClouds(levelConfig, levelKey) {
+  if (levelConfig.colorClouds === undefined) {
+    return [];
+  }
+  if (!Array.isArray(levelConfig.colorClouds)) {
+    throw new Error("level.colorClouds must be an array: " + levelKey);
+  }
+  return levelConfig.colorClouds.map(function (cloud, index) {
+    var fieldName = "level.colorClouds[" + index + "]";
+    if (!cloud || typeof cloud !== "object" || Array.isArray(cloud)) {
+      throw new Error(fieldName + " must be an object: " + levelKey);
+    }
+    var actualKeys = Object.keys(cloud).sort();
+    if (actualKeys.join("|") !== COLOR_CLOUD_CONFIG_KEYS.slice().sort().join("|")) {
+      throw new Error(fieldName + " must contain exactly visible, position, hitDispearTime, startTime, speed and color: " + levelKey);
+    }
+    if (typeof cloud.visible !== "boolean") {
+      throw new Error(fieldName + ".visible must be boolean: " + levelKey);
+    }
+    if (!cloud.position || typeof cloud.position !== "object" || Array.isArray(cloud.position)) {
+      throw new Error(fieldName + ".position must be an object: " + levelKey);
+    }
+    if (Object.keys(cloud.position).sort().join("|") !== "x|y") {
+      throw new Error(fieldName + ".position must contain exactly x and y: " + levelKey);
+    }
+    if (
+      typeof cloud.position.x !== "number" || !isFinite(cloud.position.x) ||
+      typeof cloud.position.y !== "number" || !isFinite(cloud.position.y)
+    ) {
+      throw new Error(fieldName + ".position x/y must be finite numbers: " + levelKey);
+    }
+    if (!Number.isInteger(cloud.hitDispearTime) || cloud.hitDispearTime <= 0) {
+      throw new Error(fieldName + ".hitDispearTime must be a positive integer: " + levelKey);
+    }
+    if (typeof cloud.startTime !== "number" || !isFinite(cloud.startTime) || cloud.startTime < 0) {
+      throw new Error(fieldName + ".startTime must be a non-negative finite number: " + levelKey);
+    }
+    if (typeof cloud.speed !== "number" || !isFinite(cloud.speed) || cloud.speed === 0) {
+      throw new Error(fieldName + ".speed must be a non-zero finite number: " + levelKey);
+    }
+    if (
+      cloud.color !== COLOR_CLOUD_RAINBOW_CODE &&
+      (ALLOWED_COLORS.indexOf(cloud.color) === -1 || levelConfig.colors.indexOf(cloud.color) === -1)
+    ) {
+      throw new Error(fieldName + ".color must be RAINBOW or a color in level.colors: " + levelKey);
+    }
+    return cloud;
+  });
+}
 
 function isWormholeEntity(entity) {
   return !!(
@@ -46,6 +130,14 @@ function isBlackHoleEntity(entity) {
     entity &&
     entity.entityCategory === "hazard_ball" &&
     entity.entityType === "black_hole"
+  );
+}
+
+function isMineEntity(entity) {
+  return !!(
+    entity &&
+    entity.entityCategory === "hazard_ball" &&
+    entity.entityType === "mine"
   );
 }
 var COLLECTION_OBJECTIVE_TYPES = {
@@ -171,8 +263,12 @@ function normalizeCellAttachments(levelConfig, levelKey) {
       throw new Error("level.cellAttachments contains duplicate id `" + id + "`: " + levelKey);
     }
     seenIds[id] = true;
-    if (attachment.type !== "poison") {
-      throw new Error(fieldName + ".type must be `poison`: " + levelKey);
+    if (
+      attachment.type !== "poison" &&
+      attachment.type !== "ice_crystal" &&
+      attachment.type !== "bubble_shield"
+    ) {
+      throw new Error(fieldName + ".type must be `poison`, `ice_crystal`, or `bubble_shield`: " + levelKey);
     }
     if (!Number.isInteger(attachment.row) || attachment.row < 0 || attachment.row >= levelConfig.layout.length) {
       throw new Error(fieldName + ".row is outside level.layout: " + levelKey);
@@ -181,23 +277,119 @@ function normalizeCellAttachments(levelConfig, levelKey) {
     if (!Number.isInteger(attachment.col) || attachment.col < 0 || attachment.col >= row.length) {
       throw new Error(fieldName + ".col is outside level.layout row: " + levelKey);
     }
-    if (row.charAt(attachment.col) === ".") {
-      throw new Error(fieldName + " poison target must be an ordinary ball: " + levelKey);
+    if (
+      Array.isArray(levelConfig.specialEntities) &&
+      levelConfig.specialEntities.some(function (entity) {
+        return entity && entity.row === attachment.row && entity.col === attachment.col;
+      })
+    ) {
+      throw new Error(fieldName + " " + attachment.type + " target must be an ordinary ball: " + levelKey);
     }
-    if (attachment.particleCount !== POISON_PARTICLE_COUNT) {
+    if (row.charAt(attachment.col) === ".") {
+      throw new Error(fieldName + " " + attachment.type + " target must be an ordinary ball: " + levelKey);
+    }
+    if (attachment.type === "poison" && attachment.particleCount !== POISON_PARTICLE_COUNT) {
       throw new Error(fieldName + ".particleCount must equal " + POISON_PARTICLE_COUNT + ": " + levelKey);
+    }
+    if (attachment.type !== "poison" && attachment.particleCount !== undefined) {
+      throw new Error(fieldName + ".particleCount is not allowed for " + attachment.type + ": " + levelKey);
     }
     var coordinateKey = attachment.row + ":" + attachment.col;
     if (seenCoordinates[coordinateKey]) {
       throw new Error("level.cellAttachments contains duplicate target `" + coordinateKey + "`: " + levelKey);
     }
     seenCoordinates[coordinateKey] = true;
+    var normalizedAttachment = {
+      id: id,
+      type: attachment.type,
+      row: attachment.row,
+      col: attachment.col
+    };
+    if (attachment.type === "poison") {
+      normalizedAttachment.particleCount = POISON_PARTICLE_COUNT;
+    }
+    return normalizedAttachment;
+  });
+}
+
+function normalizeSpiderRows(levelConfig, levelKey) {
+  if (levelConfig.spiderRows === undefined) {
+    return undefined;
+  }
+  if (!Array.isArray(levelConfig.spiderRows)) {
+    throw new Error("level.spiderRows must be an array: " + levelKey);
+  }
+  if (!Array.isArray(levelConfig.layout) || !Array.isArray(levelConfig.specialEntities)) {
+    throw new Error("level.spiderRows requires normalized layout and specialEntities: " + levelKey);
+  }
+  if (!Array.isArray(levelConfig.cellAttachments)) {
+    throw new Error("level.spiderRows requires normalized cellAttachments: " + levelKey);
+  }
+
+  var specialCells = {};
+  levelConfig.specialEntities.forEach(function (entity) {
+    specialCells[entity.row + ":" + entity.col] = true;
+  });
+  var attachmentCells = {};
+  levelConfig.cellAttachments.forEach(function (attachment) {
+    attachmentCells[attachment.row + ":" + attachment.col] = true;
+  });
+
+  var seenIds = {};
+  var seenCoordinates = {};
+  var rowLockIds = {};
+  var lockIdRows = {};
+  return levelConfig.spiderRows.map(function (spider, index) {
+    var fieldName = "level.spiderRows[" + index + "]";
+    if (!spider || typeof spider !== "object" || Array.isArray(spider)) {
+      throw new Error(fieldName + " must be an object: " + levelKey);
+    }
+    if (Object.keys(spider).sort().join("|") !== SPIDER_ROW_CONFIG_KEYS.join("|")) {
+      throw new Error(fieldName + " must contain exactly id, lockRowId, row and col: " + levelKey);
+    }
+    var id = typeof spider.id === "string" ? spider.id.trim() : "";
+    if (!id) {
+      throw new Error(fieldName + ".id must be non-empty: " + levelKey);
+    }
+    if (seenIds[id]) {
+      throw new Error("level.spiderRows contains duplicate id `" + id + "`: " + levelKey);
+    }
+    seenIds[id] = true;
+    var lockRowId = typeof spider.lockRowId === "string" ? spider.lockRowId.trim() : "";
+    if (!lockRowId) {
+      throw new Error(fieldName + ".lockRowId must be non-empty: " + levelKey);
+    }
+    if (!Number.isInteger(spider.row) || spider.row < 0 || spider.row >= levelConfig.layout.length) {
+      throw new Error(fieldName + ".row is outside level.layout: " + levelKey);
+    }
+    var rowText = levelConfig.layout[spider.row];
+    if (!Number.isInteger(spider.col) || spider.col < 0 || spider.col >= rowText.length) {
+      throw new Error(fieldName + ".col is outside level.layout row: " + levelKey);
+    }
+    var coordinateKey = spider.row + ":" + spider.col;
+    if (seenCoordinates[coordinateKey]) {
+      throw new Error("level.spiderRows contains duplicate anchor `" + coordinateKey + "`: " + levelKey);
+    }
+    seenCoordinates[coordinateKey] = true;
+    if (rowText.charAt(spider.col) === "." || specialCells[coordinateKey]) {
+      throw new Error(fieldName + " anchor must be an ordinary ball: " + levelKey);
+    }
+    if (attachmentCells[coordinateKey]) {
+      throw new Error(fieldName + " anchor must not contain another cell attachment: " + levelKey);
+    }
+    if (rowLockIds[spider.row] && rowLockIds[spider.row] !== lockRowId) {
+      throw new Error("level.spiderRows row " + spider.row + " must use one lockRowId: " + levelKey);
+    }
+    if (Object.prototype.hasOwnProperty.call(lockIdRows, lockRowId) && lockIdRows[lockRowId] !== spider.row) {
+      throw new Error("level.spiderRows lockRowId `" + lockRowId + "` must not span rows: " + levelKey);
+    }
+    rowLockIds[spider.row] = lockRowId;
+    lockIdRows[lockRowId] = spider.row;
     return {
       id: id,
-      type: "poison",
-      row: attachment.row,
-      col: attachment.col,
-      particleCount: POISON_PARTICLE_COUNT
+      lockRowId: lockRowId,
+      row: spider.row,
+      col: spider.col
     };
   });
 }
@@ -532,6 +724,24 @@ function validateWormholePair(normalizedEntities, levelKey) {
   });
 }
 
+function validateWindTunnelSystem(normalizedEntities, levelKey) {
+  var entrances = normalizedEntities.filter(function (entity) {
+    return entity.entityCategory === "reactive_ball" && entity.entityType === "wind_tunnel_entrance";
+  });
+  var exits = normalizedEntities.filter(function (entity) {
+    return entity.entityCategory === "reactive_ball" && entity.entityType === "wind_tunnel_exit";
+  });
+  if (!entrances.length && !exits.length) {
+    return;
+  }
+  if (entrances.length !== 1) {
+    throw new Error("wind tunnel system requires exactly one entrance: " + levelKey);
+  }
+  if (exits.length < 2) {
+    throw new Error("wind tunnel system requires at least two exits: " + levelKey);
+  }
+}
+
 function validateBreederInitialSpaces(normalizedLayout, normalizedEntities, levelKey) {
   var occupiedCells = {};
   normalizedLayout.forEach(function (rowString, row) {
@@ -584,6 +794,17 @@ function resolveExpectedLevelId(rawConfig, levelKey) {
     levelKey === "level_multi_trapped_spirit_test" ||
     levelKey === "level_transparent_ball_test" ||
     levelKey === "level_breeder_ball_test" ||
+    levelKey === "level_mine_test" ||
+    levelKey === "level_bud_test" ||
+    levelKey === "level_crystal_gun_test" ||
+    levelKey === "level_rainbow_prism_ball_test" ||
+    levelKey === "level_poison_attachment_test" ||
+    levelKey === "level_ice_crystal_attachment_test" ||
+    levelKey === "level_bubble_shield_attachment_test" ||
+    levelKey === "level_lock_chain_test" ||
+    levelKey === "level_spider_test" ||
+    levelKey === "level_wind_tunnel_test" ||
+    levelKey === "level_color_cloud_test" ||
     levelKey === "level_board_occlusion_test"
   ) {
     if (!rawConfig || typeof rawConfig !== "object" || !rawConfig.level) {
@@ -721,6 +942,7 @@ function normalizeSpecialEntities(levelConfig, levelKey) {
     var blastRadius = null;
     var capacity = null;
     var moveDirection = null;
+    var initialLife = null;
     if (category === "obstacle_ball" && entityType === "ice") {
       innerColor = typeof entity.innerColor === "string" ? entity.innerColor.trim() : "";
       if (ALLOWED_INNER_COLORS.indexOf(innerColor) === -1) {
@@ -757,6 +979,14 @@ function normalizeSpecialEntities(levelConfig, levelKey) {
         throw new Error("specialEntities[" + index + "].capacity must be exactly 3 for black_hole: " + levelKey);
       }
     }
+    if (isMineEntity(entity)) {
+      initialLife = entity.initialLife === undefined
+        ? DEFAULT_MINE_INITIAL_LIFE
+        : entity.initialLife;
+      if (!Number.isInteger(initialLife) || initialLife <= 0) {
+        throw new Error("specialEntities[" + index + "].initialLife must be a positive integer for mine: " + levelKey);
+      }
+    }
     if (category === "locked_ball" && entityType === "locked") {
       lockedColor = typeof entity.lockedColor === "string" ? entity.lockedColor.trim() : "";
       if (levelConfig.colors.indexOf(lockedColor) === -1) {
@@ -775,11 +1005,13 @@ function normalizeSpecialEntities(levelConfig, levelKey) {
       lockedColor: lockedColor,
       blastRadius: blastRadius,
       capacity: capacity,
-      moveDirection: moveDirection
+      moveDirection: moveDirection,
+      initialLife: initialLife
     };
   });
   validateSwirlTracks(normalizedLayout, normalizedEntities, levelKey);
   validateWormholePair(normalizedEntities, levelKey);
+  validateWindTunnelSystem(normalizedEntities, levelKey);
   validateBreederInitialSpaces(normalizedLayout, normalizedEntities, levelKey);
   return normalizedEntities;
 }
@@ -879,26 +1111,58 @@ function validateSplitterObjectives(levelConfig, levelKey) {
   }
 }
 
-function validateKeyLockCounts(levelConfig, levelKey) {
+function validateKeyLockRows(levelConfig, levelKey) {
   if (!Array.isArray(levelConfig.specialEntities)) {
     throw new Error("level.specialEntities must be normalized before key-lock validation: " + levelKey);
   }
-  var keyCount = 0;
-  var lockCount = 0;
+  if (!Array.isArray(levelConfig.layout)) {
+    throw new Error("level.layout must be normalized before key-lock validation: " + levelKey);
+  }
+  var rows = {};
   levelConfig.specialEntities.forEach(function (entity) {
     if (!entity) {
       throw new Error("key-lock validation received empty special entity: " + levelKey);
     }
-    if (entity.entityCategory === "key_ball" && entity.entityType === "key") {
-      keyCount += 1;
+    var isKey = entity.entityCategory === "key_ball" && entity.entityType === "key";
+    var isLock = entity.entityCategory === "locked_ball" && entity.entityType === "locked";
+    if (!isKey && !isLock) {
+      return;
     }
-    if (entity.entityCategory === "locked_ball" && entity.entityType === "locked") {
-      lockCount += 1;
+    var rowKey = String(entity.row);
+    if (!rows[rowKey]) {
+      rows[rowKey] = {
+        keys: [],
+        locks: []
+      };
+    }
+    rows[rowKey][isKey ? "keys" : "locks"].push(entity);
+  });
+
+  Object.keys(rows).forEach(function (rowKey) {
+    var row = Number(rowKey);
+    var group = rows[rowKey];
+    if (group.keys.length !== 1) {
+      throw new Error("lock chain row " + row + " must contain exactly one key: " + levelKey);
+    }
+    if (group.locks.length < 1) {
+      throw new Error("lock chain row " + row + " must contain at least one locked ball: " + levelKey);
+    }
+    if (levelConfig.layout[row].replace(/\./g, "").length !== 0) {
+      throw new Error("lock chain row " + row + " must not contain ordinary layout balls: " + levelKey);
+    }
+    var nonChainEntities = levelConfig.specialEntities.filter(function (entity) {
+      if (!entity || entity.row !== row) {
+        return false;
+      }
+      return !(
+        (entity.entityCategory === "key_ball" && entity.entityType === "key") ||
+        (entity.entityCategory === "locked_ball" && entity.entityType === "locked")
+      );
+    });
+    if (nonChainEntities.length > 0) {
+      throw new Error("lock chain row " + row + " may only contain its key and locked balls: " + levelKey);
     }
   });
-  if (keyCount !== lockCount) {
-    throw new Error("key and locked ball count mismatch: keys=" + keyCount + ", locks=" + lockCount + ": " + levelKey);
-  }
 }
 
 function normalizeInitialShotBalls(levelConfig, levelKey) {
@@ -1143,6 +1407,7 @@ function normalizeLevelConfig(rawConfig, levelKey) {
       throw new Error("unsupported color in level.colors `" + colorCode + "`: " + levelKey);
     }
   });
+  config.level.colorClouds = normalizeColorClouds(config.level, levelKey);
 
   config.level.layout = normalizeLayoutRows(config.level.layout, config.level.colors, levelKey);
   config.level.cellAttachments = normalizeCellAttachments(config.level, levelKey);
@@ -1218,6 +1483,7 @@ function normalizeLevelConfig(rawConfig, levelKey) {
   });
   normalizeInitialShotBalls(config.level, levelKey);
   normalizeOpeningShotBalls(config.level, levelKey);
+  config.level.initialPowerups = normalizeInitialPowerups(config.level, levelKey);
 
   if (!config.level.jarRules || typeof config.level.jarRules !== "object" || Array.isArray(config.level.jarRules)) {
     throw new Error("level.jarRules must be an object: " + levelKey);
@@ -1229,6 +1495,7 @@ function normalizeLevelConfig(rawConfig, levelKey) {
   config.level.winConditions = normalizeObjectiveList(config.level.winConditions, WIN_CONDITION_TYPES, "winConditions", config.level, levelKey);
   config.level.bonusObjectives = normalizeObjectiveList(config.level.bonusObjectives, BONUS_OBJECTIVE_TYPES, "bonusObjectives", config.level, levelKey);
   config.level.specialEntities = normalizeSpecialEntities(config.level, levelKey);
+  config.level.spiderRows = normalizeSpiderRows(config.level, levelKey);
   normalizeTrappedSpriteRescue(config.level, levelKey);
   normalizeMultiTrappedSpiritRescue(config.level, levelKey);
   config.level.boardOcclusionPlan = BoardOcclusionConfig.normalizePlan(
@@ -1243,7 +1510,7 @@ function normalizeLevelConfig(rawConfig, levelKey) {
   }
   validateIceSnowballObjectives(config.level, levelKey);
   validateSplitterObjectives(config.level, levelKey);
-  validateKeyLockCounts(config.level, levelKey);
+  validateKeyLockRows(config.level, levelKey);
   normalizeAdPowerupRules(config.level, levelKey);
   if (config.level.levelType === "trapped_sprite_rescue") {
     if (config.level.initialDropSpaceRows !== undefined) {

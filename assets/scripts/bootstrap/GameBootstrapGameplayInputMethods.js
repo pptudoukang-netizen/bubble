@@ -45,6 +45,7 @@ module.exports = {
     this._syncSpecialIntroduceForRuntimeSnapshot(snapshot);
     this._syncGeniusTipsForRuntimeSnapshot(snapshot);
     this._syncSartTipsForRuntimeSnapshot(snapshot);
+    this._syncWindTunnelAmbientSfxForRuntimeSnapshot(snapshot);
     this._playRuntimeAudioEvents(snapshot);
     if (!snapshot.activeProjectile) {
       this._setStatus(this._formatStatus(this.currentLevelConfig, snapshot));
@@ -288,7 +289,14 @@ module.exports = {
     this._lastAimRefreshScreenPoint = null;
     this._lastAimPlanRefreshTime = 0;
     if (snapshot.shotsFired === shotsFiredBeforeFire + 1) {
-      this._playSfx("shot");
+      if (!snapshot.activeProjectile || !snapshot.activeProjectile.ball) {
+        throw new Error("Successful shot audio requires activeProjectile.ball.");
+      }
+      if (typeof this._resolveFiredShotSfxKey !== "function") {
+        throw new Error("Successful shot audio requires _resolveFiredShotSfxKey.");
+      }
+      var firedSfxKey = this._resolveFiredShotSfxKey(snapshot.activeProjectile.ball);
+      this._playSfx(firedSfxKey);
       this._completeNewUserGuide();
       this._completeActiveSkillPowerupFireGuide();
     }

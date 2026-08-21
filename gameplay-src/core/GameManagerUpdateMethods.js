@@ -15,10 +15,14 @@ GameManager.prototype._grantTimeBonusForRemovedCells = function (removedCells, r
   if (!Array.isArray(removedCells)) {
     throw new Error("Time bonus grant requires removed cells array.");
   }
-  if (removalReason !== "elimination" && removalReason !== "floating_drop") {
+  if (
+    removalReason !== "elimination" &&
+    removalReason !== "floating_drop" &&
+    removalReason !== "wind_tunnel_block"
+  ) {
     throw new Error("Time bonus grant removal reason is invalid: " + removalReason);
   }
-  if (!this.isTimedInfiniteShots || this.state !== "running") {
+  if (removalReason === "wind_tunnel_block" || !this.isTimedInfiniteShots || this.state !== "running") {
     return;
   }
   if (!this.grantedTimeBonusCellIds || typeof this.grantedTimeBonusCellIds !== "object" || Array.isArray(this.grantedTimeBonusCellIds)) {
@@ -95,6 +99,17 @@ GameManager.prototype.update = function (dt) {
     safeDt,
     this.state !== "running" || this.timerPaused
   );
+  var colorCloudUpdated = this.systems.colorCloudSystem.update(
+    safeDt,
+    this.state !== "running" || this.timerPaused
+  );
+  var windTunnelUpdated = this.systems.bubbleGrid.updateWindTunnel(
+    safeDt,
+    this.windTunnelRandom,
+    this.state !== "running" || this.timerPaused || !!(
+      this.activeProjectile && this.activeProjectile.windTunnelTransit
+    )
+  );
   if (timedOutOcclusionZoneIds.length) {
     this._pushRuntimeEvent("board_occlusion_cleared", {
       reason: "countdown",
@@ -132,7 +147,11 @@ GameManager.prototype.update = function (dt) {
 
   if (this.activeProjectile) {
     var projectile = this.activeProjectile;
-    var remainingDistance = projectile.speed * dt;
+    if (projectile.windTunnelTransit) {
+      this._updateWindTunnelTransit(safeDt);
+    } else {
+    var totalFrameDistance = projectile.speed * safeDt;
+    var remainingDistance = totalFrameDistance;
     var EPSILON = 0.000001;
     var maxStepCount = 48;
     var stepCount = 0;
@@ -174,15 +193,29 @@ GameManager.prototype.update = function (dt) {
       var nextProgress = projectile.segmentProgress + step;
       var t = nextProgress / segmentLength;
 
+      var projectileStepStart = clone(projectile.position);
+      var frameStartFraction = totalFrameDistance > EPSILON
+        ? (totalFrameDistance - remainingDistance) / totalFrameDistance
+        : 0;
       projectile.position = lerpPoint(fromPoint, toPoint, t);
       projectile.segmentProgress = nextProgress;
       remainingDistance -= step;
+      var frameEndFraction = totalFrameDistance > EPSILON
+        ? (totalFrameDistance - remainingDistance) / totalFrameDistance
+        : 0;
 
       if (projectile.segmentProgress >= segmentLength - EPSILON) {
         projectile.segmentIndex += 1;
         projectile.segmentProgress = 0;
         projectile.position = clone(toPoint);
       }
+      this._resolveColorCloudProjectileSegment(
+        projectile,
+        projectileStepStart,
+        projectile.position,
+        frameStartFraction,
+        frameEndFraction
+      );
       this._destroyReachedTransparentBalls(projectile, this.systems.bubbleGrid);
     }
 
@@ -191,6 +224,7 @@ GameManager.prototype.update = function (dt) {
         segmentIndex: projectile.segmentIndex,
         pathCount: (projectile.pathPoints || []).length
       });
+    }
     }
   }
 
@@ -230,6 +264,7 @@ GameManager.prototype.update = function (dt) {
   var cleanupScoredDrops = fallingStep && Array.isArray(fallingStep.cleanupScored) ? fallingStep.cleanupScored : [];
   var fairyHits = fallingStep && Array.isArray(fallingStep.fairyHits) ? fallingStep.fairyHits : [];
   var poisonFairyHits = fallingStep && Array.isArray(fallingStep.poisonFairyHits) ? fallingStep.poisonFairyHits : [];
+  var icicleFairyHits = fallingStep && Array.isArray(fallingStep.icicleFairyHits) ? fallingStep.icicleFairyHits : [];
   var fairySplits = fallingStep && Array.isArray(fallingStep.splits) ? fallingStep.splits : [];
   var runtimeEvents = this._drainRuntimeEvents();
   var bounceEvents = fallingStep && Array.isArray(fallingStep.bounceEvents) ? fallingStep.bounceEvents : [];
@@ -252,6 +287,9 @@ GameManager.prototype.update = function (dt) {
   }, this);
   poisonFairyHits.forEach(function (hit) {
     this._pushRuntimeEvent("poison_fairy_hit", hit);
+  }, this);
+  icicleFairyHits.forEach(function (hit) {
+    this._pushRuntimeEvent("icicle_fairy_hit", hit);
   }, this);
   fairySplits.forEach(function (split) {
     this._pushRuntimeEvent("fairy_assist_split", split);
@@ -303,12 +341,16 @@ GameManager.prototype.update = function (dt) {
 
   var trappedSpritePostImpactContinued = this._continueAfterTrappedSpriteImpactRotation();
   var boardAdvancedThisFrame = viewportFinished || this._updatePendingBoardAdvance(dt) || this._hasBoardAdvancedThisFrame();
+  var budHatchWasPending = this._hasPendingBudHatches();
+  var budHatchUpdated = boardAdvancedThisFrame || trappedSpritePostImpactContinued
+    ? false
+    : this._updatePendingBudHatches(dt);
   var spiritCocoonWasPending = this._hasPendingSpiritCocoonOpenings();
-  var spiritCocoonUpdated = boardAdvancedThisFrame || trappedSpritePostImpactContinued
+  var spiritCocoonUpdated = boardAdvancedThisFrame || trappedSpritePostImpactContinued || budHatchWasPending || this._hasPendingBudHatches()
     ? false
     : this._updatePendingSpiritCocoonOpenings(dt);
   var swirlRotationWasPending = this._hasPendingSwirlRotation();
-  var swirlRotationCompleted = boardAdvancedThisFrame || trappedSpritePostImpactContinued || spiritCocoonWasPending || this._hasPendingSpiritCocoonOpenings()
+  var swirlRotationCompleted = boardAdvancedThisFrame || trappedSpritePostImpactContinued || budHatchWasPending || this._hasPendingBudHatches() || spiritCocoonWasPending || this._hasPendingSpiritCocoonOpenings()
     ? false
     : this._updatePendingSwirlRotation(dt);
   var wormholeShiftWasPending = this._hasPendingWormholeShift();
@@ -319,7 +361,7 @@ GameManager.prototype.update = function (dt) {
   var vineCastCompleted = boardAdvancedThisFrame || swirlRotationWasPending || this._hasPendingSwirlRotation() || wormholeShiftWasPending || this._hasPendingWormholeShift()
     ? false
     : this._updatePendingVineCast(dt);
-  var blockOtherSpecialUpdates = spiritCocoonWasPending || this._hasPendingSpiritCocoonOpenings() || swirlRotationWasPending || this._hasPendingSwirlRotation() || wormholeShiftWasPending || this._hasPendingWormholeShift() || vineCastWasPending || this._hasPendingVineCast();
+  var blockOtherSpecialUpdates = budHatchWasPending || this._hasPendingBudHatches() || spiritCocoonWasPending || this._hasPendingSpiritCocoonOpenings() || swirlRotationWasPending || this._hasPendingSwirlRotation() || wormholeShiftWasPending || this._hasPendingWormholeShift() || vineCastWasPending || this._hasPendingVineCast();
   var splitterSpawned = boardAdvancedThisFrame || blockOtherSpecialUpdates ? false : this._updatePendingSplitterSpawns(dt);
   var molotovBlastUpdated = boardAdvancedThisFrame || blockOtherSpecialUpdates ? false : this._updatePendingMolotovBlasts(dt);
   runtimeEvents = runtimeEvents.concat(this._drainRuntimeEvents());
@@ -327,6 +369,7 @@ GameManager.prototype.update = function (dt) {
   var hasFallingDrops = this.systems.fallingMarbleSystem.hasActiveDrops();
   var hasPendingSplitterSpawns = this._hasPendingSplitterSpawns();
   var hasPendingMolotovBlasts = this._hasPendingMolotovBlasts();
+  var hasPendingBudHatches = this._hasPendingBudHatches();
   var hasPendingSpiritCocoonOpenings = this._hasPendingSpiritCocoonOpenings();
   var hasPendingSwirlRotation = this._hasPendingSwirlRotation();
   var hasPendingWormholeShift = this._hasPendingWormholeShift();
@@ -349,6 +392,7 @@ GameManager.prototype.update = function (dt) {
     !hasFallingDrops &&
     !hasPendingSplitterSpawns &&
     !hasPendingMolotovBlasts &&
+    !hasPendingBudHatches &&
     !hasPendingSpiritCocoonOpenings &&
     !hasPendingSwirlRotation &&
     !hasPendingWormholeShift &&
@@ -366,6 +410,7 @@ GameManager.prototype.update = function (dt) {
     !hasFallingDrops &&
     !hasPendingSplitterSpawns &&
     !hasPendingMolotovBlasts &&
+    !hasPendingBudHatches &&
     !hasPendingSpiritCocoonOpenings &&
     !hasPendingSwirlRotation &&
     !hasPendingWormholeShift &&
@@ -385,7 +430,7 @@ GameManager.prototype.update = function (dt) {
     }
   }
 
-  if (this.state === "won_pending" && !hasProjectile && !hasFallingDrops && !hasPendingSplitterSpawns && !hasPendingMolotovBlasts && !hasPendingSpiritCocoonOpenings && !hasPendingSwirlRotation && !hasPendingWormholeShift && !hasPendingVineCast && !hasPendingTrappedSpritePostImpact && !this.systems.trappedSpriteRescueSystem.isRotating()) {
+  if (this.state === "won_pending" && !hasProjectile && !hasFallingDrops && !hasPendingSplitterSpawns && !hasPendingMolotovBlasts && !hasPendingBudHatches && !hasPendingSpiritCocoonOpenings && !hasPendingSwirlRotation && !hasPendingWormholeShift && !hasPendingVineCast && !hasPendingTrappedSpritePostImpact && !this.systems.trappedSpriteRescueSystem.isRotating()) {
     this._resolveBoardClearedOutcome();
     runtimeEvents = runtimeEvents.concat(this._drainRuntimeEvents());
     return this.getRuntimeSnapshot(runtimeEvents);
@@ -397,6 +442,7 @@ GameManager.prototype.update = function (dt) {
     !hasFallingDrops &&
     !hasPendingSplitterSpawns &&
     !hasPendingMolotovBlasts &&
+    !hasPendingBudHatches &&
     !hasPendingSpiritCocoonOpenings &&
     !hasPendingSwirlRotation &&
     !hasPendingWormholeShift &&
@@ -423,7 +469,7 @@ GameManager.prototype.update = function (dt) {
     return this.getRuntimeSnapshot(runtimeEvents);
   }
 
-  if (this.state === "out_of_shots_pending" && !hasProjectile && !hasFallingDrops && !hasPendingSplitterSpawns && !hasPendingMolotovBlasts && !hasPendingSpiritCocoonOpenings && !hasPendingSwirlRotation && !hasPendingWormholeShift && !hasPendingVineCast && !this._isBoardAdvanceBusy()) {
+  if (this.state === "out_of_shots_pending" && !hasProjectile && !hasFallingDrops && !hasPendingSplitterSpawns && !hasPendingMolotovBlasts && !hasPendingBudHatches && !hasPendingSpiritCocoonOpenings && !hasPendingSwirlRotation && !hasPendingWormholeShift && !hasPendingVineCast && !this._isBoardAdvanceBusy()) {
     this._showOutOfShotsAddBallPrompt();
     return this.getRuntimeSnapshot(runtimeEvents);
   }
@@ -437,6 +483,7 @@ GameManager.prototype.update = function (dt) {
     !scoreBoostChanged &&
     !splitterSpawned &&
     !molotovBlastUpdated &&
+    !budHatchUpdated &&
     !spiritCocoonUpdated &&
     !swirlRotationCompleted &&
     !wormholeShiftCompleted &&
@@ -446,6 +493,8 @@ GameManager.prototype.update = function (dt) {
     !viewportUpdated &&
     !trappedSpriteRotationUpdated &&
     !boardAdvancedThisFrame &&
+    !colorCloudUpdated &&
+    !windTunnelUpdated &&
     !runtimeEvents.length &&
     !timerChanged
   ) {
@@ -462,6 +511,7 @@ GameManager.prototype.update = function (dt) {
     scoreBoostChanged ||
     splitterSpawned ||
     molotovBlastUpdated ||
+    budHatchUpdated ||
     spiritCocoonUpdated ||
     swirlRotationCompleted ||
     wormholeShiftCompleted ||
@@ -471,6 +521,8 @@ GameManager.prototype.update = function (dt) {
     viewportUpdated ||
     trappedSpriteRotationUpdated ||
     boardAdvancedThisFrame ||
+    colorCloudUpdated ||
+    windTunnelUpdated ||
     runtimeEvents.length ||
     timerChanged
   ) {
@@ -483,6 +535,7 @@ GameManager.prototype.update = function (dt) {
       !scoreBoostChanged &&
       !splitterSpawned &&
       !molotovBlastUpdated &&
+      !budHatchUpdated &&
       !spiritCocoonUpdated &&
       !swirlRotationCompleted &&
       !wormholeShiftCompleted &&
@@ -492,6 +545,8 @@ GameManager.prototype.update = function (dt) {
       !viewportUpdated &&
       !trappedSpriteRotationUpdated &&
       !boardAdvancedThisFrame &&
+      !colorCloudUpdated &&
+      !windTunnelUpdated &&
       runtimeEvents.length === 0 &&
       !timerChanged
     ) {
@@ -505,6 +560,7 @@ GameManager.prototype.update = function (dt) {
       !scoreBoostChanged &&
       !splitterSpawned &&
       !molotovBlastUpdated &&
+      !budHatchUpdated &&
       !spiritCocoonUpdated &&
       !swirlRotationCompleted &&
       !wormholeShiftCompleted &&
@@ -514,6 +570,8 @@ GameManager.prototype.update = function (dt) {
       !viewportUpdated &&
       !trappedSpriteRotationUpdated &&
       !boardAdvancedThisFrame &&
+      !colorCloudUpdated &&
+      !windTunnelUpdated &&
       runtimeEvents.length === 0
     ) {
       refreshScope = "timer";
@@ -524,6 +582,7 @@ GameManager.prototype.update = function (dt) {
       !scoreBoostChanged &&
       !splitterSpawned &&
       !molotovBlastUpdated &&
+      !budHatchUpdated &&
       !spiritCocoonUpdated &&
       !swirlRotationCompleted &&
       !wormholeShiftCompleted &&
@@ -533,6 +592,8 @@ GameManager.prototype.update = function (dt) {
       !viewportUpdated &&
       !trappedSpriteRotationUpdated &&
       !boardAdvancedThisFrame &&
+      !colorCloudUpdated &&
+      !windTunnelUpdated &&
       runtimeEvents.length === 0 &&
       !timerChanged
     ) {

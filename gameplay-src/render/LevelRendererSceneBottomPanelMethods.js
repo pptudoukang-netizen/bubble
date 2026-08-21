@@ -266,6 +266,8 @@ LevelRenderer.prototype._ensureBottomPanelPowerupButtons = function (propsConten
     destroyButtonNode: resolveButtonNode("destroy_btn"),
     snowRemovalButtonNode: resolveButtonNode("snow_removal_btn"),
     bombButtonNode: resolveButtonNode("bomb_btn"),
+    crystalGunButtonNode: resolveButtonNode("crystal_gun_btn"),
+    rainbowPrismBallButtonNode: resolveButtonNode("rainbow_prism_ball_btn"),
     threeLineButtonNode: resolveButtonNode("eliminate_three_line_btn"),
     plusBallButtonNode: resolveButtonNode("plus_ball_btn")
   };
@@ -348,6 +350,8 @@ LevelRenderer.prototype._renderBottomPanel = function (runtimeSnapshot) {
   var destroyButtonNode = powerupButtonNodes.destroyButtonNode;
   var snowRemovalButtonNode = powerupButtonNodes.snowRemovalButtonNode;
   var bombButtonNode = powerupButtonNodes.bombButtonNode;
+  var crystalGunButtonNode = powerupButtonNodes.crystalGunButtonNode;
+  var rainbowPrismBallButtonNode = powerupButtonNodes.rainbowPrismBallButtonNode;
   var threeLineButtonNode = powerupButtonNodes.threeLineButtonNode;
   var plusBallButtonNode = powerupButtonNodes.plusBallButtonNode;
   var directionsButtonNode = requireChildNode(panel, "directions_btn", "BttomPanel");
@@ -358,6 +362,8 @@ LevelRenderer.prototype._renderBottomPanel = function (runtimeSnapshot) {
   this._bindBottomPanelButton(destroyButtonNode, "use_barrier_hammer");
   this._bindBottomPanelButton(snowRemovalButtonNode, "use_snow_removal");
   this._bindBottomPanelButton(bombButtonNode, "use_blast");
+  this._bindBottomPanelButton(crystalGunButtonNode, "use_crystal_gun");
+  this._bindBottomPanelButton(rainbowPrismBallButtonNode, "use_rainbow_prism_ball");
   this._bindBottomPanelButton(threeLineButtonNode, "use_three_line_elimination");
   this._bindBottomPanelButton(plusBallButtonNode, "use_plus_three_balls");
   this._bindBottomPanelButton(directionsButtonNode, "open_prop_description");
@@ -377,6 +383,20 @@ LevelRenderer.prototype._renderBottomPanel = function (runtimeSnapshot) {
   }
   var rainbowCount = Math.max(0, Math.floor(Number(skillInventory.rainbow) || 0));
   var blastCount = Math.max(0, Math.floor(Number(skillInventory.blast) || 0));
+  if (!Object.prototype.hasOwnProperty.call(skillInventory, "crystal_gun")) {
+    throw new Error("Bottom panel requires crystal_gun inventory count.");
+  }
+  var crystalGunCount = Number(skillInventory.crystal_gun);
+  if (!Number.isInteger(crystalGunCount) || crystalGunCount < 0) {
+    throw new Error("Bottom panel crystal_gun count must be a non-negative integer.");
+  }
+  if (!Object.prototype.hasOwnProperty.call(skillInventory, "rainbow_prism_ball")) {
+    throw new Error("Bottom panel requires rainbow_prism_ball inventory count.");
+  }
+  var rainbowPrismBallCount = Number(skillInventory.rainbow_prism_ball);
+  if (!Number.isInteger(rainbowPrismBallCount) || rainbowPrismBallCount < 0) {
+    throw new Error("Bottom panel rainbow_prism_ball count must be a non-negative integer.");
+  }
   var swapCount = Math.max(0, Math.floor(Number(skillInventory.swap) || 0));
   var destroyCount = Math.max(0, Math.floor(Number(skillInventory.barrier_hammer) || 0));
   if (!Object.prototype.hasOwnProperty.call(skillInventory, "snow_removal")) {
@@ -420,6 +440,8 @@ LevelRenderer.prototype._renderBottomPanel = function (runtimeSnapshot) {
   var canUseBarrierHammer = showBarrierHammer && (pendingBarrierHammer || (canUsePowerup && destroyCount > 0));
   var canUseSnowRemoval = showSnowRemoval && canUsePowerup && !pendingBarrierHammer && snowRemovalCount > 0;
   var canUseBlast = canUsePowerup && !pendingBarrierHammer && blastCount > 0;
+  var canUseCrystalGun = canUsePowerup && !pendingBarrierHammer && crystalGunCount > 0;
+  var canUseRainbowPrismBall = canUsePowerup && !pendingBarrierHammer && rainbowPrismBallCount > 0;
   var canUseThreeLine = canUsePowerup && !pendingBarrierHammer && threeLineCount > 0;
   var canUsePlusBall = canUsePowerup && !pendingBarrierHammer && !runtimeSnapshot.infiniteShots && plusBallCount > 0;
 
@@ -437,6 +459,22 @@ LevelRenderer.prototype._renderBottomPanel = function (runtimeSnapshot) {
     snowRemovalButtonNode.active = false;
   }
   this._setBottomPanelInventoryPresentation(bombButtonNode, blastCount, "recover_inventory:blast");
+  crystalGunButtonNode.active = crystalGunCount > 0;
+  if (crystalGunButtonNode.active) {
+    var crystalGunNumBgNode = requireChildNode(crystalGunButtonNode, "num_bg", "crystal_gun_btn");
+    var crystalGunVideoNode = requireChildNode(crystalGunButtonNode, "vido_btn", "crystal_gun_btn");
+    crystalGunNumBgNode.active = true;
+    crystalGunVideoNode.active = false;
+    this._setBottomPanelCount(crystalGunButtonNode, crystalGunCount);
+  }
+  rainbowPrismBallButtonNode.active = rainbowPrismBallCount > 0;
+  if (rainbowPrismBallButtonNode.active) {
+    var rainbowPrismNumBgNode = requireChildNode(rainbowPrismBallButtonNode, "num_bg", "rainbow_prism_ball_btn");
+    var rainbowPrismVideoNode = requireChildNode(rainbowPrismBallButtonNode, "vido_btn", "rainbow_prism_ball_btn");
+    rainbowPrismNumBgNode.active = true;
+    rainbowPrismVideoNode.active = false;
+    this._setBottomPanelCount(rainbowPrismBallButtonNode, rainbowPrismBallCount);
+  }
   if (adRunPowerupAllowed.three_line_elimination === true) {
     this._setBottomPanelInventoryPresentation(threeLineButtonNode, threeLineCount, "recover_ad_powerup:three_line_elimination");
   } else if (threeLineButtonNode) {
@@ -467,6 +505,12 @@ LevelRenderer.prototype._renderBottomPanel = function (runtimeSnapshot) {
     });
   }
   this._setBottomPanelButtonEnabled(bombButtonNode, blastCount > 0 ? canUseBlast : !pendingRainbowColorSelection, {
+    dimWhenDisabled: false
+  });
+  this._setBottomPanelButtonEnabled(crystalGunButtonNode, canUseCrystalGun, {
+    dimWhenDisabled: false
+  });
+  this._setBottomPanelButtonEnabled(rainbowPrismBallButtonNode, canUseRainbowPrismBall, {
     dimWhenDisabled: false
   });
   this._setBottomPanelButtonEnabled(threeLineButtonNode, threeLineCount > 0 ? canUseThreeLine : !pendingRainbowColorSelection, {

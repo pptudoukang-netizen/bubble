@@ -110,13 +110,13 @@ function validateWarmupSourceContracts() {
   requireSourceText(resourceSource, "tasks.push(this._preloadTimeBonusBitmapFont())", "Time bonus font warmup");
   requireSourceText(resourceSource, "if (hasWormhole) {", "Wormhole shader warmup gate");
   requireSourceText(resourceSource, "tasks.push(this.wormholeShaderRenderer.preload())", "Wormhole shader warmup");
-  assert.strictEqual(initialWarmupBlock.indexOf("_preloadFairyPrefabs"), -1, "Initial render must not wait for fairy prefabs.");
+  assert.strictEqual(initialWarmupBlock.indexOf("_preloadFairySkeletonData"), -1, "Initial render must not wait for fairy Spine data.");
   assert.strictEqual(initialWarmupBlock.indexOf("_preloadExplodeAnimationClip"), -1, "Initial render must not wait for explode animation.");
   assert.strictEqual(initialWarmupBlock.indexOf("_preloadFireworksPrefab"), -1, "Initial render must not wait for fireworks prefab.");
   assert.strictEqual(initialWarmupBlock.indexOf("bubbleShatterRenderer.preload"), -1, "Initial render must not wait for bubble shatter shader.");
 
   [
-    "this._preloadFairyPrefabs()",
+    "this._preloadFairySkeletonData()",
     "this._preloadExplodeAnimationClip()",
     "this._preloadFireworksPrefab()",
     "this.prefabFactory.preload(this._collectInteractionPrefabPaths())",
@@ -196,6 +196,22 @@ function validateCountdownOverlap() {
   var warmupCalls = 0;
   var settled = false;
   var host = {
+    _windTunnelAmbientRequested: false,
+    gameManager: {
+      getRuntimeSnapshot: function () {
+        return {
+          board: {
+            specialEntities: []
+          }
+        };
+      }
+    },
+    audioManager: {
+      stopExclusiveSfx: function (channelName) {
+        assert.strictEqual(channelName, "windTunnelAmbient", "Entry reset must target the wind tunnel ambient channel.");
+        return false;
+      }
+    },
     levelRenderer: {
       playGameEntryCountdown: function () {
         countdownCalls += 1;
@@ -204,11 +220,20 @@ function validateCountdownOverlap() {
       warmupGameplayInteractionAssets: function () {
         warmupCalls += 1;
         return warmupDeferred.promise;
+      },
+      hasPendingSpiderEntrance: function () {
+        return false;
       }
     },
     _playSfx: function (soundId) {
       assert.strictEqual(soundId, "gameEntryCountdown", "Entry countdown must keep its existing SFX contract.");
     }
+  };
+  host._stopWindTunnelAmbientSfx = function () {
+    return GameBootstrapAudioMethods._stopWindTunnelAmbientSfx.call(host);
+  };
+  host._startWindTunnelAmbientSfx = function (runtimeSnapshot) {
+    return GameBootstrapAudioMethods._startWindTunnelAmbientSfx.call(host, runtimeSnapshot);
   };
 
   var readinessPromise = GameBootstrapAudioMethods._runGameEntryCountdown.call(host).then(function () {

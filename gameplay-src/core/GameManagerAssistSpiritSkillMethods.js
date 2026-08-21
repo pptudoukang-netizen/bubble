@@ -763,6 +763,7 @@ function createGameManagerAssistSpiritSkillMethods(deps) {
         }, this);
       } else if (skillId === "lightning_chain") {
         var lightningCells = this._unloadBlackHolesHitByRange(targetCells, grid, resolution, "lightning_chain");
+        lightningCells = this._resolveBubbleShieldsHitBySpecial(lightningCells, grid, resolution, "lightning_chain");
         var removedLightning = grid.removeCells(lightningCells);
         if (removedLightning.length !== lightningCells.length) {
           throw new Error("Lightning chain failed to remove every authoritative target.");
@@ -776,6 +777,7 @@ function createGameManagerAssistSpiritSkillMethods(deps) {
         resolution.collected = removedLightning.concat(resolution.floating);
       } else if (skillId === "tornado") {
         var tornadoCells = this._unloadBlackHolesHitByRange(targetCells, grid, resolution, "tornado");
+        tornadoCells = this._resolveBubbleShieldsHitBySpecial(tornadoCells, grid, resolution, "tornado");
         var removedTornado = grid.removeCells(tornadoCells);
         if (removedTornado.length !== tornadoCells.length) {
           throw new Error("Tornado failed to detach every authoritative target.");

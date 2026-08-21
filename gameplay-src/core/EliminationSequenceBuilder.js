@@ -36,6 +36,7 @@ function isShatterEligibleCell(cell) {
     cell.entityCategory === "skill_ball" ||
     cell.entityCategory === "obstacle_ball" ||
     cell.entityCategory === "reactive_ball" ||
+    cell.entityCategory === "hazard_ball" ||
     cell.entityCategory === "locked_ball" ||
     cell.entityCategory === "key_ball"
   ) {
@@ -223,7 +224,69 @@ function buildEliminationSequence(attachedCell, matchedCells, grid, scorePerBall
   };
 }
 
+function buildBottomUpRowEliminationSequence(orderedCells, grid) {
+  if (!Array.isArray(orderedCells) || !orderedCells.length) {
+    throw new Error("Bottom-up row elimination sequence requires ordered cells.");
+  }
+  if (!grid || typeof grid.getCellPosition !== "function") {
+    throw new Error("Bottom-up row elimination sequence requires grid with getCellPosition.");
+  }
+
+  var previousRow = null;
+  var previousCol = null;
+  var rowWaveIndex = -1;
+  return orderedCells.map(function (cell, index) {
+    if (!cell || (typeof cell.id !== "string" && typeof cell.id !== "number")) {
+      throw new Error("Bottom-up row elimination cell requires id at index " + index + ".");
+    }
+    if (!Number.isInteger(cell.row) || !Number.isInteger(cell.col)) {
+      throw new Error("Bottom-up row elimination cell requires integer coordinates: " + cell.id);
+    }
+    if (cell.entityCategory !== "normal_ball") {
+      throw new Error("Bottom-up row elimination only supports ordinary balls: " + cell.id);
+    }
+    if (previousRow !== null) {
+      if (cell.row > previousRow) {
+        throw new Error("Bottom-up row elimination cells must be ordered from bottom row to top row.");
+      }
+      if (cell.row === previousRow && cell.col <= previousCol) {
+        throw new Error("Bottom-up row elimination cells in the same row must be ordered by ascending column.");
+      }
+    }
+    if (cell.row !== previousRow) {
+      rowWaveIndex += 1;
+      previousRow = cell.row;
+      previousCol = null;
+    }
+    previousCol = cell.col;
+
+    var worldPosition = grid.getCellPosition(cell.row, cell.col);
+    if (
+      !worldPosition ||
+      typeof worldPosition.x !== "number" ||
+      !isFinite(worldPosition.x) ||
+      typeof worldPosition.y !== "number" ||
+      !isFinite(worldPosition.y)
+    ) {
+      throw new Error("Bottom-up row elimination cell requires finite world position: " + cell.id);
+    }
+    return {
+      cellId: cell.id,
+      row: cell.row,
+      col: cell.col,
+      worldPosition: {
+        x: worldPosition.x,
+        y: worldPosition.y
+      },
+      removeType: "rainbow_prism_ball",
+      points: 0,
+      delayMs: rowWaveIndex * ELIMINATION_INTERVAL_MS
+    };
+  });
+}
+
 module.exports = {
+  buildBottomUpRowEliminationSequence: buildBottomUpRowEliminationSequence,
   buildEliminationSequence: buildEliminationSequence,
   hexDistance: hexDistance,
   resolveEliminationPresentationDurationSec: resolveEliminationPresentationDurationSec,

@@ -31,11 +31,12 @@ var ALLOWED_BONUS_TYPES = [
   "clear_with_shots_remaining",
   "single_turn_drop_count"
 ];
-var ALLOWED_ENTITY_CATEGORIES = ["skill_ball", "obstacle_ball", "reactive_ball", "locked_ball", "key_ball"];
+var ALLOWED_ENTITY_CATEGORIES = ["hazard_ball", "skill_ball", "obstacle_ball", "reactive_ball", "locked_ball", "key_ball"];
 var ALLOWED_ENTITY_TYPES = {
-  skill_ball: ["rainbow", "blast"],
+  hazard_ball: ["black_hole", "mine"],
+  skill_ball: ["rainbow", "blast", "crystal_gun"],
   obstacle_ball: ["stone", "ice"],
-  reactive_ball: ["breeder", "molotov", "splitter", "swirl", "transparent_ball", "vine_spirit", "wormhole"],
+  reactive_ball: ["breeder", "bud", "molotov", "spirit_cocoon", "splitter", "swirl", "transparent_ball", "vine_spirit", "wind_tunnel_entrance", "wind_tunnel_exit", "wormhole"],
   locked_ball: ["locked"],
   key_ball: ["key"]
 };
@@ -48,6 +49,55 @@ var MAX_SHOT_LIMIT = 54;
 var CLEAR_REWARD_START_LEVEL_ID = 1;
 var TOP_BOARD_ROW_INDEX = 0;
 var WORMHOLE_MOVE_DIRECTIONS = ["left", "right"];
+var COLOR_CLOUD_RAINBOW_CODE = "RAINBOW";
+var COLOR_CLOUD_KEYS = ["color", "hitDispearTime", "position", "speed", "startTime", "visible"];
+
+function validateColorClouds(level, issues) {
+  if (level.colorClouds === undefined) {
+    return;
+  }
+  if (!Array.isArray(level.colorClouds)) {
+    issues.push("colorClouds must be array");
+    return;
+  }
+  level.colorClouds.forEach(function (cloud, index) {
+    var prefix = "colorClouds[" + index + "]";
+    if (!cloud || typeof cloud !== "object" || Array.isArray(cloud)) {
+      issues.push(prefix + " must be object");
+      return;
+    }
+    if (Object.keys(cloud).sort().join("|") !== COLOR_CLOUD_KEYS.slice().sort().join("|")) {
+      issues.push(prefix + " must contain exactly visible, position, hitDispearTime, startTime, speed and color");
+      return;
+    }
+    if (typeof cloud.visible !== "boolean") {
+      issues.push(prefix + ".visible must be boolean");
+    }
+    if (
+      !cloud.position || typeof cloud.position !== "object" || Array.isArray(cloud.position) ||
+      Object.keys(cloud.position).sort().join("|") !== "x|y" ||
+      typeof cloud.position.x !== "number" || !isFinite(cloud.position.x) ||
+      typeof cloud.position.y !== "number" || !isFinite(cloud.position.y)
+    ) {
+      issues.push(prefix + ".position must contain exactly finite x and y");
+    }
+    if (!Number.isInteger(cloud.hitDispearTime) || cloud.hitDispearTime <= 0) {
+      issues.push(prefix + ".hitDispearTime must be a positive integer");
+    }
+    if (typeof cloud.startTime !== "number" || !isFinite(cloud.startTime) || cloud.startTime < 0) {
+      issues.push(prefix + ".startTime must be a non-negative finite number");
+    }
+    if (typeof cloud.speed !== "number" || !isFinite(cloud.speed) || cloud.speed === 0) {
+      issues.push(prefix + ".speed must be a non-zero finite number");
+    }
+    if (
+      cloud.color !== COLOR_CLOUD_RAINBOW_CODE &&
+      (ALLOWED_COLORS.indexOf(cloud.color) === -1 || !Array.isArray(level.colors) || level.colors.indexOf(cloud.color) === -1)
+    ) {
+      issues.push(prefix + ".color must be RAINBOW or a color in level.colors");
+    }
+  });
+}
 
 function isWormholeEntity(entity) {
   return !!(
@@ -358,6 +408,83 @@ function validateSpecialEntities(level, normalizedLayoutRows, issues) {
   });
 }
 
+function validateSpiderRows(level, normalizedLayoutRows, issues) {
+  if (level.spiderRows === undefined) {
+    return;
+  }
+  if (!Array.isArray(level.spiderRows)) {
+    issues.push("spiderRows must be array");
+    return;
+  }
+  var specialCells = {};
+  (Array.isArray(level.specialEntities) ? level.specialEntities : []).forEach(function (entity) {
+    if (entity && Number.isInteger(entity.row) && Number.isInteger(entity.col)) {
+      specialCells[entity.row + ":" + entity.col] = true;
+    }
+  });
+  var attachmentCells = {};
+  (Array.isArray(level.cellAttachments) ? level.cellAttachments : []).forEach(function (attachment) {
+    if (attachment && Number.isInteger(attachment.row) && Number.isInteger(attachment.col)) {
+      attachmentCells[attachment.row + ":" + attachment.col] = true;
+    }
+  });
+  var ids = {};
+  var coordinates = {};
+  var rowLockIds = {};
+  var lockIdRows = {};
+  level.spiderRows.forEach(function (spider, index) {
+    if (!spider || typeof spider !== "object" || Array.isArray(spider)) {
+      issues.push("spiderRows[" + index + "] must be object");
+      return;
+    }
+    if (Object.keys(spider).sort().join("|") !== "col|id|lockRowId|row") {
+      issues.push("spiderRows[" + index + "] must contain exactly id, lockRowId, row and col");
+    }
+    if (typeof spider.id !== "string" || !spider.id.trim()) {
+      issues.push("spiderRows[" + index + "].id must be non-empty string");
+    } else if (ids[spider.id]) {
+      issues.push("spiderRows[" + index + "] duplicate id: " + spider.id);
+    } else {
+      ids[spider.id] = true;
+    }
+    if (typeof spider.lockRowId !== "string" || !spider.lockRowId.trim()) {
+      issues.push("spiderRows[" + index + "].lockRowId must be non-empty string");
+    }
+    if (!Number.isInteger(spider.row) || !Number.isInteger(spider.col)) {
+      issues.push("spiderRows[" + index + "] row/col must be integers");
+      return;
+    }
+    if (spider.row < 0 || spider.row >= normalizedLayoutRows.length) {
+      issues.push("spiderRows[" + index + "] row out of range: " + spider.row);
+      return;
+    }
+    var rowText = normalizedLayoutRows[spider.row];
+    if (spider.col < 0 || spider.col >= rowText.length) {
+      issues.push("spiderRows[" + index + "] col out of range: " + spider.col);
+      return;
+    }
+    var coordinateKey = spider.row + ":" + spider.col;
+    if (coordinates[coordinateKey]) {
+      issues.push("spiderRows[" + index + "] duplicate anchor: " + coordinateKey);
+    }
+    coordinates[coordinateKey] = true;
+    if (rowText.charAt(spider.col) === "." || specialCells[coordinateKey]) {
+      issues.push("spiderRows[" + index + "] anchor must be an ordinary ball: " + coordinateKey);
+    }
+    if (attachmentCells[coordinateKey]) {
+      issues.push("spiderRows[" + index + "] anchor must not contain another attachment: " + coordinateKey);
+    }
+    if (rowLockIds[String(spider.row)] && rowLockIds[String(spider.row)] !== spider.lockRowId) {
+      issues.push("spiderRows row " + spider.row + " must use one lockRowId");
+    }
+    if (Object.prototype.hasOwnProperty.call(lockIdRows, spider.lockRowId) && lockIdRows[spider.lockRowId] !== spider.row) {
+      issues.push("spiderRows lockRowId must not span rows: " + spider.lockRowId);
+    }
+    rowLockIds[String(spider.row)] = spider.lockRowId;
+    lockIdRows[spider.lockRowId] = spider.row;
+  });
+}
+
 function validateClearRewardItems(level, expectedLevelId, issues) {
   var rewardItems = level.clearRewardItems;
   if (expectedLevelId < CLEAR_REWARD_START_LEVEL_ID) {
@@ -446,23 +573,45 @@ function validateSplitterObjectives(level, issues) {
   }
 }
 
-function validateKeyLockCounts(level, issues) {
-  var keyCount = 0;
-  var lockCount = 0;
+function validateKeyLockRows(level, issues) {
+  var rows = {};
   (Array.isArray(level.specialEntities) ? level.specialEntities : []).forEach(function (entity) {
     if (!entity) {
       return;
     }
-    if (entity.entityCategory === "key_ball" && entity.entityType === "key") {
-      keyCount += 1;
+    var isKey = entity.entityCategory === "key_ball" && entity.entityType === "key";
+    var isLock = entity.entityCategory === "locked_ball" && entity.entityType === "locked";
+    if (!isKey && !isLock) {
+      return;
     }
-    if (entity.entityCategory === "locked_ball" && entity.entityType === "locked") {
-      lockCount += 1;
+    var rowKey = String(entity.row);
+    if (!rows[rowKey]) {
+      rows[rowKey] = { keys: [], locks: [] };
+    }
+    rows[rowKey][isKey ? "keys" : "locks"].push(entity);
+  });
+  Object.keys(rows).forEach(function (rowKey) {
+    var row = Number(rowKey);
+    var group = rows[rowKey];
+    if (group.keys.length !== 1) {
+      issues.push("lock chain row " + row + " must contain exactly one key");
+    }
+    if (group.locks.length < 1) {
+      issues.push("lock chain row " + row + " must contain at least one locked ball");
+    }
+    if (Array.isArray(level.layout) && typeof level.layout[row] === "string" && level.layout[row].replace(/\./g, "").length !== 0) {
+      issues.push("lock chain row " + row + " must not contain ordinary layout balls");
+    }
+    var nonChainCount = (Array.isArray(level.specialEntities) ? level.specialEntities : []).filter(function (entity) {
+      return entity && entity.row === row && !(
+        (entity.entityCategory === "key_ball" && entity.entityType === "key") ||
+        (entity.entityCategory === "locked_ball" && entity.entityType === "locked")
+      );
+    }).length;
+    if (nonChainCount > 0) {
+      issues.push("lock chain row " + row + " may only contain its key and locked balls");
     }
   });
-  if (keyCount !== lockCount) {
-    issues.push("key and locked ball count mismatch: keys=" + keyCount + ", locks=" + lockCount);
-  }
 }
 
 function validateLevelMode(level, issues) {
@@ -1073,6 +1222,7 @@ function validateLevelData(data, expectedLevelId) {
       }
     }
   }
+  validateColorClouds(level, issues);
 
   if (!isPositiveInteger(level.colorCount) || level.colorCount !== level.colors.length) {
     issues.push("colorCount must equal level.colors.length");
@@ -1207,6 +1357,7 @@ function validateLevelData(data, expectedLevelId) {
     }
 
     validateSpecialEntities(level, normalizedLayoutRows, issues);
+    validateSpiderRows(level, normalizedLayoutRows, issues);
     validateTimeBonusBalls(level, normalizedLayoutRows, expectedLevelId, issues);
     validateCampaignMechanicPlan(level, normalizedLayoutRows, expectedLevelId, issues);
     try {
@@ -1312,7 +1463,7 @@ function validateLevelData(data, expectedLevelId) {
     }
   }
   validateSplitterObjectives(level, issues);
-  validateKeyLockCounts(level, issues);
+  validateKeyLockRows(level, issues);
   validateInitialShotBalls(level, issues);
   validateOpeningShotBalls(level, issues);
   validateIceSnowballSupply(level, issues);

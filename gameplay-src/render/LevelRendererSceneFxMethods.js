@@ -6,6 +6,8 @@ var attachLevelRendererSceneBoardTransformFxMethods = require("./LevelRendererSc
 var attachLevelRendererSceneExplosionIceFxMethods = require("./LevelRendererSceneExplosionIceFxMethods");
 var attachLevelRendererSceneScreenFxMethods = require("./LevelRendererSceneScreenFxMethods");
 var attachLevelRendererSceneSpiritCocoonFxMethods = require("./LevelRendererSceneSpiritCocoonFxMethods");
+var attachLevelRendererSceneBudFxMethods = require("./LevelRendererSceneBudFxMethods");
+var attachLevelRendererSceneSpiderFxMethods = require("./LevelRendererSceneSpiderFxMethods");
 
 function attachLevelRendererSceneFxMethods(LevelRenderer, deps) {
   var BoardLayout = deps.BoardLayout;
@@ -452,10 +454,14 @@ function attachLevelRendererSceneFxMethods(LevelRenderer, deps) {
     var candidates = unlockedCells.filter(function (cell) {
       return !!(cell && cell.__sourceKeyId === keyCell.id);
     });
-    if (candidates.length !== 1) {
-      throw new Error("Key unlock animation requires exactly one unlocked target for key: " + keyCell.id);
+    if (candidates.length < 1) {
+      throw new Error("Key unlock animation requires at least one unlocked target for key: " + keyCell.id);
     }
-    return candidates;
+    return candidates.sort(function (left, right) {
+      var leftDistance = Math.abs(left.col - keyCell.col);
+      var rightDistance = Math.abs(right.col - keyCell.col);
+      return leftDistance - rightDistance || left.col - right.col || String(left.id).localeCompare(String(right.id));
+    });
   }
 
   function createKeyUnlockAnimationKey(resolution) {
@@ -601,6 +607,7 @@ function attachLevelRendererSceneFxMethods(LevelRenderer, deps) {
     attachLevelRendererSceneKeySplitterFxMethods: attachLevelRendererSceneKeySplitterFxMethods,
     attachLevelRendererSceneScreenFxMethods: attachLevelRendererSceneScreenFxMethods,
     attachLevelRendererSceneSpiritCocoonFxMethods: attachLevelRendererSceneSpiritCocoonFxMethods,
+    attachLevelRendererSceneBudFxMethods: attachLevelRendererSceneBudFxMethods,
     createKeyUnlockAnimationKey: createKeyUnlockAnimationKey,
     createBreederSpawnEntryKey: createBreederSpawnEntryKey,
     createSplitterSpawnEntryKey: createSplitterSpawnEntryKey,
@@ -631,6 +638,8 @@ function attachLevelRendererSceneFxMethods(LevelRenderer, deps) {
   attachLevelRendererSceneExplosionIceFxMethods(LevelRenderer, FX_METHOD_CONTEXT);
   attachLevelRendererSceneScreenFxMethods(LevelRenderer, FX_METHOD_CONTEXT);
   attachLevelRendererSceneSpiritCocoonFxMethods(LevelRenderer, FX_METHOD_CONTEXT);
+  attachLevelRendererSceneBudFxMethods(LevelRenderer, FX_METHOD_CONTEXT);
+  attachLevelRendererSceneSpiderFxMethods(LevelRenderer, FX_METHOD_CONTEXT);
 
 }
 

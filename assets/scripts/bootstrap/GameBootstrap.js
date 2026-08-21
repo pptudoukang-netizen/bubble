@@ -8,6 +8,7 @@ var GameBootstrapCompositionMethods = require("./GameBootstrapCompositionMethods
 var GameBootstrapLifecycleMethods = require("./GameBootstrapLifecycleMethods");
 var GameBootstrapStartupMethods = require("./GameBootstrapStartupMethods");
 var GameBootstrapAudioMethods = require("./GameBootstrapAudioMethods");
+var GameBootstrapCurrentFrontierFailureMethods = require("./GameBootstrapCurrentFrontierFailureMethods");
 var GameBootstrapGameplayInputMethods = require("./GameBootstrapGameplayInputMethods");
 var GameBootstrapLevelRuntimeMethods = require("./GameBootstrapLevelRuntimeMethods");
 var GameBootstrapNewUserGuideMethods = require("./GameBootstrapNewUserGuideMethods");
@@ -254,6 +255,10 @@ cc.Class({
       default: "sound/ding2",
       tooltip: "发射音效资源路径。"
     },
+    laserSfxResource: {
+      default: "sound/laser",
+      tooltip: "晶光炮真实发射时播放的音效资源路径（Resources 相对路径）。"
+    },
     emissionSfxResource: {
       default: "sound/emission",
       tooltip: "通关后每颗剩余球实际发射时播放的音效资源路径（Resources 相对路径）。"
@@ -294,9 +299,29 @@ cc.Class({
       default: "sound/time",
       tooltip: "开局 3-2-1-GO 倒计时音效资源路径（Resources 相对路径）。"
     },
+    spiderCrawlingSfxResource: {
+      default: "sound/spider_crawling",
+      tooltip: "蜘蛛在开局倒计时结束后爬向宿主球时循环播放的音效资源路径。"
+    },
+    windTunnelSfxResource: {
+      default: "sound/wind",
+      tooltip: "风眼入口存在时，在开局倒计时结束后循环播放的风声音效资源路径。"
+    },
+    windTunnelInhalationSfxResource: {
+      default: "sound/inhalation",
+      tooltip: "发射球到达风眼入口并开始缩小传送时播放的吸入音效资源路径。"
+    },
+    windTunnelSpitOutSfxResource: {
+      default: "sound/spit_out",
+      tooltip: "发射球完成吸入并开始从当前激活出口放大吐出时播放的音效资源路径。"
+    },
     bombSfxResource: {
       default: "sound/bomb",
       tooltip: "炸弹道具与燃烧瓶爆炸时播放的音效资源路径（Resources 相对路径）。"
+    },
+    flowerDieSfxResource: {
+      default: "sound/flower_die",
+      tooltip: "花苞完成破碎动画并孵化时播放的音效资源路径（Resources 相对路径）。"
     },
     lockOpenSfxResource: {
       default: "sound/lock_open",
@@ -309,6 +334,10 @@ cc.Class({
     iceBreakSfxResource: {
       default: "sound/ice_break",
       tooltip: "冰冻球成功解冻时播放的音效资源路径（Resources 相对路径）。"
+    },
+    icicleSfxResource: {
+      default: "sound/icicle",
+      tooltip: "冰凌柱开始掉落时播放的音效资源路径（Resources 相对路径）。"
     },
     vinesSfxResource: {
       default: "sound/vines",
@@ -442,8 +471,18 @@ cc.Class({
   _playGameplayBackgroundMusic: GameBootstrapAudioMethods._playGameplayBackgroundMusic,
   _playSfx: GameBootstrapAudioMethods._playSfx,
   _playFairyAssistHitSfx: GameBootstrapAudioMethods._playFairyAssistHitSfx,
+  _runSpiderEntranceAfterCountdown: GameBootstrapAudioMethods._runSpiderEntranceAfterCountdown,
+  _startWindTunnelAmbientSfx: GameBootstrapAudioMethods._startWindTunnelAmbientSfx,
+  _stopWindTunnelAmbientSfx: GameBootstrapAudioMethods._stopWindTunnelAmbientSfx,
+  _syncWindTunnelAmbientSfxForRuntimeSnapshot: GameBootstrapAudioMethods._syncWindTunnelAmbientSfxForRuntimeSnapshot,
   _runGameEntryCountdown: GameBootstrapAudioMethods._runGameEntryCountdown,
+  _beginCurrentFrontierFailureTracking: GameBootstrapCurrentFrontierFailureMethods._beginCurrentFrontierFailureTracking,
+  _clearCurrentFrontierFailureTracking: GameBootstrapCurrentFrontierFailureMethods._clearCurrentFrontierFailureTracking,
+  _recordCurrentFrontierAttemptResult: GameBootstrapCurrentFrontierFailureMethods._recordCurrentFrontierAttemptResult,
+  _shouldShowCurrentFrontierAimingToolTips: GameBootstrapCurrentFrontierFailureMethods._shouldShowCurrentFrontierAimingToolTips,
+  _showCurrentFrontierAimingToolTipsAfterCountdown: GameBootstrapCurrentFrontierFailureMethods._showCurrentFrontierAimingToolTipsAfterCountdown,
   _triggerShortVibration: GameBootstrapAudioMethods._triggerShortVibration,
+  _resolveFiredShotSfxKey: GameBootstrapAudioMethods._resolveFiredShotSfxKey,
   _playRuntimeAudioEvents: GameBootstrapAudioMethods._playRuntimeAudioEvents,
   _preloadStartupLevelConfigs: GameBootstrapStartupMethods._preloadStartupLevelConfigs,
   _delay: GameBootstrapStartupMethods._delay,

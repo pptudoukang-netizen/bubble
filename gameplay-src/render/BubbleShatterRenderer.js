@@ -4,6 +4,7 @@ var BundleLoader = require("../../assets/scripts/utils/BundleLoader");
 var EFFECT_RESOURCE_PATH = "game/effects/BubbleShatter";
 var SHATTER_LIFETIME = 0.48;
 var SHATTER_SEQUENCE_INTERVAL_SEC = 0.03;
+var BUBBLE_SHIELD_SHATTER_SIZE = 65;
 var FIRST_FRAME_BURST_TIME = 0.055;
 var EXPANDED_QUAD_SCALE = 3;
 var SHATTER_SPREAD = 0.92;
@@ -278,6 +279,7 @@ function BubbleShatterRenderer(options) {
   this.sharedMaterials = {};
   this.currentResolution = null;
   this.playedCellIds = {};
+  this.playedBubbleShieldIds = {};
   this.pendingCellIds = {};
   this.pendingScheduleCallbacks = {};
   this.presentationCompleteHandler = null;
@@ -344,6 +346,7 @@ BubbleShatterRenderer.prototype.reset = function () {
   this._resetPresentationTracking(true);
   this.currentResolution = null;
   this.playedCellIds = {};
+  this.playedBubbleShieldIds = {};
 };
 
 BubbleShatterRenderer.prototype.releaseAfterGameplayBundleUnload = function () {
@@ -367,7 +370,11 @@ BubbleShatterRenderer.prototype._armPresentationRelease = function (resolution, 
   if (!Array.isArray(playPlan)) {
     throw new Error("Bubble shatter presentation release requires playPlan array.");
   }
+  if (typeof resolution.eliminationPresentationComplete !== "boolean") {
+    throw new Error("Bubble shatter presentation requires resolution.eliminationPresentationComplete boolean.");
+  }
   this.presentationTrackedResolution = resolution;
+  resolution.eliminationPresentationComplete = false;
   this.presentationCompleteNotified = false;
   if (!playPlan.length) {
     this._notifyPresentationComplete();
@@ -419,10 +426,15 @@ BubbleShatterRenderer.prototype._notifyPresentationComplete = function () {
     return;
   }
   this.presentationCompleteNotified = true;
+  var completedResolution = this.presentationTrackedResolution;
+  if (completedResolution === null) {
+    return;
+  }
+  completedResolution.eliminationPresentationComplete = true;
   if (typeof this.presentationCompleteHandler !== "function") {
     return;
   }
-  this.presentationCompleteHandler();
+  this.presentationCompleteHandler(completedResolution);
 };
 
 BubbleShatterRenderer.prototype.isCellShatterPending = function (cellId) {
@@ -625,6 +637,88 @@ BubbleShatterRenderer.prototype._playCellShatter = function (
   this.playedCellIds[cellId] = true;
 };
 
+BubbleShatterRenderer.prototype.playBubbleShieldRemovals = function (
+  resolution,
+  boardBubbleNodes,
+  spriteFrameCache
+) {
+  if (!this.layer || !this.layer.isValid) {
+    throw new Error("Bubble shield shatter play requires mounted layer.");
+  }
+  if (!this.effectAsset || !this.effectAsset.isValid) {
+    throw new Error("Bubble shield shatter effect must be preloaded before play.");
+  }
+  if (!resolution || typeof resolution !== "object" || Array.isArray(resolution)) {
+    throw new Error("Bubble shield shatter play requires resolution.");
+  }
+  if (!Array.isArray(resolution.bubbleShieldsRemoved)) {
+    throw new Error("Bubble shield shatter resolution requires bubbleShieldsRemoved array.");
+  }
+  if (this.currentResolution !== resolution) {
+    throw new Error("Bubble shield shatter requires playResolution for the same resolution first.");
+  }
+  if (!boardBubbleNodes || typeof boardBubbleNodes !== "object" || Array.isArray(boardBubbleNodes)) {
+    throw new Error("Bubble shield shatter requires board bubble node map.");
+  }
+  if (!spriteFrameCache || typeof spriteFrameCache !== "object" || Array.isArray(spriteFrameCache)) {
+    throw new Error("Bubble shield shatter requires SpriteFrame cache.");
+  }
+
+  var spritePath = this.ballResources.BUBBLE_SHIELD;
+  if (typeof spritePath !== "string" || !spritePath) {
+    throw new Error("Bubble shield shatter resource path is missing.");
+  }
+  var spriteFrame = spriteFrameCache[spritePath];
+  if (!spriteFrame || !spriteFrame.isValid) {
+    throw new Error("Bubble shield shatter SpriteFrame is not preloaded: " + spritePath);
+  }
+  var sharedMaterial = this._getSharedMaterial(spritePath, spriteFrame);
+
+  resolution.bubbleShieldsRemoved.forEach(function (entry, index) {
+    if (
+      !entry ||
+      typeof entry !== "object" ||
+      Array.isArray(entry) ||
+      typeof entry.id !== "string" ||
+      !entry.id ||
+      entry.type !== "bubble_shield" ||
+      !Number.isInteger(entry.row) ||
+      !Number.isInteger(entry.col) ||
+      (typeof entry.protectedCellId !== "string" && typeof entry.protectedCellId !== "number")
+    ) {
+      throw new Error("Bubble shield shatter entry is invalid at index " + index + ".");
+    }
+    var shieldId = entry.id;
+    if (this.playedBubbleShieldIds[shieldId]) {
+      return;
+    }
+    var protectedCellId = String(entry.protectedCellId);
+    var sourceNode = boardBubbleNodes[protectedCellId];
+    if (!sourceNode || !sourceNode.isValid || !sourceNode.active) {
+      throw new Error("Bubble shield shatter source ball node is missing: " + protectedCellId + ".");
+    }
+    if (!Number.isFinite(Number(sourceNode.x)) || !Number.isFinite(Number(sourceNode.y))) {
+      throw new Error("Bubble shield shatter source ball position is invalid: " + protectedCellId + ".");
+    }
+
+    var component = this._acquireComponent();
+    component.node.name = "BubbleShieldShatter_" + shieldId;
+    component.node.parent = this.layer;
+    component.node.setPosition(Number(sourceNode.x), Number(sourceNode.y));
+    component.node.active = true;
+    component.initialize({
+      material: sharedMaterial,
+      spriteFrame: spriteFrame,
+      width: BUBBLE_SHIELD_SHATTER_SIZE,
+      height: BUBBLE_SHIELD_SHATTER_SIZE,
+      seed: hashStringToUnit("bubble_shield:" + shieldId),
+      releaseHandler: this.releaseComponentHandler
+    });
+    this.activeComponents.push(component);
+    this.playedBubbleShieldIds[shieldId] = true;
+  }, this);
+};
+
 BubbleShatterRenderer.prototype._isEligibleCell = function (cell) {
   if (!cell || typeof cell !== "object" || Array.isArray(cell)) {
     throw new Error("Bubble shatter matched entry must be a cell object.");
@@ -742,6 +836,7 @@ BubbleShatterRenderer.prototype.playResolution = function (resolution, boardSnap
     this._resetPresentationTracking(true);
     this.currentResolution = resolution;
     this.playedCellIds = {};
+    this.playedBubbleShieldIds = {};
   }
 
   var playPlan = this._buildPlayPlan(resolution);

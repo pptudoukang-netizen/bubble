@@ -4,6 +4,7 @@ var BoardLayout = require("./BoardLayout");
 
 var TOP_BOARD_ROW_INDEX = 0;
 var MAX_TOP_ROW_SAME_COLOR_RUN = 3;
+var MAX_SAME_COLOR_COMPONENT = 8;
 var MIN_NORMAL_BALL_OCCUPANCY_RATIO = 0.7;
 
 function isWormholeEntity(entity) {
@@ -11,6 +12,14 @@ function isWormholeEntity(entity) {
     entity &&
     entity.entityCategory === "reactive_ball" &&
     entity.entityType === "wormhole"
+  );
+}
+
+function isWindTunnelEntranceEntity(entity) {
+  return !!(
+    entity &&
+    entity.entityCategory === "reactive_ball" &&
+    entity.entityType === "wind_tunnel_entrance"
   );
 }
 
@@ -123,7 +132,7 @@ function collectOccupiedCells(levelConfig, levelKey) {
     if (levelConfig.layout[entity.row].charAt(entity.col) !== ".") {
       throw new Error("specialEntities[" + index + "] overlaps layout for initial board support validation: " + levelKey);
     }
-    if (isWormholeEntity(entity)) {
+    if (isWormholeEntity(entity) || isWindTunnelEntranceEntity(entity)) {
       return;
     }
     addCell(entity.row, entity.col, "specialEntities[" + index + "]");
@@ -294,6 +303,35 @@ function analyzeGeneratedBoardRules(levelConfig, levelKey) {
     topRowSameColorRun = Math.max(topRowSameColorRun, currentTopRun);
   });
 
+  var visitedColorCells = {};
+  var maximumSameColorComponent = 0;
+  levelConfig.layout.forEach(function (rowString, rowIndex) {
+    rowString.split("").forEach(function (cellCode, colIndex) {
+      var startKey = keyFor(rowIndex, colIndex);
+      if (cellCode === "." || visitedColorCells[startKey]) {
+        return;
+      }
+      var queue = [{ row: rowIndex, col: colIndex }];
+      var queueIndex = 0;
+      var componentSize = 0;
+      visitedColorCells[startKey] = true;
+      while (queueIndex < queue.length) {
+        var current = queue[queueIndex];
+        queueIndex += 1;
+        componentSize += 1;
+        getNeighborCoordinates(levelConfig.layout, current.row, current.col).forEach(function (neighbor) {
+          var neighborKey = keyFor(neighbor.row, neighbor.col);
+          if (!visitedColorCells[neighborKey] &&
+              levelConfig.layout[neighbor.row].charAt(neighbor.col) === cellCode) {
+            visitedColorCells[neighborKey] = true;
+            queue.push(neighbor);
+          }
+        });
+      }
+      maximumSameColorComponent = Math.max(maximumSameColorComponent, componentSize);
+    });
+  });
+
   var excludedCellCount = Object.keys(excludedCellMap).length;
   var normalBallSlotCount = boardCapacity - excludedCellCount;
   if (normalBallSlotCount <= 0) {
@@ -306,7 +344,8 @@ function analyzeGeneratedBoardRules(levelConfig, levelKey) {
     normalBallSlotCount: normalBallSlotCount,
     normalBallOccupancyRatio: normalBallCount / normalBallSlotCount,
     enforceMinimumNormalBallOccupancy: levelConfig.levelType !== "trapped_sprite_rescue",
-    topRowSameColorRun: topRowSameColorRun
+    topRowSameColorRun: topRowSameColorRun,
+    maximumSameColorComponent: maximumSameColorComponent
   };
 }
 
@@ -316,6 +355,12 @@ function assertGeneratedBoardRules(levelConfig, levelKey) {
     throw new Error(
       "level top row same-color run must be <= " + MAX_TOP_ROW_SAME_COLOR_RUN +
       ", got " + metrics.topRowSameColorRun + ": " + levelKey
+    );
+  }
+  if (metrics.maximumSameColorComponent > MAX_SAME_COLOR_COMPONENT) {
+    throw new Error(
+      "level same-color component must be <= " + MAX_SAME_COLOR_COMPONENT +
+      ", got " + metrics.maximumSameColorComponent + ": " + levelKey
     );
   }
   if (metrics.enforceMinimumNormalBallOccupancy &&
@@ -333,6 +378,7 @@ function assertGeneratedBoardRules(levelConfig, levelKey) {
 
 module.exports = {
   MAX_TOP_ROW_SAME_COLOR_RUN: MAX_TOP_ROW_SAME_COLOR_RUN,
+  MAX_SAME_COLOR_COMPONENT: MAX_SAME_COLOR_COMPONENT,
   MIN_NORMAL_BALL_OCCUPANCY_RATIO: MIN_NORMAL_BALL_OCCUPANCY_RATIO,
   findUnsupportedInitialCells: findUnsupportedInitialCells,
   assertInitialBoardSupported: assertInitialBoardSupported,

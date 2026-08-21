@@ -27,7 +27,7 @@ function resolveWechatPlatform() {
 }
 
 function isInterstitialLoseState(state) {
-  return state === "out_of_shots" || state === "lost_danger" || state === "lost_objective";
+  return state === "out_of_shots" || state === "lost_danger" || state === "lost_hazard" || state === "lost_objective";
 }
 
 function isInterstitialAdUnlocked(host) {

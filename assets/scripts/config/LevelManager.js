@@ -12,7 +12,18 @@ var FEATURE_TEST_LEVEL_KEYS = {
   spirit_cocoon: "level_spirit_cocoon_test",
   multi_trapped_spirit: "level_multi_trapped_spirit_test",
   transparent_ball: "level_transparent_ball_test",
-  breeder_ball: "level_breeder_ball_test"
+  breeder_ball: "level_breeder_ball_test",
+  mine: "level_mine_test",
+  bud: "level_bud_test",
+  crystal_gun: "level_crystal_gun_test",
+  rainbow_prism_ball: "level_rainbow_prism_ball_test",
+  poison_attachment: "level_poison_attachment_test",
+  ice_crystal_attachment: "level_ice_crystal_attachment_test",
+  bubble_shield_attachment: "level_bubble_shield_attachment_test",
+  lock_chain: "level_lock_chain_test",
+  color_cloud: "level_color_cloud_test",
+  spider: "level_spider_test",
+  wind_tunnel: "level_wind_tunnel_test"
 };
 
 function padLevelId(levelId) {

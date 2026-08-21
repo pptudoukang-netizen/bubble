@@ -232,11 +232,26 @@ GameManager.prototype._requiresBoardAdvanceEliminationPresentationWait = functio
   return resolution.matched.length > 0;
 };
 
-GameManager.prototype.notifyBoardAdvanceEliminationPresentationComplete = function () {
+GameManager.prototype.notifyBoardAdvanceEliminationPresentationComplete = function (resolution) {
   if (typeof this.pendingBoardAdvanceEliminationPresentation !== "boolean") {
     throw new Error("GameManager pendingBoardAdvanceEliminationPresentation must be boolean.");
   }
-  this.pendingBoardAdvanceEliminationPresentation = false;
+  if (!resolution || typeof resolution !== "object" || Array.isArray(resolution)) {
+    throw new Error("Elimination presentation completion requires resolution.");
+  }
+  if (typeof resolution.eliminationPresentationComplete !== "boolean") {
+    throw new Error("Elimination presentation completion requires resolution.eliminationPresentationComplete boolean.");
+  }
+  resolution.eliminationPresentationComplete = true;
+  if (resolution === this.lastResolution) {
+    this.pendingBoardAdvanceEliminationPresentation = false;
+    if (
+      this.pendingSwirlRotationResolution === resolution &&
+      this.pendingSwirlRotationWaitingForEliminationPresentation === true
+    ) {
+      this._startPendingSwirlRotation(resolution);
+    }
+  }
 };
 
 GameManager.prototype._hasPendingSplitterSpawns = function () {
@@ -263,10 +278,26 @@ GameManager.prototype._hasPendingSwirlRotation = function () {
   if (this.pendingSwirlRotationRemaining < 0) {
     throw new Error("GameManager pendingSwirlRotationRemaining must not be negative.");
   }
-  if (this.pendingSwirlRotationRemaining > 0 && !this.pendingSwirlRotationResolution) {
-    throw new Error("GameManager pending swirl rotation requires its resolution.");
+  if (typeof this.pendingSwirlRotationWaitingForEliminationPresentation !== "boolean") {
+    throw new Error("GameManager pendingSwirlRotationWaitingForEliminationPresentation must be boolean.");
   }
-  return this.pendingSwirlRotationRemaining > 0;
+  var hasResolution = this.pendingSwirlRotationResolution !== null;
+  if (!hasResolution) {
+    if (this.pendingSwirlRotationRemaining !== 0 || this.pendingSwirlRotationWaitingForEliminationPresentation) {
+      throw new Error("GameManager idle swirl rotation must not retain pending phase state.");
+    }
+    return false;
+  }
+  if (this.pendingSwirlRotationWaitingForEliminationPresentation) {
+    if (this.pendingSwirlRotationRemaining !== 0) {
+      throw new Error("Swirl elimination wait must not consume rotation duration.");
+    }
+    return true;
+  }
+  if (this.pendingSwirlRotationRemaining <= 0) {
+    throw new Error("Active swirl rotation requires positive remaining duration.");
+  }
+  return true;
 };
 
 GameManager.prototype._hasPendingWormholeShift = function () {

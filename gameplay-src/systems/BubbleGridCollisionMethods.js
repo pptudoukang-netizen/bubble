@@ -17,6 +17,92 @@ function attachBubbleGridCollisionMethods(BubbleGrid, context) {
     );
   }
 
+  function isWindTunnelExitCell(cell) {
+    return !!(
+      cell &&
+      cell.entityCategory === "reactive_ball" &&
+      cell.entityType === "wind_tunnel_exit"
+    );
+  }
+
+  function isTraversableCell(cell) {
+    if (isTransparentBallCell(cell) || isWindTunnelExitCell(cell)) {
+      if (cell.traversable !== true) {
+        throw new Error("Traversable special cell is missing traversable=true: " + cell.id + ".");
+      }
+      return true;
+    }
+    return cell && cell.traversable === true;
+  }
+
+  function findSpecialCollisionsOnPath(grid, pathPoints, collisionRadius, predicate, label) {
+    if (!Array.isArray(pathPoints) || pathPoints.length < 2) {
+      throw new Error(label + " path collision requires at least two path points.");
+    }
+    if (!Number.isFinite(collisionRadius) || collisionRadius <= 0) {
+      throw new Error(label + " path collision requires positive collisionRadius.");
+    }
+    var penetratedById = {};
+    var penetrated = [];
+    var paddingRows = grid._resolveSegmentPaddingRows(collisionRadius);
+    for (var segmentIndex = 0; segmentIndex < pathPoints.length - 1; segmentIndex += 1) {
+      var startPoint = pathPoints[segmentIndex];
+      var endPoint = pathPoints[segmentIndex + 1];
+      if (
+        !startPoint || !endPoint ||
+        !Number.isFinite(startPoint.x) || !Number.isFinite(startPoint.y) ||
+        !Number.isFinite(endPoint.x) || !Number.isFinite(endPoint.y)
+      ) {
+        throw new Error(label + " path points must contain finite coordinates.");
+      }
+      var segment = { x: endPoint.x - startPoint.x, y: endPoint.y - startPoint.y };
+      var segmentLengthSq = dot(segment, segment);
+      if (segmentLengthSq <= EPSILON) {
+        continue;
+      }
+      var segmentHits = [];
+      grid._iterateCellsNearSegment(startPoint, endPoint, paddingRows, function (cell) {
+        if (!predicate(cell)) {
+          return;
+        }
+        if (typeof cell.id !== "string" || !cell.id) {
+          throw new Error(label + " collision requires a non-empty cell id.");
+        }
+        var candidate = this._testSegmentCircleHit(
+          cell,
+          startPoint,
+          segment,
+          segmentLengthSq,
+          collisionRadius
+        );
+        if (candidate) {
+          segmentHits.push(candidate);
+        }
+      });
+      segmentHits.sort(function (left, right) {
+        if (left.t !== right.t) {
+          return left.t - right.t;
+        }
+        return String(left.cell.id) < String(right.cell.id) ? -1 : 1;
+      });
+      segmentHits.forEach(function (hit) {
+        if (penetratedById[hit.cell.id]) {
+          return;
+        }
+        penetratedById[hit.cell.id] = true;
+        var entry = clone(hit.cell);
+        entry.hitPoint = {
+          x: startPoint.x + segment.x * hit.t,
+          y: startPoint.y + segment.y * hit.t
+        };
+        entry.pathSegmentIndex = segmentIndex;
+        entry.pathSegmentProgress = Math.sqrt(segmentLengthSq) * hit.t;
+        penetrated.push(entry);
+      });
+    }
+    return penetrated;
+  }
+
 BubbleGrid.prototype.getNeighborCells = function (row, col) {
   return this.getNeighborCoordinates(row, col).map(function (candidate) {
     return this.getCell(candidate.row, candidate.col);
@@ -282,6 +368,9 @@ BubbleGrid.prototype.findCollision = function (point, collisionRadius) {
   var radius = typeof collisionRadius === "number" ? collisionRadius : BoardLayout.collisionDistance;
 
   this.cells.forEach(function (cell) {
+    if (isTraversableCell(cell)) {
+      return;
+    }
     var cellPosition = this.getCellPosition(cell.row, cell.col);
     var dx = point.x - cellPosition.x;
     var dy = point.y - cellPosition.y;
@@ -330,7 +419,7 @@ BubbleGrid.prototype.findCollisionOnSegment = function (startPoint, endPoint, co
   var paddingRows = this._resolveSegmentPaddingRows(radius);
 
   this._iterateCellsNearSegment(startPoint, endPoint, paddingRows, function (cell) {
-    if (isTransparentBallCell(cell)) {
+    if (isTraversableCell(cell)) {
       return;
     }
     var candidate = this._testSegmentCircleHit(cell, startPoint, segment, a, radius);
@@ -387,82 +476,55 @@ BubbleGrid.prototype.findWormholeCollisionOnSegment = function (startPoint, endP
   return collision;
 };
 
-BubbleGrid.prototype.findTransparentBallCollisionsOnPath = function (pathPoints, collisionRadius) {
-  if (!Array.isArray(pathPoints) || pathPoints.length < 2) {
-    throw new Error("Transparent ball path collision requires at least two path points.");
+BubbleGrid.prototype.findWindTunnelEntranceCollisionOnSegment = function (startPoint, endPoint, collisionRadius) {
+  if (!startPoint || !endPoint) {
+    throw new Error("Wind tunnel entrance collision requires start and end points.");
   }
   if (!Number.isFinite(collisionRadius) || collisionRadius <= 0) {
-    throw new Error("Transparent ball path collision requires positive collisionRadius.");
+    throw new Error("Wind tunnel entrance collision requires positive collisionRadius.");
   }
-
-  var penetratedById = {};
-  var penetrated = [];
-  var paddingRows = this._resolveSegmentPaddingRows(collisionRadius);
-
-  for (var segmentIndex = 0; segmentIndex < pathPoints.length - 1; segmentIndex += 1) {
-    var startPoint = pathPoints[segmentIndex];
-    var endPoint = pathPoints[segmentIndex + 1];
-    if (
-      !startPoint ||
-      !endPoint ||
-      !Number.isFinite(startPoint.x) ||
-      !Number.isFinite(startPoint.y) ||
-      !Number.isFinite(endPoint.x) ||
-      !Number.isFinite(endPoint.y)
-    ) {
-      throw new Error("Transparent ball path points must contain finite coordinates.");
-    }
-    var segment = {
-      x: endPoint.x - startPoint.x,
-      y: endPoint.y - startPoint.y
-    };
-    var segmentLengthSq = dot(segment, segment);
-    if (segmentLengthSq <= EPSILON) {
-      continue;
-    }
-
-    var segmentHits = [];
-    this._iterateCellsNearSegment(startPoint, endPoint, paddingRows, function (cell) {
-      if (!isTransparentBallCell(cell)) {
-        return;
-      }
-      if (typeof cell.id !== "string" || !cell.id) {
-        throw new Error("Transparent ball collision requires a non-empty cell id.");
-      }
-      var candidate = this._testSegmentCircleHit(
-        cell,
-        startPoint,
-        segment,
-        segmentLengthSq,
-        collisionRadius
-      );
-      if (candidate) {
-        segmentHits.push(candidate);
-      }
-    });
-    segmentHits.sort(function (left, right) {
-      if (left.t !== right.t) {
-        return left.t - right.t;
-      }
-      return String(left.cell.id) < String(right.cell.id) ? -1 : 1;
-    });
-    segmentHits.forEach(function (hit) {
-      if (penetratedById[hit.cell.id]) {
-        return;
-      }
-      penetratedById[hit.cell.id] = true;
-      var entry = clone(hit.cell);
-      entry.hitPoint = {
-        x: startPoint.x + segment.x * hit.t,
-        y: startPoint.y + segment.y * hit.t
-      };
-      entry.pathSegmentIndex = segmentIndex;
-      entry.pathSegmentProgress = Math.sqrt(segmentLengthSq) * hit.t;
-      penetrated.push(entry);
-    });
+  var entrance = this.getWindTunnelEntrance();
+  if (!entrance) {
+    return null;
   }
+  var segment = { x: endPoint.x - startPoint.x, y: endPoint.y - startPoint.y };
+  var segmentLengthSq = dot(segment, segment);
+  if (segmentLengthSq <= EPSILON) {
+    return null;
+  }
+  var hit = this._testSegmentCircleHit(
+    entrance,
+    startPoint,
+    segment,
+    segmentLengthSq,
+    collisionRadius
+  );
+  if (!hit) {
+    return null;
+  }
+  var collision = this._buildSegmentCollisionResult(hit, startPoint, segment);
+  collision.center = clone(hit.center);
+  return collision;
+};
 
-  return penetrated;
+BubbleGrid.prototype.findTransparentBallCollisionsOnPath = function (pathPoints, collisionRadius) {
+  return findSpecialCollisionsOnPath(
+    this,
+    pathPoints,
+    collisionRadius,
+    isTransparentBallCell,
+    "Transparent ball"
+  );
+};
+
+BubbleGrid.prototype.findWindTunnelExitCollisionsOnPath = function (pathPoints, collisionRadius) {
+  return findSpecialCollisionsOnPath(
+    this,
+    pathPoints,
+    collisionRadius,
+    isWindTunnelExitCell,
+    "Wind tunnel exit"
+  );
 };
 
 BubbleGrid.prototype.findTrappedSpriteCollisionOnSegment = function (startPoint, endPoint, collisionRadius) {

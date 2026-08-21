@@ -1,0 +1,166 @@
+{
+  "schemaVersion": 1,
+  "gameMode": "glass_marble_bubble",
+  "coordinateSystem": "odd-r-hex",
+  "layoutNotes": {
+    "description": "Dedicated two-stage lock-chain test. The lower key opens its row before the upper chain becomes playable.",
+    "legend": {
+      ".": "empty",
+      "R": "red",
+      "G": "green",
+      "B": "blue"
+    },
+    "pattern": "lock_chain_test",
+    "theme": "mechanism_test",
+    "focus": "row_key_unlock_and_upper_protection",
+    "silhouetteVariant": "lock_chain_test",
+    "designBeat": "unlock_bottom_chain_then_upper_chain"
+  },
+  "sharedDefaults": {
+    "collectMode": "any_with_same_color_bonus",
+    "loseConditions": [
+      {
+        "type": "reach_danger_line",
+        "value": 1
+      },
+      {
+        "type": "run_out_of_shots",
+        "value": 1
+      }
+    ],
+    "fallingRules": {
+      "maxDynamicMarbles": 20,
+      "maxBounces": 2,
+      "enableMarbleMarbleCollision": true,
+      "gravity": 900,
+      "initialSpeedY": 120,
+      "horizontalSpeed": 165,
+      "maxDropLifeTime": 6,
+      "bounceDamping": 0.82
+    }
+  },
+  "level": {
+    "levelId": 1,
+    "code": "L001_LOCK_CHAIN_TEST",
+    "difficulty": "advanced",
+    "teaches": [
+      "lock_chain_row",
+      "one_key_unlocks_same_row",
+      "upper_rows_are_protected"
+    ],
+    "colorCount": 3,
+    "colors": [
+      "R",
+      "G",
+      "B"
+    ],
+    "shotLimit": 30,
+    "targetScore": 5200,
+    "starThresholds": {
+      "star1": 1800,
+      "star2": 3400,
+      "star3": 4800
+    },
+    "dropInterval": 10,
+    "jarCount": 5,
+    "jarColors": [
+      "R",
+      "G",
+      "B",
+      "Y",
+      "P"
+    ],
+    "spawnWeights": {
+      "R": 1.2,
+      "G": 1,
+      "B": 1.2
+    },
+    "openingShotBalls": [
+      "R",
+      "B",
+      "G",
+      "R",
+      "B",
+      "G"
+    ],
+    "jarRules": {
+      "rimBounce": 0.68,
+      "collectZoneScale": 1.1,
+      "sameColorBonus": 1.5
+    },
+    "winConditions": [
+      {
+        "type": "clear_all",
+        "value": 1
+      }
+    ],
+    "bonusObjectives": [
+      {
+        "type": "clear_with_shots_remaining",
+        "value": 5
+      }
+    ],
+    "clearRewardItems": [
+      {
+        "id": "coin",
+        "count": 50
+      },
+      {
+        "id": "stamina",
+        "count": 1
+      }
+    ],
+    "layout": [
+      "RRRGGGBBBRR",
+      ".RRGGBBRR.",
+      "...........",
+      "RRGGBBRRGB",
+      "BBRGGRBBRGG",
+      "GGRRBBGGRR",
+      "...........",
+      "RRBBGGRRBB",
+      "BBRRGGBBRRG",
+      "RRGGBBRRGG"
+    ],
+    "designNotes": "Rows 2 and 6 are complete lock-chain rows. Clear near row 6 first, then advance to row 2 after the lower row unlocks.",
+    "difficultyScore": 28,
+    "specialEntities": [
+      { "id": "upper_lock_00", "entityCategory": "locked_ball", "entityType": "locked", "row": 2, "col": 0, "lockedColor": "R" },
+      { "id": "upper_lock_01", "entityCategory": "locked_ball", "entityType": "locked", "row": 2, "col": 1, "lockedColor": "G" },
+      { "id": "upper_lock_02", "entityCategory": "locked_ball", "entityType": "locked", "row": 2, "col": 2, "lockedColor": "B" },
+      { "id": "upper_lock_03", "entityCategory": "locked_ball", "entityType": "locked", "row": 2, "col": 3, "lockedColor": "R" },
+      { "id": "upper_lock_04", "entityCategory": "locked_ball", "entityType": "locked", "row": 2, "col": 4, "lockedColor": "G" },
+      { "id": "upper_key", "entityCategory": "key_ball", "entityType": "key", "row": 2, "col": 5 },
+      { "id": "upper_lock_06", "entityCategory": "locked_ball", "entityType": "locked", "row": 2, "col": 6, "lockedColor": "B" },
+      { "id": "upper_lock_07", "entityCategory": "locked_ball", "entityType": "locked", "row": 2, "col": 7, "lockedColor": "R" },
+      { "id": "upper_lock_08", "entityCategory": "locked_ball", "entityType": "locked", "row": 2, "col": 8, "lockedColor": "G" },
+      { "id": "upper_lock_09", "entityCategory": "locked_ball", "entityType": "locked", "row": 2, "col": 9, "lockedColor": "B" },
+      { "id": "upper_lock_10", "entityCategory": "locked_ball", "entityType": "locked", "row": 2, "col": 10, "lockedColor": "R" },
+      { "id": "lower_lock_00", "entityCategory": "locked_ball", "entityType": "locked", "row": 6, "col": 0, "lockedColor": "B" },
+      { "id": "lower_lock_01", "entityCategory": "locked_ball", "entityType": "locked", "row": 6, "col": 1, "lockedColor": "R" },
+      { "id": "lower_lock_02", "entityCategory": "locked_ball", "entityType": "locked", "row": 6, "col": 2, "lockedColor": "G" },
+      { "id": "lower_lock_03", "entityCategory": "locked_ball", "entityType": "locked", "row": 6, "col": 3, "lockedColor": "B" },
+      { "id": "lower_lock_04", "entityCategory": "locked_ball", "entityType": "locked", "row": 6, "col": 4, "lockedColor": "R" },
+      { "id": "lower_key", "entityCategory": "key_ball", "entityType": "key", "row": 6, "col": 5 },
+      { "id": "lower_lock_06", "entityCategory": "locked_ball", "entityType": "locked", "row": 6, "col": 6, "lockedColor": "G" },
+      { "id": "lower_lock_07", "entityCategory": "locked_ball", "entityType": "locked", "row": 6, "col": 7, "lockedColor": "B" },
+      { "id": "lower_lock_08", "entityCategory": "locked_ball", "entityType": "locked", "row": 6, "col": 8, "lockedColor": "R" },
+      { "id": "lower_lock_09", "entityCategory": "locked_ball", "entityType": "locked", "row": 6, "col": 9, "lockedColor": "G" },
+      { "id": "lower_lock_10", "entityCategory": "locked_ball", "entityType": "locked", "row": 6, "col": 10, "lockedColor": "B" }
+    ],
+    "levelType": "normal",
+    "playMode": "shot_limited",
+    "initialDropSpaceRows": 8,
+    "adPowerupRules": {
+      "allowed": [
+        "plus_three_balls"
+      ]
+    },
+    "boardOcclusionPlan": {
+      "generatorVersion": 1,
+      "mode": "none",
+      "variants": []
+    }
+  },
+  "difficultyScaleMax": 100
+}

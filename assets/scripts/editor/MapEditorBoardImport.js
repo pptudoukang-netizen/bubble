@@ -15,12 +15,15 @@ var PROP_NODE_BY_ENTITY_TYPE = {
   ice: "ice",
   blast: "blast",
   rainbow: "rainbow",
+  crystal_gun: "crystal_gun",
+  bud: "bud",
   stone: "stone",
   molotov: "molotov",
   swirl: "swirl",
   vine_spirit: "vine_spirit",
   key: "key",
-  locked: "chain"
+  locked: "chain",
+  wind_tunnel_exit: "wind_tunnel_exit"
 };
 
 function colorCodeToNodeName(colorCode) {
@@ -54,6 +57,13 @@ function buildSpecialEntityIndex(specialEntities) {
 
 function isWormholeEntity(entity) {
   return entity.entityCategory === "reactive_ball" && entity.entityType === "wormhole";
+}
+
+function isNonCellSpecialEntity(entity) {
+  return isWormholeEntity(entity) || (
+    entity.entityCategory === "reactive_ball" &&
+    entity.entityType === "wind_tunnel_entrance"
+  );
 }
 
 function cellStateFromSpecialEntity(entity, levelColors) {
@@ -143,6 +153,17 @@ function cellStateFromSpecialEntity(entity, levelColors) {
     };
   }
 
+  if (entity.entityCategory === "reactive_ball" && entity.entityType === "wind_tunnel_entrance") {
+    return {
+      kind: "special",
+      layoutName: "prop_layot",
+      nodeName: "wind_tunnel_entrance",
+      entityCategory: entity.entityCategory,
+      entityType: entity.entityType,
+      id: entity.id
+    };
+  }
+
   var propNodeName = PROP_NODE_BY_ENTITY_TYPE[entity.entityType];
   if (propNodeName && (
     entity.entityCategory === "skill_ball" ||
@@ -177,7 +198,7 @@ function importLevelToCellStates(levelConfig) {
 
   var specialIndex = buildSpecialEntityIndex(level.specialEntities);
   var cells = {};
-  var wormholeOverlays = {};
+  var nonCellSpecialOverlays = {};
   var rowCount = level.layout.length;
 
   for (var row = 0; row < rowCount; row += 1) {
@@ -189,14 +210,14 @@ function importLevelToCellStates(levelConfig) {
       var key = row + ":" + col;
       var cellCode = rowString[col];
       var specialEntity = specialIndex[key];
-      if (specialEntity && isWormholeEntity(specialEntity)) {
+      if (specialEntity && isNonCellSpecialEntity(specialEntity)) {
         if (cellCode !== ".") {
           throw new Error("虫洞坐标必须保持为空格 at " + row + ":" + col);
         }
-        wormholeOverlays[key] = cellStateFromSpecialEntity(specialEntity, level.colors);
+        nonCellSpecialOverlays[key] = cellStateFromSpecialEntity(specialEntity, level.colors);
       }
       if (cellCode === ".") {
-        if (specialEntity && !isWormholeEntity(specialEntity)) {
+        if (specialEntity && !isNonCellSpecialEntity(specialEntity)) {
           cells[key] = cellStateFromSpecialEntity(specialEntity, level.colors);
         } else {
           cells[key] = { kind: "empty" };
@@ -219,7 +240,7 @@ function importLevelToCellStates(levelConfig) {
   return {
     rowCount: rowCount,
     cells: cells,
-    wormholeOverlays: wormholeOverlays
+    nonCellSpecialOverlays: nonCellSpecialOverlays
   };
 }
 

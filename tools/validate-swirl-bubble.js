@@ -76,7 +76,8 @@ function createResolution() {
     boardViewportAdjusted: false,
     topAnchorCollapse: false,
     eliminationSequence: [],
-    scoreEvents: []
+    scoreEvents: [],
+    eliminationPresentationComplete: false
   };
 }
 
@@ -257,6 +258,12 @@ function validateSwirlCenterAndNeighborDropWithoutStaleEliminationHold() {
   var manager = new GameManager();
   manager.systems.bubbleGrid = grid;
   manager.systems.supportSystem = new SupportSystem();
+  var supportScanCount = 0;
+  var findFloatingCells = manager.systems.supportSystem.findFloatingCells.bind(manager.systems.supportSystem);
+  manager.systems.supportSystem.findFloatingCells = function (passedGrid) {
+    supportScanCount += 1;
+    return findFloatingCells(passedGrid);
+  };
   manager.systems.fallingMarbleSystem = {
     registerDrops: function (cells, passedGrid, options) {
       if (passedGrid !== grid) {
@@ -305,8 +312,35 @@ function validateSwirlCenterAndNeighborDropWithoutStaleEliminationHold() {
     continuationCalled = true;
   };
 
+  var deferredFloating = manager._findFloatingCellsBeforeSwirlRotation(grid, resolution);
+  if (deferredFloating.length !== 0 || supportScanCount !== 0) {
+    throw new Error("Swirl support judgment must be deferred before rotation.");
+  }
   if (!manager._beginSwirlRotationForResolution(resolution)) {
     throw new Error("Swirl center-floating validation board must start a rotation.");
+  }
+  if (
+    resolution.swirlRotations.length !== 0 ||
+    manager.pendingSwirlRotationRemaining !== 0 ||
+    manager.pendingSwirlRotationWaitingForEliminationPresentation !== true
+  ) {
+    throw new Error("Swirl rotation must wait for the active elimination presentation.");
+  }
+  manager._updatePendingSwirlRotation(SpecialAnimationTiming.swirlRotation.duration);
+  if (resolution.swirlRotations.length !== 0 || dropped.length !== 0 || supportScanCount !== 0) {
+    throw new Error("Swirl elimination wait must not advance rotation or support judgment.");
+  }
+
+  manager.notifyBoardAdvanceEliminationPresentationComplete(resolution);
+  if (
+    resolution.swirlRotations.length !== 1 ||
+    manager.pendingSwirlRotationRemaining !== SpecialAnimationTiming.swirlRotation.duration ||
+    manager.pendingSwirlRotationWaitingForEliminationPresentation
+  ) {
+    throw new Error("Swirl rotation must start immediately after elimination presentation completes.");
+  }
+  if (supportScanCount !== 0) {
+    throw new Error("Swirl support judgment must wait until rotation completes.");
   }
   manager._updatePendingSwirlRotation(SpecialAnimationTiming.swirlRotation.duration);
 
@@ -325,20 +359,35 @@ function validateSwirlCenterAndNeighborDropWithoutStaleEliminationHold() {
   if (!continuationCalled) {
     throw new Error("Swirl center-floating completion must resume the shot state machine.");
   }
+  if (supportScanCount <= 0) {
+    throw new Error("Swirl completion must run the support judgment after rotation.");
+  }
 }
 
 function validateFloatingNodesOverridePendingShatterRetention() {
   function FakeLevelRenderer() {}
   attachLevelRendererSceneBoardMethods(FakeLevelRenderer, {
     BoardLayout: BoardLayout,
-    FairyAssistConfig: FairyAssistConfig
+    FairyAssistConfig: FairyAssistConfig,
+    SpecialAnimationTiming: SpecialAnimationTiming,
+    MINE_COUNTDOWN_FONT_RESOURCE: "game/fnt/num_b",
+    ensureLabel: function () {},
+    getOrCreateChild: function () {}
   });
 
   function createNode() {
+    var iconNode = {
+      isValid: true,
+      __mineIdleAnimationActive: false
+    };
     return {
       __boardTick: 1,
       __bubblePrefabPath: "prefab/NormalBubbleItem",
+      isValid: true,
       active: true,
+      getChildByName: function (name) {
+        return name === "Icon" ? iconNode : null;
+      },
       stopAllActions: function () {},
       removeFromParent: function () {}
     };

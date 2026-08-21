@@ -14,6 +14,7 @@ var FIRST_AESTHETIC_LEVEL_ID = 101;
 var REFERENCE_PROJECTED_LAST_LEVEL_ID = 300;
 var MAX_CONSECUTIVE_BOTH_EDGE_EMPTY_ROWS = 3;
 var MAX_TOP_ROW_SAME_COLOR_RUN = LevelBoardSupportValidator.MAX_TOP_ROW_SAME_COLOR_RUN;
+var MAX_SAME_COLOR_COMPONENT = LevelBoardSupportValidator.MAX_SAME_COLOR_COMPONENT;
 
 REDESIGN_LEVEL_IDS.forEach(function (levelId) {
   REDESIGN_LEVEL_ID_MAP[levelId] = true;
@@ -503,7 +504,6 @@ function buildColorChunks(colors, colorCounts, targetChunkSize, rotation, revers
         });
       }
     });
-    orderedColors.push(orderedColors.shift());
   }
   return chunks;
 }
@@ -729,15 +729,18 @@ function countGeometricIsolatedSlots(slots) {
 
 function buildColorComponents(rows) {
   var cells = [];
+  var cellMap = {};
   rows.forEach(function (row, rowIndex) {
     row.split("").forEach(function (color, colIndex) {
       if (color !== ".") {
-        cells.push({
+        var cell = {
           id: rowIndex + ":" + colIndex,
           row: rowIndex,
           col: colIndex,
           color: color
-        });
+        };
+        cells.push(cell);
+        cellMap[cell.id] = cell;
       }
     });
   });
@@ -754,8 +757,14 @@ function buildColorComponents(rows) {
     while (queue.length > 0) {
       var current = queue.pop();
       component.push(current);
-      cells.forEach(function (candidate) {
-        if (!visited[candidate.id] && candidate.color === current.color && areAdjacent(current, candidate)) {
+      var offsets = current.row % 2 === 1 ? [
+        [-1, 0], [-1, 1], [0, -1], [0, 1], [1, 0], [1, 1]
+      ] : [
+        [-1, -1], [-1, 0], [0, -1], [0, 1], [1, -1], [1, 0]
+      ];
+      offsets.forEach(function (offset) {
+        var candidate = cellMap[(current.row + offset[0]) + ":" + (current.col + offset[1])];
+        if (candidate && !visited[candidate.id] && candidate.color === current.color) {
           visited[candidate.id] = true;
           queue.push(candidate);
         }
@@ -776,8 +785,13 @@ function analyzeLayout(rows, targetColor) {
   var groupedCellCount = 0;
   var isolatedCellCount = 0;
   var targetComponentSizes = [];
+  var maximumSameColorComponent = 0;
+  var sameColorOverflowScore = 0;
 
   components.forEach(function (component) {
+    maximumSameColorComponent = Math.max(maximumSameColorComponent, component.length);
+    var overflow = Math.max(0, component.length - MAX_SAME_COLOR_COMPONENT);
+    sameColorOverflowScore += overflow * overflow;
     if (component.length >= 3) {
       groupedCellCount += component.length;
     }
@@ -793,11 +807,83 @@ function analyzeLayout(rows, targetColor) {
     normalBallCount: cells.length,
     groupedRatio: groupedCellCount / cells.length,
     isolatedRatio: isolatedCellCount / cells.length,
+    maximumSameColorComponent: maximumSameColorComponent,
+    sameColorOverflowScore: sameColorOverflowScore,
     targetComponentSizes: targetComponentSizes,
     targetLargestComponent: targetComponentSizes[0],
     targetComponentCount: targetComponentSizes.length,
     targetSingletonCount: targetComponentSizes.filter(function (size) { return size === 1; }).length
   };
+}
+
+function isBetterComponentRepairMetrics(candidate, current) {
+  if (candidate.sameColorOverflowScore !== current.sameColorOverflowScore) {
+    return candidate.sameColorOverflowScore < current.sameColorOverflowScore;
+  }
+  if (candidate.maximumSameColorComponent !== current.maximumSameColorComponent) {
+    return candidate.maximumSameColorComponent < current.maximumSameColorComponent;
+  }
+  if (candidate.targetSingletonCount !== current.targetSingletonCount) {
+    return candidate.targetSingletonCount < current.targetSingletonCount;
+  }
+  if (candidate.isolatedRatio !== current.isolatedRatio) {
+    return candidate.isolatedRatio < current.isolatedRatio;
+  }
+  if (candidate.groupedRatio !== current.groupedRatio) {
+    return candidate.groupedRatio > current.groupedRatio;
+  }
+  return candidate.targetLargestComponent > current.targetLargestComponent;
+}
+
+function repairSameColorComponentLimit(rows, targetColor) {
+  var nextRows = rows.map(function (row) { return row.split(""); });
+  var cells = buildColorComponents(rows).cells;
+  var currentMetrics = analyzeLayout(rows, targetColor);
+  for (var iteration = 0; iteration < cells.length; iteration += 1) {
+    if (currentMetrics.maximumSameColorComponent <= MAX_SAME_COLOR_COMPONENT) {
+      return {
+        rows: nextRows.map(function (row) { return row.join(""); }),
+        metrics: currentMetrics
+      };
+    }
+    var bestSwap = null;
+    var bestMetrics = currentMetrics;
+    for (var leftIndex = 0; leftIndex < cells.length; leftIndex += 1) {
+      var left = cells[leftIndex];
+      for (var rightIndex = leftIndex + 1; rightIndex < cells.length; rightIndex += 1) {
+        var right = cells[rightIndex];
+        var leftColor = nextRows[left.row][left.col];
+        var rightColor = nextRows[right.row][right.col];
+        if (leftColor === rightColor) {
+          continue;
+        }
+        nextRows[left.row][left.col] = rightColor;
+        nextRows[right.row][right.col] = leftColor;
+        var candidateRows = nextRows.map(function (row) { return row.join(""); });
+        if (getMaxSameColorRun(candidateRows[0]) <= MAX_TOP_ROW_SAME_COLOR_RUN) {
+          var candidateMetrics = analyzeLayout(candidateRows, targetColor);
+          if (isBetterComponentRepairMetrics(candidateMetrics, bestMetrics)) {
+            bestMetrics = candidateMetrics;
+            bestSwap = {
+              left: left,
+              right: right,
+              leftColor: leftColor,
+              rightColor: rightColor
+            };
+          }
+        }
+        nextRows[left.row][left.col] = leftColor;
+        nextRows[right.row][right.col] = rightColor;
+      }
+    }
+    if (!bestSwap || bestMetrics.sameColorOverflowScore >= currentMetrics.sameColorOverflowScore) {
+      return null;
+    }
+    nextRows[bestSwap.left.row][bestSwap.left.col] = bestSwap.rightColor;
+    nextRows[bestSwap.right.row][bestSwap.right.col] = bestSwap.leftColor;
+    currentMetrics = bestMetrics;
+  }
+  return null;
 }
 
 function analyzeCascadeRiskWithSpecialCells(rows, specialCells, isTrappedSpriteRescue, trappedSpriteRescue) {
@@ -1236,6 +1322,7 @@ function buildClusteredLayout(options) {
   }
   var baseAllowedIsolatedRatio = Math.min(limits.allowedIsolatedRatio, 0.1);
   var candidates = [];
+  var componentRepairCandidates = [];
   var bestRejected = null;
   var selectedSlotSets = [];
 
@@ -1274,6 +1361,7 @@ function buildClusteredLayout(options) {
             metrics: {
               groupedRatio: 0,
               isolatedRatio: 1,
+              maximumSameColorComponent: 0,
               targetSingletonCount: 0
             },
             unsupportedCount: 0,
@@ -1334,6 +1422,30 @@ function buildClusteredLayout(options) {
                     countOccupiedRows(candidateRows, specialCells) < Math.min(getAestheticMinimumRows(levelId), rows.length)) {
                   continue;
                 }
+                if (metrics.maximumSameColorComponent > MAX_SAME_COLOR_COMPONENT) {
+                  componentRepairCandidates.push({
+                    rows: candidateRows,
+                    metrics: metrics,
+                    colorComposition: colorComposition,
+                    score: scoreCandidate(metrics, limits, colorState.counts[targetColor], candidateProfile, colorComposition),
+                    variant: [slotSet.shapeMode, chunkSize, mode, flip, rotation, reverseIndex, chunkPlan],
+                    allowedIsolatedRatio: slotSet.allowedIsolatedRatio,
+                    allowedTargetSingletons: slotSet.allowedTargetSingletons
+                  });
+                  componentRepairCandidates.sort(function (candidateA, candidateB) {
+                    if (candidateA.metrics.sameColorOverflowScore !== candidateB.metrics.sameColorOverflowScore) {
+                      return candidateA.metrics.sameColorOverflowScore - candidateB.metrics.sameColorOverflowScore;
+                    }
+                    if (candidateA.metrics.maximumSameColorComponent !== candidateB.metrics.maximumSameColorComponent) {
+                      return candidateA.metrics.maximumSameColorComponent - candidateB.metrics.maximumSameColorComponent;
+                    }
+                    return candidateA.score - candidateB.score;
+                  });
+                  if (componentRepairCandidates.length > 16) {
+                    componentRepairCandidates.pop();
+                  }
+                  continue;
+                }
                 var unsupportedCells = LevelBoardSupportValidator.findUnsupportedInitialCells({
                   layout: candidateRows,
                   specialEntities: options.specialEntities,
@@ -1375,10 +1487,62 @@ function buildClusteredLayout(options) {
   });
 
   if (candidates.length === 0) {
+    componentRepairCandidates.some(function (candidate) {
+      var repaired = repairSameColorComponentLimit(candidate.rows, targetColor);
+      if (!repaired) {
+        return false;
+      }
+      var repairedComposition = analyzeColorComposition(repaired.rows, colors, visualFocus);
+      if (repaired.metrics.groupedRatio < limits.requiredGroupedRatio ||
+          repaired.metrics.isolatedRatio > candidate.allowedIsolatedRatio ||
+          repaired.metrics.targetSingletonCount > candidate.allowedTargetSingletons ||
+          repaired.metrics.targetLargestComponent < 3 ||
+          (repairedComposition !== null && repairedComposition.focusTargetCount < 2) ||
+          (repairedComposition !== null && repairedComposition.maxColorSideImbalanceRatio > 0.75) ||
+          (repairedComposition !== null && repairedComposition.mirroredColorEchoRatio < 0.12)) {
+        return false;
+      }
+      var unsupportedCells = LevelBoardSupportValidator.findUnsupportedInitialCells({
+        layout: repaired.rows,
+        specialEntities: options.specialEntities,
+        levelType: options.levelType,
+        trappedSpriteRescue: options.trappedSpriteRescue
+      }, "level_" + String(levelId).padStart(3, "0"));
+      if (unsupportedCells.length > 0) {
+        return false;
+      }
+      var repairedCascadeRisk = cascadeBalancePolicy === null
+        ? null
+        : analyzeCascadeRiskWithSpecialCells(
+          repaired.rows,
+          specialCells,
+          isTrappedSpriteRescue,
+          options.trappedSpriteRescue
+        );
+      candidates.push({
+        rows: repaired.rows,
+        metrics: repaired.metrics,
+        colorComposition: repairedComposition,
+        cascadeRisk: repairedCascadeRisk,
+        score: scoreCandidate(
+          repaired.metrics,
+          limits,
+          colorState.counts[targetColor],
+          candidateProfile,
+          repairedComposition
+        ),
+        variant: candidate.variant.concat(["component_repair"])
+      });
+      return cascadeBalancePolicy === null || candidates.length >= cascadeBalancePolicy.candidateLimit;
+    });
+  }
+
+  if (candidates.length === 0) {
     if (bestRejected) {
       throw new Error(
         "Level " + levelId + " has no clustered layout candidate satisfying quality limits." +
         " bestGrouped=" + Math.round(bestRejected.metrics.groupedRatio * 100) + "%" +
+        " bestMaxComponent=" + bestRejected.metrics.maximumSameColorComponent +
         " bestIsolated=" + Math.round(bestRejected.metrics.isolatedRatio * 100) + "%" +
         " allowedIsolated=" + Math.round(bestRejected.allowedIsolatedRatio * 100) + "%" +
         " targetSingletons=" + bestRejected.metrics.targetSingletonCount +
@@ -1464,10 +1628,16 @@ function validateClusteredLevel(level) {
   var targetConditions = level.winConditions.filter(function (condition) {
     return condition && condition.type === "collect_color";
   });
-  if (targetConditions.length !== 1) {
+  var isMultiRescue = level.levelType === "multi_trapped_spirit_rescue";
+  if (!isMultiRescue && targetConditions.length !== 1) {
     throw new Error("Level " + levelId + " must have exactly one collect_color target.");
   }
-  var targetColor = requireNonEmptyString(targetConditions[0].color, "Level " + levelId + " target color");
+  if (isMultiRescue && targetConditions.length !== 0) {
+    throw new Error("Level " + levelId + " multi rescue must not configure collect_color targets.");
+  }
+  var targetColor = isMultiRescue
+    ? null
+    : requireNonEmptyString(targetConditions[0].color, "Level " + levelId + " target color");
   var counts = {};
   colors.forEach(function (color) {
     counts[color] = 0;
@@ -1482,6 +1652,11 @@ function validateClusteredLevel(level) {
       }
     });
   });
+  if (isMultiRescue) {
+    targetColor = colors.slice().sort(function (left, right) {
+      return counts[right] - counts[left] || left.localeCompare(right);
+    })[0];
+  }
   if (counts[targetColor] < 3) {
     throw new Error("Level " + levelId + " target color must have at least three balls.");
   }
@@ -1509,6 +1684,12 @@ function validateClusteredLevel(level) {
   var metrics = analyzeLayout(rows, targetColor);
   metrics.allowedIsolatedRatio = allowedIsolatedRatio;
   metrics.allowedTargetSingletons = geometricIsolatedCount;
+  if (metrics.maximumSameColorComponent > MAX_SAME_COLOR_COMPONENT) {
+    throw new Error(
+      "Level " + levelId + " same-color component must be <= " +
+      MAX_SAME_COLOR_COMPONENT + ", got " + metrics.maximumSameColorComponent + "."
+    );
+  }
   if (metrics.groupedRatio < limits.requiredGroupedRatio) {
     throw new Error(
       "Level " + levelId + " grouped color coverage is too low: " +
@@ -1521,7 +1702,8 @@ function validateClusteredLevel(level) {
       Math.round(metrics.isolatedRatio * 100) + "%"
     );
   }
-  if (metrics.targetSingletonCount > metrics.allowedTargetSingletons || metrics.targetLargestComponent < 3) {
+  if (!isMultiRescue &&
+      (metrics.targetSingletonCount > metrics.allowedTargetSingletons || metrics.targetLargestComponent < 3)) {
     throw new Error("Level " + levelId + " target color must not contain isolated balls.");
   }
   return metrics;

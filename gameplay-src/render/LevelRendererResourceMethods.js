@@ -1,11 +1,14 @@
 "use strict";
 
+var MineCountdownPresenter = require("./MineCountdownPresenter");
+
 function attachLevelRendererResourceMethods(LevelRenderer, context) {
   var AssistSpiritPresentationConfig = context.AssistSpiritPresentationConfig;
   var AssistSpiritSkillConfig = context.AssistSpiritSkillConfig;
   var BALL_RESOURCES = context.BALL_RESOURCES;
   var BOARD_OCCLUSION_CLOCK_RESOURCE = context.BOARD_OCCLUSION_CLOCK_RESOURCE;
   var BOARD_OCCLUSION_RESOURCES = context.BOARD_OCCLUSION_RESOURCES;
+  var COLOR_CLOUD_RESOURCES = context.COLOR_CLOUD_RESOURCES;
   var BoardLayout = context.BoardLayout;
   var BubbleShatterRenderer = context.BubbleShatterRenderer;
   var BundleLoader = context.BundleLoader;
@@ -22,6 +25,7 @@ function attachLevelRendererResourceMethods(LevelRenderer, context) {
   var JAR_RESOURCES = context.JAR_RESOURCES;
   var JarScoreConfig = context.JarScoreConfig;
   var LOSE_STATUS_RESOURCES = context.LOSE_STATUS_RESOURCES;
+  var MINE_COUNTDOWN_FONT_RESOURCE = context.MINE_COUNTDOWN_FONT_RESOURCE;
   var LightningChainRenderer = context.LightningChainRenderer;
   var POWERUP_ICON_RESOURCES = context.POWERUP_ICON_RESOURCES;
   var PREFAB_PATHS = context.PREFAB_PATHS;
@@ -106,11 +110,18 @@ LevelRenderer.prototype._preloadInitialLevelRenderAssets = function (runtimeSnap
     }
     return entity.entityCategory === "reactive_ball" && entity.entityType === "wormhole";
   });
+  var hasMine = board.cells.some(function (cell) {
+    return cell.entityCategory === "hazard_ball" && cell.entityType === "mine";
+  });
   if (hasTimeBonus) {
     tasks.push(this._preloadTimeBonusBitmapFont());
   }
   if (hasWormhole) {
     tasks.push(this.wormholeShaderRenderer.preload());
+  }
+  if (hasMine) {
+    tasks.push(this._preloadMineCountdownBitmapFont());
+    tasks.push(this._preloadMineAnimationFrames());
   }
   return Promise.all(tasks).then(function () {
     return null;
@@ -123,7 +134,7 @@ LevelRenderer.prototype.warmupGameplayInteractionAssets = function () {
   }
 
   this._interactionWarmupPromise = Promise.all([
-    this._preloadFairyPrefabs(),
+    this._preloadFairySkeletonData(),
     this._preloadExplodeAnimationClip(),
     this._preloadFireworksPrefab(),
     this.prefabFactory.preload(this._collectInteractionPrefabPaths()),
@@ -321,6 +332,23 @@ LevelRenderer.prototype._collectSpritePaths = function (levelConfig, runtimeSnap
       }
     });
   }
+  if (!Array.isArray(level.colorClouds)) {
+    throw new Error("LevelRenderer sprite collection requires normalized level.colorClouds.");
+  }
+  level.colorClouds.forEach(function (cloud, index) {
+    if (!cloud || typeof cloud !== "object" || Array.isArray(cloud)) {
+      throw new Error("level.colorClouds[" + index + "] must be an object.");
+    }
+    if (typeof cloud.visible !== "boolean") {
+      throw new Error("level.colorClouds[" + index + "].visible must be boolean.");
+    }
+    if (!COLOR_CLOUD_RESOURCES[cloud.color]) {
+      throw new Error("Unsupported level.colorClouds[" + index + "].color: " + cloud.color);
+    }
+    if (cloud.visible) {
+      pushUniqueSpritePath(paths, COLOR_CLOUD_RESOURCES[cloud.color], "level.colorClouds[" + index + "]");
+    }
+  });
   if (!level.boardOcclusionPlan || !Array.isArray(level.boardOcclusionPlan.variants)) {
     throw new Error("LevelRenderer sprite collection requires level.boardOcclusionPlan.");
   }
@@ -431,6 +459,7 @@ LevelRenderer.prototype.releaseLevelSpecificSpriteCache = function () {
 };
 
 LevelRenderer.prototype.releaseAfterGameplayBundleUnload = function () {
+  this._restoreMineFailureGraySprites();
   this.lightningChainRenderer.reset("gameplay_bundle_unload");
   if (typeof this._releaseJarFractionNodesBeforeGameplayBundleUnload !== "function") {
     throw new Error("LevelRenderer requires jar fraction bundle release cleanup.");
@@ -438,8 +467,10 @@ LevelRenderer.prototype.releaseAfterGameplayBundleUnload = function () {
   this._releaseJarFractionNodesBeforeGameplayBundleUnload();
   assertNoPendingSpriteFrameLoadsByPrefix(this.spriteFrameLoadPromises, GAME_RESOURCE_PATH_PREFIX);
   releaseRetainedSpriteFramesByPrefix(this.spriteFrameCache, GAME_RESOURCE_PATH_PREFIX);
-  this.fairyPrefabCache = {};
-  this.fairyPrefabLoadPromises = {};
+  if (this.fairySkeletonDataLoadPromise) {
+    throw new Error("Cannot unload gameplay bundle while fairy Spine data is loading.");
+  }
+  this.fairySkeletonData = null;
   this.fireworksPrefab = null;
   this.fireworksPrefabLoadPromise = null;
   this.explodeAnimationClip = null;
@@ -455,6 +486,14 @@ LevelRenderer.prototype.releaseAfterGameplayBundleUnload = function () {
     throw new Error("Cannot unload gameplay bundle while time bonus font is loading.");
   }
   this.timeBonusBitmapFont = null;
+  if (this.mineCountdownBitmapFontLoadPromise) {
+    throw new Error("Cannot unload gameplay bundle while mine countdown font is loading.");
+  }
+  this.mineCountdownBitmapFont = null;
+  if (this.mineAnimationFramesLoadPromise) {
+    throw new Error("Cannot unload gameplay bundle while mine animation frames are loading.");
+  }
+  this.mineAnimationFrames = null;
   if (!this.bubbleShatterRenderer || typeof this.bubbleShatterRenderer.releaseAfterGameplayBundleUnload !== "function") {
     throw new Error("LevelRenderer requires BubbleShatterRenderer.releaseAfterGameplayBundleUnload.");
   }
@@ -525,6 +564,8 @@ LevelRenderer.prototype._collectInitialCommonSpritePaths = function () {
     POWERUP_ICON_RESOURCES.rainbow,
     POWERUP_ICON_RESOURCES.swap,
     POWERUP_ICON_RESOURCES.blast,
+    POWERUP_ICON_RESOURCES.crystal_gun,
+    POWERUP_ICON_RESOURCES.rainbow_prism_ball,
     POWERUP_ICON_RESOURCES.barrier_hammer,
     POWERUP_ICON_RESOURCES.precise_aim,
     POWERUP_ICON_RESOURCES.snow_removal,
@@ -541,11 +582,27 @@ LevelRenderer.prototype._collectInteractionCommonSpritePaths = function () {
     GUIDE_DOT_SPRITE_PATH,
     BALL_RESOURCES.RAINBOW,
     BALL_RESOURCES.BLAST,
+    BALL_RESOURCES.CRYSTAL_GUN,
+    BALL_RESOURCES.RAINBOW_PRISM_BALL,
     BALL_RESOURCES.BLOCKADE_LINE,
     BALL_RESOURCES.LIGHT,
     BALL_RESOURCES.SNOW_REMOVAL_TOOLS,
     BALL_RESOURCES.POISON_OVERLAY,
     BALL_RESOURCES.POISON_DROPLET,
+    BALL_RESOURCES.ICE_CRYSTAL_ATTACHMENT,
+    BALL_RESOURCES.BUBBLE_SHIELD,
+    BALL_RESOURCES.SPIDER,
+    BALL_RESOURCES.COBWEB,
+    BALL_RESOURCES.SPIDER_COCOON_01,
+    BALL_RESOURCES.SPIDER_COCOON_02,
+    BALL_RESOURCES.SPIDER_COCOON_03,
+    BALL_RESOURCES.SPIDER_COCOON_04,
+    BALL_RESOURCES.SPIDER_COCOON_05,
+    BALL_RESOURCES.SPIDER_COCOON_06,
+    BALL_RESOURCES.SPIDER_COCOON_07,
+    BALL_RESOURCES.SPIDER_COCOON_08,
+    BALL_RESOURCES.SPIDER_COCOON_09,
+    BALL_RESOURCES.ICICLE,
     LOSE_STATUS_RESOURCES.complete,
     LOSE_STATUS_RESOURCES.incomplete,
     REWARD_ITEM_RESOURCES.coin,
@@ -626,6 +683,7 @@ LevelRenderer.prototype._collectInteractionPrefabPaths = function () {
     PREFAB_PATHS.rescueSuccessfulView,
     PREFAB_PATHS.loseView,
     PREFAB_PATHS.addBallTipsView,
+    PREFAB_PATHS.aimingToolTips,
     PREFAB_PATHS.pauseView,
     PREFAB_PATHS.propDescriptionView
   ];
@@ -639,53 +697,46 @@ LevelRenderer.prototype._collectPrefabPaths = function () {
   return this._collectInitialRenderPrefabPaths().concat(this._collectInteractionPrefabPaths());
 };
 
-LevelRenderer.prototype._collectFairyPrefabPaths = function () {
-  return FairyAssistConfig.colorRules.map(function (rule) {
-    if (!rule || typeof rule.prefabPath !== "string" || !rule.prefabPath) {
-      throw new Error("Fairy prefab path is required for color rule.");
-    }
-    return rule.prefabPath;
-  }).filter(function (path, index, list) {
-    return list.indexOf(path) === index;
-  });
-};
-
-LevelRenderer.prototype._preloadFairyPrefabs = function () {
-  var paths = this._collectFairyPrefabPaths();
-  return BundleLoader.ensureNamedBundleLoaded(FAIRY_ANIMATION_BUNDLE_NAME).then(function (bundle) {
-    return Promise.all(paths.map(function (path) {
-      if (this.fairyPrefabCache[path]) {
-        return Promise.resolve(this.fairyPrefabCache[path]);
+LevelRenderer.prototype._preloadFairySkeletonData = function () {
+  if (this.fairySkeletonData) {
+    return Promise.resolve(this.fairySkeletonData);
+  }
+  if (this.fairySkeletonDataLoadPromise) {
+    return this.fairySkeletonDataLoadPromise;
+  }
+  if (typeof sp === "undefined" || !sp || typeof sp.SkeletonData !== "function") {
+    throw new Error("Fairy animation preload requires Spine SkeletonData runtime.");
+  }
+  if (typeof FairyAssistConfig.skeletonDataPath !== "string" || !FairyAssistConfig.skeletonDataPath) {
+    throw new Error("FairyAssistConfig.skeletonDataPath is required.");
+  }
+  this.fairySkeletonDataLoadPromise = BundleLoader.ensureNamedBundleLoaded(FAIRY_ANIMATION_BUNDLE_NAME).then(function (bundle) {
+    return new Promise(function (resolve, reject) {
+      if (!bundle || typeof bundle.load !== "function") {
+        reject(new Error("Fairy animation bundle is invalid."));
+        return;
       }
-      if (this.fairyPrefabLoadPromises[path]) {
-        return this.fairyPrefabLoadPromises[path];
-      }
-
-      this.fairyPrefabLoadPromises[path] = new Promise(function (resolve, reject) {
-        if (!bundle || typeof bundle.load !== "function") {
-          reject(new Error("Fairy animation bundle is invalid."));
+      bundle.load(FairyAssistConfig.skeletonDataPath, sp.SkeletonData, function (error, skeletonData) {
+        if (error) {
+          reject(new Error("Load fairy Spine data failed `" + FAIRY_ANIMATION_BUNDLE_NAME + "/" + FairyAssistConfig.skeletonDataPath + "`: " + error.message));
           return;
         }
-        bundle.load(path, cc.Prefab, function (error, prefab) {
-          if (error) {
-            reject(new Error("Load fairy prefab failed `" + FAIRY_ANIMATION_BUNDLE_NAME + "/" + path + "`: " + error.message));
-            return;
-          }
-          if (!prefab) {
-            reject(new Error("Load fairy prefab returned empty asset: " + FAIRY_ANIMATION_BUNDLE_NAME + "/" + path));
-            return;
-          }
-          this.fairyPrefabCache[path] = prefab;
-          delete this.fairyPrefabLoadPromises[path];
-          resolve(prefab);
-        }.bind(this));
-      }.bind(this)).catch(function (error) {
-        delete this.fairyPrefabLoadPromises[path];
-        throw error;
-      }.bind(this));
-      return this.fairyPrefabLoadPromises[path];
-    }, this));
+        if (!skeletonData) {
+          reject(new Error("Load fairy Spine data returned empty asset: " + FAIRY_ANIMATION_BUNDLE_NAME + "/" + FairyAssistConfig.skeletonDataPath));
+          return;
+        }
+        resolve(skeletonData);
+      });
+    });
+  }).then(function (skeletonData) {
+    this.fairySkeletonData = skeletonData;
+    this.fairySkeletonDataLoadPromise = null;
+    return skeletonData;
+  }.bind(this)).catch(function (error) {
+    this.fairySkeletonDataLoadPromise = null;
+    throw error;
   }.bind(this));
+  return this.fairySkeletonDataLoadPromise;
 };
 
 LevelRenderer.prototype._preloadExplodeAnimationClip = function () {
@@ -864,6 +915,73 @@ LevelRenderer.prototype._preloadTimeBonusBitmapFont = function () {
     }.bind(this));
   }.bind(this));
   return this.timeBonusBitmapFontLoadPromise;
+};
+
+LevelRenderer.prototype._preloadMineCountdownBitmapFont = function () {
+  if (this.mineCountdownBitmapFont) {
+    return Promise.resolve(this.mineCountdownBitmapFont);
+  }
+  if (this.mineCountdownBitmapFontLoadPromise) {
+    return this.mineCountdownBitmapFontLoadPromise;
+  }
+  if (typeof cc.BitmapFont !== "function") {
+    throw new Error("Mine countdown display requires cc.BitmapFont.");
+  }
+  this.mineCountdownBitmapFontLoadPromise = new Promise(function (resolve, reject) {
+    BundleLoader.loadRes(MINE_COUNTDOWN_FONT_RESOURCE, cc.BitmapFont, function (error, font) {
+      this.mineCountdownBitmapFontLoadPromise = null;
+      if (error) {
+        reject(new Error("Load mine countdown bitmap font failed `" + MINE_COUNTDOWN_FONT_RESOURCE + "`: " + error.message));
+        return;
+      }
+      if (!font) {
+        reject(new Error("Load mine countdown bitmap font returned empty asset: " + MINE_COUNTDOWN_FONT_RESOURCE));
+        return;
+      }
+      this.mineCountdownBitmapFont = font;
+      resolve(font);
+    }.bind(this));
+  }.bind(this));
+  return this.mineCountdownBitmapFontLoadPromise;
+};
+
+LevelRenderer.prototype._preloadMineAnimationFrames = function () {
+  if (this.mineAnimationFrames) {
+    return Promise.resolve(MineCountdownPresenter.normalizeMineAnimationFrames(this.mineAnimationFrames));
+  }
+  if (this.mineAnimationFramesLoadPromise) {
+    return this.mineAnimationFramesLoadPromise;
+  }
+  if (typeof cc === "undefined" || !cc || typeof cc.SpriteFrame !== "function") {
+    throw new Error("Mine animation preload requires cc.SpriteFrame.");
+  }
+
+  this.mineAnimationFramesLoadPromise = BundleLoader.ensureNamedBundleLoaded(FAIRY_ANIMATION_BUNDLE_NAME).then(function (bundle) {
+    return new Promise(function (resolve, reject) {
+      if (!bundle || typeof bundle.loadDir !== "function") {
+        reject(new Error("Mine animation bundle is invalid."));
+        return;
+      }
+      bundle.loadDir(MineCountdownPresenter.MINE_ANIMATION_FRAME_DIRECTORY, cc.SpriteFrame, function (error, frames) {
+        if (error) {
+          reject(new Error(
+            "Load mine animation frames failed `" + FAIRY_ANIMATION_BUNDLE_NAME + "/" +
+            MineCountdownPresenter.MINE_ANIMATION_FRAME_DIRECTORY + "`: " + error.message
+          ));
+          return;
+        }
+        resolve(MineCountdownPresenter.normalizeMineAnimationFrames(frames));
+      });
+    });
+  }).then(function (frames) {
+    this.mineAnimationFrames = frames;
+    this.mineAnimationFramesLoadPromise = null;
+    return frames;
+  }.bind(this)).catch(function (error) {
+    this.mineAnimationFramesLoadPromise = null;
+    throw error;
+  }.bind(this));
+  return this.mineAnimationFramesLoadPromise;
 };
 }
 

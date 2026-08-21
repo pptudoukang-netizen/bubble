@@ -7,6 +7,7 @@ var BundleLoader = Shared.BundleLoader;
 var PoolManager = Shared.PoolManager;
 var LevelProgressStore = Shared.LevelProgressStore;
 var LevelAttemptStatsStore = Shared.LevelAttemptStatsStore;
+var CurrentFrontierFailureStore = Shared.CurrentFrontierFailureStore;
 var PlayerResourceStore = Shared.PlayerResourceStore;
 var AssistSpiritStore = Shared.AssistSpiritStore;
 var SpiritShopStore = Shared.SpiritShopStore;
@@ -120,6 +121,7 @@ module.exports = {
     this._gameplayKernelPromise = null;
     this._lastStatusMessage = "";
     this._lastRuntimeState = null;
+    this._windTunnelAmbientRequested = false;
     this._lastAimRefreshPoint = null;
     this._lastAimRefreshScreenPoint = null;
     this._currentLevelId = 0;
@@ -160,6 +162,11 @@ module.exports = {
       : this.levelProgressStore.load();
     this.levelAttemptStatsStore = new LevelAttemptStatsStore();
     this.levelAttemptStats = this.levelAttemptStatsStore.load();
+    this.currentFrontierFailureStore = new CurrentFrontierFailureStore();
+    this.currentFrontierFailureState = this.currentFrontierFailureStore.load(
+      this.levelProgress.highestUnlockedLevel
+    );
+    this._currentAttemptTracksFrontierFailure = false;
     this.randomChallengeStore = new RandomChallengeStore();
     this.randomChallengeState = this.randomChallengeStore.load();
     this.playerResourceStore = new PlayerResourceStore({
@@ -687,6 +694,12 @@ module.exports = {
         }.bind(this),
         onUseBlast: function () {
           this._onUseSkillBallTap("blast");
+        }.bind(this),
+        onUseCrystalGun: function () {
+          this._onUseSkillBallTap("crystal_gun");
+        }.bind(this),
+        onUseRainbowPrismBall: function () {
+          this._onUseSkillBallTap("rainbow_prism_ball");
         }.bind(this),
         onUseSwap: function () {
           this._onUseSwapBallTap();

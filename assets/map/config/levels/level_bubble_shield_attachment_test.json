@@ -1,0 +1,88 @@
+{
+  "schemaVersion": 1,
+  "gameMode": "glass_marble_bubble",
+  "coordinateSystem": "odd-r-hex",
+  "layoutNotes": {
+    "description": "Dedicated bubble shield attachment absorption test.",
+    "legend": {
+      ".": "empty",
+      "R": "red",
+      "B": "blue"
+    },
+    "pattern": "bubble_shield_attachment_test",
+    "theme": "mechanism_test",
+    "focus": "normal_match_exclusion_adjacent_break_and_special_hit_absorption",
+    "silhouetteVariant": "bubble_shield_attachment_test",
+    "designBeat": "clear_left_red_group_then_blast_shielded_red_group"
+  },
+  "sharedDefaults": {
+    "collectMode": "any_with_same_color_bonus",
+    "loseConditions": [
+      { "type": "reach_danger_line", "value": 1 },
+      { "type": "run_out_of_shots", "value": 1 }
+    ],
+    "fallingRules": {
+      "maxDynamicMarbles": 20,
+      "maxBounces": 2,
+      "enableMarbleMarbleCollision": true,
+      "gravity": 900,
+      "initialSpeedY": 120,
+      "horizontalSpeed": 165,
+      "maxDropLifeTime": 6,
+      "bounceDamping": 0.82
+    }
+  },
+  "level": {
+    "levelId": 1,
+    "code": "L001_BUBBLE_SHIELD_ATTACHMENT_TEST",
+    "difficulty": "advanced",
+    "teaches": ["bubble_shield_attachment", "adjacent_shield_break", "special_hit_absorption"],
+    "colorCount": 2,
+    "colors": ["R", "B"],
+    "shotLimit": 14,
+    "targetScore": 3600,
+    "starThresholds": { "star1": 1200, "star2": 2400, "star3": 3300 },
+    "dropInterval": 8,
+    "jarCount": 5,
+    "jarColors": ["R", "G", "B", "Y", "P"],
+    "spawnWeights": { "R": 2.5, "B": 1.0 },
+    "openingShotBalls": ["R", "R", "B"],
+    "jarRules": { "rimBounce": 0.68, "collectZoneScale": 1.1, "sameColorBonus": 1.5 },
+    "winConditions": [
+      { "type": "collect_color", "color": "B", "value": 20 }
+    ],
+    "bonusObjectives": [
+      { "type": "single_turn_drop_count", "value": 8 }
+    ],
+    "clearRewardItems": [
+      { "id": "coin", "count": 50 },
+      { "id": "stamina", "count": 1 }
+    ],
+    "layout": [
+      "BBBBBBBBBBB",
+      "B........B",
+      "B.........B",
+      "B........B",
+      "B.........B",
+      "B........B",
+      "BBBBBBBBBBB",
+      "RRRRRRRRRR",
+      "..........."
+    ],
+    "designNotes": "The unshielded red trio at row 7 columns 0-2 demonstrates ordinary matching while the adjacent shield at column 3 breaks first. Use the granted blast balls on columns 4-6 to verify one-hit absorption before the underlying red balls can be cleared.",
+    "difficultyScore": 24,
+    "specialEntities": [],
+    "cellAttachments": [
+      { "id": "bubble_shield_test_01", "type": "bubble_shield", "row": 7, "col": 3 },
+      { "id": "bubble_shield_test_02", "type": "bubble_shield", "row": 7, "col": 4 },
+      { "id": "bubble_shield_test_03", "type": "bubble_shield", "row": 7, "col": 5 },
+      { "id": "bubble_shield_test_04", "type": "bubble_shield", "row": 7, "col": 6 }
+    ],
+    "levelType": "normal",
+    "playMode": "shot_limited",
+    "initialDropSpaceRows": 8,
+    "adPowerupRules": { "allowed": ["three_line_elimination", "plus_three_balls"] },
+    "boardOcclusionPlan": { "generatorVersion": 1, "mode": "none", "variants": [] }
+  },
+  "difficultyScaleMax": 100
+}

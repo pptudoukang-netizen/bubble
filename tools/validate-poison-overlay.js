@@ -12,6 +12,10 @@ var BoardViewportSystem = require("../gameplay-src/systems/BoardViewportSystem")
 var FairyAssistSystem = require("../gameplay-src/systems/FairyAssistSystem");
 var FallingMarbleSystem = require("../gameplay-src/systems/FallingMarbleSystem");
 
+var ROOT = path.resolve(__dirname, "..");
+var TEST_LEVEL_KEY = "level_poison_attachment_test";
+var TEST_LEVEL_PATH = path.join(ROOT, "assets/map/config/levels/" + TEST_LEVEL_KEY + ".json");
+
 function assert(condition, message) {
   if (!condition) {
     throw new Error(message);
@@ -27,19 +31,11 @@ function clone(value) {
 }
 
 function buildRawPoisonLevel() {
-  var raw = readJson(path.resolve(__dirname, "../assets/map/config/levels/level_001.json"));
-  raw.level.cellAttachments = [{
-    id: "poison_validation_01",
-    type: "poison",
-    row: 2,
-    col: 1,
-    particleCount: 3
-  }];
-  return raw;
+  return readJson(TEST_LEVEL_PATH);
 }
 
 function buildNormalizedPoisonLevel() {
-  return LevelConfigLoader.normalizeLevelConfig(buildRawPoisonLevel(), "level_001");
+  return LevelConfigLoader.normalizeLevelConfig(buildRawPoisonLevel(), TEST_LEVEL_KEY);
 }
 
 function buildGrid(levelConfig) {
@@ -76,9 +72,18 @@ function buildFallingSystems(levelConfig) {
 }
 
 function validateConfigAndCodec() {
+  assert(fs.existsSync(TEST_LEVEL_PATH), "Poison attachment test config is missing.");
+  assert(fs.existsSync(TEST_LEVEL_PATH + ".meta"), "Poison attachment test config meta is missing.");
   var normalized = buildNormalizedPoisonLevel();
-  assert(normalized.level.cellAttachments.length === 1, "Normalized level must preserve poison attachment.");
-  assert(normalized.level.cellAttachments[0].particleCount === 3, "Poison attachment must keep particleCount 3.");
+  assert(normalized.level.specialEntities.length === 0, "Poison attachment test must isolate cell attachments.");
+  assert(normalized.level.layout[8] === "...........", "Poison attachment test must reserve a shootable bottom row.");
+  assert(normalized.level.cellAttachments.length === 6, "Poison attachment test must contain six attachments.");
+  normalized.level.cellAttachments.forEach(function (attachment, index) {
+    assert(attachment.id === "poison_test_0" + (index + 1), "Poison attachment test id mismatch at " + index + ".");
+    assert(attachment.type === "poison", "Poison attachment test type mismatch at " + index + ".");
+    assert(attachment.row === 7 && attachment.col === index + 2, "Poison attachment test position mismatch at " + index + ".");
+    assert(attachment.particleCount === 3, "Poison attachment must keep particleCount 3.");
+  });
 
   var compact = LevelPackCompactCodec.compactPack({
     schemaVersion: 1,
@@ -89,7 +94,7 @@ function validateConfigAndCodec() {
   });
   var expanded = LevelPackCompactCodec.expandPack(compact);
   assert(
-    expanded.levels.level_001.level.cellAttachments[0].id === "poison_validation_01",
+    expanded.levels.level_001.level.cellAttachments[0].id === "poison_test_01",
     "Compact level round trip must preserve poison attachments."
   );
 
@@ -98,7 +103,7 @@ function validateConfigAndCodec() {
   assertConfigRejected(invalidCount, "particleCount must equal 3");
 
   var emptyTarget = buildRawPoisonLevel();
-  emptyTarget.level.cellAttachments[0].row = 6;
+  emptyTarget.level.cellAttachments[0].row = 8;
   emptyTarget.level.cellAttachments[0].col = 0;
   assertConfigRejected(emptyTarget, "poison target must be an ordinary ball");
 }
@@ -106,7 +111,7 @@ function validateConfigAndCodec() {
 function assertConfigRejected(raw, expectedMessage) {
   var rejected = false;
   try {
-    LevelConfigLoader.normalizeLevelConfig(raw, "level_001");
+    LevelConfigLoader.normalizeLevelConfig(raw, TEST_LEVEL_KEY);
   } catch (error) {
     rejected = error.message.indexOf(expectedMessage) >= 0;
   }
@@ -116,8 +121,8 @@ function assertConfigRejected(raw, expectedMessage) {
 function validateBoardStateAndRelease() {
   var levelConfig = buildNormalizedPoisonLevel();
   var grid = buildGrid(levelConfig);
-  var poisonedCell = grid.getCell(2, 1);
-  assert(poisonedCell.poisonAttachmentId === "poison_validation_01", "Board cell must expose poison overlay state.");
+  var poisonedCell = grid.getCell(7, 2);
+  assert(poisonedCell.poisonAttachmentId === "poison_test_01", "Board cell must expose poison overlay state.");
   assert(poisonedCell.poisonParticleCount === 3, "Board cell must expose poison particle count.");
 
   var removed = grid.removeCells([poisonedCell]);
@@ -140,8 +145,8 @@ function validateBoardStateAndRelease() {
 
   var floatingGrid = buildGrid(levelConfig);
   var floatingSystems = buildFallingSystems(levelConfig);
-  var floatingRemoved = floatingGrid.removeFloatingCells([floatingGrid.getCell(2, 1)]);
-  assert(floatingRemoved[0].poisonAttachmentId === "poison_validation_01", "Floating removal must still clear poison overlay state.");
+  var floatingRemoved = floatingGrid.removeFloatingCells([floatingGrid.getCell(7, 2)]);
+  assert(floatingRemoved[0].poisonAttachmentId === "poison_test_01", "Floating removal must still clear poison overlay state.");
   assert(floatingSystems.falling.activeDrops.length === 0, "Unsupported floating removal must not create poison droplets.");
 }
 
@@ -149,7 +154,7 @@ function validatePoisonMakesFairyLeave() {
   var levelConfig = buildNormalizedPoisonLevel();
   var grid = buildGrid(levelConfig);
   var systems = buildFallingSystems(levelConfig);
-  var spawnEvent = systems.fairy._spawnFairy(3, grid.getCellPosition(2, 1))[0];
+  var spawnEvent = systems.fairy._spawnFairy(3, grid.getCellPosition(7, 2))[0];
   var fairyBefore = systems.fairy.snapshot().slots[spawnEvent.slotIndex].fairy;
   assert(fairyBefore && fairyBefore.id === spawnEvent.fairyId, "Validation requires a live fairy target.");
 
@@ -157,7 +162,7 @@ function validatePoisonMakesFairyLeave() {
   manager.systems = { fallingMarbleSystem: systems.falling };
   manager.runtimeEventSequence = 0;
   manager.pendingRuntimeEvents = [];
-  var removed = grid.removeCells([grid.getCell(2, 1)]);
+  var removed = grid.removeCells([grid.getCell(7, 2)]);
   manager._registerPoisonDropletsForEliminatedCells(removed, grid, { poisonReleases: [] });
   var droplet = systems.falling.activeDrops[0];
   droplet.position.x = fairyBefore.position.x;
@@ -204,4 +209,4 @@ validateBoardStateAndRelease();
 validatePoisonMakesFairyLeave();
 validateRenderAndAuthoritativeCallSite();
 
-console.log("[OK] poison overlay, three-speed droplets, floating exclusion and fairy departure validated");
+console.log("[OK] poison attachment test config, overlay, three-speed droplets, floating exclusion and fairy departure validated");

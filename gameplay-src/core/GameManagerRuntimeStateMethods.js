@@ -238,6 +238,46 @@ GameManager.prototype._pushBombExplosionEvent = function () {
   this._pushRuntimeEvent("bomb_explosion", {});
 };
 
+GameManager.prototype._pushMineDisappearEvents = function (removedCells, removalReason) {
+  if (!Array.isArray(removedCells)) {
+    throw new Error("Mine disappearance events require removedCells array.");
+  }
+  if (typeof removalReason !== "string" || !removalReason) {
+    throw new Error("Mine disappearance events require removalReason.");
+  }
+
+  var removedMines = [];
+  removedCells.forEach(function (cell) {
+    if (!cell || typeof cell !== "object" || Array.isArray(cell)) {
+      throw new Error("Mine disappearance events require removed cell objects.");
+    }
+    if (cell.entityCategory !== "hazard_ball" || cell.entityType !== "mine") {
+      return;
+    }
+    if (removalReason !== "elimination" && removalReason !== "floating_drop") {
+      throw new Error("Removed mine has invalid removal reason: " + removalReason + ".");
+    }
+    if (typeof cell.id !== "string" || !cell.id) {
+      throw new Error("Removed mine requires non-empty id.");
+    }
+    if (!Number.isInteger(cell.row) || !Number.isInteger(cell.col)) {
+      throw new Error("Removed mine requires integer coordinates.");
+    }
+    removedMines.push(cell);
+  });
+
+  removedMines.forEach(function (mine) {
+    this._pushRuntimeEvent("mine_disappeared", {
+      mineId: mine.id,
+      row: mine.row,
+      col: mine.col,
+      reason: removalReason
+    });
+    this._pushBombExplosionEvent();
+  }, this);
+  return removedMines;
+};
+
 GameManager.prototype._pushLockOpenEvent = function (unlockedCell) {
   if (!unlockedCell || (typeof unlockedCell.id !== "string" && typeof unlockedCell.id !== "number")) {
     throw new Error("Lock open sfx requires unlocked cell id.");
@@ -251,6 +291,35 @@ GameManager.prototype._pushLockOpenEvent = function (unlockedCell) {
     row: unlockedCell.row,
     col: unlockedCell.col
   });
+};
+
+GameManager.prototype._pushSpiderCocoonBreakEvent = function (removedCells) {
+  if (!Array.isArray(removedCells)) {
+    throw new Error("Spider cocoon break event requires removedCells array.");
+  }
+  var grid = this.systems.bubbleGrid;
+  if (!grid || typeof grid.getCellPosition !== "function") {
+    throw new Error("Spider cocoon break event requires BubbleGrid.getCellPosition.");
+  }
+  var cocoons = removedCells.filter(function (cell) {
+    return !!cell &&
+      cell.entityCategory === "obstacle_ball" &&
+      cell.entityType === "spider_cocoon";
+  }).map(function (cell) {
+    if (!Number.isInteger(cell.row) || !Number.isInteger(cell.col) || typeof cell.id !== "string" || !cell.id) {
+      throw new Error("Removed spider cocoon requires id and integer coordinates.");
+    }
+    return {
+      id: cell.id,
+      row: cell.row,
+      col: cell.col,
+      position: grid.getCellPosition(cell.row, cell.col)
+    };
+  });
+  if (cocoons.length) {
+    this._pushRuntimeEvent("spider_cocoons_removed", { cocoons: cocoons });
+  }
+  return cocoons;
 };
 
 GameManager.prototype._pushRuntimeEvent = function (type, payload) {

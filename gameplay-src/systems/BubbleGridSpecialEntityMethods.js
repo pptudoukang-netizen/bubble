@@ -9,8 +9,87 @@ function attachBubbleGridSpecialEntityMethods(BubbleGrid, context) {
   var clone = context.clone;
   var createSpecialEntityRecord = context.createSpecialEntityRecord;
   var isBlackHoleCell = context.isBlackHoleCell;
+  var isMineCell = context.isMineCell;
   var isVineSpiritCell = context.isVineSpiritCell;
   var keyFor = context.keyFor;
+
+BubbleGrid.prototype.getMines = function () {
+  return this.getCells().filter(isMineCell).sort(function (left, right) {
+    if (typeof left.id !== "string" || !left.id || typeof right.id !== "string" || !right.id) {
+      throw new Error("Mine collection requires non-empty ids.");
+    }
+    return left.id < right.id ? -1 : (left.id > right.id ? 1 : 0);
+  });
+};
+
+BubbleGrid.prototype.advanceMinesAfterShot = function () {
+  var mines = this.getMines();
+  var ticks = [];
+  var explosion = null;
+  var changed = false;
+
+  for (var index = 0; index < mines.length; index += 1) {
+    var mine = mines[index];
+    var cellKey = keyFor(mine.row, mine.col);
+    var record = this._specialCellMap[cellKey];
+    if (!isMineCell(record) || record.id !== mine.id) {
+      throw new Error("Mine countdown lost live mine: " + mine.id + ".");
+    }
+    if (!Number.isInteger(record.initialLife) || record.initialLife <= 0) {
+      throw new Error("Mine countdown requires positive initialLife: " + mine.id + ".");
+    }
+    if (!Number.isInteger(record.life) || record.life <= 0 || record.life > record.initialLife) {
+      throw new Error("Mine countdown requires life in [1, initialLife]: " + mine.id + ".");
+    }
+    if (typeof record.countdownStarted !== "boolean") {
+      throw new Error("Mine countdown requires countdownStarted boolean: " + mine.id + ".");
+    }
+
+    var countdownStartedThisShot = false;
+    if (!record.countdownStarted) {
+      var validNeighbors = this.getNeighborCoordinates(record.row, record.col);
+      var allValidNeighborsOccupied = validNeighbors.every(function (coordinate) {
+        return this.hasCell(coordinate.row, coordinate.col);
+      }, this);
+      if (allValidNeighborsOccupied) {
+        continue;
+      }
+      record.countdownStarted = true;
+      countdownStartedThisShot = true;
+    }
+
+    var lifeBefore = record.life;
+    record.life -= 1;
+    changed = true;
+    ticks.push({
+      mineId: record.id,
+      row: record.row,
+      col: record.col,
+      lifeBefore: lifeBefore,
+      lifeAfter: record.life,
+      countdownStarted: true,
+      countdownStartedThisShot: countdownStartedThisShot
+    });
+    if (record.life === 0) {
+      explosion = {
+        mineId: record.id,
+        row: record.row,
+        col: record.col
+      };
+      delete this._specialCellMap[cellKey];
+      break;
+    }
+  }
+
+  if (changed) {
+    this.version += 1;
+    this._rebuildCaches();
+  }
+  return {
+    ticks: ticks,
+    explosion: explosion
+  };
+};
 
 BubbleGrid.prototype.consumeBlackHole = function (row, col) {
   if (!Number.isInteger(row) || !Number.isInteger(col)) {
@@ -364,6 +443,9 @@ BubbleGrid.prototype.rotateSwirlNeighborsClockwise = function (swirlCell) {
   if (!liveSwirlCell || liveSwirlCell.id !== swirlCell.id || liveSwirlCell.entityType !== "swirl") {
     throw new Error("BubbleGrid swirl rotation requires the live swirl center.");
   }
+  if (liveSwirlCell.spiderLocked === true) {
+    throw new Error("BubbleGrid swirl rotation cannot move a spider-locked center.");
+  }
 
   var track = this.getClockwiseNeighborCoordinates(swirlCell.row, swirlCell.col);
   var occupiedBefore = [];
@@ -373,6 +455,11 @@ BubbleGrid.prototype.rotateSwirlNeighborsClockwise = function (swirlCell) {
     if (!cell) {
       occupiedBefore.push(null);
       return;
+    }
+    if (cell.spiderLocked === true) {
+      throw new Error(
+        "BubbleGrid swirl rotation cannot move a spider-locked track cell at " + coordinate.row + ":" + coordinate.col + "."
+      );
     }
     if (cell.entityCategory !== "normal_ball" || typeof cell.color !== "string" || !cell.color) {
       throw new Error(
@@ -396,6 +483,8 @@ BubbleGrid.prototype.rotateSwirlNeighborsClockwise = function (swirlCell) {
     delete this._vinePreviewOwnerByCell[keyFor(coordinate.row, coordinate.col)];
     delete this._spiritMistExpiryByCell[keyFor(coordinate.row, coordinate.col)];
     delete this._poisonAttachmentByCell[keyFor(coordinate.row, coordinate.col)];
+    delete this._iceCrystalAttachmentByCell[keyFor(coordinate.row, coordinate.col)];
+    delete this._bubbleShieldAttachmentByCell[keyFor(coordinate.row, coordinate.col)];
     this._setCell(coordinate.row, coordinate.col, ".");
   }, this);
 
@@ -432,6 +521,22 @@ BubbleGrid.prototype.rotateSwirlNeighborsClockwise = function (swirlCell) {
         row: target.row,
         col: target.col,
         particleCount: cell.poisonParticleCount
+      };
+    }
+    if (typeof cell.iceCrystalAttachmentId === "string" && cell.iceCrystalAttachmentId) {
+      this._iceCrystalAttachmentByCell[keyFor(target.row, target.col)] = {
+        id: cell.iceCrystalAttachmentId,
+        type: "ice_crystal",
+        row: target.row,
+        col: target.col
+      };
+    }
+    if (typeof cell.bubbleShieldAttachmentId === "string" && cell.bubbleShieldAttachmentId) {
+      this._bubbleShieldAttachmentByCell[keyFor(target.row, target.col)] = {
+        id: cell.bubbleShieldAttachmentId,
+        type: "bubble_shield",
+        row: target.row,
+        col: target.col
       };
     }
     moves.push({
@@ -493,6 +598,8 @@ BubbleGrid.prototype._shiftWormholePairInterior = function (wormholes) {
     delete this._vinePreviewOwnerByCell[coordinateKey];
     delete this._spiritMistExpiryByCell[coordinateKey];
     delete this._poisonAttachmentByCell[coordinateKey];
+    delete this._iceCrystalAttachmentByCell[coordinateKey];
+    delete this._bubbleShieldAttachmentByCell[coordinateKey];
     this._clearSpecialCell(coordinate.row, coordinate.col);
     this._setCell(coordinate.row, coordinate.col, ".");
   }, this);
@@ -532,6 +639,22 @@ BubbleGrid.prototype._shiftWormholePairInterior = function (wormholes) {
           row: target.row,
           col: target.col,
           particleCount: cell.poisonParticleCount
+        };
+      }
+      if (typeof cell.iceCrystalAttachmentId === "string" && cell.iceCrystalAttachmentId) {
+        this._iceCrystalAttachmentByCell[targetKey] = {
+          id: cell.iceCrystalAttachmentId,
+          type: "ice_crystal",
+          row: target.row,
+          col: target.col
+        };
+      }
+      if (typeof cell.bubbleShieldAttachmentId === "string" && cell.bubbleShieldAttachmentId) {
+        this._bubbleShieldAttachmentByCell[targetKey] = {
+          id: cell.bubbleShieldAttachmentId,
+          type: "bubble_shield",
+          row: target.row,
+          col: target.col
         };
       }
       targetCellId = target.row + "_" + target.col;

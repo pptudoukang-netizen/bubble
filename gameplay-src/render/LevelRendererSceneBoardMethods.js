@@ -1,5 +1,8 @@
 "use strict";
 
+var MineCountdownPresenter = require("./MineCountdownPresenter");
+var createWindTunnelBoardVisuals = require("./LevelRendererWindTunnelBoardVisuals");
+
 function attachLevelRendererSceneBoardMethods(LevelRenderer, deps) {
   var DebugFlags = deps.DebugFlags;
   var BoardLayout = deps.BoardLayout;
@@ -10,6 +13,9 @@ function attachLevelRendererSceneBoardMethods(LevelRenderer, deps) {
   var ICE_OVERLAY_OPACITY = deps.ICE_OVERLAY_OPACITY;
   var BOARD_BUBBLE_SIZE = deps.BOARD_BUBBLE_SIZE;
   var WORMHOLE_RENDER_SIZE = deps.WORMHOLE_RENDER_SIZE;
+  var WIND_TUNNEL_ENTRANCE_RENDER_SIZE = deps.WIND_TUNNEL_ENTRANCE_RENDER_SIZE;
+  var WIND_TUNNEL_EXIT_RENDER_SIZE = deps.WIND_TUNNEL_EXIT_RENDER_SIZE;
+  var WIND_TUNNEL_DISAPPEAR_FRAME_SIZES = deps.WIND_TUNNEL_DISAPPEAR_FRAME_SIZES;
   var VINE_VISUAL_SIZE = deps.VINE_VISUAL_SIZE;
   var TEST_SLOT_RADIUS = deps.TEST_SLOT_RADIUS;
   var FairyAssistConfig = deps.FairyAssistConfig;
@@ -20,6 +26,20 @@ function attachLevelRendererSceneBoardMethods(LevelRenderer, deps) {
   var resolveBallVisualKey = deps.resolveBallVisualKey;
   var isIceBallLike = deps.isIceBallLike;
   var resolveIceInnerColor = deps.resolveIceInnerColor;
+  var windTunnelBoardVisuals = createWindTunnelBoardVisuals({
+    BLACK_HOLE_RENDER_SIZE: deps.BLACK_HOLE_RENDER_SIZE,
+    BOARD_BUBBLE_SIZE: BOARD_BUBBLE_SIZE,
+    SpecialAnimationTiming: deps.SpecialAnimationTiming,
+    WIND_TUNNEL_DISAPPEAR_FRAME_SIZES: WIND_TUNNEL_DISAPPEAR_FRAME_SIZES,
+    WIND_TUNNEL_ENTRANCE_RENDER_SIZE: WIND_TUNNEL_ENTRANCE_RENDER_SIZE,
+    WIND_TUNNEL_EXIT_RENDER_SIZE: WIND_TUNNEL_EXIT_RENDER_SIZE,
+    WORMHOLE_RENDER_SIZE: WORMHOLE_RENDER_SIZE
+  });
+  var collectBoardRenderEntities = windTunnelBoardVisuals.collectBoardRenderEntities;
+  var isWindTunnelEntranceEntity = windTunnelBoardVisuals.isWindTunnelEntranceEntity;
+  var isWormholeEntity = windTunnelBoardVisuals.isWormholeEntity;
+  var resolveBoardEntityRenderSize = windTunnelBoardVisuals.resolveBoardEntityRenderSize;
+  var syncWindTunnelEntranceRotation = windTunnelBoardVisuals.syncWindTunnelEntranceRotation;
   var DROP_COLLISION_GLOW_NODE_NAME = "DropCollisionGlow";
   var DROP_COLLISION_GLOW_SIZE = {
     width: BoardLayout.bubbleDiameter * FairyAssistConfig.dropCollisionGlowScale,
@@ -36,13 +56,23 @@ function attachLevelRendererSceneBoardMethods(LevelRenderer, deps) {
   var POISON_OVERLAY_NODE_NAME = "PoisonOverlay";
   var POISON_OVERLAY_SIZE = { width: 69, height: 70 };
   var POISON_DROPLET_SIZE = { width: 16, height: 21 };
+  var ICE_CRYSTAL_ATTACHMENT_NODE_NAME = "IceCrystalAttachment";
+  var ICE_CRYSTAL_ATTACHMENT_SIZE = { width: 65, height: 65 };
+  var ICE_CRYSTAL_ATTACHMENT_OPACITY = 200;
+  var BUBBLE_SHIELD_ATTACHMENT_NODE_NAME = "BubbleShieldAttachment";
+  var BUBBLE_SHIELD_ATTACHMENT_SIZE = { width: 65, height: 65 };
+  var ICICLE_SIZE = { width: 64, height: 34 };
   var VINE_PREVIEW_FADE_DURATION = 0.18;
   var TIME_BONUS_LABEL_NODE_NAME = "TimeBonus";
   var TIME_BONUS_LABEL_Z_INDEX = 100;
   // num_b.fnt declares a baseline of 10 for 61px-tall glyphs, so its visible
   // glyphs sit below Cocos' geometric label center without this compensation.
   var TIME_BONUS_LABEL_VERTICAL_OFFSET_RATIO = 0.15;
-
+  var syncMineCountdownLabel = MineCountdownPresenter.createSyncMineCountdownLabel({
+    fontResource: deps.MINE_COUNTDOWN_FONT_RESOURCE,
+    ensureLabel: ensureLabel,
+    getOrCreateChild: getOrCreateChild
+  });
   function requirePositiveSize(size, fieldName) {
     if (
       !size ||
@@ -164,7 +194,6 @@ function attachLevelRendererSceneBoardMethods(LevelRenderer, deps) {
     glow.node.opacity = Math.min(255, 55 + visualStacks * 28);
     glow.node.setScale(1);
   }
-
   function isBoardSpecialPrefabCell(cell) {
     return !!(
       cell &&
@@ -202,34 +231,19 @@ function attachLevelRendererSceneBoardMethods(LevelRenderer, deps) {
       lockedColorKey,
       typeof cell.health === "number" ? cell.health : "",
       Number.isInteger(cell.capacity) ? cell.capacity : "",
+      Number.isInteger(cell.initialLife) ? cell.initialLife : "",
+      Number.isInteger(cell.life) ? cell.life : "",
+      typeof cell.countdownStarted === "boolean" ? String(cell.countdownStarted) : "",
       Number.isInteger(cell.timeBonusSeconds) ? cell.timeBonusSeconds : "",
       cell.spiritMistExpiresAfterShot === null ? "" : cell.spiritMistExpiresAfterShot,
       typeof cell.vineOwnerId === "string" ? cell.vineOwnerId : "",
       typeof cell.vinePreviewOwnerId === "string" ? cell.vinePreviewOwnerId : "",
       typeof cell.poisonAttachmentId === "string" ? cell.poisonAttachmentId : "",
-      Number.isInteger(cell.poisonParticleCount) ? cell.poisonParticleCount : ""
+      Number.isInteger(cell.poisonParticleCount) ? cell.poisonParticleCount : "",
+      typeof cell.iceCrystalAttachmentId === "string" ? cell.iceCrystalAttachmentId : "",
+      typeof cell.bubbleShieldAttachmentId === "string" ? cell.bubbleShieldAttachmentId : "",
+      cell.lockChainProtected === true ? "lock_chain_protected" : "lock_chain_active"
     ].join("|");
-  }
-
-  function isWormholeEntity(entity) {
-    return !!(
-      entity &&
-      entity.entityCategory === "reactive_ball" &&
-      entity.entityType === "wormhole"
-    );
-  }
-
-  function collectBoardRenderEntities(boardSnapshot) {
-    if (!boardSnapshot || !Array.isArray(boardSnapshot.cells) || !Array.isArray(boardSnapshot.specialEntities)) {
-      throw new Error("Board rendering requires cells and specialEntities arrays.");
-    }
-    var wormholes = boardSnapshot.specialEntities.filter(isWormholeEntity);
-    wormholes.forEach(function (wormhole) {
-      if (!wormhole.position) {
-        throw new Error("Wormhole rendering requires endpoint position.");
-      }
-    });
-    return wormholes.concat(boardSnapshot.cells);
   }
 
   function resolveBoardBubblePrefabPath(cell) {
@@ -250,7 +264,6 @@ function attachLevelRendererSceneBoardMethods(LevelRenderer, deps) {
     }
     throw new Error("Unsupported board special prefab entityType: " + cell.entityType);
   }
-
   function getNodePool(poolMap, prefabPath) {
     if (!poolMap || typeof poolMap !== "object" || Array.isArray(poolMap)) {
       throw new Error("Board node pool map is required.");
@@ -485,6 +498,79 @@ function attachLevelRendererSceneBoardMethods(LevelRenderer, deps) {
     overlayNode.setContentSize(POISON_OVERLAY_SIZE);
   }
 
+  function syncIceCrystalAttachment(renderer, node, cell) {
+    if (!node || !node.isValid) {
+      throw new Error("Ice crystal attachment requires valid board node.");
+    }
+    var spriteTarget = node.getChildByName("Icon") || node;
+    var overlayNode = getOrCreateChild(spriteTarget, ICE_CRYSTAL_ATTACHMENT_NODE_NAME);
+    var hasIceCrystal = !!(
+      cell &&
+      typeof cell.iceCrystalAttachmentId === "string" &&
+      cell.iceCrystalAttachmentId
+    );
+    if (!hasIceCrystal) {
+      overlayNode.active = false;
+      return;
+    }
+    if (
+      cell.entityCategory !== "normal_ball" ||
+      cell.entityType !== null ||
+      (typeof cell.poisonAttachmentId === "string" && cell.poisonAttachmentId)
+    ) {
+      throw new Error("Ice crystal attachment requires an ordinary ball with no other cell attachment.");
+    }
+    var iceCrystalFrame = renderer.spriteFrameCache[BALL_RESOURCES.ICE_CRYSTAL_ATTACHMENT];
+    if (!iceCrystalFrame) {
+      throw new Error(
+        "Ice crystal attachment sprite was not preloaded: " + BALL_RESOURCES.ICE_CRYSTAL_ATTACHMENT
+      );
+    }
+    overlayNode.active = true;
+    overlayNode.setPosition(0, 0);
+    overlayNode.zIndex = 14;
+    overlayNode.opacity = ICE_CRYSTAL_ATTACHMENT_OPACITY;
+    var iceCrystalSprite = ensureSprite(overlayNode, iceCrystalFrame);
+    iceCrystalSprite.trim = false;
+    overlayNode.setContentSize(ICE_CRYSTAL_ATTACHMENT_SIZE);
+  }
+
+  function syncBubbleShieldAttachment(renderer, node, cell) {
+    if (!node || !node.isValid) {
+      throw new Error("Bubble shield attachment requires valid board node.");
+    }
+    var spriteTarget = node.getChildByName("Icon") || node;
+    var overlayNode = getOrCreateChild(spriteTarget, BUBBLE_SHIELD_ATTACHMENT_NODE_NAME);
+    var hasBubbleShield = !!(
+      cell &&
+      typeof cell.bubbleShieldAttachmentId === "string" &&
+      cell.bubbleShieldAttachmentId
+    );
+    if (!hasBubbleShield) {
+      overlayNode.active = false;
+      return;
+    }
+    if (
+      cell.entityCategory !== "normal_ball" ||
+      cell.entityType !== null ||
+      (typeof cell.poisonAttachmentId === "string" && cell.poisonAttachmentId) ||
+      (typeof cell.iceCrystalAttachmentId === "string" && cell.iceCrystalAttachmentId)
+    ) {
+      throw new Error("Bubble shield attachment requires an ordinary ball with no other cell attachment.");
+    }
+    var shieldFrame = renderer.spriteFrameCache[BALL_RESOURCES.BUBBLE_SHIELD];
+    if (!shieldFrame) {
+      throw new Error("Bubble shield attachment sprite was not preloaded: " + BALL_RESOURCES.BUBBLE_SHIELD);
+    }
+    overlayNode.active = true;
+    overlayNode.setPosition(0, 0);
+    overlayNode.zIndex = 15;
+    overlayNode.opacity = 255;
+    var shieldSprite = ensureSprite(overlayNode, shieldFrame);
+    shieldSprite.trim = false;
+    overlayNode.setContentSize(BUBBLE_SHIELD_ATTACHMENT_SIZE);
+  }
+
   function syncVineSpiritHealth(node, cell) {
     if (!node || !node.isValid) {
       throw new Error("Vine spirit health requires valid board node.");
@@ -611,7 +697,7 @@ LevelRenderer.prototype._renderBoard = function (boardSnapshot) {
     var renderKey = buildBoardCellRenderKey(cell, boardSnapshot);
     var cachedRenderKey = this.boardCellRenderKeys[cellId];
     var existingNode = this.boardBubbleNodes[cellId];
-    var renderLayer = isWormholeEntity(cell) ? this.layers.wormhole : this.layers.board;
+    var renderLayer = (isWormholeEntity(cell) || isWindTunnelEntranceEntity(cell)) ? this.layers.wormhole : this.layers.board;
     if (!renderLayer || !renderLayer.isValid) {
       throw new Error("Board entity render layer is missing: " + cellId);
     }
@@ -622,12 +708,17 @@ LevelRenderer.prototype._renderBoard = function (boardSnapshot) {
         existingNode.parent = renderLayer;
       }
       restoreBoardBubbleVisualState(this, existingNode, cell);
+      syncWindTunnelEntranceRotation(existingNode, cell);
       this.wormholeShaderRenderer.syncNode(existingNode, cell);
       syncVineOverlay(this, existingNode, cell);
       syncPoisonOverlay(this, existingNode, cell);
+      syncIceCrystalAttachment(this, existingNode, cell);
+      syncBubbleShieldAttachment(this, existingNode, cell);
       syncVineSpiritHealth(existingNode, cell);
       syncTimeBonusLabel(this, existingNode, cell);
+      syncMineCountdownLabel(this, existingNode, cell);
       this._syncSpiritMistOverlay(existingNode, cell);
+      this._applyLockChainProtectionTint(existingNode, cell);
       this._applySplitterSpawnHiddenBoardState(existingNode, cell.id);
       this._applyBreederSpawnHiddenBoardState(existingNode, cell.id);
       this._applyMolotovBlastHiddenBoardState(existingNode, cell.id);
@@ -646,14 +737,19 @@ LevelRenderer.prototype._renderBoard = function (boardSnapshot) {
     this._applyBoardBubbleVisualCached(
       bubbleNode,
       cell,
-      isWormholeEntity(cell) ? WORMHOLE_RENDER_SIZE : BOARD_BUBBLE_SIZE
+      resolveBoardEntityRenderSize(cell)
     );
+    syncWindTunnelEntranceRotation(bubbleNode, cell);
     this.wormholeShaderRenderer.syncNode(bubbleNode, cell);
     syncVineOverlay(this, bubbleNode, cell);
     syncPoisonOverlay(this, bubbleNode, cell);
+    syncIceCrystalAttachment(this, bubbleNode, cell);
+    syncBubbleShieldAttachment(this, bubbleNode, cell);
     syncVineSpiritHealth(bubbleNode, cell);
     syncTimeBonusLabel(this, bubbleNode, cell);
+    syncMineCountdownLabel(this, bubbleNode, cell);
     this._syncSpiritMistOverlay(bubbleNode, cell);
+    this._applyLockChainProtectionTint(bubbleNode, cell);
     this._applySplitterSpawnHiddenBoardState(bubbleNode, cell.id);
     this._applyBreederSpawnHiddenBoardState(bubbleNode, cell.id);
     this._applyMolotovBlastHiddenBoardState(bubbleNode, cell.id);
@@ -751,6 +847,7 @@ LevelRenderer.prototype._acquireBoardBubbleNode = function (cell) {
     if (existing.__bubblePrefabPath !== expectedPath) {
       this._removeBarrierHammerHintNodeByCellId(nodeId);
       this.wormholeShaderRenderer.resetNode(existing);
+      MineCountdownPresenter.stopMineIdleAnimation(existing);
       existing.stopAllActions();
       existing.active = false;
       existing.removeFromParent(false);
@@ -867,12 +964,12 @@ LevelRenderer.prototype._recycleInactiveBoardBubbleNodes = function (activeTick)
     if (node) {
       this._removeBarrierHammerHintNodeByCellId(cellId);
       this.wormholeShaderRenderer.resetNode(node);
-      node.stopAllActions();
+      windTunnelBoardVisuals.resetWindTunnelEntranceRotation(node);
+      MineCountdownPresenter.stopMineIdleAnimation(node);
       node.active = false;
       node.removeFromParent(false);
       getNodePool(this.boardBubbleNodePool, requireNodePrefabPath(node, "Board bubble node")).push(node);
     }
-
     delete this.boardBubbleNodes[cellId];
     if (this.boardCellRenderKeys && Object.prototype.hasOwnProperty.call(this.boardCellRenderKeys, cellId)) {
       delete this.boardCellRenderKeys[cellId];
@@ -915,9 +1012,13 @@ LevelRenderer.prototype._renderFallingDrops = function (runtimeSnapshot) {
     this._applyBoardBubbleVisualCached(
       dropNode,
       drop,
-      drop.entityType === "poison_droplet" ? POISON_DROPLET_SIZE : BOARD_BUBBLE_SIZE
+      drop.entityType === "poison_droplet"
+        ? POISON_DROPLET_SIZE
+        : (drop.entityType === "icicle" ? ICICLE_SIZE : BOARD_BUBBLE_SIZE)
     );
     syncPoisonOverlay(this, dropNode, drop);
+    syncIceCrystalAttachment(this, dropNode, drop);
+    syncBubbleShieldAttachment(this, dropNode, drop);
     applyDropCollisionGlow(this, dropNode, drop);
   }
   this._recycleInactiveFallingDropNodes(currentTick);

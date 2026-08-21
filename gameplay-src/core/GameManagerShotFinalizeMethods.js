@@ -11,6 +11,8 @@ function createGameManagerShotFinalizeMethods(context) {
   var createGameManagerShotFinalizeMethods = context.createGameManagerShotFinalizeMethods;
   var findPrimaryCollectionObjective = context.findPrimaryCollectionObjective;
   var isBlastBall = context.isBlastBall;
+  var isCrystalGunBall = context.isCrystalGunBall;
+  var isRainbowPrismBall = context.isRainbowPrismBall;
   var isBlackHoleBall = context.isBlackHoleBall;
   var isIceBall = context.isIceBall;
   var isLockedBall = context.isLockedBall;
@@ -204,7 +206,7 @@ function createGameManagerShotFinalizeMethods(context) {
       this._appendUniqueCells(resolution.transparentBallsDestroyed, removedTransparentBalls);
       this._appendUniqueCells(resolution.collected, removedTransparentBalls);
 
-      var floatingCells = this.systems.supportSystem.findFloatingCells(grid);
+      var floatingCells = this._findFloatingCellsBeforeSwirlRotation(grid, resolution);
       var removedFloating = grid.removeFloatingCells(
         this._filterFloatingSpiritCocoons(floatingCells, resolution)
       );
@@ -308,6 +310,7 @@ function createGameManagerShotFinalizeMethods(context) {
       });
 
       blastCells = this._unloadBlackHolesHitByRange(blastCells, grid, resolution, "blast");
+      blastCells = this._resolveBubbleShieldsHitBySpecial(blastCells, grid, resolution, "blast");
 
       this._resolveVineSpiritsHitByExplosion(blastCells, grid, resolution);
       var removableBlastCells = blastCells.filter(function (cell) {
@@ -333,6 +336,11 @@ function createGameManagerShotFinalizeMethods(context) {
         resolution.iceCollected += this._registerIceCollection(resolution.thawed);
       }
       var removedReactive = this._resolveReactiveEntitiesAfterRemoval(removedBlastCells, grid, resolution);
+      this._queueBudHatchesAdjacentToCells(
+        removedBlastCells.concat(removedReactive),
+        resolution,
+        projectile.ball
+      );
       if (this._hasPendingMolotovBlasts()) {
         this._beginMolotovPendingResolution(
           resolution,
@@ -347,7 +355,7 @@ function createGameManagerShotFinalizeMethods(context) {
         return resolution;
       }
 
-      var floatingCells = this.systems.supportSystem.findFloatingCells(grid);
+      var floatingCells = this._findFloatingCellsBeforeSwirlRotation(grid, resolution);
       var removedFloating = grid.removeFloatingCells(
         this._filterFloatingSpiritCocoons(floatingCells, resolution)
       );
@@ -615,7 +623,7 @@ function createGameManagerShotFinalizeMethods(context) {
           capacityBefore: consumption.capacityBefore,
           sourceType: "capacity_exhausted"
         });
-        var floatingCells = this.systems.supportSystem.findFloatingCells(grid);
+        var floatingCells = this._findFloatingCellsBeforeSwirlRotation(grid, resolution);
         var removedFloating = grid.removeFloatingCells(
           this._filterFloatingSpiritCocoons(floatingCells, resolution)
         );
@@ -675,12 +683,21 @@ function createGameManagerShotFinalizeMethods(context) {
       var grid = this.systems.bubbleGrid;
       var targetCell = projectile.targetCell;
       var trappedSpriteRescueSystem = this.systems.trappedSpriteRescueSystem;
+      var firedBall = projectile.ball || {
+        ballCategory: "normal",
+        color: projectile.color,
+        entityCategory: "normal_ball",
+        entityType: null
+      };
+      var rainbowPrismShot = isRainbowPrismBall(firedBall);
 
-      if (projectile.shotPlan && projectile.shotPlan.hitType === "wormhole") {
+      if (this._beginWindTunnelTransitIfPlanned(projectile, grid)) { return; }
+
+      if (!rainbowPrismShot && projectile.shotPlan && projectile.shotPlan.hitType === "wormhole") {
         this._finalizeWormholeAbsorbedShot(projectile, grid);
         return;
       }
-      if (projectile.shotPlan && projectile.shotPlan.hitType === "black_hole") {
+      if (!rainbowPrismShot && projectile.shotPlan && projectile.shotPlan.hitType === "black_hole") {
         this._finalizeBlackHoleAbsorbedShot(projectile, grid);
         return;
       }
@@ -688,7 +705,8 @@ function createGameManagerShotFinalizeMethods(context) {
       if (
         projectile.shotPlan &&
         projectile.shotPlan.hitType === "miss" &&
-        trappedSpriteRescueSystem.isActive()
+        trappedSpriteRescueSystem.isActive() &&
+        !rainbowPrismShot
       ) {
         this.lastResolution = createEmptyResolution();
         this.lastResolution.shotMissed = true;
@@ -707,6 +725,7 @@ function createGameManagerShotFinalizeMethods(context) {
             zoneIds: missClearedOcclusionZoneIds
           });
         }
+        if (this._resolveMineCountdownPhase(this.lastResolution)) { return; }
         if (!this.isTimedInfiniteShots && this.remainingShots <= 0) {
           this._showOutOfShotsAddBallPrompt();
         }
@@ -714,6 +733,7 @@ function createGameManagerShotFinalizeMethods(context) {
       }
 
       var removedTransparentBalls = this._removePlannedTransparentBalls(projectile, grid);
+      var blockedWindTunnelExit = this._blockPlannedWindTunnelExit(projectile, grid, targetCell);
 
       var transparentAttachmentTarget = projectile.shotPlan
         ? projectile.shotPlan.transparentAttachmentTarget
@@ -731,7 +751,7 @@ function createGameManagerShotFinalizeMethods(context) {
         }
       }
 
-      if (!targetCell || grid.hasCell(targetCell.row, targetCell.col)) {
+      if (!rainbowPrismShot && (!targetCell || grid.hasCell(targetCell.row, targetCell.col))) {
         var fallbackPoint = projectile.shotPlan && projectile.shotPlan.hitPoint
           ? projectile.shotPlan.hitPoint
           : projectile.position;
@@ -743,27 +763,25 @@ function createGameManagerShotFinalizeMethods(context) {
           projectile.position
         );
       }
-      if (!targetCell) {
+      if (!rainbowPrismShot && !targetCell) {
         throw new Error("Planned shot could not resolve an attachment cell.");
       }
 
-      var firedBall = projectile.ball || {
-        ballCategory: "normal",
-        color: projectile.color,
-        entityCategory: "normal_ball",
-        entityType: null
-      };
-
-      if (isBlastBall(firedBall)) {
+      if (rainbowPrismShot) {
+        this.lastResolution = this._resolveRainbowPrismBallShot(projectile);
+      } else if (isBlastBall(firedBall)) {
         this.lastResolution = this._resolveBlastShot(projectile, targetCell);
+      } else if (isCrystalGunBall(firedBall)) {
+        this.lastResolution = this._resolveCrystalGunShot(projectile, targetCell);
       } else if (isRainbowBall(firedBall)) {
         this.lastResolution = this._resolveRainbowShot(projectile, targetCell);
       } else {
         var attachedColor = firedBall.color;
         var attachedBubble = grid.addBubble(targetCell, attachedColor);
-        this.lastResolution = this._resolveAttachment(attachedBubble);
+        this.lastResolution = this._resolveAttachment(attachedBubble, firedBall);
       }
       this._settleTransparentBallPenetration(this.lastResolution, removedTransparentBalls, grid);
+      this._appendWindTunnelShotResolution(projectile, blockedWindTunnelExit, grid);
       if (trappedSpriteRescueSystem.isActive()) {
         if (
           !projectile.shotPlan ||
@@ -771,9 +789,13 @@ function createGameManagerShotFinalizeMethods(context) {
         ) {
           throw new Error("Trapped sprite impact requires shotPlan.impactDirection.");
         }
+        var rotationImpactCell = targetCell || projectile.shotPlan.collidedCell;
+        if (!rotationImpactCell || !Number.isInteger(rotationImpactCell.row) || !Number.isInteger(rotationImpactCell.col)) {
+          throw new Error("Trapped sprite impact requires target or collided cell coordinates.");
+        }
         this.lastResolution.trappedSpriteRotation =
           trappedSpriteRescueSystem.beginImpactRotation(
-            grid.getCellPosition(targetCell.row, targetCell.col),
+            grid.getCellPosition(rotationImpactCell.row, rotationImpactCell.col),
             projectile.shotPlan.impactDirection,
             grid.getCells(),
             grid
@@ -785,7 +807,7 @@ function createGameManagerShotFinalizeMethods(context) {
       ) {
         this.lastResolution.impact = null;
       }
-      if (!this.lastResolution.multiTrappedSpiritRescueCompleted) {
+      if (!rainbowPrismShot && !this.lastResolution.multiTrappedSpiritRescueCompleted) {
         this._resolveDirectVineImpact(projectile, grid, this.lastResolution);
       }
       if (!this.molotovResolutionPending && !this.lastResolution.multiTrappedSpiritRescueCompleted) {
@@ -795,20 +817,23 @@ function createGameManagerShotFinalizeMethods(context) {
         this.lastResolution.trappedSpriteRotation &&
         this.lastResolution.trappedSpriteRotation.started
       );
+      var budHatchStarted = this._hasPendingBudHatches();
       var spiritCocoonStarted = this._hasPendingSpiritCocoonOpenings();
       var swirlRotationStarted = false;
       var wormholeShiftStarted = false;
       var vineCastStarted = false;
       if (trappedSpriteRotationStarted) {
         this._deferTrappedSpritePostImpactResolution(this.lastResolution);
-      } else if (!spiritCocoonStarted && !this.lastResolution.multiTrappedSpiritRescueCompleted) {
+      } else if (!budHatchStarted && !spiritCocoonStarted && !this.lastResolution.multiTrappedSpiritRescueCompleted) {
         swirlRotationStarted = !this.molotovResolutionPending && this._beginSwirlRotationForResolution(this.lastResolution);
         wormholeShiftStarted = !this.molotovResolutionPending && !swirlRotationStarted && this._beginWormholeShiftForResolution(this.lastResolution);
         vineCastStarted = !this.molotovResolutionPending && !swirlRotationStarted && !wormholeShiftStarted && this._beginVineCastForResolution(this.lastResolution);
       }
-      var postShotSpecialStarted = trappedSpriteRotationStarted || spiritCocoonStarted || swirlRotationStarted || wormholeShiftStarted || vineCastStarted;
+      var postShotSpecialStarted = trappedSpriteRotationStarted || budHatchStarted || spiritCocoonStarted || swirlRotationStarted || wormholeShiftStarted || vineCastStarted;
+      var mineFailureTriggered = false;
       if (!postShotSpecialStarted && !this.molotovResolutionPending && !this.lastResolution.multiTrappedSpiritRescueCompleted) {
-        this._resolveBreederPhase(this.lastResolution);
+        mineFailureTriggered = this._resolveMineCountdownPhase(this.lastResolution);
+        if (!mineFailureTriggered) { this._resolveBreederPhase(this.lastResolution); }
       }
       var deferredBoardShift = this.lastResolution.multiTrappedSpiritRescueCompleted
         ? false
@@ -825,10 +850,14 @@ function createGameManagerShotFinalizeMethods(context) {
           (
             Array.isArray(this.lastResolution.rescuedTrappedSpirits) &&
             this.lastResolution.rescuedTrappedSpirits.length > 0
+          ) ||
+          (
+            Array.isArray(this.lastResolution.bubbleShieldsRemoved) &&
+            this.lastResolution.bubbleShieldsRemoved.length > 0
           )
         )
       );
-      if (noEliminationTriggered) {
+      if (noEliminationTriggered && !mineFailureTriggered) {
         if (
           !projectile.shotPlan ||
           !Number.isInteger(projectile.shotPlan.wallBounceCount) ||
@@ -856,6 +885,8 @@ function createGameManagerShotFinalizeMethods(context) {
           zoneIds: clearedOcclusionZoneIds
         });
       }
+
+      if (mineFailureTriggered) { this.pendingShotPlan = null; return; }
 
       if (postShotSpecialStarted) {
         this.pendingShotPlan = null;
@@ -897,7 +928,7 @@ function createGameManagerShotFinalizeMethods(context) {
       }
 
       if (!this.isTimedInfiniteShots && this.remainingShots <= 0) {
-        if (this.systems.fallingMarbleSystem.hasActiveDrops() || this._isBoardAdvanceBusy() || this._hasPendingSplitterSpawns() || this._hasPendingMolotovBlasts() || this._hasPendingSpiritCocoonOpenings() || this._hasPendingVineCast()) {
+        if (this.systems.fallingMarbleSystem.hasActiveDrops() || this._isBoardAdvanceBusy() || this._hasPendingSplitterSpawns() || this._hasPendingMolotovBlasts() || this._hasPendingBudHatches() || this._hasPendingSpiritCocoonOpenings() || this._hasPendingVineCast()) {
           this.state = "out_of_shots_pending";
         } else {
           this._showOutOfShotsAddBallPrompt();
@@ -908,7 +939,7 @@ function createGameManagerShotFinalizeMethods(context) {
       this.pendingShotPlan = null;
     },
 
-    _resolveAttachment: function (attachedBubble) {
+    _resolveAttachment: function (attachedBubble, firedBall) {
       var resolution = createEmptyResolution();
       resolution.attachedCell = attachedBubble;
       resolution.impact = this._createImpactEventFromCell(attachedBubble);
@@ -937,8 +968,15 @@ function createGameManagerShotFinalizeMethods(context) {
       }
 
       var removedMatches = grid.removeCells(matchedCells);
+      this._clearBubbleShieldsAdjacentToOrdinaryElimination(removedMatches, grid, resolution);
       this._registerPoisonDropletsForEliminatedCells(removedMatches, grid, resolution);
+      this._registerIciclesForEliminatedCells(removedMatches, grid, resolution);
       var removedReactiveMatches = this._resolveReactiveEntitiesAfterRemoval(removedMatches, grid, resolution);
+      this._queueBudHatchesAdjacentToCells(
+        removedMatches.concat(removedReactiveMatches),
+        resolution,
+        firedBall
+      );
       if (resolution.impact) {
         resolution.impact = this._filterImpactEventSurvivors(
           resolution.impact,
@@ -965,7 +1003,7 @@ function createGameManagerShotFinalizeMethods(context) {
         return resolution;
       }
 
-      var floatingCells = this.systems.supportSystem.findFloatingCells(grid);
+      var floatingCells = this._findFloatingCellsBeforeSwirlRotation(grid, resolution);
       var removedFloating = grid.removeFloatingCells(
         this._filterFloatingSpiritCocoons(floatingCells, resolution)
       );
@@ -1064,7 +1102,7 @@ function createGameManagerShotFinalizeMethods(context) {
 
       // 清屏后若仍有掉落中的玻璃球，先进入等待态；
       // 等掉落完成并计分后，再决定本局最终胜负。
-      if (this.systems.fallingMarbleSystem.hasActiveDrops() || this._hasPendingSplitterSpawns() || this._hasPendingMolotovBlasts() || this._hasPendingSpiritCocoonOpenings() || this._hasPendingSwirlRotation() || this._hasPendingWormholeShift() || this._hasPendingVineCast() || this._hasPendingTrappedSpritePostImpactResolution() || this.systems.trappedSpriteRescueSystem.isRotating()) {
+      if (this.systems.fallingMarbleSystem.hasActiveDrops() || this._hasPendingSplitterSpawns() || this._hasPendingMolotovBlasts() || this._hasPendingBudHatches() || this._hasPendingSpiritCocoonOpenings() || this._hasPendingSwirlRotation() || this._hasPendingWormholeShift() || this._hasPendingVineCast() || this._hasPendingTrappedSpritePostImpactResolution() || this.systems.trappedSpriteRescueSystem.isRotating()) {
         this.state = "won_pending";
         return;
       }
@@ -1158,5 +1196,4 @@ function createGameManagerShotFinalizeMethods(context) {
     }
   };
 }
-
 module.exports = createGameManagerShotFinalizeMethods;

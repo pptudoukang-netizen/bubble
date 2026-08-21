@@ -2,15 +2,21 @@
 
 var SPECIAL_ORDER = [
   "time_bonus",
+  "black_hole",
   "ice",
   "splitter",
+  "bud",
+  "mine",
   "transparent_ball",
   "swirl",
   "wormhole",
+  "wind_tunnel",
   "vine_spirit",
+  "spider",
   "locked",
   "molotov",
   "blast",
+  "crystal_gun",
   "stone",
   "rainbow"
 ];
@@ -23,6 +29,14 @@ var SPECIAL_DEFINITIONS = {
     effectTitle: "时间奖励",
     effectDescription: "优先消除加时球，延长倒计时并获得更多操作空间。",
     iconPath: "ui/image/preview_balls/time_ball"
+  },
+  black_hole: {
+    title: "黑洞",
+    description: "直接命中会被黑洞吞噬，不会落位或参与匹配；吞噬第 3 颗发射球后黑洞消失。",
+    summary: "黑洞固定拥有 3 次吞噬容量，每次吞噬仍会推进当前回合和棋盘进程。",
+    effectTitle: "吞噬规则",
+    effectDescription: "黑洞失去顶部支撑时会原地缩小消失；炸弹等范围效果命中时可直接清除黑洞。",
+    iconPath: "ui/image/preview_balls/black_hole"
   },
   ice: {
     title: "冰冻球",
@@ -39,6 +53,22 @@ var SPECIAL_DEFINITIONS = {
     effectTitle: "特殊效果",
     effectDescription: "利用分裂球扩展同色区域，能更快打通棋盘结构。",
     iconPath: "ui/image/preview_balls/split_red_ball"
+  },
+  bud: {
+    title: "花苞球",
+    description: "邻接消除命中后先破碎，再在原格孵化普通球，并把周围普通球染成同色。",
+    summary: "普通色发射球决定孵化色；特殊发射球会从当前棋盘仍存在的普通颜色中随机选择。",
+    effectTitle: "孵化染色",
+    effectDescription: "周围普通球越多，越容易制造大面积同色结构；范围爆炸可以直接移除花苞球本体。",
+    iconPath: "ui/image/preview_balls/bud"
+  },
+  mine: {
+    title: "地雷",
+    description: "周围有效邻位没有全部占满时启动倒计时，此后每次发射结束生命减 1。",
+    summary: "地雷默认 6 点生命；倒计时一旦启动不会暂停，归零爆炸并立即挑战失败。",
+    effectTitle: "倒计时规则",
+    effectDescription: "在归零前通过消除、特殊清除或悬空掉落移除地雷，可使它停止倒计时。",
+    iconPath: "ui/image/preview_balls/mines"
   },
   transparent_ball: {
     title: "透明球",
@@ -64,6 +94,14 @@ var SPECIAL_DEFINITIONS = {
     effectDescription: "虫洞不可消除、不可掉落并作为固定支撑；移动不会立刻触发同色消除，但失去支撑的球会直接掉落。",
     iconPath: "ui/image/preview_balls/wormhole"
   },
+  wind_tunnel: {
+    title: "风眼",
+    description: "中央入口会吸入发射球，并从当前激活出口沿进入时的方向继续飞行和落位。",
+    summary: "多个出口始终只有一个激活并定时随机切换；将球停在出口坐标会堵塞并移除该出口。",
+    effectTitle: "风眼规则",
+    effectDescription: "出口与透明球均可穿越；出口失去支撑会直接消失且不播放掉落，全部出口消失后中央入口退场。",
+    iconPath: "ui/image/preview_balls/wind_tunnel_entrance"
+  },
   vine_spirit: {
     title: "藤蔓魔灵",
     description: "拥有 3 点生命，每 3 次发射会预告并缠绕附近的普通球。",
@@ -71,6 +109,14 @@ var SPECIAL_DEFINITIONS = {
     effectTitle: "藤蔓规则",
     effectDescription: "缠绕球不能参与消除；魔灵或缠绕球失去支撑时会正常掉落，掉落前解除藤蔓。魔灵死亡或掉落后，由它制造的全部藤蔓会自动枯萎。",
     iconPath: "ui/image/preview_balls/vine_spirit"
+  },
+  spider: {
+    title: "蜘蛛",
+    description: "蜘蛛附着在泡泡上并用蛛网锁住整行，行内空位会生成蜘蛛茧。",
+    summary: "蛛网锁住的泡泡不能参与普通同色消除；范围特殊效果不能越过当前最底层蜘蛛行。",
+    effectTitle: "解锁规则",
+    effectDescription: "清除蜘蛛宿主球可解除锁层；同一行仍有蜘蛛时会在原位补茧，清除最后一只蜘蛛后整行解锁并同时消除全部蜘蛛茧。",
+    iconPath: "game/image/spider/spider"
   },
   locked: {
     title: "锁定球",
@@ -96,6 +142,14 @@ var SPECIAL_DEFINITIONS = {
     effectDescription: "炸弹适合在颜色难以匹配或障碍集中时使用。",
     iconPath: "ui/image/preview_balls/bomb_ball"
   },
+  crystal_gun: {
+    title: "晶光炮",
+    description: "收集后获得晶光炮道具球，从命中点沿当前射击直线继续穿透，并飞到最后一个消除终点。",
+    summary: "最多向前扫描 5 行，射线路径穿过的球全部清除；空格会跳过并继续。",
+    effectTitle: "直线穿透",
+    effectDescription: "反弹后沿最后一段飞行方向继续，不检查颜色或三连；到达棋盘顶部或射出侧边界时提前停止。",
+    iconPath: "game/image/ball/crystal_gun"
+  },
   stone: {
     title: "石头",
     description: "不能按普通颜色匹配消除，会阻挡消除路线。",
@@ -115,16 +169,23 @@ var SPECIAL_DEFINITIONS = {
 };
 
 var SPECIAL_KEY_BY_ENTITY_TYPE = {
+  black_hole: "black_hole",
   ice: "ice",
   splitter: "splitter",
+  bud: "bud",
+  mine: "mine",
   transparent_ball: "transparent_ball",
   swirl: "swirl",
   wormhole: "wormhole",
+  wind_tunnel_entrance: "wind_tunnel",
+  wind_tunnel_exit: "wind_tunnel",
   vine_spirit: "vine_spirit",
+  spider_cocoon: "spider",
   locked: "locked",
   key: "locked",
   molotov: "molotov",
   blast: "blast",
+  crystal_gun: "crystal_gun",
   stone: "stone",
   rainbow: "rainbow"
 };
@@ -159,6 +220,12 @@ var POWERUP_DEFINITIONS = [
     title: "彩虹球",
     description: "选择关卡内任意颜色，将当前发射球变为该颜色。",
     iconPath: "ui/image/props/rainbow_ball"
+  },
+  {
+    key: "crystal_gun",
+    title: "晶光炮",
+    description: "将当前发射球替换为晶光炮，从命中点沿实际射击直线向前穿透，最多扫描 5 行并清除路径穿过的全部球；炮弹到达最后一个消除终点后才消失。",
+    iconPath: "game/image/ball/crystal_gun"
   },
   {
     key: "swap_ball",
@@ -212,6 +279,15 @@ function collectSpecialKeysForLevel(levelConfig) {
   var safeConfig = requireLevelConfig(levelConfig);
   var presentKeys = {};
 
+  if (safeConfig.level.spiderRows !== undefined) {
+    if (!Array.isArray(safeConfig.level.spiderRows)) {
+      throw new Error("Prop description level.spiderRows must be an array when configured.");
+    }
+    if (safeConfig.level.spiderRows.length > 0) {
+      presentKeys.spider = true;
+    }
+  }
+
   safeConfig.level.winConditions.forEach(function (condition, index) {
     if (!condition || typeof condition !== "object" || Array.isArray(condition)) {
       throw new Error("Prop description winConditions[" + index + "] must be an object.");
@@ -237,19 +313,21 @@ function collectSpecialKeysForLevel(levelConfig) {
 }
 
 function buildListDefinitions(levelConfig) {
-  var definitions = collectSpecialKeysForLevel(levelConfig).map(function (key) {
-    var definition = SPECIAL_DEFINITIONS[key];
-    if (!definition) {
-      throw new Error("Prop description special definition missing: " + key);
-    }
-    return {
-      key: "special_" + key,
-      title: definition.title,
-      description: definition.description,
-      iconPath: definition.iconPath
-    };
-  });
-
+  var definitions = [];
+  if (levelConfig !== undefined) {
+    collectSpecialKeysForLevel(levelConfig).forEach(function (specialKey) {
+      var definition = SPECIAL_DEFINITIONS[specialKey];
+      if (!definition || typeof definition.iconPath !== "string" || !definition.iconPath) {
+        throw new Error("Prop description special definition is invalid: " + specialKey);
+      }
+      definitions.push({
+        key: "special_" + specialKey,
+        title: definition.title,
+        description: definition.description,
+        iconPath: definition.iconPath
+      });
+    });
+  }
   POWERUP_DEFINITIONS.forEach(function (definition) {
     definitions.push({
       key: "powerup_" + definition.key,

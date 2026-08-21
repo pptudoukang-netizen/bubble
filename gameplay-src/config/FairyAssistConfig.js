@@ -1,5 +1,9 @@
 "use strict";
 
+var SKELETON_DATA_PATH = "bonus_sprite/Bonus Sprite";
+var IDLE_ANIMATION_NAME = "idle";
+var SMASH_ANIMATION_NAME = "smash";
+
 var COLOR_RULES = [
   {
     color: "red",
@@ -7,7 +11,7 @@ var COLOR_RULES = [
     maxEliminated: 5,
     bonusStep: 1,
     canSplit: false,
-    prefabPath: "prefabs/genius_red"
+    skinName: "red"
   },
   {
     color: "yellow",
@@ -15,7 +19,7 @@ var COLOR_RULES = [
     maxEliminated: 9,
     bonusStep: 2,
     canSplit: false,
-    prefabPath: "prefabs/genius_yellow"
+    skinName: "yellow"
   },
   {
     color: "green",
@@ -23,7 +27,7 @@ var COLOR_RULES = [
     maxEliminated: Number.MAX_SAFE_INTEGER,
     bonusStep: 3,
     canSplit: true,
-    prefabPath: "prefabs/genius_green"
+    skinName: "green"
   }
 ];
 
@@ -83,8 +87,11 @@ function validateColorRules(rules) {
     if (typeof rule.canSplit !== "boolean") {
       throw new Error("FairyAssistConfig canSplit must be boolean for " + rule.color + ".");
     }
-    if (typeof rule.prefabPath !== "string" || !rule.prefabPath) {
-      throw new Error("FairyAssistConfig prefabPath is required for " + rule.color + ".");
+    if (typeof rule.skinName !== "string" || !rule.skinName) {
+      throw new Error("FairyAssistConfig skinName is required for " + rule.color + ".");
+    }
+    if (rule.skinName !== rule.color) {
+      throw new Error("FairyAssistConfig skinName must match color " + rule.color + ".");
     }
     expectedMin = rule.maxEliminated + 1;
   });
@@ -138,6 +145,9 @@ validateColorRules(COLOR_RULES);
 validateSlots(SLOTS);
 
 var CONFIG = {
+  skeletonDataPath: SKELETON_DATA_PATH,
+  idleAnimationName: IDLE_ANIMATION_NAME,
+  smashAnimationName: SMASH_ANIMATION_NAME,
   colorRules: COLOR_RULES,
   slots: SLOTS,
   removeCountOnMiss: 2,

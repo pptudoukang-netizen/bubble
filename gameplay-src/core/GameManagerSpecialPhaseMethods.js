@@ -1,5 +1,7 @@
 "use strict";
 
+var EliminationSequenceBuilder = require("./EliminationSequenceBuilder");
+
 function attachGameManagerSpecialPhaseMethods(GameManager, context) {
   var BubbleGrid = context.BubbleGrid;
   var SPLITTER_SPAWN_DELAY_SEC = context.SPLITTER_SPAWN_DELAY_SEC;
@@ -23,6 +25,58 @@ function selectRandomIndex(length, description) {
   }
   return Math.floor(randomValue * length);
 }
+
+function findRotatableSwirlCenters(grid) {
+  if (
+    !grid ||
+    typeof grid.getCells !== "function" ||
+    typeof grid.getNeighborCoordinates !== "function" ||
+    typeof grid.getCell !== "function"
+  ) {
+    throw new Error("Swirl rotation requires BubbleGrid cell and neighbor queries.");
+  }
+  return grid.getCells().filter(isSwirlBall).filter(function (center) {
+    if (center.spiderLocked === true) {
+      return false;
+    }
+    var track = grid.getNeighborCoordinates(center.row, center.col);
+    if (track.some(function (coordinate) {
+      var cell = grid.getCell(coordinate.row, coordinate.col);
+      return !!cell && cell.spiderLocked === true;
+    })) {
+      return false;
+    }
+    return track.some(function (coordinate) {
+      return !!grid.getCell(coordinate.row, coordinate.col);
+    });
+  }).sort(function (left, right) {
+    if (left.row !== right.row) {
+      return left.row - right.row;
+    }
+    if (left.col !== right.col) {
+      return left.col - right.col;
+    }
+    return String(left.id).localeCompare(String(right.id));
+  });
+}
+
+GameManager.prototype._findFloatingCellsBeforeSwirlRotation = function (grid, resolution) {
+  if (!resolution || typeof resolution !== "object" || Array.isArray(resolution)) {
+    throw new Error("Pre-swirl support resolution requires resolution.");
+  }
+  if (!Array.isArray(resolution.swirlRotations)) {
+    throw new Error("Pre-swirl support resolution requires resolution.swirlRotations.");
+  }
+  if (!this.systems.supportSystem ||
+      typeof this.systems.supportSystem.findFloatingCells !== "function" ||
+      typeof this.systems.supportSystem.clearFloatingCells !== "function") {
+    throw new Error("Pre-swirl support resolution requires SupportSystem.");
+  }
+  if (findRotatableSwirlCenters(grid).length > 0) {
+    return this.systems.supportSystem.clearFloatingCells();
+  }
+  return this.systems.supportSystem.findFloatingCells(grid);
+};
 
 GameManager.prototype._resolveBreederPhase = function (resolution) {
   if (!resolution || typeof resolution !== "object" || Array.isArray(resolution)) {
@@ -137,6 +191,61 @@ GameManager.prototype._resolveBreederPhase = function (resolution) {
   return resolution.breederSpawns.slice();
 };
 
+GameManager.prototype._resolveMineCountdownPhase = function (resolution) {
+  if (!resolution || typeof resolution !== "object" || Array.isArray(resolution)) {
+    throw new Error("Mine countdown phase requires resolution.");
+  }
+  if (typeof resolution.mineCountdownResolved !== "boolean") {
+    throw new Error("Mine countdown phase requires resolution.mineCountdownResolved boolean.");
+  }
+  if (!Array.isArray(resolution.mineCountdowns) || !Array.isArray(resolution.mineExplosions)) {
+    throw new Error("Mine countdown phase requires mine countdown and explosion arrays.");
+  }
+  if (resolution.mineCountdownResolved) {
+    throw new Error("Mine countdown phase cannot resolve the same shot twice.");
+  }
+  if (!Number.isInteger(this.shotsFired) || this.shotsFired <= 0) {
+    throw new Error("Mine countdown phase requires positive shotsFired.");
+  }
+  var grid = this.systems.bubbleGrid;
+  if (!grid || typeof grid.advanceMinesAfterShot !== "function") {
+    throw new Error("Mine countdown phase requires BubbleGrid.advanceMinesAfterShot.");
+  }
+
+  resolution.mineCountdownResolved = true;
+  var result = grid.advanceMinesAfterShot();
+  if (!result || !Array.isArray(result.ticks)) {
+    throw new Error("Mine countdown phase received invalid BubbleGrid result.");
+  }
+  result.ticks.forEach(function (tick) {
+    resolution.mineCountdowns.push(tick);
+  });
+  if (!result.explosion) {
+    return false;
+  }
+  var explosion = result.explosion;
+  if (typeof explosion.mineId !== "string" || !explosion.mineId || !Number.isInteger(explosion.row) || !Number.isInteger(explosion.col)) {
+    throw new Error("Mine explosion requires id and integer coordinates.");
+  }
+  resolution.mineExplosions.push({
+    id: "mine_explosion_" + this.shotsFired + "_" + explosion.mineId,
+    mineId: explosion.mineId,
+    entityType: "mine",
+    row: explosion.row,
+    col: explosion.col
+  });
+  resolution.dangerReached = true;
+  this._pushBombExplosionEvent();
+  this._pushRuntimeEvent("mine_exploded", {
+    mineId: explosion.mineId,
+    row: explosion.row,
+    col: explosion.col
+  });
+  this.state = "lost_hazard";
+  this.pendingShotPlan = null;
+  return true;
+};
+
 GameManager.prototype._beginVineCastForResolution = function (resolution) {
   if (!resolution || typeof resolution !== "object" || Array.isArray(resolution)) {
     throw new Error("Vine cast requires resolution.");
@@ -214,18 +323,7 @@ GameManager.prototype._beginSwirlRotationForResolution = function (resolution) {
     throw new Error("Swirl rotation cannot start while another rotation is pending.");
   }
   var grid = this.systems.bubbleGrid;
-  if (!grid || typeof grid.getCells !== "function") {
-    throw new Error("Swirl rotation requires BubbleGrid.getCells.");
-  }
-  var centers = grid.getCells().filter(isSwirlBall).sort(function (left, right) {
-    if (left.row !== right.row) {
-      return left.row - right.row;
-    }
-    if (left.col !== right.col) {
-      return left.col - right.col;
-    }
-    return String(left.id).localeCompare(String(right.id));
-  });
+  var centers = findRotatableSwirlCenters(grid);
   if (!centers.length) {
     return false;
   }
@@ -235,6 +333,42 @@ GameManager.prototype._beginSwirlRotationForResolution = function (resolution) {
   if (!Array.isArray(resolution.swirlRotations)) {
     throw new Error("Swirl rotation requires resolution.swirlRotations.");
   }
+
+  if (typeof resolution.eliminationPresentationComplete !== "boolean") {
+    throw new Error("Swirl rotation requires resolution.eliminationPresentationComplete boolean.");
+  }
+  if (resolution.swirlRotations.length !== 0) {
+    throw new Error("Swirl rotation cannot start twice for one resolution.");
+  }
+
+  this.pendingSwirlRotationResolution = resolution;
+  this.pendingSwirlRotationRemaining = 0;
+  this.pendingSwirlRotationWaitingForEliminationPresentation =
+    EliminationSequenceBuilder.resolveRequiresEliminationPresentationHold(resolution) &&
+    !resolution.eliminationPresentationComplete;
+  if (this.pendingSwirlRotationWaitingForEliminationPresentation) {
+    return true;
+  }
+  this._startPendingSwirlRotation(resolution);
+  return true;
+};
+
+GameManager.prototype._startPendingSwirlRotation = function (resolution) {
+  if (!resolution || resolution !== this.pendingSwirlRotationResolution) {
+    throw new Error("Swirl rotation start requires the pending resolution.");
+  }
+  if (this.pendingSwirlRotationRemaining !== 0) {
+    throw new Error("Swirl rotation start requires zero pending duration.");
+  }
+  var grid = this.systems.bubbleGrid;
+  if (!grid || typeof grid.rotateSwirlNeighborsClockwise !== "function") {
+    throw new Error("Swirl rotation requires BubbleGrid.rotateSwirlNeighborsClockwise.");
+  }
+  var centers = findRotatableSwirlCenters(grid);
+  if (!centers.length) {
+    throw new Error("Pending swirl rotation lost every rotatable center before animation start.");
+  }
+  this.pendingSwirlRotationWaitingForEliminationPresentation = false;
 
   centers.forEach(function (center) {
     var moves = grid.rotateSwirlNeighborsClockwise(center);
@@ -252,11 +386,10 @@ GameManager.prototype._beginSwirlRotationForResolution = function (resolution) {
     });
   }, this);
   if (!resolution.swirlRotations.length) {
-    return false;
+    throw new Error("Pending swirl rotation produced no occupied track moves.");
   }
   this.pendingSwirlRotationRemaining = SWIRL_ROTATION_DURATION;
-  this.pendingSwirlRotationResolution = resolution;
-  return true;
+  return resolution.swirlRotations;
 };
 
 GameManager.prototype._beginWormholeShiftForResolution = function (resolution) {
@@ -367,6 +500,9 @@ GameManager.prototype._continueAfterVineCast = function (resolution) {
   if (!resolution) {
     throw new Error("Vine cast completion requires resolution.");
   }
+  if (this._resolveMineCountdownPhase(resolution)) {
+    return;
+  }
   this._resolveBreederPhase(resolution);
   if (resolution.boardCleared) {
     this._resolveBoardClearedOutcome();
@@ -378,7 +514,7 @@ GameManager.prototype._continueAfterVineCast = function (resolution) {
   var eliminationPresentationWasComplete = this.pendingBoardAdvanceEliminationPresentation === false;
   if (this._applyPostImpactBoardShiftPolicy(resolution)) {
     if (eliminationPresentationWasComplete) {
-      this.notifyBoardAdvanceEliminationPresentationComplete();
+      this.notifyBoardAdvanceEliminationPresentationComplete(resolution);
     }
     return;
   }
@@ -391,6 +527,7 @@ GameManager.prototype._continueAfterVineCast = function (resolution) {
       this._isBoardAdvanceBusy() ||
       this._hasPendingSplitterSpawns() ||
       this._hasPendingMolotovBlasts() ||
+      this._hasPendingBudHatches() ||
       this._hasPendingSpiritCocoonOpenings() ||
       this._hasPendingVineCast()
     ) {
@@ -451,6 +588,9 @@ GameManager.prototype._updatePendingSwirlRotation = function (dt) {
   if (safeDt < 0) {
     throw new Error("Pending swirl rotation dt must not be negative.");
   }
+  if (this.pendingSwirlRotationWaitingForEliminationPresentation) {
+    return false;
+  }
   this.pendingSwirlRotationRemaining = Math.max(0, this.pendingSwirlRotationRemaining - safeDt);
   if (this.pendingSwirlRotationRemaining > 0) {
     return false;
@@ -484,6 +624,7 @@ GameManager.prototype._updatePendingSwirlRotation = function (dt) {
   this._scoreSwirlFloatingDrops(resolution, newlyFloating);
   resolution.boardCleared = this._isBoardCleared(grid);
   this.pendingSwirlRotationResolution = null;
+  this.pendingSwirlRotationWaitingForEliminationPresentation = false;
   this._continueAfterSwirlRotation(resolution);
   return true;
 };
@@ -652,7 +793,7 @@ GameManager.prototype._updatePendingSplitterSpawns = function (dt) {
     this.state = "running";
   }
   this._ensureMinimumVisibleBoardRows(this.lastResolution);
-  if (this.state === "out_of_shots_pending" && !this.systems.fallingMarbleSystem.hasActiveDrops() && !this._hasPendingSplitterSpawns() && !this._hasPendingMolotovBlasts() && !this._hasPendingSpiritCocoonOpenings() && !this._hasPendingSwirlRotation() && !this._hasPendingWormholeShift() && !this._hasPendingVineCast() && !this._isBoardAdvanceBusy()) {
+  if (this.state === "out_of_shots_pending" && !this.systems.fallingMarbleSystem.hasActiveDrops() && !this._hasPendingSplitterSpawns() && !this._hasPendingMolotovBlasts() && !this._hasPendingBudHatches() && !this._hasPendingSpiritCocoonOpenings() && !this._hasPendingSwirlRotation() && !this._hasPendingWormholeShift() && !this._hasPendingVineCast() && !this._isBoardAdvanceBusy()) {
     this._showOutOfShotsAddBallPrompt();
   }
   if (grid && typeof grid.assertNoVisualOverlap === "function") {

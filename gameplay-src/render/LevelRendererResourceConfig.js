@@ -7,6 +7,7 @@ var PrefabFactory = require("./PrefabFactory");
 var BoardLayout = require("../../assets/scripts/config/BoardLayout");
 var AssistSpiritConfig = require("../../assets/scripts/config/AssistSpiritConfig");
 var SpecialAnimationTiming = require("../config/SpecialAnimationTiming");
+var ColorCloudConfig = require("../config/ColorCloudConfig");
 var FairyAssistConfig = require("../config/FairyAssistConfig");
 var JarScoreConfig = require("../config/JarScoreConfig");
 var AssistSpiritSkillConfig = require("../config/AssistSpiritSkillConfig");
@@ -45,6 +46,8 @@ var BALL_RESOURCES = {
   W: "game/image/ball/white_ball",
   RAINBOW: "game/image/ball/rainbow_ball",
   BLAST: "game/image/ball/bomb_ball",
+  CRYSTAL_GUN: "game/image/ball/crystal_gun",
+  RAINBOW_PRISM_BALL: "game/image/props/rainbow_prism_ball",
   STONE: "game/image/ball/stone_ball",
   ICE: "game/image/ball/ice_ball",
   MOLOTOV: "game/image/props/fire_box",
@@ -56,7 +59,17 @@ var BALL_RESOURCES = {
   SPLIT_Y: "game/image/ball/split_yellow_ball",
   SPLIT_P: "game/image/ball/split_purple_ball",
   BREEDER: "game/image/ball/breeder_ball",
+  BUD: "game/image/ball/bud",
+  BUD_1: "game/image/ball/bud_1",
+  BUD_2: "game/image/ball/bud_2",
+  BUD_3: "game/image/ball/bud_3",
+  BUD_4: "game/image/ball/bud_4",
+  BUD_5: "game/image/ball/bud_5",
+  BUD_6: "game/image/ball/bud_6",
+  BUD_7: "game/image/ball/bud_7",
+  BUD_8: "game/image/ball/bud_8",
   BLACK_HOLE: "game/image/ball/black_hole",
+  MINE: "game/image/ball/mines",
   SPIRIT_COCOON: "game/image/ball/cocoon_1",
   COCOON_1: "game/image/ball/cocoon_1",
   COCOON_2: "game/image/ball/cocoon_2",
@@ -70,16 +83,40 @@ var BALL_RESOURCES = {
   TRANSPARENT_BALL: "game/image/ball/transparent_ball",
   SWIRL: "game/image/ball/swirl_ball",
   WORMHOLE: "game/image/ball/wormhole",
+  WIND_TUNNEL_ENTRANCE: "game/image/special_item/wind_tunnel_entrance",
+  WIND_TUNNEL_EXIT_INACTIVE: "game/image/special_item/inactive_exit",
+  WIND_TUNNEL_EXIT_ACTIVE: "game/image/special_item/activated_exit",
+  AIR_INTAKE_01: "game/image/special_item/air_intake_01",
+  AIR_INTAKE_02: "game/image/special_item/air_intake_02",
+  AIR_INTAKE_03: "game/image/special_item/air_intake_03",
+  AIR_INTAKE_04: "game/image/special_item/air_intake_04",
+  AIR_INTAKE_05: "game/image/special_item/air_intake_05",
   VINE_SPIRIT: "game/image/ball/vine_spirit",
   VINES: "game/image/ball/vines",
   POISON_OVERLAY: "game/image/ball/poison_overlay",
   POISON_DROPLET: "game/image/ball/poison_droplet",
+  ICE_CRYSTAL_ATTACHMENT: "game/image/ball/ice_crystal_ball",
+  BUBBLE_SHIELD: "game/image/ball/transparent_bubbles",
+  SPIDER: "game/image/spider/spider",
+  COBWEB: "game/image/spider/cobweb",
+  SPIDER_COCOON: "game/image/spider/spider_cocoon_01",
+  SPIDER_COCOON_01: "game/image/spider/spider_cocoon_01",
+  SPIDER_COCOON_02: "game/image/spider/spider_cocoon_02",
+  SPIDER_COCOON_03: "game/image/spider/spider_cocoon_03",
+  SPIDER_COCOON_04: "game/image/spider/spider_cocoon_04",
+  SPIDER_COCOON_05: "game/image/spider/spider_cocoon_05",
+  SPIDER_COCOON_06: "game/image/spider/spider_cocoon_06",
+  SPIDER_COCOON_07: "game/image/spider/spider_cocoon_07",
+  SPIDER_COCOON_08: "game/image/spider/spider_cocoon_08",
+  SPIDER_COCOON_09: "game/image/spider/spider_cocoon_09",
+  ICICLE: "game/image/ball/icicle",
   ICE_SNOWBALL: "game/image/ball/ice_ball",
   BLOCKADE_LINE: "game/image/ball/blockade_line",
   LIGHT: "game/image/ball/light_ball",
   SNOW_REMOVAL_TOOLS: "game/image/ball/snow_removal_tools"
 };
 var TIME_BONUS_FONT_RESOURCE = "game/fnt/num_b";
+var MINE_COUNTDOWN_FONT_RESOURCE = "game/fnt/clock";
 var TRAPPED_SPIRIT_PATH_PREFIX = "game/trapped_spirit/";
 var RESCUE_SUCCESSFUL_SPIRIT_PATH_PREFIX = "image/rescue_successful/";
 var TRAPPED_SPRITE_LAYER_Z_INDEX = 49;
@@ -105,8 +142,30 @@ var BOARD_OCCLUSION_RESOURCES = {
 };
 var BOARD_OCCLUSION_CLOCK_RESOURCE = "game/image/props/clock";
 
+var COLOR_CLOUD_RESOURCES = {
+  R: "game/image/special_item/red_cloud",
+  G: "game/image/special_item/green_cloud",
+  B: "game/image/special_item/blue_cloud",
+  Y: "game/image/special_item/yellow_cloud",
+  P: "game/image/special_item/purple_cloud",
+  K: "game/image/special_item/black_cloud",
+  O: "game/image/special_item/orange_cloud",
+  W: "game/image/special_item/white_cloud",
+  RAINBOW: "game/image/special_item/rainbow_cloud"
+};
+
 var WORMHOLE_DIRECTION_ARROW_RESOURCE = "game/image/ball/arrow";
 var WORMHOLE_RENDER_SIZE = new cc.Size(80, 80);
+var WIND_TUNNEL_ENTRANCE_RENDER_SIZE = new cc.Size(110, 92);
+var WIND_TUNNEL_EXIT_RENDER_SIZE = new cc.Size(80, 70);
+var WIND_TUNNEL_DISAPPEAR_FRAME_SIZES = [
+  new cc.Size(114, 92),
+  new cc.Size(113, 92),
+  new cc.Size(110, 92),
+  new cc.Size(96, 92),
+  new cc.Size(79, 92)
+];
+var BLACK_HOLE_RENDER_SIZE = new cc.Size(93, 73);
 var WORMHOLE_DIRECTION_ARROW_SIZE = new cc.Size(42, 42);
 var WORMHOLE_DIRECTION_ARROW_TRAVEL_DISTANCE = 18;
 var WORMHOLE_DIRECTION_ARROW_STAGGER = 0.12;
@@ -171,6 +230,8 @@ var POWERUP_ICON_RESOURCES = {
   rainbow: "ui/image/props/rainbow_ball",
   swap: "ui/image/props/change_ball",
   blast: "ui/image/props/blast_ball",
+  crystal_gun: "game/image/ball/crystal_gun",
+  rainbow_prism_ball: "game/image/props/rainbow_prism_ball",
   barrier_hammer: "ui/image/props/barrier_hammer",
   precise_aim: "ui/image/props/aim",
   snow_removal: "ui/image/props/snow_removal",
@@ -198,6 +259,7 @@ var PREFAB_PATHS = {
   rescueSuccessfulView: "prefabs/ui/RescueSuccessfulView",
   loseView: "prefabs/ui/LoseView",
   addBallTipsView: "prefabs/ui/AddBallTipsView",
+  aimingToolTips: "game/prefabs/game/AimingToolTips",
   pauseView: "prefabs/ui/PauseView",
   propDescriptionView: "prefabs/ui/PropDescriptionView",
   bubbleItem: "game/prefabs/game/BubbleItem",
@@ -350,6 +412,7 @@ var LEVEL_RENDERER_RESOURCE_CONTEXT = {
   AssistSpiritPresentationConfig: AssistSpiritPresentationConfig,
   AssistSpiritSkillConfig: AssistSpiritSkillConfig,
   BALL_RESOURCES: BALL_RESOURCES,
+  MINE_COUNTDOWN_FONT_RESOURCE: MINE_COUNTDOWN_FONT_RESOURCE,
   BARRIER_HAMMER_HINT_LIFT_DURATION: BARRIER_HAMMER_HINT_LIFT_DURATION,
   BARRIER_HAMMER_HINT_OFFSET_X: BARRIER_HAMMER_HINT_OFFSET_X,
   BARRIER_HAMMER_HINT_OFFSET_Y: BARRIER_HAMMER_HINT_OFFSET_Y,
@@ -358,11 +421,17 @@ var LEVEL_RENDERER_RESOURCE_CONTEXT = {
   BARRIER_HAMMER_HINT_STRIKE_DURATION: BARRIER_HAMMER_HINT_STRIKE_DURATION,
   BARRIER_HAMMER_HINT_TAP_OFFSET_X: BARRIER_HAMMER_HINT_TAP_OFFSET_X,
   BARRIER_HAMMER_HINT_TAP_OFFSET_Y: BARRIER_HAMMER_HINT_TAP_OFFSET_Y,
+  BLACK_HOLE_RENDER_SIZE: BLACK_HOLE_RENDER_SIZE,
+  WIND_TUNNEL_ENTRANCE_RENDER_SIZE: WIND_TUNNEL_ENTRANCE_RENDER_SIZE,
+  WIND_TUNNEL_EXIT_RENDER_SIZE: WIND_TUNNEL_EXIT_RENDER_SIZE,
+  WIND_TUNNEL_DISAPPEAR_FRAME_SIZES: WIND_TUNNEL_DISAPPEAR_FRAME_SIZES,
   BOARD_BUBBLE_SIZE: BOARD_BUBBLE_SIZE,
   BOARD_CLEAR_FIREWORKS_BURST_COUNT: BOARD_CLEAR_FIREWORKS_BURST_COUNT,
   BOARD_CLEAR_FIREWORKS_INTERVAL_SEC: BOARD_CLEAR_FIREWORKS_INTERVAL_SEC,
   BOARD_OCCLUSION_CLOCK_RESOURCE: BOARD_OCCLUSION_CLOCK_RESOURCE,
   BOARD_OCCLUSION_RESOURCES: BOARD_OCCLUSION_RESOURCES,
+  COLOR_CLOUD_RESOURCES: COLOR_CLOUD_RESOURCES,
+  ColorCloudConfig: ColorCloudConfig,
   BoardLayout: BoardLayout,
   BubbleShatterRenderer: BubbleShatterRenderer,
   BundleLoader: BundleLoader,

@@ -286,6 +286,9 @@ function validateExplosionInteractions() {
     supportSystem: {
       findFloatingCells: function () {
         return [];
+      },
+      clearFloatingCells: function () {
+        throw new Error("Vine blast fixture without swirl must not defer support.");
       }
     },
     fallingMarbleSystem: {
@@ -310,7 +313,14 @@ function validateExplosionInteractions() {
   blastManager._createImpactEventFromCell = function () { return null; };
   var previousCc = global.cc;
   global.cc = { log: function () {} };
-  var blastResolution = blastManager._resolveBlastShot({}, { row: 1, col: 1 });
+  var blastResolution = blastManager._resolveBlastShot({
+    ball: {
+      ballCategory: "skill",
+      color: null,
+      entityCategory: "skill_ball",
+      entityType: "blast"
+    }
+  }, { row: 1, col: 1 });
   if (previousCc === undefined) {
     delete global.cc;
   } else {

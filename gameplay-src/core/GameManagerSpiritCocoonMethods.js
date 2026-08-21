@@ -252,8 +252,22 @@ function attachGameManagerSpiritCocoonMethods(GameManager) {
     this.pendingSpiritCocoonOpenings.forEach(function (opening) {
       pendingIds[String(opening.cocoonId)] = true;
     });
+    var pendingBudIds = {};
+    this.pendingBudHatches.forEach(function (hatch) {
+      if (!hatch || typeof hatch.budId !== "string" || !hatch.budId) {
+        throw new Error("Pending bud hatch requires budId while filtering floating cells.");
+      }
+      pendingBudIds[hatch.budId] = true;
+    });
     return floatingCells.filter(function (cell) {
-      return !isSpiritCocoon(cell) || pendingIds[String(cell.id)] !== true;
+      var isPendingSpiritCocoon = isSpiritCocoon(cell) && pendingIds[String(cell.id)] === true;
+      var isPendingBud = !!(
+        cell &&
+        cell.entityCategory === "reactive_ball" &&
+        cell.entityType === "bud" &&
+        pendingBudIds[String(cell.id)] === true
+      );
+      return !isPendingSpiritCocoon && !isPendingBud;
     });
   };
 
@@ -339,7 +353,7 @@ function attachGameManagerSpiritCocoonMethods(GameManager) {
   GameManager.prototype._resolveFloatingAfterSpiritCocoon = function (resolution) {
     var grid = this.systems.bubbleGrid;
     while (true) {
-      var floating = this.systems.supportSystem.findFloatingCells(grid);
+      var floating = this._findFloatingCellsBeforeSwirlRotation(grid, resolution);
       if (!floating.length) {
         return;
       }

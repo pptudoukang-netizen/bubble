@@ -4,6 +4,7 @@ var BoardLayout = require("../assets/scripts/config/BoardLayout");
 var BoardOcclusionConfig = require("../assets/scripts/config/BoardOcclusionConfig");
 var LevelBoardSupportValidator = require("../assets/scripts/config/LevelBoardSupportValidator");
 var AssistSpiritRescueConfig = require("../assets/scripts/config/AssistSpiritRescueConfig");
+var SpecialMechanismSchedule = require("./campaign-special-mechanism-schedule");
 
 var TARGET_LEVEL_COUNT = 1000;
 var TIMED_LEVEL_INTERVAL = 10;
@@ -19,7 +20,7 @@ var TRAPPED_SPRITE_RESCUE_HEX_RADIUS = 5;
 var TRAPPED_SPRITE_RESCUE_ANCHOR_ROW = 6;
 var TRAPPED_SPRITE_RESCUE_OCCUPIED_CELL_COUNT =
   3 * TRAPPED_SPRITE_RESCUE_HEX_RADIUS * (TRAPPED_SPRITE_RESCUE_HEX_RADIUS + 1);
-var TRAPPED_SPRITE_RESCUE_MAX_SAME_COLOR_COMPONENT = 5;
+var TRAPPED_SPRITE_RESCUE_MAX_SAME_COLOR_COMPONENT = LevelBoardSupportValidator.MAX_SAME_COLOR_COMPONENT;
 var TRAPPED_SPRITE_RESCUE_MAX_ANCHOR_NEIGHBOR_RUN = 2;
 var NORMAL_BALL_COLORS = Object.freeze(["B", "R", "G", "Y", "P", "O", "K", "W"]);
 var BASE_SPECIAL_COLORS = Object.freeze(["R", "G", "B", "Y", "P"]);
@@ -267,6 +268,50 @@ function isTrappedSpriteRescueLevelId(levelId) {
   return containsLevel(TRAPPED_SPRITE_RESCUE_LEVEL_IDS, levelId);
 }
 
+function getLockChainRows(levelId, rowCount, chainCount) {
+  assertLevelId(levelId);
+  requirePositiveInteger(rowCount, "Lock chain rowCount");
+  requireNonNegativeInteger(chainCount, "Lock chain row count");
+  if (chainCount > 2) {
+    throw new Error("Campaign lock chain supports at most two rows: " + levelId);
+  }
+  if (chainCount === 0) {
+    return [];
+  }
+  if (rowCount < 8) {
+    throw new Error("Campaign lock chain requires at least eight board rows: " + levelId);
+  }
+  var candidates = [];
+  for (var row = 2; row <= rowCount - 2; row += 1) {
+    candidates.push(row);
+  }
+  candidates.sort(function (left, right) {
+    var target = (rowCount - 1) * 0.58;
+    var leftScore = Math.abs(left - target) + ((left + levelId) % 3) * 0.03;
+    var rightScore = Math.abs(right - target) + ((right + levelId) % 3) * 0.03;
+    return leftScore - rightScore || left - right;
+  });
+  var selected = [];
+  candidates.forEach(function (row) {
+    if (selected.length >= chainCount) {
+      return;
+    }
+    if (selected.every(function (existingRow) { return Math.abs(existingRow - row) >= 2; })) {
+      selected.push(row);
+    }
+  });
+  if (selected.length !== chainCount) {
+    throw new Error("Unable to select isolated lock chain rows for level " + levelId + ".");
+  }
+  return selected.sort(function (left, right) { return left - right; });
+}
+
+function getLockChainLockedCount(levelId, rowCount, chainCount) {
+  return getLockChainRows(levelId, rowCount, chainCount).reduce(function (sum, row) {
+    return sum + BoardLayout.getRowColumnCount(row, BoardLayout.defaultColumns) - 1;
+  }, 0);
+}
+
 function getTrappedSpriteRescueSpiritId(levelId) {
   assertLevelId(levelId);
   return AssistSpiritRescueConfig.requireSpiritIdByLevelId(levelId);
@@ -479,7 +524,7 @@ function getIceBallCount(levelId, boardCapacity) {
 
 function getScoreDesignBeat(levelId) {
   assertLevelId(levelId);
-  if (isTrappedSpriteRescueLevelId(levelId)) {
+  if (isTrappedSpriteRescueLevelId(levelId) || SpecialMechanismSchedule.getPlan(levelId).multiRescueTargets > 0) {
     return "rescue";
   }
   var phase = ((levelId - 1) % 10) + 1;
@@ -556,10 +601,18 @@ function buildCampaignScoreDesign(options) {
     throw new Error("Campaign score design requires explicit designBeat.");
   }
   var designBeat = options.designBeat;
+  var starThresholds = buildStarThresholds(options.levelId, targetScore, designBeat);
+  var multiRescueTargetCount = SpecialMechanismSchedule.getPlan(options.levelId).multiRescueTargets;
+  if (multiRescueTargetCount > 0) {
+    starThresholds.star1 = multiRescueTargetCount * 1000;
+    if (starThresholds.star1 >= starThresholds.star2) {
+      throw new Error("Multi-rescue guaranteed star1 score must remain below star2: " + options.levelId);
+    }
+  }
   return {
     designBeat: designBeat,
     targetScore: targetScore,
-    starThresholds: buildStarThresholds(options.levelId, targetScore, designBeat)
+    starThresholds: starThresholds
   };
 }
 
@@ -581,8 +634,10 @@ function getLevelPlan(levelId) {
   assertLevelId(levelId);
   var rescue = isTrappedSpriteRescueLevelId(levelId);
   var timed = isTimedLevelId(levelId);
-  if (rescue && timed) {
-    throw new Error("Campaign level cannot be both timed and trapped sprite rescue: " + levelId);
+  var additionalMechanismPlan = SpecialMechanismSchedule.getPlan(levelId);
+  var multiRescue = additionalMechanismPlan.multiRescueTargets > 0;
+  if ((rescue && timed) || (multiRescue && timed) || (rescue && multiRescue)) {
+    throw new Error("Campaign level modes overlap at level " + levelId + ".");
   }
   var reactiveSpecialCounts = getReactiveSpecialCounts(levelId);
   if (rescue && reactiveSpecialCounts.wormhole) {
@@ -601,13 +656,21 @@ function getLevelPlan(levelId) {
   if (reactiveSpecialCounts.wormhole) {
     teaches.push("wormhole");
   }
-  var boardOcclusionEnabled = levelId >= BoardOcclusionConfig.ENABLED_FROM_LEVEL && !rescue;
+  var boardOcclusionEnabled = levelId >= BoardOcclusionConfig.ENABLED_FROM_LEVEL && !rescue && !multiRescue;
   if (boardOcclusionEnabled) {
     teaches.push("board_occlusion");
   }
   if (rescue) {
     teaches.push("trapped_sprite_rescue");
   }
+  if (multiRescue) {
+    teaches.push("multi_trapped_spirit_rescue");
+  }
+  SpecialMechanismSchedule.INTRODUCTIONS.forEach(function (definition) {
+    if (additionalMechanismPlan[definition.key] > 0) {
+      teaches.push(definition.key);
+    }
+  });
   Object.keys(NORMAL_BALL_COLOR_TEACHES).forEach(function (color) {
     if (NORMAL_BALL_COLOR_INTRO_LEVELS[color] === levelId) {
       teaches.push(NORMAL_BALL_COLOR_TEACHES[color]);
@@ -615,13 +678,17 @@ function getLevelPlan(levelId) {
   });
   return {
     levelId: levelId,
-    levelType: rescue ? "trapped_sprite_rescue" : (timed ? "special_floating_island" : "normal"),
+    levelType: rescue
+      ? "trapped_sprite_rescue"
+      : (multiRescue ? "multi_trapped_spirit_rescue" : (timed ? "special_floating_island" : "normal")),
     playMode: timed ? "timed_infinite_shots" : "shot_limited",
     timeLimitSeconds: timed ? TIMED_LEVEL_TIME_LIMIT_SECONDS : undefined,
     requiredStarCount: timed ? TIMED_LEVEL_REQUIRED_STAR_COUNT : undefined,
     boardOcclusionEnabled: boardOcclusionEnabled,
     reactiveSpecialCounts: reactiveSpecialCounts,
     trappedSpriteRescue: rescue,
+    multiTrappedSpiritRescue: multiRescue,
+    additionalMechanismPlan: additionalMechanismPlan,
     teaches: teaches
   };
 }
@@ -720,6 +787,8 @@ module.exports = Object.freeze({
   isTimedLevelId: isTimedLevelId,
   isTrappedSpriteRescueLevelId: isTrappedSpriteRescueLevelId,
   getTrappedSpriteRescueSpiritId: getTrappedSpriteRescueSpiritId,
+  getLockChainRows: getLockChainRows,
+  getLockChainLockedCount: getLockChainLockedCount,
   getClearanceRebalanceCascadePolicy: getClearanceRebalanceCascadePolicy,
   applyClearanceRebalanceShotLimit: applyClearanceRebalanceShotLimit,
   getReactiveSpecialCounts: getReactiveSpecialCounts,

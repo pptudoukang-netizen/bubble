@@ -4,7 +4,7 @@ var crypto = require("crypto");
 var cloud = require("wx-server-sdk");
 
 var COLLECTION_NAME = "world_leaderboard";
-var DEPLOYMENT_MARKER = "worldLeaderboard_v20260619_2";
+var DEPLOYMENT_MARKER = "worldLeaderboard_v20260820_1";
 
 cloud.init({
   env: cloud.DYNAMIC_CURRENT_ENV
@@ -102,11 +102,11 @@ function normalizeRecord(record, selfOpenid, rank) {
 }
 
 function compareRecords(left, right) {
-  if (right.score !== left.score) {
-    return right.score - left.score;
-  }
   if (right.completedLevels !== left.completedLevels) {
     return right.completedLevels - left.completedLevels;
+  }
+  if (right.score !== left.score) {
+    return right.score - left.score;
   }
   if (left.updatedAt !== right.updatedAt) {
     return left.updatedAt - right.updatedAt;
@@ -144,8 +144,8 @@ async function submitRecord(collection, openid, event) {
 
 async function listRecords(collection, openid, limit, submittedRecord) {
   var result = await collection
-    .orderBy("score", "desc")
     .orderBy("completedLevels", "desc")
+    .orderBy("score", "desc")
     .orderBy("updatedAt", "asc")
     .limit(limit)
     .get();

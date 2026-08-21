@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 1,
+  "gameMode": "glass_marble_bubble",
+  "coordinateSystem": "odd-r-hex",
+  "layoutNotes": {
+    "description": "Dedicated bud hatch and neighboring recolor test.",
+    "legend": {
+      ".": "empty",
+      "R": "red",
+      "B": "blue"
+    },
+    "pattern": "bud_test",
+    "theme": "mechanism_test",
+    "focus": "bud_hatch_recolor",
+    "silhouetteVariant": "bud_test",
+    "designBeat": "adjacent_hit_hatch"
+  },
+  "sharedDefaults": {
+    "collectMode": "any_with_same_color_bonus",
+    "loseConditions": [
+      { "type": "reach_danger_line", "value": 1 },
+      { "type": "run_out_of_shots", "value": 1 }
+    ],
+    "fallingRules": {
+      "maxDynamicMarbles": 10,
+      "maxBounces": 2,
+      "enableMarbleMarbleCollision": true,
+      "gravity": 900,
+      "initialSpeedY": 120,
+      "horizontalSpeed": 165,
+      "maxDropLifeTime": 6,
+      "bounceDamping": 0.82
+    }
+  },
+  "level": {
+    "levelId": 1,
+    "code": "L001_BUD_TEST",
+    "difficulty": "advanced",
+    "teaches": ["bud", "adjacent_hit_hatch", "neighbor_recolor"],
+    "colorCount": 2,
+    "colors": ["R", "B"],
+    "shotLimit": 12,
+    "targetScore": 3620,
+    "starThresholds": { "star1": 1158, "star2": 2172, "star3": 3041 },
+    "dropInterval": 8,
+    "jarCount": 5,
+    "jarColors": ["R", "G", "B", "Y", "P"],
+    "spawnWeights": { "R": 1.12, "B": 2.4 },
+    "openingShotBalls": ["B", "R", "B"],
+    "jarRules": { "rimBounce": 0.68, "collectZoneScale": 1.1, "sameColorBonus": 1.5 },
+    "winConditions": [
+      { "type": "collect_color", "color": "B", "value": 23 }
+    ],
+    "bonusObjectives": [
+      { "type": "clear_with_shots_remaining", "value": 3 }
+    ],
+    "clearRewardItems": [
+      { "id": "coin", "count": 50 },
+      { "id": "stamina", "count": 1 }
+    ],
+    "layout": [
+      "RRBRBBRBRR.",
+      ".B.BRBRBB.",
+      ".RBRBBRBRB.",
+      ".RB...BR..",
+      "..RBRRBR...",
+      ".RBRRBBR..",
+      ".B.........",
+      ".B........"
+    ],
+    "designNotes": "The bud is supported at row 6 column 2 and is adjacent to ordinary balls for hatch recolor validation.",
+    "difficultyScore": 23,
+    "specialEntities": [
+      {
+        "id": "bud_test_01",
+        "entityCategory": "reactive_ball",
+        "entityType": "bud",
+        "row": 6,
+        "col": 2
+      }
+    ],
+    "levelType": "normal",
+    "playMode": "shot_limited",
+    "initialDropSpaceRows": 8,
+    "adPowerupRules": { "allowed": ["three_line_elimination", "plus_three_balls"] },
+    "boardOcclusionPlan": { "generatorVersion": 1, "mode": "none", "variants": [] }
+  },
+  "difficultyScaleMax": 100
+}

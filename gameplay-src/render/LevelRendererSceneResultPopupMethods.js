@@ -182,7 +182,7 @@ LevelRenderer.prototype._renderAddBallTipsView = function (runtimeSnapshot) {
 LevelRenderer.prototype._renderLoseView = function (runtimeSnapshot) {
   var isLoseState = !!(
     runtimeSnapshot &&
-    (runtimeSnapshot.state === "lost_danger" || runtimeSnapshot.state === "out_of_shots" || runtimeSnapshot.state === "lost_objective")
+    (runtimeSnapshot.state === "lost_danger" || runtimeSnapshot.state === "lost_hazard" || runtimeSnapshot.state === "out_of_shots" || runtimeSnapshot.state === "lost_objective")
   );
   var existing = this.layers.modal.getChildByName("LoseView");
   var wasActive = !!(existing && existing.active);

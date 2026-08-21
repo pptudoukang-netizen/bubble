@@ -403,7 +403,7 @@ PropDescriptionViewController.prototype._rebuildItems = function (definitions, s
 
 PropDescriptionViewController.prototype.render = function (options) {
   requireObject(options, "PropDescriptionView render options");
-  var definitions = PropDescriptionConfig.buildListDefinitions(options.levelConfig);
+  var definitions = PropDescriptionConfig.buildListDefinitions();
   this._rebuildItems(definitions, options.spriteFrameCache);
   this._syncStaticProxies();
 };

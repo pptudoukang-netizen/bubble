@@ -13,10 +13,12 @@ var REQUIRED_MODULE_FAMILIES = {
     "GameManagerSnapshotMethods",
     "GameManagerBoardPhaseMethods",
     "GameManagerSpecialPhaseMethods",
+    "GameManagerBudMethods",
     "GameManagerRuntimeStateMethods",
     "GameManagerInputMethods",
     "GameManagerAdPowerupMethods",
     "GameManagerPowerupMethods",
+    "GameManagerColorCloudMethods",
     "GameManagerUpdateMethods",
     "GameManagerShotResolutionMethods",
     "GameManagerAssistSpiritSkillMethods"
@@ -40,6 +42,9 @@ var REQUIRED_MODULE_FAMILIES = {
     "LevelRendererResourceConfig",
     "LevelRendererStateSelectors"
   ],
+  "render/LevelRendererSceneMethods.js": [
+    "LevelRendererSceneColorCloudMethods"
+  ],
   "render/LevelRendererSceneHudMethods.js": [
     "LevelRendererSceneHudCoreMethods",
     "LevelRendererSceneFloatingScoreMethods",
@@ -54,7 +59,8 @@ var REQUIRED_MODULE_FAMILIES = {
     "LevelRendererSceneKeySplitterFxMethods",
     "LevelRendererSceneBoardTransformFxMethods",
     "LevelRendererSceneExplosionIceFxMethods",
-    "LevelRendererSceneScreenFxMethods"
+    "LevelRendererSceneScreenFxMethods",
+    "LevelRendererSceneBudFxMethods"
   ],
   "render/LevelRendererScenePopupMethods.js": [
     "LevelRendererSceneWinPopupMethods",

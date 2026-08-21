@@ -10,6 +10,7 @@ var MapEditorBoardImport = require("./MapEditorBoardImport");
 
 var MAX_COLUMNS = BoardLayout.defaultColumns;
 var WORMHOLE_RENDER_SIZE = 80;
+var WIND_TUNNEL_ENTRANCE_RENDER_SIZE = { width: 110, height: 92 };
 var PALETTE_SELECTED_SCALE = 1.12;
 var PALETTE_NORMAL_SCALE = 1;
 var TOP_BOARD_ROW_INDEX = 0;
@@ -42,6 +43,14 @@ var SPECIAL_TOOL_DEFS = {
   rainbow: {
     entityCategory: "skill_ball",
     entityType: "rainbow"
+  },
+  crystal_gun: {
+    entityCategory: "skill_ball",
+    entityType: "crystal_gun"
+  },
+  bud: {
+    entityCategory: "reactive_ball",
+    entityType: "bud"
   },
   stone: {
     entityCategory: "obstacle_ball",
@@ -78,8 +87,20 @@ var SPECIAL_TOOL_DEFS = {
     entityCategory: "reactive_ball",
     entityType: "wormhole",
     moveDirection: "right"
+  },
+  wind_tunnel_entrance: {
+    entityCategory: "reactive_ball",
+    entityType: "wind_tunnel_entrance"
+  },
+  wind_tunnel_exit: {
+    entityCategory: "reactive_ball",
+    entityType: "wind_tunnel_exit"
   }
 };
+
+function isNonCellSpecialEntityType(entityType) {
+  return entityType === "wormhole" || entityType === "wind_tunnel_entrance";
+}
 
 function requireNode(parent, name) {
   if (!parent || !parent.isValid) {
@@ -241,7 +262,7 @@ var MapEditorController = cc.Class({
   onLoad: function () {
     this._rowCount = 0;
     this._cells = {};
-    this._wormholeOverlays = {};
+    this._nonCellSpecialOverlays = {};
     this._cellNodes = {};
     this._selectedTool = null;
     this._paletteNodes = [];
@@ -717,7 +738,7 @@ var MapEditorController = cc.Class({
       this._setMapIdLabel(levelId);
       this._rowInput.string = String(imported.rowCount);
       this._syncBallCountInputFromLevel(levelConfig.level);
-      this._applyImportedBoard(imported.rowCount, imported.cells, imported.wormholeOverlays);
+      this._applyImportedBoard(imported.rowCount, imported.cells, imported.nonCellSpecialOverlays);
       cc.log("[MapEditor] 已加载关卡", levelId, loadResult.source);
       this._setStatusText(loadResult.source === "local"
         ? "已优先加载第 " + levelId + " 关本地草稿，可继续修改并保存"
@@ -726,9 +747,9 @@ var MapEditorController = cc.Class({
     }.bind(this));
   },
 
-  _applyImportedBoard: function (rowCount, cells, wormholeOverlays) {
-    if (!wormholeOverlays || typeof wormholeOverlays !== "object" || Array.isArray(wormholeOverlays)) {
-      throw new Error("导入关卡缺少 wormholeOverlays 覆盖层数据。");
+  _applyImportedBoard: function (rowCount, cells, nonCellSpecialOverlays) {
+    if (!nonCellSpecialOverlays || typeof nonCellSpecialOverlays !== "object" || Array.isArray(nonCellSpecialOverlays)) {
+      throw new Error("导入关卡缺少 nonCellSpecialOverlays 覆盖层数据。");
     }
     this.rebuildBoard(rowCount);
     Object.keys(cells).forEach(function (key) {
@@ -738,14 +759,14 @@ var MapEditorController = cc.Class({
       this._cells[key] = cells[key];
       this._syncCellVisual(key);
     }.bind(this));
-    Object.keys(wormholeOverlays).forEach(function (key) {
+    Object.keys(nonCellSpecialOverlays).forEach(function (key) {
       if (!this._cells[key]) {
-        throw new Error("导入虫洞覆盖层超出棋盘范围: " + key);
+        throw new Error("导入非占位特殊实体覆盖层超出棋盘范围: " + key);
       }
       if (this._cells[key].kind !== "empty") {
-        throw new Error("导入虫洞坐标必须保持为空格: " + key);
+        throw new Error("导入非占位特殊实体坐标必须保持为空格: " + key);
       }
-      this._wormholeOverlays[key] = wormholeOverlays[key];
+      this._nonCellSpecialOverlays[key] = nonCellSpecialOverlays[key];
       this._syncCellVisual(key);
     }.bind(this));
   },
@@ -786,7 +807,7 @@ var MapEditorController = cc.Class({
 
     this._rowCount = rowCount;
     this._cells = {};
-    this._wormholeOverlays = {};
+    this._nonCellSpecialOverlays = {};
     this._cellNodes = {};
     this._clearCellNodes();
     this._applyCheckerboardLayout(rowCount);
@@ -863,13 +884,13 @@ var MapEditorController = cc.Class({
     contentSprite.sizeMode = cc.Sprite.SizeMode.CUSTOM;
     contentNode.setContentSize(this._honeycombTemplate.getContentSize());
 
-    var wormholeNode = new cc.Node("wormhole_overlay");
-    wormholeNode.parent = cellNode;
-    wormholeNode.active = false;
-    var wormholeSprite = wormholeNode.addComponent(cc.Sprite);
-    wormholeSprite.sizeMode = cc.Sprite.SizeMode.CUSTOM;
-    wormholeNode.setContentSize(WORMHOLE_RENDER_SIZE, WORMHOLE_RENDER_SIZE);
-    wormholeNode.setSiblingIndex(contentNode.getSiblingIndex());
+    var nonCellSpecialNode = new cc.Node("non_cell_special_overlay");
+    nonCellSpecialNode.parent = cellNode;
+    nonCellSpecialNode.active = false;
+    var nonCellSpecialSprite = nonCellSpecialNode.addComponent(cc.Sprite);
+    nonCellSpecialSprite.sizeMode = cc.Sprite.SizeMode.CUSTOM;
+    nonCellSpecialNode.setContentSize(WORMHOLE_RENDER_SIZE, WORMHOLE_RENDER_SIZE);
+    nonCellSpecialNode.setSiblingIndex(contentNode.getSiblingIndex());
 
     return cellNode;
   },
@@ -1011,8 +1032,8 @@ var MapEditorController = cc.Class({
 
     var key = cellStateKey(row, col);
     if (this._selectedTool.kind === "erase") {
-      if (this._wormholeOverlays[key]) {
-        delete this._wormholeOverlays[key];
+      if (this._nonCellSpecialOverlays[key]) {
+        delete this._nonCellSpecialOverlays[key];
         this._syncCellVisual(key);
         return;
       }
@@ -1022,8 +1043,8 @@ var MapEditorController = cc.Class({
     }
 
     if (this._selectedTool.kind === "color") {
-      if (this._wormholeOverlays[key]) {
-        throw new Error("普通球不能占用虫洞坐标，请先擦除虫洞: " + key);
+      if (this._nonCellSpecialOverlays[key]) {
+        throw new Error("普通球不能占用非占位特殊实体坐标，请先擦除覆盖层: " + key);
       }
       this._cells[key] = {
         kind: "color",
@@ -1034,16 +1055,16 @@ var MapEditorController = cc.Class({
     }
 
     if (this._selectedTool.kind === "special") {
-      if (this._selectedTool.specialDef.entityType === "wormhole") {
+      if (isNonCellSpecialEntityType(this._selectedTool.specialDef.entityType)) {
         if (this._cells[key].kind !== "empty") {
-          throw new Error("虫洞坐标必须为空，不能与普通球或特殊实体重叠: " + key);
+          throw new Error("非占位特殊实体坐标必须为空，不能与普通球或特殊实体重叠: " + key);
         }
-        this._wormholeOverlays[key] = this._buildSpecialCellState(this._selectedTool, row, col);
+        this._nonCellSpecialOverlays[key] = this._buildSpecialCellState(this._selectedTool, row, col);
         this._syncCellVisual(key);
         return;
       }
-      if (this._wormholeOverlays[key]) {
-        throw new Error("其他特殊实体不能与虫洞使用同一坐标，请先擦除虫洞: " + key);
+      if (this._nonCellSpecialOverlays[key]) {
+        throw new Error("占位特殊实体不能与非占位特殊实体使用同一坐标，请先擦除覆盖层: " + key);
       }
       this._cells[key] = this._buildSpecialCellState(this._selectedTool, row, col);
       this._syncCellVisual(key);
@@ -1051,8 +1072,8 @@ var MapEditorController = cc.Class({
     }
 
     if (this._selectedTool.kind === "splitter") {
-      if (this._wormholeOverlays[key]) {
-        throw new Error("分裂球不能与虫洞使用同一坐标，请先擦除虫洞: " + key);
+      if (this._nonCellSpecialOverlays[key]) {
+        throw new Error("分裂球不能与非占位特殊实体使用同一坐标，请先擦除覆盖层: " + key);
       }
       this._cells[key] = this._buildSplitterCellState(this._selectedTool, row, col);
       this._syncCellVisual(key);
@@ -1133,28 +1154,32 @@ var MapEditorController = cc.Class({
       contentNode.active = true;
     }
 
-    var wormholeNode = cellNode.getChildByName("wormhole_overlay");
-    var wormholeSprite = wormholeNode && wormholeNode.getComponent(cc.Sprite);
-    if (!wormholeNode || !wormholeSprite) {
-      throw new Error("MapEditor cell `" + key + "` missing wormhole overlay sprite.");
+    var nonCellSpecialNode = cellNode.getChildByName("non_cell_special_overlay");
+    var nonCellSpecialSprite = nonCellSpecialNode && nonCellSpecialNode.getComponent(cc.Sprite);
+    if (!nonCellSpecialNode || !nonCellSpecialSprite) {
+      throw new Error("MapEditor cell `" + key + "` missing non-cell special overlay sprite.");
     }
-    var wormholeState = this._wormholeOverlays[key];
-    if (!wormholeState) {
-      wormholeNode.active = false;
-      wormholeSprite.spriteFrame = null;
+    var nonCellSpecialState = this._nonCellSpecialOverlays[key];
+    if (!nonCellSpecialState) {
+      nonCellSpecialNode.active = false;
+      nonCellSpecialSprite.spriteFrame = null;
       return;
     }
-    if (wormholeState.entityType !== "wormhole") {
-      throw new Error("MapEditor wormhole overlay state type invalid at `" + key + "`.");
+    if (!isNonCellSpecialEntityType(nonCellSpecialState.entityType)) {
+      throw new Error("MapEditor non-cell special overlay state type invalid at `" + key + "`.");
     }
-    var wormholeIconNode = this._resolveIconSourceNode(wormholeState);
-    var wormholeIconSprite = wormholeIconNode.getComponent(cc.Sprite);
-    if (!wormholeIconSprite || !wormholeIconSprite.spriteFrame) {
-      throw new Error("MapEditor wormhole icon node `" + wormholeIconNode.name + "` 缺少 spriteFrame。");
+    var nonCellSpecialIconNode = this._resolveIconSourceNode(nonCellSpecialState);
+    var nonCellSpecialIconSprite = nonCellSpecialIconNode.getComponent(cc.Sprite);
+    if (!nonCellSpecialIconSprite || !nonCellSpecialIconSprite.spriteFrame) {
+      throw new Error("MapEditor non-cell special icon node `" + nonCellSpecialIconNode.name + "` 缺少 spriteFrame。");
     }
-    wormholeSprite.spriteFrame = wormholeIconSprite.spriteFrame;
-    wormholeNode.setContentSize(WORMHOLE_RENDER_SIZE, WORMHOLE_RENDER_SIZE);
-    wormholeNode.active = true;
+    nonCellSpecialSprite.spriteFrame = nonCellSpecialIconSprite.spriteFrame;
+    if (nonCellSpecialState.entityType === "wind_tunnel_entrance") {
+      nonCellSpecialNode.setContentSize(WIND_TUNNEL_ENTRANCE_RENDER_SIZE.width, WIND_TUNNEL_ENTRANCE_RENDER_SIZE.height);
+    } else {
+      nonCellSpecialNode.setContentSize(WORMHOLE_RENDER_SIZE, WORMHOLE_RENDER_SIZE);
+    }
+    nonCellSpecialNode.active = true;
   },
 
   _resolveIconSourceNode: function (cellState) {
@@ -1182,7 +1207,7 @@ var MapEditorController = cc.Class({
   _onClearAllTap: function () {
     Object.keys(this._cells).forEach(function (key) {
       this._cells[key] = createEmptyCellState();
-      delete this._wormholeOverlays[key];
+      delete this._nonCellSpecialOverlays[key];
       this._syncCellVisual(key);
     }.bind(this));
   },
@@ -1305,15 +1330,15 @@ var MapEditorController = cc.Class({
         if (!cellState) {
           throw new Error("保存时缺少格子状态: " + key);
         }
-        var wormholeOverlay = this._wormholeOverlays[key];
-        if (wormholeOverlay) {
-          if (wormholeOverlay.entityType !== "wormhole") {
-            throw new Error("保存时虫洞覆盖层实体类型非法: " + key);
+        var nonCellSpecialOverlay = this._nonCellSpecialOverlays[key];
+        if (nonCellSpecialOverlay) {
+          if (!isNonCellSpecialEntityType(nonCellSpecialOverlay.entityType)) {
+            throw new Error("保存时非占位特殊实体覆盖层类型非法: " + key);
           }
           if (cellState.kind !== "empty") {
-            throw new Error("保存时虫洞坐标必须保持为空格: " + key);
+            throw new Error("保存时非占位特殊实体坐标必须保持为空格: " + key);
           }
-          specialEntities.push(this._buildSpecialEntityExport(wormholeOverlay, row, col));
+          specialEntities.push(this._buildSpecialEntityExport(nonCellSpecialOverlay, row, col));
         }
 
         if (cellState.kind === "color") {

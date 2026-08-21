@@ -3,8 +3,10 @@
 function createGameManagerShotDropMethods(context) {
   var EliminationSequenceBuilder = context.EliminationSequenceBuilder;
   var FLOATING_ICE_DROP_DELAY = context.FLOATING_ICE_DROP_DELAY;
+  var SpecialAnimationTiming = context.SpecialAnimationTiming;
   var clone = context.clone;
   var createGameManagerShotDropMethods = context.createGameManagerShotDropMethods;
+  var isBlackHoleBall = context.isBlackHoleBall;
   var isIceBall = context.isIceBall;
   var isKeyBall = context.isKeyBall;
   var isSkillBall = context.isSkillBall;
@@ -13,6 +15,69 @@ function createGameManagerShotDropMethods(context) {
   var resolveIceInnerColor = context.resolveIceInnerColor;
 
   return {
+    _registerIciclesForEliminatedCells: function (cells, grid, resolution) {
+      if (!Array.isArray(cells)) {
+        throw new Error("Icicle release requires eliminated cells array.");
+      }
+      if (!grid || typeof grid.getCellPosition !== "function") {
+        throw new Error("Icicle release requires BubbleGrid.");
+      }
+      if (!resolution || !Array.isArray(resolution.icicleReleases)) {
+        throw new Error("Icicle release requires resolution.icicleReleases.");
+      }
+      if (
+        !this.systems ||
+        !this.systems.fallingMarbleSystem ||
+        typeof this.systems.fallingMarbleSystem.registerDrops !== "function"
+      ) {
+        throw new Error("Icicle release requires FallingMarbleSystem.registerDrops.");
+      }
+
+      cells.forEach(function (cell) {
+        if (!cell) {
+          throw new Error("Icicle release requires eliminated cell.");
+        }
+        if (cell.iceCrystalAttachmentId === null || cell.iceCrystalAttachmentId === undefined) {
+          return;
+        }
+        if (
+          cell.entityCategory !== "normal_ball" ||
+          cell.entityType !== null ||
+          typeof cell.iceCrystalAttachmentId !== "string" ||
+          !cell.iceCrystalAttachmentId
+        ) {
+          throw new Error("Ice crystal attachment must belong to an ordinary ball.");
+        }
+
+        var icicleCell = {
+          id: cell.iceCrystalAttachmentId + "_icicle",
+          row: cell.row,
+          col: cell.col,
+          color: null,
+          entityCategory: "effect_particle",
+          entityType: "icicle",
+          icicleSourceAttachmentId: cell.iceCrystalAttachmentId
+        };
+        var drops = this.systems.fallingMarbleSystem.registerDrops([icicleCell], grid, {
+          dropKind: "icicle"
+        });
+        if (!Array.isArray(drops) || drops.length !== 1) {
+          throw new Error("Ice crystal attachment must register exactly one icicle drop.");
+        }
+        var release = {
+          attachmentId: cell.iceCrystalAttachmentId,
+          sourceCellId: String(cell.id),
+          row: cell.row,
+          col: cell.col,
+          dropId: drops[0].id
+        };
+        resolution.icicleReleases.push(release);
+        if (typeof this._pushRuntimeEvent === "function") {
+          this._pushRuntimeEvent("icicle_released", release);
+        }
+      }, this);
+    },
+
     _registerPoisonDropletsForEliminatedCells: function (cells, grid, resolution) {
       if (!Array.isArray(cells)) {
         throw new Error("Poison droplet release requires eliminated cells array.");
@@ -86,7 +151,11 @@ function createGameManagerShotDropMethods(context) {
 
     _injectCollectedSkillBalls: function (collectedDrops) {
       var skillCells = (collectedDrops || []).filter(function (cell) {
-        return isSkillBall(cell) && (cell.entityType === "rainbow" || cell.entityType === "blast");
+        return isSkillBall(cell) && (
+          cell.entityType === "rainbow" ||
+          cell.entityType === "blast" ||
+          cell.entityType === "crystal_gun"
+        );
       });
       if (!skillCells.length) {
         return 0;
@@ -479,45 +548,78 @@ function createGameManagerShotDropMethods(context) {
           throw new Error("Resolution drop registration requires cell.");
         }
         return cell.__resolutionDropRegistered !== true;
+      }).filter(function (cell) {
+        return !(
+          cell.entityCategory === "reactive_ball" &&
+          cell.entityType === "wind_tunnel_exit"
+        );
       });
       if (!pendingCells.length) {
         return;
       }
 
-      if (!timingOptions || timingOptions.skipAssistSpiritSkillCharge !== true) {
-        this._collectAssistSpiritSkillCharge(pendingCells, "floating_drop");
-      }
-
-      var prepared = this._prepareResolutionDropCells(pendingCells, resolution);
-      var registerOptions = this._buildResolutionDropRegisterOptions(resolution, dropOptions, timingOptions);
-      var immediateCandidates = this._splitMolotovDropCandidates(prepared.immediate);
-      if (immediateCandidates.immediate.length) {
-        this.systems.fallingMarbleSystem.registerDrops(
-          immediateCandidates.immediate,
-          grid,
-          registerOptions
-        );
-        immediateCandidates.immediate.forEach(function (cell) {
-          cell.__resolutionDropRegistered = true;
+      var physicalDropCells = [];
+      pendingCells.forEach(function (cell) {
+        if (!isBlackHoleBall(cell)) {
+          physicalDropCells.push(cell);
+          return;
+        }
+        if (!resolution || !Array.isArray(resolution.blackHoleUnsupportedDisappears)) {
+          throw new Error("Unsupported black-hole disappearance requires resolution.blackHoleUnsupportedDisappears.");
+        }
+        if (!Number.isInteger(cell.row) || !Number.isInteger(cell.col)) {
+          throw new Error("Unsupported black-hole disappearance requires integer coordinates.");
+        }
+        var duration = SpecialAnimationTiming.blackHole &&
+          SpecialAnimationTiming.blackHole.unsupportedDisappearDuration;
+        if (typeof duration !== "number" || !Number.isFinite(duration) || duration <= 0) {
+          throw new Error("Unsupported black-hole disappearance duration must be positive.");
+        }
+        resolution.blackHoleUnsupportedDisappears.push({
+          id: String(cell.id),
+          row: cell.row,
+          col: cell.col,
+          duration: duration
         });
-      }
+        cell.__resolutionDropRegistered = true;
+      });
 
-      if (prepared.delayedIce.length) {
-        var delayedCandidates = this._splitMolotovDropCandidates(prepared.delayedIce);
-        if (delayedCandidates.immediate.length) {
-          var delayedIceRegisterOptions = this._buildResolutionDropRegisterOptions(
-            resolution,
-            { startDelay: FLOATING_ICE_DROP_DELAY },
-            timingOptions
-          );
+      if (physicalDropCells.length) {
+        if (!timingOptions || timingOptions.skipAssistSpiritSkillCharge !== true) {
+          this._collectAssistSpiritSkillCharge(physicalDropCells, "floating_drop");
+        }
+
+        var prepared = this._prepareResolutionDropCells(physicalDropCells, resolution);
+        var registerOptions = this._buildResolutionDropRegisterOptions(resolution, dropOptions, timingOptions);
+        var immediateCandidates = this._splitMolotovDropCandidates(prepared.immediate);
+        if (immediateCandidates.immediate.length) {
           this.systems.fallingMarbleSystem.registerDrops(
-            delayedCandidates.immediate,
+            immediateCandidates.immediate,
             grid,
-            delayedIceRegisterOptions
+            registerOptions
           );
-          delayedCandidates.immediate.forEach(function (cell) {
+          immediateCandidates.immediate.forEach(function (cell) {
             cell.__resolutionDropRegistered = true;
           });
+        }
+
+        if (prepared.delayedIce.length) {
+          var delayedCandidates = this._splitMolotovDropCandidates(prepared.delayedIce);
+          if (delayedCandidates.immediate.length) {
+            var delayedIceRegisterOptions = this._buildResolutionDropRegisterOptions(
+              resolution,
+              { startDelay: FLOATING_ICE_DROP_DELAY },
+              timingOptions
+            );
+            this.systems.fallingMarbleSystem.registerDrops(
+              delayedCandidates.immediate,
+              grid,
+              delayedIceRegisterOptions
+            );
+            delayedCandidates.immediate.forEach(function (cell) {
+              cell.__resolutionDropRegistered = true;
+            });
+          }
         }
       }
     },

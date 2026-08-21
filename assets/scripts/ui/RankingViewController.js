@@ -28,7 +28,6 @@ var RANKING_ROW_PROXY_LAYER_NAMES = {
 };
 
 var TEXT = {
-  scoreSuffix: "",
   levelSuffix: "\u5173"
 };
 
@@ -910,10 +909,10 @@ RankingViewController.prototype._renderRankRow = function (row, entry, index) {
     refs.nameLabel.node.color = cc.color(41, 18, 102);
   }
   if (refs.scoreLabel) {
-    refs.scoreLabel.string = score + TEXT.scoreSuffix;
+    refs.scoreLabel.string = String(score);
   }
   if (refs.levelLabel) {
-    refs.levelLabel.string = "(" + completedLevels + TEXT.levelSuffix + ")";
+    refs.levelLabel.string = completedLevels + TEXT.levelSuffix;
   }
 };
 

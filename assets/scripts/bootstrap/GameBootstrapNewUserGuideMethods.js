@@ -685,10 +685,13 @@ function collectSkillPowerupGuideTypesFromSnapshot(snapshot) {
     if (!event || event.type !== "skill_powerup_collected") {
       return;
     }
-    var entityType = requireSkillPowerupGuideType(event.entityType, "Skill powerup collected event entityType");
     if (!Number.isInteger(event.total) || event.total <= 0) {
       throw new Error("Skill powerup collected event requires positive total.");
     }
+    if (event.entityType === "crystal_gun") {
+      return;
+    }
+    var entityType = requireSkillPowerupGuideType(event.entityType, "Skill powerup collected event entityType");
     if (collectedTypes.indexOf(entityType) === -1) {
       collectedTypes.push(entityType);
     }
@@ -1105,6 +1108,9 @@ module.exports = {
   },
 
   _advanceSkillPowerupGuideAfterSkillSelected: function (entityType, runtimeSnapshot) {
+    if (entityType === "crystal_gun" || entityType === "rainbow_prism_ball") {
+      return null;
+    }
     var safeType = requireSkillPowerupGuideType(entityType, "Skill powerup selected guide type");
     if (this._activeSkillPowerupGuideType !== safeType) {
       return null;

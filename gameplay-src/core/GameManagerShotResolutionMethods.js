@@ -5,7 +5,10 @@ var createGameManagerShotPlanningMethods = require("./GameManagerShotPlanningMet
 var createGameManagerShotDropMethods = require("./GameManagerShotDropMethods");
 var createGameManagerShotMolotovMethods = require("./GameManagerShotMolotovMethods");
 var createGameManagerShotReactiveMethods = require("./GameManagerShotReactiveMethods");
+var createGameManagerShotCrystalGunMethods = require("./GameManagerShotCrystalGunMethods");
+var createGameManagerShotRainbowPrismMethods = require("./GameManagerShotRainbowPrismMethods");
 var createGameManagerShotFinalizeMethods = require("./GameManagerShotFinalizeMethods");
+var RainbowPrismBallResolver = require("./RainbowPrismBallResolver");
 
 var SpecialAnimationTiming = require("../config/SpecialAnimationTiming");
 var BoardViewportSystem = require("../systems/BoardViewportSystem");
@@ -23,6 +26,8 @@ function createGameManagerShotResolutionMethods(deps) {
   var isSkillBall = deps.isSkillBall;
   var isIceBall = deps.isIceBall;
   var isBlastBall = deps.isBlastBall;
+  var isCrystalGunBall = deps.isCrystalGunBall;
+  var isRainbowPrismBall = deps.isRainbowPrismBall;
   var isBlackHoleBall = deps.isBlackHoleBall;
   var isRainbowBall = deps.isRainbowBall;
   var isMolotovBall = deps.isMolotovBall;
@@ -68,72 +73,6 @@ function createGameManagerShotResolutionMethods(deps) {
     return value;
   }
 
-  function measureWorldDistanceSqBetweenCells(leftCell, rightCell, grid) {
-    if (!leftCell || !Number.isInteger(leftCell.row) || !Number.isInteger(leftCell.col)) {
-      throw new Error("World distance requires left cell coordinates.");
-    }
-    if (!rightCell || !Number.isInteger(rightCell.row) || !Number.isInteger(rightCell.col)) {
-      throw new Error("World distance requires right cell coordinates.");
-    }
-    if (!grid || typeof grid.getCellPosition !== "function") {
-      throw new Error("World distance requires grid.getCellPosition.");
-    }
-
-    var leftPosition = requireFinitePoint(
-      grid.getCellPosition(leftCell.row, leftCell.col),
-      "Left cell"
-    );
-    var rightPosition = requireFinitePoint(
-      grid.getCellPosition(rightCell.row, rightCell.col),
-      "Right cell"
-    );
-    var dx = rightPosition.x - leftPosition.x;
-    var dy = rightPosition.y - leftPosition.y;
-    return dx * dx + dy * dy;
-  }
-
-  function compareWorldDistanceSq(leftDistanceSq, rightDistanceSq) {
-    if (typeof leftDistanceSq !== "number" || !isFinite(leftDistanceSq)) {
-      throw new Error("World distance compare requires left distanceSq.");
-    }
-    if (typeof rightDistanceSq !== "number" || !isFinite(rightDistanceSq)) {
-      throw new Error("World distance compare requires right distanceSq.");
-    }
-    return leftDistanceSq - rightDistanceSq;
-  }
-
-  function compareKeysForStableTiebreak(leftKey, rightKey) {
-    if (!leftKey || !Number.isInteger(leftKey.row) || !Number.isInteger(leftKey.col)) {
-      throw new Error("Key tiebreak requires left key coordinates.");
-    }
-    if (!rightKey || !Number.isInteger(rightKey.row) || !Number.isInteger(rightKey.col)) {
-      throw new Error("Key tiebreak requires right key coordinates.");
-    }
-    if (leftKey.row !== rightKey.row) {
-      return leftKey.row - rightKey.row;
-    }
-    if (leftKey.col !== rightKey.col) {
-      return leftKey.col - rightKey.col;
-    }
-    return String(leftKey.id).localeCompare(String(rightKey.id));
-  }
-
-  function compareLocksForStableTiebreak(leftLock, rightLock) {
-    if (!leftLock || !Number.isInteger(leftLock.row) || !Number.isInteger(leftLock.col)) {
-      throw new Error("Lock tiebreak requires left lock coordinates.");
-    }
-    if (!rightLock || !Number.isInteger(rightLock.row) || !Number.isInteger(rightLock.col)) {
-      throw new Error("Lock tiebreak requires right lock coordinates.");
-    }
-    if (leftLock.row !== rightLock.row) {
-      return leftLock.row - rightLock.row;
-    }
-    if (leftLock.col !== rightLock.col) {
-      return leftLock.col - rightLock.col;
-    }
-    return String(leftLock.id).localeCompare(String(rightLock.id));
-  }
-
   function hasUnlockEntryForKey(keyCell, unlockedLockedBalls) {
     if (!keyCell || (typeof keyCell.id !== "string" && typeof keyCell.id !== "number")) {
       throw new Error("Key unlock lookup requires key id.");
@@ -146,102 +85,42 @@ function createGameManagerShotResolutionMethods(deps) {
     });
   }
 
-  function findNearestLockForKey(keyCell, lockedTargets, grid) {
-    if (!keyCell) {
-      throw new Error("Nearest lock selection requires key cell.");
-    }
-    if (!Array.isArray(lockedTargets) || !lockedTargets.length) {
-      throw new Error("Nearest lock selection requires locked targets.");
-    }
-
-    var nearestLock = null;
-    var nearestDistanceSq = null;
-    lockedTargets.forEach(function (lockCell) {
-      var distanceSq = measureWorldDistanceSqBetweenCells(keyCell, lockCell, grid);
-      if (
-        nearestLock === null ||
-        compareWorldDistanceSq(distanceSq, nearestDistanceSq) < 0 ||
-        (
-          compareWorldDistanceSq(distanceSq, nearestDistanceSq) === 0 &&
-          compareLocksForStableTiebreak(lockCell, nearestLock) < 0
-        )
-      ) {
-        nearestLock = lockCell;
-        nearestDistanceSq = distanceSq;
-      }
-    });
-
-    if (!nearestLock) {
-      throw new Error("Nearest lock selection failed for key: " + keyCell.id);
-    }
-    return nearestLock;
-  }
-
-  function buildNearestKeyLockPairings(groupKeys, lockedTargets, grid) {
+  function buildRowKeyLockPairings(groupKeys, lockedTargets) {
     if (!Array.isArray(groupKeys) || !groupKeys.length) {
-      throw new Error("Nearest key lock pairing requires group keys.");
+      throw new Error("Row key lock pairing requires collected keys.");
     }
     if (!Array.isArray(lockedTargets) || !lockedTargets.length) {
-      throw new Error("Nearest key lock pairing requires locked targets.");
+      throw new Error("Row key lock pairing requires locked targets.");
     }
-    if (lockedTargets.length < groupKeys.length) {
-      throw new Error("Nearest key lock pairing requires at least one locked target per key.");
-    }
-
-    if (groupKeys.length === 1) {
-      return [{
-        keyCell: groupKeys[0],
-        lockCell: findNearestLockForKey(groupKeys[0], lockedTargets, grid)
-      }];
-    }
-
-    var remainingKeys = groupKeys.slice();
-    var remainingLocks = lockedTargets.slice();
+    var keyByRow = {};
     var pairings = [];
-
-    while (remainingKeys.length && remainingLocks.length) {
-      var bestPair = null;
-      var bestDistanceSq = null;
-
-      remainingKeys.forEach(function (keyCell) {
-        remainingLocks.forEach(function (lockCell) {
-          var distanceSq = measureWorldDistanceSqBetweenCells(keyCell, lockCell, grid);
-          if (
-            !bestPair ||
-            compareWorldDistanceSq(distanceSq, bestDistanceSq) < 0 ||
-            (
-              compareWorldDistanceSq(distanceSq, bestDistanceSq) === 0 &&
-              (
-                compareKeysForStableTiebreak(keyCell, bestPair.keyCell) < 0 ||
-                (
-                  compareKeysForStableTiebreak(keyCell, bestPair.keyCell) === 0 &&
-                  compareLocksForStableTiebreak(lockCell, bestPair.lockCell) < 0
-                )
-              )
-            )
-          ) {
-            bestPair = {
-              keyCell: keyCell,
-              lockCell: lockCell
-            };
-            bestDistanceSq = distanceSq;
-          }
+    groupKeys.forEach(function (keyCell) {
+      if (!keyCell || !Number.isInteger(keyCell.row) || !Number.isInteger(keyCell.col)) {
+        throw new Error("Row key lock pairing requires key coordinates.");
+      }
+      var rowKey = String(keyCell.row);
+      if (keyByRow[rowKey]) {
+        throw new Error("Lock chain row contains more than one collected key: " + keyCell.row + ".");
+      }
+      keyByRow[rowKey] = keyCell;
+      var rowLocks = lockedTargets.filter(function (lockCell) {
+        return lockCell && lockCell.row === keyCell.row;
+      }).sort(function (left, right) {
+        if (left.col !== right.col) {
+          return left.col - right.col;
+        }
+        return String(left.id).localeCompare(String(right.id));
+      });
+      if (!rowLocks.length) {
+        throw new Error("Collected key has no locked targets in row " + keyCell.row + ": " + keyCell.id + ".");
+      }
+      rowLocks.forEach(function (lockCell) {
+        pairings.push({
+          keyCell: keyCell,
+          lockCell: lockCell
         });
       });
-
-      if (!bestPair) {
-        throw new Error("Nearest key lock pairing failed to resolve target.");
-      }
-
-      pairings.push(bestPair);
-      remainingKeys = remainingKeys.filter(function (cell) {
-        return cell.id !== bestPair.keyCell.id;
-      });
-      remainingLocks = remainingLocks.filter(function (cell) {
-        return cell.id !== bestPair.lockCell.id;
-      });
-    }
-
+    });
     return pairings;
   }
 
@@ -377,6 +256,7 @@ function createGameManagerShotResolutionMethods(deps) {
     AssistSpiritConfig: AssistSpiritConfig,
     BoardLayout: BoardLayout,
     BoardViewportSystem: BoardViewportSystem,
+    RainbowPrismBallResolver: RainbowPrismBallResolver,
     COMBO_BONUS_PER_HIT: COMBO_BONUS_PER_HIT,
     EliminationSequenceBuilder: EliminationSequenceBuilder,
     FLOATING_ICE_DROP_DELAY: FLOATING_ICE_DROP_DELAY,
@@ -389,7 +269,7 @@ function createGameManagerShotResolutionMethods(deps) {
     SpecialAnimationTiming: SpecialAnimationTiming,
     appendMolotovEliminationSequence: appendMolotovEliminationSequence,
     buildMolotovBlastDropVelocity: buildMolotovBlastDropVelocity,
-    buildNearestKeyLockPairings: buildNearestKeyLockPairings,
+    buildRowKeyLockPairings: buildRowKeyLockPairings,
     buildProjectilePathFromShotPlan: buildProjectilePathFromShotPlan,
     buildTriggeredSplitterIdsFromPendingSpawns: buildTriggeredSplitterIdsFromPendingSpawns,
     clone: clone,
@@ -403,6 +283,8 @@ function createGameManagerShotResolutionMethods(deps) {
     findPrimaryCollectionObjective: findPrimaryCollectionObjective,
     hasUnlockEntryForKey: hasUnlockEntryForKey,
     isBlastBall: isBlastBall,
+    isCrystalGunBall: isCrystalGunBall,
+    isRainbowPrismBall: isRainbowPrismBall,
     isBlackHoleBall: isBlackHoleBall,
     isIceBall: isIceBall,
     isKeyBall: isKeyBall,
@@ -425,6 +307,8 @@ function createGameManagerShotResolutionMethods(deps) {
     createGameManagerShotDropMethods(SHOT_RESOLUTION_CONTEXT),
     createGameManagerShotMolotovMethods(SHOT_RESOLUTION_CONTEXT),
     createGameManagerShotReactiveMethods(SHOT_RESOLUTION_CONTEXT),
+    createGameManagerShotCrystalGunMethods(SHOT_RESOLUTION_CONTEXT),
+    createGameManagerShotRainbowPrismMethods(SHOT_RESOLUTION_CONTEXT),
     createGameManagerShotFinalizeMethods(SHOT_RESOLUTION_CONTEXT)
   );
 }

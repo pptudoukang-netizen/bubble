@@ -43,6 +43,10 @@ function createBreederResolution(matched) {
     matched: matched || [],
     breederResolved: false,
     breederSpawns: [],
+    mineCountdownResolved: false,
+    mineCountdowns: [],
+    mineExplosions: [],
+    eliminationPresentationComplete: false,
     boardCleared: false
   };
 }

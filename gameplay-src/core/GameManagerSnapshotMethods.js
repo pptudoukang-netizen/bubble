@@ -117,9 +117,11 @@ GameManager.prototype.getRuntimeSnapshot = function (runtimeEvents, renderOption
     !this.systems.bubbleGrid ||
     typeof this.systems.bubbleGrid.getCells !== "function" ||
     !this.systems.boardOcclusionSystem ||
-    typeof this.systems.boardOcclusionSystem.clearZonesWithoutBoardCells !== "function"
+    typeof this.systems.boardOcclusionSystem.clearZonesWithoutBoardCells !== "function" ||
+    !this.systems.colorCloudSystem ||
+    typeof this.systems.colorCloudSystem.snapshotForRender !== "function"
   ) {
-    throw new Error("getRuntimeSnapshot requires board occlusion and bubble grid synchronization.");
+    throw new Error("getRuntimeSnapshot requires board occlusion, color cloud and bubble grid synchronization.");
   }
   var snapshotRuntimeEvents = Array.isArray(runtimeEvents) ? runtimeEvents.slice() : [];
   var boardEmptyOcclusionZoneIds = this.systems.boardOcclusionSystem.clearZonesWithoutBoardCells(
@@ -142,7 +144,8 @@ GameManager.prototype.getRuntimeSnapshot = function (runtimeEvents, renderOption
     fallingMarbleSystem: typeof fallingSystem.snapshotForRender === "function"
       ? fallingSystem.snapshotForRender()
       : fallingSystem.snapshot(),
-    boardOcclusionSystem: this.systems.boardOcclusionSystem.snapshotForRender()
+    boardOcclusionSystem: this.systems.boardOcclusionSystem.snapshotForRender(),
+    colorCloudSystem: this.systems.colorCloudSystem.snapshotForRender()
   };
   systemSnapshots.trappedSpriteRescueSystem = this.systems.trappedSpriteRescueSystem.snapshotForRender();
   var jarsSnapshot = this._getCachedJarSnapshot();
@@ -185,6 +188,7 @@ GameManager.prototype.getRuntimeSnapshot = function (runtimeEvents, renderOption
     this.state === "running" &&
     !this.activeProjectile &&
     !this._isBoardAdvanceBusy() &&
+    !this._hasPendingBudHatches() &&
     !this._hasPendingSpiritCocoonOpenings() &&
     !this._hasPendingSwirlRotation() &&
     !this._hasPendingWormholeShift() &&
@@ -245,7 +249,7 @@ GameManager.prototype.getRuntimeSnapshot = function (runtimeEvents, renderOption
     jarScoreBoostRemainingMs: Math.max(0, Math.floor(Number(this.jarScoreBoostRemainingMs) || 0)),
     dropInterval: 0,
     boardViewport: this.systems.boardViewportSystem.snapshot(),
-    inputLocked: this._isBoardAdvanceBusy() || this._hasPendingSpiritCocoonOpenings() || this._hasPendingSwirlRotation() || this._hasPendingWormholeShift() || this._hasPendingVineCast() || this.state !== "running",
+    inputLocked: this._isBoardAdvanceBusy() || this._hasPendingBudHatches() || this._hasPendingSpiritCocoonOpenings() || this._hasPendingSwirlRotation() || this._hasPendingWormholeShift() || this._hasPendingVineCast() || this.state !== "running",
     turnsUntilDrop: this.getTurnsUntilDrop(),
     lastFiredColor: this.lastFiredColor,
     // Keep runtime snapshot light during flight to avoid per-frame deep-clone spikes.

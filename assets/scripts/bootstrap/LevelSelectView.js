@@ -1642,7 +1642,18 @@ function bindFeatureTestButtons(levelView, onFeatureTestLevel, showTestLevelButt
     { key: "spirit_cocoon", nodeName: "spirit_cocoon_test_btn", label: "精灵茧" },
     { key: "multi_trapped_spirit", nodeName: "multi_trapped_spirit_test_btn", label: "多救援" },
     { key: "transparent_ball", nodeName: "transparent_ball_test_btn", label: "透明球" },
-    { key: "breeder_ball", nodeName: "breeder_ball_test_btn", label: "繁殖球" }
+    { key: "breeder_ball", nodeName: "breeder_ball_test_btn", label: "繁殖球" },
+    { key: "mine", nodeName: "mine_test_btn", label: "地雷" },
+    { key: "bud", nodeName: "bud_test_btn", label: "花苞球" },
+    { key: "crystal_gun", nodeName: "crystal_gun_test_btn", label: "晶光炮" },
+    { key: "rainbow_prism_ball", nodeName: "rainbow_prism_ball_test_btn", label: "棱镜球" },
+    { key: "poison_attachment", nodeName: "poison_attachment_test_btn", label: "毒液" },
+    { key: "ice_crystal_attachment", nodeName: "ice_crystal_attachment_test_btn", label: "冰凌" },
+    { key: "bubble_shield_attachment", nodeName: "bubble_shield_attachment_test_btn", label: "护盾" },
+    { key: "lock_chain", nodeName: "lock_chain_test_btn", label: "锁定球" },
+    { key: "color_cloud", nodeName: "color_cloud_test_btn", label: "彩云" },
+    { key: "spider", nodeName: "spider_test_btn", label: "蜘蛛" },
+    { key: "wind_tunnel", nodeName: "wind_tunnel_test_btn", label: "风眼" }
   ].forEach(function (definition, index) {
     var buttonNode = testLevelButtonNode.parent.getChildByName(definition.nodeName);
     if (!buttonNode) {
@@ -1652,7 +1663,6 @@ function bindFeatureTestButtons(levelView, onFeatureTestLevel, showTestLevelButt
       }
       buttonNode.name = definition.nodeName;
       buttonNode.parent = testLevelButtonNode.parent;
-      buttonNode.setPosition(testLevelButtonNode.x + index * 145, testLevelButtonNode.y + 145);
       var iconNode = buttonNode.getChildByName("icon");
       if (!iconNode || !iconNode.isValid) {
         throw new Error("LevelView/" + definition.nodeName + " requires icon.");
@@ -1665,6 +1675,12 @@ function bindFeatureTestButtons(levelView, onFeatureTestLevel, showTestLevelButt
       label.fontSize = definition.label.length > 2 ? 30 : 40;
       label.lineHeight = label.fontSize;
     }
+    var columnIndex = index % 4;
+    var rowIndex = Math.floor(index / 4);
+    buttonNode.setPosition(
+      testLevelButtonNode.x + columnIndex * 145,
+      testLevelButtonNode.y + (rowIndex + 1) * 145
+    );
     buttonNode.active = showTestLevelButton;
     bindNamedButtonTap(
       buttonNode,

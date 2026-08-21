@@ -3,7 +3,7 @@
 function createGameManagerShotReactiveMethods(context) {
   var isBlackHoleBall = context.isBlackHoleBall;
   var KEY_UNLOCK_DROP_DELAY = context.KEY_UNLOCK_DROP_DELAY;
-  var buildNearestKeyLockPairings = context.buildNearestKeyLockPairings;
+  var buildRowKeyLockPairings = context.buildRowKeyLockPairings;
   var createGameManagerShotReactiveMethods = context.createGameManagerShotReactiveMethods;
   var hasUnlockEntryForKey = context.hasUnlockEntryForKey;
   var isIceBall = context.isIceBall;
@@ -16,6 +16,88 @@ function createGameManagerShotReactiveMethods(context) {
   var resolveIceInnerColor = context.resolveIceInnerColor;
 
   return {
+    _recordBubbleShieldRemovals: function (removedShields, resolution, sourceType) {
+      if (!Array.isArray(removedShields)) {
+        throw new Error("Bubble shield removal recording requires removedShields array.");
+      }
+      if (!resolution || !Array.isArray(resolution.bubbleShieldsRemoved)) {
+        throw new Error("Bubble shield removal recording requires resolution.bubbleShieldsRemoved array.");
+      }
+      if (typeof sourceType !== "string" || !sourceType) {
+        throw new Error("Bubble shield removal recording requires sourceType.");
+      }
+      var existingIds = {};
+      resolution.bubbleShieldsRemoved.forEach(function (entry) {
+        if (!entry || typeof entry.id !== "string" || !entry.id) {
+          throw new Error("Bubble shield resolution entry requires id.");
+        }
+        existingIds[entry.id] = true;
+      });
+      removedShields.forEach(function (entry, index) {
+        if (
+          !entry ||
+          typeof entry.id !== "string" ||
+          !entry.id ||
+          entry.type !== "bubble_shield" ||
+          !Number.isInteger(entry.row) ||
+          !Number.isInteger(entry.col) ||
+          (typeof entry.protectedCellId !== "string" && typeof entry.protectedCellId !== "number")
+        ) {
+          throw new Error("Bubble shield removal entry is invalid at index " + index + ".");
+        }
+        if (existingIds[entry.id]) {
+          throw new Error("Bubble shield was removed twice in one resolution: " + entry.id + ".");
+        }
+        existingIds[entry.id] = true;
+        resolution.bubbleShieldsRemoved.push({
+          id: entry.id,
+          type: entry.type,
+          row: entry.row,
+          col: entry.col,
+          protectedCellId: entry.protectedCellId,
+          sourceType: sourceType
+        });
+      });
+      if (removedShields.length && typeof this._pushRuntimeEvent === "function") {
+        this._pushRuntimeEvent("bubble_shield_removed", {
+          sourceType: sourceType,
+          count: removedShields.length,
+          shieldIds: removedShields.map(function (entry) { return entry.id; })
+        });
+      }
+      return removedShields;
+    },
+
+    _resolveBubbleShieldsHitBySpecial: function (affectedCells, grid, resolution, sourceType) {
+      if (!Array.isArray(affectedCells)) {
+        throw new Error("Special bubble shield hit requires affectedCells array.");
+      }
+      if (!grid || typeof grid.resolveBubbleShieldHits !== "function") {
+        throw new Error("Special bubble shield hit requires BubbleGrid.resolveBubbleShieldHits.");
+      }
+      var hitResult = grid.resolveBubbleShieldHits(affectedCells);
+      if (
+        !hitResult ||
+        !Array.isArray(hitResult.removableCells) ||
+        !Array.isArray(hitResult.removedShields)
+      ) {
+        throw new Error("BubbleGrid.resolveBubbleShieldHits returned an invalid result.");
+      }
+      this._recordBubbleShieldRemovals(hitResult.removedShields, resolution, sourceType);
+      return hitResult.removableCells;
+    },
+
+    _clearBubbleShieldsAdjacentToOrdinaryElimination: function (matchedCells, grid, resolution) {
+      if (!Array.isArray(matchedCells)) {
+        throw new Error("Adjacent bubble shield clearing requires matchedCells array.");
+      }
+      if (!grid || typeof grid.removeBubbleShieldsAdjacentToCells !== "function") {
+        throw new Error("Adjacent bubble shield clearing requires BubbleGrid.removeBubbleShieldsAdjacentToCells.");
+      }
+      var removedShields = grid.removeBubbleShieldsAdjacentToCells(matchedCells);
+      return this._recordBubbleShieldRemovals(removedShields, resolution, "adjacent_normal_elimination");
+    },
+
     _unloadBlackHolesHitByRange: function (affectedCells, grid, resolution, sourceType) {
       if (!Array.isArray(affectedCells)) {
         throw new Error("Black hole range unload requires affectedCells array.");
@@ -34,6 +116,19 @@ function createGameManagerShotReactiveMethods(context) {
         }
         var liveCell = grid.getCell(affectedCell.row, affectedCell.col);
         if (!liveCell) {
+          return;
+        }
+        if (
+          liveCell.spiderProtected === true ||
+          (
+            liveCell.spiderLocked === true &&
+            !(typeof liveCell.spiderId === "string" && liveCell.spiderId)
+          )
+        ) {
+          return;
+        }
+        if (liveCell.lockChainProtected === true) {
+          remainingCells.push(liveCell);
           return;
         }
         if (!isBlackHoleBall(liveCell)) {
@@ -151,7 +246,7 @@ function createGameManagerShotReactiveMethods(context) {
         unlockedPositions[entry.row + ":" + entry.col] = true;
       });
 
-      var floatingCells = this.systems.supportSystem.findFloatingCells(grid);
+      var floatingCells = this._findFloatingCellsBeforeSwirlRotation(grid, resolution);
       var targets = floatingCells.filter(function (cell) {
         return unlockedPositions[cell.row + ":" + cell.col] === true;
       });
@@ -205,11 +300,7 @@ function createGameManagerShotReactiveMethods(context) {
       if (!lockedTargets.length) {
         throw new Error("Collected key has no locked target.");
       }
-      if (lockedTargets.length < pendingKeys.length) {
-        throw new Error("Collected keys exceed remaining locked targets.");
-      }
-
-      var pairings = buildNearestKeyLockPairings(pendingKeys, lockedTargets, grid);
+      var pairings = buildRowKeyLockPairings(pendingKeys, lockedTargets);
       pairings.forEach(function (pair) {
         var keyCell = pair.keyCell;
         var targetCell = pair.lockCell;
@@ -455,11 +546,13 @@ function createGameManagerShotReactiveMethods(context) {
         return [];
       }
 
+      var removedKeys = keys.filter(function (keyCell) {
+        return !grid.hasCell(keyCell.row, keyCell.col);
+      });
       var liveKeys = keys.filter(function (keyCell) {
         return grid.hasCell(keyCell.row, keyCell.col);
       });
-      var removedKeys = grid.removeCells(liveKeys);
-      this._appendUniqueCells(removedKeys, keys);
+      this._appendUniqueCells(removedKeys, grid.removeCells(liveKeys));
       this._appendUniqueCells(resolution.collectedKeys, removedKeys);
       return removedKeys;
     },

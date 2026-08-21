@@ -494,7 +494,7 @@ LevelRenderer.prototype._applyBallVisual = function (node, ballLike, forcedSize)
   spriteTarget.active = true;
   spriteTarget.opacity = 255;
   var sprite = ensureSprite(spriteTarget, spriteFrame);
-  sprite.trim = spriteCode !== "VINE_SPIRIT";
+  sprite.trim = spriteCode !== "VINE_SPIRIT" && spriteCode !== "BLACK_HOLE";
   var visualSize = forcedSize || spriteFrame.getOriginalSize();
   spriteTarget.setContentSize(visualSize);
 
@@ -542,6 +542,31 @@ LevelRenderer.prototype._applyJarMaskVisual = function (node, colorCode) {
 
   ensureSprite(maskNode, spriteFrame);
   maskNode.setContentSize(JAR_RENDER_SIZE);
+};
+
+LevelRenderer.prototype._applyLockChainProtectionTint = function (node, cell) {
+  if (!node || !node.isValid) {
+    throw new Error("Lock chain protection tint requires valid board node.");
+  }
+  if (!cell || typeof cell.lockChainProtected !== "boolean") {
+    throw new Error("Board cell requires boolean lockChainProtected state.");
+  }
+  if (typeof node.getComponentsInChildren !== "function") {
+    throw new Error("Lock chain protection tint requires node.getComponentsInChildren.");
+  }
+  var sprites = node.getComponentsInChildren(cc.Sprite);
+  if (!Array.isArray(sprites) || sprites.length === 0) {
+    throw new Error("Lock chain protection tint requires at least one Sprite: " + cell.id + ".");
+  }
+  var tint = cell.lockChainProtected === true
+    ? cc.color(118, 118, 118, 255)
+    : cc.color(255, 255, 255, 255);
+  sprites.forEach(function (sprite) {
+    if (!sprite || !sprite.node || !sprite.node.isValid) {
+      throw new Error("Lock chain protection tint encountered invalid Sprite: " + cell.id + ".");
+    }
+    sprite.node.color = tint;
+  });
 };
 }
 

@@ -8,6 +8,7 @@ function attachFallingMarbleJarPhysicsMethods(FallingMarbleSystem, context) {
   var normalize = context.normalize;
   var reflectVector = context.reflectVector;
   var rotateVector = context.rotateVector;
+  var ICICLE_COLLISION_RADIUS = 32;
 
 FallingMarbleSystem.prototype._getJarZoneByIndex = function (jarIndex) {
   if (!this.jarZones || !this.jarZones.length) {
@@ -334,6 +335,28 @@ FallingMarbleSystem.prototype._applyPoisonFairyCollision = function (drop) {
     slotIndex: departure.slotIndex,
     dropId: drop.id,
     poisonBatchId: drop.poisonBatchId
+  };
+};
+
+FallingMarbleSystem.prototype._applyIcicleFairyCollision = function (drop) {
+  if (!drop || drop.dropKind !== "icicle" || drop.entityType !== "icicle") {
+    throw new Error("Icicle fairy collision requires icicle drop.");
+  }
+  if (!this.fairyAssistSystem || typeof this.fairyAssistSystem.removeFairyByIcicle !== "function") {
+    throw new Error("Icicle fairy collision requires FairyAssistSystem.removeFairyByIcicle.");
+  }
+  var collision = this.fairyAssistSystem.resolveFirstCollision(drop, ICICLE_COLLISION_RADIUS);
+  if (!collision) {
+    return null;
+  }
+  var departure = this.fairyAssistSystem.removeFairyByIcicle(collision.fairy.id);
+  drop.active = false;
+  return {
+    fairyId: departure.fairyId,
+    fairyColor: departure.color,
+    slotIndex: departure.slotIndex,
+    dropId: drop.id,
+    attachmentId: drop.icicleSourceAttachmentId
   };
 };
 

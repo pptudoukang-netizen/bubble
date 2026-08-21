@@ -249,7 +249,9 @@ function validateGeneratedRescueBoardDesign(level, levelId) {
   });
   assert(
     largestComponent <= CampaignLevelGenerationConfig.TRAPPED_SPRITE_RESCUE_MAX_SAME_COLOR_COMPONENT,
-    "Remote rescue same-color component exceeds five: " + levelId + " got " + largestComponent
+    "Remote rescue same-color component exceeds " +
+      CampaignLevelGenerationConfig.TRAPPED_SPRITE_RESCUE_MAX_SAME_COLOR_COMPONENT +
+      ": " + levelId + " got " + largestComponent
   );
   var anchorNeighborRun = getMaximumCyclicRun(
     getClockwiseHexNeighbors(anchor.row, anchor.col).map(function (neighbor) {
@@ -383,7 +385,12 @@ function validateMultiTargetRuntime(config) {
   manager.systems.boardViewportSystem.targetOffsetY = 58;
   var firstTrigger = grid.getCell(3, 3);
   assert(firstTrigger, "Multi rescue first trigger fixture cell is missing.");
-  var firstResolution = manager._resolveAttachment(firstTrigger);
+  var firstResolution = manager._resolveAttachment(firstTrigger, {
+    ballCategory: "normal",
+    color: firstTrigger.color,
+    entityCategory: "normal_ball",
+    entityType: null
+  });
   assert(firstResolution.matched.length === 0, "Adjacent no-match rescue must not fabricate a match.");
   assert(firstResolution.rescuedTrappedSpirits.length === 1, "Adjacent no-match landing must rescue one target.");
   assert(firstResolution.scoreDelta === 1000 && manager.score === 1000, "First rescued target must award exactly 1000 points.");
@@ -407,7 +414,12 @@ function validateMultiTargetRuntime(config) {
 
   var secondTrigger = grid.getCell(5, 4);
   assert(secondTrigger, "Multi rescue second trigger fixture cell is missing.");
-  var secondResolution = manager._resolveAttachment(secondTrigger);
+  var secondResolution = manager._resolveAttachment(secondTrigger, {
+    ballCategory: "normal",
+    color: secondTrigger.color,
+    entityCategory: "normal_ball",
+    entityType: null
+  });
   assert(secondResolution.rescuedTrappedSpirits.length === 1, "Second adjacent landing must rescue the final target.");
   assert(secondResolution.multiTrappedSpiritRescueCompleted === true, "Final rescue must mark multi-target completion.");
   assert(secondResolution.boardCleared === true && grid.getCells().length === 0, "Final rescue must clear the remaining board.");
@@ -521,7 +533,16 @@ function runProjectileUntilSettled(gameManager) {
     }
     stepCount += 1;
   }
-  assert(stepCount < 1200, "Trapped sprite projectile/rotation did not settle.");
+  assert(
+    stepCount < 1200,
+    "Trapped sprite projectile/rotation did not settle: activeProjectile=" + !!gameManager.activeProjectile +
+      ", pendingFinalize=" + !!gameManager.pendingProjectileFinalize +
+      ", rotating=" + gameManager.systems.trappedSpriteRescueSystem.isRotating() +
+      ", trappedPostImpact=" + gameManager._hasPendingTrappedSpritePostImpactResolution() +
+      ", swirl=" + gameManager._hasPendingSwirlRotation() +
+      ", wormhole=" + gameManager._hasPendingWormholeShift() +
+      ", vine=" + gameManager._hasPendingVineCast()
+  );
   return sawRotationSnapshot;
 }
 
@@ -1085,7 +1106,12 @@ function validateRuntime(config) {
   grid.removeCells(directSupportCells);
   assert(grid.getCells().length > 0, "Support-drop test requires an outer cluster.");
   var attached = grid.addBubble({ row: 9, col: 4 }, "K");
-  var resolution = supportManager._resolveAttachment(attached);
+  var resolution = supportManager._resolveAttachment(attached, {
+    ballCategory: "normal",
+    color: attached.color,
+    entityCategory: "normal_ball",
+    entityType: null
+  });
   assert(resolution.floating.length > 0, "Unsupported outer cluster must drop in the same resolution.");
   assert(grid.getCells().length === 0, "Unsupported cells must not remain on the board.");
 }

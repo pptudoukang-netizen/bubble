@@ -472,7 +472,9 @@ function normalizePlan(rawPlan, level, levelKey) {
 
 function buildCampaignPlan(level) {
   return createPlanForLevel(level, {
-    enabled: level.levelId >= ENABLED_FROM_LEVEL && level.levelType !== "trapped_sprite_rescue",
+    enabled: level.levelId >= ENABLED_FROM_LEVEL &&
+      level.levelType !== "trapped_sprite_rescue" &&
+      level.levelType !== "multi_trapped_spirit_rescue",
     mode: MODE_PER_ATTEMPT
   });
 }

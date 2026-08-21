@@ -2,7 +2,9 @@
 
 var attachBubbleGridSpecialEntityMethods = require("./BubbleGridSpecialEntityMethods");
 var attachBubbleGridCollisionMethods = require("./BubbleGridCollisionMethods");
+var attachBubbleGridSpiderMethods = require("./BubbleGridSpiderMethods");
 var attachBubbleGridMutationMethods = require("./BubbleGridMutationMethods");
+var attachBubbleGridWindTunnelMethods = require("./BubbleGridWindTunnelMethods");
 
 var BaseSystem = require("./BaseSystem");
 var BoardLayout = require("../../assets/scripts/config/BoardLayout");
@@ -58,11 +60,43 @@ function isWormholeCell(cell) {
   );
 }
 
+function isWindTunnelEntranceCell(cell) {
+  return !!(
+    cell &&
+    cell.entityCategory === "reactive_ball" &&
+    cell.entityType === "wind_tunnel_entrance"
+  );
+}
+
+function isWindTunnelExitCell(cell) {
+  return !!(
+    cell &&
+    cell.entityCategory === "reactive_ball" &&
+    cell.entityType === "wind_tunnel_exit"
+  );
+}
+
+function isTraversableCell(cell) {
+  return !!(
+    cell &&
+    cell.entityCategory === "reactive_ball" &&
+    (cell.entityType === "transparent_ball" || cell.entityType === "wind_tunnel_exit")
+  );
+}
+
 function isBlackHoleCell(cell) {
   return !!(
     cell &&
     cell.entityCategory === "hazard_ball" &&
     cell.entityType === "black_hole"
+  );
+}
+
+function isMineCell(cell) {
+  return !!(
+    cell &&
+    cell.entityCategory === "hazard_ball" &&
+    cell.entityType === "mine"
   );
 }
 
@@ -131,10 +165,25 @@ function createSpecialEntityRecord(entity, row, col) {
       ? entity.temporaryThawToken
       : null,
     row: row,
-    col: col
+    col: col,
+    traversable: isTraversableCell(entity)
   };
   if (isBlackHoleCell(entity) && (!Number.isInteger(record.capacity) || record.capacity < 1 || record.capacity > 3)) {
     throw new Error("Black hole special entity runtime capacity must be in [1, 3].");
+  }
+  if (isMineCell(entity)) {
+    if (!Number.isInteger(entity.initialLife) || entity.initialLife <= 0) {
+      throw new Error("Mine special entity requires positive initialLife.");
+    }
+    record.initialLife = entity.initialLife;
+    record.life = entity.life === undefined ? entity.initialLife : entity.life;
+    record.countdownStarted = entity.countdownStarted === undefined ? false : entity.countdownStarted;
+    if (!Number.isInteger(record.life) || record.life <= 0 || record.life > record.initialLife) {
+      throw new Error("Mine special entity runtime life must be in [1, initialLife].");
+    }
+    if (typeof record.countdownStarted !== "boolean") {
+      throw new Error("Mine special entity countdownStarted must be boolean.");
+    }
   }
   if (record.temporaryThawed && !(record.entityCategory === "obstacle_ball" && record.entityType === "ice")) {
     throw new Error("Temporary thaw state is only valid on ice obstacles.");
@@ -164,11 +213,23 @@ function BubbleGrid() {
   this._rescueExtendedNormalCellMap = {};
   this._specialCellMap = {};
   this._wormholeMap = {};
+  this._windTunnelEntrance = null;
+  this._closingWindTunnelEntrance = null;
+  this._activeWindTunnelExitId = null;
+  this._windTunnelExitSwitchElapsed = 0;
   this._timeBonusByCell = {};
   this._vineOwnerByCell = {};
   this._vinePreviewOwnerByCell = {};
   this._spiritMistExpiryByCell = {};
   this._poisonAttachmentByCell = {};
+  this._iceCrystalAttachmentByCell = {};
+  this._bubbleShieldAttachmentByCell = {};
+  this._spidersById = {};
+  this._spiderIdByCell = {};
+  this._spiderLocksById = {};
+  this._spiderLockIdByRow = {};
+  this._spiderCocoonByCell = {};
+  this._spiderLockCount = 0;
   this._cellRemovalListener = null;
 }
 
@@ -273,6 +334,8 @@ BubbleGrid.prototype.configureLevel = function (levelConfig) {
   this._vinePreviewOwnerByCell = {};
   this._spiritMistExpiryByCell = {};
   this._poisonAttachmentByCell = {};
+  this._iceCrystalAttachmentByCell = {};
+  this._bubbleShieldAttachmentByCell = {};
   var cellAttachments = levelConfig.level.cellAttachments;
   if (cellAttachments === undefined) {
     cellAttachments = [];
@@ -282,23 +345,49 @@ BubbleGrid.prototype.configureLevel = function (levelConfig) {
   cellAttachments.forEach(function (attachment, index) {
     if (
       !attachment ||
-      attachment.type !== "poison" ||
+      (
+        attachment.type !== "poison" &&
+        attachment.type !== "ice_crystal" &&
+        attachment.type !== "bubble_shield"
+      ) ||
       typeof attachment.id !== "string" ||
       !attachment.id ||
       !Number.isInteger(attachment.row) ||
-      !Number.isInteger(attachment.col) ||
-      attachment.particleCount !== 3
+      !Number.isInteger(attachment.col)
     ) {
-      throw new Error("BubbleGrid poison attachment is invalid at index " + index + ".");
+      throw new Error("BubbleGrid cell attachment is invalid at index " + index + ".");
     }
     var coordinateKey = keyFor(attachment.row, attachment.col);
-    if (Object.prototype.hasOwnProperty.call(this._poisonAttachmentByCell, coordinateKey)) {
-      throw new Error("BubbleGrid poison attachment target is duplicated: " + coordinateKey + ".");
+    if (
+      Object.prototype.hasOwnProperty.call(this._poisonAttachmentByCell, coordinateKey) ||
+      Object.prototype.hasOwnProperty.call(this._iceCrystalAttachmentByCell, coordinateKey) ||
+      Object.prototype.hasOwnProperty.call(this._bubbleShieldAttachmentByCell, coordinateKey)
+    ) {
+      throw new Error("BubbleGrid cell attachment target is duplicated: " + coordinateKey + ".");
     }
     if (this.layout[attachment.row].charAt(attachment.col) === ".") {
-      throw new Error("BubbleGrid poison attachment target must be an ordinary ball: " + coordinateKey + ".");
+      throw new Error("BubbleGrid cell attachment target must be an ordinary ball: " + coordinateKey + ".");
     }
-    this._poisonAttachmentByCell[coordinateKey] = clone(attachment);
+    if (this.specialEntities.some(function (entity) {
+      return entity && entity.row === attachment.row && entity.col === attachment.col;
+    })) {
+      throw new Error("BubbleGrid cell attachment cannot target a special ball: " + coordinateKey + ".");
+    }
+    if (attachment.type === "poison") {
+      if (attachment.particleCount !== 3) {
+        throw new Error("BubbleGrid poison attachment must release exactly three particles at " + coordinateKey + ".");
+      }
+      this._poisonAttachmentByCell[coordinateKey] = clone(attachment);
+      return;
+    }
+    if (attachment.particleCount !== undefined) {
+      throw new Error("BubbleGrid " + attachment.type + " attachment must not define particleCount at " + coordinateKey + ".");
+    }
+    if (attachment.type === "ice_crystal") {
+      this._iceCrystalAttachmentByCell[coordinateKey] = clone(attachment);
+      return;
+    }
+    this._bubbleShieldAttachmentByCell[coordinateKey] = clone(attachment);
   }, this);
   var layoutMaxColumns = this.layout.reduce(function (max, row) {
     return Math.max(max, row.length);
@@ -309,6 +398,8 @@ BubbleGrid.prototype.configureLevel = function (levelConfig) {
   this.maxColumns = Math.max(BoardLayout.defaultColumns, layoutMaxColumns);
   this._normalizeLayoutRows();
   this._rebuildSpecialCellMap();
+  this._initializeWindTunnelState();
+  this._configureSpiderRows(levelConfig.level.spiderRows);
   this.version = 1;
   this._rebuildCaches();
   this.boardViewport.planIntroPosition(this.cells);
@@ -368,6 +459,12 @@ BubbleGrid.prototype._rebuildSpecialCellMap = function () {
       this._wormholeMap[entityKey] = record;
       return;
     }
+    if (isWindTunnelEntranceCell(record)) {
+      if (this.layout[entity.row].charAt(entity.col) !== ".") {
+        throw new Error("BubbleGrid wind tunnel entrance must reserve an empty layout slot at " + entityKey + ".");
+      }
+      return;
+    }
     this._specialCellMap[entityKey] = record;
   }, this);
 };
@@ -398,6 +495,12 @@ BubbleGrid.prototype._createNormalCell = function (row, col, colorCode) {
       : null,
     poisonParticleCount: Object.prototype.hasOwnProperty.call(this._poisonAttachmentByCell, cellKey)
       ? this._poisonAttachmentByCell[cellKey].particleCount
+      : null,
+    iceCrystalAttachmentId: Object.prototype.hasOwnProperty.call(this._iceCrystalAttachmentByCell, cellKey)
+      ? this._iceCrystalAttachmentByCell[cellKey].id
+      : null,
+    bubbleShieldAttachmentId: Object.prototype.hasOwnProperty.call(this._bubbleShieldAttachmentByCell, cellKey)
+      ? this._bubbleShieldAttachmentByCell[cellKey].id
       : null,
     isSpecial: false
   };
@@ -431,7 +534,8 @@ BubbleGrid.prototype._createSpecialCell = function (entity, row, col) {
     temporaryThawToken: typeof entity.temporaryThawToken === "string" && entity.temporaryThawToken
       ? entity.temporaryThawToken
       : null,
-    isSpecial: true
+    isSpecial: true,
+    traversable: isTraversableCell(entity)
   };
   if (cell.temporaryThawed) {
     if (!(cell.entityCategory === "obstacle_ball" && cell.entityType === "ice")) {
@@ -446,6 +550,20 @@ BubbleGrid.prototype._createSpecialCell = function (entity, row, col) {
   }
   if (isBlackHoleCell(entity) && (!Number.isInteger(cell.capacity) || cell.capacity < 1 || cell.capacity > 3)) {
     throw new Error("Black hole runtime capacity must be in [1, 3].");
+  }
+  if (isMineCell(entity)) {
+    if (!Number.isInteger(entity.initialLife) || entity.initialLife <= 0) {
+      throw new Error("Mine special cell requires positive initialLife.");
+    }
+    if (!Number.isInteger(entity.life) || entity.life <= 0 || entity.life > entity.initialLife) {
+      throw new Error("Mine special cell requires life in [1, initialLife].");
+    }
+    if (typeof entity.countdownStarted !== "boolean") {
+      throw new Error("Mine special cell requires countdownStarted boolean.");
+    }
+    cell.initialLife = entity.initialLife;
+    cell.life = entity.life;
+    cell.countdownStarted = entity.countdownStarted;
   }
   if (isVineSpiritCell(entity)) {
     if (!Number.isInteger(entity.health) || entity.health <= 0 || entity.health > VINE_SPIRIT_MAX_HEALTH) {
@@ -470,7 +588,9 @@ BubbleGrid.prototype._rebuildCaches = function () {
         return;
       }
 
-      var cell = this._createNormalCell(rowIndex, columnIndex, cellCode);
+      var cell = this._applySpiderStateToCell(
+        this._createNormalCell(rowIndex, columnIndex, cellCode)
+      );
 
       this.cells.push(cell);
       this._cellMap[keyFor(rowIndex, columnIndex)] = cell;
@@ -490,7 +610,9 @@ BubbleGrid.prototype._rebuildCaches = function () {
       throw new Error("BubbleGrid extended cell overlaps an authored layout cell: " + key);
     }
 
-    var normalCell = this._createNormalCell(extendedCell.row, extendedCell.col, extendedCell.color);
+    var normalCell = this._applySpiderStateToCell(
+      this._createNormalCell(extendedCell.row, extendedCell.col, extendedCell.color)
+    );
     this.cells.push(normalCell);
     this._cellMap[key] = normalCell;
     this._pushCellToRowBucket(normalCell);
@@ -503,7 +625,9 @@ BubbleGrid.prototype._rebuildCaches = function () {
     }
 
     var entity = this._specialCellMap[key];
-    var specialCell = this._createSpecialCell(entity, entity.row, entity.col);
+    var specialCell = this._applySpiderStateToCell(
+      this._createSpecialCell(entity, entity.row, entity.col)
+    );
     this.cells.push(specialCell);
     this._cellMap[key] = specialCell;
     this._pushCellToRowBucket(specialCell);
@@ -691,13 +815,58 @@ BubbleGrid.prototype._clearSpecialCell = function (row, col) {
 };
 
 BubbleGrid.prototype.getSpecialEntities = function () {
+  var activeLockChainRow = this.getActiveLockChainRow();
   var cellEntities = Object.keys(this._specialCellMap).map(function (key) {
-    return clone(this._specialCellMap[key]);
+    var entity = clone(this._specialCellMap[key]);
+    if (isWindTunnelExitCell(entity)) {
+      entity.active = entity.id === this._activeWindTunnelExitId;
+      entity.traversable = true;
+    }
+    entity.lockChainProtected = activeLockChainRow !== null && entity.row < activeLockChainRow;
+    return this._applySpiderStateToCell(entity);
   }, this);
   var wormholes = Object.keys(this._wormholeMap).map(function (key) {
-    return clone(this._wormholeMap[key]);
+    var entity = clone(this._wormholeMap[key]);
+    entity.lockChainProtected = activeLockChainRow !== null && entity.row < activeLockChainRow;
+    return this._applySpiderStateToCell(entity);
   }, this);
-  return cellEntities.concat(wormholes);
+  var entrance = this.getWindTunnelEntrance();
+  var closingEntrance = this.getClosingWindTunnelEntrance();
+  var nonCellEntities = wormholes;
+  if (entrance) {
+    entrance.lockChainProtected = activeLockChainRow !== null && entrance.row < activeLockChainRow;
+    nonCellEntities.push(entrance);
+  }
+  if (closingEntrance) {
+    closingEntrance.lockChainProtected = activeLockChainRow !== null && closingEntrance.row < activeLockChainRow;
+    nonCellEntities.push(closingEntrance);
+  }
+  return cellEntities.concat(nonCellEntities);
+};
+
+BubbleGrid.prototype.getActiveLockChainRow = function () {
+  var activeRow = null;
+  Object.keys(this._specialCellMap).forEach(function (key) {
+    var entity = this._specialCellMap[key];
+    if (!entity || entity.entityCategory !== "locked_ball" || entity.entityType !== "locked") {
+      return;
+    }
+    if (!Number.isInteger(entity.row)) {
+      throw new Error("Locked ball requires integer row before lock chain lookup.");
+    }
+    if (activeRow === null || entity.row > activeRow) {
+      activeRow = entity.row;
+    }
+  }, this);
+  return activeRow;
+};
+
+BubbleGrid.prototype.isLockChainProtectedCell = function (cell) {
+  if (!cell || !Number.isInteger(cell.row) || !Number.isInteger(cell.col)) {
+    throw new Error("Lock chain protection lookup requires cell coordinates.");
+  }
+  var activeRow = this.getActiveLockChainRow();
+  return activeRow !== null && cell.row < activeRow;
 };
 
 BubbleGrid.prototype.getWormholes = function () {
@@ -720,11 +889,25 @@ BubbleGrid.prototype.getRowCount = function () {
 };
 
 BubbleGrid.prototype.getCells = function () {
-  return clone(this.cells);
+  var activeLockChainRow = this.getActiveLockChainRow();
+  return clone(this.cells).map(function (cell) {
+    if (isWindTunnelExitCell(cell)) {
+      cell.active = cell.id === this._activeWindTunnelExitId;
+      cell.traversable = true;
+    }
+    cell.lockChainProtected = activeLockChainRow !== null && cell.row < activeLockChainRow;
+    return this._applySpiderStateToCell(cell);
+  }, this);
 };
 
 BubbleGrid.prototype.getClearableCells = function () {
-  return clone(this.cells);
+  return this.getCells().filter(function (cell) {
+    return cell.lockChainProtected !== true && cell.spiderProtected !== true && !(
+      cell.entityCategory === "locked_ball" && cell.entityType === "locked"
+    ) && !(
+      cell.spiderLocked === true && !(typeof cell.spiderId === "string" && cell.spiderId)
+    );
+  });
 };
 
 var BUBBLE_GRID_METHOD_CONTEXT = {
@@ -743,12 +926,16 @@ var BUBBLE_GRID_METHOD_CONTEXT = {
   isVineProtectedCell: isVineProtectedCell,
   isVineSpiritCell: isVineSpiritCell,
   isBlackHoleCell: isBlackHoleCell,
+  isMineCell: isMineCell,
+  isTraversableCell: isTraversableCell,
   keyFor: keyFor,
   normalize: normalize
 };
 attachBubbleGridSpecialEntityMethods(BubbleGrid, BUBBLE_GRID_METHOD_CONTEXT);
 attachBubbleGridCollisionMethods(BubbleGrid, BUBBLE_GRID_METHOD_CONTEXT);
+attachBubbleGridSpiderMethods(BubbleGrid, BUBBLE_GRID_METHOD_CONTEXT);
 attachBubbleGridMutationMethods(BubbleGrid, BUBBLE_GRID_METHOD_CONTEXT);
+attachBubbleGridWindTunnelMethods(BubbleGrid, BUBBLE_GRID_METHOD_CONTEXT);
 
 BubbleGrid.prototype.getMaxColumns = function () {
   return this.maxColumns;
@@ -760,7 +947,12 @@ BubbleGrid.prototype.getViewportOffsetY = function () {
 
 BubbleGrid.prototype.getCell = function (row, col) {
   var cell = this._cellMap[keyFor(row, col)];
-  return cell ? clone(cell) : null;
+  if (!cell) {
+    return null;
+  }
+  var clonedCell = clone(cell);
+  clonedCell.lockChainProtected = this.isLockChainProtectedCell(clonedCell);
+  return this._applySpiderStateToCell(clonedCell);
 };
 
 BubbleGrid.prototype.hasCell = function (row, col) {

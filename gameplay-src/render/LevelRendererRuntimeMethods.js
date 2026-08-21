@@ -15,6 +15,10 @@ function attachLevelRendererRuntimeMethods(LevelRenderer, context) {
   var resolveRefreshScope = context.resolveRefreshScope;
 
 LevelRenderer.prototype.renderLevel = function (levelConfig, runtimeSnapshot) {
+  if (!runtimeSnapshot || !runtimeSnapshot.board || !Array.isArray(runtimeSnapshot.board.spiderRows)) {
+    throw new Error("LevelRenderer spider entrance requires runtimeSnapshot.board.spiderRows.");
+  }
+  this._restoreMineFailureGraySprites();
   this.lightningChainRenderer.reset("render_level");
   if (typeof this._stopBoardClearFireworks === "function") {
     this._stopBoardClearFireworks("render_level");
@@ -30,6 +34,7 @@ LevelRenderer.prototype.renderLevel = function (levelConfig, runtimeSnapshot) {
   this.lastBoardVersion = -1;
   this.lastBoardViewportOffsetY = null;
   this.lastBoardOcclusionRenderKey = "";
+  this.colorCloudNodes = {};
   this.lastHudRenderKey = "";
   this.lastHudStarRating = null;
   this.hudStarDisplayedRating = null;
@@ -63,11 +68,15 @@ LevelRenderer.prototype.renderLevel = function (levelConfig, runtimeSnapshot) {
   this.molotovBlastAnimatedIds = {};
   this.swirlRotationAnimatedIds = {};
   this.spiritCocoonAnimatedIds = {};
+  this.spiderCocoonBreakAnimatedEventIds = {};
+  this.budHatchAnimatedIds = {};
   this.wormholeShiftAnimatedIds = {};
   this.wormholeProjectileAbsorptionAnimatedIds = {};
+  this.blackHoleUnsupportedDisappearAnimatedIds = {};
   this.wormholeDirectionGuideRoot = null;
   this.lastWormholeDirectionGuideKey = "";
   this.blastExplosionAnimatedIds = {};
+  this.mineExplosionAnimatedIds = {};
   this.lastCommentResolution = null;
   this.boardClearFireworksRoot = null;
   this.boardClearFireworksActive = false;
@@ -75,6 +84,9 @@ LevelRenderer.prototype.renderLevel = function (levelConfig, runtimeSnapshot) {
   this.bottomPanelInitialBoardTargets = null;
   this.currentResolutionFloatingCellIds = {};
   this.boardRenderTick = 1;
+  this.spiderLockRenderTick = 1;
+  this.spiderEntranceState = runtimeSnapshot.board.spiderRows.length ? "pending" : "none";
+  this.spiderEntranceTargets = {};
   this.topSlotStarNodes = {};
   this.topSlotStarNodePool = [];
   this.topSlotStarRenderTick = 1;
@@ -99,11 +111,17 @@ LevelRenderer.prototype.renderLevel = function (levelConfig, runtimeSnapshot) {
       clearChildren(this.layers.wormhole);
       clearChildren(this.layers.wormholeDirection);
       clearChildren(this.layers.board);
+      clearChildren(this.layers.spiderLock);
+      clearChildren(this.layers.crystalGunProjectile);
     clearChildren(this.layers.trappedSprite);
     clearChildren(this.layers.boardOcclusion);
+    clearChildren(this.layers.colorCloud);
     this.wormholeDirectionGuideRoot = null;
     this.lastWormholeDirectionGuideKey = "";
     this.boardBubbleNodes = {};
+    this.spiderWebNodes = {};
+    this.spiderNodes = {};
+    this.spiderEntranceTargets = {};
     this.boardBubbleNodePool = {};
     this.boardCellRenderKeys = {};
     this.trappedSpriteNode = null;
@@ -156,12 +174,16 @@ LevelRenderer.prototype.renderLevel = function (levelConfig, runtimeSnapshot) {
     this._renderBottomPanel(runtimeSnapshot);
     this._queueSkillPowerupCollectedFeedback(runtimeSnapshot);
     this._renderBoard(runtimeSnapshot.board);
+    this._syncMineFailureGrayState(runtimeSnapshot);
+    this._playBudHatchAnimations(runtimeSnapshot);
     this._playSpiritCocoonAnimations(runtimeSnapshot);
+    this._playSpiderCocoonBreakAnimations(runtimeSnapshot);
     this._renderTrappedSpriteRescue(runtimeSnapshot);
     this._renderMultiTrappedSpiritRescue(runtimeSnapshot);
     this._playTrappedSpriteRescueDeparture(runtimeSnapshot);
     this._playMultiTrappedSpiritDepartures(runtimeSnapshot);
     this._renderBoardOcclusions(runtimeSnapshot);
+    this._renderColorClouds(runtimeSnapshot);
     this._syncBarrierHammerStoneHints(runtimeSnapshot);
     this._renderMainland(runtimeSnapshot.board);
     this._renderJianbian(runtimeSnapshot.board);
@@ -296,6 +318,12 @@ LevelRenderer.prototype._refreshRuntimeFull = function (levelConfig, runtimeSnap
     this.boardBubbleNodes,
     this.spriteFrameCache
   );
+  this.bubbleShatterRenderer.playBubbleShieldRemovals(
+    runtimeSnapshot.lastResolution,
+    this.boardBubbleNodes,
+    this.spriteFrameCache
+  );
+  this._playBlackHoleUnsupportedDisappearAnimations(runtimeSnapshot);
   this._playBallScoreDisplay(runtimeSnapshot);
   this._playTimeBonusFloatingScoreDisplay(runtimeSnapshot);
   if (boardChanged) {
@@ -306,8 +334,11 @@ LevelRenderer.prototype._refreshRuntimeFull = function (levelConfig, runtimeSnap
     this._renderMainland(runtimeSnapshot.board);
     this._renderJianbian(runtimeSnapshot.board);
   }
+  this._playBudHatchAnimations(runtimeSnapshot);
   this._playSpiritCocoonAnimations(runtimeSnapshot);
+  this._playSpiderCocoonBreakAnimations(runtimeSnapshot);
   this._renderBoardOcclusions(runtimeSnapshot);
+  this._renderColorClouds(runtimeSnapshot);
   this._playSwirlRotationAnimation(runtimeSnapshot);
   this._playWormholeProjectileAbsorptionAnimation(runtimeSnapshot);
   this._playWormholeShiftAnimation(runtimeSnapshot);
@@ -365,6 +396,8 @@ LevelRenderer.prototype._refreshRuntimeFull = function (levelConfig, runtimeSnap
   this._playBreederSpawnAnimation(runtimeSnapshot);
   this._playMolotovBlastAnimation(runtimeSnapshot);
   this._playBlastExplosionAnimation(runtimeSnapshot);
+  this._playMineExplosionAnimation(runtimeSnapshot);
+  this._syncMineFailureGrayState(runtimeSnapshot);
   this._playTrappedSpriteRescueDeparture(runtimeSnapshot);
   this._playMultiTrappedSpiritDepartures(runtimeSnapshot);
   this._playCommentAnimation(runtimeSnapshot);
@@ -382,6 +415,76 @@ LevelRenderer.prototype._refreshRuntimeFull = function (levelConfig, runtimeSnap
   this._renderAddBallTipsView(runtimeSnapshot);
   this._renderLoseView(runtimeSnapshot);
   this._renderResultPopup(runtimeSnapshot);
+};
+
+LevelRenderer.prototype._restoreMineFailureGraySprites = function () {
+  if (!Array.isArray(this.mineFailureGraySprites)) {
+    throw new Error("Mine failure gray sprite registry must be an array.");
+  }
+  this.mineFailureGraySprites.forEach(function (entry) {
+    if (!entry || !entry.sprite || !entry.sprite.isValid || !entry.material || !entry.material.isValid) {
+      throw new Error("Mine failure gray restore requires valid Sprite and material.");
+    }
+    var restored = entry.sprite.setMaterial(0, entry.material);
+    if (!restored || !restored.isValid) {
+      throw new Error("Mine failure gray restore failed.");
+    }
+  });
+  this.mineFailureGraySprites = [];
+};
+
+LevelRenderer.prototype._syncMineFailureGrayState = function (runtimeSnapshot) {
+  if (!runtimeSnapshot || typeof runtimeSnapshot !== "object") {
+    throw new Error("Mine failure gray state requires runtime snapshot.");
+  }
+  if (runtimeSnapshot.state !== "lost_hazard") {
+    if (this.mineFailureGraySprites.length > 0) {
+      this._restoreMineFailureGraySprites();
+    }
+    return;
+  }
+  if (this.mineFailureGraySprites.length > 0) {
+    return;
+  }
+  if (!cc.Material || typeof cc.Material.getBuiltinMaterial !== "function") {
+    throw new Error("Mine failure gray state requires cc.Material.getBuiltinMaterial.");
+  }
+  var grayMaterial = cc.Material.getBuiltinMaterial("2d-gray-sprite");
+  if (!grayMaterial || !grayMaterial.isValid) {
+    throw new Error("Mine failure gray material is missing.");
+  }
+
+  var sprites = [];
+  function collectNodeSprites(node) {
+    if (!node || !node.isValid) {
+      throw new Error("Mine failure gray state requires valid board node.");
+    }
+    var sprite = node.getComponent(cc.Sprite);
+    if (sprite) {
+      sprites.push(sprite);
+    }
+    node.children.forEach(collectNodeSprites);
+  }
+  Object.keys(this.boardBubbleNodes).forEach(function (cellId) {
+    collectNodeSprites(this.boardBubbleNodes[cellId]);
+  }, this);
+  sprites.forEach(function (sprite) {
+    if (typeof sprite.getMaterial !== "function" || typeof sprite.setMaterial !== "function") {
+      throw new Error("Mine failure gray state requires Sprite material accessors.");
+    }
+    var originalMaterial = sprite.getMaterial(0);
+    if (!originalMaterial || !originalMaterial.isValid) {
+      throw new Error("Mine failure gray state requires valid original Sprite material.");
+    }
+    var appliedMaterial = sprite.setMaterial(0, grayMaterial);
+    if (!appliedMaterial || !appliedMaterial.isValid) {
+      throw new Error("Mine failure gray material binding failed.");
+    }
+    this.mineFailureGraySprites.push({
+      sprite: sprite,
+      material: originalMaterial
+    });
+  }, this);
 };
 
 LevelRenderer.prototype._forEachGameplayLayer = function (callback) {
@@ -438,8 +541,11 @@ LevelRenderer.prototype._ensureLayers = function () {
     overlay: this._getOrCreateLayer("OverlayLayer", 30),
     wormhole: this._getOrCreateLayer("WormholeLayer", 24),
     board: this._getOrCreateLayer("BoardLayer", 40),
+    spiderLock: this._getOrCreateLayer("SpiderLockLayer", 41),
+    crystalGunProjectile: this._getOrCreateLayer("CrystalGunProjectileLayer", 41),
     wormholeDirection: this._getOrCreateLayer("WormholeDirectionLayer", 42),
     boardOcclusion: this._getOrCreateLayer("BoardOcclusionLayer", 43),
+    colorCloud: this._getOrCreateLayer("ColorCloudLayer", 43),
     shatter: this._getOrCreateLayer("BubbleShatterLayer", 44),
     // 掉落球前置到固定球前方，提升层次与动效可见度。
     falling: this._getOrCreateLayer("FallingLayer", 45),

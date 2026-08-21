@@ -54,6 +54,54 @@ function attachLevelRendererSceneShooterMethods(LevelRenderer, deps) {
   var ASSIST_SKILL_GRAY_COLOR = cc.color(116, 116, 116, 255);
   var ASSIST_SKILL_HALO_ROTATION_DURATION = 1.6;
 
+  function isCrystalGunProjectile(activeProjectile) {
+    return !!(
+      activeProjectile &&
+      activeProjectile.ball &&
+      activeProjectile.ball.entityCategory === "skill_ball" &&
+      activeProjectile.ball.entityType === "crystal_gun"
+    );
+  }
+
+  function syncActiveProjectileVisual(renderer, activeProjectile) {
+    if (!renderer.layers || !renderer.layers.shooter || !renderer.layers.shooter.isValid) {
+      throw new Error("Active projectile render requires shooter layer.");
+    }
+    if (!renderer.layers.crystalGunProjectile || !renderer.layers.crystalGunProjectile.isValid) {
+      throw new Error("Active projectile render requires crystal gun projectile layer.");
+    }
+
+    var shooterProjectileNode = getOrCreateChild(renderer.layers.shooter, "ActiveProjectile");
+    var crystalGunProjectileNode = getOrCreateChild(
+      renderer.layers.crystalGunProjectile,
+      "ActiveProjectile"
+    );
+    if (!activeProjectile) {
+      shooterProjectileNode.active = false;
+      crystalGunProjectileNode.active = false;
+      return;
+    }
+    if (!activeProjectile.position) {
+      throw new Error("Active projectile render requires position.");
+    }
+    if (!Number.isFinite(activeProjectile.scale) || activeProjectile.scale < 0 || activeProjectile.scale > 1) {
+      throw new Error("Active projectile render requires scale in [0, 1].");
+    }
+
+    var crystalGunActive = isCrystalGunProjectile(activeProjectile);
+    var activeNode = crystalGunActive ? crystalGunProjectileNode : shooterProjectileNode;
+    var inactiveNode = crystalGunActive ? shooterProjectileNode : crystalGunProjectileNode;
+    inactiveNode.active = false;
+    activeNode.active = true;
+    activeNode.setPosition(activeProjectile.position.x, activeProjectile.position.y);
+    activeNode.setScale(activeProjectile.scale);
+    renderer._applyBallVisualCached(
+      activeNode,
+      activeProjectile.ball || activeProjectile.color,
+      BOARD_BUBBLE_SIZE
+    );
+  }
+
   function requireAssistSkillChargeValue(value, fieldName) {
     if (!Number.isInteger(value) || value < 0) {
       throw new Error("ShooterPanel Skill " + fieldName + " must be a non-negative integer.");
@@ -595,15 +643,7 @@ LevelRenderer.prototype._renderShooter = function (shooterSnapshot, activeProjec
     this._applyBallVisualCached(ghost, currentBallLike, BOARD_BUBBLE_SIZE);
   }
 
-  var projectileNode = getOrCreateChild(this.layers.shooter, "ActiveProjectile");
-  if (activeProjectile) {
-    projectileNode.active = true;
-    projectileNode.setPosition(activeProjectile.position.x, activeProjectile.position.y);
-    projectileNode.setScale(1);
-    this._applyBallVisualCached(projectileNode, activeProjectile.ball || activeProjectile.color, BOARD_BUBBLE_SIZE);
-  } else {
-    projectileNode.active = false;
-  }
+  syncActiveProjectileVisual(this, activeProjectile);
 
   this._syncShooterGuideDots(shooterPanel, shooterSnapshot, activeProjectile);
 
@@ -892,7 +932,12 @@ LevelRenderer.prototype._syncShooterGuideDots = function (shooterPanel, shooterS
       this.lastGuideDotColorCode = currentBall.color;
     } else if (currentBall.ballCategory === "skill") {
       if (currentBall.entityCategory !== "skill_ball" ||
-        (currentBall.entityType !== "rainbow" && currentBall.entityType !== "blast")) {
+        (
+          currentBall.entityType !== "rainbow" &&
+          currentBall.entityType !== "blast" &&
+          currentBall.entityType !== "crystal_gun" &&
+          currentBall.entityType !== "rainbow_prism_ball"
+        )) {
         throw new Error("Guide dot skill ball requires a supported firing powerup.");
       }
     } else {
@@ -972,22 +1017,10 @@ LevelRenderer.prototype._renderShooterAimAngleOnly = function (shooterSnapshot, 
 };
 
 LevelRenderer.prototype._updateProjectileOnly = function (activeProjectile) {
-  if (!this.layers || !this.layers.shooter) {
-    throw new Error("Projectile refresh requires shooter layer.");
-  }
   if (!activeProjectile || !activeProjectile.position) {
     throw new Error("Projectile refresh requires active projectile position.");
   }
-
-  var projectileNode = getOrCreateChild(this.layers.shooter, "ActiveProjectile");
-  projectileNode.active = true;
-  projectileNode.setPosition(activeProjectile.position.x, activeProjectile.position.y);
-  projectileNode.setScale(1);
-  this._applyBallVisualCached(
-    projectileNode,
-    activeProjectile.ball || activeProjectile.color,
-    BOARD_BUBBLE_SIZE
-  );
+  syncActiveProjectileVisual(this, activeProjectile);
 };
 
 LevelRenderer.prototype._applyBallVisualCached = function (node, ballLike, forcedSize) {

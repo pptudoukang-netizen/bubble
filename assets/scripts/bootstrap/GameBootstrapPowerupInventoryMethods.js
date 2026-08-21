@@ -1042,6 +1042,9 @@ module.exports = {
         reason: reason
       });
       this._setStatusWithTip("skill_inventory_empty", null, "该道具库存不足");
+      if (entityType === "crystal_gun" || entityType === "rainbow_prism_ball") {
+        return;
+      }
       this._tryRecoverInventoryByAd(entityType);
       return;
     }

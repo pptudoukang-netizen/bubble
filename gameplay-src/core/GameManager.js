@@ -6,11 +6,14 @@ var attachGameManagerSnapshotMethods = require("./GameManagerSnapshotMethods");
 var attachGameManagerBoardPhaseMethods = require("./GameManagerBoardPhaseMethods");
 var attachGameManagerSpecialPhaseMethods = require("./GameManagerSpecialPhaseMethods");
 var attachGameManagerSpiritCocoonMethods = require("./GameManagerSpiritCocoonMethods");
+var attachGameManagerBudMethods = require("./GameManagerBudMethods");
 var attachGameManagerRuntimeStateMethods = require("./GameManagerRuntimeStateMethods");
 var attachGameManagerInputMethods = require("./GameManagerInputMethods");
 var attachGameManagerAdPowerupMethods = require("./GameManagerAdPowerupMethods");
 var attachGameManagerPowerupMethods = require("./GameManagerPowerupMethods");
 var attachGameManagerUpdateMethods = require("./GameManagerUpdateMethods");
+var attachGameManagerColorCloudMethods = require("./GameManagerColorCloudMethods");
+var attachGameManagerWindTunnelMethods = require("./GameManagerWindTunnelMethods");
 
 var Logger = require("../../assets/scripts/utils/Logger");
 var BoardLayout = require("../../assets/scripts/config/BoardLayout");
@@ -28,6 +31,7 @@ var BoardViewportSystem = require("../systems/BoardViewportSystem");
 var FallingMarbleSystem = require("../systems/FallingMarbleSystem");
 var JarCollectorSystem = require("../systems/JarCollectorSystem");
 var BoardOcclusionSystem = require("../systems/BoardOcclusionSystem");
+var ColorCloudSystem = require("../systems/ColorCloudSystem");
 var TrappedSpriteRescueSystem = require("../systems/TrappedSpriteRescueSystem");
 var ProjectileMath = require("./ProjectileMath");
 var AdRevivePolicy = require("./AdRevivePolicy");
@@ -115,7 +119,12 @@ function createEmptyResolution() {
     injectedSkills: [],
     reactiveTriggered: [],
     blastExplosions: [],
+    crystalGunPath: null,
+    rainbowPrismClear: null,
     transparentBallsDestroyed: [],
+    windTunnelTransits: [],
+    windTunnelExitsRemoved: [],
+    windTunnelEntranceClosed: false,
     rescuedTrappedSpirits: [],
     spawnedBySplitters: [],
     spiritCocoonOpenings: [],
@@ -123,13 +132,20 @@ function createEmptyResolution() {
     spiritCocoonRecolors: [],
     spiritMistApplied: [],
     spiritMistCleared: [],
+    budHatches: [],
+    budHatchedCells: [],
+    budRecolors: [],
     breederResolved: false,
     breederSpawns: [],
+    mineCountdownResolved: false,
+    mineCountdowns: [],
+    mineExplosions: [],
     swirlRotations: [],
     wormholeShifts: [],
     wormholeProjectileAbsorptions: [],
     blackHoleProjectileAbsorptions: [],
     blackHolesUnloaded: [],
+    blackHoleUnsupportedDisappears: [],
     vineCastEvaluated: false,
     vineCasts: [],
     vineSpiritHits: [],
@@ -138,6 +154,8 @@ function createEmptyResolution() {
     collectedKeys: [],
     unlockedLockedBalls: [],
     poisonReleases: [],
+    icicleReleases: [],
+    bubbleShieldsRemoved: [],
     fairyAssistEvents: [],
     fairyAssistResolved: false,
     impact: null,
@@ -152,6 +170,7 @@ function createEmptyResolution() {
     multiTrappedSpiritRescueCompleted: false,
     dangerReached: false,
     shotMissed: false,
+    eliminationPresentationComplete: false,
     trappedSpriteRotation: null
   };
 }
@@ -197,6 +216,7 @@ var BASE_SCORE_RULES = {
   matchedDrop: 10,
   floatingDrop: 80,
   blastDrop: 100,
+  crystalGunDrop: 100,
   transparentBallBreak: 1000,
   trappedSpiritRescue: 1000,
   jarCollectBase: 60,
@@ -330,6 +350,14 @@ function resolveBallDisplayCode(ball) {
     return "BLAST";
   }
 
+  if (ball.entityType === "crystal_gun") {
+    return "CRYSTAL_GUN";
+  }
+
+  if (ball.entityType === "rainbow_prism_ball") {
+    return "RAINBOW_PRISM_BALL";
+  }
+
   if (ball.entityType === "stone") {
     return "STONE";
   }
@@ -390,6 +418,14 @@ function isBarrierObstacleBall(cellOrBall) {
 
 function isBlastBall(ball) {
   return !!(ball && ball.entityCategory === "skill_ball" && ball.entityType === "blast");
+}
+
+function isCrystalGunBall(ball) {
+  return !!(ball && ball.entityCategory === "skill_ball" && ball.entityType === "crystal_gun");
+}
+
+function isRainbowPrismBall(ball) {
+  return !!(ball && ball.entityCategory === "skill_ball" && ball.entityType === "rainbow_prism_ball");
 }
 
 function isRainbowBall(ball) {
@@ -554,6 +590,8 @@ function buildActiveProjectile(firedBall, shotPlan) {
     segmentIndex: 0,
     segmentProgress: 0,
     destroyedTransparentBalls: [],
+    colorCloudInsideIds: {},
+    scale: 1,
     targetCell: shotPlan && shotPlan.targetCell ? clone(shotPlan.targetCell) : null,
     shotPlan: shotPlan ? clone(shotPlan) : null
   };
@@ -570,6 +608,7 @@ function buildRuntimeProjectileSnapshot(projectile) {
       y: projectile.position.y
     },
     color: projectile.color,
+    scale: projectile.scale,
     ball: projectile.ball ? clone(projectile.ball) : null
   };
 }
@@ -812,6 +851,7 @@ function GameManager(options) {
   this.pendingWinSettlementDelay = 0;
   this.pendingSplitterSpawns = [];
   this.pendingSpiritCocoonOpenings = [];
+  this.pendingBudHatches = [];
   this.pendingMolotovBlastQueue = [];
   this.activeMolotovBlast = null;
   this.molotovBlastTriggeredIds = {};
@@ -819,6 +859,7 @@ function GameManager(options) {
   this.molotovPendingResolutionContext = null;
   this.pendingSwirlRotationRemaining = 0;
   this.pendingSwirlRotationResolution = null;
+  this.pendingSwirlRotationWaitingForEliminationPresentation = false;
   this.pendingWormholeShiftRemaining = 0;
   this.pendingWormholeShiftResolution = null;
   this.pendingVineCastRemaining = 0;
@@ -849,16 +890,23 @@ function GameManager(options) {
     fairyAssistSystem: new FairyAssistSystem(),
     fallingMarbleSystem: new FallingMarbleSystem(),
     jarCollectorSystem: new JarCollectorSystem(),
-    boardOcclusionSystem: new BoardOcclusionSystem()
+    boardOcclusionSystem: new BoardOcclusionSystem(),
+    colorCloudSystem: new ColorCloudSystem()
   };
   this.systems.bubbleGrid.attachBoardViewport(this.systems.boardViewportSystem);
   this.systems.bubbleGrid.attachTrappedSpriteRescueSystem(this.systems.trappedSpriteRescueSystem);
   this.systems.bubbleGrid.attachCellRemovalListener(function (removedCells, removalReason) {
     this._grantTimeBonusForRemovedCells(removedCells, removalReason);
+    this._pushSpiderCocoonBreakEvent(removedCells);
+    this._pushMineDisappearEvents(removedCells, removalReason);
   }.bind(this));
   this.systems.fallingMarbleSystem.attachFairyAssistSystem(this.systems.fairyAssistSystem);
   this.spiritCocoonFirstTriggerStore = options.spiritCocoonFirstTriggerStore;
   this.spiritCocoonRandom = Math.random;
+  this.budRandom = Math.random;
+  this.rainbowPrismRandom = Math.random;
+  this.colorCloudRandom = Math.random;
+  this.windTunnelRandom = Math.random;
 }
 
 var GAME_MANAGER_ENTRY_CONTEXT = {
@@ -946,10 +994,13 @@ var GAME_MANAGER_METHOD_CONTEXT = {
 attachGameManagerBoardPhaseMethods(GameManager, GAME_MANAGER_METHOD_CONTEXT);
 attachGameManagerSpecialPhaseMethods(GameManager, GAME_MANAGER_METHOD_CONTEXT);
 attachGameManagerSpiritCocoonMethods(GameManager);
+attachGameManagerBudMethods(GameManager);
 attachGameManagerRuntimeStateMethods(GameManager, GAME_MANAGER_METHOD_CONTEXT);
 attachGameManagerInputMethods(GameManager, GAME_MANAGER_METHOD_CONTEXT);
 attachGameManagerAdPowerupMethods(GameManager, GAME_MANAGER_METHOD_CONTEXT);
 attachGameManagerPowerupMethods(GameManager, GAME_MANAGER_METHOD_CONTEXT);
+attachGameManagerColorCloudMethods(GameManager);
+attachGameManagerWindTunnelMethods(GameManager, GAME_MANAGER_METHOD_CONTEXT);
 attachGameManagerUpdateMethods(GameManager, GAME_MANAGER_METHOD_CONTEXT);
 
 Object.assign(GameManager.prototype, createGameManagerShotResolutionMethods({
@@ -963,6 +1014,8 @@ Object.assign(GameManager.prototype, createGameManagerShotResolutionMethods({
   isSkillBall: isSkillBall,
   isIceBall: isIceBall,
   isBlastBall: isBlastBall,
+  isCrystalGunBall: isCrystalGunBall,
+  isRainbowPrismBall: isRainbowPrismBall,
   isBlackHoleBall: isBlackHoleBall,
   isRainbowBall: isRainbowBall,
   isMolotovBall: isMolotovBall,

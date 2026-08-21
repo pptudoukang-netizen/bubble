@@ -111,16 +111,16 @@
             }
         ],
         "layout": [
-            "GGGBBBGGBBB",
-            "GRR.GB.GGB",
-            "R...GGB...B",
-            "R...BG...B",
-            ".G..BB.RRB.",
-            "RRRRB.RRBB",
-            "BBGGGRRRRBB",
-            ".BBRRRRGGG",
-            "..B.B.R.GGG",
-            "..B.BR.R.G"
+            "RRRBBBGGBBB",
+            "RGG.GB.GGR",
+            "G...GGB...R",
+            "G...RG...R",
+            ".B..RR.BRR.",
+            "BBBRB.BBGG",
+            "GGBBBRRBRGG",
+            ".GGRRRRBRR",
+            "..B.B.G.BBR",
+            "..B.BG.G.B"
         ],
         "designNotes": "Gameplay is generated from the current LEVEL_CONFIG_TABLE_1_1000.csv rules; only the occupancy silhouette is projected from E:\\kxppm\\decrypted_config\\all_levels.json level 7 into current level 7 on the current 11/10-column board.",
         "difficultyScore": 41,

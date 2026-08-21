@@ -129,6 +129,8 @@ LevelRenderer.prototype.setGameplayActionHandlers = function (handlers) {
     onClosePropDescription: typeof handlers.onClosePropDescription === "function" ? handlers.onClosePropDescription : null,
     onUseRainbow: typeof handlers.onUseRainbow === "function" ? handlers.onUseRainbow : null,
     onUseBlast: typeof handlers.onUseBlast === "function" ? handlers.onUseBlast : null,
+    onUseCrystalGun: typeof handlers.onUseCrystalGun === "function" ? handlers.onUseCrystalGun : null,
+    onUseRainbowPrismBall: typeof handlers.onUseRainbowPrismBall === "function" ? handlers.onUseRainbowPrismBall : null,
     onUseSwap: typeof handlers.onUseSwap === "function" ? handlers.onUseSwap : null,
     onUseBarrierHammer: typeof handlers.onUseBarrierHammer === "function" ? handlers.onUseBarrierHammer : null,
     onUseSnowRemoval: typeof handlers.onUseSnowRemoval === "function" ? handlers.onUseSnowRemoval : null,
@@ -157,10 +159,10 @@ LevelRenderer.prototype.setFallingMarbleSystem = function (fallingMarbleSystem, 
   ) {
     throw new Error("LevelRenderer.setFallingMarbleSystem requires board advance presentation target when provided.");
   }
-  this.bubbleShatterRenderer.setPresentationCompleteHandler(function () {
+  this.bubbleShatterRenderer.setPresentationCompleteHandler(function (resolution) {
     fallingMarbleSystem.requestEliminationPresentationDropRelease();
     if (boardAdvancePresentationTarget) {
-      boardAdvancePresentationTarget.notifyBoardAdvanceEliminationPresentationComplete();
+      boardAdvancePresentationTarget.notifyBoardAdvanceEliminationPresentationComplete(resolution);
     }
   });
 };
@@ -257,6 +259,10 @@ LevelRenderer.prototype._invokeGameplayAction = function (action) {
     handler = this.gameplayActionHandlers.onUseRainbow;
   } else if (action === "use_blast") {
     handler = this.gameplayActionHandlers.onUseBlast;
+  } else if (action === "use_crystal_gun") {
+    handler = this.gameplayActionHandlers.onUseCrystalGun;
+  } else if (action === "use_rainbow_prism_ball") {
+    handler = this.gameplayActionHandlers.onUseRainbowPrismBall;
   } else if (action === "use_swap") {
     handler = this.gameplayActionHandlers.onUseSwap;
   } else if (action === "use_barrier_hammer") {

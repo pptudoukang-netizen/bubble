@@ -6,6 +6,7 @@ var SpecialAnimationTiming = require("../config/SpecialAnimationTiming");
 var SLOT_POSITION_EPSILON = 0.01;
 var GLOW_PULSE_DURATION = 0.48;
 var GLOW_HIT_EFFECT_DURATION = 2;
+var FAIRY_SPINE_SCALE = 0.8;
 
 function requireFairyTiming() {
   var timing = SpecialAnimationTiming.fairyAssist;
@@ -121,68 +122,67 @@ function disableSlotSprite(node) {
   sprite.enabled = false;
 }
 
-function playRequiredPrefabAnimation(node, description) {
-  if (!node || !node.isValid) {
-    throw new Error(description + " requires valid prefab node.");
+function requireSpineRuntime(description) {
+  if (typeof sp === "undefined" || !sp || typeof sp.Skeleton !== "function") {
+    throw new Error(description + " requires Spine Skeleton runtime.");
   }
-  var animation = node.getComponent(cc.Animation);
-  if (!animation) {
-    throw new Error(description + " requires cc.Animation.");
-  }
-  var clip = animation.defaultClip || null;
-  if (!clip && typeof animation.getClips === "function") {
-    var clips = animation.getClips();
-    if (Array.isArray(clips) && clips.length > 0) {
-      clip = clips[0];
-    }
-  }
-  if (!clip) {
-    throw new Error(description + " requires an animation clip.");
-  }
-  if (typeof clip.name === "string" && clip.name) {
-    animation.play(clip.name);
-    return;
-  }
-  animation.play();
+  return sp;
 }
 
-function instantiateFairyPrefab(renderer, prefabPath, parent, nodeName, description) {
-  if (!renderer || !renderer.fairyPrefabCache) {
-    throw new Error(description + " requires fairy prefab cache.");
+function playRequiredSpineAnimation(skeleton, animationName, loop, description) {
+  if (!skeleton || typeof skeleton.setAnimation !== "function") {
+    throw new Error(description + " requires sp.Skeleton.setAnimation.");
   }
-  if (typeof prefabPath !== "string" || !prefabPath) {
-    throw new Error(description + " requires prefabPath.");
+  if (typeof animationName !== "string" || !animationName) {
+    throw new Error(description + " requires animationName.");
   }
-  var prefab = renderer.fairyPrefabCache[prefabPath];
-  if (!prefab) {
-    throw new Error(description + " prefab was not preloaded: " + prefabPath);
+  var trackEntry = skeleton.setAnimation(0, animationName, loop);
+  if (!trackEntry) {
+    throw new Error(description + " animation is missing: " + animationName + ".");
   }
-  var prefabNode = cc.instantiate(prefab);
-  if (!prefabNode || !prefabNode.isValid) {
-    throw new Error(description + " prefab instantiate failed: " + prefabPath);
-  }
-  prefabNode.name = nodeName;
-  prefabNode.parent = parent;
-  prefabNode.setPosition(0, 0);
-  prefabNode.opacity = 255;
-  prefabNode.scale = 1;
-  prefabNode.active = true;
-  playRequiredPrefabAnimation(prefabNode, description);
-  return prefabNode;
+  return trackEntry;
 }
 
-function requireFairyVisualNode(renderer, node, prefabPath) {
+function instantiateFairySkeleton(renderer, skinName, parent, nodeName, description) {
+  if (!renderer || !renderer.fairySkeletonData) {
+    throw new Error(description + " requires preloaded fairy Spine data.");
+  }
+  if (typeof skinName !== "string" || !skinName) {
+    throw new Error(description + " requires skinName.");
+  }
+  var spineRuntime = requireSpineRuntime(description);
+  var skeletonNode = new cc.Node(nodeName);
+  skeletonNode.parent = parent;
+  skeletonNode.setPosition(0, -62);
+  skeletonNode.setContentSize(FairyAssistConfig.spriteWidth, FairyAssistConfig.spriteHeight);
+  skeletonNode.opacity = 255;
+  skeletonNode.scale = FAIRY_SPINE_SCALE;
+  skeletonNode.active = true;
+  var skeleton = skeletonNode.addComponent(spineRuntime.Skeleton);
+  if (!skeleton) {
+    throw new Error(description + " failed to add sp.Skeleton.");
+  }
+  skeleton.skeletonData = renderer.fairySkeletonData;
+  if (typeof skeleton.setSkin !== "function") {
+    throw new Error(description + " requires sp.Skeleton.setSkin.");
+  }
+  skeleton.setSkin(skinName);
+  playRequiredSpineAnimation(skeleton, FairyAssistConfig.idleAnimationName, true, description + " idle");
+  return skeletonNode;
+}
+
+function requireFairyVisualNode(renderer, node, skinName) {
   disableSlotSprite(node);
-  var visualNode = node.getChildByName("FairyPrefabVisual");
-  if (visualNode && visualNode.isValid && node.__fairyPrefabPath === prefabPath) {
+  var visualNode = node.getChildByName("FairySpineVisual");
+  if (visualNode && visualNode.isValid && node.__fairySkinName === skinName) {
     visualNode.active = true;
     return visualNode;
   }
   if (visualNode) {
     destroyNode(visualNode);
   }
-  visualNode = instantiateFairyPrefab(renderer, prefabPath, node, "FairyPrefabVisual", "Fairy slot " + node.name);
-  node.__fairyPrefabPath = prefabPath;
+  visualNode = instantiateFairySkeleton(renderer, skinName, node, "FairySpineVisual", "Fairy slot " + node.name);
+  node.__fairySkinName = skinName;
   return visualNode;
 }
 
@@ -193,11 +193,11 @@ function hideFairyGlow(node) {
   }
   glowNode.stopAllActions();
   glowNode.active = false;
-  glowNode.scale = 1;
+  glowNode.scale = FAIRY_SPINE_SCALE;
   glowNode.opacity = 255;
 }
 
-function applyGlow(renderer, node, prefabPath, glowStacks) {
+function applyGlow(renderer, node, skinName, glowStacks) {
   if (!Number.isInteger(glowStacks) || glowStacks < 0) {
     throw new Error("Fairy glowStacks must be a non-negative integer.");
   }
@@ -209,22 +209,23 @@ function applyGlow(renderer, node, prefabPath, glowStacks) {
   }
 
   var glowNode = node.getChildByName("FairyGlow");
-  if (glowNode && glowNode.isValid && node.__fairyGlowPrefabPath !== prefabPath) {
+  if (glowNode && glowNode.isValid && node.__fairyGlowSkinName !== skinName) {
     destroyNode(glowNode);
     glowNode = null;
   }
   if (!glowNode || !glowNode.isValid) {
-    glowNode = instantiateFairyPrefab(renderer, prefabPath, node, "FairyGlow", "Fairy glow");
+    glowNode = instantiateFairySkeleton(renderer, skinName, node, "FairyGlow", "Fairy glow");
     glowNode.zIndex = -1;
-    node.__fairyGlowPrefabPath = prefabPath;
+    node.__fairyGlowSkinName = skinName;
   }
   glowNode.stopAllActions();
   glowNode.active = true;
-  playRequiredPrefabAnimation(glowNode, "Fairy glow");
+  var glowSkeleton = glowNode.getComponent(requireSpineRuntime("Fairy glow").Skeleton);
+  playRequiredSpineAnimation(glowSkeleton, FairyAssistConfig.idleAnimationName, true, "Fairy glow idle");
 
   var visualStacks = Math.min(glowStacks, FairyAssistConfig.maxGlowStacks);
-  var baseScale = 1.04 + visualStacks * 0.025;
-  var peakScale = baseScale + 0.08;
+  var baseScale = FAIRY_SPINE_SCALE * (1.04 + visualStacks * 0.025);
+  var peakScale = baseScale + FAIRY_SPINE_SCALE * 0.08;
   glowNode.opacity = Math.min(210, 48 + visualStacks * 13);
   glowNode.scale = baseScale;
 
@@ -258,22 +259,112 @@ function configureFairyNode(renderer, node, fairy) {
   if (!fairy || typeof fairy.id !== "string" || !fairy.id) {
     throw new Error("Fairy render state requires id.");
   }
-  if (typeof fairy.prefabPath !== "string" || !fairy.prefabPath) {
-    throw new Error("Fairy render state requires prefabPath.");
+  if (typeof fairy.skinName !== "string" || !fairy.skinName) {
+    throw new Error("Fairy render state requires skinName.");
   }
 
-  requireFairyVisualNode(renderer, node, fairy.prefabPath);
-  node.__fairyId = fairy.id;
-  node.__fairyColor = fairy.color;
-  node.__fairyEntering = false;
   node.active = true;
   node.opacity = 255;
   node.scale = 1;
-  applyGlow(renderer, node, fairy.prefabPath, fairy.glowStacks);
+  requireFairyVisualNode(renderer, node, fairy.skinName);
+  node.__fairyId = fairy.id;
+  node.__fairyColor = fairy.color;
+  node.__fairyEntering = false;
+  applyGlow(renderer, node, fairy.skinName, fairy.glowStacks);
+}
+
+function addRequiredSpineAnimation(skeleton, animationName, loop, description) {
+  if (!skeleton || typeof skeleton.addAnimation !== "function") {
+    throw new Error(description + " requires sp.Skeleton.addAnimation.");
+  }
+  var trackEntry = skeleton.addAnimation(0, animationName, loop, 0);
+  if (!trackEntry) {
+    throw new Error(description + " animation is missing: " + animationName + ".");
+  }
+  return trackEntry;
+}
+
+function playFairySmashCount(node, smashCount) {
+  if (!Number.isInteger(smashCount) || smashCount <= 0) {
+    throw new Error("Fairy smash count must be a positive integer.");
+  }
+  var visualNode = node.getChildByName("FairySpineVisual");
+  if (!visualNode || !visualNode.isValid) {
+    throw new Error("Fairy smash requires FairySpineVisual.");
+  }
+  var skeleton = visualNode.getComponent(requireSpineRuntime("Fairy smash").Skeleton);
+  playRequiredSpineAnimation(skeleton, FairyAssistConfig.smashAnimationName, false, "Fairy smash");
+  for (var index = 1; index < smashCount; index += 1) {
+    addRequiredSpineAnimation(skeleton, FairyAssistConfig.smashAnimationName, false, "Queued fairy smash");
+  }
+  addRequiredSpineAnimation(skeleton, FairyAssistConfig.idleAnimationName, true, "Fairy idle after smash");
+}
+
+function playPendingFairySmash(node) {
+  var smashCount = node.__fairyPendingSmashCount;
+  if (smashCount === undefined || smashCount === 0) {
+    return;
+  }
+  node.__fairyPendingSmashCount = 0;
+  playFairySmashCount(node, smashCount);
+}
+
+function playFairyHitAnimations(root, snapshot, runtimeEvents) {
+  if (!Array.isArray(runtimeEvents)) {
+    throw new Error("Fairy hit animation requires runtimeEvents array.");
+  }
+  var hitCounts = {};
+  runtimeEvents.forEach(function (event) {
+    if (!event || event.type !== "fairy_assist_hit") {
+      return;
+    }
+    if (typeof event.fairyId !== "string" || !event.fairyId) {
+      throw new Error("fairy_assist_hit requires fairyId for smash animation.");
+    }
+    var currentHitCount = hitCounts[event.fairyId];
+    if (currentHitCount === undefined) {
+      hitCounts[event.fairyId] = 1;
+      return;
+    }
+    if (!Number.isInteger(currentHitCount) || currentHitCount <= 0) {
+      throw new Error("Fairy hit count is invalid for " + event.fairyId + ".");
+    }
+    hitCounts[event.fairyId] = currentHitCount + 1;
+  });
+
+  Object.keys(hitCounts).forEach(function (fairyId) {
+    var slotSnapshot = null;
+    for (var index = 0; index < snapshot.slots.length; index += 1) {
+      var candidate = snapshot.slots[index];
+      if (candidate.fairy && candidate.fairy.id === fairyId) {
+        slotSnapshot = candidate;
+        break;
+      }
+    }
+    if (!slotSnapshot) {
+      throw new Error("fairy_assist_hit targets missing fairy: " + fairyId + ".");
+    }
+    var slotConfig = FairyAssistConfig.slots[slotSnapshot.index];
+    var node = requireSlotNode(root, slotSnapshot, slotConfig);
+    if (node.__fairyId === fairyId) {
+      playFairySmashCount(node, hitCounts[fairyId]);
+      return;
+    }
+    if (node.__fairyPendingTargetId !== fairyId) {
+      throw new Error("fairy_assist_hit visual target is inconsistent: " + fairyId + ".");
+    }
+    var pendingCount = node.__fairyPendingSmashCount;
+    if (pendingCount !== undefined && (!Number.isInteger(pendingCount) || pendingCount < 0)) {
+      throw new Error("Fairy pending smash count is invalid.");
+    }
+    var initialPendingCount = pendingCount === undefined ? 0 : pendingCount;
+    node.__fairyPendingSmashCount = initialPendingCount + hitCounts[fairyId];
+  });
 }
 
 function playFairyEntry(renderer, node, fairy, slotPosition, token) {
   configureFairyNode(renderer, node, fairy);
+  playPendingFairySmash(node);
   node.__fairyEntering = true;
   var spawnPosition = resolveFairySpawnPosition(renderer, fairy.spawnFrom);
   node.setPosition(spawnPosition.x, spawnPosition.y);
@@ -343,6 +434,7 @@ function hideFairyNode(node, token) {
     node.__fairyColor = null;
     node.__fairyEntering = false;
     node.__fairyGlowStacks = 0;
+    node.__fairyPendingSmashCount = 0;
     hideFairyGlow(node);
   });
 }
@@ -450,11 +542,11 @@ function attachLevelRendererFairyMethods(LevelRenderer) {
           node.scale = 1;
         }
         if (node.__fairyGlowStacks !== fairy.glowStacks) {
-          if (typeof fairy.prefabPath !== "string" || !fairy.prefabPath) {
-            throw new Error("Active fairy slot requires prefabPath.");
+          if (typeof fairy.skinName !== "string" || !fairy.skinName) {
+            throw new Error("Active fairy slot requires skinName.");
           }
-          requireFairyVisualNode(this, node, fairy.prefabPath);
-          applyGlow(this, node, fairy.prefabPath, fairy.glowStacks);
+          requireFairyVisualNode(this, node, fairy.skinName);
+          applyGlow(this, node, fairy.skinName, fairy.glowStacks);
         }
         return;
       }
@@ -475,6 +567,7 @@ function attachLevelRendererFairyMethods(LevelRenderer) {
       node.stopAllActions();
       playFairyEntry(this, node, fairy, slotPosition, token);
     }, this);
+    playFairyHitAnimations(root, snapshot, runtimeSnapshot.runtimeEvents);
   };
 }
 

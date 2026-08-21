@@ -109,11 +109,15 @@ function assertAssets() {
   });
   assert(propLayout, "Editor scene must contain prop_layot.");
   var expectedStaticTools = {
+    bud: "5cfd11a5-9f34-4e73-83a5-2b8c1a30ba6a",
+    crystal_gun: "d9a38bde-607f-42e7-90aa-e6100b3dfa4f",
     molotov: "ada1d590-3913-4956-9f66-d8e04ddca734",
     swirl: "f1e1f9c0-222d-466b-bf8c-73d31b60301d",
     vine_spirit: "1797d01f-6210-45a6-90f9-ccdc8158fae3",
     wormhole_left: "04d628f6-0efc-45b5-9a60-5e95f19fa5a3",
-    wormhole_right: "04d628f6-0efc-45b5-9a60-5e95f19fa5a3"
+    wormhole_right: "04d628f6-0efc-45b5-9a60-5e95f19fa5a3",
+    wind_tunnel_entrance: "512d47a2-4f6a-4f2d-a554-c193089a4e9e",
+    wind_tunnel_exit: "6b853132-a846-43be-9228-72d20e010a28"
   };
   var propChildren = propLayout._children.map(function (childRef) {
     return sceneData[childRef.__id__];
@@ -826,12 +830,12 @@ function assertWormholeOverlayImportContract() {
     );
     var leftKey = wormholeRow + ":0";
     assert.strictEqual(imported.cells[leftKey].kind, "empty", "Wormhole import must preserve its reserved empty layout slot.");
-    assert.strictEqual(imported.wormholeOverlays[leftKey].entityType, "wormhole", "Wormhole must import into the overlay map.");
-    assert.strictEqual(imported.wormholeOverlays[leftKey].moveDirection, "right", "Wormhole overlay direction must be preserved.");
+    assert.strictEqual(imported.nonCellSpecialOverlays[leftKey].entityType, "wormhole", "Wormhole must import into the overlay map.");
+    assert.strictEqual(imported.nonCellSpecialOverlays[leftKey].moveDirection, "right", "Wormhole overlay direction must be preserved.");
     var exported = controllerDefinition._collectBoardData.call({
       _rowCount: imported.rowCount,
       _cells: imported.cells,
-      _wormholeOverlays: imported.wormholeOverlays,
+      _nonCellSpecialOverlays: imported.nonCellSpecialOverlays,
       _buildSpecialEntityExport: controllerDefinition._buildSpecialEntityExport
     });
     assert.strictEqual(exported.layout[wormholeRow].charAt(0), ".", "Wormhole export must keep its reserved layout slot empty.");
@@ -844,6 +848,52 @@ function assertWormholeOverlayImportContract() {
     assert.throws(function () {
       LevelConfigLoader.normalizeLevelConfig(overlappingRaw, "level_001");
     }, /special entity must be placed on `\.` layout slot/, "Level normalization must reject a normal ball occupying a wormhole coordinate.");
+  } finally {
+    if (previousCc === undefined) {
+      delete global.cc;
+    } else {
+      global.cc = previousCc;
+    }
+  }
+}
+
+function assertBudImportExportContract() {
+  var previousCc = global.cc;
+  global.cc = {
+    Class: function (definition) {
+      return definition;
+    },
+    Component: function () {}
+  };
+  try {
+    var LevelConfigLoader = require(path.join(PROJECT_ROOT, "assets/scripts/config/LevelConfigLoader"));
+    var MapEditorBoardImport = require(path.join(PROJECT_ROOT, "assets/scripts/editor/MapEditorBoardImport"));
+    var controllerPath = path.join(PROJECT_ROOT, "assets/scripts/editor/MapEditorController");
+    delete require.cache[require.resolve(controllerPath)];
+    var controllerDefinition = require(controllerPath);
+    var raw = JSON.parse(read("assets/map/config/levels/level_bud_test.json"));
+    var imported = MapEditorBoardImport.importLevelToCellStates(
+      LevelConfigLoader.normalizeLevelConfig(raw, "level_bud_test")
+    );
+    var budState = imported.cells["6:2"];
+    assert.strictEqual(budState.kind, "special", "Bud must import as an editor special cell.");
+    assert.strictEqual(budState.layoutName, "prop_layot", "Bud must import through the special tool palette.");
+    assert.strictEqual(budState.nodeName, "bud", "Bud import must target the authored bud tool node.");
+    assert.strictEqual(budState.entityCategory, "reactive_ball", "Bud import category mismatch.");
+    assert.strictEqual(budState.entityType, "bud", "Bud import type mismatch.");
+
+    var exported = controllerDefinition._collectBoardData.call({
+      _rowCount: imported.rowCount,
+      _cells: imported.cells,
+      _nonCellSpecialOverlays: imported.nonCellSpecialOverlays,
+      _buildSpecialEntityExport: controllerDefinition._buildSpecialEntityExport
+    });
+    var exportedBud = exported.specialEntities.filter(function (entity) {
+      return entity.entityCategory === "reactive_ball" && entity.entityType === "bud";
+    });
+    assert.strictEqual(exportedBud.length, 1, "Bud editor export must preserve exactly one bud entity.");
+    assert.strictEqual(exportedBud[0].row, 6, "Bud editor export row mismatch.");
+    assert.strictEqual(exportedBud[0].col, 2, "Bud editor export column mismatch.");
   } finally {
     if (previousCc === undefined) {
       delete global.cc;
@@ -914,6 +964,7 @@ assertLocalDraftPriorityDecision();
 assertInputLevelParsing();
 assertLocalStore();
 assertWormholeOverlayImportContract();
+assertBudImportExportContract();
 assertAllOnlineLevelsAreImportable();
 assertCloudDraftIsolation();
 assertExtendedColorRuntimeContracts();

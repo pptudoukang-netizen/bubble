@@ -605,6 +605,13 @@ GameManager.prototype.useBarrierHammerAt = function (point) {
   }
 
   var targetCell = grid.getCell(collision.row, collision.col);
+  if (targetCell && targetCell.lockChainProtected === true) {
+    return {
+      accepted: false,
+      reason: "lock_chain_protected",
+      snapshot: this.getRuntimeSnapshot()
+    };
+  }
   if (!targetCell || (!isStoneBall(targetCell) && !isIceBall(targetCell))) {
     return {
       accepted: false,

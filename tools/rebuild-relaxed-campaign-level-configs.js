@@ -8,9 +8,11 @@ var BoardLayout = require("../assets/scripts/config/BoardLayout");
 var CampaignLevelGenerationConfig = require("./campaign-level-generation-config");
 var FirstHundredLevelDesign = require("./first-100-level-design");
 var ReferenceLevels101To300Design = require("./reference-levels-101-300-design");
+var SpecialMechanismSchedule = require("./campaign-special-mechanism-schedule");
 
 var PROJECT_ROOT = path.resolve(__dirname, "..");
 var TABLE_PATH = path.join(PROJECT_ROOT, "LEVEL_CONFIG_TABLE_1_1000.csv");
+var DOCUMENT_PATH = path.join(PROJECT_ROOT, "docs", "1000关逐关特殊玩法配置.md");
 var GENERATOR_PATH = path.join(__dirname, "generate-1000-level-configs.js");
 var TARGET_LEVEL_COUNT = 1000;
 var COLORS = CampaignLevelGenerationConfig.NORMAL_BALL_COLORS.slice();
@@ -23,7 +25,7 @@ var EXPECTED_HEADERS = [
   "石头", "雪块", "炸弹", "彩虹球", "燃烧瓶",
   "蓝分裂球", "红分裂球", "绿分裂球", "黄分裂球", "紫分裂球",
   "钥匙", "锁定球", "收集目标1", "收集目标2", "发射球数量", "通关率"
-];
+].concat(SpecialMechanismSchedule.ADDITIONAL_TABLE_COLUMNS);
 
 function parseTable(text) {
   var hasBom = text.charCodeAt(0) === 0xfeff;
@@ -93,7 +95,43 @@ function buildFirstHundredCells(spec) {
     formatTarget(spec.target2),
     spec.shotLimit,
     spec.passRate.toFixed(1) + "%"
-  ].map(String);
+  ].concat(buildMechanismCells(spec.levelId)).map(String);
+}
+
+function buildMechanismCells(levelId) {
+  var gameplayPlan = CampaignLevelGenerationConfig.getLevelPlan(levelId);
+  var additional = gameplayPlan.additionalMechanismPlan;
+  var singleRescueSpiritId = gameplayPlan.trappedSpriteRescue
+    ? CampaignLevelGenerationConfig.getTrappedSpriteRescueSpiritId(levelId)
+    : "-";
+  var timedBallCount = gameplayPlan.playMode === "timed_infinite_shots"
+    ? CampaignLevelGenerationConfig.getTimedLevelTimeBonusBallCount(levelId)
+    : 0;
+  return [
+    gameplayPlan.reactiveSpecialCounts.swirl,
+    gameplayPlan.reactiveSpecialCounts.vine_spirit,
+    gameplayPlan.reactiveSpecialCounts.wormholePairs,
+    additional.blackHole,
+    additional.mine,
+    additional.breeder,
+    additional.bud,
+    additional.spiritCocoon,
+    additional.transparentBall,
+    additional.crystalGun,
+    additional.windTunnelExit,
+    additional.poisonAttachment,
+    additional.iceCrystalAttachment,
+    additional.bubbleShieldAttachment,
+    additional.spider,
+    additional.colorCloud,
+    additional.multiRescueTargets,
+    additional.rainbowPrism,
+    gameplayPlan.levelType,
+    gameplayPlan.playMode,
+    singleRescueSpiritId,
+    timedBallCount,
+    gameplayPlan.boardOcclusionEnabled ? "per_attempt_no_repeat" : "none"
+  ];
 }
 
 function getPhase(levelId) {
@@ -220,6 +258,14 @@ function buildSpecialCounts(levelId, targetColor) {
     throw new Error("Unsupported chapter for level " + levelId + ": " + chapter);
   }
 
+  if (counts.key > 0) {
+    counts.locked = CampaignLevelGenerationConfig.getLockChainLockedCount(
+      levelId,
+      getRowCount(levelId),
+      counts.key
+    );
+  }
+
   return counts;
 }
 
@@ -277,15 +323,20 @@ function buildRelaxedSpec(levelId) {
   var capacity = getRowCapacity(rowCount);
   var normalBallOccupancyTarget = getFillRatio(levelId);
   specialCounts.ice = CampaignLevelGenerationConfig.getIceBallCount(levelId, capacity);
-  if (gameplayPlan.trappedSpriteRescue) {
+  if (gameplayPlan.trappedSpriteRescue || gameplayPlan.multiTrappedSpiritRescue) {
     specialCounts = CampaignLevelGenerationConfig.buildTrappedSpriteRescueBaseSpecialCounts(specialCounts);
   }
   var nonIceSpecials = countNonIceSpecials(specialCounts);
   var reactiveSpecialSlotCount = gameplayPlan.reactiveSpecialCounts.swirl +
     gameplayPlan.reactiveSpecialCounts.vine_spirit +
     gameplayPlan.reactiveSpecialCounts.wormhole;
-  var specialSlotCount = specialCounts.ice + nonIceSpecials + reactiveSpecialSlotCount;
-  var excludedGameplaySlotCount = specialSlotCount + (gameplayPlan.trappedSpriteRescue ? 1 : 0);
+  var additional = gameplayPlan.additionalMechanismPlan;
+  var additionalEntitySlotCount = additional.blackHole + additional.mine + additional.breeder +
+    additional.bud + additional.spiritCocoon + additional.transparentBall + additional.crystalGun +
+    (additional.windTunnelExit > 0 ? additional.windTunnelExit + 1 : 0);
+  var specialSlotCount = specialCounts.ice + nonIceSpecials + reactiveSpecialSlotCount + additionalEntitySlotCount;
+  var excludedGameplaySlotCount = specialSlotCount +
+    (gameplayPlan.trappedSpriteRescue ? 1 : 0);
   var normalCount = gameplayPlan.trappedSpriteRescue
     ? CampaignLevelGenerationConfig.TRAPPED_SPRITE_RESCUE_OCCUPIED_CELL_COUNT - specialSlotCount
     : Math.ceil((capacity - excludedGameplaySlotCount) * normalBallOccupancyTarget);
@@ -312,7 +363,8 @@ function buildRelaxedSpec(levelId) {
       reactiveSpecialCounts: gameplayPlan.reactiveSpecialCounts
     });
   } else {
-    shotLimit = Math.ceil((normalCount + specialSlotCount) * 0.25 + rowCount * 0.65 + nonIceSpecials * 0.5);
+    shotLimit = Math.ceil((normalCount + specialSlotCount) * 0.25 + rowCount * 0.65 +
+      (nonIceSpecials + additionalEntitySlotCount) * 0.5);
     if (getPhase(levelId) >= 7) {
       shotLimit += 1;
     }
@@ -375,11 +427,81 @@ function buildRelaxedCells(spec) {
     formatTarget(spec.target2),
     spec.shotLimit,
     spec.passRate.toFixed(1) + "%"
-  ].map(String);
+  ].concat(buildMechanismCells(spec.levelId)).map(String);
+}
+
+function buildAllRows() {
+  var rows = [];
+  for (var levelId = 1; levelId <= TARGET_LEVEL_COUNT; levelId += 1) {
+    rows.push(levelId <= FirstHundredLevelDesign.LAST_LEVEL_ID
+      ? buildFirstHundredCells(FirstHundredLevelDesign.buildLevelSpec(levelId))
+      : buildRelaxedCells(buildRelaxedSpec(levelId)));
+  }
+  return rows;
+}
+
+function writeConfigurationDocument(rows) {
+  var mechanicsColumns = EXPECTED_HEADERS.slice(10, 22).concat(EXPECTED_HEADERS.slice(26, 44));
+  var lines = [
+    "# 1000关逐关特殊玩法配置",
+    "",
+    "> 本文档由 `tools/rebuild-relaxed-campaign-level-configs.js --table-only` 从正式排期生成。`LEVEL_CONFIG_TABLE_1_1000.csv` 是生成器唯一读取的机器配置源；本文档是与其同步的人读版本。",
+    "",
+    "## 硬性规则",
+    "",
+    "- 普通关与救援关的同色六向连通块均不超过 8。",
+    "- 每条钥匙/锁球链独占完整一行：该行恰好 1 个钥匙球、至少 1 个锁球、0 个普通球，也不混入其他特殊实体。`钥匙`列表示锁链行数，`锁定球`列表示这些行的实际锁球总数。",
+    "- 新增特殊玩法从 301 关后分批引入，每 150 关复现一次；不与每 10 关的限时关、单精灵救援关重叠。",
+    "- `风眼出口`大于 0 时固定同时生成 1 个入口；`彩虹棱镜球`表示本关初始道具库存；附着类数量表示被附着普通球数量。",
+    "",
+    "## 新机制投放总表",
+    "",
+    "| 机制 | 首次关卡 | 重复间隔 | 单关配置 | 投放关卡 |",
+    "|---|---:|---:|---:|---|"
+  ];
+  SpecialMechanismSchedule.INTRODUCTIONS.forEach(function (definition) {
+    lines.push("| " + definition.label + " | " + definition.firstLevel + " | " +
+      SpecialMechanismSchedule.REPEAT_INTERVAL + " | " + definition.count + " | " +
+      SpecialMechanismSchedule.getScheduledLevelIds(definition).join("、") + " |");
+  });
+  lines.push("", "## 逐关配置", "", "| 关卡 | 关卡类型 | 玩法模式 | 特殊玩法配置 |", "|---:|---|---|---|");
+  rows.forEach(function (cells) {
+    var row = {};
+    EXPECTED_HEADERS.forEach(function (header, index) { row[header] = cells[index]; });
+    var entries = [];
+    mechanicsColumns.forEach(function (column) {
+      var value = row[column];
+      if (value !== "0" && value !== "-" && value !== "none") {
+        entries.push(column + "=" + value);
+      }
+    });
+    if (row["单精灵救援"] !== "-") {
+      entries.push("单精灵救援=" + row["单精灵救援"]);
+    }
+    if (row["限时球"] !== "0") {
+      entries.push("限时球=" + row["限时球"]);
+    }
+    if (row["棋盘遮挡"] !== "none") {
+      entries.push("棋盘遮挡=" + row["棋盘遮挡"]);
+    }
+    lines.push("| " + row["关卡"] + " | " + row["关卡类型"] + " | " + row["玩法模式"] + " | " +
+      (entries.length ? entries.join("；") : "普通球配置") + " |");
+  });
+  fs.writeFileSync(DOCUMENT_PATH, lines.join("\n") + "\n", "utf8");
 }
 
 function rewriteTable(onlyTrappedSpriteRescue) {
-  var parsed = parseTable(fs.readFileSync(TABLE_PATH, "utf8"));
+  var parsed;
+  if (onlyTrappedSpriteRescue) {
+    parsed = parseTable(fs.readFileSync(TABLE_PATH, "utf8"));
+  } else {
+    var existingText = fs.readFileSync(TABLE_PATH, "utf8");
+    parsed = {
+      hasBom: existingText.charCodeAt(0) === 0xfeff,
+      headers: EXPECTED_HEADERS.slice(),
+      rows: buildAllRows()
+    };
+  }
   for (var levelId = 1; levelId <= TARGET_LEVEL_COUNT; levelId += 1) {
     if (onlyTrappedSpriteRescue && !CampaignLevelGenerationConfig.isTrappedSpriteRescueLevelId(levelId)) {
       continue;
@@ -397,6 +519,7 @@ function rewriteTable(onlyTrappedSpriteRescue) {
     output = "\ufeff" + output;
   }
   fs.writeFileSync(TABLE_PATH, output, "utf8");
+  writeConfigurationDocument(parsed.rows);
 }
 
 function runGenerator(onlyTrappedSpriteRescue) {
@@ -418,12 +541,14 @@ function runGenerator(onlyTrappedSpriteRescue) {
 
 function main() {
   var args = process.argv.slice(2);
-  if (args.length > 1 || (args.length === 1 && args[0] !== "--trapped-rescue")) {
+  if (args.length > 1 || (args.length === 1 && args[0] !== "--trapped-rescue" && args[0] !== "--table-only")) {
     throw new Error("Unsupported relaxed campaign rebuild arguments: " + args.join(" "));
   }
   var onlyTrappedSpriteRescue = args[0] === "--trapped-rescue";
   rewriteTable(onlyTrappedSpriteRescue);
-  runGenerator(onlyTrappedSpriteRescue);
+  if (args[0] !== "--table-only") {
+    runGenerator(onlyTrappedSpriteRescue);
+  }
 }
 
 main();

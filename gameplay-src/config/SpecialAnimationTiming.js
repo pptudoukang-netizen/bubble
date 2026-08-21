@@ -29,6 +29,22 @@ var wormholeShift = {
   projectileAbsorbDuration: 0.22
 };
 
+var blackHole = {
+  unsupportedDisappearDuration: 0.2
+};
+
+var windTunnel = {
+  activeExitSwitchInterval: 3,
+  inhaleDuration: 0.22,
+  exhaleDuration: 0.24,
+  entranceIdleRotationDuration: 2.4,
+  entranceDisappearFrameDuration: 0.08,
+  entranceDisappearFrameCount: 5
+};
+
+windTunnel.entranceDisappearDuration =
+  windTunnel.entranceDisappearFrameDuration * windTunnel.entranceDisappearFrameCount;
+
 var vineCast = {
   previewDuration: 0.65
 };
@@ -45,6 +61,20 @@ spiritCocoon.totalDuration =
   spiritCocoon.frameDuration * spiritCocoon.frameCount +
   spiritCocoon.revealDuration;
 
+var bud = {
+  frameDuration: 0.06,
+  frameCount: 8
+};
+
+bud.totalDuration = bud.frameDuration * bud.frameCount;
+
+var spiderCocoon = {
+  frameDuration: 0.06,
+  frameCount: 9
+};
+
+spiderCocoon.totalDuration = spiderCocoon.frameDuration * spiderCocoon.frameCount;
+
 var fairyAssist = {
   flyInDuration: 0.45,
   flyOutDuration: 0.65,
@@ -54,6 +84,10 @@ var fairyAssist = {
 var trappedSpriteRescue = {
   flyOutDuration: 0.65,
   exitMargin: 80
+};
+
+var colorCloud = {
+  fadeDuration: 0.35
 };
 
 function requirePositiveNumber(value, fieldName) {
@@ -111,10 +145,15 @@ module.exports = Object.freeze({
   molotovBlast: Object.freeze(molotovBlast),
   swirlRotation: Object.freeze(swirlRotation),
   wormholeShift: Object.freeze(wormholeShift),
+  blackHole: Object.freeze(blackHole),
+  windTunnel: Object.freeze(windTunnel),
   vineCast: Object.freeze(vineCast),
   spiritCocoon: Object.freeze(spiritCocoon),
+  bud: Object.freeze(bud),
+  spiderCocoon: Object.freeze(spiderCocoon),
   fairyAssist: Object.freeze(fairyAssist),
   trappedSpriteRescue: Object.freeze(trappedSpriteRescue),
+  colorCloud: Object.freeze(colorCloud),
   impactBounce: Object.freeze(impactBounce),
   iceSnowballCollect: Object.freeze(iceSnowballCollect),
   calculateImpactBounceTotalDuration: calculateImpactBounceTotalDuration

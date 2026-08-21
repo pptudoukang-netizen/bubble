@@ -1,5 +1,7 @@
 "use strict";
 
+var MineCountdownPresenter = require("./MineCountdownPresenter");
+
 function attachLevelRendererSceneExplosionIceFxMethods(LevelRenderer, context) {
   var BOARD_BUBBLE_SIZE = context.BOARD_BUBBLE_SIZE;
   var BoardLayout = context.BoardLayout;
@@ -101,6 +103,73 @@ LevelRenderer.prototype._playBlastExplosionAnimation = function (runtimeSnapshot
       "Blast explosion"
     );
     playExplosionAnimationAt(this, "BlastExplosionFx_" + normalizedId, explosionPosition, "Blast explosion animation", null);
+  }, this);
+};
+
+LevelRenderer.prototype._playMineExplosionAnimation = function (runtimeSnapshot) {
+  if (!runtimeSnapshot || !Array.isArray(runtimeSnapshot.runtimeEvents)) {
+    throw new Error("Mine explosion animation requires runtimeEvents array.");
+  }
+  var resolution = runtimeSnapshot.lastResolution;
+  if (!resolution || typeof resolution !== "object" || Array.isArray(resolution)) {
+    throw new Error("Mine explosion animation requires lastResolution.");
+  }
+  if (!Array.isArray(resolution.mineExplosions)) {
+    throw new Error("Mine explosion animation requires lastResolution.mineExplosions.");
+  }
+  resolution.mineExplosions.forEach(function (explosion) {
+    if (!explosion || typeof explosion.id !== "string" || !explosion.id) {
+      throw new Error("Mine explosion animation requires non-empty explosion id.");
+    }
+    if (explosion.entityType !== "mine") {
+      throw new Error("Mine explosion animation requires entityType mine.");
+    }
+    if (this.mineExplosionAnimatedIds[explosion.id]) {
+      return;
+    }
+    this.mineExplosionAnimatedIds[explosion.id] = true;
+    var explosionPosition = resolveBoardCellWorldPosition(
+      runtimeSnapshot,
+      explosion.row,
+      explosion.col,
+      "Mine explosion"
+    );
+    MineCountdownPresenter.playMineExplosionFrameSequence(this, "MineExplosionFx_" + explosion.id, explosionPosition);
+  }, this);
+
+  runtimeSnapshot.runtimeEvents.forEach(function (event) {
+    if (!event || event.type !== "mine_disappeared") {
+      return;
+    }
+    if (!Number.isInteger(event.id) || event.id <= 0) {
+      throw new Error("mine_disappeared event requires positive integer id.");
+    }
+    if (typeof event.mineId !== "string" || !event.mineId) {
+      throw new Error("mine_disappeared event requires mineId.");
+    }
+    if (!Number.isInteger(event.row) || !Number.isInteger(event.col)) {
+      throw new Error("mine_disappeared event requires integer coordinates.");
+    }
+    if (event.reason !== "elimination" && event.reason !== "floating_drop") {
+      throw new Error("mine_disappeared event has invalid reason: " + event.reason + ".");
+    }
+
+    var eventAnimationKey = "runtime_event_" + event.id;
+    if (this.mineExplosionAnimatedIds[eventAnimationKey]) {
+      return;
+    }
+    this.mineExplosionAnimatedIds[eventAnimationKey] = true;
+    var eventPosition = resolveBoardCellWorldPosition(
+      runtimeSnapshot,
+      event.row,
+      event.col,
+      "Mine disappearance"
+    );
+    MineCountdownPresenter.playMineExplosionFrameSequence(
+      this,
+      "MineDisappearFx_" + event.mineId + "_" + event.id,
+      eventPosition
+    );
   }, this);
 };
 

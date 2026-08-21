@@ -25,8 +25,12 @@ function LevelRenderer(rootNode) {
   this.spriteFrameLoadPromises = {};
   this.timeBonusBitmapFont = null;
   this.timeBonusBitmapFontLoadPromise = null;
-  this.fairyPrefabCache = {};
-  this.fairyPrefabLoadPromises = {};
+  this.mineCountdownBitmapFont = null;
+  this.mineCountdownBitmapFontLoadPromise = null;
+  this.mineAnimationFrames = null;
+  this.mineAnimationFramesLoadPromise = null;
+  this.fairySkeletonData = null;
+  this.fairySkeletonDataLoadPromise = null;
   this.fireworksPrefab = null;
   this.fireworksPrefabLoadPromise = null;
   this.explodeAnimationClip = null;
@@ -52,6 +56,7 @@ function LevelRenderer(rootNode) {
   this.lastBoardVersion = -1;
   this.lastBoardViewportOffsetY = null;
   this.lastBoardOcclusionRenderKey = "";
+  this.colorCloudNodes = {};
   this.whiteMaskFrames = {};
   this.whiteMaskTextures = [];
   this.lastHudRenderKey = "";
@@ -66,6 +71,7 @@ function LevelRenderer(rootNode) {
   this.lastTimerRenderKey = "";
   this.lastWinViewRenderKey = "";
   this.lastAddBallTipsViewRenderKey = "";
+  this._aimingToolTipsClosePromise = null;
   this.lastRenderedFallingCount = 0;
   this.lastGuideDotsVisible = false;
   this.lastGuidePathKey = "";
@@ -90,17 +96,27 @@ function LevelRenderer(rootNode) {
   this.molotovBlastAnimatedIds = {};
   this.swirlRotationAnimatedIds = {};
   this.spiritCocoonAnimatedIds = {};
+  this.spiderCocoonBreakAnimatedEventIds = {};
+  this.budHatchAnimatedIds = {};
   this.wormholeShiftAnimatedIds = {};
   this.wormholeProjectileAbsorptionAnimatedIds = {};
+  this.blackHoleUnsupportedDisappearAnimatedIds = {};
   this.wormholeDirectionGuideRoot = null;
   this.lastWormholeDirectionGuideKey = "";
   this.blastExplosionAnimatedIds = {};
+  this.mineExplosionAnimatedIds = {};
+  this.mineFailureGraySprites = [];
   this.lastCommentResolution = null;
   this.boardClearFireworksRoot = null;
   this.boardClearFireworksActive = false;
   this.boardClearFireworksBurstSerial = 0;
   this.bottomPanelInitialBoardTargets = null;
   this.boardBubbleNodes = {};
+  this.spiderWebNodes = {};
+  this.spiderNodes = {};
+  this.spiderLockRenderTick = 1;
+  this.spiderEntranceState = "none";
+  this.spiderEntranceTargets = {};
   this.boardBubbleNodePool = {};
   this.boardCellRenderKeys = {};
   this.currentResolutionFloatingCellIds = {};
@@ -184,6 +200,8 @@ function LevelRenderer(rootNode) {
     onClosePropDescription: null,
     onUseRainbow: null,
     onUseBlast: null,
+    onUseCrystalGun: null,
+    onUseRainbowPrismBall: null,
     onUseSwap: null,
     onUseBarrierHammer: null,
     onUseSnowRemoval: null,

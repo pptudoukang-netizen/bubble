@@ -1023,7 +1023,7 @@ module.exports = {
       }
     } else if (
       currentState !== previousState &&
-      (currentState === "out_of_shots" || currentState === "lost_danger" || currentState === "lost_objective")
+      (currentState === "out_of_shots" || currentState === "lost_danger" || currentState === "lost_hazard" || currentState === "lost_objective")
     ) {
       this._playSfx("lose");
       if (isRandomChallengeContext(this._currentRunContext) && typeof this._recordDailyTaskEvent === "function") {

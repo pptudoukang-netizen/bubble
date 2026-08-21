@@ -52,7 +52,18 @@ module.exports = {
         this._currentRunContext.testSource === "spirit_cocoon" ||
         this._currentRunContext.testSource === "multi_trapped_spirit" ||
         this._currentRunContext.testSource === "transparent_ball" ||
-        this._currentRunContext.testSource === "breeder_ball"
+        this._currentRunContext.testSource === "breeder_ball" ||
+        this._currentRunContext.testSource === "mine" ||
+        this._currentRunContext.testSource === "bud" ||
+        this._currentRunContext.testSource === "crystal_gun" ||
+        this._currentRunContext.testSource === "rainbow_prism_ball" ||
+        this._currentRunContext.testSource === "poison_attachment" ||
+        this._currentRunContext.testSource === "ice_crystal_attachment" ||
+        this._currentRunContext.testSource === "bubble_shield_attachment" ||
+        this._currentRunContext.testSource === "lock_chain" ||
+        this._currentRunContext.testSource === "color_cloud" ||
+        this._currentRunContext.testSource === "spider" ||
+        this._currentRunContext.testSource === "wind_tunnel"
       ) {
         if (typeof this._startFeatureTestLevelEntry !== "function") {
           throw new Error("Feature test retry requires _startFeatureTestLevelEntry.");
@@ -193,6 +204,7 @@ module.exports = {
       snapshot.state === "out_of_shots" ||
       snapshot.state === "out_of_shots_pending" ||
       snapshot.state === "lost_danger" ||
+      snapshot.state === "lost_hazard" ||
       snapshot.state === "lost_objective";
   }
 };

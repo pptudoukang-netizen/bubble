@@ -133,7 +133,11 @@ function resolveDropKind(options) {
   if (!options || !Object.prototype.hasOwnProperty.call(options, "dropKind")) {
     return null;
   }
-  if (options.dropKind !== "victory_board_drop" && options.dropKind !== "poison_droplet") {
+  if (
+    options.dropKind !== "victory_board_drop" &&
+    options.dropKind !== "poison_droplet" &&
+    options.dropKind !== "icicle"
+  ) {
     throw new Error("FallingMarbleSystem.registerDrops unsupported dropKind: " + options.dropKind);
   }
   return options.dropKind;
@@ -151,6 +155,7 @@ function createEmptyUpdateResult() {
     bounceEvents: [],
     fairyHits: [],
     poisonFairyHits: [],
+    icicleFairyHits: [],
     splits: []
   };
 }
@@ -465,6 +470,15 @@ FallingMarbleSystem.prototype._applyDropLaunchVelocity = function (drop, launchI
   }
 
   var launchSpeed = resolveDownwardLaunchSpeed(this, launchIndex);
+  if (drop.dropKind === "icicle") {
+    drop.velocity = {
+      x: 0,
+      y: -launchSpeed
+    };
+    drop.rotationSpeed = 0;
+    drop.launchIndex = launchIndex;
+    return drop;
+  }
   var launchSeed = buildDropLaunchSeed(drop.sourceId, launchIndex, drop.launchDropSerial);
   var launchVelocity = buildDownwardLaunchVelocity(launchSpeed, launchSeed);
   drop.velocity = {
@@ -486,7 +500,9 @@ FallingMarbleSystem.prototype._advanceDropMotion = function (drop, dt) {
     return;
   }
   drop.jarCooldown = Math.max(0, (drop.jarCooldown || 0) - dt);
-  this._applyGapAttraction(drop, dt);
+  if (drop.dropKind !== "poison_droplet" && drop.dropKind !== "icicle") {
+    this._applyGapAttraction(drop, dt);
+  }
   drop.velocity.y -= this.gravity * dt;
   drop.position.x += drop.velocity.x * dt;
   drop.position.y += drop.velocity.y * dt;
@@ -671,7 +687,7 @@ FallingMarbleSystem.prototype._buildDropFromCell = function (
     velocity: resolveInitialDropVelocity(cell, standardVelocity),
     remainingBounces: this.maxBounces,
     rotation: 0,
-    rotationSpeed: rotationDirection * (180 + index * 25),
+    rotationSpeed: dropKind === "icicle" ? 0 : rotationDirection * (180 + index * 25),
     jarCooldown: 0,
     startDelay: startDelay,
     holdUntilEliminationPresentationComplete: holdUntilEliminationPresentationComplete === true,
@@ -693,6 +709,9 @@ FallingMarbleSystem.prototype._buildDropFromCell = function (
       : null,
     poisonParticleIndex: Number.isInteger(cell.poisonParticleIndex)
       ? cell.poisonParticleIndex
+      : null,
+    icicleSourceAttachmentId: typeof cell.icicleSourceAttachmentId === "string" && cell.icicleSourceAttachmentId
+      ? cell.icicleSourceAttachmentId
       : null,
     rootDropId: Object.prototype.hasOwnProperty.call(cell, "rootDropId")
       ? String(cell.rootDropId)

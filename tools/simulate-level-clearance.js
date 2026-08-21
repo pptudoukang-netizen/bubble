@@ -709,7 +709,13 @@ function settleManager(manager) {
     var hasHeldDrops = manager.systems.fallingMarbleSystem.activeDrops.some(function (drop) {
       return drop && drop.holdUntilEliminationPresentationComplete === true;
     });
-    if (manager.pendingBoardAdvanceEliminationPresentation === true || hasHeldDrops) {
+    var swirlWaitsForEliminationPresentation =
+      manager.pendingSwirlRotationWaitingForEliminationPresentation === true;
+    if (
+      manager.pendingBoardAdvanceEliminationPresentation === true ||
+      swirlWaitsForEliminationPresentation ||
+      hasHeldDrops
+    ) {
       var fallingMarbleSystem = manager.systems.fallingMarbleSystem;
       if (!fallingMarbleSystem || typeof fallingMarbleSystem.requestEliminationPresentationDropRelease !== "function") {
         throw new Error("Simulation requires FallingMarbleSystem.requestEliminationPresentationDropRelease.");
@@ -721,8 +727,11 @@ function settleManager(manager) {
         throw new Error("Simulation requires GameManager.notifyBoardAdvanceEliminationPresentationComplete.");
       }
       fallingMarbleSystem.requestEliminationPresentationDropRelease();
-      if (manager.pendingBoardAdvanceEliminationPresentation === true) {
-        manager.notifyBoardAdvanceEliminationPresentationComplete();
+      if (
+        manager.pendingBoardAdvanceEliminationPresentation === true ||
+        swirlWaitsForEliminationPresentation
+      ) {
+        manager.notifyBoardAdvanceEliminationPresentationComplete(manager.lastResolution);
       }
       fallingMarbleSystem.processPendingEliminationPresentationRelease(FRAME_DT);
     }
