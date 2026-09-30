@@ -235,23 +235,6 @@ function createGameManagerShotResolutionMethods(deps) {
     });
   }
 
-  function buildTriggeredSplitterIdsFromPendingSpawns(pendingSplitterSpawns) {
-    if (!Array.isArray(pendingSplitterSpawns)) {
-      throw new Error("Molotov splitter dedup requires pendingSplitterSpawns array.");
-    }
-    var triggeredSplitterIds = {};
-    pendingSplitterSpawns.forEach(function (pending) {
-      if (!pending || typeof pending !== "object" || Array.isArray(pending)) {
-        throw new Error("Molotov splitter dedup requires pending splitter entry.");
-      }
-      if (typeof pending.id !== "string" && typeof pending.id !== "number") {
-        throw new Error("Molotov splitter dedup requires pending splitter id.");
-      }
-      triggeredSplitterIds[pending.id] = true;
-    });
-    return triggeredSplitterIds;
-  }
-
   var SHOT_RESOLUTION_CONTEXT = {
     AssistSpiritConfig: AssistSpiritConfig,
     BoardLayout: BoardLayout,
@@ -271,7 +254,6 @@ function createGameManagerShotResolutionMethods(deps) {
     buildMolotovBlastDropVelocity: buildMolotovBlastDropVelocity,
     buildRowKeyLockPairings: buildRowKeyLockPairings,
     buildProjectilePathFromShotPlan: buildProjectilePathFromShotPlan,
-    buildTriggeredSplitterIdsFromPendingSpawns: buildTriggeredSplitterIdsFromPendingSpawns,
     clone: clone,
     createEmptyResolution: createEmptyResolution,
     createGameManagerShotDropMethods: createGameManagerShotDropMethods,

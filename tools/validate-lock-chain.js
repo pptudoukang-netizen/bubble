@@ -42,6 +42,7 @@ function createResolution() {
   return {
     collectedKeys: [],
     unlockedLockedBalls: [],
+    keyUnlockPresentationComplete: false,
     floating: [],
     spawnedBySplitters: [],
     swirlRotations: []
@@ -149,9 +150,14 @@ function validatePresentationContract() {
   var boardSource = fs.readFileSync(path.join(ROOT, "gameplay-src/render/LevelRendererSceneBoardMethods.js"), "utf8");
   var sharedVisualSource = fs.readFileSync(path.join(ROOT, "gameplay-src/render/LevelRendererSharedVisualMethods.js"), "utf8");
   var fxSource = fs.readFileSync(path.join(ROOT, "gameplay-src/render/LevelRendererSceneFxMethods.js"), "utf8");
+  var keyFxSource = fs.readFileSync(path.join(ROOT, "gameplay-src/render/LevelRendererSceneKeySplitterFxMethods.js"), "utf8");
   assert(boardSource.indexOf("applyLockChainProtectionTint") >= 0, "Board renderer must tint protected lock-chain cells.");
   assert(sharedVisualSource.indexOf("cc.color(118, 118, 118, 255)") >= 0, "Protected lock-chain cells must use the authored gray tint.");
   assert(fxSource.indexOf("candidates.length < 1") >= 0, "Key unlock animation must accept multiple same-row targets.");
+  assert(
+    keyFxSource.indexOf("notifyBoardAdvanceKeyUnlockPresentationComplete(resolution)") >= 0,
+    "Key unlock animation completion must release the board advance gate."
+  );
 }
 
 var rawConfig = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8"));
@@ -159,4 +165,4 @@ var normalized = LevelConfigLoader.normalizeLevelConfig(clone(rawConfig), LEVEL_
 validateConfigContract(rawConfig, normalized);
 validateRuntime(normalized);
 validatePresentationContract();
-console.log("[OK] lock_chain", "row config, staged protection, gray rendering and same-row mass unlock validated");
+console.log("[OK] lock_chain", "row config, staged protection, gray rendering, mass unlock and board advance gate validated");

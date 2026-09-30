@@ -22,6 +22,7 @@ var BubbleGrid = require("../gameplay-src/systems/BubbleGrid");
 var BoardViewportSystem = require("../gameplay-src/systems/BoardViewportSystem");
 var SupportSystem = require("../gameplay-src/systems/SupportSystem");
 var TrajectoryPredictor = require("../gameplay-src/systems/TrajectoryPredictor");
+var attachLevelRendererSceneBlackHoleMethods = require("../gameplay-src/render/LevelRendererSceneBlackHoleMethods");
 
 function assert(condition, message) {
   if (!condition) {
@@ -193,7 +194,8 @@ function buildCapacityFixture() {
   };
 }
 
-function buildProjectile(blackHole, shotSequence) {
+function buildProjectile(blackHole, shotSequence, grid) {
+  var targetPosition = grid.getCellPosition(blackHole.row, blackHole.col);
   return {
     position: { x: 0, y: 0 },
     ball: {
@@ -212,7 +214,7 @@ function buildProjectile(blackHole, shotSequence) {
         id: blackHole.id,
         row: blackHole.row,
         col: blackHole.col,
-        position: { x: 0, y: 0 }
+        position: clone(targetPosition)
       },
       penetratedTransparentBalls: [],
       hitPoint: { x: 0, y: 0 },
@@ -254,18 +256,89 @@ function validateThreeShotCapacityAndTurnAdvance() {
     var liveBlackHole = grid.getCell(1, 4);
     assert(liveBlackHole && liveBlackHole.capacity === 4 - shot, "Black hole capacity before shot " + shot + " is invalid.");
     manager.shotsFired = shot;
-    manager.activeProjectile = buildProjectile(liveBlackHole, shot);
+    manager.activeProjectile = buildProjectile(liveBlackHole, shot, grid);
     manager._finalizePlannedShot();
     assert(manager.activeProjectile === null, "Black hole shot " + shot + " must consume the projectile.");
     assert(manager.lastResolution.matched.length === 0, "Black hole shot must not enter ordinary match elimination.");
     assert(manager.lastResolution.blackHoleProjectileAbsorptions.length === 1, "Each black hole shot must record exactly one absorption.");
     assert(manager.lastResolution.blackHoleProjectileAbsorptions[0].capacityAfter === 3 - shot, "Black hole capacity after shot " + shot + " is invalid.");
+    assert(manager.lastResolution.blackHoleProjectileAbsorptions[0].duration === SpecialAnimationTiming.blackHole.projectileAbsorbDuration, "Black hole absorption must use authoritative animation timing.");
   }
 
   assert(grid.getCell(1, 4) === null, "Third projectile must remove the black hole.");
   assert(grid.getCell(2, 4) === null, "Third projectile must rerun support and drop the disconnected bubble.");
   assert(registeredDrops.length === 1 && registeredDrops[0].row === 2 && registeredDrops[0].col === 4, "Third projectile must register the newly floating bubble exactly once.");
   assert(advancedTurnCount === 3, "Every swallowed projectile must continue the ordinary post-shot turn chain.");
+}
+
+function validateProjectileAbsorptionAnimation() {
+  function MockNode(name) {
+    this.name = name;
+    this.isValid = true;
+    this.opacity = 255;
+    this.children = [];
+    this.action = null;
+  }
+  Object.defineProperty(MockNode.prototype, "parent", {
+    set: function (parent) {
+      this._parent = parent;
+      parent.children.push(this);
+    }
+  });
+  MockNode.prototype.setContentSize = function (size) { this.contentSize = size; };
+  MockNode.prototype.setPosition = function (x, y) { this.x = x; this.y = y; };
+  MockNode.prototype.setScale = function (scale) { this.scale = scale; };
+  MockNode.prototype.runAction = function (action) { this.action = action; };
+  MockNode.prototype.removeFromParent = function () { this._parent = null; };
+  MockNode.prototype.destroy = function () { this.isValid = false; };
+
+  global.cc.Node = MockNode;
+  global.cc.sequence = function () { return { type: "sequence", actions: Array.prototype.slice.call(arguments) }; };
+  global.cc.spawn = function () { return { type: "spawn", actions: Array.prototype.slice.call(arguments) }; };
+  global.cc.moveTo = function (duration, x, y) { return { type: "moveTo", duration: duration, x: x, y: y }; };
+  global.cc.scaleTo = function (duration, scale) { return { type: "scaleTo", duration: duration, scale: scale }; };
+  global.cc.fadeTo = function (duration, opacity) { return { type: "fadeTo", duration: duration, opacity: opacity }; };
+  global.cc.callFunc = function (callback, target) { return { type: "callFunc", callback: callback, target: target }; };
+
+  function RendererFixture() {}
+  attachLevelRendererSceneBlackHoleMethods(RendererFixture, {
+    SpecialAnimationTiming: SpecialAnimationTiming,
+    BOARD_BUBBLE_SIZE: { width: 65, height: 65 }
+  });
+  var boardLayer = { isValid: true, children: [] };
+  var renderer = Object.create(RendererFixture.prototype);
+  renderer.layers = { board: boardLayer };
+  renderer.boardBubbleNodes = { capacity_black_hole: { isValid: true } };
+  renderer.blackHoleProjectileAbsorptionAnimatedIds = {};
+  renderer._applyBallVisualCached = function (node, ball, size) {
+    node.renderedBall = clone(ball);
+    node.renderedSize = size;
+  };
+  var absorption = {
+    id: "black_hole_projectile_1",
+    blackHoleId: "capacity_black_hole",
+    row: 1,
+    col: 4,
+    startPosition: { x: 0, y: 12 },
+    targetPosition: { x: 0, y: 40 },
+    duration: SpecialAnimationTiming.blackHole.projectileAbsorbDuration,
+    ball: { ballCategory: "normal", color: "R", entityCategory: "normal_ball", entityType: null }
+  };
+  var snapshot = { lastResolution: { blackHoleProjectileAbsorptions: [absorption] } };
+
+  renderer._playBlackHoleProjectileAbsorptionAnimations(snapshot);
+  assert(boardLayer.children.length === 1, "Black-hole absorption must create one independent projectile visual.");
+  var projectileNode = boardLayer.children[0];
+  assert(projectileNode.name === "BlackHoleAbsorbedProjectile_" + absorption.id, "Black-hole absorption visual must preserve event identity.");
+  assert(projectileNode.x === absorption.startPosition.x && projectileNode.y === absorption.startPosition.y, "Black-hole absorption visual must begin at the authoritative hit point.");
+  assert(projectileNode.action.type === "sequence" && projectileNode.action.actions[0].type === "spawn", "Black-hole absorption must run one move-shrink-fade sequence.");
+  var parallelActions = projectileNode.action.actions[0].actions;
+  assert(parallelActions.length === 3, "Black-hole absorption must combine movement, scale and opacity actions.");
+  assert(parallelActions[0].x === absorption.targetPosition.x && parallelActions[0].y === absorption.targetPosition.y, "Black-hole absorption must move into the black-hole center.");
+  assert(parallelActions.every(function (action) { return action.duration === absorption.duration; }), "Black-hole absorption actions must use the authoritative duration.");
+
+  renderer._playBlackHoleProjectileAbsorptionAnimations(snapshot);
+  assert(boardLayer.children.length === 1, "Black-hole absorption event must animate exactly once.");
 }
 
 function validateUnsupportedShrinkDisappear() {
@@ -462,6 +535,7 @@ function validateRangeUnloadAndRendering() {
   var resourceSource = fs.readFileSync(path.resolve(__dirname, "../gameplay-src/render/LevelRendererResourceConfig.js"), "utf8");
   var boardVisualSource = fs.readFileSync(path.resolve(__dirname, "../gameplay-src/render/LevelRendererWindTunnelBoardVisuals.js"), "utf8");
   var sharedVisualSource = fs.readFileSync(path.resolve(__dirname, "../gameplay-src/render/LevelRendererSharedVisualMethods.js"), "utf8");
+  var runtimeRendererSource = fs.readFileSync(path.resolve(__dirname, "../gameplay-src/render/LevelRendererRuntimeMethods.js"), "utf8");
   var blackHoleMeta = readJson(path.resolve(__dirname, "../assets/game/image/ball/black_hole.png.meta"));
   var blackHoleFrameMeta = blackHoleMeta.subMetas.black_hole;
   assert(selectorSource.indexOf('ballLike.entityType === "black_hole"') >= 0 && selectorSource.indexOf('return "BLACK_HOLE";') >= 0, "Black hole render selector must resolve BLACK_HOLE.");
@@ -469,6 +543,9 @@ function validateRangeUnloadAndRendering() {
   assert(resourceSource.indexOf("var BLACK_HOLE_RENDER_SIZE = new cc.Size(93, 73);") >= 0, "Black hole must preserve its original 93x73 render size.");
   assert(boardVisualSource.indexOf('entity.entityType === "black_hole" ? deps.BLACK_HOLE_RENDER_SIZE') >= 0, "Board rendering must use the dedicated black hole size.");
   assert(sharedVisualSource.indexOf('spriteCode !== "BLACK_HOLE"') >= 0, "Black hole Sprite must render with trim=false.");
+  var absorptionAnimationIndex = runtimeRendererSource.indexOf("this._playBlackHoleProjectileAbsorptionAnimations(runtimeSnapshot);");
+  var boardRefreshIndex = runtimeRendererSource.indexOf("this._renderBoard(runtimeSnapshot.board);", absorptionAnimationIndex);
+  assert(absorptionAnimationIndex >= 0 && boardRefreshIndex > absorptionAnimationIndex, "Black-hole projectile absorption must claim the live endpoint before board refresh recycles it.");
   assert(
     blackHoleMeta.width === 93 &&
       blackHoleMeta.height === 73 &&
@@ -487,9 +564,10 @@ function validateRangeUnloadAndRendering() {
 validateConfigCodecAndBudget();
 validateSpecialIntroduction();
 validateThreeShotCapacityAndTurnAdvance();
+validateProjectileAbsorptionAnimation();
 validateUnsupportedShrinkDisappear();
 validateDirectContactTrajectory();
 validateCapacitySurvivesWormholeShift();
 validateRangeUnloadAndRendering();
 
-console.log("[OK] black_hole", "introduction, unsupported shrink-disappear, capacity, direct absorption, support rerun, range unload, turn advance, shot budget, codec and rendering validated");
+console.log("[OK] black_hole", "introduction, projectile absorption animation, unsupported shrink-disappear, capacity, direct absorption, support rerun, range unload, turn advance, shot budget, codec and rendering validated");

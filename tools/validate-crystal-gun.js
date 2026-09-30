@@ -11,9 +11,15 @@ var BoardLayout = require("../assets/scripts/config/BoardLayout");
 var LevelConfigLoader = require("../assets/scripts/config/LevelConfigLoader");
 var LevelPackCompactCodec = require("../assets/scripts/config/LevelPackCompactCodec");
 var GameBootstrapAudioMethods = require("../assets/scripts/bootstrap/GameBootstrapAudioMethods");
+var ShopGoodsConfig = require("../assets/scripts/config/ShopGoodsConfig");
+var ShopRulesConfig = require("../assets/scripts/config/ShopRulesConfig");
+var InventoryStore = require("../assets/scripts/utils/InventoryStore");
+var SelectedPowerupsStore = require("../assets/scripts/utils/SelectedPowerupsStore");
+var ShopConfigService = require("../assets/scripts/services/ShopConfigService");
 var CrystalGunPath = require("../gameplay-src/core/CrystalGunPath");
 var GameManager = require("../gameplay-src/core/GameManager");
 var ShooterController = require("../gameplay-src/systems/ShooterController");
+var SpecialMechanismSchedule = require("./campaign-special-mechanism-schedule");
 
 var PROJECT_ROOT = path.resolve(__dirname, "..");
 
@@ -232,6 +238,91 @@ function validateInventoryAndCollection() {
       shooter.currentBall.entityCategory === "skill_ball" &&
       shooter.currentBall.entityType === "crystal_gun",
     "Equipped crystal gun must become the authoritative current shot ball."
+  );
+}
+
+function validatePersistentPowerupSurfaces() {
+  assert(
+    SpecialMechanismSchedule.INTRODUCTIONS.every(function (definition) {
+      return definition.key !== "crystalGun";
+    }),
+    "Crystal gun must not be scheduled as a campaign mechanism."
+  );
+  assert(
+    SpecialMechanismSchedule.DISABLED_CAMPAIGN_MECHANISMS.some(function (definition) {
+      return definition.key === "crystalGun" && definition.column === "晶光炮";
+    }),
+    "Campaign schedule must explicitly keep crystal gun disabled."
+  );
+  for (var levelId = 1; levelId <= SpecialMechanismSchedule.TARGET_LEVEL_COUNT; levelId += 1) {
+    assert(
+      SpecialMechanismSchedule.getPlan(levelId).crystalGun === 0,
+      "Campaign schedule must keep crystal gun at zero for level " + levelId + "."
+    );
+  }
+
+  var tableLines = readSource("LEVEL_CONFIG_TABLE_1_1000.csv").replace(/^\uFEFF/, "").trim().split(/\r?\n/);
+  var tableHeaders = tableLines[0].split(",");
+  var crystalGunColumnIndex = tableHeaders.indexOf("晶光炮");
+  assert(crystalGunColumnIndex >= 0, "Campaign table must retain the crystal gun audit column.");
+  tableLines.slice(1).forEach(function (line, index) {
+    var cells = line.split(",");
+    assert(Number(cells[crystalGunColumnIndex]) === 0, "Campaign table crystal gun count must be zero at level " + (index + 1) + ".");
+  });
+
+  var shopService = new ShopConfigService({
+    goodsConfig: ShopGoodsConfig,
+    rulesConfig: ShopRulesConfig
+  });
+  var goods = shopService.getGoodsBySkuId("sku_crystal_gun_01");
+  assert(goods.itemId === "crystal_gun" && goods.itemCount === 1, "Shop must sell one persistent crystal gun per purchase.");
+  assert(goods.price.currency === "coin" && goods.price.amount === 300, "Crystal gun shop price must be 300 coins.");
+  assert(goods.iconPath === "ui/image/props/crystal_gun", "Crystal gun shop must use the UI-owned icon.");
+
+  var inventoryStore = new InventoryStore();
+  var migratedAndAdded = inventoryStore.addItem({
+    version: 3,
+    items: {
+      precise_aim: 0,
+      swap_ball: 0,
+      rainbow_ball: 0,
+      blast_ball: 0,
+      barrier_hammer: 0,
+      snow_removal: 0
+    }
+  }, "crystal_gun", 1);
+  assert(
+    migratedAndAdded.inventory.version === 5 && migratedAndAdded.inventory.items.crystal_gun === 1,
+    "Inventory v3 must migrate to the current schema and preserve crystal gun as a persistent item."
+  );
+
+  var selectedPowerupsStore = new SelectedPowerupsStore();
+  var toggled = selectedPowerupsStore.toggleItem({
+    version: 2,
+    selectedItems: [],
+    selectedItemCounts: {}
+  }, "crystal_gun");
+  assert(toggled.accepted === true && toggled.selected === true, "Crystal gun must be selectable for the next run.");
+
+  var startGameSource = readSource("assets/scripts/ui/StartGameViewController.js");
+  var backpackSource = readSource("assets/scripts/ui/BackpackViewController.js");
+  var sharedSource = readSource("assets/scripts/bootstrap/GameBootstrapShared.js");
+  var powerupFlowSource = readSource("assets/scripts/bootstrap/GameBootstrapPowerupInventoryMethods.js");
+  assert(
+    startGameSource.indexOf('{ itemId: "crystal_gun", unlockLevel: 25, iconPath: "ui/image/props/crystal_gun" }') >= 0,
+    "Start game powerup list must expose crystal gun at level 25."
+  );
+  assert(
+    backpackSource.indexOf('itemId: "crystal_gun"') >= 0 &&
+      backpackSource.indexOf('displayName: "晶光炮"') >= 0 &&
+      backpackSource.indexOf('iconPath: "ui/image/props/crystal_gun"') >= 0,
+    "Backpack must expose crystal gun with the UI-owned icon."
+  );
+  assert(sharedSource.indexOf('crystal_gun: "crystal_gun"') >= 0, "Persistent crystal gun must map to the runtime crystal_gun type.");
+  assert(
+    powerupFlowSource.indexOf('crystal_gun: 25') >= 0 &&
+      powerupFlowSource.indexOf('"snow_removal", "crystal_gun"') >= 0,
+    "Prepared-run validation must recognize crystal gun as a level-25 persistent powerup."
   );
 }
 
@@ -486,6 +577,14 @@ function validateResourcesEditorAndIntegration() {
     meta.subMetas && meta.subMetas.crystal_gun && meta.subMetas.crystal_gun.uuid === "d9a38bde-607f-42e7-90aa-e6100b3dfa4f",
     "Crystal gun SpriteFrame UUID must match the editor scene reference."
   );
+  var uiPngPath = path.resolve(PROJECT_ROOT, "assets/ui/image/props/crystal_gun.png");
+  var uiMetaPath = uiPngPath + ".meta";
+  assert(fs.existsSync(uiPngPath) && fs.existsSync(uiMetaPath), "Crystal gun UI image and meta must exist.");
+  var uiMeta = readJson("assets/ui/image/props/crystal_gun.png.meta");
+  assert(
+    uiMeta.importer === "texture" && uiMeta.type === "sprite" && uiMeta.packable === true && uiMeta.width === 65 && uiMeta.height === 65,
+    "Crystal gun UI icon must be a packable 65x65 sprite."
+  );
 
   var editorScene = JSON.parse(readSource("assets/game/scens/editor.fire"));
   var editorNode = editorScene.find(function (entry) {
@@ -546,12 +645,17 @@ function validateResourcesEditorAndIntegration() {
       gameplayInputSource.indexOf("this._playSfx(firedSfxKey)") >= 0,
     "A successful crystal gun fire must play laser while other fired balls retain the normal shot sound."
   );
-  assert(bottomPanelSource.indexOf('resolveButtonNode("crystal_gun_btn")') >= 0, "Bottom panel must expose the collected crystal gun inventory.");
+  assert(bottomPanelSource.indexOf('resolveButtonNode("crystal_gun_btn")') >= 0, "Bottom panel must expose the crystal gun inventory.");
+  assert(
+    bottomPanelSource.indexOf('this._setBottomPanelInventoryPresentation(crystalGunButtonNode, crystalGunCount, "recover_inventory:crystal_gun")') >= 0,
+    "Bottom panel must present crystal gun through the normal persistent inventory flow."
+  );
 }
 
 validateGeometry();
 validateConfigAndCodec();
 validateInventoryAndCollection();
+validatePersistentPowerupSurfaces();
 validateFireAudio();
 validateAuthoritativeResolution();
 validateResourcesEditorAndIntegration();

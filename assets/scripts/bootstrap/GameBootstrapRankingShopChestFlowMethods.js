@@ -547,6 +547,9 @@ module.exports = {
     if (!this.starChestService || typeof this.starChestService.openChest !== "function") {
       throw new Error("GameBootstrap requires StarChestService.openChest.");
     }
+    if (typeof this._showAwardViewSequence !== "function") {
+      throw new Error("GameBootstrap requires AwardView sequence display for star chest rewards.");
+    }
 
     this._playSfx("uiClick");
     this._hideSettingView();
@@ -562,15 +565,36 @@ module.exports = {
     }
 
     var summary = this._getStarChestSummary();
+    if (!Number.isInteger(summary.openableCount) || summary.openableCount < 0) {
+      throw new Error("Star chest summary openableCount must be a non-negative integer.");
+    }
     this._trackTelemetry("star_chest_open_click", summary);
-    var openResult = this.starChestService.openChest(this.levelProgress, new Date());
-    if (!openResult || !openResult.accepted) {
-      var reason = openResult && openResult.reason ? openResult.reason : "STAR_CHEST_OPEN_FAILED";
+    if (summary.openableCount === 0) {
+      var rejectedResult = this.starChestService.openChest(this.levelProgress, new Date());
+      if (rejectedResult && rejectedResult.accepted) {
+        throw new Error("Star chest open result conflicts with zero openable count.");
+      }
+      var reason = rejectedResult && rejectedResult.reason ? rejectedResult.reason : "STAR_CHEST_OPEN_FAILED";
       this._trackTelemetry("star_chest_open_fail", {
         fail_reason: reason
       });
       showStatusAndTip(this, resolveStarChestFailMessage(reason, summary));
       return;
+    }
+
+    var openResults = [];
+    for (var openIndex = 0; openIndex < summary.openableCount; openIndex += 1) {
+      var openResult = this.starChestService.openChest(this.levelProgress, new Date());
+      if (!openResult || !openResult.accepted) {
+        var batchReason = openResult && openResult.reason ? openResult.reason : "STAR_CHEST_OPEN_FAILED";
+        throw new Error(
+          "Star chest batch open failed at index " + openIndex + ": " + batchReason
+        );
+      }
+      openResults.push(openResult);
+    }
+    if (openResults.length !== summary.openableCount) {
+      throw new Error("Star chest batch open result count mismatch.");
     }
 
     this._refreshPlayerResources();
@@ -582,11 +606,14 @@ module.exports = {
       this._renderInventoryView();
     }
 
-    var rewardText = formatRewardItems(openResult.rewardItems);
+    var rewardItemGroups = openResults.map(function (result) {
+      return result.rewardItems;
+    });
+    var rewardText = rewardItemGroups.map(formatRewardItems).join("；");
     var message = "\u83b7\u5f97\uff1a" + rewardText;
     this._setStatus(message);
-    this._showAwardViewForRewardItems(openResult.rewardItems).catch(function (error) {
-      Logger.error("Show star chest award view failed", error && error.message ? error.message : error);
+    return this._showAwardViewSequence(rewardItemGroups).catch(function (error) {
+      Logger.error("Show star chest award view sequence failed", error && error.message ? error.message : error);
       this._setStatus("宝箱奖励弹窗加载失败");
     }.bind(this));
   }

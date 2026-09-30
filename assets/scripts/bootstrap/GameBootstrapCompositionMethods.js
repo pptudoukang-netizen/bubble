@@ -328,6 +328,7 @@ module.exports = {
     this._settingViewNode = null;
     this._awardViewPrefab = null;
     this._awardViewNode = null;
+    this._awardViewSequence = null;
     this._awardItemIconSpriteFrameCache = {};
     this._signInViewPrefab = null;
     this._signInViewNode = null;

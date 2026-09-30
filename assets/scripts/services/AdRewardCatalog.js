@@ -12,6 +12,8 @@ var POWERUP_DISPLAY_NAMES = {
   swap: "换球",
   barrier_hammer: "破障锤",
   snow_removal: "除雪剂",
+  crystal_gun: "晶光炮",
+  rainbow_prism_ball: "彩虹棱镜球",
   three_line_elimination: "消三行",
   plus_three_balls: "加十球"
 };

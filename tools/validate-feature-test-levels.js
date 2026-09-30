@@ -4,6 +4,7 @@ var fs = require("fs");
 var path = require("path");
 
 var LevelConfigLoader = require("../assets/scripts/config/LevelConfigLoader");
+var LevelPackCompactCodec = require("../assets/scripts/config/LevelPackCompactCodec");
 var LevelManager = require("../assets/scripts/config/LevelManager");
 
 var ROOT = path.resolve(__dirname, "..");
@@ -19,6 +20,11 @@ var DEFINITIONS = [
     levelKey: "level_spirit_cocoon_test",
     entityCategory: "reactive_ball",
     entityType: "spirit_cocoon"
+  },
+  {
+    featureKey: "campaign_321",
+    levelKey: "level_campaign_321_test",
+    campaignLevelId: 321
   },
   {
     featureKey: "multi_trapped_spirit",
@@ -127,10 +133,48 @@ function validateConfigs() {
     assert(fs.existsSync(configPath), "Feature test config is missing: " + relativePath + ".");
     assert(fs.existsSync(configPath + ".meta"), "Feature test config meta is missing: " + relativePath + ".meta.");
     var normalized = LevelConfigLoader.normalizeLevelConfig(readJson(configPath), definition.levelKey);
+    if (definition.campaignLevelId) {
+      var formalPack = LevelPackCompactCodec.expandPack(
+        readJson(path.join(ROOT, "remote-level-packs/levels_pack_301_400.json"))
+      );
+      var formalLevelKey = "level_" + definition.campaignLevelId;
+      var formalConfig = LevelConfigLoader.normalizeLevelConfig(
+        formalPack.levels[formalLevelKey],
+        formalLevelKey
+      );
+      var testComparable = JSON.parse(JSON.stringify(normalized));
+      var formalComparable = JSON.parse(JSON.stringify(formalConfig));
+      delete testComparable.meta;
+      delete formalComparable.meta;
+      assert(
+        JSON.stringify(testComparable) === JSON.stringify(formalComparable),
+        definition.levelKey + " must exactly match formal campaign level " + definition.campaignLevelId + "."
+      );
+      assert(
+        normalized.level.specialEntities.some(function (entity) {
+          return entity.id === "ice_017" && entity.row === 6 && entity.col === 4;
+        }),
+        definition.levelKey + " must preserve level 321 ice_017."
+      );
+      assert(
+        normalized.level.specialEntities.some(function (entity) {
+          return entity.id === "spirit_cocoon_032" && entity.row === 6 && entity.col === 5;
+        }),
+        definition.levelKey + " must preserve level 321 spirit cocoon."
+      );
+      return;
+    }
     if (definition.levelType) {
       assert(normalized.level.levelType === definition.levelType, definition.levelKey + " levelType mismatch.");
       assert(normalized.level.specialEntities.length === 0, definition.levelKey + " must isolate multi-target rescue.");
       assert(normalized.level.multiTrappedSpiritRescue.targets.length >= 2, definition.levelKey + " requires multiple rescue targets.");
+      normalized.level.multiTrappedSpiritRescue.targets.forEach(function (target) {
+        assert(
+          target.row >= LevelConfigLoader.MULTI_RESCUE_MIN_TARGET_ROW_INDEX &&
+            target.row <= LevelConfigLoader.MULTI_RESCUE_MAX_TARGET_ROW_INDEX,
+          definition.levelKey + " targets must remain within visible top rows 2-6."
+        );
+      });
       return;
     }
     if (definition.attachmentType) {
@@ -300,6 +344,7 @@ function validateHiddenButtons() {
   [
     'key: "black_hole", nodeName: "black_hole_test_btn", label: "黑洞"',
     'key: "spirit_cocoon", nodeName: "spirit_cocoon_test_btn", label: "精灵茧"',
+    'key: "campaign_321", nodeName: "campaign_321_test_btn", label: "321"',
     'key: "multi_trapped_spirit", nodeName: "multi_trapped_spirit_test_btn", label: "多救援"',
     'key: "transparent_ball", nodeName: "transparent_ball_test_btn", label: "透明球"',
     'key: "breeder_ball", nodeName: "breeder_ball_test_btn", label: "繁殖球"',
@@ -323,11 +368,17 @@ function validateHiddenButtons() {
   );
   assert(flowSource.indexOf("_startFeatureTestLevelEntry: function (featureKey)") >= 0, "Feature test start entry is missing.");
   assert(flowSource.indexOf("loadFeatureTestLevel(featureKey)") >= 0, "Feature test entry must load the selected dedicated config.");
+  var routeSource = fs.readFileSync(
+    path.join(ROOT, "assets/scripts/bootstrap/GameBootstrapRouteEditorFlowMethods.js"),
+    "utf8"
+  );
+  assert(routeSource.indexOf('options.testSource !== "campaign_321"') >= 0, "Campaign 321 test entry source is missing.");
   var retrySource = fs.readFileSync(
     path.join(ROOT, "assets/scripts/bootstrap/GameBootstrapLevelRuntimeMethods.js"),
     "utf8"
   );
   assert(retrySource.indexOf("this._startFeatureTestLevelEntry(this._currentRunContext.testSource)") >= 0, "Feature test retry wiring is missing.");
+  assert(retrySource.indexOf('this._currentRunContext.testSource === "campaign_321"') >= 0, "Campaign 321 test retry source is missing.");
   assert(retrySource.indexOf('this._currentRunContext.testSource === "crystal_gun"') >= 0, "Crystal gun test retry source is missing.");
   assert(retrySource.indexOf('this._currentRunContext.testSource === "poison_attachment"') >= 0, "Poison attachment test retry source is missing.");
   assert(retrySource.indexOf('this._currentRunContext.testSource === "ice_crystal_attachment"') >= 0, "Ice crystal attachment test retry source is missing.");
@@ -361,7 +412,7 @@ function validateHiddenButtons() {
 validateConfigs();
 validateHiddenButtons();
 validateEntryWiring().then(function () {
-  console.log("[OK] feature_test_levels", "sixteen isolated configs, hidden entries, test inventory grants and retry wiring validated");
+  console.log("[OK] feature_test_levels", DEFINITIONS.length + " configs, hidden entries, test inventory grants and retry wiring validated");
 }).catch(function (error) {
   console.error(error && error.stack ? error.stack : error);
   process.exitCode = 1;

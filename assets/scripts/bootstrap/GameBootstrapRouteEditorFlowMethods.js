@@ -37,6 +37,7 @@ function normalizeLevelEntryOptions(options) {
     options.testSource !== "board_occlusion" &&
     options.testSource !== "black_hole" &&
     options.testSource !== "spirit_cocoon" &&
+    options.testSource !== "campaign_321" &&
     options.testSource !== "multi_trapped_spirit" &&
     options.testSource !== "transparent_ball" &&
     options.testSource !== "breeder_ball" &&

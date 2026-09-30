@@ -1036,15 +1036,15 @@ module.exports = {
     var nodes = this._resolveAwardViewNodes(awardViewNode);
     this._bindNodeTapOnce(nodes.closeButtonNode, function () {
       this._playSfx("uiClick");
-      this._hideAwardView();
+      this._hideAwardView(true);
     }.bind(this));
     this._bindNodeTapOnce(nodes.maskNode, function () {
       this._playSfx("uiClick");
-      this._hideAwardView();
+      this._hideAwardView(true);
     }.bind(this));
     this._bindNodeTapOnce(nodes.confirmButtonNode, function () {
       this._playSfx("uiClick");
-      this._hideAwardView();
+      this._hideAwardView(true);
     }.bind(this));
   },
 
@@ -1143,7 +1143,56 @@ module.exports = {
     }.bind(this));
   },
 
-  _hideAwardView: function () {
+  _showAwardViewSequence: function (rewardItemGroups) {
+    if (!Array.isArray(rewardItemGroups) || rewardItemGroups.length === 0) {
+      throw new Error("AwardView sequence requires a non-empty reward group array.");
+    }
+    if (this._awardViewSequence !== null) {
+      throw new Error("AwardView sequence is already active.");
+    }
+
+    var normalizedGroups = rewardItemGroups.map(function (rewardItems) {
+      return normalizeAwardPopupItems(rewardItems);
+    });
+    return new Promise(function (resolve, reject) {
+      this._awardViewSequence = {
+        rewardItemGroups: normalizedGroups,
+        nextIndex: 0,
+        resolve: resolve,
+        reject: reject
+      };
+      this._showNextAwardViewInSequence();
+    }.bind(this));
+  },
+
+  _showNextAwardViewInSequence: function () {
+    var sequence = this._awardViewSequence;
+    if (!sequence) {
+      throw new Error("AwardView sequence is not active.");
+    }
+    if (sequence.nextIndex >= sequence.rewardItemGroups.length) {
+      this._awardViewSequence = null;
+      sequence.resolve();
+      return Promise.resolve();
+    }
+
+    var rewardItems = sequence.rewardItemGroups[sequence.nextIndex];
+    sequence.nextIndex += 1;
+    return this._showAwardViewForRewardItems(rewardItems).catch(function (error) {
+      if (this._awardViewSequence !== sequence) {
+        sequence.reject(new Error("AwardView sequence state changed while rendering."));
+        return;
+      }
+      this._awardViewSequence = null;
+      sequence.reject(error);
+    }.bind(this));
+  },
+
+  _hideAwardView: function (continueSequence) {
+    if (continueSequence !== undefined && continueSequence !== true) {
+      throw new Error("AwardView continueSequence must be true when provided.");
+    }
+    var sequence = this._awardViewSequence;
     if (this._awardViewNode && cc.isValid(this._awardViewNode)) {
       var nodes = this._resolveAwardViewNodes(this._awardViewNode);
       SpriteProxyLayerHelper.destroyProxyRoot(this._awardViewNode, AWARD_PROXY_ROOT_NAME);
@@ -1164,6 +1213,12 @@ module.exports = {
       this._renderGameCircleWelfareView().catch(function (error) {
         Logger.error("Restore game circle welfare view after award close failed", error && error.message ? error.message : error);
       });
+    }
+    if (sequence !== null && continueSequence === true) {
+      this._showNextAwardViewInSequence();
+    } else if (sequence !== null) {
+      this._awardViewSequence = null;
+      sequence.reject(new Error("AwardView sequence was interrupted before completion."));
     }
   },
 

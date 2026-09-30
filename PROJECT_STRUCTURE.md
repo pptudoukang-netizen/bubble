@@ -19,16 +19,19 @@
 - `assets/ui/`：局内与选关共用、按会话生命周期持有的公共 UI 分包，包含弹窗预制体与 UI 图片；返回选关后的 `game`/`animation` 空闲释放不得清理 `ui` prefab 或 `ui/` SpriteFrame。`image/props/` 保存 UI 生命周期独立使用的金币、体力和道具图副本，`image/preview_balls/` 保存选关目标与道具说明使用的球图标（包括与棋盘 `game/image/ball/mines` 同图的地雷说明副本），避免返回选关后 `game` bundle 延迟释放造成黑块或失效 SpriteFrame；`image/commone/` 存放多个弹窗共用图片，`fnt/` 保存 UI 自有字体。
 - `assets/game/`：局内资源、关卡底图编辑场景与玩法代码分包（微信 `subpackage`），包含 `GameView`、`scens/editor.fire`、球/罐子/道具图片、`trapped_spirit/{spiritId}` 七名角色的局内被困形象、编辑器蜂窝底图、局内 HUD 图片与字体、射手 hero 动画、局内 prefab、Shader effect 与生成的 `generated/lazy-gameplay-code.js`；进入局内或关卡编辑器前由 `BundleLoader.ensureGameplayBundleLoaded()` 加载并校验玩法代码标记。
 - `assets/audio/`：音频资源分包（微信 `subpackage`），全部 BGM/SFX 位于 `assets/audio/sound/`；选关与局内 BGM 在业务启动阶段并行预加载，SFX 仍在首次播放时按需加载。
-- `assets/animation/`：显式命名为 `animation` 的动画资源分包（微信 `subpackage`），包含爆炸、烟花、地雷 `mines/frame_00...09` 帧图和局内固定精灵共用的 `bonus_sprite/Bonus Sprite` Spine 数据；地雷使用 0、1 两帧每 0.5 秒切换待机，归零消失时播放 2～9 爆炸帧。固定精灵按红/黄/绿映射 `red/yellow/green` 皮肤，循环播放 `idle`，被坠落球命中时播放 `smash` 后返回 `idle`。七名出战精灵的射手待机/递球动画位于 `assets/game/animation/{spiritId}_idle|pao.anim`，禁止 `game` prefab 通过 UUID 反向依赖该分包。
+- `assets/animation/`：显式命名为 `animation` 的动画资源分包（微信 `subpackage`），包含爆炸、烟花、地雷 `mines/frame_00...09` 帧图和局内固定精灵共用的 `bonus_sprite/Bonus Sprite` Spine 数据；地雷使用 0、1 两帧每 0.5 秒切换待机，归零消失时播放 2～9 爆炸帧。固定精灵按红/黄/绿映射 `red/yellow/green` 皮肤，循环播放 `idle`，被坠落球命中时播放 `smash` 后返回 `idle`。七名出战精灵的射手共用 `assets/game/spine/diqiushou` Spine，按精灵 ID 切换同名皮肤，循环播放 `idle`，递球播放 `passball` 并在完成回调后恢复待机；剩余球全部落定后的 `won_settlement_pending`（以及最终 `won`）切换 `win`，`lost_danger/lost_hazard/lost_objective/out_of_shots` 切换 `fail`，复活后恢复 `idle`，射手刷新键包含对局状态；失败时先播放 `fail`，`LevelRendererSceneResultPopupMethods` 通过随 Modal 层销毁的 `LoseViewDelay` 节点等待 1.5 秒后才显示失败结算弹窗，重复刷新不重置计时，复活/重开取消旧计时，禁止 `game` prefab 通过 UUID 反向依赖该分包。
 - `assets/spirit_system/`：显式命名为 `spirit_system` 的精灵系统资源分包（微信 `subpackage`），保存精灵大厅背景、角色立绘、商店资源、UI 图集、`prefabs/SpiritHallView.prefab`、`prefabs/SpiritShopView.prefab` 与多界面共用的 `prefabs/SpiritSystemTabBar.prefab`；商店面板与商品主体 Sprite 独占 `image/shop/AutoAtlas`，大厅/商店共用的控件、底栏及七名精灵碎片图标统一进入 `image/tabbar/AutoAtlas`，进阶按钮和碎片商品复用同一套碎片 SpriteFrame；大厅与商店采用 720×1280 设计分辨率和 Sprite 代理分层，通过挂载组件动态实例化共享 TabBar，重复卡片和 TabBar 的源 Sprite 仅保留逻辑、布局及点击职责，独立代理层集中渲染；大厅未拥有角色的头像代理使用内置 `2d-gray-sprite` 材质置灰，解锁后恢复 `2d-sprite`，但升级、进阶、出战按钮仍保留点击以展示救援解锁提示；大厅由 `SpiritHallScreenAdapter`、商店由 `SpiritShopScreenAdapter` 分别负责安全区、等比内容缩放、长屏分区延展、源/代理/文本层同步和背景 cover。
 - `assets/image/`：非 map/game/ui 分包资源；选关专用图片已归入 `assets/map/`，局内专用图片已归入 `assets/game/`，弹窗专用图片已归入 `assets/ui/`。
 - `assets/map/config/levels/`：本地内置关卡 JSON 配置，文件名形如 `level_001.json`；当前只内置 `level_001.json` 到 `level_010.json`。
 - `assets/map/config/levels/level_board_occlusion_test.json`：独立遮挡玩法测试关；隐藏测试模式中的“遮挡”按钮加载该配置。该普通`shot_limited`测试关的云朵和树叶均按发射次数清除，同时覆盖动态位置轮换和除雪剂主动清除；秒数倒计时只用于正式`timed_infinite_shots`限时关。
 - `assets/map/config/levels/level_black_hole_test.json`、`level_spirit_cocoon_test.json`、`level_multi_trapped_spirit_test.json`、`level_transparent_ball_test.json`、`level_breeder_ball_test.json`、`level_mine_test.json`、`level_bud_test.json`、`level_crystal_gun_test.json`、`level_rainbow_prism_ball_test.json`、`level_poison_attachment_test.json`、`level_ice_crystal_attachment_test.json`、`level_bubble_shield_attachment_test.json`、`level_lock_chain_test.json`、`level_color_cloud_test.json`、`level_spider_test.json`、`level_wind_tunnel_test.json`：黑洞、精灵茧、多救援、透明球、繁殖球、地雷、花苞球、晶光炮、彩虹棱镜球、毒液附着、冰凌附着、气泡护盾附着、锁定球、彩云、蜘蛛和风眼十六个相互隔离的本地测试关；临时解锁全部关卡后，选关界面的对应隐藏按钮分别加载这些配置。地雷测试关用可配置的 2 条初始生命快速验证首次暴露、逐发倒计时、爆炸灰屏和 `lost_hazard` 失败；晶光炮测试关进入和重试时固定授予 6 发本局库存，并用完整十行棋盘验证不同射击角度的五行直线穿透及射出左右边界时提前停止；彩虹棱镜球测试关固定授予 6 颗道具球，并用 14 行重复配色和底部石头分别验证普通首触取色、非普通首触随机取色及屏幕外隐藏行保留；毒液附着测试关在最低占用行中央六颗普通球上配置 `poison` 附着，首发红球完成普通匹配后一次释放十八滴不同初速组合的毒液，用于验证覆盖显示、物理掉落和固定精灵离场；冰凌附着测试关在最低占用行十颗普通球上配置 `ice_crystal` 附着，并在其下保留一行射击吸附位，验证透明度 200 的 `ice_crystal_ball` 覆盖、普通匹配消除生成整图 `icicle` 直落、固定精灵碰撞离场及悬空掉落不生成冰凌柱；气泡护盾测试关使用 `transparent_bubbles` 覆盖普通球并固定授予 6 颗爆破球，验证普通同色搜索隔离、相邻普通消除先拆盾、特殊命中抵挡一次以及下一次范围命中清除底层球；彩云测试关同时覆盖普通云、彩虹云、延迟移动、正负速度、隐藏组、一次/两次命中阈值和淡出移除；蜘蛛测试关固定授予 6 颗爆破球，同时覆盖 11/10 列锁行、同排双蜘蛛引用计数、原位补茧和上下两层最底蜘蛛过滤；风眼测试关在中央入口下方保留直射通道，并以三个结构出口覆盖定时随机激活、按入口最终方向从出口继续飞行、堵塞移除、失去支撑后直接消失和入口退场。
+- `assets/map/config/levels/level_campaign_321_test.json`：正式 321 关的完整本地镜像；临时解锁全部关卡后由隐藏“321”按钮进入独立测试模式，重试继续加载该本地镜像，不修改远程正式关包。
 - `assets/map/config/level_manifest.json`：远程关卡 bootstrap manifest，只内置云环境、关卡边界和远程完整 manifest 的固定云存储 fileID。
 - `remote-level-packs/`：待上传到微信云存储的远程关卡包和完整远程 manifest；当前包含 `level_manifest.json` 以及 `levels_pack_011_100.json` 到 `levels_pack_901_1000.json`，关卡包采用 `compact-schema-v2` 压缩格式。
 - `docs/LEVEL_1000_DESIGN.md`：1000 关长线关卡设计、特殊球投放节奏、图案化棋盘策略和生成规则。
 - `docs/1000关逐关特殊玩法配置.md` / `LEVEL_CONFIG_TABLE_1_1000.csv`：正式1～1000关逐关特殊玩法排期的人读文档与机器权威表；二者由 `tools/rebuild-relaxed-campaign-level-configs.js --table-only` 同步生成，完整关卡生成器严格按表读取并复核统一排期。
+- `docs/关卡机制与特殊球组合配置表.md` / `LEVEL_COMBINATION_CONFIG_TABLE.csv`：27种机制、20种棋盘特殊球及全部合法单/双机制类型组合的人读表与机器表；特殊球按所属机制计入，单关强制最多2种机制和3种特殊球类型。二者由 `tools/generate-level-combination-config-table.js` 根据 `tools/level-combination-catalog.js` 确定性生成，运行 `npm run validate:level-combinations` 校验生成物同步、互斥、重复项、孤立特殊球和数量上限。
+- `docs/1000关机制投放差异预览.md` / `LEVEL_MECHANISM_DEPLOYMENT_PREVIEW.json`：逐关审计当前324个新增机制排期关与单机制、新增+基础、新增+遮挡计划是否一致；由 `tools/campaign-mechanism-deployment-plan.js` 确定性选择合法组合，`tools/generate-campaign-mechanism-deployment-preview.js` 读取正式CSV并输出差异。生成器本身只读，运行 `npm run validate:level-deployment-preview` 校验审计产物与当前权威表同步；正式应用后应为0项待调整。
 - `docs/TRAPPED_SPRITE_RESCUE_GAMEPLAY_DESIGN.md`：以被困精灵为唯一中心支撑点的开放顶部旋转棋盘规则、配置合同、受力公式、结算时序、实现状态和验收标准。
 - `cloudfunctions/`：微信云开发函数源码。
 - `build-templates/wechatgame/`：微信小游戏构建模板与云函数模板；构建后由 `packages/build-loading-splash` 自动调用 `tools/wechat-minigame-loading-patch.js` 接入微信官方封面图插件 `MinigameLoading`，封面图使用 `assets/loading/loading_bg.jpg`；随后校验完整业务脚本只存在于 `subpackages/core/game.js`、玩法生成资产只存在于 `subpackages/game/game.js`，并移除旧版 `main.js` 同步加载块。
@@ -48,7 +51,9 @@
 - `tools/validate-current-frontier-aiming-tips.js`：校验当前最高解锁关连续失败只写独立本地 key、不进入玩家云档；两次失败且本局未携带 `precise_aim` 时，开场倒计时结束后保持交互锁并打开 `AimingToolTips`，同时校验预制体节点、任意区域关闭绑定和 Sprite 代理渲染合同；运行 `npm run validate:current-frontier-aiming-tips`。
 - `tools/validate-remote-level-background-preload.js`：校验启动 LoadingView 阶段会完成云档案同步与全量远端关卡包缓存、最高解锁关所在包优先、并发数固定不超过 2、重复任务复用 Promise，并禁止 StartGameView 恢复临界预下载等待；运行 `npm run validate:remote-level-preload`。
 - `tools/validate-level-pack-compact-v2.js`：校验全部远程包的 V2 格式、manifest 字节数/SHA-256、990 关无损往返、遮挡方案严格数组合同、非法代码与坐标 Fail-Fast，以及远程包总体积不超过 2,000,000 字节；运行 `npm run validate:level-pack-v2`。
-- `tools/validate-campaign-mechanism-schedule.js`：独立展开本地与10个远程包，逐关核对权威CSV与实际特殊实体、锁链整行、附着物、蜘蛛、彩云、单/多救援、限时球、遮挡和初始彩虹棱镜库存，并确认所有排期机制均有正式覆盖；运行 `npm run validate:campaign-mechanisms`。
+- `tools/validate-campaign-mechanism-schedule.js`：独立展开本地与10个远程包，逐关核对权威CSV与实际特殊实体、锁链整行、附着物、蜘蛛、彩云、单/多救援、限时球、遮挡和初始彩虹棱镜库存；同时逐关比对统一投放计划并强制最多2种机制、3种特殊球类型。运行 `npm run validate:campaign-mechanisms`。
+- `tools/level-combination-catalog.js` / `tools/level-combination-deployment-policy.js` / `tools/generate-level-combination-config-table.js`：关卡组合配置的数据权威、投放策略和确定性生成/校验入口；维护27种机制、20种特殊球的唯一归属、单球结构合同和组合兼容矩阵，生成250条合法类型配置（含27条单机制、223条双机制；分裂球与多精灵救援因胜利目标冲突被明确排除），并为每条配置计算复杂度、T1/T2/T3/F投放等级、普通池权重、首次允许关卡、推荐阶段、长期最小间隔和复现策略；非法互斥、超过3种特殊球、固定模式进入普通随机池或早于机制教学关投放均直接报错。
+- `tools/campaign-mechanism-deployment-plan.js` / `tools/generate-campaign-mechanism-deployment-preview.js`：前者是1～1000关统一机制投放权威，生成336个纯普通球关、293个单机制关和371个双机制关；其中14种新增机制占324关。新增机制普通复现按单机制、新增+基础、新增+遮挡循环，多救援按单机制、新增+基础循环；基础机制、限时、单救援和遮挡也各自按教学/复习/组合/长期复现确定性排期。后者只读正式CSV并审计324个新增机制关是否与计划一致。
 - `tools/validate-poison-overlay.js`：校验独立毒液测试关的 `level.cellAttachments` 配置、普通匹配清除固定生成三滴不同初速的 `poison_droplet`、悬空掉落不生成毒液、毒液碰撞毛球后触发离场，以及 `poison_overlay` / `poison_droplet` 渲染资源合同；运行 `npm run validate:poison-overlay`。
 - `tools/validate-ice-crystal-attachment.js`：校验 `level.cellAttachments` 冰凌附着配置、普通匹配清除每颗附着球只生成一个整图 `icicle`、悬空掉落不生成冰凌柱、冰凌柱碰撞固定精灵后触发离场，以及 `ice_crystal_ball` 透明度 200 和 `icicle` 渲染资源合同；运行 `npm run validate:ice-crystal-attachment`。
 - `tools/validate-bubble-shield-attachment.js`：校验 `level.cellAttachments` 气泡护盾配置、特殊球禁止初始附着、普通同色搜索排除、相邻普通消除拆盾、特殊范围命中一次抵挡、后续清除以及 `transparent_bubbles` 渲染合同；运行 `npm run validate:bubble-shield-attachment`。
@@ -57,12 +62,12 @@
 - `open-data/`：历史微信开放数据域逻辑。当前世界排行榜由主域源码和云函数实现，不再依赖开放数据域读取好友云存储。
 - `tools/`：校验、同步、构建修复、调试辅助脚本。
 - `tools/first-100-level-design.js`：前 100 关权威设计规则；Fail-Fast 读取 `E:\kxppm\decrypted_config\all_levels.json`，只提取前 100 关 `bubbles` 的占位/空位轮廓。母版 11/10 列轮廓通过归一化距离场投影到当前 11/10 列、8～15 行棋盘，并强制顶部支撑、逐行连通、普通球占位率至少70%和 100 个轮廓唯一；颜色数量、收集目标、冰球目标、特殊球、开局球序列、星级线、奖励和关卡模式全部继续使用当前项目规则。发射数由当前项目真实玩法模拟得到的 100 项逐关校准表控制，优先削减连锁掉落关的过量余球并保留高压关安全线，不读取参考项目发射数；校准表长度或数值非法时直接报错。源文件缺失、行宽或字符非法、投影不连通时直接报错，不导入参考项目玩法，也不使用默认关卡兜底。
-- `tools/campaign-level-generation-config.js` / `tools/campaign-special-mechanism-schedule.js`：1–1000 关统一生成与全部特殊玩法排期；集中维护普通球八色池、单关最多5色、计时关、漩涡/藤蔓魔灵/多对虫洞、冰块占比、目标分/星级线、动态遮挡、单/多精灵救援及普通球占位率。黑洞、毒液、精灵茧、冰凌、透明球、繁殖球、护盾、地雷、花苞、晶光炮、多救援、彩云、蜘蛛、风眼和彩虹棱镜分别从301～441关分批引入，并每150关复现。钥匙关按完整锁链行生成：每行恰好1把钥匙，其余格全部锁球，禁止普通球和其他特殊实体混入。全部正式关卡六方向同色连通块最多8球；普通关占位目标在1–300/301–500/501–700/701–1000分别为70%/72%/74%/76%。
+- `tools/campaign-level-generation-config.js` / `tools/campaign-special-mechanism-schedule.js`：1–1000 关统一生成与全部特殊玩法排期；集中维护普通球八色池、单关最多5色、计时关、基础机制实例数量、目标分/星级线、动态遮挡、单/多精灵救援及普通球占位率。黑洞、毒液、精灵茧、冰凌、透明球、繁殖球、护盾、地雷、花苞、多救援、彩云、蜘蛛、风眼和彩虹棱镜分别从301～441关分批引入；每种机制在首次教学后4～6关复习、10～15关组合，之后每25～40关出现一次（目标30关），同一种精确组合仍遵守50/100关最小复用间隔，并避开限时关和单精灵救援关。晶光炮只作为持久化道具，不进入正式关卡排期。钥匙关按完整锁链行生成：每行恰好1把钥匙，其余格全部锁球，禁止普通球和其他特殊实体混入。全部正式关卡六方向同色连通块最多8球；普通关占位目标在1–300/301–500/501–700/701–1000分别为70%/72%/74%/76%。
 - `tools/rebuild-trapped-sprite-rescue-identities.js`：只展开并重写50个既定救援关的身份字段，将旧数字 `spriteId` 严格迁移为七名精灵大厅角色的 `spiritId`，保留所有非救援关数据，并同步受影响远程包的 SHA/字节数和 manifest；运行 `npm run generate:trapped-rescue-identities`。
 - `tools/campaign-level-mode-policy.js`：玩法模式兼容入口，委托统一生成策略决定 `normal`、`special_floating_island`、`trapped_sprite_rescue` 及发射模式。每个 10 的倍数关固定为 90 秒 `timed_infinite_shots` 特殊浮岛关；计时关禁止配置发射球上限、开局长序列和“+3 球”。
 - `tools/rebuild-first-100-level-configs.js`：前 100 关定向重建入口；先按当前项目设计规则同步 `LEVEL_CONFIG_TABLE_1_1000.csv` 前 100 行，再只重建本地 1-10、远程包 11-100 和对应 manifest 条目，不改写 101-1000 关远程包。运行命令为 `npm run generate:levels-first100`，重建时会复验当前玩法字段、11/10 列布局、支撑关系以及 100 个占位轮廓的唯一性。
-- `tools/reference-levels-101-300-design.js`、`tools/rebuild-reference-levels-101-300.js`：101–300 关参考轮廓与逐关发射数权威规则。参考项目普通主线只存在 1–200 关，因此 101–200 一一投影同编号轮廓，201–300 使用参考 101–200 的水平镜像投影；目标棋盘仍采用当前项目 11/10 列、15 行、当前球数、颜色目标和特殊球。200 项发射数校准表缺项或数值非法时直接报错。运行 `npm run generate:levels101-300` 只重写 CSV 中非救援关的参考发射数、两个远程包及对应 manifest 条目；救援关发数继续由统一战役公式负责，并校验 200 个投影轮廓全部不同、水平重心偏移和左右占位差均不超过 0.20。
-- `tools/clustered-level-layout.js`、`tools/rebuild-relaxed-campaign-level-configs.js`、`tools/redesign-first-100-clustered-levels.js`、`tools/redesign-levels-100-500-aesthetic.js`：1-1000 关颜色聚类与爽感校验规则；所有普通球按 odd-r 六方向统计的同色连通块硬上限为8。`rebuild-relaxed-campaign-level-configs.js --table-only` 先生成权威 `LEVEL_CONFIG_TABLE_1_1000.csv` 与 `docs/1000关逐关特殊玩法配置.md`，全量生成器再严格读取逐关表；普通关校验目标色指标，多目标救援关只校验整体聚类指标。休闲解压版全量重建通过 `npm run redesign:relaxed-campaign` 同步 CSV、逐关文档、本地 1-10、远程 11-1000 compact 包和 manifest。
+- `tools/reference-levels-101-300-design.js`、`tools/rebuild-reference-levels-101-300.js`：101–300 关参考轮廓与逐关发射数权威规则。实际投放机制的关继续使用参考轮廓；纯普通球缓冲关使用程序化聚类轮廓，避免在70%占位下被参考形状强制合并成超过8球的同色连通块。200 项发射数校准表缺项或数值非法时直接报错。运行 `npm run generate:levels101-300` 只重写 CSV 中非救援关的参考发射数、两个远程包及对应 manifest 条目；救援关发数继续由统一战役公式负责。
+- `tools/clustered-level-layout.js`、`tools/rebuild-relaxed-campaign-level-configs.js`、`tools/redesign-first-100-clustered-levels.js`、`tools/redesign-levels-100-500-aesthetic.js`：1-1000 关颜色聚类与爽感校验规则；所有普通球按 odd-r 六方向统计的同色连通块硬上限为8。`rebuild-relaxed-campaign-level-configs.js --table-only` 先生成权威 `LEVEL_CONFIG_TABLE_1_1000.csv` 与 `docs/1000关逐关特殊玩法配置.md`，全量生成器再严格读取逐关表；纯普通球缓冲关采用均衡目标色供给，有机制关按目标导向比例分配。`npm run generate:levels1000` 与 `npm run redesign:relaxed-campaign` 均同步CSV、逐关文档、本地1-10、远程11-1000 compact包、镜像和manifest。
 - `settings/`：Cocos Creator 项目设置。
 - `package.json`：校验脚本入口。
 
@@ -76,7 +81,7 @@
 
 `GameBootstrap.js` 是 Cocos 组件声明文件，负责暴露 Inspector 属性，并把实际实现挂载到组件方法上。启动 LoadingView 退场后会销毁节点并释放其 SpriteFrame；选关/局内 BGM 切换成功后停止旧音效并只保留当前 BGM 缓存，防止启动图和跨场景音频常驻。具体业务实现拆在多个 `GameBootstrap*Methods.js` 文件中：
 
-- `GameBootstrapCompositionMethods.js`：`onLoad` 初始化中枢，创建 Store、Service、Manager、Audio、Tips、NetworkLoading 等；开局准备弹窗完成首帧绘制后后台调用 `_ensureGameplayKernel()`，加载并校验 `game` 分包、初始化 `GameManager`/`LevelRenderer`，同时预热初始局内 Prefab、通用首帧 Sprite 和当前出战精灵动画。
+- `GameBootstrapCompositionMethods.js`：`onLoad` 初始化中枢，创建 Store、Service、Manager、Audio、Tips、NetworkLoading 等；开局准备弹窗完成首帧绘制后后台调用 `_ensureGameplayKernel()`，加载并校验 `game` 分包、初始化 `GameManager`/`LevelRenderer`，同时预热初始局内 Prefab、通用首帧 Sprite、碎裂 EffectAsset 和当前出战精灵动画。
 - `GameBootstrapStartupMethods.js`：启动加载流程；`start()` 先展示场景内 LoadingView，再由 `_beginStartupBundlePrefetch()` 下载并加载首屏必需的 `map` 分包，分包下载和 bundle 加载进度都会写入 LoadingView 进度条；随后并行加载选关预制体以及选关/局内两首 BGM。启动服务初始化后先在 LoadingView 内同步云档案并应用云端进度，再缓存远端关卡包（最高解锁关所在包优先、每完成一包更新 LoadingView 进度）；完整缓存成功后写入与 manifest 版本及各包 SHA 绑定的完成标记，后续启动只校验 manifest 和该标记，不再逐包读取校验。仅新账号首次进入选关时会消费 `NewUserGuideStore.initialPreparationShown` 一次性标记，将最高已解锁关传入 `prepareLevelId` 自动打开开局准备界面；新手引导同时从 `quick_start` 推进到 `start_game`，之后重启只显示选关。选关页首帧后只延迟处理好友体力领取和 `ui` 分包预热。
 - `GameBootstrapLazyModule.js` / `GameBootstrapLazyRegistry.js`：非首屏必需的 bootstrap 方法模块（签到/任务/商店/游戏圈/设置/广告/telemetry/背包等）通过 `GameBootstrapLazyModule` 在首次调用时再 `require` 对应模块；各 loader 必须使用 Cocos 可静态分析的字符串字面量路径，禁止运行时变量 `require(path)` 或对 UI Controller 做 getter 懒加载。
 - `GameBootstrapGameplayInputMethods.js`：局内触摸输入、瞄准、发射、update 驱动。
@@ -95,7 +100,7 @@
 - `GameBootstrapGameCircleFlowMethods.js`：游戏圈福利与原生按钮适配。
 - `GameBootstrapSettingsFlowMethods.js`：设置页和音频开关/音量。
 - `GameBootstrapAdRewardMethods.js`：激励广告、广告奖励、频控。
-- `GameBootstrapAudioMethods.js`：背景音乐、音效、震动；被困精灵完成获救时消费 `trapped_sprite_rescued` 事件并播放 `sound/cute_laughter`。首次进局的固定 `3、2、1、GO` 倒计时会与结算弹窗、协助精灵、爆炸/烟花及碎裂 Shader 等交互阶段资源预热并行，倒计时和预热都完成后才开放操作。
+- `GameBootstrapAudioMethods.js`：背景音乐、音效、震动；被困精灵完成获救时消费 `trapped_sprite_rescued` 事件并播放 `sound/cute_laughter`。首次进局的固定 `3、2、1、GO` 倒计时会与结算弹窗、协助精灵及爆炸/烟花等交互阶段资源预热并行，倒计时和预热都完成后才开放操作；碎裂 Shader 已在初始棋盘渲染前完成共享预热。
 - `GameBootstrapShareFlowMethods.js`：微信分享。
 - `GameBootstrapRuntimeConfigMethods.js`：运行模式、视口、安全区、棋盘参数；Inspector 中的 `projectileSpeed`/`impactBounceSpeed`/`jarRimBounceSpeed`/`dropGravity`/`dropInitialSpeedY` 经 `_applyBoardTuningFromProperties` 写入 `BoardLayout`，进关前再次同步以支持运行时调参。
 - `GameBootstrapLifecycleMethods.js`：生命周期和 resize 处理。
@@ -111,7 +116,7 @@
 应用编排层。它连接 UI、玩法内核、渲染、服务、存储、广告、微信能力和音频。修改业务流程时通常先从这里找到真实调用链。
 
 - `LevelSelectView.js`：选关页顶层 UI 渲染入口，负责顶部状态和入口按钮绑定；`top/top_layer/sign_btn` 是签到入口，`bottom_layer/elven_hall_btn` 打开精灵大厅；`test_btn` 进入关卡底图编辑场景，运行时从其同结构克隆 `local_level_test_btn`、`trapped_sprite_test_btn` 和 `board_occlusion_test_btn`，其中“遮挡”按钮进入独立遮挡测试关；这些按钮仅在隐藏测试模式开启后显示。`quick_start_btn` 快速开始，`back_cur_level` 回到当前关卡位置。
-- `LevelSelectFloatingMap.js`：按 `assets/map/config/floating_map.json` 渲染 1000 关无限上滚动浮岛地图；配置显式携带与统一关卡生成策略一致的 50 个救援关 ID，只有这些 `trapped_sprite_rescue` 关卡使用单关 `landmark1` 浮岛，其余连续关卡优先装入普通浮岛，末尾等不足普通浮岛最小容量的非救援关使用 `landmark2`～`landmark5`；启动时仅预加载当前焦点关卡视口所需 island prefab，滚动时按需加载其余 prefab。
+- `LevelSelectFloatingMap.js`：按 `assets/map/config/floating_map.json` 渲染 1000 关无限上滚动浮岛地图；配置显式携带与统一关卡生成策略一致的 50 个救援关 ID，只有这些 `trapped_sprite_rescue` 关卡使用单关 `landmark1` 浮岛，其余连续关卡优先装入普通浮岛，末尾等不足普通浮岛最小容量的非救援关使用 `landmark2`～`landmark5`；启动时仅预加载当前焦点关卡视口所需 island prefab，滚动时按需加载其余 prefab。关卡上的 `protagonist` 按 `AssistSpiritStore.equippedSpiritId` 显示 `map/image/ui/{spiritId}_avatar`；地图预加载七名角色头像，出战保存成功后直接刷新现有头像与浮岛运行状态，滚动重建时沿用当前出战身份。
 
 ### core
 
@@ -122,17 +127,18 @@
 - `GameManagerBoardPhaseMethods.js` / `GameManagerSpecialPhaseMethods.js` / `GameManagerRuntimeStateMethods.js` / `GameManagerInputMethods.js` / `GameManagerAdPowerupMethods.js` / `GameManagerPowerupMethods.js` / `GameManagerUpdateMethods.js`：按棋盘阶段、特殊实体阶段、运行状态、发射输入、广告道具、局内道具和逐帧推进拆分的状态机扩展。所有扩展通过显式 context 注入共享依赖，不读取隐式全局变量。
 - `GameManagerAssistSpiritSkillMethods.js` / `AssistSpiritSkillConfig.js`：ShooterPanel 出战精灵全局技能的权威配置与结算。Milu/Lumi 不显示全局技能；Noya 使用“本局种子 + 技能成功释放序号”生成可复现的随机三次贝塞尔路径，并让路径影响半径内的合法球按配置概率、最大数量进入掉落；只要棋盘仍有内容，即使没有合法掉落对象、曲线附近候选为0或全部概率未命中，也会正常播放技能且不强制补目标。Flora/Loco/Kelu 分别执行全盘解除藤蔓、按真实发射次数临时融雪、闪电链；Yumi 按藤蔓、雪块、闪电、龙卷风的固定优先级选择当前合法技能。玩法层先确定曲线和概率结果，表现层只播放已确定结果。
 - `GameManagerShotResolutionMethods.js`：发射命中结算的薄聚合层；下挂 `GameManagerShotScoreMethods.js`、`GameManagerShotPlanningMethods.js`、`GameManagerShotDropMethods.js`、`GameManagerShotMolotovMethods.js`、`GameManagerShotReactiveMethods.js`、`GameManagerShotFinalizeMethods.js`，分别负责计分、落点规划、悬空掉落、燃烧瓶、反应型特殊球和最终结算；钥匙结算严格按行分组，一把钥匙必须一次替换同行全部 `locked_ball`，不再按世界距离一对一配对；`_resolveBoardClearedOutcome` / `_beginSurplusShotBonus` 处理自然清屏后的星级校验、剩余球奖励与终局结算。
+- 分裂球不再由邻格清除即时触发；每次发射完成当次消除、悬空掉落、漩涡、虫洞、藤蔓、地雷与繁殖球阶段后，`GameManager._resolveSplitterPhase()` 按稳定 ID 检查全部存活分裂球。只有自身六邻接格存在合法空位且这六格本次没有球被消除或掉落时才进入延迟分裂队列；目标在入队时从实时六邻空位中随机锁定并跨分裂球去重，生成前再次严格校验来源和落点，新球禁止吸附到六邻范围之外。
 - 漩涡泡泡由 `GameManager` 在每次发射落位结算后启动：`BubbleGrid.rotateSwirlNeighborsClockwise()` 将中心周围六格严格顺时针轮换一格，`SpecialAnimationTiming.swirlRotation` 统一 60° / 0.4 秒时序；动画结束后 `SupportSystem.findFloatingCells()` 立即重算顶部连接并复用正常掉落链路。
-- 虫洞由 `GameManager` 在漩涡阶段之后、藤蔓阶段之前处理：`BubbleGrid.getWormholePairs()` 按行严格配对，要求每个虫洞行恰好两个同方向端点；两个端点坐标必须在 layout 中保持 `.`，不可放置或吸附普通球/特殊球。`shiftWormholeInteriors()` 仅将两个端点之间的普通球、特殊球与空位组成严格内区间，并在0.35秒阶段内按 `moveDirection` 循环移动一格；包裹球先移动到入口虫洞并缩小淡出，再从另一端虫洞缩小态吐出并移动到目标格。虫洞端点保存在独立集合，不进入 `BubbleGrid.cells`，不参与支撑、下压边界、清屏或顶部崩塌占位。`TrajectoryPredictor` 在普通球/槽位/墙体候选之外同步计算虫洞碰撞，瞄准与真实发射共用最早命中结果；发射球到达接触点后不吸附，播放向虫洞中心缩小淡出的吸入效果并直接消失，发射次数及后续虫洞循环阶段照常结算。`WormholeShaderRenderer` 为全部80×80端点绑定 `effects/WormholeFlow`；端点位于 `WormholeLayer`（zIndex 24）并低于普通球 `BoardLayer`（zIndex 40），循环箭头位于独立 `WormholeDirectionLayer`（zIndex 42）并高于普通球。移动不调用颜色匹配，动画结束后统一重算支撑并让无支撑球进入掉落链路。
+- 虫洞由 `GameManager` 在漩涡阶段之后、藤蔓阶段之前处理：`BubbleGrid.getWormholePairs()` 按行严格配对，要求每个虫洞行恰好两个同方向端点；两个端点坐标必须在 layout 中保持 `.`，不可放置或吸附普通球/特殊球。`shiftWormholeInteriors()` 仅将两个端点之间的普通球、特殊球与空位组成严格内区间，并在0.35秒阶段内按 `moveDirection` 循环移动一格；包裹球先移动到入口虫洞并缩小淡出，再从另一端虫洞缩小态吐出并移动到目标格。虫洞端点保存在独立集合，不进入 `BubbleGrid.cells`，不参与支撑、下压边界、清屏或顶部崩塌占位。`TrajectoryPredictor` 先按普通球、合法槽位、墙体与顶部计算不受虫洞截断的权威终点，再沿这条物理路径检查虫洞：虫洞后方存在合法吸附格时发射球直接穿过虫洞并落到该格；只有轨迹没有合法落点，或物理终点与虫洞端点坐标一致时，才在首次命中的虫洞播放缩小淡出吸入并直接消失。瞄准与真实发射共用该结果，吸入仍正常消耗发射次数并继续后续特殊阶段。`WormholeShaderRenderer` 为全部80×80端点绑定 `effects/WormholeFlow`；端点位于 `WormholeLayer`（zIndex 24）并低于普通球 `BoardLayer`（zIndex 40），循环箭头位于独立 `WormholeDirectionLayer`（zIndex 42）并高于普通球。移动不调用颜色匹配，动画结束后统一重算支撑并让无支撑球进入掉落链路。
 - 风眼由 `BubbleGridWindTunnelMethods.js` 与 `GameManagerWindTunnelMethods.js` 共同维护，`LevelRendererWindTunnelBoardVisuals.js` 独立处理入口/出口表现：配置严格要求一个 `wind_tunnel_entrance` 和至少两个 `wind_tunnel_exit`，出口进入 `BubbleGrid.cells` 参与支撑与悬空掉落，但与 `transparent_ball` 一样显式标记 `traversable=true` 并从普通碰撞中跳过；入口独立于棋盘占位。系统每 3 秒从当前出口之外随机激活一个出口；发射球先在入口缩小，再于抵达入口时的激活出口原格放大吐出，随后移除该出口并重新执行普通落点、匹配和支撑结算。最后一个出口被堵塞或掉落后入口逻辑立即失效，表现层停止待机顺时针循环旋转并依次播放 `air_intake_01` 至 `air_intake_05` 后移除；`GameBootstrapAudioMethods.js` 在开局倒计时完成后循环播放 `sound/wind`，关闭动画期间继续播放，入口运行时实体彻底移除后停止。每次发射球到达入口并创建 `inhale` 状态时，玩法层发布一次 `wind_tunnel_projectile_entered` 并播放 `sound/inhalation`；吸入完成、弹体切到出口 `exhale` 状态时发布一次 `wind_tunnel_projectile_exited` 并播放 `sound/spit_out`。
-- 藤蔓魔灵由 `GameManager` 在发射结算链中统一处理：魔灵固定 3 点生命，直接命中、爆炸范围命中或相邻格完成消除时每次结算只受 1 点伤害；缠绕球只有在六邻格内存在本次实际消除的球时才解除藤蔓并保留底层普通球，直接命中但未消除、或爆炸只覆盖缠绕球本身都不会解除。每 3 次真实发射后，存活魔灵按距离选择最近的未缠绕普通球，先预告 0.65 秒再写入归属藤蔓状态。魔灵死亡或因无支撑掉落时，`BubbleGrid` 按 owner id 同步清除其全部藤蔓；缠绕球自身掉落前也会解除藤蔓。
+- 藤蔓魔灵由 `GameManager` 在发射结算链中统一处理：魔灵固定 3 点生命，直接命中、爆炸范围命中或相邻格完成消除时每次结算只受 1 点伤害；缠绕球只有在六邻格内存在本次实际消除的球时才解除藤蔓并保留底层普通球，直接命中但未消除、或爆炸只覆盖缠绕球本身都不会解除。每 3 次真实发射后，存活魔灵只从自身六邻接格选择未缠绕普通球，先预告 0.65 秒再写入归属藤蔓状态；若本次结算已经因邻接消除解除任意藤蔓，则整次跳过缠绕，不会立即重新束缚刚解除的球。魔灵死亡或因无支撑掉落时，`BubbleGrid` 按 owner id 同步清除其全部藤蔓；缠绕球自身掉落前也会解除藤蔓。
 - 繁殖球使用 `reactive_ball/breeder` 配置并在漩涡、虫洞、藤蔓阶段之后结算；存活繁殖球按 ID 顺序各自从实时六邻空位随机选择一格，再从当前棋盘仍存在的普通颜色中随机生成一球。新球先隐藏真实目标格，再复用分裂球的贝塞尔飞行参数从繁殖球格出生并飞向目标，落点后恢复真实棋盘节点。若本次发射实际消除格与该繁殖球六邻相交，则该球本回合跳过；六邻已满时不改色、不补偿。繁殖结束后普通关继续既有棋盘视口移动，繁殖球本体复用统一消除、悬空掉落与特殊清除入口。
 - 地雷使用 `hazard_ball/mine` 配置，`initialLife` 省略时由配置规范化层显式写为 6；棋盘运行态独立保存剩余生命与倒计时锁存状态。每次真实发射的漩涡、虫洞、藤蔓、清除和掉落全部完成后，存活地雷按 ID 顺序检查六个有效邻位：未全部占满时立即启动并在本发射减 1，启动后即使重新封闭仍逐发减命；归零立刻移出棋盘，播放 `assets/animation/mines` 的 2～9 爆炸帧和 `bomb` 音效，将棋盘置灰并进入不可复活的 `lost_hazard`。地雷先被普通移除、范围特殊清除或悬空掉落时由统一棋盘移除监听发布坐标事件，同样播放 2～9 爆炸帧和 `bomb` 音效，然后从集合删除且不再参与倒计时。
 - 花苞球使用 `reactive_ball/bud` 配置；普通匹配消除邻接花苞时锁定输入并在原格播放 `bud_1` 至 `bud_8` 破碎动画，动画完成后才把原格孵化为普通球，并由每个实际完成的 `bud_hatched` 事件播放一次 `sound/flower_die`。普通色发射球决定孵化色，并把花苞实时六邻的一圈普通球染成同色；特殊发射球只从当前棋盘仍存在的普通颜色集合中随机选择孵化色，不按技能类型映射颜色。染色保留普通球附件且不立刻再次触发匹配；全部花苞完成孵化后、进入后续特殊阶段前统一重算顶部支撑，孵化球及其无支撑连通结构立即进入掉落链路；范围爆炸通过统一移除入口直接清除花苞本体，不触发孵化。
 - 精灵茧使用 `reactive_ball/spirit_cocoon` 配置；普通消除或悬空掉落邻接茧时进入独占开启阶段，`cocoon_1` 至 `cocoon_5` 逐帧破裂后固定增加 1000 分，并按本地首次必出贪吃、后续迷雾/贪吃/彩虹 20%/40%/40% 的权威结果结算。迷雾精灵将当前六邻普通球按逆时针排序后依次经过一次，每经过一球用 `sandstorm` 覆盖，到达最后一个球后立即消失，不再回到第一个球形成闭环；遮挡随球消除/掉落，并在第五次后续发射时统一清除。贪吃精灵和彩虹精灵都会按随机方向以每格 0.35 秒沿同行目标逐球移动，原图朝左，向右移动时仅把精灵特效节点 `scaleX` 设为 `-1`：贪吃精灵到达一个球才移除该球并追加连击分，彩虹精灵到达一个普通球才按当前棋盘颜色序列完成该球染色；全部目标处理结束后只统一执行一次支撑扫描。
-- 透明球使用 `reactive_ball/transparent_ball` 配置：轨迹碰撞会穿过透明球并以其后方实体球作为物理碰撞终点；若被穿过的透明球与该实体球相邻，最终吸附目标固定为透明球被清空后的原槽位，不受预测时其他候选空槽影响。弹体越过记录命中点的同一帧移除透明球，最终落位时每个固定增加 1000 分。即使没有普通三连，也会基于最终落位后的棋盘执行支撑扫描、登记悬空掉落并把本次视为有效消除以递增连击；透明球暂不允许配置到被困精灵救援关。关卡配置必须保证透明球后方存在稳定合法碰撞终点，避免将穿透路径导入狭窄死角。
+- 透明球使用 `reactive_ball/transparent_ball` 配置：轨迹碰撞会穿过透明球并以其后方实体球作为物理碰撞终点；若被穿过的透明球与该实体球相邻，最终吸附目标固定为透明球被清空后的原槽位，不受预测时其他候选空槽影响。弹体越过记录命中点的同一帧移除透明球，并由该帧产生的 `transparent_ball_destroyed` runtime event 在原位置立即飘出 `+1000`；总分仍在最终落位结算中每个固定增加 1000 分，禁止由飘分事件重复加分。即使没有普通三连，也会基于最终落位后的棋盘执行支撑扫描、登记悬空掉落并把本次视为有效消除以递增连击；透明球暂不允许配置到被困精灵救援关。关卡配置必须保证透明球后方存在稳定合法碰撞终点，避免将穿透路径导入狭窄死角。
 - 被困精灵救援关使用独立 `trapped_sprite_rescue` 类型：`TrappedSpriteRescueSystem` 以 `anchorCell` 六邻格作为唯一支撑种子，保存权威任意角旋转状态，并根据最终入射方向、命中半径和实时转动惯量计算阻尼转角；中心精灵是吸附支撑点而不是反弹点，发射球命中精灵后吸附到接触方向对应的锚点六邻合法空格，中心保留格本身不放球。吸附确实启动整盘旋转时会抑制同一击的邻居局部反弹。救援关允许彩虹球、爆破球、石球、冰块、漩涡和藤蔓魔灵；即时技能/障碍结算先进入支撑扫描，漩涡轮换和藤蔓预告等待整盘受力旋转停止后再执行，禁止双重拓扑动画并行。`BubbleGrid` 保留 `row/col` 拓扑但把碰撞、吸附、特殊实体和快照坐标转换到旋转后的世界坐标。第0行不提供支撑或吸附，发射球触碰顶部会反弹，只有球心低于炮台位置才消失；支撑扫描清空棋盘后立即发出被困精灵获救飞离事件，不等待掉落球入缸，但最终胜利结算仍等待掉落计分完成。燃烧瓶、分裂球、虫洞、锁定球、钥匙球、普通棋盘视口推进、顶部空槽崩塌、危险线和额外固定锚点全部禁用。测试关 `assets/map/config/levels/level_trapped_sprite_test.json` 已同时配置六类兼容实体，隐藏测试模式下通过选关页“精灵”按钮进入。
-- 普通多目标救援使用 `multi_trapped_spirit_rescue` 类型并继续走普通棋盘支撑、视口推进、危险线和非旋转坐标。`level.multiTrappedSpiritRescue.targets` 必须配置2～7个不重复七精灵目标；目标格为空、非顶行、不可吸附且必须邻接普通可消除支撑。普通三连按被消除球六邻格解救，未三连按真实落点六邻格解救；每个目标固定加1000分并发出独立离场事件。最后一个目标触发视口归零、剩余棋盘 `victory_board_drop` 和 `won_pending`。测试配置为 `assets/map/config/levels/level_multi_trapped_spirit_test.json`。
+- 普通多目标救援使用 `multi_trapped_spirit_rescue` 类型并继续走普通棋盘支撑、视口推进、危险线和非旋转坐标。`level.multiTrappedSpiritRescue.targets` 必须配置2～7个不重复七精灵目标；目标格限定玩家视角顶部第2～6行（配置 `row=1..5`）、保持为空、不可吸附且必须邻接普通可消除支撑。普通三连按被消除球六邻格解救，未三连按真实落点六邻格解救；每个目标固定加1000分并发出独立离场事件。最后一个目标触发视口归零、剩余棋盘 `victory_board_drop` 和 `won_pending`。测试配置为 `assets/map/config/levels/level_multi_trapped_spirit_test.json`。
 - `AdRevivePolicy.js`：广告复活策略；普通限球关统一补 10 球并选择目标色，计时关失败复活统一增加 10 秒，LoseView 按模式切换描述、位置与赠球图标。
 - `ProjectileMath.js`：弹道与几何计算。
 - `StarRatingPolicy.js`：星级计算策略；正式主线关必须显式提供 `starThresholds`，生成器按教学/练习/组合/转折/考核节拍写入48%–56%、68%–76%、86%–94%的逐步收紧阈值；仅非正式测试配置可使用50%/70%/88%的通用比例。
@@ -171,7 +177,7 @@
 - `LevelRendererSceneSpiderBoardMethods.js`：蜘蛛表现专用棋盘层；按活动 `lockRowId` 渲染一张 720×102 `cobweb` 整行蛛网，并把蜘蛛本体定位到各宿主球中心。
 - `LevelRendererSceneOcclusionMethods.js`：在`BoardOcclusionLayer`（z=43）按格坐标与视口偏移渲染等比云朵/树叶，并显示剩余“发/秒”；普通关发射次数固定显示在遮挡正中且层级高于遮挡Sprite，限时关秒数显示在正中钟表底部框内。云朵使用4.8秒完整周期、236至252透明度范围的缓慢呼吸，树叶保持静止且不旋转。限时关`timer`局部刷新只更新现有遮挡Label与渲染版本键，不重建遮挡节点或重启呼吸动画。
 - `LevelRendererSceneColorCloudMethods.js`：在独立 `ColorCloudLayer`（z=43）按系统快照复用彩云 Sprite 节点，严格使用各 PNG 的原始尺寸（当前宽 200、高 121–125）作为显示与碰撞范围，并同步实时位置和权威淡出透明度；资源来自 `assets/game/image/special_item/*_cloud.png`，运行时会校验 SpriteFrame 尺寸与 `ColorCloudConfig` 映射完全一致。
-- `LevelRendererSceneShooterMethods.js`：炮台、瞄准辅助线、彩虹选色、路线编辑器与飞行球视觉缓存；普通飞行球保留在 `ShooterLayer`（z=25），晶光炮飞行期间切换到专用 `CrystalGunProjectileLayer`（z=41），确保其显示在 `BoardLayer`（z=40）的棋盘球上方；晶光炮真实发射成功时由 `GameBootstrapGameplayInputMethods` 播放 `sound/laser` 并替换普通 `shot` 音效，避免双音效叠加；通过 `AssistSpiritPresentationConfig` 按 `shooterSnapshot.assistSpiritId` 安装当前出战精灵的待机/递球动画，ID 来自精灵大厅持久化的 `AssistSpiritStore.equippedSpiritId`。
+- `LevelRendererSceneShooterMethods.js`：炮台、瞄准辅助线、彩虹选色、路线编辑器与飞行球视觉缓存；普通飞行球保留在 `ShooterLayer`（z=25），晶光炮飞行期间切换到专用 `CrystalGunProjectileLayer`（z=41），确保其显示在 `BoardLayer`（z=40）的棋盘球上方；晶光炮真实发射成功时由 `GameBootstrapGameplayInputMethods` 播放 `sound/laser` 并替换普通 `shot` 音效，避免双音效叠加；通过 `AssistSpiritPresentationConfig` 按 `shooterSnapshot.assistSpiritId` 切换递球手 Spine 皮肤；`ShooterPanel/handler_milu` 保留布局锚点，子节点 `SpineVisual` 负责显示，`ShooterHeldBallFollow` 在 `lateUpdate` 将 `NextBallAnchor` 跟随托球手 `bone23`（`shou-2` 插槽），保留首帧球与手的相对偏移；每次布局刷新后同步挂点，使递球飞行从当前手中球位置出发，资源由 `_preloadAssistSpiritSkeletonData` 预热并随 game 分包释放，ID 来自精灵大厅持久化的 `AssistSpiritStore.equippedSpiritId`。
 - `LevelRendererSceneFxMethods.js`：FX 聚合层，下挂障碍提示、钥匙/分裂、棋盘变换、爆炸/冰球和屏幕反馈五个领域模块。
 - `LevelRendererSceneSpiderFxMethods.js`：消费 `spider_cocoons_removed` 运行时事件，对同批移除的茧并行播放 `spider_cocoon_01`～`09` 后销毁临时节点。
 - `LevelRendererSceneHudMethods.js`：HUD 聚合层，下挂基础 HUD、分数飘字、罐子分数、底栏、道具反馈、目标和星级七个领域模块；道具按钮由 `prefabs/game/PropsBtn` 动态实例化到 `GameView/BttomPanel/props_scroll/view/content`。
@@ -191,10 +197,10 @@
 
 - `LevelManager.js`：按关卡 ID 生成 key，1-10 调用本地 `LevelConfigLoader`，11-1000 调用 `RemoteLevelPackLoader`，并缓存关卡配置；除既有显式本地测试入口外，`loadFeatureTestLevel(featureKey)` 只接受已登记玩法（含彩云）的严格映射并加载对应独立测试关；`preloadAllRemotePacks(priorityLevelId)` 用于启动 LoadingView 阶段完成全部远端关卡包的磁盘缓存。
 - `LevelConfigLoader.js`：本地关卡配置加载、校验、规范化，并向远程包 loader 暴露同一套规范化入口。正式普通 `level_###` 配置统一校验顶部横向连续同色普通球不超过3个，以及排除特殊实体格后的普通球占位率不少于70%。`trapped_sprite_rescue` 使用固定90格正六边形专用形状合同，不套用矩形棋盘占位率；同时要求顶行全空、中心格保留、`spiritId` 严格属于精灵大厅七名角色、旋转字段完整；只允许彩虹球、爆破球、石球、冰块、漩涡和藤蔓魔灵，且特殊实体不得占用顶行或中心格，并禁止普通模式的 `dropInterval` 与 `initialDropSpaceRows`；全部非法状态 Fail-Fast。
-- `multi_trapped_spirit_rescue` 仍执行普通棋盘顶部支撑、占位率、`dropInterval` 与 `initialDropSpaceRows` 合同，并额外严格校验至少两个目标、七精灵身份不重复、目标非顶行/空格/不重叠以及相邻普通可消除支撑；一星线不得超过目标固定1000分之和，保证完成全部救援后能进入胜利。
+- `multi_trapped_spirit_rescue` 仍执行普通棋盘顶部支撑、占位率、`dropInterval` 与 `initialDropSpaceRows` 合同，并额外严格校验至少两个目标、七精灵身份不重复、目标位于玩家视角顶部第2～6行（配置 `row=1..5`）、空格/不重叠以及相邻普通可消除支撑；一星线不得超过目标固定1000分之和，保证完成全部救援后能进入胜利。
 - `BoardOcclusionConfig.js`：动态遮挡Schema、严格校验与正式关卡候选生成策略；1-30关显式`none`，31关起启用，80关起由单区提升为双区，被困精灵救援关固定禁用。
 - `LevelBoardSupportValidator.js`：生成器、运行时配置加载和离线关卡校验共用的棋盘规则；按普通顶部支撑或救援中心锚点验证连通性。全部正式关卡统一断言六方向同色连通块上限8；普通关另行断言顶部同色连续上限3与普通球最低占位率70%，救援关由专用校验器断言完整半径5正六边形和中心邻圈连续同色2。
-- `LevelColorPermutation.js`：普通关卡进入局内前对本次 `levelConfig` 拷贝执行颜色轮换；保持棋盘格局不变，同色球整体换成另一组颜色，不改写原始关卡缓存和收集目标字段。
+- `LevelColorPermutation.js`：普通关卡进入局内前对本次 `levelConfig` 拷贝执行颜色轮换；保持棋盘格局不变，棋盘、发射球、罐子、收集目标、特殊实体及普通彩云使用同一颜色映射，彩虹云保持 `RAINBOW`，不改写原始关卡缓存。
 - `LevelPackManifest.js`：远程关卡 bootstrap manifest、远程完整 manifest、包清单和包定位的严格校验，并要求远程包声明 `compact-schema-v2` 格式。
 - `LevelPackCompactCodec.js`：远程关卡包 `compact-schema-v2` 编解码器；包头集中公共字段，特殊实体使用短数组，遮挡方案使用严格的模式/视觉/清除规则代码与扁平坐标数组，显式存在的彩云六字段组编码为七值短数组；旧关卡未配置 `colorClouds` 时保持字段缺席，因此无需重生成现有 1000 关配置；生成器写入压缩格式，运行时和离线工具读取后先无损展开为完整关卡结构。
 - `RemoteLevelPackLoader.js`：先读取本地 bootstrap manifest，再使用 `wx.cloud.getTempFileURL` 下载远程完整 manifest；启动 LoadingView 阶段按最高解锁关优先、最多 2 路并发下载全部远端 compact 包到 `USER_DATA_PATH`，每包按 manifest 执行 SHA-256 完整性校验；实际读取单关时展开对应包并复用 `LevelConfigLoader` 的规范化校验。
@@ -219,7 +225,7 @@
 - 精灵商店：`SpiritShopService.js`；严格串联 `PlayerResourceStore`、`AssistSpiritStore` 与 `SpiritShopStore`，处理宝石扣除、碎片发放、商品库存、每日限购及刷新。
 - 星星宝箱：`StarChestService.js`、`StarChestRewardService.js`
 - 微信能力：`WechatShareService.js`、`FriendGiftService.js`、`GameCircleButtonAdapter.js`、`WorldLeaderboardService.js`
-- 玩家云端档案：`PlayerCloudProfileService.js` 通过 `playerProfile` 微信云函数同步本地玩家状态到云数据库 `player_profiles`，同步内容包含关卡进度、金币/宝石、精灵拥有状态/等级/星级/碎片/出战状态、背包、签到、普通商店、精灵商店库存与购买状态、游戏圈福利及关卡尝试统计；精灵旧档 v1 显式迁移为 v2，仅默认米露保持拥有与出战，保留七名角色原等级、星级和碎片，并在本地启动或云档应用后依据已完成救援关补齐拥有状态；旧档案缺少宝石或精灵商店字段时由客户端与云函数执行显式 schema 迁移。本地写入经 `StrictStorage` 观察者合并上传（默认 5s debounce）；`Store.load()` 仅在 normalize 后数据变化时写回；选关页体力倒计时 ticker 只读内存状态，仅在自然恢复体力时写 storage；云端拉取后刷新选关 UI 在 `suspendWriteObserver` 内执行以避免冗余上传。
+- 玩家云端档案：`PlayerCloudProfileService.js` 通过新版本专用 `playerProfileV2` 微信云函数同步本地玩家状态到云数据库 `player_profiles`；已发布旧包继续调用独立保留的 `playerProfile`，避免单一函数部署标记切换导致旧包启动失败。两个函数共用同一档案集合以延续玩家进度，`playerProfileV2` 的代码由 `tools/sync-player-profile-v2-cloudfunction.js` 从当前 `playerProfile` 权威源码严格生成，仅使用独立部署标记。同步内容包含关卡进度、金币/宝石、精灵拥有状态/等级/星级/碎片/出战状态、背包、签到、普通商店、精灵商店库存与购买状态、游戏圈福利及关卡尝试统计；精灵旧档 v1 显式迁移为 v2，仅默认米露保持拥有与出战，保留七名角色原等级、星级和碎片，并在本地启动或云档应用后依据已完成救援关补齐拥有状态；旧档案缺少宝石或精灵商店字段时由客户端与云函数执行显式 schema 迁移。本地写入经 `StrictStorage` 观察者合并上传（默认 5s debounce）；`Store.load()` 仅在 normalize 后数据变化时写回；选关页体力倒计时 ticker 只读内存状态，仅在自然恢复体力时写 storage；云端拉取后刷新选关 UI 在 `suspendWriteObserver` 内执行以避免冗余上传。
 - 世界排行榜：玩家普通关卡过关后，`WorldLeaderboardService.js` 立即用本地最佳成绩和已过关数调用 `worldLeaderboard` 微信云函数写入云数据库 `world_leaderboard`。未授权昵称头像时数据库中的 `nickname` 与 `avatarUrl` 保持空字符串；用户后续授权后，排行榜入口会保存 `bubble_world_leaderboard_profile_v1` 并再次上报覆盖云端资料。排行榜只拉取前 100 名；展示时空头像使用默认头像，空昵称显示“微信用户”。
 - 关卡编辑器云同步：`LevelEditorCloudSyncService.js` 每次只将编辑器当前选中且已保存的单关本地草稿调用 `levelEditorDrafts` 云函数，写入独立集合 `level_editor_drafts`；文档 ID 由当前微信 `OPENID` 哈希与 `levelId` 共同组成，不同玩家上传同一关不会相互覆盖；该链路不上传、不修改 `level-packs/` 静态文件、远端 manifest 或线上正式关卡版本。
 - 游戏圈福利：`GameCircleWelfareService.js`
@@ -244,9 +250,9 @@
 独立 UI 控制器：
 
 - `LoadingViewController.js`
-- `StartGameViewController.js`
+- `StartGameViewController.js`：准备界面道具列表包含晶光炮，25关解锁并读取持久化背包数量。
 - `PropDescriptionViewController.js`：局内道具说明弹窗；从当前关卡配置筛选特殊球，并固定列出全部九种局内道具（含晶光炮），图标按宽 80 等比渲染，列表 Sprite 使用代理分层。
-- `BackpackViewController.js`
+- `BackpackViewController.js`：动态生成持久化道具栏；晶光炮与其他正常道具共用代理分层、数量显示和图标预加载合同。
 - `InventoryViewController.js`
 - `DailyTaskViewController.js`
 - `ShopViewController.js`
@@ -264,7 +270,7 @@
 
 路径：`assets/scripts/editor`
 
-- `MapEditorController.js`：`game/scens/editor` 场景运行时脚本。绑定棋盘、普通球、分裂球和特殊球工具；支持当前正式配置中的冰球、爆破球、彩虹球、晶光炮、石球、锁球/钥匙、燃烧瓶、分裂球、漩涡、花苞球、藤蔓魔灵和左右虫洞。保存按钮把合并并严格校验后的整关配置写入本地草稿，云同步按钮只上传本地草稿，返回按钮重新进入 `game.fire`/LevelView。
+- `MapEditorController.js`：`game/scens/editor` 场景运行时脚本。绑定棋盘、普通球、分裂球和特殊球工具；支持冰球、爆破球、彩虹球、石球、锁球/钥匙、燃烧瓶、分裂球、漩涡、花苞球、藤蔓魔灵、左右虫洞以及仅供独立测试配置使用的晶光炮。保存按钮把合并并严格校验后的整关配置写入本地草稿，云同步按钮只上传本地草稿，返回按钮重新进入 `game.fire`/LevelView。
 - `MapEditorLevelCatalog.js`：复用 `LevelManager`、`RemoteLevelPackLoader` 和线上远端 manifest，展示当前线上 1-1000 关列表并按原正式加载链读取关卡，不再扫描或改写工程内 JSON 文件夹。
 - `MapEditorLevelPicker.js`：有界虚拟 ScrollView 关卡选择弹层（顶部最小关、底部最大关）；静态背景与虚拟行背景使用独立 Sprite 代理渲染层，原 Sprite 禁用，逻辑/触摸节点保持原层级。
 - `MapEditorBoardImport.js`：把当前完整 `layout`/`specialEntities` 合同导入为编辑器格子状态；`validate:level-editor` 会验证现有 1000 关全部可导入。
@@ -301,8 +307,8 @@
 6. `LevelManager` 对 1-10 使用 `LevelConfigLoader` 加载本地 `levels/level_###.json`；对 11-1000 使用 `RemoteLevelPackLoader` 先下载远程完整 manifest，再按 manifest 下载云存储关卡包并复用同一套校验。
 7. `_ensureGameplayKernel()` 复用准备弹窗已启动的内核 Promise；其内部调用 `BundleLoader.ensureGameplayBundleLoaded()`，加载 `game` Asset Bundle 并执行其中唯一的 `generated/lazy-gameplay-code.js`，严格校验完成标记、模块加载器和源码哈希，再通过 `requireGameplayModule("GameManager")` 与 `requireGameplayModule("LevelRenderer")` 初始化局内内核。
 8. `gameManager.startLevel(levelConfig)` 生成运行时状态。
-9. `levelRenderer.renderLevel(levelConfig, snapshot)` 首先只等待当前出战精灵动画、初始局内 Prefab、当前画面会访问的 HUD/棋盘/炮台 Sprite，以及当前棋盘确实存在加时球/虫洞时需要的字体/Shader，然后渲染局内场景；评论、结算、瞄准点、技能特效和道具说明 Sprite 不阻塞首帧。
-10. 隐藏选关页后保持 `isRestarting` 门控，`levelRenderer.playGameEntryCountdown()` 依次播放 3、2、1、GO，同时 `warmupGameplayInteractionAssets()` 严格加载结算/暂停/道具说明 Prefab、评论/结算/瞄准点/技能特效 Sprite、协助精灵、爆炸/烟花及碎裂 Shader；两者都完成才恢复玩法 update、触摸和局内按钮，并继续特殊球介绍或新手引导。
+9. `levelRenderer.renderLevel(levelConfig, snapshot)` 首先等待当前出战精灵动画、初始局内 Prefab、当前画面会访问的 HUD/棋盘/炮台 Sprite、所有全量刷新都会调用的碎裂 EffectAsset，以及当前棋盘确实存在加时球/虫洞时需要的字体/Shader，然后渲染局内场景；评论、结算、瞄准点、技能特效和道具说明 Sprite 不阻塞首帧。
+10. 隐藏选关页后保持 `isRestarting` 门控，`GameBootstrapAudioMethods._runGameEntryCountdown()` 等待倒计时音效加载并开始播放后，再由 `levelRenderer.playGameEntryCountdown()` 按当前 `sound/time.mp3` 的 0.03 / 0.52 / 1.01 / 1.47 秒起拍点依次显示 3、2、1、GO，总显示流程保留 3 秒；明确关闭音效时仍按同一节拍显示，音效开启但播放失败则报错，同时 `warmupGameplayInteractionAssets()` 严格加载结算/暂停/道具说明 Prefab、评论/结算/瞄准点/技能特效 Sprite、协助精灵及爆炸/烟花；两者都完成才恢复玩法 update、触摸和局内按钮，并继续特殊球介绍或新手引导。
 11. `LevelView/test_btn` 先加载 `game` 分包，再通过 `gameBundle.loadScene("scens/editor")` 切入关卡底图编辑器；编辑器从线上 manifest 显示关卡列表，修改后只保存本地草稿或同步到独立云端草稿集合。
 12. `LevelView/local_level_test_btn` 读取本地草稿索引并显示关卡列表；选中后以 `testSource: "local"` 进入现有测试模式，不扣体力、不记录普通关进度、不发放通关奖励，重试继续加载同一份本地草稿。
 
@@ -312,7 +318,7 @@
 2. `GameView/BttomPanel/directions_btn` 打开 `PropDescriptionView`；弹窗展示期间暂停玩法 update 与输入，关闭后恢复。
 3. 瞄准输入传给 `gameManager.beginAim` / `setAim` / `endAim`。
 4. 发射触发 `gameManager.fireShot`。
-5. `GameManager` 调用 systems 完成命中、消除、掉落、收集、胜负判断；若棋盘存在一个或多个漩涡泡泡，则按稳定顺序分别将各自六格轨道顺时针旋转60°；随后所有独立虫洞对在同一阶段内将各自端点间的格子按箭头方向循环移动一格，并只统一重算支撑与掉落、不主动匹配；最后若本次为第3的倍数次发射，所有存活藤蔓魔灵按稳定顺序选择互不重复的最近普通球进行预告和缠绕。结构变化全部完成后，地雷按稳定 ID 顺序判断首次暴露并对已启动倒计时逐发减命，归零立即进入 `lost_hazard`；未失败时才继续繁殖球增长。上述动态阶段期间均锁定输入。
+5. `GameManager` 调用 systems 完成命中、消除、掉落、收集、胜负判断；若棋盘存在一个或多个漩涡泡泡，则按稳定顺序分别将各自六格轨道顺时针旋转60°；随后所有独立虫洞对在同一阶段内将各自端点间的格子按箭头方向循环移动一格，并只统一重算支撑与掉落、不主动匹配；最后若本次为第3的倍数次发射且本次没有因邻接消除解除藤蔓，所有存活藤蔓魔灵按稳定顺序只从各自六邻接格选择互不重复的普通球进行预告和缠绕。结构变化全部完成后，地雷按稳定 ID 顺序判断首次暴露并对已启动倒计时逐发减命，归零立即进入 `lost_hazard`；未失败时才继续繁殖球增长。上述动态阶段期间均锁定输入。
 6. 匹配消除球在原位置碎裂，只有 `SupportSystem` 判定的悬空球进入 `FallingMarbleSystem`；只要本次发射产生消除，不管是否产生悬空掉落球，都会由 `FairyAssistSystem` 生成固定精灵，未消除时按分数加成等级从高到低离场两只（同等级时更早入场的先离场）。
 7. 坠落球碰撞固定精灵后累加倍率并反弹；普通球首次碰撞绿色精灵时由两个子球替换，两个子球分别落缸计分。
 8. 棋盘全部球通过正常消除或悬空掉落清空后，`GameManager` 先等待所有掉落球、分裂生成和燃烧瓶结算结束，再检查最终分数是否达到 1 星；达到则继续胜利结算，未达到则失败。`bonusObjectives` / `winConditions` 中的收集目标不参与通关判定，只在胜利奖励发放时决定奖励是否翻倍。
@@ -360,12 +366,14 @@
 ## 微信相关
 
 - `cloudfunctions/`：实际云函数源码。
-- `cloudfunctions/playerProfile`：玩家信息云端存储函数，按当前微信 `OPENID` 读写 `player_profiles` 云数据库集合。
+- `cloudfunctions/playerProfile`：已发布旧包继续使用的玩家档案函数；线上旧部署保持不动。
+- `cloudfunctions/playerProfileV2`：新版本玩家档案函数，按当前微信 `OPENID` 读写同一 `player_profiles` 集合，使用独立部署标记；禁止覆盖部署到旧 `playerProfile` 名称。
 - `cloudfunctions/worldLeaderboard`：世界排行榜云函数，按当前微信 `OPENID` 写入并读取 `world_leaderboard` 云数据库集合。
 - `cloudfunctions/levelEditorDrafts`：关卡编辑器草稿同步云函数，按当前微信 `OPENID + levelId` 写入独立 `level_editor_drafts` 集合；禁止访问或修改线上静态关卡包。
 - `build-templates/wechatgame/cloudfunctions/`：构建模板中的云函数。
 - `tools/wechat-minigame-loading-patch.js`：微信官方封面图插件 `MinigameLoading` 构建后装配脚本，写入 `game.json` 插件声明、修补 `game.js`/`main.js` 启动与销毁逻辑，并复制 `images/loading_bg.jpg`。
 - `tools/build-wechat-gameplay-code.js`：微信小游戏局内玩法源码打包脚本；从 `gameplay-src` 生成 `assets/game/generated/lazy-gameplay-code.js`，构建后校验其 sha256 源码哈希存在于 `subpackages/game/game.js`，同时拒绝旧 `main.js` 同步 require 和 JS/JSON 双份发布。
+- `tools/sync-player-profile-v2-cloudfunction.js`：从 `cloudfunctions/playerProfile` 权威源码生成 `cloudfunctions/playerProfileV2` 与微信构建模板副本，只替换独立部署标记；传入 `--include-build` 时同时严格校验微信构建项目并生成可部署的 `build/wechatgame/cloudfunctions/playerProfileV2`。
 - `open-data/`：历史微信开放数据域排行榜逻辑。当前世界排行榜不再依赖开放数据域。
 - `settings/wechatgame.json`：微信小游戏构建相关设置。
 
@@ -376,7 +384,7 @@
 `package.json` 提供以下校验脚本：
 
 - `npm run validate:stamina`
-- `npm run validate:player-profile-size`：校验普通商城购买日志、关卡近期事件和逐关最后尝试均保持50条上限，同时校验客户端、云函数与微信构建模板使用同一档案规范化合同。
+- `npm run validate:player-profile-size`：校验普通商城购买日志、关卡近期事件和逐关最后尝试均保持50条上限，同时校验新客户端固定调用 `playerProfileV2`，以及客户端、独立云函数与微信构建模板使用同一档案规范化和部署标记合同。
 - `npm run validate:levels`
 - `npm run validate:breeder-ball`
 - `npm run validate:bud-ball`

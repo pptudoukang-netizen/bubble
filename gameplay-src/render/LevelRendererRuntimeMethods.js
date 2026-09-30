@@ -72,6 +72,7 @@ LevelRenderer.prototype.renderLevel = function (levelConfig, runtimeSnapshot) {
   this.budHatchAnimatedIds = {};
   this.wormholeShiftAnimatedIds = {};
   this.wormholeProjectileAbsorptionAnimatedIds = {};
+  this.blackHoleProjectileAbsorptionAnimatedIds = {};
   this.blackHoleUnsupportedDisappearAnimatedIds = {};
   this.wormholeDirectionGuideRoot = null;
   this.lastWormholeDirectionGuideKey = "";
@@ -191,7 +192,7 @@ LevelRenderer.prototype.renderLevel = function (levelConfig, runtimeSnapshot) {
     this._renderFairyAssists(runtimeSnapshot);
     this._renderFallingDrops(runtimeSnapshot);
     this._renderTestGrid(runtimeSnapshot.board);
-    this._renderShooter(runtimeSnapshot.shooter, runtimeSnapshot.activeProjectile, runtimeSnapshot.remainingShots);
+    this._renderShooter(runtimeSnapshot.shooter, runtimeSnapshot.activeProjectile, runtimeSnapshot.remainingShots, runtimeSnapshot.state);
     this._renderWinView(runtimeSnapshot);
     this._renderAddBallTipsView(runtimeSnapshot);
     this._renderLoseView(runtimeSnapshot);
@@ -262,7 +263,8 @@ LevelRenderer.prototype._refreshRuntimeShooterAim = function (runtimeSnapshot) {
   this._renderShooter(
     runtimeSnapshot.shooter,
     runtimeSnapshot.activeProjectile,
-    runtimeSnapshot.remainingShots
+    runtimeSnapshot.remainingShots,
+    runtimeSnapshot.state
   );
   var nextShooterKey = buildShooterRenderKey(runtimeSnapshot);
   if (!runtimeSnapshot.activeProjectile) {
@@ -287,7 +289,8 @@ LevelRenderer.prototype._refreshRuntimeFalling = function (runtimeSnapshot) {
     this._renderShooter(
       runtimeSnapshot.shooter,
       runtimeSnapshot.activeProjectile,
-      runtimeSnapshot.remainingShots
+      runtimeSnapshot.remainingShots,
+      runtimeSnapshot.state
     );
     if (!runtimeSnapshot.activeProjectile) {
       this.lastShooterRenderKey = nextShooterKey;
@@ -323,8 +326,10 @@ LevelRenderer.prototype._refreshRuntimeFull = function (levelConfig, runtimeSnap
     this.boardBubbleNodes,
     this.spriteFrameCache
   );
+  this._playBlackHoleProjectileAbsorptionAnimations(runtimeSnapshot);
   this._playBlackHoleUnsupportedDisappearAnimations(runtimeSnapshot);
   this._playBallScoreDisplay(runtimeSnapshot);
+  this._playTransparentBallFloatingScoreDisplay(runtimeSnapshot);
   this._playTimeBonusFloatingScoreDisplay(runtimeSnapshot);
   if (boardChanged) {
     this._renderBoard(runtimeSnapshot.board);
@@ -405,7 +410,7 @@ LevelRenderer.prototype._refreshRuntimeFull = function (levelConfig, runtimeSnap
   var hasActiveProjectile = !!(runtimeSnapshot.activeProjectile);
   var nextShooterKey = buildShooterRenderKey(runtimeSnapshot);
   if (hasActiveProjectile || nextShooterKey !== this.lastShooterRenderKey) {
-    this._renderShooter(runtimeSnapshot.shooter, runtimeSnapshot.activeProjectile, runtimeSnapshot.remainingShots);
+    this._renderShooter(runtimeSnapshot.shooter, runtimeSnapshot.activeProjectile, runtimeSnapshot.remainingShots, runtimeSnapshot.state);
     if (!hasActiveProjectile) {
       this.lastShooterRenderKey = nextShooterKey;
     }

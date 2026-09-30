@@ -51,6 +51,8 @@ module.exports = {
     "_bindAwardViewActions",
     "_renderAwardView",
     "_showAwardViewForRewardItems",
+    "_showAwardViewSequence",
+    "_showNextAwardViewInSequence",
     "_hideAwardView",
     "_grantSignInRewardItems",
     "_resolveSignInRewardItemsForDay",

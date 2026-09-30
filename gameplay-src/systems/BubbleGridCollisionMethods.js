@@ -933,22 +933,33 @@ BubbleGrid.prototype.getCoordinatesWithinRadius = function (row, col, radius) {
   return result;
 };
 
-BubbleGrid.prototype.findSplitterSpawnCell = function (splitterCell) {
+BubbleGrid.prototype.isSplitterSpawnCellAvailable = function (row, col, reservedCellKeys) {
+  if (!Number.isInteger(row) || !Number.isInteger(col)) {
+    throw new Error("BubbleGrid.isSplitterSpawnCellAvailable requires integer coordinates.");
+  }
+  if (!reservedCellKeys || typeof reservedCellKeys !== "object" || Array.isArray(reservedCellKeys)) {
+    throw new Error("BubbleGrid.isSplitterSpawnCellAvailable requires reserved cell key map.");
+  }
+  if (reservedCellKeys[row + ":" + col] === true) {
+    return false;
+  }
+  return this.isValidCell(row, col) &&
+    !this.hasCell(row, col) &&
+    !this.isTrappedSpiritReservedCell(row, col) &&
+    !this.hasWormholeAt(row, col);
+};
+
+BubbleGrid.prototype.findSplitterSpawnCell = function (splitterCell, reservedCellKeys) {
   if (!splitterCell || !Number.isInteger(splitterCell.row) || !Number.isInteger(splitterCell.col)) {
     throw new Error("BubbleGrid.findSplitterSpawnCell requires splitter cell coordinates.");
   }
-
-  var candidates = [];
-  for (var row = 0; row < this.getRowCount(); row += 1) {
-    for (var col = 0; col < this.getColumnCountForRow(row); col += 1) {
-      if (this.isAttachableCell(row, col, { x: 0, y: 1 }, { allowTopRow: true })) {
-        candidates.push({
-          row: row,
-          col: col
-        });
-      }
-    }
+  if (!reservedCellKeys || typeof reservedCellKeys !== "object" || Array.isArray(reservedCellKeys)) {
+    throw new Error("BubbleGrid.findSplitterSpawnCell requires reserved cell key map.");
   }
+
+  var candidates = this.getNeighborCoordinates(splitterCell.row, splitterCell.col).filter(function (coordinate) {
+    return this.isSplitterSpawnCellAvailable(coordinate.row, coordinate.col, reservedCellKeys);
+  }, this);
 
   if (!candidates.length) {
     return null;

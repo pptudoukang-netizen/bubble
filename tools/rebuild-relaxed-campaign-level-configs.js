@@ -9,6 +9,7 @@ var CampaignLevelGenerationConfig = require("./campaign-level-generation-config"
 var FirstHundredLevelDesign = require("./first-100-level-design");
 var ReferenceLevels101To300Design = require("./reference-levels-101-300-design");
 var SpecialMechanismSchedule = require("./campaign-special-mechanism-schedule");
+var CampaignMechanismDeploymentPlan = require("./campaign-mechanism-deployment-plan");
 
 var PROJECT_ROOT = path.resolve(__dirname, "..");
 var TABLE_PATH = path.join(PROJECT_ROOT, "LEVEL_CONFIG_TABLE_1_1000.csv");
@@ -184,89 +185,11 @@ function getChapter(levelId) {
 }
 
 function buildSpecialCounts(levelId, targetColor) {
-  var phase = getPhase(levelId);
-  var chapter = getChapter(levelId);
-  var splitters = makeEmptySplitterCounts();
-  var counts = {
-    stone: 0,
-    ice: 0,
-    blast: 0,
-    rainbow: 0,
-    molotov: 0,
-    splitters: splitters,
-    key: 0,
-    locked: 0
-  };
-
-  if (chapter === "molotov_splitter_combo") {
-    counts.molotov = phase >= 6 ? 2 : 1;
-    if (phase === 4 || phase === 8 || phase === 10) {
-      splitters[targetColor] = 1;
-    }
-    if (phase === 7) {
-      counts.blast = 1;
-    }
-  } else if (chapter === "splitter_lock_combo") {
-    splitters[targetColor] = 1;
-    counts.key = phase >= 8 ? 2 : 1;
-    counts.locked = counts.key;
-    if (phase === 5) {
-      counts.rainbow = 1;
-    }
-  } else if (chapter === "full_reactive_exam") {
-    counts.molotov = phase >= 5 ? 2 : 1;
-    splitters[targetColor] = 1;
-    counts.key = phase >= 8 ? 2 : 1;
-    counts.locked = counts.key;
-    counts.blast = phase === 10 ? 1 : 0;
-  } else if (chapter === "blast_chain_routes") {
-    counts.molotov = phase >= 6 ? 2 : 1;
-    counts.blast = phase === 3 || phase === 7 || phase === 10 ? 1 : 0;
-    counts.stone = phase === 5 || phase === 10 ? 1 : 0;
-  } else if (chapter === "growth_and_keys") {
-    splitters[targetColor] = phase >= 4 ? 2 : 1;
-    counts.key = phase >= 6 ? 2 : 1;
-    counts.locked = counts.key;
-    counts.rainbow = phase === 8 ? 1 : 0;
-  } else if (chapter === "symbolic_patterns") {
-    if (phase === 2 || phase === 6) {
-      counts.molotov = 1;
-    }
-    if (phase === 4 || phase === 8) {
-      splitters[targetColor] = 1;
-    }
-    if (phase === 5 || phase === 10) {
-      counts.key = phase === 10 ? 2 : 1;
-      counts.locked = counts.key;
-    }
-    counts.blast = phase === 7 || phase === 8 ? 1 : 0;
-  } else if (chapter === "full_system_mastery") {
-    if (phase === 1 || phase === 4 || phase === 7 || phase === 9 || phase === 10) {
-      counts.molotov = phase === 10 ? 2 : 1;
-    }
-    if (phase === 2 || phase === 5 || phase === 7 || phase === 8 || phase === 10) {
-      splitters[targetColor] = phase === 10 ? 2 : 1;
-    }
-    if (phase === 3 || phase === 6 || phase === 8 || phase === 9 || phase === 10) {
-      counts.key = phase === 10 ? 2 : 1;
-      counts.locked = counts.key;
-    }
-    counts.blast = phase === 4 || phase === 10 ? 1 : 0;
-    counts.stone = phase === 5 || phase === 10 ? 1 : 0;
-    counts.rainbow = phase === 6 ? 1 : 0;
-  } else {
-    throw new Error("Unsupported chapter for level " + levelId + ": " + chapter);
-  }
-
-  if (counts.key > 0) {
-    counts.locked = CampaignLevelGenerationConfig.getLockChainLockedCount(
-      levelId,
-      getRowCount(levelId),
-      counts.key
-    );
-  }
-
-  return counts;
+  return CampaignLevelGenerationConfig.buildBaseSpecialCounts(
+    levelId,
+    getRowCount(levelId),
+    targetColor
+  );
 }
 
 function countSplitters(splitterCounts) {
@@ -285,7 +208,10 @@ function distributeColorCounts(levelId, activeColors, targetColor, normalCount) 
   COLORS.forEach(function (color) {
     counts[color] = 0;
   });
-  var targetRatio = levelId <= 200 ? 0.38 : (levelId <= 500 ? 0.36 : 0.34);
+  var mechanismCount = CampaignMechanismDeploymentPlan.getCampaignLevelPlan(levelId).mechanismIds.length;
+  var targetRatio = mechanismCount === 0
+    ? 0.2
+    : (levelId <= 500 ? 0.32 : (levelId <= 700 ? 0.3 : 0.28));
   var targetCount = Math.max(10, Math.round(normalCount * targetRatio));
   var otherColors = activeColors.filter(function (color) {
     return color !== targetColor;
@@ -322,10 +248,6 @@ function buildRelaxedSpec(levelId) {
   var specialCounts = buildSpecialCounts(levelId, targetColor);
   var capacity = getRowCapacity(rowCount);
   var normalBallOccupancyTarget = getFillRatio(levelId);
-  specialCounts.ice = CampaignLevelGenerationConfig.getIceBallCount(levelId, capacity);
-  if (gameplayPlan.trappedSpriteRescue || gameplayPlan.multiTrappedSpiritRescue) {
-    specialCounts = CampaignLevelGenerationConfig.buildTrappedSpriteRescueBaseSpecialCounts(specialCounts);
-  }
   var nonIceSpecials = countNonIceSpecials(specialCounts);
   var reactiveSpecialSlotCount = gameplayPlan.reactiveSpecialCounts.swirl +
     gameplayPlan.reactiveSpecialCounts.vine_spirit +
@@ -442,6 +364,11 @@ function buildAllRows() {
 
 function writeConfigurationDocument(rows) {
   var mechanicsColumns = EXPECTED_HEADERS.slice(10, 22).concat(EXPECTED_HEADERS.slice(26, 44));
+  var campaignPlan = CampaignMechanismDeploymentPlan.buildCampaignPlan();
+  var ordinaryLevelCount = campaignPlan.filter(function (entry) { return entry.mechanismIds.length === 0; }).length;
+  var singleMechanismLevelCount = campaignPlan.filter(function (entry) { return entry.mechanismIds.length === 1; }).length;
+  var doubleMechanismLevelCount = campaignPlan.filter(function (entry) { return entry.mechanismIds.length === 2; }).length;
+  var newMechanismLevelCount = campaignPlan.filter(function (entry) { return entry.source === "new"; }).length;
   var lines = [
     "# 1000关逐关特殊玩法配置",
     "",
@@ -451,18 +378,39 @@ function writeConfigurationDocument(rows) {
     "",
     "- 普通关与救援关的同色六向连通块均不超过 8。",
     "- 每条钥匙/锁球链独占完整一行：该行恰好 1 个钥匙球、至少 1 个锁球、0 个普通球，也不混入其他特殊实体。`钥匙`列表示锁链行数，`锁定球`列表示这些行的实际锁球总数。",
-    "- 新增特殊玩法从 301 关后分批引入，每 150 关复现一次；不与每 10 关的限时关、单精灵救援关重叠。",
+    "- 新增特殊玩法从 301 关后分批引入；首次教学后 4～6 关安排复习、10～15 关安排组合，此后每 " +
+      SpecialMechanismSchedule.RECURRENCE_INTERVAL_MIN + "～" +
+      SpecialMechanismSchedule.RECURRENCE_INTERVAL_MAX + " 关出现一次（目标间隔 " +
+      SpecialMechanismSchedule.RECURRENCE_INTERVAL_TARGET + " 关）；同一种精确组合仍遵守组合策略的最小复用间隔。",
+    "- 新机制投放不与每 10 关的限时关或单精灵救援关重叠；`投放关卡数`统计关卡数量，`总配置数量`统计各投放关内的机制对象总数。",
     "- `风眼出口`大于 0 时固定同时生成 1 个入口；`彩虹棱镜球`表示本关初始道具库存；附着类数量表示被附着普通球数量。",
+    "",
+    "## 全局投放统计",
+    "",
+    "- 纯普通球关：" + ordinaryLevelCount + " 关。",
+    "- 单机制关：" + singleMechanismLevelCount + " 关；双机制关：" + doubleMechanismLevelCount + " 关。",
+    "- 14种新增机制共投放 " + newMechanismLevelCount + " 关；所有关均不超过2种机制、3种特殊球类型。",
     "",
     "## 新机制投放总表",
     "",
-    "| 机制 | 首次关卡 | 重复间隔 | 单关配置 | 投放关卡 |",
-    "|---|---:|---:|---:|---|"
+    "| 机制 | 教学关 | 复习关 | 组合关 | 后续间隔 | 单关配置 | 投放关卡数 | 总配置数量 | 后续投放关卡 |",
+    "|---|---:|---:|---:|---:|---:|---:|---:|---|"
   ];
   SpecialMechanismSchedule.INTRODUCTIONS.forEach(function (definition) {
-    lines.push("| " + definition.label + " | " + definition.firstLevel + " | " +
-      SpecialMechanismSchedule.REPEAT_INTERVAL + " | " + definition.count + " | " +
-      SpecialMechanismSchedule.getScheduledLevelIds(definition).join("、") + " |");
+    var entries = SpecialMechanismSchedule.getScheduledEntries(definition);
+    var teachingEntries = entries.filter(function (entry) { return entry.stage === "teaching"; });
+    var reviewEntries = entries.filter(function (entry) { return entry.stage === "review"; });
+    var combinationEntries = entries.filter(function (entry) { return entry.stage === "combination"; });
+    var recurrenceEntries = entries.filter(function (entry) { return entry.stage === "recurrence"; });
+    if (teachingEntries.length !== 1 || reviewEntries.length !== 1 || combinationEntries.length !== 1) {
+      throw new Error(definition.label + " schedule must contain one teaching, review, and combination stage.");
+    }
+    lines.push("| " + definition.label + " | " + teachingEntries[0].levelId + " | " +
+      reviewEntries[0].levelId + " | " + combinationEntries[0].levelId + " | " +
+      SpecialMechanismSchedule.RECURRENCE_INTERVAL_MIN + "～" + SpecialMechanismSchedule.RECURRENCE_INTERVAL_MAX +
+      "（目标" + SpecialMechanismSchedule.RECURRENCE_INTERVAL_TARGET + "） | " + definition.count + " | " +
+      entries.length + " | " + (entries.length * definition.count) + " | " +
+      recurrenceEntries.map(function (entry) { return entry.levelId; }).join("、") + " |");
   });
   lines.push("", "## 逐关配置", "", "| 关卡 | 关卡类型 | 玩法模式 | 特殊玩法配置 |", "|---:|---|---|---|");
   rows.forEach(function (cells) {

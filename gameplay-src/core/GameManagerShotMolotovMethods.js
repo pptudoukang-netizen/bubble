@@ -5,7 +5,6 @@ function createGameManagerShotMolotovMethods(context) {
   var MOLOTOV_BLAST_TRIGGER_DELAY = context.MOLOTOV_BLAST_TRIGGER_DELAY;
   var appendMolotovEliminationSequence = context.appendMolotovEliminationSequence;
   var buildMolotovBlastDropVelocity = context.buildMolotovBlastDropVelocity;
-  var buildTriggeredSplitterIdsFromPendingSpawns = context.buildTriggeredSplitterIdsFromPendingSpawns;
   var createGameManagerShotMolotovMethods = context.createGameManagerShotMolotovMethods;
   var isLockedBall = context.isLockedBall;
   var isMolotovBall = context.isMolotovBall;
@@ -160,12 +159,6 @@ function createGameManagerShotMolotovMethods(context) {
       });
 
       var removedKeys = this._triggerKeysAndResolveUnlocks(removedByBlast, grid, resolution);
-      var triggeredSplitterIds = this.molotovPendingResolutionContext.triggeredSplitterIds;
-      if (!triggeredSplitterIds || typeof triggeredSplitterIds !== "object" || Array.isArray(triggeredSplitterIds)) {
-        throw new Error("Molotov blast phase requires context.triggeredSplitterIds.");
-      }
-      this._triggerAdjacentSplitters(removedByBlast, grid, resolution, triggeredSplitterIds);
-
       var chainMolotovs = this._collectAdjacentMolotovs(removedByBlast, grid, this.molotovBlastTriggeredIds);
       this._queueMolotovBlasts(chainMolotovs, resolution);
 
@@ -305,12 +298,10 @@ function createGameManagerShotMolotovMethods(context) {
       this.molotovResolutionPending = true;
       this.molotovPendingResolutionContext = {
         dropScoreRuleKey: dropScoreRuleKey,
-        allRemoved: syncRemoved.slice(),
-        triggeredSplitterIds: {}
+        allRemoved: syncRemoved.slice()
       };
 
       this._cancelPendingSplitterSpawnsForDroppedCells(syncRemoved);
-      this.molotovPendingResolutionContext.triggeredSplitterIds = buildTriggeredSplitterIdsFromPendingSpawns(this.pendingSplitterSpawns);
       this.systems.jarCollectorSystem.collect([]);
 
       appendMolotovEliminationSequence(resolution, syncRemoved, this.systems.bubbleGrid);
@@ -428,6 +419,7 @@ function createGameManagerShotMolotovMethods(context) {
         return;
       }
       this._resolveBreederPhase(resolution);
+      this._resolveSplitterPhase(resolution);
       if (resolution.boardCleared) {
         this._resolveBoardClearedOutcome();
         return;

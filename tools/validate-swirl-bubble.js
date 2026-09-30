@@ -201,15 +201,25 @@ function validateRotationAndDeferredDrop() {
   if (grid.getCell(1, 3).timeBonusSeconds !== null || grid.getCell(1, 4).timeBonusSeconds !== 5) {
     throw new Error("Swirl track must move the time bonus property with its source bubble.");
   }
-  if (resolution.swirlRotations.length !== 1 || resolution.swirlRotations[0].moves.length !== 2) {
+  if (
+    resolution.swirlRotations.length !== 1 ||
+    resolution.swirlRotations[0].moves.length !== 2 ||
+    resolution.swirlRotations[0].completed !== false
+  ) {
     throw new Error("Swirl resolution must expose the exact occupied track moves.");
   }
 
   manager._updatePendingSwirlRotation(SpecialAnimationTiming.swirlRotation.duration * 0.5);
+  if (resolution.swirlRotations[0].completed !== false) {
+    throw new Error("Swirl rotation must remain incomplete while animation time remains.");
+  }
   if (dropped.length !== 0 || continuationCalled) {
     throw new Error("Swirl support scan must wait for the rotation animation to finish.");
   }
   manager._updatePendingSwirlRotation(SpecialAnimationTiming.swirlRotation.duration * 0.5);
+  if (resolution.swirlRotations[0].completed !== true) {
+    throw new Error("Swirl rotation must become complete before post-rotation support resolution.");
+  }
   var droppedCoordinates = dropped.map(function (cell) {
     return cell.row + ":" + cell.col;
   }).sort();
@@ -221,6 +231,74 @@ function validateRotationAndDeferredDrop() {
   }
   if (!continuationCalled) {
     throw new Error("Swirl completion must resume the shot state machine immediately.");
+  }
+}
+
+function validateVineEntangledNeighborBlocksRotation() {
+  var levelConfig = {
+    coordinateSystem: "odd-r-hex",
+    level: {
+      levelId: 1,
+      code: "SWIRL_VINE_BLOCK_VALIDATION",
+      initialDropSpaceRows: 8,
+      layout: [
+        "...R......",
+        "...R.....",
+        "...B......",
+        ".........",
+        "..........",
+        ".........",
+        "..........",
+        "........."
+      ],
+      specialEntities: [{
+        id: "swirl_center",
+        entityCategory: "reactive_ball",
+        entityType: "swirl",
+        row: 2,
+        col: 4
+      }, {
+        id: "vine_spirit_for_swirl",
+        entityCategory: "reactive_ball",
+        entityType: "vine_spirit",
+        row: 4,
+        col: 4
+      }]
+    }
+  };
+  var grid = createGrid(levelConfig);
+  grid.beginVinePreview("vine_spirit_for_swirl", { row: 1, col: 3 });
+  grid.completeVineEntanglement("vine_spirit_for_swirl", { row: 1, col: 3 });
+  var cellsBefore = clone(grid.getCells());
+  var manager = new GameManager();
+  manager.systems.bubbleGrid = grid;
+  var resolution = createResolution();
+
+  if (manager._beginSwirlRotationForResolution(resolution)) {
+    throw new Error("A swirl with a vine-entangled neighbor must not start rotating.");
+  }
+  if (
+    resolution.swirlRotations.length !== 0 ||
+    manager.pendingSwirlRotationResolution !== null ||
+    manager.pendingSwirlRotationRemaining !== 0
+  ) {
+    throw new Error("Blocked swirl rotation must not create pending rotation state.");
+  }
+  if (JSON.stringify(grid.getCells()) !== JSON.stringify(cellsBefore)) {
+    throw new Error("Blocked swirl rotation must preserve every board cell.");
+  }
+
+  var directRotationFailed = false;
+  try {
+    grid.rotateSwirlNeighborsClockwise(grid.getCell(2, 4));
+  } catch (error) {
+    directRotationFailed = !!(
+      error &&
+      error.message === "BubbleGrid swirl rotation cannot move a vine-entangled track cell at 1:3."
+    );
+  }
+  if (!directRotationFailed) {
+    throw new Error("BubbleGrid must fail fast if vine-blocked swirl rotation bypasses scheduling.");
   }
 }
 
@@ -334,6 +412,7 @@ function validateSwirlCenterAndNeighborDropWithoutStaleEliminationHold() {
   manager.notifyBoardAdvanceEliminationPresentationComplete(resolution);
   if (
     resolution.swirlRotations.length !== 1 ||
+    resolution.swirlRotations[0].completed !== false ||
     manager.pendingSwirlRotationRemaining !== SpecialAnimationTiming.swirlRotation.duration ||
     manager.pendingSwirlRotationWaitingForEliminationPresentation
   ) {
@@ -343,6 +422,9 @@ function validateSwirlCenterAndNeighborDropWithoutStaleEliminationHold() {
     throw new Error("Swirl support judgment must wait until rotation completes.");
   }
   manager._updatePendingSwirlRotation(SpecialAnimationTiming.swirlRotation.duration);
+  if (resolution.swirlRotations[0].completed !== true) {
+    throw new Error("Completed swirl phase must mark its animation event complete.");
+  }
 
   var droppedCoordinates = dropped.map(function (cell) {
     return cell.row + ":" + cell.col;
@@ -496,6 +578,7 @@ function validateSwirlRotationCarriesTimeBonusLabel() {
           id: "time_bonus_swirl_rotation",
           duration: SpecialAnimationTiming.swirlRotation.duration,
           angleDegrees: 60,
+          completed: false,
           centerId: "swirl_center",
           moves: [{
             fromRow: 2,
@@ -537,9 +620,79 @@ function validateSwirlRotationCarriesTimeBonusLabel() {
   }
 }
 
+function validateCompletedSwirlRotationDoesNotRequireRecycledBoardNodes() {
+  var previousCc = global.cc;
+  global.cc = {
+    moveTo: function () {},
+    rotateBy: function () {}
+  };
+
+  try {
+    function FxRenderer() {}
+    attachLevelRendererSceneFxMethods(FxRenderer, {
+      BoardLayout: BoardLayout,
+      SpecialAnimationTiming: SpecialAnimationTiming
+    });
+
+    var renderer = new FxRenderer();
+    renderer.swirlRotationAnimatedIds = {};
+    renderer.boardBubbleNodes = {};
+    var rotation = {
+      id: "completed_swirl_with_floating_track",
+      duration: SpecialAnimationTiming.swirlRotation.duration,
+      angleDegrees: 60,
+      completed: true,
+      centerId: "floating_swirl_center",
+      moves: [{
+        fromRow: 12,
+        fromCol: 5,
+        toRow: 11,
+        toCol: 5,
+        targetCellId: "12_5"
+      }]
+    };
+    var snapshot = {
+      board: {
+        maxColumns: 11,
+        viewportOffsetY: 0
+      },
+      lastResolution: {
+        swirlRotations: [rotation]
+      }
+    };
+
+    renderer._playSwirlRotationAnimation(snapshot);
+    if (renderer.swirlRotationAnimatedIds[rotation.id]) {
+      throw new Error("Completed swirl event must not be marked as newly animated.");
+    }
+
+    rotation.completed = false;
+    var missingNodeFailed = false;
+    try {
+      renderer._playSwirlRotationAnimation(snapshot);
+    } catch (error) {
+      missingNodeFailed = !!(
+        error &&
+        error.message === "Swirl animation target bubble node missing: 12_5"
+      );
+    }
+    if (!missingNodeFailed) {
+      throw new Error("Incomplete swirl event must still fail fast when its live target node is missing.");
+    }
+  } finally {
+    if (typeof previousCc === "undefined") {
+      delete global.cc;
+    } else {
+      global.cc = previousCc;
+    }
+  }
+}
+
 validateConfigAndCompactCodec();
 validateRotationAndDeferredDrop();
+validateVineEntangledNeighborBlocksRotation();
 validateSwirlCenterAndNeighborDropWithoutStaleEliminationHold();
 validateFloatingNodesOverridePendingShatterRetention();
 validateSwirlRotationCarriesTimeBonusLabel();
-console.log("[OK] swirl_bubble config, clockwise rotation, full-chain support drop and board-node recycling");
+validateCompletedSwirlRotationDoesNotRequireRecycledBoardNodes();
+console.log("[OK] swirl_bubble config, vine-blocked rotation, clockwise rotation, full-chain support drop and completed-event board-node recycling");

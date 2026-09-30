@@ -35,8 +35,8 @@ function LevelRenderer(rootNode) {
   this.fireworksPrefabLoadPromise = null;
   this.explodeAnimationClip = null;
   this.explodeAnimationClipPromise = null;
-  this.assistSpiritAnimationClipCache = {};
-  this.assistSpiritAnimationClipLoadPromises = {};
+  this.assistSpiritSkeletonDataCache = {};
+  this.assistSpiritSkeletonDataLoadPromises = {};
   this.layers = null;
   this.prefabFactory = new PrefabFactory();
   this.bubbleShatterRenderer = new BubbleShatterRenderer({
@@ -88,6 +88,7 @@ function LevelRenderer(rootNode) {
   this.skillPowerupCollectedFeedbackActive = false;
   this.skillPowerupCollectedFeedbackActiveState = null;
   this.lastKeyUnlockAnimationKey = "";
+  this.boardAdvancePresentationTarget = null;
   this.splitterSpawnAnimatedEntryKeys = {};
   this.splitterSpawnHiddenCellIds = {};
   this.breederSpawnAnimatedEntryKeys = {};
@@ -100,6 +101,7 @@ function LevelRenderer(rootNode) {
   this.budHatchAnimatedIds = {};
   this.wormholeShiftAnimatedIds = {};
   this.wormholeProjectileAbsorptionAnimatedIds = {};
+  this.blackHoleProjectileAbsorptionAnimatedIds = {};
   this.blackHoleUnsupportedDisappearAnimatedIds = {};
   this.wormholeDirectionGuideRoot = null;
   this.lastWormholeDirectionGuideKey = "";
@@ -152,6 +154,7 @@ function LevelRenderer(rootNode) {
   this.pendingBallScoreCellIds = {};
   this.pendingBallScoreCallbacks = {};
   this.playedTimeBonusAwardedEvents = [];
+  this.playedTransparentBallDestroyedEvents = [];
   this.winActionHandlers = {
     onNextLevel: null,
     onRetryLevel: null

@@ -137,11 +137,23 @@ function validateBoardStateAndRelease() {
 
   assert(resolution.poisonReleases.length === 1, "Normal elimination must record one poison release batch.");
   assert(systems.falling.activeDrops.length === 3, "Poison release must create three physical droplets.");
+  var initialPositions = systems.falling.activeDrops.map(function (drop) {
+    return { x: drop.position.x, y: drop.position.y };
+  });
   var speeds = systems.falling.activeDrops.map(function (drop) {
     assert(drop.dropKind === "poison_droplet", "Released particle must use poison_droplet drop kind.");
+    assert(drop.velocity.x === 0, "Poison droplet must launch vertically downward without horizontal velocity.");
+    assert(drop.velocity.y < 0, "Poison droplet must launch downward.");
+    assert(drop.rotationSpeed === 0, "Poison droplet must keep its downward visual orientation.");
     return Math.round(Math.sqrt(drop.velocity.x * drop.velocity.x + drop.velocity.y * drop.velocity.y));
   });
   assert(new Set(speeds).size === 3, "Three poison droplets must start with three different speeds.");
+  systems.falling.update(0.1);
+  systems.falling.activeDrops.forEach(function (drop, index) {
+    assert(drop.position.x === initialPositions[index].x, "Poison droplet trajectory must remain vertically downward.");
+    assert(drop.position.y < initialPositions[index].y, "Poison droplet must move downward after update.");
+    assert(drop.velocity.x === 0, "Poison droplet update must not introduce horizontal velocity.");
+  });
 
   var floatingGrid = buildGrid(levelConfig);
   var floatingSystems = buildFallingSystems(levelConfig);

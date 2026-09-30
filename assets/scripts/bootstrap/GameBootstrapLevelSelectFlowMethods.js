@@ -864,6 +864,7 @@ module.exports = {
       existingLevelSelectNode: this._levelSelectNode,
       levelViewPrefab: levelViewPrefab,
       floatingMapAssets: floatingMapAssets,
+      equippedSpiritId: this.assistSpiritState.equippedSpiritId,
       levelIds: levelIds,
       levelSelectRouteEditorMode: this._levelSelectRouteEditorMode,
       highestUnlocked: highestUnlocked,

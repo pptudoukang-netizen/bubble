@@ -6,6 +6,8 @@ var path = require("path");
 var BoardLayout = require("../assets/scripts/config/BoardLayout");
 var LevelPackCompactCodec = require("../assets/scripts/config/LevelPackCompactCodec");
 var SpecialMechanismSchedule = require("./campaign-special-mechanism-schedule");
+var CampaignMechanismDeploymentPlan = require("./campaign-mechanism-deployment-plan");
+var CombinationCatalog = require("./level-combination-catalog");
 
 var PROJECT_ROOT = path.resolve(__dirname, "..");
 var TABLE_PATH = path.join(PROJECT_ROOT, "LEVEL_CONFIG_TABLE_1_1000.csv");
@@ -97,6 +99,89 @@ function assertCount(levelId, fieldName, actual, expected) {
   }
 }
 
+function readNonNegativeTableCount(tableRow, column, levelId) {
+  var value = Number(tableRow[column]);
+  if (!Number.isInteger(value) || value < 0) {
+    throw new Error("Level " + levelId + " table column `" + column + "` must be a non-negative integer.");
+  }
+  return value;
+}
+
+function getTableMechanismIds(tableRow, levelId) {
+  var mechanismIds = [];
+  function addWhenPositive(mechanismId, columns) {
+    if (columns.some(function (column) {
+      return readNonNegativeTableCount(tableRow, column, levelId) > 0;
+    })) {
+      mechanismIds.push(mechanismId);
+    }
+  }
+  addWhenPositive("stone", ["石头"]);
+  addWhenPositive("ice", ["雪块"]);
+  addWhenPositive("rainbow", ["彩虹球"]);
+  addWhenPositive("blast", ["炸弹"]);
+  addWhenPositive("molotov", ["燃烧瓶"]);
+  addWhenPositive("splitter", Object.keys(SPLITTER_COLUMNS));
+  addWhenPositive("swirl", ["漩涡球"]);
+  addWhenPositive("vine_spirit", ["藤蔓精灵"]);
+  addWhenPositive("wormhole", ["虫洞对"]);
+  var keyCount = readNonNegativeTableCount(tableRow, "钥匙", levelId);
+  var lockedCount = readNonNegativeTableCount(tableRow, "锁定球", levelId);
+  if ((keyCount > 0) !== (lockedCount > 0)) {
+    throw new Error("Level " + levelId + " table contains an incomplete lock-chain pair.");
+  }
+  if (keyCount > 0) {
+    mechanismIds.push("lock_chain");
+  }
+  SpecialMechanismSchedule.INTRODUCTIONS.forEach(function (definition) {
+    if (readNonNegativeTableCount(tableRow, definition.column, levelId) > 0) {
+      mechanismIds.push(CampaignMechanismDeploymentPlan.SCHEDULE_KEY_TO_MECHANISM_ID[definition.key]);
+    }
+  });
+  if (tableRow["棋盘遮挡"] === "per_attempt_no_repeat") {
+    mechanismIds.push("board_occlusion");
+  } else if (tableRow["棋盘遮挡"] !== "none") {
+    throw new Error("Level " + levelId + " table contains unsupported board occlusion mode.");
+  }
+  if (tableRow["玩法模式"] === "timed_infinite_shots") {
+    mechanismIds.push("timed_mode");
+  } else if (tableRow["玩法模式"] !== "shot_limited") {
+    throw new Error("Level " + levelId + " table contains unsupported play mode.");
+  }
+  if (tableRow["关卡类型"] === "trapped_sprite_rescue") {
+    mechanismIds.push("single_rescue");
+  }
+  return mechanismIds;
+}
+
+function validateDeploymentPlan(levelId, tableRow) {
+  var actualMechanismIds = getTableMechanismIds(tableRow, levelId);
+  var expectedMechanismIds = CampaignMechanismDeploymentPlan.getCampaignLevelPlan(levelId).mechanismIds;
+  var actualSorted = actualMechanismIds.slice().sort();
+  var expectedSorted = expectedMechanismIds.slice().sort();
+  if (JSON.stringify(actualSorted) !== JSON.stringify(expectedSorted)) {
+    throw new Error(
+      "Level " + levelId + " mechanism plan mismatch: expected " +
+      expectedSorted.join("+") + ", got " + actualSorted.join("+") + "."
+    );
+  }
+  if (actualMechanismIds.length > 2) {
+    throw new Error("Level " + levelId + " exceeds the two-mechanism limit.");
+  }
+  var specialBallIds = [];
+  actualMechanismIds.forEach(function (mechanismId) {
+    CombinationCatalog.getMechanism(mechanismId).balls.forEach(function (ballId) {
+      if (specialBallIds.indexOf(ballId) < 0) {
+        specialBallIds.push(ballId);
+      }
+    });
+  });
+  if (specialBallIds.length > 3) {
+    throw new Error("Level " + levelId + " exceeds the three-special-ball-type limit.");
+  }
+  return actualMechanismIds.length;
+}
+
 function validateLockChainRows(levelId, level, tableRow) {
   var chainEntities = level.specialEntities.filter(function (entity) {
     return entity.entityType === "key" || entity.entityType === "locked";
@@ -165,6 +250,13 @@ function validateLevel(levelId, config, tableRow, coverage) {
     ? level.multiTrappedSpiritRescue.targets.length
     : 0;
   assertCount(levelId, "多精灵救援目标", rescueTargetCount, Number(tableRow["多精灵救援目标"]));
+  if (rescueTargetCount > 0) {
+    level.multiTrappedSpiritRescue.targets.forEach(function (target) {
+      if (target.row < 1 || target.row > 5) {
+        throw new Error("Level " + levelId + " multi-rescue target must be within visible top rows 2-6: " + target.row + ":" + target.col + ".");
+      }
+    });
+  }
   var prismCount = level.initialPowerups && Number.isInteger(level.initialPowerups.rainbow_prism_ball)
     ? level.initialPowerups.rainbow_prism_ball
     : 0;
@@ -187,15 +279,25 @@ function validateLevel(levelId, config, tableRow, coverage) {
       coverage[definition.key] += 1;
     }
   });
+  SpecialMechanismSchedule.DISABLED_CAMPAIGN_MECHANISMS.forEach(function (definition) {
+    if (Number(tableRow[definition.column]) !== 0) {
+      throw new Error("Level " + levelId + " `" + definition.column + "` must remain zero because it is an inventory powerup.");
+    }
+  });
+  return validateDeploymentPlan(levelId, tableRow);
 }
 
 function main() {
   var table = loadTable();
   var levels = loadAllLevels();
   var coverage = {};
+  var ordinaryLevelCount = 0;
+  var mechanismLevelCount = 0;
   SpecialMechanismSchedule.INTRODUCTIONS.forEach(function (definition) { coverage[definition.key] = 0; });
   table.forEach(function (row, index) {
-    validateLevel(index + 1, levels[index + 1], row, coverage);
+    var mechanismCount = validateLevel(index + 1, levels[index + 1], row, coverage);
+    ordinaryLevelCount += mechanismCount === 0 ? 1 : 0;
+    mechanismLevelCount += mechanismCount > 0 ? 1 : 0;
   });
   SpecialMechanismSchedule.INTRODUCTIONS.forEach(function (definition) {
     var expectedLevelCount = SpecialMechanismSchedule.getScheduledLevelIds(definition).length;
@@ -203,7 +305,10 @@ function main() {
       throw new Error(definition.label + " coverage mismatch: expected " + expectedLevelCount + ", got " + coverage[definition.key] + ".");
     }
   });
-  console.log("Validated authoritative table-to-config parity for 1000 campaign levels and all scheduled mechanisms.");
+  console.log(
+    "Validated authoritative table-to-config parity for 1000 campaign levels: " +
+    mechanismLevelCount + " mechanism levels, " + ordinaryLevelCount + " ordinary-only levels."
+  );
 }
 
 main();

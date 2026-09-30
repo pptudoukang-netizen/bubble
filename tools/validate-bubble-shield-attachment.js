@@ -187,6 +187,7 @@ function validateRenderAndIntegrationContracts() {
   });
 
   var resourceConfig = fs.readFileSync(path.join(ROOT, "gameplay-src/render/LevelRendererResourceConfig.js"), "utf8");
+  var resourceMethods = fs.readFileSync(path.join(ROOT, "gameplay-src/render/LevelRendererResourceMethods.js"), "utf8");
   var boardRenderer = fs.readFileSync(path.join(ROOT, "gameplay-src/render/LevelRendererSceneBoardMethods.js"), "utf8");
   var bubbleShatterRenderer = fs.readFileSync(path.join(ROOT, "gameplay-src/render/BubbleShatterRenderer.js"), "utf8");
   var runtimeRenderer = fs.readFileSync(path.join(ROOT, "gameplay-src/render/LevelRendererRuntimeMethods.js"), "utf8");
@@ -196,6 +197,13 @@ function validateRenderAndIntegrationContracts() {
   var crystalGun = fs.readFileSync(path.join(ROOT, "gameplay-src/core/GameManagerShotCrystalGunMethods.js"), "utf8");
   var prism = fs.readFileSync(path.join(ROOT, "gameplay-src/core/GameManagerShotRainbowPrismMethods.js"), "utf8");
   assert(resourceConfig.indexOf('BUBBLE_SHIELD: "game/image/ball/transparent_bubbles"') >= 0, "Bubble shield transparent_bubbles resource contract is missing.");
+  var initialSpriteMethodStart = resourceMethods.indexOf("LevelRenderer.prototype._collectInitialCommonSpritePaths");
+  var initialSpriteMethodEnd = resourceMethods.indexOf("LevelRenderer.prototype._collectInteractionCommonSpritePaths", initialSpriteMethodStart);
+  assert(initialSpriteMethodStart >= 0 && initialSpriteMethodEnd > initialSpriteMethodStart, "Initial common SpriteFrame collection is missing.");
+  assert(
+    resourceMethods.slice(initialSpriteMethodStart, initialSpriteMethodEnd).indexOf("BALL_RESOURCES.BUBBLE_SHIELD") >= 0,
+    "Bubble shield shatter SpriteFrame must preload with the prepared shatter effect."
+  );
   assert(boardRenderer.indexOf("syncBubbleShieldAttachment") >= 0, "Bubble shield overlay renderer is missing.");
   var shieldShatterMethodStart = bubbleShatterRenderer.indexOf("BubbleShatterRenderer.prototype.playBubbleShieldRemovals");
   var shieldShatterMethodEnd = bubbleShatterRenderer.indexOf("\n};", shieldShatterMethodStart);

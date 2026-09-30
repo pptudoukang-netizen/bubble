@@ -140,7 +140,7 @@ cc.Class({
       tooltip: "玩家信息云端存储使用的微信云开发环境 ID。"
     },
     playerProfileCloudFunctionName: {
-      default: "playerProfile",
+      default: "playerProfileV2",
       tooltip: "玩家信息云端存储使用的微信云函数名称。"
     },
     playerProfileCloudSyncDebounceMs: {
@@ -807,6 +807,8 @@ cc.Class({
   _bindAwardViewActions: GameBootstrapUiFlowMethods._bindAwardViewActions,
   _renderAwardView: GameBootstrapUiFlowMethods._renderAwardView,
   _showAwardViewForRewardItems: GameBootstrapUiFlowMethods._showAwardViewForRewardItems,
+  _showAwardViewSequence: GameBootstrapUiFlowMethods._showAwardViewSequence,
+  _showNextAwardViewInSequence: GameBootstrapUiFlowMethods._showNextAwardViewInSequence,
   _hideAwardView: GameBootstrapUiFlowMethods._hideAwardView,
   _grantSignInRewardItems: GameBootstrapUiFlowMethods._grantSignInRewardItems,
   _resolveSignInRewardItemsForDay: GameBootstrapUiFlowMethods._resolveSignInRewardItemsForDay,

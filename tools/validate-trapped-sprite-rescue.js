@@ -294,7 +294,11 @@ function validateMultiTargetConfigContract(config) {
   assert(level.playMode === "shot_limited", "Multi rescue test must use shot_limited.");
   assert(level.multiTrappedSpiritRescue.targets.length === 2, "Multi rescue test must configure two targets.");
   level.multiTrappedSpiritRescue.targets.forEach(function (target) {
-    assert(target.row > 0, "Multi rescue target must not occupy the top row.");
+    assert(
+      target.row >= LevelConfigLoader.MULTI_RESCUE_MIN_TARGET_ROW_INDEX &&
+        target.row <= LevelConfigLoader.MULTI_RESCUE_MAX_TARGET_ROW_INDEX,
+      "Multi rescue target must occupy visible top rows 2-6."
+    );
     assert(level.layout[target.row].charAt(target.col) === ".", "Multi rescue target cell must remain empty.");
     assert(
       getHexNeighbors(target.row, target.col).some(function (neighbor) {
@@ -320,7 +324,14 @@ function validateMultiTargetConfigContract(config) {
   topTarget.level.multiTrappedSpiritRescue.targets[0].col = 0;
   expectThrow(function () {
     LevelConfigLoader.normalizeLevelConfig(topTarget, "level_multi_trapped_spirit_test");
-  }, "non-top-row board coordinate");
+  }, "top rows 2-6");
+
+  var belowTargetRange = clone(raw);
+  belowTargetRange.level.multiTrappedSpiritRescue.targets[0].row = 6;
+  belowTargetRange.level.multiTrappedSpiritRescue.targets[0].col = 0;
+  expectThrow(function () {
+    LevelConfigLoader.normalizeLevelConfig(belowTargetRange, "level_multi_trapped_spirit_test");
+  }, "top rows 2-6");
 
   var unsupportedTarget = clone(raw);
   var target = unsupportedTarget.level.multiTrappedSpiritRescue.targets[0];
@@ -530,6 +541,13 @@ function runProjectileUntilSettled(gameManager) {
         "Swirl and vine topology effects must wait until trapped sprite rotation completes."
       );
       sawRotationSnapshot = true;
+    }
+    if (gameManager.pendingSwirlRotationWaitingForEliminationPresentation === true) {
+      assert(
+        gameManager.pendingSwirlRotationResolution === gameManager.lastResolution,
+        "Trapped sprite swirl presentation wait must retain lastResolution."
+      );
+      gameManager.notifyBoardAdvanceEliminationPresentationComplete(gameManager.lastResolution);
     }
     stepCount += 1;
   }
@@ -1288,7 +1306,8 @@ function validateSupportedSpecialEntities(config) {
   var vineResolution = {
     boardCleared: false,
     vineCastEvaluated: false,
-    vineCasts: []
+    vineCasts: [],
+    releasedVines: []
   };
   vineManager.lastResolution = vineResolution;
   assert(

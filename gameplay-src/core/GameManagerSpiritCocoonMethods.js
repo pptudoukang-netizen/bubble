@@ -249,8 +249,20 @@ function attachGameManagerSpiritCocoonMethods(GameManager) {
   GameManager.prototype._filterFloatingSpiritCocoons = function (floatingCells, resolution) {
     this._queueSpiritCocoonsAdjacentToCells(floatingCells, resolution);
     var pendingIds = {};
+    var pendingTraversalTargetIds = {};
     this.pendingSpiritCocoonOpenings.forEach(function (opening) {
       pendingIds[String(opening.cocoonId)] = true;
+      ["mistTraversal", "gluttonyTraversal", "rainbowTraversal"].forEach(function (fieldName) {
+        if (!Array.isArray(opening[fieldName])) {
+          throw new Error("Pending spirit cocoon opening requires " + fieldName + " array.");
+        }
+        opening[fieldName].forEach(function (entry) {
+          if (!entry || typeof entry.id !== "string" || !entry.id) {
+            throw new Error("Pending spirit cocoon traversal target requires id.");
+          }
+          pendingTraversalTargetIds[entry.id] = true;
+        });
+      });
     });
     var pendingBudIds = {};
     this.pendingBudHatches.forEach(function (hatch) {
@@ -261,13 +273,18 @@ function attachGameManagerSpiritCocoonMethods(GameManager) {
     });
     return floatingCells.filter(function (cell) {
       var isPendingSpiritCocoon = isSpiritCocoon(cell) && pendingIds[String(cell.id)] === true;
+      var isPendingTraversalTarget = !!(
+        cell &&
+        typeof cell.id === "string" &&
+        pendingTraversalTargetIds[cell.id] === true
+      );
       var isPendingBud = !!(
         cell &&
         cell.entityCategory === "reactive_ball" &&
         cell.entityType === "bud" &&
         pendingBudIds[String(cell.id)] === true
       );
-      return !isPendingSpiritCocoon && !isPendingBud;
+      return !isPendingSpiritCocoon && !isPendingTraversalTarget && !isPendingBud;
     });
   };
 

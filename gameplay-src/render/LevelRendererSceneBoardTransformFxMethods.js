@@ -48,6 +48,9 @@ LevelRenderer.prototype._playSwirlRotationAnimation = function (runtimeSnapshot)
     if (!rotation || typeof rotation.id !== "string" || !rotation.id) {
       throw new Error("Swirl animation requires rotation id.");
     }
+    if (typeof rotation.completed !== "boolean") {
+      throw new Error("Swirl animation requires rotation completed boolean.");
+    }
     if (this.swirlRotationAnimatedIds[rotation.id]) {
       return;
     }
@@ -60,8 +63,6 @@ LevelRenderer.prototype._playSwirlRotationAnimation = function (runtimeSnapshot)
     if (!Array.isArray(rotation.moves) || !rotation.moves.length) {
       throw new Error("Swirl animation requires occupied track moves.");
     }
-    this.swirlRotationAnimatedIds[rotation.id] = true;
-
     rotation.moves.forEach(function (move) {
       if (
         !move ||
@@ -74,6 +75,16 @@ LevelRenderer.prototype._playSwirlRotationAnimation = function (runtimeSnapshot)
       ) {
         throw new Error("Swirl animation move is invalid.");
       }
+    });
+    if (typeof rotation.centerId !== "string" && typeof rotation.centerId !== "number") {
+      throw new Error("Swirl animation requires centerId.");
+    }
+    if (rotation.completed) {
+      return;
+    }
+    this.swirlRotationAnimatedIds[rotation.id] = true;
+
+    rotation.moves.forEach(function (move) {
       var bubbleNode = this.boardBubbleNodes[move.targetCellId];
       if (!bubbleNode || !bubbleNode.isValid) {
         throw new Error("Swirl animation target bubble node missing: " + move.targetCellId);
@@ -95,9 +106,6 @@ LevelRenderer.prototype._playSwirlRotationAnimation = function (runtimeSnapshot)
       bubbleNode.runAction(cc.moveTo(rotation.duration, targetPosition.x, targetPosition.y));
     }, this);
 
-    if (typeof rotation.centerId !== "string" && typeof rotation.centerId !== "number") {
-      throw new Error("Swirl animation requires centerId.");
-    }
     var centerNode = this.boardBubbleNodes[String(rotation.centerId)];
     if (!centerNode || !centerNode.isValid) {
       throw new Error("Swirl animation center node missing: " + rotation.centerId);

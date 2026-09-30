@@ -359,6 +359,7 @@ function createKeyUnlockResolution() {
   return {
     collectedKeys: [],
     unlockedLockedBalls: [],
+    keyUnlockPresentationComplete: false,
     floating: [],
     spiritCocoonOpenings: [],
     budHatches: [],
@@ -745,7 +746,7 @@ function runTransparentBallPassThroughAndSettlementCase() {
     destroyedTransparentBalls: []
   };
   var flightRemoved = false;
-  manager._destroyReachedTransparentBalls(flightProjectile, {
+  var flightGrid = {
     getCell: function () {
       return flightRemoved ? null : liveTransparentForFlight;
     },
@@ -755,10 +756,66 @@ function runTransparentBallPassThroughAndSettlementCase() {
       }
       flightRemoved = true;
       return [liveTransparentForFlight];
+    },
+    getCellPosition: function (row, col) {
+      return { x: col * 70, y: row * -60 };
     }
-  });
+  };
+  manager._destroyReachedTransparentBalls(flightProjectile, flightGrid);
   if (!flightRemoved || flightProjectile.destroyedTransparentBalls.length !== 1) {
     throw new Error("Transparent ball must be removed when projectile progress reaches the hit point.");
+  }
+  var destroyedEvents = manager._drainRuntimeEvents().filter(function (event) {
+    return event.type === "transparent_ball_destroyed";
+  });
+  if (
+    destroyedEvents.length !== 1 ||
+    destroyedEvents[0].gained !== 1000 ||
+    destroyedEvents[0].count !== 1 ||
+    !Array.isArray(destroyedEvents[0].cells) ||
+    destroyedEvents[0].cells.length !== 1 ||
+    destroyedEvents[0].cells[0].id !== "transparent_path" ||
+    destroyedEvents[0].cells[0].points !== 1000 ||
+    destroyedEvents[0].cells[0].worldPosition.x !== 350 ||
+    destroyedEvents[0].cells[0].worldPosition.y !== -360
+  ) {
+    throw new Error("Transparent ball destruction must immediately emit its exact +1000 floating score payload.");
+  }
+  if (manager.score !== 0) {
+    throw new Error("Transparent ball floating score event must not add gameplay score before settlement.");
+  }
+
+  function TransparentScoreValidationRenderer() {}
+  attachLevelRendererSceneHudMethods(TransparentScoreValidationRenderer, {
+    BoardLayout: BoardLayout
+  });
+  var transparentScoreRenderer = Object.create(TransparentScoreValidationRenderer.prototype);
+  transparentScoreRenderer.playedTransparentBallDestroyedEvents = [];
+  transparentScoreRenderer._convertBoardPointToGameView = function (x, y) {
+    return { x: x + 7, y: y - 11 };
+  };
+  var transparentScoreDisplays = [];
+  transparentScoreRenderer._spawnBallScoreDisplay = function (scoreEvent, position) {
+    transparentScoreDisplays.push({
+      cellId: scoreEvent.cellId,
+      points: scoreEvent.points,
+      position: position
+    });
+  };
+  var penetrationSnapshot = {
+    runtimeEvents: destroyedEvents
+  };
+  transparentScoreRenderer._playTransparentBallFloatingScoreDisplay(penetrationSnapshot);
+  transparentScoreRenderer._playTransparentBallFloatingScoreDisplay(penetrationSnapshot);
+  if (
+    transparentScoreDisplays.length !== 1 ||
+    transparentScoreDisplays[0].cellId !==
+      "transparent_ball_" + String(destroyedEvents[0].id) + "_transparent_path" ||
+    transparentScoreDisplays[0].points !== 1000 ||
+    transparentScoreDisplays[0].position.x !== 357 ||
+    transparentScoreDisplays[0].position.y !== -371
+  ) {
+    throw new Error("Transparent ball penetration must float +1000 once from the destroyed ball position.");
   }
   var supportChecks = 0;
   manager.systems = {
@@ -820,21 +877,17 @@ function runTransparentBallPassThroughAndSettlementCase() {
   if (manager.score < 1000 || resolution.scoreDelta !== manager.score) {
     throw new Error("Transparent ball fixed score and existing combo bonus must stay synchronized.");
   }
-  if (
-    resolution.scoreEvents.length !== 1 ||
-    resolution.scoreEvents[0].points !== 1000 ||
-    resolution.scoreEvents[0].scoreKind !== "transparent_ball_break"
-  ) {
-    throw new Error("Transparent ball destruction must create one +1000 floating score event.");
+  if (resolution.scoreEvents.length !== 0) {
+    throw new Error("Transparent ball settlement must not repeat the penetration-time floating score event.");
   }
   if (manager.comboStreak !== 2 || manager.maxComboStreak !== 2) {
     throw new Error("Transparent-only destruction must increase combo instead of clearing it.");
   }
-  var destroyedEvents = manager._drainRuntimeEvents().filter(function (event) {
+  var repeatedDestroyedEvents = manager._drainRuntimeEvents().filter(function (event) {
     return event.type === "transparent_ball_destroyed";
   });
-  if (destroyedEvents.length !== 1 || destroyedEvents[0].gained !== 1000) {
-    throw new Error("Transparent ball destruction runtime event must report the fixed score.");
+  if (repeatedDestroyedEvents.length !== 0) {
+    throw new Error("Transparent ball settlement must not emit the destruction event twice.");
   }
   if (hadCc) {
     global.cc = previousCc;
@@ -843,7 +896,7 @@ function runTransparentBallPassThroughAndSettlementCase() {
   }
 }
 
-function runKeyUnlockBoardAdvanceDelayCase() {
+function runKeyUnlockBoardAdvancePresentationGateCase() {
   var manager = new GameManager();
   var settlePlanned = false;
   var hadCc = Object.prototype.hasOwnProperty.call(global, "cc");
@@ -875,6 +928,7 @@ function runKeyUnlockBoardAdvanceDelayCase() {
       unlockedLockedBalls: [
         { id: "locked_1", row: 1, col: 2, __sourceKeyId: "key_1" }
       ],
+      keyUnlockPresentationComplete: false,
       boardViewportAdjusted: false
     };
     manager.systems.boardViewportSystem = {
@@ -897,18 +951,51 @@ function runKeyUnlockBoardAdvanceDelayCase() {
       throw new Error("Post-impact board shift regression expected deferred viewport settle.");
     }
 
-    var combinedDelay = manager.pendingBoardAdvanceSpecialAnimationDelay;
-    if (combinedDelay <= 0) {
-      throw new Error("Post-impact regression expected positive special animation delay.");
+    if (manager.pendingBoardAdvanceKeyUnlockPresentation !== true) {
+      throw new Error("Key unlock regression expected board advance presentation gate.");
     }
-    if (manager._updatePendingBoardAdvance(combinedDelay - 0.001)) {
-      throw new Error("Viewport settle started before post-impact animation delay finished.");
+    var impactDelay = manager.pendingBoardAdvanceSpecialAnimationDelay;
+    if (manager._updatePendingBoardAdvance(impactDelay + SpecialAnimationTiming.keyUnlock.totalDuration + 1)) {
+      throw new Error("Viewport settle started before key unlock presentation completed.");
     }
-    if (!manager._updatePendingBoardAdvance(0.001)) {
-      throw new Error("Viewport settle did not start after post-impact animation delay.");
+    if (settlePlanned) {
+      throw new Error("Key unlock presentation gate allowed early viewport settle.");
+    }
+    manager.notifyBoardAdvanceKeyUnlockPresentationComplete(manager.lastResolution);
+    if (manager.lastResolution.keyUnlockPresentationComplete !== true) {
+      throw new Error("Key unlock completion callback must persist presentation completion on the resolution.");
+    }
+    if (!manager._updatePendingBoardAdvance(0)) {
+      throw new Error("Viewport settle did not start after key unlock presentation completed.");
     }
     if (!settlePlanned || manager.lastResolution.boardViewportAdjusted !== true) {
       throw new Error("Viewport settle regression did not mark boardViewportAdjusted.");
+    }
+
+    var earlyCompletionManager = new GameManager();
+    earlyCompletionManager.lastResolution = {
+      collectedKeys: [{ id: "key_early", row: 2, col: 1 }],
+      unlockedLockedBalls: [{ id: "locked_early", row: 2, col: 2, __sourceKeyId: "key_early" }],
+      keyUnlockPresentationComplete: false
+    };
+    earlyCompletionManager.notifyBoardAdvanceKeyUnlockPresentationComplete(earlyCompletionManager.lastResolution);
+    if (earlyCompletionManager._requiresBoardAdvanceKeyUnlockPresentationWait(earlyCompletionManager.lastResolution)) {
+      throw new Error("Key unlock completion received before board scheduling must not re-arm the presentation gate.");
+    }
+    var completedKeyCount = earlyCompletionManager.lastResolution.collectedKeys.length;
+    earlyCompletionManager.lastResolution.collectedKeys.push({ id: "key_later", row: 3, col: 1 });
+    earlyCompletionManager._markKeyUnlockPresentationPendingForNewKeys(
+      earlyCompletionManager.lastResolution,
+      completedKeyCount
+    );
+    earlyCompletionManager.lastResolution.unlockedLockedBalls.push({
+      id: "locked_later",
+      row: 3,
+      col: 2,
+      __sourceKeyId: "key_later"
+    });
+    if (!earlyCompletionManager._requiresBoardAdvanceKeyUnlockPresentationWait(earlyCompletionManager.lastResolution)) {
+      throw new Error("A later key wave must re-arm the key unlock presentation gate.");
     }
   } finally {
     if (hadCc) {
@@ -940,6 +1027,7 @@ function runImpactBounceBoardAdvanceDelayCase() {
       matched: [],
       collectedKeys: [],
       unlockedLockedBalls: [],
+      keyUnlockPresentationComplete: false,
       impact: {
         seq: 1,
         center: { x: 0, y: 0 },
@@ -1013,6 +1101,7 @@ function runImpactBounceBoardAdvanceSameUpdateFrameCase() {
       matched: [],
       collectedKeys: [],
       unlockedLockedBalls: [],
+      keyUnlockPresentationComplete: false,
       impact: {
         seq: 1,
         center: { x: 0, y: 0 },
@@ -1085,6 +1174,7 @@ function runEliminationPresentationBoardAdvanceGateCase() {
       ],
       collectedKeys: [],
       unlockedLockedBalls: [],
+      keyUnlockPresentationComplete: false,
       impact: {
         seq: 1,
         center: { x: 0, y: 0 },
@@ -1376,6 +1466,7 @@ function runKeyUnlockMolotovFloatingRemovalCase() {
     collected: [],
     collectedKeys: [],
     unlockedLockedBalls: [],
+    keyUnlockPresentationComplete: false,
     spawnedBySplitters: [],
     thawed: [],
     iceCollected: 0,
@@ -1434,6 +1525,7 @@ function runMolotovFloatingMolotovRegistersDropCase() {
     collected: [],
     collectedKeys: [],
     unlockedLockedBalls: [],
+    keyUnlockPresentationComplete: false,
     spawnedBySplitters: [],
     thawed: [],
     iceCollected: 0,
@@ -1562,6 +1654,7 @@ function runMolotovFloatingKeyUnlockCascadesUnsupportedDropCase() {
     collected: [],
     collectedKeys: [],
     unlockedLockedBalls: [],
+    keyUnlockPresentationComplete: false,
     spawnedBySplitters: [],
     thawed: [],
     iceCollected: 0,
@@ -1885,14 +1978,12 @@ function runMolotovEliminationSequencePositionCase() {
     }
   };
   manager.molotovPendingResolutionContext = {
-    allRemoved: [],
-    triggeredSplitterIds: {}
+    allRemoved: []
   };
   manager.molotovBlastTriggeredIds = {};
   manager._triggerAdjacentKeys = function () {
     return [];
   };
-  manager._triggerAdjacentSplitters = function () {};
   manager._collectAdjacentMolotovs = function () {
     return [];
   };
@@ -1919,7 +2010,7 @@ function runMolotovEliminationSequencePositionCase() {
   }
 }
 
-function runMolotovChainSplitterDedupCase() {
+function runMolotovChainDefersSplitterPhaseCase() {
   var manager = new GameManager();
   var splitter = {
     id: "splitter_shared",
@@ -1968,7 +2059,6 @@ function runMolotovChainSplitterDedupCase() {
     molotov_second: molotovSecond,
     splitter_shared: splitter
   };
-  var queuedSplitterIds = [];
   var grid = {
     getCells: function () {
       return Object.keys(cellsById).map(function (cellId) {
@@ -2048,6 +2138,7 @@ function runMolotovChainSplitterDedupCase() {
     matchedObjectiveCollected: [],
     collectedKeys: [],
     unlockedLockedBalls: [],
+    keyUnlockPresentationComplete: false,
     vineSpiritHits: [],
     releasedVines: [],
     witheredVines: [],
@@ -2077,16 +2168,14 @@ function runMolotovChainSplitterDedupCase() {
   };
   manager.pendingSplitterSpawns = [];
   manager.molotovPendingResolutionContext = {
-    allRemoved: [],
-    triggeredSplitterIds: {}
+    allRemoved: []
   };
   manager.molotovBlastTriggeredIds = {};
   manager._triggerAdjacentKeys = function () {
     return [];
   };
-  manager._queuePendingSplitterSpawn = function (splitterCell, targetResolution) {
-    GameManager.prototype._queuePendingSplitterSpawn.call(this, splitterCell, targetResolution);
-    queuedSplitterIds.push(splitterCell.id);
+  manager._queuePendingSplitterSpawn = function () {
+    throw new Error("Molotov blast removal must not queue splitter growth before the post-shot splitter phase.");
   };
   manager._collectAdjacentMolotovs = function () {
     return [];
@@ -2108,23 +2197,22 @@ function runMolotovChainSplitterDedupCase() {
     blastRadius: 2
   }, grid, resolution);
 
-  if (queuedSplitterIds.length !== 1 || queuedSplitterIds[0] !== "splitter_shared") {
-    throw new Error("Molotov chain must queue a shared adjacent splitter exactly once.");
+  if (manager.pendingSplitterSpawns.length !== 0) {
+    throw new Error("Molotov chain must defer splitter evaluation until all removals and drops are known.");
   }
-  if (manager.pendingSplitterSpawns.length !== 1 || manager.pendingSplitterSpawns[0].id !== "splitter_shared") {
-    throw new Error("Molotov chain must leave one pending splitter spawn.");
-  }
-  if (resolution.reactiveTriggered.length !== 1 || resolution.reactiveTriggered[0].id !== "splitter_shared") {
-    throw new Error("Molotov chain must emit one splitter reactive trigger event.");
+  if (resolution.reactiveTriggered.length !== 0) {
+    throw new Error("Molotov chain must not emit a splitter trigger for an adjacent current-turn removal.");
   }
 }
 
-function runMolotovPendingResolutionSeedsSplitterDedupCase() {
+function runMolotovPendingResolutionPreservesSplitterQueueCase() {
   var manager = new GameManager();
   var splitter = {
     id: "splitter_already_pending",
     row: 1,
     col: 3,
+    targetRow: 1,
+    targetCol: 4,
     splitColor: "P",
     entityCategory: "reactive_ball",
     entityType: "splitter"
@@ -2211,6 +2299,7 @@ function runMolotovPendingResolutionSeedsSplitterDedupCase() {
     matchedObjectiveCollected: [],
     collectedKeys: [],
     unlockedLockedBalls: [],
+    keyUnlockPresentationComplete: false,
     vineSpiritHits: [],
     releasedVines: [],
     witheredVines: [],
@@ -2275,9 +2364,6 @@ function runMolotovPendingResolutionSeedsSplitterDedupCase() {
   }
   if (resolution.reactiveTriggered.length !== 0) {
     throw new Error("Molotov pending splitter seed must not emit a duplicate splitter trigger.");
-  }
-  if (!manager.molotovPendingResolutionContext.triggeredSplitterIds.splitter_already_pending) {
-    throw new Error("Molotov pending splitter seed must mark existing pending splitter id.");
   }
 }
 
@@ -2352,6 +2438,7 @@ function runMolotovBlastPhaseDropsUnsupportedSourceSupportCase() {
     matchedObjectiveCollected: [],
     collectedKeys: [],
     unlockedLockedBalls: [],
+    keyUnlockPresentationComplete: false,
     spawnedBySplitters: [{
       id: "unsupported_after_source",
       row: 2,
@@ -2400,14 +2487,12 @@ function runMolotovBlastPhaseDropsUnsupportedSourceSupportCase() {
     }
   };
   manager.molotovPendingResolutionContext = {
-    allRemoved: [],
-    triggeredSplitterIds: {}
+    allRemoved: []
   };
   manager.molotovBlastTriggeredIds = {};
   manager._triggerAdjacentKeys = function () {
     return [];
   };
-  manager._triggerAdjacentSplitters = function () {};
   manager._collectAdjacentMolotovs = function () {
     return [];
   };
@@ -2512,6 +2597,8 @@ function runMolotovPendingResolutionFinalizeCase() {
     floating: [],
     swirlRotations: [],
     spawnedBySplitters: [],
+    splitterResolved: false,
+    reactiveTriggered: [],
     breederResolved: false,
     breederSpawns: [],
     mineCountdownResolved: false,
@@ -2519,6 +2606,7 @@ function runMolotovPendingResolutionFinalizeCase() {
     mineExplosions: [],
     collectedKeys: [],
     unlockedLockedBalls: [],
+    keyUnlockPresentationComplete: false,
     fairyAssistEvents: [],
     vineCastEvaluated: false,
     vineCasts: [],
@@ -2536,8 +2624,7 @@ function runMolotovPendingResolutionFinalizeCase() {
     dropScoreRuleKey: "matchedDrop",
     allRemoved: [
       { id: "molotov_removed_support", row: 2, col: 2, color: "G", entityCategory: "normal_ball", entityType: null }
-    ],
-    triggeredSplitterIds: {}
+    ]
   };
   manager.pendingMolotovBlastQueue = [];
   manager.activeMolotovBlast = null;
@@ -2581,6 +2668,16 @@ function runMolotovBlastUpdateForcesFullRefreshCase() {
   manager.pendingRuntimeEvents = [];
   manager.systems = {
     trappedSpriteRescueSystem: createInactiveTrappedSpriteRescueSystemFixture(),
+    colorCloudSystem: {
+      update: function () {
+        return false;
+      }
+    },
+    bubbleGrid: {
+      updateWindTunnel: function () {
+        return false;
+      }
+    },
     fallingMarbleSystem: {
       hasActiveDrops: function () {
         return true;
@@ -2589,6 +2686,8 @@ function runMolotovBlastUpdateForcesFullRefreshCase() {
         return {
           updated: false,
           collected: [],
+          cleanupScored: [],
+          timedOutBallDisappearCount: 0,
           fairyHits: [],
           splits: [],
           bounceEvents: []
@@ -4043,6 +4142,7 @@ function runTopAnchorCollapseCancelsPendingSplitterSpawnCase() {
     collected: [],
     collectedKeys: [],
     unlockedLockedBalls: [],
+    keyUnlockPresentationComplete: false,
     boardViewportAdjusted: false
   };
   manager.pendingSplitterSpawns = [{
@@ -4093,8 +4193,12 @@ function runTopAnchorCollapseCancelsPendingSplitterSpawnCase() {
   if (registeredDrops.length !== 2) {
     throw new Error("Top anchor collapse must register all removed cells as drops.");
   }
-  if (!registeredDropOptions || registeredDropOptions.startDelay !== 0) {
-    throw new Error("Top anchor collapse drops must start without delay.");
+  if (
+    !registeredDropOptions ||
+    registeredDropOptions.startDelay !== SpecialAnimationTiming.topAnchorCollapse.dropDelay ||
+    registeredDropOptions.startDelay !== 0.5
+  ) {
+    throw new Error("Top anchor collapse drops must remain still for exactly 0.5 seconds before falling.");
   }
   if (registeredDropOptions.holdUntilEliminationPresentationComplete === true) {
     throw new Error("Top anchor collapse drops must not wait for an elimination callback that already completed.");
@@ -4160,12 +4264,15 @@ function runSplitterSpawnViewportSettleCase() {
     collected: [],
     collectedKeys: [],
     unlockedLockedBalls: [],
+    keyUnlockPresentationComplete: false,
     boardViewportAdjusted: false
   };
   manager.pendingSplitterSpawns = [{
-    id: "splitter_5_0",
-    row: 5,
+    id: "splitter_9_0",
+    row: 9,
     col: 0,
+    targetRow: 10,
+    targetCol: 0,
     splitColor: "G",
     remainingDelay: 0
   }];
@@ -4182,8 +4289,29 @@ function runSplitterSpawnViewportSettleCase() {
         viewportOffsetY: viewport.offsetY
       };
     },
-    findSplitterSpawnCell: function () {
-      return { row: 10, col: 0 };
+    getCell: function (row, col) {
+      if (row === 9 && col === 0) {
+        return {
+          id: "splitter_9_0",
+          row: 9,
+          col: 0,
+          splitColor: "G",
+          entityCategory: "reactive_ball",
+          entityType: "splitter"
+        };
+      }
+      return null;
+    },
+    getNeighborCoordinates: function (row, col) {
+      if (row !== 9 || col !== 0) {
+        throw new Error("Splitter viewport regression queried unexpected source neighbors.");
+      }
+      return [{ row: 10, col: 0 }];
+    },
+    isSplitterSpawnCellAvailable: function (row, col) {
+      return row === 10 && col === 0 && !cells.some(function (cell) {
+        return cell.row === row && cell.col === col;
+      });
     },
     addBubble: function (cell, color) {
       if (color !== "G") {
@@ -5850,10 +5978,10 @@ function main() {
   console.log("[OK]", "reflected_shot_first_collision", "bank shot does not tunnel to a later attachment point");
 
   runTransparentBallPassThroughAndSettlementCase();
-  console.log("[OK]", "transparent_ball", "passes through, awards 1000, checks drops, and keeps combo");
+  console.log("[OK]", "transparent_ball", "floats +1000 on penetration, checks drops, and keeps combo");
 
-  runKeyUnlockBoardAdvanceDelayCase();
-  console.log("[OK]", "key_unlock_board_advance_delay", "waited for special animation before board advance");
+  runKeyUnlockBoardAdvancePresentationGateCase();
+  console.log("[OK]", "key_unlock_board_advance_presentation_gate", "waited for key unlock completion before board advance");
   runImpactBounceBoardAdvanceDelayCase();
   console.log("[OK]", "impact_bounce_board_advance_delay", "waited for impact bounce before board advance");
   runImpactBounceBoardAdvanceSameUpdateFrameCase();
@@ -5882,10 +6010,10 @@ function main() {
   console.log("[OK]", "molotov_chain_queue", "adjacent molotov queued after neighbor removal");
   runMolotovEliminationSequencePositionCase();
   console.log("[OK]", "molotov_elimination_sequence_position", "blasted normal balls keep pre-removal positions");
-  runMolotovChainSplitterDedupCase();
-  console.log("[OK]", "molotov_chain_splitter_dedup", "shared splitter queues once across chained molotov blasts");
-  runMolotovPendingResolutionSeedsSplitterDedupCase();
-  console.log("[OK]", "molotov_pending_splitter_seed", "already pending splitters seed molotov dedup");
+  runMolotovChainDefersSplitterPhaseCase();
+  console.log("[OK]", "molotov_chain_defers_splitter", "adjacent removals defer and suppress post-shot splitter growth");
+  runMolotovPendingResolutionPreservesSplitterQueueCase();
+  console.log("[OK]", "molotov_pending_splitter_queue", "molotov pending setup preserves an existing splitter queue");
   runMolotovBlastPhaseDropsUnsupportedSourceSupportCase();
   console.log("[OK]", "molotov_blast_phase_drops_source_support", "source molotov removal drops unsupported cells immediately");
   runMolotovPendingResolutionFinalizeCase();

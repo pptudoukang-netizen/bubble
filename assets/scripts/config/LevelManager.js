@@ -10,6 +10,7 @@ var BOARD_OCCLUSION_TEST_LEVEL_KEY = "level_board_occlusion_test";
 var FEATURE_TEST_LEVEL_KEYS = {
   black_hole: "level_black_hole_test",
   spirit_cocoon: "level_spirit_cocoon_test",
+  campaign_321: "level_campaign_321_test",
   multi_trapped_spirit: "level_multi_trapped_spirit_test",
   transparent_ball: "level_transparent_ball_test",
   breeder_ball: "level_breeder_ball_test",

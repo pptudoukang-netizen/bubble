@@ -428,6 +428,7 @@ function validateSpiderCrawlingAudioLifecycle() {
 
 function validateCountdownSpiderEntranceOrdering() {
   var countdown = createDeferred();
+  var countdownStarted = createDeferred();
   var entrance = createDeferred();
   var events = [];
   var settled = false;
@@ -442,6 +443,7 @@ function validateCountdownSpiderEntranceOrdering() {
       hasPendingSpiderEntrance: function () { return true; },
       playGameEntryCountdown: function () {
         events.push("countdown_started");
+        countdownStarted.resolve();
         return countdown.promise;
       },
       warmupGameplayInteractionAssets: function () {
@@ -454,6 +456,10 @@ function validateCountdownSpiderEntranceOrdering() {
       }
     },
     audioManager: {
+      playSfx: function (key) {
+        assert(key === "gameEntryCountdown", "Countdown must use its configured SFX key.");
+        return Promise.resolve(7);
+      },
       preloadPaths: function (paths) {
         assert(paths.length === 1 && paths[0] === "sound/spider_crawling", "Countdown must preload the crawling clip.");
         events.push("spider_audio_preload_requested");
@@ -483,9 +489,7 @@ function validateCountdownSpiderEntranceOrdering() {
   assert(events.indexOf("spider_entrance_started") < 0, "Spider entrance must not begin before countdown completion.");
   assert(events.indexOf("spider_audio_preload_requested") >= 0, "Spider crawling audio must preload before countdown.");
 
-  return Promise.resolve().then(function () {
-    return Promise.resolve();
-  }).then(function () {
+  return countdownStarted.promise.then(function () {
     assert(events.indexOf("countdown_started") >= 0, "Countdown must start after crawling audio preload succeeds.");
     countdown.resolve();
     return Promise.resolve();

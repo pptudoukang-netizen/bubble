@@ -89,7 +89,9 @@ var POWERUP_TYPE_BY_ITEM_ID = {
   rainbow_ball: "rainbow",
   blast_ball: "blast",
   barrier_hammer: "barrier_hammer",
-  snow_removal: "snow_removal"
+  snow_removal: "snow_removal",
+  crystal_gun: "crystal_gun",
+  rainbow_prism_ball: "rainbow_prism_ball"
 };
 var ITEM_ID_BY_POWERUP_TYPE = {
   precise_aim: "precise_aim",
@@ -97,7 +99,9 @@ var ITEM_ID_BY_POWERUP_TYPE = {
   rainbow: "rainbow_ball",
   blast: "blast_ball",
   barrier_hammer: "barrier_hammer",
-  snow_removal: "snow_removal"
+  snow_removal: "snow_removal",
+  crystal_gun: "crystal_gun",
+  rainbow_prism_ball: "rainbow_prism_ball"
 };
 var LOSE_COIN_REVIVE_COST = 500;
 var ADD_BALL_TIPS_COIN_COST = 500;

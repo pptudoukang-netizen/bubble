@@ -7,7 +7,7 @@ var AssistSpiritConfig = require("../config/AssistSpiritConfig");
 var MAP_BUNDLE_NAME = "map";
 var CONFIG_PATH = "config/floating_map";
 var TELEPORT_ARRAY_PREFAB_NAME = "TeleportationArray";
-var PROTAGONIST_PATH = "image/ui/protagonist";
+var SPIRIT_AVATAR_PATH_PREFIX = "image/ui/";
 var LEVEL_NUMBER_PATH_PREFIX = "image/num/";
 var TRAPPED_SPIRIT_PATH_PREFIX = "image/trapped_spirit/";
 var ROOT_NODE_NAME = "FloatingMapRoot";
@@ -794,6 +794,28 @@ function validateLoadedPrefabs(config, prefabs) {
   }
 }
 
+function loadMapSpiritAvatarSpriteFrames(bundle) {
+  var frames = {};
+  return Promise.all(AssistSpiritConfig.getCatalog().map(function (spirit) {
+    return loadBundleAsset(bundle, SPIRIT_AVATAR_PATH_PREFIX + spirit.id + "_avatar", cc.SpriteFrame,
+      "map spirit avatar " + spirit.id).then(function (frame) {
+      frames[spirit.id] = frame;
+    });
+  })).then(function () {
+    return frames;
+  });
+}
+
+function requireSpiritAvatar(assets, spiritId) {
+  AssistSpiritConfig.getSpirit(spiritId);
+  requireObject(assets.spiritAvatarSpriteFrames, "Floating map spirit avatar sprite frames");
+  var frame = assets.spiritAvatarSpriteFrames[spiritId];
+  if (!frame) {
+    throw new Error("Floating map spirit avatar is missing: " + spiritId);
+  }
+  return frame;
+}
+
 function loadAssets(focusLevelId) {
   if (cachedAssets) {
     LevelSelectMemoryDiagnostics.increment("map.assets.cache");
@@ -822,14 +844,14 @@ function loadAssets(focusLevelId) {
           prefabs: prefabs,
           mapBundle: bundle
         }, startupPrefabNames),
-        loadBundleAsset(bundle, PROTAGONIST_PATH, cc.SpriteFrame, "map protagonist sprite"),
+        loadMapSpiritAvatarSpriteFrames(bundle),
         loadMapLevelNumberSpriteFrames(bundle),
         loadMapTrappedSpiritSpriteFrames(bundle, startupTrappedSpiritIds)
       ]).then(function (results) {
         return {
           config: config,
           prefabs: results[0],
-          protagonistSpriteFrame: results[1],
+          spiritAvatarSpriteFrames: results[1],
           levelNumberSpriteFrames: results[2],
           trappedSpiritSpriteFrames: results[3],
           mapBundle: bundle
@@ -1218,7 +1240,7 @@ function attachProtagonist(buttonNode, state) {
   protagonistNode.zIndex = PROTAGONIST_Z_INDEX;
   var sprite = protagonistNode.addComponent(cc.Sprite);
   sprite.sizeMode = cc.Sprite.SizeMode.CUSTOM;
-  sprite.spriteFrame = state.assets.protagonistSpriteFrame;
+  sprite.spriteFrame = requireSpiritAvatar(state.assets, state.equippedSpiritId);
   protagonistNode.setContentSize(PROTAGONIST_WIDTH, PROTAGONIST_HEIGHT);
   protagonistNode.__floatingMapLevelId = buttonNode.__floatingMapLevelId;
   protagonistNode.__floatingMapUnlocked = buttonNode.__floatingMapUnlocked;
@@ -1979,9 +2001,7 @@ function requireRenderOptions(options) {
   if (!options.assets.mapBundle || typeof options.assets.mapBundle.load !== "function") {
     throw new Error("Floating map assets.mapBundle is required.");
   }
-  if (!options.assets.protagonistSpriteFrame) {
-    throw new Error("Floating map protagonist sprite frame is required.");
-  }
+  requireSpiritAvatar(options.assets, options.equippedSpiritId);
   requireObject(options.assets.levelNumberSpriteFrames, "Floating map level number sprite frames");
   requireObject(options.assets.trappedSpiritSpriteFrames, "Floating map trapped spirit sprite frames");
   LEVEL_NUMBER_DIGITS.forEach(function (digit) {
@@ -2024,6 +2044,7 @@ function render(options) {
     root: runtimeNodes.root,
     content: runtimeNodes.content,
     assets: options.assets,
+    equippedSpiritId: options.equippedSpiritId,
     config: config,
     bounds: bounds,
     focusY: focusY,
@@ -2065,6 +2086,20 @@ function render(options) {
   };
 }
 
+function refreshProtagonist(mapHostNode, spiritId) {
+  var state = requireFloatingMapState(mapHostNode);
+  var frame = requireSpiritAvatar(state.assets, spiritId);
+  state.equippedSpiritId = spiritId;
+  Object.keys(state.renderedNodes).forEach(function (key) {
+    var island = requireNode(state.renderedNodes[key], "Floating map rendered island");
+    var protagonist = island.getChildByName(PROTAGONIST_NODE_NAME);
+    // Only the island containing the current frontier has a protagonist.
+    if (protagonist) {
+      requireComponent(protagonist, cc.Sprite, "Floating map protagonist").spriteFrame = frame;
+    }
+  });
+}
+
 function refreshIslandProgress(mapHostNode, options) {
   requireObject(options || {}, "Floating map refresh options");
   var state = requireFloatingMapState(mapHostNode);
@@ -2087,6 +2122,7 @@ module.exports = {
   render: render,
   scrollToLevel: scrollToLevel,
   refreshIslandProgress: refreshIslandProgress,
+  refreshProtagonist: refreshProtagonist,
   disposeRuntime: disposeRuntime,
   releaseAllCachedMapPrefabs: releaseAllCachedMapPrefabs,
   invalidateAssetCache: invalidateAssetCache,

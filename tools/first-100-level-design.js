@@ -449,178 +449,15 @@ function makeEmptySplitterCounts() {
 
 function buildBaseSpecialCounts(levelId, targetColor) {
   assertFirstHundredLevelId(levelId);
-  var phase = getPhase(levelId);
+  var counts = CampaignLevelGenerationConfig.buildBaseSpecialCounts(
+    levelId,
+    resolveRowCount(levelId),
+    targetColor
+  );
   var reactiveSpecialCounts = CampaignLevelGenerationConfig.getReactiveSpecialCounts(levelId);
-  var counts = {
-    stone: 0,
-    ice: 0,
-    blast: 0,
-    rainbow: 0,
-    molotov: 0,
-    splitters: makeEmptySplitterCounts(),
-    key: 0,
-    locked: 0,
-    swirl: reactiveSpecialCounts.swirl,
-    vine_spirit: reactiveSpecialCounts.vine_spirit,
-    wormhole: reactiveSpecialCounts.wormhole
-  };
-
-  if (levelId === 15) {
-    counts.stone = 1;
-    counts.rainbow = 1;
-    counts.blast = 1;
-    return counts;
-  }
-  if (levelId === 30) {
-    counts.ice = 5;
-    counts.stone = 1;
-    counts.rainbow = 1;
-    counts.blast = 1;
-    return counts;
-  }
-  if (levelId === 45) {
-    counts.molotov = 2;
-    counts.stone = 1;
-    counts.rainbow = 1;
-    counts.blast = 1;
-    return counts;
-  }
-  if (levelId === 60) {
-    counts.molotov = 2;
-    counts.ice = 3;
-    counts.stone = 1;
-    counts.blast = 1;
-    return counts;
-  }
-  if (levelId === 80) {
-    counts.splitters[targetColor] = 1;
-    counts.molotov = 1;
-    counts.ice = 3;
-    counts.rainbow = 1;
-    return counts;
-  }
-  if (levelId === 100) {
-    counts.key = 2;
-    counts.locked = 2;
-    counts.splitters[targetColor] = 1;
-    counts.ice = 3;
-    return counts;
-  }
-
-  if (levelId <= 9) {
-    return counts;
-  }
-  if (levelId === 10) {
-    counts.stone = 1;
-    return counts;
-  }
-  if (levelId === 11) {
-    counts.stone = 2;
-    return counts;
-  }
-  if (levelId === 12) {
-    counts.rainbow = 1;
-    return counts;
-  }
-  if (levelId === 13) {
-    counts.stone = 1;
-    counts.rainbow = 1;
-    return counts;
-  }
-  if (levelId === 14) {
-    counts.stone = 1;
-    counts.blast = 1;
-    return counts;
-  }
-  if (levelId === 15) {
-    counts.blast = 1;
-    return counts;
-  }
-  if (levelId === 16) {
-    counts.ice = 3;
-    return counts;
-  }
-  if (levelId === 17) {
-    counts.ice = 4;
-    return counts;
-  }
-  if (levelId === 18) {
-    counts.ice = 4;
-    counts.stone = 1;
-    return counts;
-  }
-  if (levelId === 19) {
-    counts.ice = 5;
-    counts.blast = 1;
-    return counts;
-  }
-  if (levelId === 20) {
-    counts.ice = 5;
-    counts.stone = 1;
-    counts.rainbow = 1;
-    return counts;
-  }
-
-  if (levelId <= 40) {
-    counts.ice = 4 + ((phase - 1) % 4);
-    if (phase === 3 || phase === 8) {
-      counts.stone = 1;
-    } else if (phase === 5) {
-      counts.blast = 1;
-    } else if (phase === 7) {
-      counts.rainbow = 1;
-    } else if (phase === 10) {
-      counts.stone = 1;
-      counts.blast = 1;
-    }
-    return counts;
-  }
-
-  if (levelId <= 60) {
-    counts.molotov = phase >= 8 ? 2 : 1;
-    if (phase === 3) {
-      counts.rainbow = 1;
-    } else if (phase === 5) {
-      counts.stone = 1;
-    } else if (phase === 7) {
-      counts.blast = 1;
-    } else if (phase === 10) {
-      counts.ice = 3;
-    }
-    return counts;
-  }
-
-  if (levelId <= 80) {
-    counts.splitters[targetColor] = 1;
-    if (phase === 3) {
-      counts.rainbow = 1;
-    } else if (phase === 5) {
-      counts.stone = 1;
-    } else if (phase === 7) {
-      counts.blast = 1;
-    } else if (phase === 10) {
-      counts.molotov = 1;
-      counts.ice = 3;
-    } else if (phase === 4 || phase === 8) {
-      counts.ice = 2;
-    }
-    return counts;
-  }
-
-  counts.key = phase === 10 ? 2 : 1;
-  counts.locked = counts.key;
-  if (phase === 3) {
-    counts.rainbow = 1;
-  } else if (phase === 5) {
-    counts.stone = 1;
-  } else if (phase === 7) {
-    counts.blast = 1;
-  } else if (phase === 10) {
-    counts.splitters[targetColor] = 1;
-    counts.ice = 3;
-  } else if (phase === 4 || phase === 8) {
-    counts.ice = 2;
-  }
+  counts.swirl = reactiveSpecialCounts.swirl;
+  counts.vine_spirit = reactiveSpecialCounts.vine_spirit;
+  counts.wormhole = reactiveSpecialCounts.wormhole;
   return counts;
 }
 
@@ -636,30 +473,7 @@ function getBoardCapacity(rowCount) {
 }
 
 function buildSpecialCounts(levelId, targetColor) {
-  var counts = buildBaseSpecialCounts(levelId, targetColor);
-  var reactiveSpecialCounts = CampaignLevelGenerationConfig.getReactiveSpecialCounts(levelId);
-  counts.ice = CampaignLevelGenerationConfig.getIceBallCount(
-    levelId,
-    getBoardCapacity(resolveRowCount(levelId))
-  );
-  counts.swirl = reactiveSpecialCounts.swirl;
-  counts.vine_spirit = reactiveSpecialCounts.vine_spirit;
-  counts.wormhole = reactiveSpecialCounts.wormhole;
-  if (CampaignLevelGenerationConfig.isTrappedSpriteRescueLevelId(levelId)) {
-    var compatibleCounts = CampaignLevelGenerationConfig.buildTrappedSpriteRescueBaseSpecialCounts(counts);
-    compatibleCounts.swirl = reactiveSpecialCounts.swirl;
-    compatibleCounts.vine_spirit = reactiveSpecialCounts.vine_spirit;
-    compatibleCounts.wormhole = reactiveSpecialCounts.wormhole;
-    return compatibleCounts;
-  }
-  if (counts.key > 0) {
-    counts.locked = CampaignLevelGenerationConfig.getLockChainLockedCount(
-      levelId,
-      resolveRowCount(levelId),
-      counts.key
-    );
-  }
-  return counts;
+  return buildBaseSpecialCounts(levelId, targetColor);
 }
 
 function countSplitters(splitterCounts) {

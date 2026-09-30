@@ -445,8 +445,20 @@ module.exports = {
     }
     var windTunnelEntryFailure = null;
     var startCountdown = function () {
-      this._playSfx("gameEntryCountdown");
-      var countdownAnimationPromise = Promise.resolve(this.levelRenderer.playGameEntryCountdown());
+      if (!this.audioManager || typeof this.audioManager.playSfx !== "function") {
+        throw new Error("Game entry countdown requires AudioManager.playSfx.");
+      }
+      var countdownAnimationPromise = this.audioManager.playSfx("gameEntryCountdown").then(function (audioId) {
+        if (audioId === null) {
+          var audioSnapshot = this.audioManager.snapshot();
+          if (!audioSnapshot || !audioSnapshot.settings || audioSnapshot.settings.sfxEnabled !== false) {
+            throw new Error("Game entry countdown audio failed to start.");
+          }
+        } else if (!Number.isInteger(audioId) || audioId < 0) {
+          throw new Error("Game entry countdown audio returned an invalid playback id.");
+        }
+        return this.levelRenderer.playGameEntryCountdown();
+      }.bind(this));
       var interactionWarmupPromise = Promise.resolve(this.levelRenderer.warmupGameplayInteractionAssets());
       var windTunnelPlaybackPromise = Promise.resolve(null);
       if (windTunnelEntrancePresent) {
@@ -574,6 +586,14 @@ module.exports = {
       }
 
       if (event.type === "jar_collect_bottom") {
+        this._playSfx("jarCollectBottom");
+        return;
+      }
+
+      if (event.type === "falling_drop_timeout_disappeared") {
+        if (!Number.isInteger(event.count) || event.count <= 0) {
+          throw new Error("falling_drop_timeout_disappeared runtime event requires positive integer count.");
+        }
         this._playSfx("jarCollectBottom");
         return;
       }

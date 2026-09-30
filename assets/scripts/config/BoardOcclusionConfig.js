@@ -470,11 +470,20 @@ function normalizePlan(rawPlan, level, levelKey) {
   };
 }
 
-function buildCampaignPlan(level) {
+function buildCampaignPlan(level, enabled) {
+  requireObject(level, "Board occlusion campaign level");
+  if (typeof enabled !== "boolean") {
+    throw new Error("Board occlusion campaign enabled flag must be boolean.");
+  }
+  if (enabled && level.levelId < ENABLED_FROM_LEVEL) {
+    throw new Error("Board occlusion campaign plan starts before level " + ENABLED_FROM_LEVEL + ".");
+  }
+  if (enabled && (level.levelType === "trapped_sprite_rescue" ||
+      level.levelType === "multi_trapped_spirit_rescue")) {
+    throw new Error("Board occlusion campaign plan cannot be enabled for a rescue level: " + level.levelId + ".");
+  }
   return createPlanForLevel(level, {
-    enabled: level.levelId >= ENABLED_FROM_LEVEL &&
-      level.levelType !== "trapped_sprite_rescue" &&
-      level.levelType !== "multi_trapped_spirit_rescue",
+    enabled: enabled,
     mode: MODE_PER_ATTEMPT
   });
 }

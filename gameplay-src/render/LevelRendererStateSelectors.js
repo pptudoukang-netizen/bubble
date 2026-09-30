@@ -645,6 +645,13 @@ function buildBottomPanelRenderKey(runtimeSnapshot) {
   if (!Number.isInteger(snowRemovalCount) || snowRemovalCount < 0) {
     throw new Error("Bottom panel render key snow_removal count must be a non-negative integer.");
   }
+  if (!Object.prototype.hasOwnProperty.call(skillInventory, "crystal_gun")) {
+    throw new Error("Bottom panel render key requires crystal_gun count.");
+  }
+  var crystalGunCount = Number(skillInventory.crystal_gun);
+  if (!Number.isInteger(crystalGunCount) || crystalGunCount < 0) {
+    throw new Error("Bottom panel render key crystal_gun count must be a non-negative integer.");
+  }
   if (!Object.prototype.hasOwnProperty.call(skillInventory, "rainbow_prism_ball")) {
     throw new Error("Bottom panel render key requires rainbow_prism_ball count.");
   }
@@ -669,6 +676,7 @@ function buildBottomPanelRenderKey(runtimeSnapshot) {
     runtimeSnapshot.infiniteShots ? 1 : 0,
     Math.max(0, Math.floor(Number(skillInventory.rainbow) || 0)),
     Math.max(0, Math.floor(Number(skillInventory.blast) || 0)),
+    crystalGunCount,
     rainbowPrismBallCount,
     Math.max(0, Math.floor(Number(skillInventory.swap) || 0)),
     Math.max(0, Math.floor(Number(skillInventory.barrier_hammer) || 0)),
@@ -698,6 +706,7 @@ function buildShooterRenderKey(runtimeSnapshot) {
     ? rainbowSelection.colors.join(",")
     : "";
   return [
+    runtimeSnapshot.state,
     runtimeSnapshot.remainingShots,
     shooter.infiniteShots ? 1 : 0,
     shooter.isAiming ? 1 : 0,

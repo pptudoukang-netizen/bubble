@@ -892,8 +892,8 @@ function validateBootstrapAndCloudContract() {
   );
 
   var clientCloud = readText("assets/scripts/services/PlayerCloudProfileService.js");
-  var serverCloud = readText("cloudfunctions/playerProfile/index.js");
-  var templateCloud = readText("build-templates/wechatgame/cloudfunctions/playerProfile/index.js");
+  var serverCloud = readText("cloudfunctions/playerProfileV2/index.js");
+  var templateCloud = readText("build-templates/wechatgame/cloudfunctions/playerProfileV2/index.js");
   assert(
     templateCloud === serverCloud,
     "WeChat playerProfile cloud-function template must match the deployment source."
@@ -901,7 +901,7 @@ function validateBootstrapAndCloudContract() {
   requireContains(clientCloud, "SpiritShopStore.STORAGE_KEY", "Client cloud spirit shop storage key");
   requireContains(serverCloud, "bubble_spirit_shop_state_v1", "Server cloud spirit shop storage key");
   requireContains(serverCloud, "fragment_bag: 0", "Server cloud fragment bag initial daily count");
-  var marker = "playerProfile_v20260814_profile_size_caps_v6";
+  var marker = "playerProfileV2_v20260824_profile_size_caps_v6";
   requireContains(clientCloud, marker, "Client cloud deployment marker");
   requireContains(serverCloud, marker, "Server cloud deployment marker");
 }

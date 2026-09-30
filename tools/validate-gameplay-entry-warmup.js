@@ -25,6 +25,12 @@ function requireSourceBlock(source, startText, endText, description) {
   return source.slice(startIndex, endIndex);
 }
 
+function readNumericConstant(source, constantName) {
+  var match = new RegExp("var " + constantName + " = ([0-9]+(?:\\.[0-9]+)?);").exec(source);
+  assert.ok(match, "Missing numeric constant: " + constantName);
+  return Number(match[1]);
+}
+
 function createDeferred() {
   var resolve;
   var reject;
@@ -100,10 +106,17 @@ function validateWarmupSourceContracts() {
   );
 
   requireSourceText(runtimeSource, "this.warmupSharedAssets(runtimeSnapshot)", "Runtime render");
-  requireSourceText(preparedWarmupBlock, "this._preloadAssistSpiritAnimationClips(assistSpiritId)", "Current assist spirit warmup");
+  requireSourceText(preparedWarmupBlock, "this._preloadAssistSpiritSkeletonData(assistSpiritId)", "Current assist spirit warmup");
   requireSourceText(preparedWarmupBlock, "this.prefabFactory.preload(", "Initial prefab warmup");
   requireSourceText(preparedWarmupBlock, "this._collectInitialRenderPrefabPaths()", "Initial prefab collection");
   requireSourceText(preparedWarmupBlock, "this._preloadSprites(this._collectInitialCommonSpritePaths())", "Initial common sprite warmup");
+  requireSourceText(preparedWarmupBlock, "this.bubbleShatterRenderer.preload()", "Initial bubble shatter effect warmup");
+  requireSourceText(initialSpriteBlock, "BALL_RESOURCES.BUBBLE_SHIELD", "Initial bubble shield shatter SpriteFrame warmup");
+  assert.strictEqual(
+    interactionSpriteBlock.indexOf("BALL_RESOURCES.BUBBLE_SHIELD"),
+    -1,
+    "Bubble shield shatter SpriteFrame must not wait for interaction warmup."
+  );
   requireSourceText(initialWarmupBlock, "this.warmupPreparedGameplayAssets(assistSpiritId)", "Prepared gameplay warmup reuse");
   requireSourceText(initialWarmupBlock, "this._preloadInitialLevelRenderAssets(runtimeSnapshot)", "Current level render warmup");
   requireSourceText(resourceSource, "if (hasTimeBonus) {", "Time bonus font warmup gate");
@@ -113,18 +126,22 @@ function validateWarmupSourceContracts() {
   assert.strictEqual(initialWarmupBlock.indexOf("_preloadFairySkeletonData"), -1, "Initial render must not wait for fairy Spine data.");
   assert.strictEqual(initialWarmupBlock.indexOf("_preloadExplodeAnimationClip"), -1, "Initial render must not wait for explode animation.");
   assert.strictEqual(initialWarmupBlock.indexOf("_preloadFireworksPrefab"), -1, "Initial render must not wait for fireworks prefab.");
-  assert.strictEqual(initialWarmupBlock.indexOf("bubbleShatterRenderer.preload"), -1, "Initial render must not wait for bubble shatter shader.");
+  assert.strictEqual(initialWarmupBlock.indexOf("bubbleShatterRenderer.preload"), -1, "Level-specific warmup must reuse the prepared bubble shatter preload.");
 
   [
     "this._preloadFairySkeletonData()",
     "this._preloadExplodeAnimationClip()",
     "this._preloadFireworksPrefab()",
     "this.prefabFactory.preload(this._collectInteractionPrefabPaths())",
-    "this._preloadSprites(this._collectInteractionSpritePaths())",
-    "this.bubbleShatterRenderer.preload()"
+    "this._preloadSprites(this._collectInteractionSpritePaths())"
   ].forEach(function (contract) {
     requireSourceText(interactionWarmupBlock, contract, "Gameplay interaction warmup");
   });
+  assert.strictEqual(
+    interactionWarmupBlock.indexOf("bubbleShatterRenderer.preload"),
+    -1,
+    "Interaction warmup must not own the initial bubble shatter effect."
+  );
 
   requireSourceText(levelSpriteBlock, "this._collectInitialCommonSpritePaths().slice()", "Initial level sprite collection");
   requireSourceText(levelSpriteBlock, "AssistSpiritSkillConfig.getBySpiritId(runtimeSnapshot.shooter.assistSpiritId)", "Equipped assist spirit skill icon collection");
@@ -170,7 +187,7 @@ function validateWarmupSourceContracts() {
   assert.strictEqual(
     requireSourceBlock(
       resourceSource,
-      "LevelRenderer.prototype._preloadAssistSpiritAnimationClips = function (spiritId)",
+      "LevelRenderer.prototype._preloadAssistSpiritSkeletonData = function (spiritId)",
       "LevelRenderer.prototype._preloadFireworksPrefab = function ()",
       "Assist spirit clip warmup"
     ).indexOf("getAllClipPaths"),
@@ -190,6 +207,7 @@ function validateWarmupSourceContracts() {
 }
 
 function validateCountdownOverlap() {
+  var audioDeferred = createDeferred();
   var countdownDeferred = createDeferred();
   var warmupDeferred = createDeferred();
   var countdownCalls = 0;
@@ -207,6 +225,10 @@ function validateCountdownOverlap() {
       }
     },
     audioManager: {
+      playSfx: function (key) {
+        assert.strictEqual(key, "gameEntryCountdown");
+        return audioDeferred.promise;
+      },
       stopExclusiveSfx: function (channelName) {
         assert.strictEqual(channelName, "windTunnelAmbient", "Entry reset must target the wind tunnel ambient channel.");
         return false;
@@ -239,17 +261,57 @@ function validateCountdownOverlap() {
   var readinessPromise = GameBootstrapAudioMethods._runGameEntryCountdown.call(host).then(function () {
     settled = true;
   });
-  assert.strictEqual(countdownCalls, 1, "Entry countdown must start exactly once.");
-  assert.strictEqual(warmupCalls, 1, "Interaction warmup must start exactly once with the countdown.");
-
-  countdownDeferred.resolve();
+  assert.strictEqual(countdownCalls, 0, "Visuals must wait while countdown audio is loading.");
+  assert.strictEqual(warmupCalls, 1, "Interaction warmup must overlap audio loading.");
+  audioDeferred.resolve(7);
   return Promise.resolve().then(function () {
-    assert.strictEqual(settled, false, "Entry readiness must still wait for interaction assets after countdown completion.");
+    assert.strictEqual(countdownCalls, 1, "Countdown must start exactly once after audio starts.");
+    countdownDeferred.resolve();
+    return Promise.resolve();
+  }).then(function () {
+    assert.strictEqual(settled, false, "Entry must still wait for interaction assets.");
     warmupDeferred.resolve();
     return readinessPromise;
   }).then(function () {
-    assert.strictEqual(settled, true, "Entry readiness must finish after countdown and interaction warmup both complete.");
+    assert.strictEqual(settled, true);
+    host.audioManager.playSfx = function () { return Promise.resolve(null); };
+    host.audioManager.snapshot = function () { return { settings: { sfxEnabled: false } }; };
+    return GameBootstrapAudioMethods._runGameEntryCountdown.call(host);
+  }).then(function () {
+    assert.strictEqual(countdownCalls, 2, "Explicit mute must still display countdown.");
+    host.audioManager.snapshot = function () { return { settings: { sfxEnabled: true } }; };
+    return assert.rejects(GameBootstrapAudioMethods._runGameEntryCountdown.call(host), /audio failed to start/);
+  }).then(function () {
+    assert.strictEqual(countdownCalls, 2, "Failed audio must not start an unsynchronized countdown.");
   });
+}
+
+function validateCountdownDurationContract() {
+  var scaffoldSource = readProjectFile("gameplay-src/render/LevelRendererSceneScaffoldMethods.js");
+  var countdownBlock = requireSourceBlock(
+    scaffoldSource,
+    "LevelRenderer.prototype.playGameEntryCountdown = function ()",
+    "LevelRenderer.prototype.syncBoardLayoutHudBottomLineAsync = function ()",
+    "Game entry countdown"
+  );
+  var totalDuration = readNumericConstant(scaffoldSource, "GAME_ENTRY_COUNTDOWN_TOTAL_DURATION");
+  var times = ["THREE", "TWO", "ONE", "GO"].map(function (name) {
+    return readNumericConstant(scaffoldSource, "GAME_ENTRY_" + name + "_TIME");
+  });
+  assert.deepStrictEqual(times, [0.03, 0.52, 1.01, 1.47], "Visual cues must match the current time.mp3 onsets.");
+  assert.strictEqual(totalDuration, 3);
+  var scaleDuration = readNumericConstant(scaffoldSource, "GAME_ENTRY_GO_SCALE_DURATION");
+  assert(totalDuration - times[3] - scaleDuration > 0);
+  [
+    "cc.delayTime(GAME_ENTRY_THREE_TIME)",
+    "cc.delayTime(GAME_ENTRY_TWO_TIME - GAME_ENTRY_THREE_TIME)",
+    "cc.delayTime(GAME_ENTRY_ONE_TIME - GAME_ENTRY_TWO_TIME)",
+    "cc.delayTime(GAME_ENTRY_GO_TIME - GAME_ENTRY_ONE_TIME)",
+    "cc.delayTime(GAME_ENTRY_GO_HOLD_DURATION)"
+  ].forEach(function (text) { requireSourceText(countdownBlock, text, "Audio cue schedule"); });
+  requireSourceText(scaffoldSource,
+    "GAME_ENTRY_COUNTDOWN_TOTAL_DURATION - GAME_ENTRY_GO_TIME - GAME_ENTRY_GO_SCALE_DURATION",
+    "GO must fill the remaining three-second presentation budget");
 }
 
 function validateConditionalInitialResources() {
@@ -292,10 +354,83 @@ function validateConditionalInitialResources() {
   });
 }
 
+function validatePreparedBubbleShatterWarmup() {
+  function LevelRendererFixture() {}
+  attachLevelRendererResourceMethods(LevelRendererFixture, {
+    AssistSpiritPresentationConfig: {
+      getBySpiritId: function (spiritId) {
+        assert.strictEqual(spiritId, "milu", "Prepared warmup must validate the equipped assist spirit.");
+        return { id: spiritId };
+      }
+    },
+    HUD_STAR_RESOURCES: { lit: "hud_star_lit", unlit: "hud_star_unlit" },
+    TOP_SLOT_STAR_RESOURCE: "top_slot_star",
+    POWERUP_ICON_RESOURCES: {
+      rainbow: "powerup_rainbow",
+      swap: "powerup_swap",
+      blast: "powerup_blast",
+      crystal_gun: "powerup_crystal_gun",
+      rainbow_prism_ball: "powerup_rainbow_prism_ball",
+      barrier_hammer: "powerup_barrier_hammer",
+      precise_aim: "powerup_precise_aim",
+      snow_removal: "powerup_snow_removal",
+      three_line_elimination: "powerup_three_line_elimination",
+      plus_three_balls: "powerup_plus_three_balls"
+    },
+    BALL_RESOURCES: {
+      BUBBLE_SHIELD: "game/image/ball/transparent_bubbles"
+    }
+  });
+  var shatterDeferred = createDeferred();
+  var shatterPreloadCalls = 0;
+  var settled = false;
+  var renderer = Object.create(LevelRendererFixture.prototype);
+  renderer._sharedWarmupPromise = null;
+  renderer.prefabFactory = {
+    preload: function () {
+      return Promise.resolve();
+    }
+  };
+  renderer._collectInitialRenderPrefabPaths = function () {
+    return [];
+  };
+  renderer._preloadSprites = function (paths) {
+    assert.ok(
+      paths.indexOf("game/image/ball/transparent_bubbles") >= 0,
+      "Prepared warmup must preload the bubble shield shatter SpriteFrame."
+    );
+    return Promise.resolve();
+  };
+  renderer._preloadAssistSpiritSkeletonData = function () {
+    return Promise.resolve();
+  };
+  renderer.bubbleShatterRenderer = {
+    preload: function () {
+      shatterPreloadCalls += 1;
+      return shatterDeferred.promise;
+    }
+  };
+
+  var firstWarmup = renderer.warmupPreparedGameplayAssets("milu").then(function () {
+    settled = true;
+  });
+  var secondWarmup = renderer.warmupPreparedGameplayAssets("milu");
+  assert.strictEqual(shatterPreloadCalls, 1, "Prepared warmup must share one bubble shatter preload promise.");
+  return Promise.resolve().then(function () {
+    assert.strictEqual(settled, false, "Prepared warmup must wait for the bubble shatter effect.");
+    shatterDeferred.resolve({ isValid: true });
+    return Promise.all([firstWarmup, secondWarmup]);
+  }).then(function () {
+    assert.strictEqual(settled, true, "Prepared warmup must complete after the bubble shatter effect loads.");
+  });
+}
+
 validateWarmupSourceContracts();
+validateCountdownDurationContract();
 Promise.all([
   validateCountdownOverlap(),
-  validateConditionalInitialResources()
+  validateConditionalInitialResources(),
+  validatePreparedBubbleShatterWarmup()
 ]).then(function () {
   console.log("Gameplay entry warmup validation passed.");
 }).catch(function (error) {

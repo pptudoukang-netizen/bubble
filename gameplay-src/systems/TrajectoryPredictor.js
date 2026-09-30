@@ -110,6 +110,77 @@ function buildPlan(origin, direction, wallPoints, hitType, hitPoint, collidedCel
   };
 }
 
+function findFirstWormholeCollisionOnPlanPath(grid, plan, collisionRadius) {
+  if (typeof grid.findWormholeCollisionOnSegment !== "function") {
+    throw new Error("Trajectory prediction requires BubbleGrid.findWormholeCollisionOnSegment.");
+  }
+  if (!plan || !plan.origin || !plan.hitPoint || !Array.isArray(plan.wallPoints)) {
+    throw new Error("Wormhole path resolution requires an authoritative shot plan.");
+  }
+
+  var physicalPathPoints = [plan.origin].concat(plan.wallPoints).concat([plan.hitPoint]);
+  for (var segmentIndex = 0; segmentIndex < physicalPathPoints.length - 1; segmentIndex += 1) {
+    var segmentStart = physicalPathPoints[segmentIndex];
+    var segmentEnd = physicalPathPoints[segmentIndex + 1];
+    if (nearlySamePoint(segmentStart, segmentEnd, 0.000001)) {
+      continue;
+    }
+    var collision = grid.findWormholeCollisionOnSegment(
+      segmentStart,
+      segmentEnd,
+      collisionRadius
+    );
+    if (!collision) {
+      continue;
+    }
+    return {
+      collision: collision,
+      wallPointsBeforeCollision: plan.wallPoints.slice(0, segmentIndex),
+      impactDirection: normalize({
+        x: segmentEnd.x - segmentStart.x,
+        y: segmentEnd.y - segmentStart.y
+      })
+    };
+  }
+  return null;
+}
+
+function isPlanTerminalAtWormhole(grid, plan) {
+  if (typeof grid.getWormholes !== "function") {
+    throw new Error("Wormhole terminal resolution requires BubbleGrid.getWormholes.");
+  }
+  if (!plan || !plan.hitPoint || !Number.isFinite(plan.hitPoint.x) || !Number.isFinite(plan.hitPoint.y)) {
+    throw new Error("Wormhole terminal resolution requires a finite shot-plan hitPoint.");
+  }
+  return grid.getWormholes().some(function (wormhole) {
+    var endpointPosition = grid.getCellPosition(wormhole.row, wormhole.col);
+    return nearlySamePoint(plan.hitPoint, endpointPosition, 0.001);
+  });
+}
+
+function buildWormholeAbsorptionPlan(normalPlan, pathCollision) {
+  var collision = pathCollision.collision;
+  var wormholePlan = buildPlan(
+    normalPlan.origin,
+    normalPlan.direction,
+    pathCollision.wallPointsBeforeCollision,
+    "wormhole",
+    collision.point,
+    collision.cell,
+    null,
+    collision.point,
+    pathCollision.impactDirection
+  );
+  wormholePlan.targetCellPosition = null;
+  wormholePlan.absorbingWormhole = {
+    id: String(collision.cell.id),
+    row: collision.cell.row,
+    col: collision.cell.col,
+    position: clone(collision.center)
+  };
+  return wormholePlan;
+}
+
 function TrajectoryPredictor() {
   BaseSystem.call(this, "TrajectoryPredictor");
   this.maxBounces = 6;
@@ -172,7 +243,7 @@ TrajectoryPredictor.prototype.configureLevel = function (levelConfig) {
   return this;
 };
 
-TrajectoryPredictor.prototype.predictShotPlan = function (grid, origin, direction) {
+TrajectoryPredictor.prototype._predictShotPlanIgnoringWormholes = function (grid, origin, direction) {
   if (!grid || !origin || !direction) {
     return null;
   }
@@ -218,18 +289,6 @@ TrajectoryPredictor.prototype.predictShotPlan = function (grid, origin, directio
       } else {
         distanceToBubble = collisionInfo.t * probeDistance;
       }
-    }
-    if (typeof grid.findWormholeCollisionOnSegment !== "function") {
-      throw new Error("Trajectory prediction requires BubbleGrid.findWormholeCollisionOnSegment.");
-    }
-    var wormholeCollision = grid.findWormholeCollisionOnSegment(
-      currentPoint,
-      probeEnd,
-      this.predictionCollisionRadius
-    );
-    var distanceToWormhole = Number.POSITIVE_INFINITY;
-    if (wormholeCollision) {
-      distanceToWormhole = wormholeCollision.t * probeDistance;
     }
     if (typeof grid.findWindTunnelEntranceCollisionOnSegment !== "function") {
       throw new Error("Trajectory prediction requires BubbleGrid.findWindTunnelEntranceCollisionOnSegment.");
@@ -289,7 +348,6 @@ TrajectoryPredictor.prototype.predictShotPlan = function (grid, origin, directio
     var minDistance = Math.min(
       distanceToBubble,
       distanceToBlackHole,
-      distanceToWormhole,
       distanceToWindTunnel,
       distanceToTrappedSprite,
       effectiveSlotDistance,
@@ -326,29 +384,6 @@ TrajectoryPredictor.prototype.predictShotPlan = function (grid, origin, directio
         position: clone(grid.getCellPosition(blackHoleCollision.cell.row, blackHoleCollision.cell.col))
       };
       return blackHolePlan;
-    }
-
-    if (distanceToWormhole <= minDistance + EPSILON && wormholeCollision) {
-      var wormholeImpactPoint = clone(wormholeCollision.point);
-      var wormholePlan = buildPlan(
-        rayOrigin,
-        rayDirection,
-        wallPoints,
-        "wormhole",
-        wormholeImpactPoint,
-        wormholeCollision.cell,
-        null,
-        wormholeImpactPoint,
-        currentDirection
-      );
-      wormholePlan.targetCellPosition = null;
-      wormholePlan.absorbingWormhole = {
-        id: String(wormholeCollision.cell.id),
-        row: wormholeCollision.cell.row,
-        col: wormholeCollision.cell.col,
-        position: clone(wormholeCollision.center)
-      };
-      return wormholePlan;
     }
 
     if (distanceToWindTunnel <= minDistance + EPSILON && windTunnelCollision) {
@@ -633,6 +668,25 @@ TrajectoryPredictor.prototype.predictShotPlan = function (grid, origin, directio
     throw new Error("Trapped sprite rescue trajectory did not resolve within the boundary bounce limit.");
   }
   return buildFallbackPlan(grid, rayOrigin, rayDirection);
+};
+
+TrajectoryPredictor.prototype.predictShotPlan = function (grid, origin, direction) {
+  var normalPlan = this._predictShotPlanIgnoringWormholes(grid, origin, direction);
+  if (!normalPlan) {
+    return null;
+  }
+  var pathCollision = findFirstWormholeCollisionOnPlanPath(
+    grid,
+    normalPlan,
+    this.predictionCollisionRadius
+  );
+  if (!pathCollision) {
+    return normalPlan;
+  }
+  if (normalPlan.targetCell && !isPlanTerminalAtWormhole(grid, normalPlan)) {
+    return normalPlan;
+  }
+  return buildWormholeAbsorptionPlan(normalPlan, pathCollision);
 };
 
 TrajectoryPredictor.prototype._shouldPreferSlotCandidate = function (slotInfo, distanceToSlot, distanceToBubble, epsilon) {

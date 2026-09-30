@@ -176,7 +176,15 @@ function validateMixedCellShiftAndProtection() {
   assert(grid.getCell(3, 7).color === "G", "Last occupied slot must move right without losing color.");
   assert(grid.getCells().every(function (cell) { return cell.entityType !== "wormhole"; }), "Wormholes must not enter BubbleGrid.cells.");
   assert(grid.getSpecialEntities().filter(function (entity) { return entity.entityType === "wormhole"; }).length === 2, "Wormhole overlays must remain fixed special entities.");
-  assert(grid.getClearableCells().length === grid.getCells().length, "Every occupied board cell must remain clearable independently of wormhole overlays.");
+  var clearableCells = grid.getClearableCells();
+  [2, 4, 6, 7].forEach(function (col) {
+    assert(clearableCells.some(function (cell) {
+      return cell.row === 3 && cell.col === col;
+    }), "Wormhole cycling must preserve clearability for the movable non-locked cell at 3:" + col + ".");
+  });
+  assert(!clearableCells.some(function (cell) {
+    return cell.id === "locked_moving";
+  }), "The wormhole fixture must preserve the current locked-ball clearability rule.");
   var emptyEndpointPosition = grid.getCellPosition(3, 8);
   assert(grid.findCollision(emptyEndpointPosition, 1) === null, "An empty wormhole endpoint must not block the shot collision path.");
   assert(
@@ -232,15 +240,15 @@ function validateMultiplePairShift() {
 }
 
 function validateProjectileAbsorptionPlanningAndSettlement() {
-  var levelConfig = {
+  var passThroughLevelConfig = {
     coordinateSystem: "odd-r-hex",
     level: {
       levelId: 1,
-      code: "WORMHOLE_PROJECTILE_ABSORPTION",
+      code: "WORMHOLE_PROJECTILE_PASS_THROUGH",
       initialDropSpaceRows: 8,
       layout: [
         "R.........",
-        ".........",
+        "....R....",
         "..........",
         ".........",
         "..........",
@@ -254,19 +262,58 @@ function validateProjectileAbsorptionPlanningAndSettlement() {
       ]
     }
   };
-  var grid = createGrid(levelConfig);
-  var targetPosition = grid.getCellPosition(3, 4);
+  var passThroughGrid = createGrid(passThroughLevelConfig);
+  var targetPosition = passThroughGrid.getCellPosition(3, 4);
   var predictor = new TrajectoryPredictor();
   predictor.initialize({});
-  predictor.configureLevel(levelConfig);
-  var plan = predictor.predictShotPlan(
-    grid,
+  predictor.configureLevel(passThroughLevelConfig);
+  var passThroughPlan = predictor.predictShotPlan(
+    passThroughGrid,
     { x: targetPosition.x, y: targetPosition.y - 300 },
     { x: 0, y: 1 }
   );
-  assert(plan.hitType === "wormhole", "Aim prediction must stop at the first wormhole endpoint.");
+  assert(passThroughPlan.hitType !== "wormhole", "Aim prediction must skip a wormhole when a legal landing exists beyond it.");
+  assert(passThroughPlan.targetCell !== null, "A shot passing through a wormhole must preserve its legal landing cell.");
+  assert(passThroughPlan.targetCell.row < 3, "The preserved legal landing must be physically beyond the crossed wormhole row.");
+  assert(
+    !passThroughGrid.hasWormholeAt(passThroughPlan.targetCell.row, passThroughPlan.targetCell.col),
+    "A shot passing through a wormhole must never attach on the endpoint coordinate."
+  );
+  assert(passThroughPlan.absorbingWormhole === undefined, "A legal landing beyond a wormhole must not emit an absorption target.");
+
+  var terminalLevelConfig = {
+    coordinateSystem: "odd-r-hex",
+    level: {
+      levelId: 1,
+      code: "WORMHOLE_PROJECTILE_TERMINAL_ABSORPTION",
+      initialDropSpaceRows: 8,
+      layout: [
+        "R.........",
+        ".........",
+        "..........",
+        ".........",
+        "..........",
+        ".........",
+        "..........",
+        "........."
+      ],
+      specialEntities: [
+        { id: "terminal_left", entityCategory: "reactive_ball", entityType: "wormhole", moveDirection: "right", row: 0, col: 4 },
+        { id: "terminal_right", entityCategory: "reactive_ball", entityType: "wormhole", moveDirection: "right", row: 0, col: 7 }
+      ]
+    }
+  };
+  var grid = createGrid(terminalLevelConfig);
+  var terminalPosition = grid.getCellPosition(0, 4);
+  predictor.configureLevel(terminalLevelConfig);
+  var plan = predictor.predictShotPlan(
+    grid,
+    { x: terminalPosition.x, y: terminalPosition.y - 300 },
+    { x: 0, y: 1 }
+  );
+  assert(plan.hitType === "wormhole", "Aim prediction must absorb when the physical trajectory endpoint is a wormhole.");
   assert(plan.targetCell === null && plan.targetCellPosition === null, "Wormhole shot plan must not expose an attachment or ghost target.");
-  assert(plan.absorbingWormhole.id === "absorb_left", "Wormhole shot plan must record the exact absorbing endpoint.");
+  assert(plan.absorbingWormhole.id === "terminal_left", "Wormhole shot plan must record the exact terminal endpoint.");
   assert(plan.pathPoints.length >= 2, "Wormhole shot plan must keep a finite projectile path to the contact point.");
   plan.penetratedTransparentBalls = [];
 
@@ -304,7 +351,7 @@ function validateProjectileAbsorptionPlanningAndSettlement() {
   assert(manager.activeProjectile === null, "Absorbed projectile must disappear instead of attaching to the board.");
   assert(manager.lastResolution.wormholeProjectileAbsorptions.length === 1, "Absorbed projectile must create exactly one visual event.");
   var absorption = manager.lastResolution.wormholeProjectileAbsorptions[0];
-  assert(absorption.wormholeId === "absorb_left", "Absorption event must preserve the absorbing endpoint id.");
+  assert(absorption.wormholeId === "terminal_left", "Absorption event must preserve the absorbing endpoint id.");
   assert(absorption.duration === SpecialAnimationTiming.wormholeShift.projectileAbsorbDuration, "Absorption event must use authoritative timing.");
   assert(continuedResolution === manager.lastResolution, "Absorbed shot must continue the ordinary post-shot special phase chain.");
 }
@@ -443,7 +490,10 @@ function validateTopAnchorCollapsePreservesWormholes() {
   assert(BoardViewportSystem.countTopRowEmptySlots(grid.getCells(), grid.maxColumns) === 6, "Top-anchor collapse fixture must expose exactly six top-row empty slots.");
   assert(manager._tryTopAnchorCollapse(), "Six top-row empty slots must trigger collapse even when a wormhole pair exists.");
   assert(registeredDrops.length === 5, "Top-anchor collapse must drop every non-wormhole board cell.");
-  assert(registeredDropOptions.startDelay === 0, "Top-anchor collapse drops must start without delay.");
+  assert(
+    registeredDropOptions.startDelay === SpecialAnimationTiming.topAnchorCollapse.dropDelay,
+    "Top-anchor collapse drops must use the authoritative presentation delay."
+  );
   assert(registeredDropOptions.holdUntilEliminationPresentationComplete !== true, "Top-anchor collapse drops must not wait for an elimination callback that already completed.");
   assert(grid.getCells().length === 0 && grid.hasWormholePair(), "Top-anchor collapse must leave an empty grid while preserving both wormhole overlays.");
   assert(manager.lastResolution.topAnchorCollapse === true, "Top-anchor collapse must be recorded on the active resolution.");
@@ -465,10 +515,12 @@ function validateFlowShaderAndShiftCompatibility() {
   var wormholeTextureMetaPath = path.resolve(__dirname, "../assets/game/image/ball/wormhole.png.meta");
   var directionArrowMetaPath = path.resolve(__dirname, "../assets/game/image/ball/arrow.png.meta");
   var boardRendererSourcePath = path.resolve(__dirname, "../gameplay-src/render/LevelRendererSceneBoardMethods.js");
+  var boardVisualsSourcePath = path.resolve(__dirname, "../gameplay-src/render/LevelRendererWindTunnelBoardVisuals.js");
   var effectText = fs.readFileSync(effectPath, "utf8");
   var projectRoot = path.resolve(__dirname, "..");
   var levelRendererSource = readGameplaySourceFamily(projectRoot, "gameplay-src/render", "LevelRenderer");
   var boardRendererSource = fs.readFileSync(boardRendererSourcePath, "utf8");
+  var boardVisualsSource = fs.readFileSync(boardVisualsSourcePath, "utf8");
   var sceneFxSource = readGameplaySourceFamily(projectRoot, "gameplay-src/render", "LevelRenderer");
   var effectMeta = readJson(effectMetaPath);
   var wormholeTextureMeta = readJson(wormholeTextureMetaPath);
@@ -495,7 +547,7 @@ function validateFlowShaderAndShiftCompatibility() {
       levelRendererSource.indexOf('wormholeDirection: this._getOrCreateLayer("WormholeDirectionLayer", 42)') >= 0,
     "Wormhole endpoints must render below board balls and direction arrows must render above them."
   );
-  assert(boardRendererSource.indexOf("isWormholeEntity(cell) ? WORMHOLE_RENDER_SIZE : BOARD_BUBBLE_SIZE") >= 0, "Board rendering must apply the dedicated wormhole size.");
+  assert(boardVisualsSource.indexOf("return deps.WORMHOLE_RENDER_SIZE;") >= 0, "Board rendering must apply the dedicated wormhole size.");
   assert(sceneFxSource.indexOf("boardSnapshot.specialEntities.filter") >= 0, "Wormhole direction guide must use non-grid special entities.");
   assert(boardRendererSource.indexOf("this._syncWormholeDirectionGuide(boardSnapshot);") >= 0, "Board rendering must synchronize the wormhole direction guide.");
   [
@@ -859,4 +911,4 @@ validateProjectileAbsorptionPlanningAndSettlement();
 validateDeferredSupportDropAndNoAutoMatch();
 validateTopAnchorCollapsePreservesWormholes();
 validateFlowShaderAndShiftCompatibility();
-console.log("[OK] wormhole reserved endpoints, absorption collision/settlement, non-support rules, strict-interior cyclic shift, inhale/exhale visuals, 80x80 below-ball rendering, above-ball arrows, top-anchor collapse, deferred drop and clear-state rules");
+console.log("[OK] wormhole reserved endpoints, legal-landing pass-through, terminal-only absorption settlement, non-support rules, strict-interior cyclic shift, inhale/exhale visuals, 80x80 below-ball rendering, above-ball arrows, top-anchor collapse, deferred drop and clear-state rules");

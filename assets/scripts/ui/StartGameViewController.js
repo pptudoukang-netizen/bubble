@@ -12,7 +12,9 @@ var POWERUP_DEFINITIONS = [
   { itemId: "rainbow_ball", unlockLevel: 10, iconPath: "ui/image/props/rainbow_ball" },
   { itemId: "blast_ball", unlockLevel: 15, iconPath: "ui/image/props/blast_ball" },
   { itemId: "barrier_hammer", unlockLevel: 20, iconPath: "ui/image/props/barrier_hammer" },
-  { itemId: "snow_removal", unlockLevel: 16, iconPath: "ui/image/props/snow_removal" }
+  { itemId: "snow_removal", unlockLevel: 16, iconPath: "ui/image/props/snow_removal" },
+  { itemId: "crystal_gun", unlockLevel: 25, iconPath: "ui/image/props/crystal_gun" },
+  { itemId: "rainbow_prism_ball", unlockLevel: 30, iconPath: "ui/image/props/rainbow_prism_ball" }
 ];
 var LOCK_ICON_PATH = "image/commone/lock";
 var PROP_ITEM_HORIZONTAL_PADDING = 12;

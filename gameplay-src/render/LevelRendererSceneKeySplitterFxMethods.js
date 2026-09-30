@@ -43,12 +43,28 @@ LevelRenderer.prototype._playKeyUnlockAnimation = function (runtimeSnapshot) {
   if (!this.layers || !this.layers.board || !this.layers.board.isValid) {
     throw new Error("Key unlock animation requires board layer.");
   }
+  if (
+    !this.boardAdvancePresentationTarget ||
+    typeof this.boardAdvancePresentationTarget.notifyBoardAdvanceKeyUnlockPresentationComplete !== "function"
+  ) {
+    throw new Error("Key unlock animation requires board advance presentation target.");
+  }
 
   var boardSnapshot = runtimeSnapshot.board;
   var flyDuration = SpecialAnimationTiming.keyUnlock.flyDuration;
   var keyShrinkDuration = SpecialAnimationTiming.keyUnlock.shrinkDuration;
   var lockShakeStep = SpecialAnimationTiming.keyUnlock.lockShakeStepDuration;
   var lockShakeOffset = 8;
+  var remainingKeyAnimations = collectedKeys.length;
+  var markKeyAnimationComplete = function () {
+    remainingKeyAnimations -= 1;
+    if (remainingKeyAnimations < 0) {
+      throw new Error("Key unlock animation completion count cannot be negative.");
+    }
+    if (remainingKeyAnimations === 0) {
+      this.boardAdvancePresentationTarget.notifyBoardAdvanceKeyUnlockPresentationComplete(resolution);
+    }
+  }.bind(this);
 
   collectedKeys.forEach(function (keyCell) {
     if (!keyCell) {
@@ -108,13 +124,17 @@ LevelRenderer.prototype._playKeyUnlockAnimation = function (runtimeSnapshot) {
           entry.lockFx.removeFromParent(true);
         }
       });
+      markKeyAnimationComplete();
     };
 
     var shakeLocks = function () {
       var remaining = lockFxNodes.length;
       var markDone = function () {
         remaining -= 1;
-        if (remaining <= 0) {
+        if (remaining < 0) {
+          throw new Error("Key unlock lock animation completion count cannot be negative.");
+        }
+        if (remaining === 0) {
           cleanup();
         }
       };

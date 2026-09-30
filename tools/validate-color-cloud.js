@@ -5,6 +5,7 @@ var path = require("path");
 
 var LevelConfigLoader = require("../assets/scripts/config/LevelConfigLoader");
 var LevelPackCompactCodec = require("../assets/scripts/config/LevelPackCompactCodec");
+var LevelColorPermutation = require("../assets/scripts/config/LevelColorPermutation");
 var ColorCloudSystem = require("../gameplay-src/systems/ColorCloudSystem");
 var ColorCloudConfig = require("../gameplay-src/config/ColorCloudConfig");
 var SpecialAnimationTiming = require("../gameplay-src/config/SpecialAnimationTiming");
@@ -269,6 +270,70 @@ function validateGameManagerLifecycle(normalized) {
   assert(updateSnapshot && updateSnapshot.systems.colorCloudSystem, "Moving color clouds must request a runtime refresh without an active projectile.");
 }
 
+function validateColorPermutation(normalized) {
+  var entries = [{ key: LEVEL_KEY, config: normalized }];
+  var packDirectory = path.join(ROOT, "remote-level-packs");
+  fs.readdirSync(packDirectory).filter(function (name) {
+    return /^levels_pack_\d+_\d+\.json$/.test(name);
+  }).forEach(function (name) {
+    var pack = LevelPackCompactCodec.expandPack(readJson(path.join(packDirectory, name)));
+    Object.keys(pack.levels).forEach(function (key) {
+      var config = pack.levels[key];
+      if (Array.isArray(config.level.colorClouds) && config.level.colorClouds.length > 0) {
+        entries.push({ key: key, config: LevelConfigLoader.normalizeLevelConfig(config, key) });
+      }
+    });
+  });
+  assert(entries.some(function (entry) { return entry.key === "level_514"; }), "Campaign regression must include level 514.");
+  var originalRandom = Math.random;
+  var caseCount = 0;
+  try {
+    entries.forEach(function (entry) {
+      // The two color groups have four and two non-identity rotations.
+      for (var primaryOffset = 0; primaryOffset < 4; primaryOffset += 1) {
+        for (var extraOffset = 0; extraOffset < 2; extraOffset += 1) {
+          var randomValues = [primaryOffset / 4, extraOffset / 2];
+          var randomIndex = 0;
+          Math.random = function () {
+            assert(randomIndex < randomValues.length, "Unexpected permutation random draw.");
+            return randomValues[randomIndex++];
+          };
+          var config = clone(entry.config);
+          var originalClouds = config.level.colorClouds;
+          var originalCloudText = JSON.stringify(originalClouds);
+          LevelColorPermutation.apply(config);
+          Math.random = originalRandom;
+          assert(JSON.stringify(originalClouds) === originalCloudText, "Permutation must not mutate source cloud objects.");
+          config.level.colorClouds.forEach(function (cloud, index) {
+            var source = originalClouds[index];
+            var expected = Object.assign({}, source, {
+              color: source.color === "RAINBOW" ? "RAINBOW" : config.meta.colorPermutation.map[source.color]
+            });
+            assert(JSON.stringify(cloud) === JSON.stringify(expected), entry.key + " must map only the cloud color, including hidden clouds.");
+          });
+          var system = new ColorCloudSystem();
+          system.configureLevel(config);
+          if (entry.key === "level_514") {
+            var manager = new GameManager();
+            manager.bootstrap();
+            var snapshot = manager.startLevel(config, { seed: "level-514-permutation", attemptIndex: 1, runMode: "test" });
+            assert(snapshot.systems.colorCloudSystem.activeClouds.length === 1, "Level 514 must start with its recolored cloud.");
+          }
+          caseCount += 1;
+        }
+      }
+    });
+  } finally {
+    Math.random = originalRandom;
+  }
+  var invalidConfig = clone(normalized);
+  invalidConfig.level.colorClouds[0].color = "INVALID";
+  assertThrows(function () {
+    LevelColorPermutation.apply(invalidConfig);
+  }, "unsupported level.colorClouds[0].color", "Unknown cloud color during permutation");
+  console.log("[OK] color cloud permutation: " + entries.length + " levels, " + caseCount + " rotations, including level 514 startup");
+}
+
 function validateAssetsAndWiring() {
   [
     { name: "red", code: "R" },
@@ -317,5 +382,6 @@ var normalized = validateConfigAndCodec(rawConfig);
 validateSystem(normalized);
 validateGameManagerMutation(normalized);
 validateGameManagerLifecycle(normalized);
+validateColorPermutation(normalized);
 validateAssetsAndWiring();
 console.log("[OK] color_cloud config, per-image size, screen ping-pong movement, continuous traversal recolor, frozen hit fade, codec, assets and test level validated");

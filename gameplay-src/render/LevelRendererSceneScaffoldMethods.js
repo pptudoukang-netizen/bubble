@@ -7,9 +7,15 @@ function attachLevelRendererSceneScaffoldMethods(LevelRenderer, deps) {
   var BoardLayout = deps.BoardLayout;
   var PREFAB_PATHS = deps.PREFAB_PATHS;
   var requireChildNode = SceneShared.requireChildNode;
-  var GAME_ENTRY_COUNTDOWN_STEP_INTERVAL = 1;
+  var GAME_ENTRY_COUNTDOWN_TOTAL_DURATION = 3;
+  // Measured onset times in assets/audio/sound/time.mp3 (seconds from playback).
+  var GAME_ENTRY_THREE_TIME = 0.03;
+  var GAME_ENTRY_TWO_TIME = 0.52;
+  var GAME_ENTRY_ONE_TIME = 1.01;
+  var GAME_ENTRY_GO_TIME = 1.47;
   var GAME_ENTRY_GO_SCALE_DURATION = 0.3;
-  var GAME_ENTRY_GO_HOLD_DURATION = 0.2;
+  var GAME_ENTRY_GO_HOLD_DURATION =
+    GAME_ENTRY_COUNTDOWN_TOTAL_DURATION - GAME_ENTRY_GO_TIME - GAME_ENTRY_GO_SCALE_DURATION;
   var GAME_ENTRY_GO_START_SCALE = 0.2;
   var GAME_ENTRY_GO_END_SCALE = 1.2;
   var GAME_ENTRY_COUNTDOWN_MASK_NAME = "GameEntryCountdownMask";
@@ -251,7 +257,7 @@ LevelRenderer.prototype.playGameEntryCountdown = function () {
   this._promoteGameEntryCountdownNodes(gameViewNode, timerNode, goNode);
   gameViewNode.__gameEntryCountdownActive = true;
   var self = this;
-  timerNode.active = true;
+  timerNode.active = false;
   timerNode.opacity = 255;
   timerLabel.string = "3";
   goNode.active = false;
@@ -260,15 +266,19 @@ LevelRenderer.prototype.playGameEntryCountdown = function () {
 
   return new Promise(function (resolve) {
     gameViewNode.runAction(cc.sequence(
-      cc.delayTime(GAME_ENTRY_COUNTDOWN_STEP_INTERVAL),
+      cc.delayTime(GAME_ENTRY_THREE_TIME),
+      cc.callFunc(function () {
+        timerNode.active = true;
+      }),
+      cc.delayTime(GAME_ENTRY_TWO_TIME - GAME_ENTRY_THREE_TIME),
       cc.callFunc(function () {
         timerLabel.string = "2";
       }),
-      cc.delayTime(GAME_ENTRY_COUNTDOWN_STEP_INTERVAL),
+      cc.delayTime(GAME_ENTRY_ONE_TIME - GAME_ENTRY_TWO_TIME),
       cc.callFunc(function () {
         timerLabel.string = "1";
       }),
-      cc.delayTime(GAME_ENTRY_COUNTDOWN_STEP_INTERVAL),
+      cc.delayTime(GAME_ENTRY_GO_TIME - GAME_ENTRY_ONE_TIME),
       cc.callFunc(function () {
         timerNode.active = false;
         goNode.active = true;

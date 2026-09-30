@@ -143,6 +143,10 @@ function resolveDropKind(options) {
   return options.dropKind;
 }
 
+function isVerticalAttachmentDropKind(dropKind) {
+  return dropKind === "poison_droplet" || dropKind === "icicle";
+}
+
 function createEmptyUpdateResult() {
   return {
     updated: false,
@@ -150,6 +154,7 @@ function createEmptyUpdateResult() {
     surplusShotLaunchedCount: 0,
     collected: [],
     cleanupScored: [],
+    timedOutBallDisappearCount: 0,
     missed: [],
     bounced: 0,
     bounceEvents: [],
@@ -470,7 +475,7 @@ FallingMarbleSystem.prototype._applyDropLaunchVelocity = function (drop, launchI
   }
 
   var launchSpeed = resolveDownwardLaunchSpeed(this, launchIndex);
-  if (drop.dropKind === "icicle") {
+  if (isVerticalAttachmentDropKind(drop.dropKind)) {
     drop.velocity = {
       x: 0,
       y: -launchSpeed
@@ -664,8 +669,13 @@ FallingMarbleSystem.prototype._buildDropFromCell = function (
   var start = grid.getCellPosition(cell.row, cell.col);
   var dropSerial = this._dropSerial + 1;
   var launchSpeed = resolveDownwardLaunchSpeed(this, index);
-  var launchSeed = buildDropLaunchSeed(cell.id, index, dropSerial);
-  var launchVelocity = buildDownwardLaunchVelocity(launchSpeed, launchSeed);
+  var launchVelocity;
+  if (isVerticalAttachmentDropKind(dropKind)) {
+    launchVelocity = { x: 0, y: -launchSpeed };
+  } else {
+    var launchSeed = buildDropLaunchSeed(cell.id, index, dropSerial);
+    launchVelocity = buildDownwardLaunchVelocity(launchSpeed, launchSeed);
+  }
   var standardVelocity = {
     x: launchVelocity.x,
     y: launchVelocity.y
@@ -687,7 +697,7 @@ FallingMarbleSystem.prototype._buildDropFromCell = function (
     velocity: resolveInitialDropVelocity(cell, standardVelocity),
     remainingBounces: this.maxBounces,
     rotation: 0,
-    rotationSpeed: dropKind === "icicle" ? 0 : rotationDirection * (180 + index * 25),
+    rotationSpeed: isVerticalAttachmentDropKind(dropKind) ? 0 : rotationDirection * (180 + index * 25),
     jarCooldown: 0,
     startDelay: startDelay,
     holdUntilEliminationPresentationComplete: holdUntilEliminationPresentationComplete === true,

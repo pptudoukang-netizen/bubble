@@ -43,7 +43,7 @@
     return null;
   }
   var previousRequire = resolvePreviousRequire();
-  var gameplayCodeHash = "7a40afbaf9996f65840904ea3e8e666c0a7543d7e242839a74e90e82cc085345";
+  var gameplayCodeHash = "7e28ad524c5c0659bf922eb2dc1f96b75753dca239e878c39fd38ba850d6c3b5";
   var lazyRequire = (function (modules, cache, entries) {
     function load(moduleId, jumped) {
       if (!cache[moduleId]) {
@@ -324,10 +324,12 @@ var PRESENTATION_BY_SPIRIT_ID = {};
 SPIRIT_IDS.forEach(function (spiritId) {
   PRESENTATION_BY_SPIRIT_ID[spiritId] = {
     spiritId: spiritId,
-    idleClipPath: "game/animation/" + spiritId + "_idle",
-    idleClipName: spiritId + "_idle",
-    deliverClipPath: "game/animation/" + spiritId + "_pao",
-    deliverClipName: spiritId + "_pao"
+    skeletonDataPath: "game/spine/diqiushou",
+    skinName: spiritId,
+    idleClipName: "idle",
+    deliverClipName: "passball",
+    winClipName: "win",
+    loseClipName: "fail"
   };
 });
 
@@ -352,14 +354,6 @@ module.exports = {
   },
   getBySpiritId: function (spiritId) {
     return clone(requirePresentation(spiritId));
-  },
-  getAllClipPaths: function () {
-    var paths = [];
-    SPIRIT_IDS.forEach(function (spiritId) {
-      var presentation = requirePresentation(spiritId);
-      paths.push(presentation.idleClipPath, presentation.deliverClipPath);
-    });
-    return paths;
   }
 };
 
@@ -3150,22 +3144,33 @@ BubbleGrid.prototype.getCoordinatesWithinRadius = function (row, col, radius) {
   return result;
 };
 
-BubbleGrid.prototype.findSplitterSpawnCell = function (splitterCell) {
+BubbleGrid.prototype.isSplitterSpawnCellAvailable = function (row, col, reservedCellKeys) {
+  if (!Number.isInteger(row) || !Number.isInteger(col)) {
+    throw new Error("BubbleGrid.isSplitterSpawnCellAvailable requires integer coordinates.");
+  }
+  if (!reservedCellKeys || typeof reservedCellKeys !== "object" || Array.isArray(reservedCellKeys)) {
+    throw new Error("BubbleGrid.isSplitterSpawnCellAvailable requires reserved cell key map.");
+  }
+  if (reservedCellKeys[row + ":" + col] === true) {
+    return false;
+  }
+  return this.isValidCell(row, col) &&
+    !this.hasCell(row, col) &&
+    !this.isTrappedSpiritReservedCell(row, col) &&
+    !this.hasWormholeAt(row, col);
+};
+
+BubbleGrid.prototype.findSplitterSpawnCell = function (splitterCell, reservedCellKeys) {
   if (!splitterCell || !Number.isInteger(splitterCell.row) || !Number.isInteger(splitterCell.col)) {
     throw new Error("BubbleGrid.findSplitterSpawnCell requires splitter cell coordinates.");
   }
-
-  var candidates = [];
-  for (var row = 0; row < this.getRowCount(); row += 1) {
-    for (var col = 0; col < this.getColumnCountForRow(row); col += 1) {
-      if (this.isAttachableCell(row, col, { x: 0, y: 1 }, { allowTopRow: true })) {
-        candidates.push({
-          row: row,
-          col: col
-        });
-      }
-    }
+  if (!reservedCellKeys || typeof reservedCellKeys !== "object" || Array.isArray(reservedCellKeys)) {
+    throw new Error("BubbleGrid.findSplitterSpawnCell requires reserved cell key map.");
   }
+
+  var candidates = this.getNeighborCoordinates(splitterCell.row, splitterCell.col).filter(function (coordinate) {
+    return this.isSplitterSpawnCellAvailable(coordinate.row, coordinate.col, reservedCellKeys);
+  }, this);
 
   if (!candidates.length) {
     return null;
@@ -3825,7 +3830,7 @@ BubbleGrid.prototype.getVineSpirits = function () {
   });
 };
 
-BubbleGrid.prototype.findNearestNormalCellForVine = function (spiritCell, reservedCellKeys) {
+BubbleGrid.prototype.findAdjacentNormalCellForVine = function (spiritCell, reservedCellKeys) {
   if (!isVineSpiritCell(spiritCell)) {
     throw new Error("Vine target selection requires a vine spirit cell.");
   }
@@ -3838,8 +3843,12 @@ BubbleGrid.prototype.findNearestNormalCellForVine = function (spiritCell, reserv
     }
   });
 
-  var spiritPosition = this.getCellPosition(spiritCell.row, spiritCell.col);
-  var candidates = this.getCells().filter(function (cell) {
+  var candidates = this.getNeighborCoordinates(spiritCell.row, spiritCell.col).map(function (coordinate) {
+    return this.getCell(coordinate.row, coordinate.col);
+  }, this).filter(function (cell) {
+    if (!cell) {
+      return false;
+    }
     if (cell.entityCategory !== "normal_ball" || typeof cell.color !== "string" || !cell.color) {
       return false;
     }
@@ -3850,28 +3859,17 @@ BubbleGrid.prototype.findNearestNormalCellForVine = function (spiritCell, reserv
       return false;
     }
     return reservedCellKeys[keyFor(cell.row, cell.col)] !== true;
-  }).map(function (cell) {
-    var position = this.getCellPosition(cell.row, cell.col);
-    var dx = position.x - spiritPosition.x;
-    var dy = position.y - spiritPosition.y;
-    return {
-      cell: cell,
-      distanceSq: dx * dx + dy * dy
-    };
-  }, this).sort(function (left, right) {
-    if (left.distanceSq !== right.distanceSq) {
-      return left.distanceSq - right.distanceSq;
+  }).sort(function (left, right) {
+    if (left.row !== right.row) {
+      return left.row - right.row;
     }
-    if (left.cell.row !== right.cell.row) {
-      return left.cell.row - right.cell.row;
+    if (left.col !== right.col) {
+      return left.col - right.col;
     }
-    if (left.cell.col !== right.cell.col) {
-      return left.cell.col - right.cell.col;
-    }
-    return String(left.cell.id).localeCompare(String(right.cell.id));
+    return String(left.id).localeCompare(String(right.id));
   });
 
-  return candidates.length ? clone(candidates[0].cell) : null;
+  return candidates.length ? clone(candidates[0]) : null;
 };
 
 BubbleGrid.prototype.beginVinePreview = function (spiritId, targetCell) {
@@ -4094,6 +4092,11 @@ BubbleGrid.prototype.rotateSwirlNeighborsClockwise = function (swirlCell) {
     if (cell.spiderLocked === true) {
       throw new Error(
         "BubbleGrid swirl rotation cannot move a spider-locked track cell at " + coordinate.row + ":" + coordinate.col + "."
+      );
+    }
+    if (typeof cell.vineOwnerId === "string" && cell.vineOwnerId) {
+      throw new Error(
+        "BubbleGrid swirl rotation cannot move a vine-entangled track cell at " + coordinate.row + ":" + coordinate.col + "."
       );
     }
     if (cell.entityCategory !== "normal_ball" || typeof cell.color !== "string" || !cell.color) {
@@ -7851,7 +7854,15 @@ FallingMarbleSystem.prototype.update = function (dt) {
 
     drop.lifeTime = (drop.lifeTime || 0) + dt;
     if (drop.lifeTime >= this.maxDropLifeTime) {
-      this._consumeDropInteraction(result, this._forceDropResolution(drop, true));
+      var timeoutInteraction = this._forceDropResolution(drop, true);
+      if (
+        !timeoutInteraction.collected &&
+        drop.dropKind !== "poison_droplet" &&
+        drop.dropKind !== "icicle"
+      ) {
+        result.timedOutBallDisappearCount += 1;
+      }
+      this._consumeDropInteraction(result, timeoutInteraction);
       activeDropCount -= 1;
       continue;
     }
@@ -8396,6 +8407,10 @@ function resolveDropKind(options) {
   return options.dropKind;
 }
 
+function isVerticalAttachmentDropKind(dropKind) {
+  return dropKind === "poison_droplet" || dropKind === "icicle";
+}
+
 function createEmptyUpdateResult() {
   return {
     updated: false,
@@ -8403,6 +8418,7 @@ function createEmptyUpdateResult() {
     surplusShotLaunchedCount: 0,
     collected: [],
     cleanupScored: [],
+    timedOutBallDisappearCount: 0,
     missed: [],
     bounced: 0,
     bounceEvents: [],
@@ -8723,7 +8739,7 @@ FallingMarbleSystem.prototype._applyDropLaunchVelocity = function (drop, launchI
   }
 
   var launchSpeed = resolveDownwardLaunchSpeed(this, launchIndex);
-  if (drop.dropKind === "icicle") {
+  if (isVerticalAttachmentDropKind(drop.dropKind)) {
     drop.velocity = {
       x: 0,
       y: -launchSpeed
@@ -8917,8 +8933,13 @@ FallingMarbleSystem.prototype._buildDropFromCell = function (
   var start = grid.getCellPosition(cell.row, cell.col);
   var dropSerial = this._dropSerial + 1;
   var launchSpeed = resolveDownwardLaunchSpeed(this, index);
-  var launchSeed = buildDropLaunchSeed(cell.id, index, dropSerial);
-  var launchVelocity = buildDownwardLaunchVelocity(launchSpeed, launchSeed);
+  var launchVelocity;
+  if (isVerticalAttachmentDropKind(dropKind)) {
+    launchVelocity = { x: 0, y: -launchSpeed };
+  } else {
+    var launchSeed = buildDropLaunchSeed(cell.id, index, dropSerial);
+    launchVelocity = buildDownwardLaunchVelocity(launchSpeed, launchSeed);
+  }
   var standardVelocity = {
     x: launchVelocity.x,
     y: launchVelocity.y
@@ -8940,7 +8961,7 @@ FallingMarbleSystem.prototype._buildDropFromCell = function (
     velocity: resolveInitialDropVelocity(cell, standardVelocity),
     remainingBounces: this.maxBounces,
     rotation: 0,
-    rotationSpeed: dropKind === "icicle" ? 0 : rotationDirection * (180 + index * 25),
+    rotationSpeed: isVerticalAttachmentDropKind(dropKind) ? 0 : rotationDirection * (180 + index * 25),
     jarCooldown: 0,
     startDelay: startDelay,
     holdUntilEliminationPresentationComplete: holdUntilEliminationPresentationComplete === true,
@@ -9256,6 +9277,7 @@ function createEmptyResolution() {
     budHatches: [],
     budHatchedCells: [],
     budRecolors: [],
+    splitterResolved: false,
     breederResolved: false,
     breederSpawns: [],
     mineCountdownResolved: false,
@@ -9274,6 +9296,7 @@ function createEmptyResolution() {
     witheredVines: [],
     collectedKeys: [],
     unlockedLockedBalls: [],
+    keyUnlockPresentationComplete: false,
     poisonReleases: [],
     icicleReleases: [],
     bubbleShieldsRemoved: [],
@@ -9404,7 +9427,6 @@ var BOARD_ADVANCE_AFTER_IMPACT_DELAY = assertPositiveNumber(
   "Board advance after impact delay"
 );
 var BOARD_ADVANCE_DELAY_EPSILON = 0.000001;
-var KEY_UNLOCK_BOARD_ADVANCE_BLOCK_DELAY = SpecialAnimationTiming.keyUnlock.totalDuration;
 if (
   !SpecialAnimationTiming.swirlRotation ||
   typeof SpecialAnimationTiming.swirlRotation.duration !== "number" ||
@@ -9964,6 +9986,7 @@ function GameManager(options) {
   this.pendingBoardAdvanceSpecialAnimationDelay = 0;
   this.pendingBoardAdvanceDelay = 0;
   this.pendingBoardAdvanceEliminationPresentation = false;
+  this.pendingBoardAdvanceKeyUnlockPresentation = false;
   this.pendingDeferredEnsureMinimumVisibleBoardRows = false;
   this.pendingDropIntervalBoardAdvance = false;
   this.boardAdvancedThisFrame = false;
@@ -10071,7 +10094,6 @@ var GAME_MANAGER_METHOD_CONTEXT = {
   FallingMarbleSystem: FallingMarbleSystem,
   IMPACT_BOUNCE_PUSH_DISTANCE: IMPACT_BOUNCE_PUSH_DISTANCE,
   IMPACT_BOUNCE_SPEED: IMPACT_BOUNCE_SPEED,
-  KEY_UNLOCK_BOARD_ADVANCE_BLOCK_DELAY: KEY_UNLOCK_BOARD_ADVANCE_BLOCK_DELAY,
   Logger: Logger,
   PLUS_THREE_BALLS_AMOUNT: PLUS_THREE_BALLS_AMOUNT,
   SNOW_REMOVAL_CLEAR_COUNT: SNOW_REMOVAL_CLEAR_COUNT,
@@ -10102,6 +10124,7 @@ var GAME_MANAGER_METHOD_CONTEXT = {
   isIceBall: isIceBall,
   isPowerupShotBall: isPowerupShotBall,
   isStoneBall: isStoneBall,
+  isSplitterBall: isSplitterBall,
   isSwirlBall: isSwirlBall,
   isWormholeBall: isWormholeBall,
   lerpPoint: lerpPoint,
@@ -11462,7 +11485,6 @@ function attachGameManagerBoardPhaseMethods(GameManager, context) {
   var BOARD_ADVANCE_DELAY_EPSILON = context.BOARD_ADVANCE_DELAY_EPSILON;
   var IMPACT_BOUNCE_PUSH_DISTANCE = context.IMPACT_BOUNCE_PUSH_DISTANCE;
   var IMPACT_BOUNCE_SPEED = context.IMPACT_BOUNCE_SPEED;
-  var KEY_UNLOCK_BOARD_ADVANCE_BLOCK_DELAY = context.KEY_UNLOCK_BOARD_ADVANCE_BLOCK_DELAY;
   var Logger = context.Logger;
   var WIN_SETTLEMENT_DELAY_SEC = context.WIN_SETTLEMENT_DELAY_SEC;
   var assertFiniteNumber = context.assertFiniteNumber;
@@ -11588,12 +11610,10 @@ GameManager.prototype._applyPostImpactBoardShiftPolicy = function (resolution) {
 
   this.pendingDeferredEnsureMinimumVisibleBoardRows = true;
   this.pendingDropIntervalBoardAdvance = false;
-  this.pendingBoardAdvanceSpecialAnimationDelay = Math.max(
-    this._resolveBoardAdvanceSpecialAnimationDelay(resolution),
-    BOARD_ADVANCE_AFTER_IMPACT_DELAY
-  );
+  this.pendingBoardAdvanceSpecialAnimationDelay = BOARD_ADVANCE_AFTER_IMPACT_DELAY;
   this.pendingBoardAdvanceDelay = 0;
   this.pendingBoardAdvanceEliminationPresentation = this._requiresBoardAdvanceEliminationPresentationWait(resolution);
+  this.pendingBoardAdvanceKeyUnlockPresentation = this._requiresBoardAdvanceKeyUnlockPresentationWait(resolution);
   this.pendingBoardAdvanceScheduledUpdateSerial = Math.floor(assertFiniteNumber(
     this.boardAdvanceUpdateSerial,
     "GameManager boardAdvanceUpdateSerial"
@@ -11620,6 +11640,7 @@ GameManager.prototype._isWaitingBoardAdvance = function () {
   return this.pendingBoardAdvanceSpecialAnimationDelay > 0 ||
     this.pendingBoardAdvanceDelay > 0 ||
     this.pendingBoardAdvanceEliminationPresentation === true ||
+    this.pendingBoardAdvanceKeyUnlockPresentation === true ||
     this.pendingDeferredEnsureMinimumVisibleBoardRows ||
     this.pendingDropIntervalBoardAdvance;
 };
@@ -11661,23 +11682,6 @@ GameManager.prototype._isBoardAdvanceScheduledThisUpdate = function () {
   return updateSerial > 0 && scheduledSerial === updateSerial;
 };
 
-GameManager.prototype._resolveBoardAdvanceSpecialAnimationDelay = function (resolution) {
-  if (!resolution || typeof resolution !== "object") {
-    throw new Error("Board advance special animation delay requires resolution.");
-  }
-  if (!Array.isArray(resolution.collectedKeys)) {
-    throw new Error("Board advance special animation delay requires resolution.collectedKeys array.");
-  }
-  if (!Array.isArray(resolution.unlockedLockedBalls)) {
-    throw new Error("Board advance special animation delay requires resolution.unlockedLockedBalls array.");
-  }
-
-  if (resolution.collectedKeys.length > 0 && resolution.unlockedLockedBalls.length > 0) {
-    return KEY_UNLOCK_BOARD_ADVANCE_BLOCK_DELAY;
-  }
-  return 0;
-};
-
 GameManager.prototype._requiresBoardAdvanceEliminationPresentationWait = function (resolution) {
   if (!resolution || typeof resolution !== "object") {
     throw new Error("Board advance elimination presentation wait requires resolution.");
@@ -11686,6 +11690,48 @@ GameManager.prototype._requiresBoardAdvanceEliminationPresentationWait = functio
     throw new Error("Board advance elimination presentation wait requires resolution.matched array.");
   }
   return resolution.matched.length > 0;
+};
+
+GameManager.prototype._requiresBoardAdvanceKeyUnlockPresentationWait = function (resolution) {
+  if (!resolution || typeof resolution !== "object") {
+    throw new Error("Board advance key unlock presentation wait requires resolution.");
+  }
+  if (!Array.isArray(resolution.collectedKeys)) {
+    throw new Error("Board advance key unlock presentation wait requires resolution.collectedKeys array.");
+  }
+  if (!Array.isArray(resolution.unlockedLockedBalls)) {
+    throw new Error("Board advance key unlock presentation wait requires resolution.unlockedLockedBalls array.");
+  }
+  var requiresKeyUnlockPresentation = resolution.collectedKeys.length > 0 && resolution.unlockedLockedBalls.length > 0;
+  if (!requiresKeyUnlockPresentation) {
+    return false;
+  }
+  if (typeof resolution.keyUnlockPresentationComplete !== "boolean") {
+    throw new Error("Board advance key unlock presentation wait requires resolution.keyUnlockPresentationComplete boolean.");
+  }
+  return !resolution.keyUnlockPresentationComplete;
+};
+
+GameManager.prototype.notifyBoardAdvanceKeyUnlockPresentationComplete = function (resolution) {
+  if (typeof this.pendingBoardAdvanceKeyUnlockPresentation !== "boolean") {
+    throw new Error("GameManager pendingBoardAdvanceKeyUnlockPresentation must be boolean.");
+  }
+  if (!resolution || typeof resolution !== "object" || Array.isArray(resolution)) {
+    throw new Error("Key unlock presentation completion requires resolution.");
+  }
+  if (!Array.isArray(resolution.collectedKeys) || resolution.collectedKeys.length < 1) {
+    throw new Error("Key unlock presentation completion requires collected keys.");
+  }
+  if (!Array.isArray(resolution.unlockedLockedBalls) || resolution.unlockedLockedBalls.length < 1) {
+    throw new Error("Key unlock presentation completion requires unlocked locked balls.");
+  }
+  if (resolution.keyUnlockPresentationComplete !== false) {
+    throw new Error("Key unlock presentation completion requires an incomplete presentation.");
+  }
+  resolution.keyUnlockPresentationComplete = true;
+  if (resolution === this.lastResolution) {
+    this.pendingBoardAdvanceKeyUnlockPresentation = false;
+  }
 };
 
 GameManager.prototype.notifyBoardAdvanceEliminationPresentationComplete = function (resolution) {
@@ -11889,6 +11935,9 @@ GameManager.prototype._updatePendingBoardAdvance = function (dt) {
     return false;
   }
   if (this.pendingBoardAdvanceEliminationPresentation === true) {
+    return false;
+  }
+  if (this.pendingBoardAdvanceKeyUnlockPresentation === true) {
     return false;
   }
 
@@ -12548,6 +12597,7 @@ GameManager.prototype.startLevel = function (levelConfig, startContext) {
   this.pendingBoardAdvanceSpecialAnimationDelay = 0;
   this.pendingBoardAdvanceDelay = 0;
   this.pendingBoardAdvanceEliminationPresentation = false;
+  this.pendingBoardAdvanceKeyUnlockPresentation = false;
   this.pendingDeferredEnsureMinimumVisibleBoardRows = false;
   this.pendingDropIntervalBoardAdvance = false;
   this.boardAdvancedThisFrame = false;
@@ -14978,15 +15028,7 @@ function createGameManagerShotFinalizeMethods(context) {
         throw new Error("Transparent ball flight destruction did not remove every reached ball.");
       }
       Array.prototype.push.apply(projectile.destroyedTransparentBalls, removed);
-      if (typeof this._pushRuntimeEvent === "function") {
-        this._pushRuntimeEvent("transparent_ball_destroyed", {
-          count: removed.length,
-          gained: removed.length * 1000,
-          cell_ids: removed.map(function (cell) {
-            return cell.id;
-          })
-        });
-      }
+      this._emitTransparentBallDestroyedEvent(removed, grid);
       return removed;
     },
 
@@ -15057,14 +15099,8 @@ function createGameManagerShotFinalizeMethods(context) {
       if (removed.length !== liveTransparentBalls.length) {
         throw new Error("Transparent ball penetration did not remove every planned ball.");
       }
-      if (removed.length && typeof this._pushRuntimeEvent === "function") {
-        this._pushRuntimeEvent("transparent_ball_destroyed", {
-          count: removed.length,
-          gained: removed.length * 1000,
-          cell_ids: removed.map(function (cell) {
-            return cell.id;
-          })
-        });
+      if (removed.length) {
+        this._emitTransparentBallDestroyedEvent(removed, grid);
       }
       removed.forEach(function (cell) {
         destroyedById[cell.id] = cell;
@@ -15115,18 +15151,6 @@ function createGameManagerShotFinalizeMethods(context) {
         throw new Error("Transparent ball break score must be exactly 1000.");
       }
       var gained = removedTransparentBalls.length * scorePerBall;
-      removedTransparentBalls.forEach(function (cell) {
-        var worldPosition = grid.getCellPosition(cell.row, cell.col);
-        resolution.scoreEvents.push({
-          cellId: cell.id,
-          row: cell.row,
-          col: cell.col,
-          worldPosition: worldPosition,
-          points: scorePerBall,
-          delayMs: 0,
-          scoreKind: "transparent_ball_break"
-        });
-      });
       this.score += gained;
       resolution.scoreDelta += gained;
       resolution.boardCleared = this._isBoardCleared(grid);
@@ -15478,12 +15502,27 @@ function createGameManagerShotFinalizeMethods(context) {
       }
       var absorptionTarget = projectile.shotPlan.absorbingBlackHole;
       if (!absorptionTarget || typeof absorptionTarget.id !== "string" || !absorptionTarget.id ||
-          !Number.isInteger(absorptionTarget.row) || !Number.isInteger(absorptionTarget.col)) {
+          !Number.isInteger(absorptionTarget.row) || !Number.isInteger(absorptionTarget.col) ||
+          !absorptionTarget.position ||
+          !Number.isFinite(absorptionTarget.position.x) ||
+          !Number.isFinite(absorptionTarget.position.y)) {
         throw new Error("Black hole projectile absorption requires a valid absorbingBlackHole target.");
+      }
+      if (!projectile.shotPlan.hitPoint ||
+          !Number.isFinite(projectile.shotPlan.hitPoint.x) ||
+          !Number.isFinite(projectile.shotPlan.hitPoint.y)) {
+        throw new Error("Black hole projectile absorption requires a finite hitPoint.");
       }
       var liveBlackHole = grid.getCell(absorptionTarget.row, absorptionTarget.col);
       if (!isBlackHoleBall(liveBlackHole) || String(liveBlackHole.id) !== absorptionTarget.id) {
         throw new Error("Black hole projectile absorption target is not live: " + absorptionTarget.id);
+      }
+      var targetPosition = grid.getCellPosition(absorptionTarget.row, absorptionTarget.col);
+      if (
+        Math.abs(targetPosition.x - absorptionTarget.position.x) > 0.001 ||
+        Math.abs(targetPosition.y - absorptionTarget.position.y) > 0.001
+      ) {
+        throw new Error("Black hole projectile absorption target position changed before finalization.");
       }
 
       var resolution = createEmptyResolution();
@@ -15496,6 +15535,9 @@ function createGameManagerShotFinalizeMethods(context) {
         capacityBefore: consumption.capacityBefore,
         capacityAfter: consumption.capacityAfter,
         destroyed: consumption.destroyed,
+        startPosition: clone(projectile.shotPlan.hitPoint),
+        targetPosition: clone(targetPosition),
+        duration: SpecialAnimationTiming.blackHole.projectileAbsorbDuration,
         ball: clone(projectile.ball)
       });
       this.lastResolution = resolution;
@@ -15721,7 +15763,10 @@ function createGameManagerShotFinalizeMethods(context) {
       var mineFailureTriggered = false;
       if (!postShotSpecialStarted && !this.molotovResolutionPending && !this.lastResolution.multiTrappedSpiritRescueCompleted) {
         mineFailureTriggered = this._resolveMineCountdownPhase(this.lastResolution);
-        if (!mineFailureTriggered) { this._resolveBreederPhase(this.lastResolution); }
+        if (!mineFailureTriggered) {
+          this._resolveBreederPhase(this.lastResolution);
+          this._resolveSplitterPhase(this.lastResolution);
+        }
       }
       var deferredBoardShift = this.lastResolution.multiTrappedSpiritRescueCompleted
         ? false
@@ -16095,7 +16140,6 @@ function createGameManagerShotMolotovMethods(context) {
   var MOLOTOV_BLAST_TRIGGER_DELAY = context.MOLOTOV_BLAST_TRIGGER_DELAY;
   var appendMolotovEliminationSequence = context.appendMolotovEliminationSequence;
   var buildMolotovBlastDropVelocity = context.buildMolotovBlastDropVelocity;
-  var buildTriggeredSplitterIdsFromPendingSpawns = context.buildTriggeredSplitterIdsFromPendingSpawns;
   var createGameManagerShotMolotovMethods = context.createGameManagerShotMolotovMethods;
   var isLockedBall = context.isLockedBall;
   var isMolotovBall = context.isMolotovBall;
@@ -16250,12 +16294,6 @@ function createGameManagerShotMolotovMethods(context) {
       });
 
       var removedKeys = this._triggerKeysAndResolveUnlocks(removedByBlast, grid, resolution);
-      var triggeredSplitterIds = this.molotovPendingResolutionContext.triggeredSplitterIds;
-      if (!triggeredSplitterIds || typeof triggeredSplitterIds !== "object" || Array.isArray(triggeredSplitterIds)) {
-        throw new Error("Molotov blast phase requires context.triggeredSplitterIds.");
-      }
-      this._triggerAdjacentSplitters(removedByBlast, grid, resolution, triggeredSplitterIds);
-
       var chainMolotovs = this._collectAdjacentMolotovs(removedByBlast, grid, this.molotovBlastTriggeredIds);
       this._queueMolotovBlasts(chainMolotovs, resolution);
 
@@ -16395,12 +16433,10 @@ function createGameManagerShotMolotovMethods(context) {
       this.molotovResolutionPending = true;
       this.molotovPendingResolutionContext = {
         dropScoreRuleKey: dropScoreRuleKey,
-        allRemoved: syncRemoved.slice(),
-        triggeredSplitterIds: {}
+        allRemoved: syncRemoved.slice()
       };
 
       this._cancelPendingSplitterSpawnsForDroppedCells(syncRemoved);
-      this.molotovPendingResolutionContext.triggeredSplitterIds = buildTriggeredSplitterIdsFromPendingSpawns(this.pendingSplitterSpawns);
       this.systems.jarCollectorSystem.collect([]);
 
       appendMolotovEliminationSequence(resolution, syncRemoved, this.systems.bubbleGrid);
@@ -16518,6 +16554,7 @@ function createGameManagerShotMolotovMethods(context) {
         return;
       }
       this._resolveBreederPhase(resolution);
+      this._resolveSplitterPhase(resolution);
       if (resolution.boardCleared) {
         this._resolveBoardClearedOutcome();
         return;
@@ -16641,12 +16678,20 @@ function applyTraversableAttachmentTarget(shotPlan, traversedCells, grid) {
 
 function createGameManagerShotPlanningMethods(context) {
   var BoardViewportSystem = context.BoardViewportSystem;
+  var SpecialAnimationTiming = context.SpecialAnimationTiming;
   var buildProjectilePathFromShotPlan = context.buildProjectilePathFromShotPlan;
   var createGameManagerShotPlanningMethods = context.createGameManagerShotPlanningMethods;
   var isBlastBall = context.isBlastBall;
   var isRainbowBall = context.isRainbowBall;
   var measurePathDistance = context.measurePathDistance;
   var quantize = context.quantize;
+
+  if (
+    !SpecialAnimationTiming.topAnchorCollapse ||
+    SpecialAnimationTiming.topAnchorCollapse.dropDelay !== 0.5
+  ) {
+    throw new Error("SpecialAnimationTiming.topAnchorCollapse.dropDelay must be exactly 0.5 seconds.");
+  }
 
   return {
     _scheduleBoardViewportSettle: function (resolution) {
@@ -16737,7 +16782,8 @@ function createGameManagerShotPlanningMethods(context) {
         this._appendUniqueCells(this.lastResolution.floating, removedCells);
       }
       this._registerResolutionDrops(removedCells, grid, this.lastResolution, {
-        dropKind: "victory_board_drop"
+        dropKind: "victory_board_drop",
+        startDelay: SpecialAnimationTiming.topAnchorCollapse.dropDelay
       }, {
         skipEliminationPresentationHold: true
       });
@@ -17630,6 +17676,24 @@ function createGameManagerShotReactiveMethods(context) {
       return removedKeys;
     },
 
+    _markKeyUnlockPresentationPendingForNewKeys: function (resolution, previousKeyCount) {
+      if (!resolution || !Array.isArray(resolution.collectedKeys)) {
+        throw new Error("Key unlock presentation pending state requires resolution.collectedKeys array.");
+      }
+      if (typeof resolution.keyUnlockPresentationComplete !== "boolean") {
+        throw new Error("Key unlock presentation pending state requires resolution.keyUnlockPresentationComplete boolean.");
+      }
+      if (!Number.isInteger(previousKeyCount) || previousKeyCount < 0) {
+        throw new Error("Key unlock presentation pending state requires non-negative previousKeyCount.");
+      }
+      if (resolution.collectedKeys.length < previousKeyCount) {
+        throw new Error("Collected key count cannot move backwards.");
+      }
+      if (resolution.collectedKeys.length > previousKeyCount) {
+        resolution.keyUnlockPresentationComplete = false;
+      }
+    },
+
     _collectRemovedKeysAndResolveUnlocks: function (removedCells, grid, resolution) {
       if (!Array.isArray(removedCells)) {
         throw new Error("Removed key collection requires removedCells array.");
@@ -17640,7 +17704,9 @@ function createGameManagerShotReactiveMethods(context) {
       if (!removedKeys.length) {
         return [];
       }
+      var previousKeyCount = resolution.collectedKeys.length;
       this._appendUniqueCells(resolution.collectedKeys, removedKeys);
+      this._markKeyUnlockPresentationPendingForNewKeys(resolution, previousKeyCount);
       this._resolveCollectedKeyUnlocks(grid, resolution);
       return removedKeys;
     },
@@ -17844,47 +17910,10 @@ function createGameManagerShotReactiveMethods(context) {
         return grid.hasCell(keyCell.row, keyCell.col);
       });
       this._appendUniqueCells(removedKeys, grid.removeCells(liveKeys));
+      var previousKeyCount = resolution.collectedKeys.length;
       this._appendUniqueCells(resolution.collectedKeys, removedKeys);
+      this._markKeyUnlockPresentationPendingForNewKeys(resolution, previousKeyCount);
       return removedKeys;
-    },
-
-    _triggerAdjacentSplitters: function (removedCells, grid, resolution, triggeredSplitterIds) {
-      if (!Array.isArray(removedCells)) {
-        throw new Error("Adjacent splitter trigger requires removedCells array.");
-      }
-      var manager = this;
-      var touched = {};
-      var triggered = [];
-      removedCells.forEach(function (cell) {
-        if (!cell) {
-          throw new Error("Adjacent splitter trigger requires removed cell.");
-        }
-        grid.getNeighborCoordinates(cell.row, cell.col).forEach(function (coord) {
-          var key = coord.row + ":" + coord.col;
-          if (touched[key]) {
-            return;
-          }
-          var splitter = grid.getCell(coord.row, coord.col);
-          if (!isSplitterBall(splitter)) {
-            return;
-          }
-          touched[key] = true;
-          if (triggeredSplitterIds[splitter.id]) {
-            return;
-          }
-          triggeredSplitterIds[splitter.id] = true;
-          if (typeof splitter.splitColor !== "string" || !splitter.splitColor) {
-            throw new Error("Splitter requires splitColor.");
-          }
-          if (typeof manager._queuePendingSplitterSpawn !== "function") {
-            throw new Error("Splitter trigger requires GameManager._queuePendingSplitterSpawn.");
-          }
-          manager._queuePendingSplitterSpawn(splitter, resolution);
-          triggered.push(splitter);
-        });
-      });
-
-      return triggered;
     },
 
     _collectAdjacentMolotovs: function (removedCells, grid, queuedMolotovIds) {
@@ -17947,11 +17976,9 @@ function createGameManagerShotReactiveMethods(context) {
 
       var collected = [];
       var queuedMolotovIds = {};
-      var triggeredSplitterIds = {};
 
       var removedKeys = this._triggerKeysAndResolveUnlocks(removedCells, grid, resolution);
       this._appendUniqueCells(collected, removedKeys);
-      this._triggerAdjacentSplitters(removedCells, grid, resolution, triggeredSplitterIds);
 
       var molotovs = this._collectAdjacentMolotovs(removedCells, grid, queuedMolotovIds);
       if (molotovs.length) {
@@ -18279,23 +18306,6 @@ function createGameManagerShotResolutionMethods(deps) {
     });
   }
 
-  function buildTriggeredSplitterIdsFromPendingSpawns(pendingSplitterSpawns) {
-    if (!Array.isArray(pendingSplitterSpawns)) {
-      throw new Error("Molotov splitter dedup requires pendingSplitterSpawns array.");
-    }
-    var triggeredSplitterIds = {};
-    pendingSplitterSpawns.forEach(function (pending) {
-      if (!pending || typeof pending !== "object" || Array.isArray(pending)) {
-        throw new Error("Molotov splitter dedup requires pending splitter entry.");
-      }
-      if (typeof pending.id !== "string" && typeof pending.id !== "number") {
-        throw new Error("Molotov splitter dedup requires pending splitter id.");
-      }
-      triggeredSplitterIds[pending.id] = true;
-    });
-    return triggeredSplitterIds;
-  }
-
   var SHOT_RESOLUTION_CONTEXT = {
     AssistSpiritConfig: AssistSpiritConfig,
     BoardLayout: BoardLayout,
@@ -18315,7 +18325,6 @@ function createGameManagerShotResolutionMethods(deps) {
     buildMolotovBlastDropVelocity: buildMolotovBlastDropVelocity,
     buildRowKeyLockPairings: buildRowKeyLockPairings,
     buildProjectilePathFromShotPlan: buildProjectilePathFromShotPlan,
-    buildTriggeredSplitterIdsFromPendingSpawns: buildTriggeredSplitterIdsFromPendingSpawns,
     clone: clone,
     createEmptyResolution: createEmptyResolution,
     createGameManagerShotDropMethods: createGameManagerShotDropMethods,
@@ -18392,6 +18401,38 @@ function createGameManagerShotScoreMethods(context) {
       }
 
       return baseScore + this.comboStreak * COMBO_BONUS_PER_HIT;
+    },
+
+    _emitTransparentBallDestroyedEvent: function (removedTransparentBalls, grid) {
+      if (!Array.isArray(removedTransparentBalls) || !removedTransparentBalls.length) {
+        throw new Error("Transparent ball destroyed event requires removed balls.");
+      }
+      if (!grid || typeof grid.getCellPosition !== "function") {
+        throw new Error("Transparent ball destroyed event requires BubbleGrid positions.");
+      }
+      var scorePerBall = this._getScoreRule("transparentBallBreak");
+      if (!Number.isInteger(scorePerBall) || scorePerBall !== 1000) {
+        throw new Error("Transparent ball break score must be exactly 1000.");
+      }
+      var cells = removedTransparentBalls.map(function (cell, index) {
+        if (!cell || typeof cell.id !== "string" || !cell.id ||
+            !Number.isInteger(cell.row) || !Number.isInteger(cell.col)) {
+          throw new Error("Transparent ball destroyed event requires valid cell at index " + index + ".");
+        }
+        return {
+          id: cell.id,
+          row: cell.row,
+          col: cell.col,
+          worldPosition: grid.getCellPosition(cell.row, cell.col),
+          points: scorePerBall
+        };
+      });
+      this._pushRuntimeEvent("transparent_ball_destroyed", {
+        count: cells.length,
+        gained: cells.length * scorePerBall,
+        cell_ids: cells.map(function (cell) { return cell.id; }),
+        cells: cells
+      });
     },
 
     _resolveComboAttachAnchor: function (resolution) {
@@ -19015,6 +19056,7 @@ function attachGameManagerSpecialPhaseMethods(GameManager, context) {
   var WORMHOLE_SHIFT_DURATION = context.WORMHOLE_SHIFT_DURATION;
   var assertFiniteNumber = context.assertFiniteNumber;
   var isBreederBall = context.isBreederBall;
+  var isSplitterBall = context.isSplitterBall;
   var isSwirlBall = context.isSwirlBall;
   var isWormholeBall = context.isWormholeBall;
 
@@ -19046,6 +19088,12 @@ function findRotatableSwirlCenters(grid) {
     if (track.some(function (coordinate) {
       var cell = grid.getCell(coordinate.row, coordinate.col);
       return !!cell && cell.spiderLocked === true;
+    })) {
+      return false;
+    }
+    if (track.some(function (coordinate) {
+      var cell = grid.getCell(coordinate.row, coordinate.col);
+      return !!cell && typeof cell.vineOwnerId === "string" && !!cell.vineOwnerId;
     })) {
       return false;
     }
@@ -19194,6 +19242,88 @@ GameManager.prototype._resolveBreederPhase = function (resolution) {
   return resolution.breederSpawns.slice();
 };
 
+GameManager.prototype._resolveSplitterPhase = function (resolution) {
+  if (!resolution || typeof resolution !== "object" || Array.isArray(resolution)) {
+    throw new Error("Splitter phase requires resolution.");
+  }
+  if (typeof resolution.splitterResolved !== "boolean") {
+    throw new Error("Splitter phase requires resolution.splitterResolved boolean.");
+  }
+  if (!Array.isArray(resolution.collected)) {
+    throw new Error("Splitter phase requires resolution.collected array.");
+  }
+  if (!Array.isArray(resolution.reactiveTriggered) || !Array.isArray(resolution.spawnedBySplitters)) {
+    throw new Error("Splitter phase requires splitter resolution arrays.");
+  }
+  if (resolution.splitterResolved) {
+    throw new Error("Splitter phase cannot resolve the same shot twice.");
+  }
+  if (!Number.isInteger(this.shotsFired) || this.shotsFired <= 0) {
+    throw new Error("Splitter phase requires positive shotsFired.");
+  }
+  if (!Array.isArray(this.pendingSplitterSpawns)) {
+    throw new Error("Splitter phase requires pendingSplitterSpawns array.");
+  }
+  if (this.pendingSplitterSpawns.length) {
+    throw new Error("Splitter phase cannot start while a previous splitter spawn is pending.");
+  }
+
+  var grid = this.systems.bubbleGrid;
+  if (!grid || typeof grid.getSpecialEntities !== "function") {
+    throw new Error("Splitter phase requires BubbleGrid.getSpecialEntities.");
+  }
+
+  resolution.splitterResolved = true;
+  var removedCellKeys = {};
+  resolution.collected.forEach(function (cell, index) {
+    if (!cell || !Number.isInteger(cell.row) || !Number.isInteger(cell.col)) {
+      throw new Error("Splitter phase collected cell requires integer coordinates at index " + index + ".");
+    }
+    removedCellKeys[cell.row + ":" + cell.col] = true;
+  });
+
+  var splitters = grid.getSpecialEntities().filter(isSplitterBall).sort(function (left, right) {
+    if (typeof left.id !== "string" || !left.id || typeof right.id !== "string" || !right.id) {
+      throw new Error("Splitter phase requires non-empty splitter ids.");
+    }
+    return left.id < right.id ? -1 : (left.id > right.id ? 1 : 0);
+  });
+  if (!splitters.length) {
+    return [];
+  }
+  if (
+    typeof grid.getNeighborCoordinates !== "function" ||
+    typeof grid.getCell !== "function" ||
+    typeof grid.findSplitterSpawnCell !== "function" ||
+    typeof grid.isSplitterSpawnCellAvailable !== "function"
+  ) {
+    throw new Error("Splitter phase requires BubbleGrid splitter neighbor queries.");
+  }
+  var reservedTargetKeys = {};
+  splitters.forEach(function (splitter) {
+    var liveSplitter = grid.getCell(splitter.row, splitter.col);
+    if (!isSplitterBall(liveSplitter) || liveSplitter.id !== splitter.id) {
+      throw new Error("Splitter phase lost live splitter: " + splitter.id + ".");
+    }
+    var neighborCoordinates = grid.getNeighborCoordinates(liveSplitter.row, liveSplitter.col);
+    var adjacentRemoval = neighborCoordinates.some(function (coordinate) {
+      return removedCellKeys[coordinate.row + ":" + coordinate.col] === true;
+    });
+    if (adjacentRemoval) {
+      return;
+    }
+
+    var target = grid.findSplitterSpawnCell(liveSplitter, reservedTargetKeys);
+    if (!target) {
+      return;
+    }
+    reservedTargetKeys[target.row + ":" + target.col] = true;
+    this._queuePendingSplitterSpawn(liveSplitter, resolution, target);
+  }, this);
+
+  return this.pendingSplitterSpawns.slice();
+};
+
 GameManager.prototype._resolveMineCountdownPhase = function (resolution) {
   if (!resolution || typeof resolution !== "object" || Array.isArray(resolution)) {
     throw new Error("Mine countdown phase requires resolution.");
@@ -19259,6 +19389,9 @@ GameManager.prototype._beginVineCastForResolution = function (resolution) {
   if (!Array.isArray(resolution.vineCasts)) {
     throw new Error("Vine cast requires resolution.vineCasts array.");
   }
+  if (!Array.isArray(resolution.releasedVines)) {
+    throw new Error("Vine cast requires resolution.releasedVines array.");
+  }
   if (this._hasPendingVineCast() || this.pendingVineCastResolution !== null) {
     throw new Error("Vine cast cannot start while another cast is pending.");
   }
@@ -19269,6 +19402,15 @@ GameManager.prototype._beginVineCastForResolution = function (resolution) {
   if (!Number.isInteger(this.shotsFired) || this.shotsFired <= 0) {
     throw new Error("Vine cast evaluation requires positive shotsFired.");
   }
+  var releasedAdjacentVine = resolution.releasedVines.some(function (entry) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      throw new Error("Vine cast requires valid released vine entries.");
+    }
+    return entry.sourceType === "adjacent_elimination";
+  });
+  if (releasedAdjacentVine) {
+    return false;
+  }
   if (this.shotsFired % VINE_CAST_SHOT_INTERVAL !== 0) {
     return false;
   }
@@ -19277,7 +19419,7 @@ GameManager.prototype._beginVineCastForResolution = function (resolution) {
   if (!grid || typeof grid.getVineSpirits !== "function") {
     throw new Error("Vine cast requires BubbleGrid.getVineSpirits.");
   }
-  if (typeof grid.findNearestNormalCellForVine !== "function" || typeof grid.beginVinePreview !== "function") {
+  if (typeof grid.findAdjacentNormalCellForVine !== "function" || typeof grid.beginVinePreview !== "function") {
     throw new Error("Vine cast requires BubbleGrid vine target and preview methods.");
   }
   var spirits = grid.getVineSpirits();
@@ -19287,7 +19429,7 @@ GameManager.prototype._beginVineCastForResolution = function (resolution) {
 
   var reservedCellKeys = {};
   spirits.forEach(function (spirit) {
-    var target = grid.findNearestNormalCellForVine(spirit, reservedCellKeys);
+    var target = grid.findAdjacentNormalCellForVine(spirit, reservedCellKeys);
     if (!target) {
       return;
     }
@@ -19385,6 +19527,7 @@ GameManager.prototype._startPendingSwirlRotation = function (resolution) {
       centerCol: center.col,
       duration: SWIRL_ROTATION_DURATION,
       angleDegrees: SpecialAnimationTiming.swirlRotation.angleDegrees,
+      completed: false,
       moves: moves
     });
   }, this);
@@ -19507,6 +19650,7 @@ GameManager.prototype._continueAfterVineCast = function (resolution) {
     return;
   }
   this._resolveBreederPhase(resolution);
+  this._resolveSplitterPhase(resolution);
   if (resolution.boardCleared) {
     this._resolveBoardClearedOutcome();
     return;
@@ -19603,6 +19747,15 @@ GameManager.prototype._updatePendingSwirlRotation = function (dt) {
   if (resolution !== this.lastResolution) {
     throw new Error("Pending swirl rotation resolution must remain lastResolution.");
   }
+  if (!Array.isArray(resolution.swirlRotations) || !resolution.swirlRotations.length) {
+    throw new Error("Pending swirl rotation requires non-empty resolution.swirlRotations.");
+  }
+  resolution.swirlRotations.forEach(function (rotation) {
+    if (!rotation || rotation.completed !== false) {
+      throw new Error("Pending swirl rotation entry must be incomplete.");
+    }
+    rotation.completed = true;
+  });
   var grid = this.systems.bubbleGrid;
   var newlyFloating = [];
   while (true) {
@@ -19676,7 +19829,7 @@ GameManager.prototype._updatePendingWormholeShift = function (dt) {
   return true;
 };
 
-GameManager.prototype._queuePendingSplitterSpawn = function (splitterCell, resolution) {
+GameManager.prototype._queuePendingSplitterSpawn = function (splitterCell, resolution, targetCell) {
   if (!splitterCell || !Number.isInteger(splitterCell.row) || !Number.isInteger(splitterCell.col)) {
     throw new Error("Pending splitter spawn requires splitter cell coordinates.");
   }
@@ -19688,6 +19841,9 @@ GameManager.prototype._queuePendingSplitterSpawn = function (splitterCell, resol
   }
   if (!Array.isArray(resolution.reactiveTriggered)) {
     throw new Error("Pending splitter spawn requires resolution.reactiveTriggered.");
+  }
+  if (!targetCell || !Number.isInteger(targetCell.row) || !Number.isInteger(targetCell.col)) {
+    throw new Error("Pending splitter spawn requires target cell coordinates.");
   }
 
   var pendingId = splitterCell.id;
@@ -19704,6 +19860,8 @@ GameManager.prototype._queuePendingSplitterSpawn = function (splitterCell, resol
     id: pendingId,
     row: splitterCell.row,
     col: splitterCell.col,
+    targetRow: targetCell.row,
+    targetCol: targetCell.col,
     splitColor: splitterCell.splitColor,
     remainingDelay: SPLITTER_SPAWN_DELAY_SEC
   });
@@ -19769,9 +19927,25 @@ GameManager.prototype._updatePendingSplitterSpawns = function (dt) {
       continue;
     }
 
-    var spawnCell = grid.findSplitterSpawnCell(pending);
-    if (!spawnCell) {
-      throw new Error("Pending splitter spawn requires an available spawn cell.");
+    if (!Number.isInteger(pending.targetRow) || !Number.isInteger(pending.targetCol)) {
+      throw new Error("Pending splitter spawn entry requires target coordinates.");
+    }
+    var liveSplitter = grid.getCell(pending.row, pending.col);
+    if (!isSplitterBall(liveSplitter) || liveSplitter.id !== pending.id) {
+      throw new Error("Pending splitter spawn lost source splitter: " + pending.id + ".");
+    }
+    var targetIsNeighbor = grid.getNeighborCoordinates(liveSplitter.row, liveSplitter.col).some(function (coordinate) {
+      return coordinate.row === pending.targetRow && coordinate.col === pending.targetCol;
+    });
+    if (!targetIsNeighbor) {
+      throw new Error("Pending splitter spawn target must remain adjacent to its source splitter.");
+    }
+    var spawnCell = {
+      row: pending.targetRow,
+      col: pending.targetCol
+    };
+    if (!grid.isSplitterSpawnCellAvailable(spawnCell.row, spawnCell.col, {})) {
+      throw new Error("Pending splitter spawn target is no longer an available six-neighbor cell.");
     }
     var spawnedCell = grid.addBubble(spawnCell, pending.splitColor);
     if (!spawnedCell) {
@@ -20061,8 +20235,20 @@ function attachGameManagerSpiritCocoonMethods(GameManager) {
   GameManager.prototype._filterFloatingSpiritCocoons = function (floatingCells, resolution) {
     this._queueSpiritCocoonsAdjacentToCells(floatingCells, resolution);
     var pendingIds = {};
+    var pendingTraversalTargetIds = {};
     this.pendingSpiritCocoonOpenings.forEach(function (opening) {
       pendingIds[String(opening.cocoonId)] = true;
+      ["mistTraversal", "gluttonyTraversal", "rainbowTraversal"].forEach(function (fieldName) {
+        if (!Array.isArray(opening[fieldName])) {
+          throw new Error("Pending spirit cocoon opening requires " + fieldName + " array.");
+        }
+        opening[fieldName].forEach(function (entry) {
+          if (!entry || typeof entry.id !== "string" || !entry.id) {
+            throw new Error("Pending spirit cocoon traversal target requires id.");
+          }
+          pendingTraversalTargetIds[entry.id] = true;
+        });
+      });
     });
     var pendingBudIds = {};
     this.pendingBudHatches.forEach(function (hatch) {
@@ -20073,13 +20259,18 @@ function attachGameManagerSpiritCocoonMethods(GameManager) {
     });
     return floatingCells.filter(function (cell) {
       var isPendingSpiritCocoon = isSpiritCocoon(cell) && pendingIds[String(cell.id)] === true;
+      var isPendingTraversalTarget = !!(
+        cell &&
+        typeof cell.id === "string" &&
+        pendingTraversalTargetIds[cell.id] === true
+      );
       var isPendingBud = !!(
         cell &&
         cell.entityCategory === "reactive_ball" &&
         cell.entityType === "bud" &&
         pendingBudIds[String(cell.id)] === true
       );
-      return !isPendingSpiritCocoon && !isPendingBud;
+      return !isPendingSpiritCocoon && !isPendingTraversalTarget && !isPendingBud;
     });
   };
 
@@ -20557,6 +20748,14 @@ GameManager.prototype.update = function (dt) {
   var fallingUpdated = !!(fallingStep && fallingStep.updated);
   var collectedDrops = fallingStep && Array.isArray(fallingStep.collected) ? fallingStep.collected : [];
   var cleanupScoredDrops = fallingStep && Array.isArray(fallingStep.cleanupScored) ? fallingStep.cleanupScored : [];
+  if (
+    !fallingStep ||
+    !Number.isInteger(fallingStep.timedOutBallDisappearCount) ||
+    fallingStep.timedOutBallDisappearCount < 0
+  ) {
+    throw new Error("Falling marble update requires non-negative integer timedOutBallDisappearCount.");
+  }
+  var timedOutBallDisappearCount = fallingStep.timedOutBallDisappearCount;
   var fairyHits = fallingStep && Array.isArray(fallingStep.fairyHits) ? fallingStep.fairyHits : [];
   var poisonFairyHits = fallingStep && Array.isArray(fallingStep.poisonFairyHits) ? fallingStep.poisonFairyHits : [];
   var icicleFairyHits = fallingStep && Array.isArray(fallingStep.icicleFairyHits) ? fallingStep.icicleFairyHits : [];
@@ -20589,6 +20788,11 @@ GameManager.prototype.update = function (dt) {
   fairySplits.forEach(function (split) {
     this._pushRuntimeEvent("fairy_assist_split", split);
   }, this);
+  if (timedOutBallDisappearCount > 0) {
+    this._pushRuntimeEvent("falling_drop_timeout_disappeared", {
+      count: timedOutBallDisappearCount
+    });
+  }
   runtimeEvents = runtimeEvents.concat(this._drainRuntimeEvents());
 
   if (collectedDrops.length) {
@@ -21375,8 +21579,8 @@ function LevelRenderer(rootNode) {
   this.fireworksPrefabLoadPromise = null;
   this.explodeAnimationClip = null;
   this.explodeAnimationClipPromise = null;
-  this.assistSpiritAnimationClipCache = {};
-  this.assistSpiritAnimationClipLoadPromises = {};
+  this.assistSpiritSkeletonDataCache = {};
+  this.assistSpiritSkeletonDataLoadPromises = {};
   this.layers = null;
   this.prefabFactory = new PrefabFactory();
   this.bubbleShatterRenderer = new BubbleShatterRenderer({
@@ -21428,6 +21632,7 @@ function LevelRenderer(rootNode) {
   this.skillPowerupCollectedFeedbackActive = false;
   this.skillPowerupCollectedFeedbackActiveState = null;
   this.lastKeyUnlockAnimationKey = "";
+  this.boardAdvancePresentationTarget = null;
   this.splitterSpawnAnimatedEntryKeys = {};
   this.splitterSpawnHiddenCellIds = {};
   this.breederSpawnAnimatedEntryKeys = {};
@@ -21440,6 +21645,7 @@ function LevelRenderer(rootNode) {
   this.budHatchAnimatedIds = {};
   this.wormholeShiftAnimatedIds = {};
   this.wormholeProjectileAbsorptionAnimatedIds = {};
+  this.blackHoleProjectileAbsorptionAnimatedIds = {};
   this.blackHoleUnsupportedDisappearAnimatedIds = {};
   this.wormholeDirectionGuideRoot = null;
   this.lastWormholeDirectionGuideKey = "";
@@ -21492,6 +21698,7 @@ function LevelRenderer(rootNode) {
   this.pendingBallScoreCellIds = {};
   this.pendingBallScoreCallbacks = {};
   this.playedTimeBonusAwardedEvents = [];
+  this.playedTransparentBallDestroyedEvents = [];
   this.winActionHandlers = {
     onNextLevel: null,
     onRetryLevel: null
@@ -21729,11 +21936,13 @@ LevelRenderer.prototype.setFallingMarbleSystem = function (fallingMarbleSystem, 
     boardAdvancePresentationTarget !== undefined &&
     (
       !boardAdvancePresentationTarget ||
-      typeof boardAdvancePresentationTarget.notifyBoardAdvanceEliminationPresentationComplete !== "function"
+      typeof boardAdvancePresentationTarget.notifyBoardAdvanceEliminationPresentationComplete !== "function" ||
+      typeof boardAdvancePresentationTarget.notifyBoardAdvanceKeyUnlockPresentationComplete !== "function"
     )
   ) {
     throw new Error("LevelRenderer.setFallingMarbleSystem requires board advance presentation target when provided.");
   }
+  this.boardAdvancePresentationTarget = boardAdvancePresentationTarget;
   this.bubbleShatterRenderer.setPresentationCompleteHandler(function (resolution) {
     fallingMarbleSystem.requestEliminationPresentationDropRelease();
     if (boardAdvancePresentationTarget) {
@@ -22944,7 +23153,7 @@ var POWERUP_ICON_RESOURCES = {
   rainbow: "ui/image/props/rainbow_ball",
   swap: "ui/image/props/change_ball",
   blast: "ui/image/props/blast_ball",
-  crystal_gun: "game/image/ball/crystal_gun",
+  crystal_gun: "ui/image/props/crystal_gun",
   rainbow_prism_ball: "game/image/props/rainbow_prism_ball",
   barrier_hammer: "ui/image/props/barrier_hammer",
   precise_aim: "ui/image/props/aim",
@@ -23340,7 +23549,8 @@ LevelRenderer.prototype.warmupPreparedGameplayAssets = function (assistSpiritId)
   if (!this._sharedWarmupPromise) {
     this._sharedWarmupPromise = Promise.all([
       this.prefabFactory.preload(this._collectInitialRenderPrefabPaths()),
-      this._preloadSprites(this._collectInitialCommonSpritePaths())
+      this._preloadSprites(this._collectInitialCommonSpritePaths()),
+      this.bubbleShatterRenderer.preload()
     ]).catch(function (error) {
       this._sharedWarmupPromise = null;
       throw error;
@@ -23349,7 +23559,7 @@ LevelRenderer.prototype.warmupPreparedGameplayAssets = function (assistSpiritId)
 
   return Promise.all([
     this._sharedWarmupPromise,
-    this._preloadAssistSpiritAnimationClips(assistSpiritId)
+    this._preloadAssistSpiritSkeletonData(assistSpiritId)
   ]).then(function () {
     return null;
   });
@@ -23414,8 +23624,7 @@ LevelRenderer.prototype.warmupGameplayInteractionAssets = function () {
     this._preloadExplodeAnimationClip(),
     this._preloadFireworksPrefab(),
     this.prefabFactory.preload(this._collectInteractionPrefabPaths()),
-    this._preloadSprites(this._collectInteractionSpritePaths()),
-    this.bubbleShatterRenderer.preload()
+    this._preloadSprites(this._collectInteractionSpritePaths())
   ]).catch(function (error) {
     this._interactionWarmupPromise = null;
     throw error;
@@ -23751,11 +23960,11 @@ LevelRenderer.prototype.releaseAfterGameplayBundleUnload = function () {
   this.fireworksPrefabLoadPromise = null;
   this.explodeAnimationClip = null;
   this.explodeAnimationClipPromise = null;
-  if (Object.keys(this.assistSpiritAnimationClipLoadPromises).length > 0) {
-    throw new Error("Cannot unload gameplay bundle while assist spirit animation clips are loading.");
+  if (Object.keys(this.assistSpiritSkeletonDataLoadPromises).length > 0) {
+    throw new Error("Cannot unload gameplay bundle while assist spirit Spine data is loading.");
   }
-  this.assistSpiritAnimationClipCache = {};
-  this.assistSpiritAnimationClipLoadPromises = {};
+  this.assistSpiritSkeletonDataCache = {};
+  this.assistSpiritSkeletonDataLoadPromises = {};
   this._sharedWarmupPromise = null;
   this._interactionWarmupPromise = null;
   if (this.timeBonusBitmapFontLoadPromise) {
@@ -23846,7 +24055,8 @@ LevelRenderer.prototype._collectInitialCommonSpritePaths = function () {
     POWERUP_ICON_RESOURCES.precise_aim,
     POWERUP_ICON_RESOURCES.snow_removal,
     POWERUP_ICON_RESOURCES.three_line_elimination,
-    POWERUP_ICON_RESOURCES.plus_three_balls
+    POWERUP_ICON_RESOURCES.plus_three_balls,
+    BALL_RESOURCES.BUBBLE_SHIELD
   ];
   return paths.filter(function (path, index, list) {
     return list.indexOf(path) === index;
@@ -23866,7 +24076,6 @@ LevelRenderer.prototype._collectInteractionCommonSpritePaths = function () {
     BALL_RESOURCES.POISON_OVERLAY,
     BALL_RESOURCES.POISON_DROPLET,
     BALL_RESOURCES.ICE_CRYSTAL_ATTACHMENT,
-    BALL_RESOURCES.BUBBLE_SHIELD,
     BALL_RESOURCES.SPIDER,
     BALL_RESOURCES.COBWEB,
     BALL_RESOURCES.SPIDER_COCOON_01,
@@ -24055,53 +24264,40 @@ LevelRenderer.prototype._preloadExplodeAnimationClip = function () {
   return this.explodeAnimationClipPromise;
 };
 
-LevelRenderer.prototype._preloadAssistSpiritAnimationClips = function (spiritId) {
+LevelRenderer.prototype._preloadAssistSpiritSkeletonData = function (spiritId) {
   var presentation = AssistSpiritPresentationConfig.getBySpiritId(spiritId);
-  var clipPaths = [presentation.idleClipPath, presentation.deliverClipPath];
-  return Promise.all(clipPaths.map(function (path) {
-    var cachedClip = this.assistSpiritAnimationClipCache[path];
-    if (cachedClip) {
-      if (!cachedClip.isValid) {
-        throw new Error("Cached assist spirit animation clip is invalid: " + path);
+  var path = presentation.skeletonDataPath;
+  if (this.assistSpiritSkeletonDataCache[path]) {
+    if (!this.assistSpiritSkeletonDataCache[path].isValid) {
+      throw new Error("Cached assist spirit Spine data is invalid: " + path);
+    }
+    return Promise.resolve(this.assistSpiritSkeletonDataCache[path]);
+  }
+  if (this.assistSpiritSkeletonDataLoadPromises[path]) {
+    return this.assistSpiritSkeletonDataLoadPromises[path];
+  }
+  if (typeof sp === "undefined" || !sp.SkeletonData) {
+    throw new Error("Assist spirit preload requires Spine SkeletonData runtime.");
+  }
+  this.assistSpiritSkeletonDataLoadPromises[path] = new Promise(function (resolve, reject) {
+    BundleLoader.loadRes(path, sp.SkeletonData, function (error, data) {
+      if (error) {
+        reject(new Error("Load assist spirit Spine data failed: " + path + ": " + error.message));
+        return;
       }
-      return Promise.resolve(cachedClip);
-    }
-    if (this.assistSpiritAnimationClipLoadPromises[path]) {
-      return this.assistSpiritAnimationClipLoadPromises[path];
-    }
-
-    this.assistSpiritAnimationClipLoadPromises[path] = new Promise(function (resolve, reject) {
-      BundleLoader.loadRes(path, cc.AnimationClip, function (error, clip) {
-        if (error) {
-          reject(new Error("Load assist spirit animation clip failed `" + path + "`: " + error.message));
-          return;
-        }
-        if (!clip || !clip.isValid) {
-          reject(new Error("Load assist spirit animation clip returned invalid asset: " + path));
-          return;
-        }
-        var expectedClipName = path.slice(path.lastIndexOf("/") + 1);
-        if (clip.name !== expectedClipName) {
-          reject(new Error(
-            "Assist spirit animation clip name mismatch `" + path + "`: expected `" +
-            expectedClipName + "`, received `" + clip.name + "`."
-          ));
-          return;
-        }
-        if (typeof clip.duration !== "number" || !isFinite(clip.duration) || clip.duration <= 0) {
-          reject(new Error("Assist spirit animation clip duration is invalid: " + path));
-          return;
-        }
-        this.assistSpiritAnimationClipCache[path] = clip;
-        delete this.assistSpiritAnimationClipLoadPromises[path];
-        resolve(clip);
-      }.bind(this));
-    }.bind(this)).catch(function (error) {
-      delete this.assistSpiritAnimationClipLoadPromises[path];
-      throw error;
+      if (!data || !data.isValid) {
+        reject(new Error("Load assist spirit Spine data returned invalid asset: " + path));
+        return;
+      }
+      this.assistSpiritSkeletonDataCache[path] = data;
+      delete this.assistSpiritSkeletonDataLoadPromises[path];
+      resolve(data);
     }.bind(this));
-    return this.assistSpiritAnimationClipLoadPromises[path];
-  }, this));
+  }.bind(this)).catch(function (error) {
+    delete this.assistSpiritSkeletonDataLoadPromises[path];
+    throw error;
+  }.bind(this));
+  return this.assistSpiritSkeletonDataLoadPromises[path];
 };
 
 LevelRenderer.prototype._preloadFireworksPrefab = function () {
@@ -24339,6 +24535,7 @@ LevelRenderer.prototype.renderLevel = function (levelConfig, runtimeSnapshot) {
   this.budHatchAnimatedIds = {};
   this.wormholeShiftAnimatedIds = {};
   this.wormholeProjectileAbsorptionAnimatedIds = {};
+  this.blackHoleProjectileAbsorptionAnimatedIds = {};
   this.blackHoleUnsupportedDisappearAnimatedIds = {};
   this.wormholeDirectionGuideRoot = null;
   this.lastWormholeDirectionGuideKey = "";
@@ -24458,7 +24655,7 @@ LevelRenderer.prototype.renderLevel = function (levelConfig, runtimeSnapshot) {
     this._renderFairyAssists(runtimeSnapshot);
     this._renderFallingDrops(runtimeSnapshot);
     this._renderTestGrid(runtimeSnapshot.board);
-    this._renderShooter(runtimeSnapshot.shooter, runtimeSnapshot.activeProjectile, runtimeSnapshot.remainingShots);
+    this._renderShooter(runtimeSnapshot.shooter, runtimeSnapshot.activeProjectile, runtimeSnapshot.remainingShots, runtimeSnapshot.state);
     this._renderWinView(runtimeSnapshot);
     this._renderAddBallTipsView(runtimeSnapshot);
     this._renderLoseView(runtimeSnapshot);
@@ -24529,7 +24726,8 @@ LevelRenderer.prototype._refreshRuntimeShooterAim = function (runtimeSnapshot) {
   this._renderShooter(
     runtimeSnapshot.shooter,
     runtimeSnapshot.activeProjectile,
-    runtimeSnapshot.remainingShots
+    runtimeSnapshot.remainingShots,
+    runtimeSnapshot.state
   );
   var nextShooterKey = buildShooterRenderKey(runtimeSnapshot);
   if (!runtimeSnapshot.activeProjectile) {
@@ -24554,7 +24752,8 @@ LevelRenderer.prototype._refreshRuntimeFalling = function (runtimeSnapshot) {
     this._renderShooter(
       runtimeSnapshot.shooter,
       runtimeSnapshot.activeProjectile,
-      runtimeSnapshot.remainingShots
+      runtimeSnapshot.remainingShots,
+      runtimeSnapshot.state
     );
     if (!runtimeSnapshot.activeProjectile) {
       this.lastShooterRenderKey = nextShooterKey;
@@ -24590,8 +24789,10 @@ LevelRenderer.prototype._refreshRuntimeFull = function (levelConfig, runtimeSnap
     this.boardBubbleNodes,
     this.spriteFrameCache
   );
+  this._playBlackHoleProjectileAbsorptionAnimations(runtimeSnapshot);
   this._playBlackHoleUnsupportedDisappearAnimations(runtimeSnapshot);
   this._playBallScoreDisplay(runtimeSnapshot);
+  this._playTransparentBallFloatingScoreDisplay(runtimeSnapshot);
   this._playTimeBonusFloatingScoreDisplay(runtimeSnapshot);
   if (boardChanged) {
     this._renderBoard(runtimeSnapshot.board);
@@ -24672,7 +24873,7 @@ LevelRenderer.prototype._refreshRuntimeFull = function (levelConfig, runtimeSnap
   var hasActiveProjectile = !!(runtimeSnapshot.activeProjectile);
   var nextShooterKey = buildShooterRenderKey(runtimeSnapshot);
   if (hasActiveProjectile || nextShooterKey !== this.lastShooterRenderKey) {
-    this._renderShooter(runtimeSnapshot.shooter, runtimeSnapshot.activeProjectile, runtimeSnapshot.remainingShots);
+    this._renderShooter(runtimeSnapshot.shooter, runtimeSnapshot.activeProjectile, runtimeSnapshot.remainingShots, runtimeSnapshot.state);
     if (!hasActiveProjectile) {
       this.lastShooterRenderKey = nextShooterKey;
     }
@@ -25180,16 +25381,20 @@ module.exports = attachLevelRendererSceneBarrierFxMethods;
 
 function attachLevelRendererSceneBlackHoleMethods(LevelRenderer, context) {
   var SpecialAnimationTiming = context.SpecialAnimationTiming;
+  var BOARD_BUBBLE_SIZE = context.BOARD_BUBBLE_SIZE;
 
   function requireBlackHoleTiming() {
     var timing = SpecialAnimationTiming.blackHole;
     if (
       !timing ||
+      typeof timing.projectileAbsorbDuration !== "number" ||
+      !Number.isFinite(timing.projectileAbsorbDuration) ||
+      timing.projectileAbsorbDuration <= 0 ||
       typeof timing.unsupportedDisappearDuration !== "number" ||
       !Number.isFinite(timing.unsupportedDisappearDuration) ||
       timing.unsupportedDisappearDuration <= 0
     ) {
-      throw new Error("SpecialAnimationTiming.blackHole.unsupportedDisappearDuration must be positive.");
+      throw new Error("SpecialAnimationTiming.blackHole durations must be positive.");
     }
     return timing;
   }
@@ -25212,6 +25417,91 @@ function attachLevelRendererSceneBlackHoleMethods(LevelRenderer, context) {
     node.setScale(1);
     renderer.boardBubbleNodePool[node.__bubblePrefabPath].push(node);
   }
+
+  LevelRenderer.prototype._playBlackHoleProjectileAbsorptionAnimations = function (runtimeSnapshot) {
+    if (!runtimeSnapshot || !runtimeSnapshot.lastResolution) {
+      throw new Error("Black-hole projectile absorption requires runtime lastResolution.");
+    }
+    var entries = runtimeSnapshot.lastResolution.blackHoleProjectileAbsorptions;
+    if (!Array.isArray(entries)) {
+      throw new Error("Black-hole projectile absorption requires lastResolution.blackHoleProjectileAbsorptions.");
+    }
+    if (entries.length === 0) {
+      return;
+    }
+    if (!this.blackHoleProjectileAbsorptionAnimatedIds ||
+        typeof this.blackHoleProjectileAbsorptionAnimatedIds !== "object" ||
+        Array.isArray(this.blackHoleProjectileAbsorptionAnimatedIds)) {
+      throw new Error("Black-hole projectile absorption animation registry is invalid.");
+    }
+    if (!this.layers || !this.layers.board || !this.layers.board.isValid) {
+      throw new Error("Black-hole projectile absorption requires board layer.");
+    }
+    if (!BOARD_BUBBLE_SIZE || BOARD_BUBBLE_SIZE.width <= 0 || BOARD_BUBBLE_SIZE.height <= 0) {
+      throw new Error("Black-hole projectile absorption requires positive board bubble size.");
+    }
+    if (typeof cc.Node !== "function" || typeof cc.sequence !== "function" ||
+        typeof cc.spawn !== "function" || typeof cc.moveTo !== "function" ||
+        typeof cc.scaleTo !== "function" || typeof cc.fadeTo !== "function" ||
+        typeof cc.callFunc !== "function") {
+      throw new Error("Black-hole projectile absorption requires Cocos node and action APIs.");
+    }
+    var timing = requireBlackHoleTiming();
+
+    entries.forEach(function (entry) {
+      if (!entry || typeof entry.id !== "string" || !entry.id) {
+        throw new Error("Black-hole projectile absorption requires entry id.");
+      }
+      if (this.blackHoleProjectileAbsorptionAnimatedIds[entry.id] === true) {
+        return;
+      }
+      if (typeof entry.blackHoleId !== "string" || !entry.blackHoleId) {
+        throw new Error("Black-hole projectile absorption requires blackHoleId.");
+      }
+      if (!Number.isInteger(entry.row) || !Number.isInteger(entry.col)) {
+        throw new Error("Black-hole projectile absorption requires integer coordinates.");
+      }
+      if (entry.duration !== timing.projectileAbsorbDuration) {
+        throw new Error("Black-hole projectile absorption duration must match SpecialAnimationTiming.");
+      }
+      [entry.startPosition, entry.targetPosition].forEach(function (position) {
+        if (!position || !Number.isFinite(position.x) || !Number.isFinite(position.y)) {
+          throw new Error("Black-hole projectile absorption requires finite start and target positions.");
+        }
+      });
+      if (!entry.ball || typeof entry.ball !== "object" || Array.isArray(entry.ball)) {
+        throw new Error("Black-hole projectile absorption requires fired ball data.");
+      }
+      var blackHoleNode = this.boardBubbleNodes[entry.blackHoleId];
+      if (!blackHoleNode || !blackHoleNode.isValid) {
+        throw new Error("Black-hole projectile absorption requires live black-hole node: " + entry.blackHoleId);
+      }
+
+      this.blackHoleProjectileAbsorptionAnimatedIds[entry.id] = true;
+      var projectileNode = new cc.Node("BlackHoleAbsorbedProjectile_" + entry.id);
+      projectileNode.parent = this.layers.board;
+      projectileNode.zIndex = 1000;
+      projectileNode.setContentSize(BOARD_BUBBLE_SIZE);
+      projectileNode.setPosition(entry.startPosition.x, entry.startPosition.y);
+      projectileNode.opacity = 255;
+      projectileNode.setScale(1);
+      this._applyBallVisualCached(projectileNode, entry.ball, BOARD_BUBBLE_SIZE);
+      projectileNode.runAction(cc.sequence(
+        cc.spawn(
+          cc.moveTo(entry.duration, entry.targetPosition.x, entry.targetPosition.y),
+          cc.scaleTo(entry.duration, 0.05),
+          cc.fadeTo(entry.duration, 0)
+        ),
+        cc.callFunc(function (node) {
+          if (!node || !node.isValid) {
+            throw new Error("Black-hole absorbed projectile node was destroyed before animation completion.");
+          }
+          node.removeFromParent(true);
+          node.destroy();
+        }, projectileNode)
+      ));
+    }, this);
+  };
 
   LevelRenderer.prototype._playBlackHoleUnsupportedDisappearAnimations = function (runtimeSnapshot) {
     if (!runtimeSnapshot || !runtimeSnapshot.lastResolution) {
@@ -26516,6 +26806,9 @@ LevelRenderer.prototype._playSwirlRotationAnimation = function (runtimeSnapshot)
     if (!rotation || typeof rotation.id !== "string" || !rotation.id) {
       throw new Error("Swirl animation requires rotation id.");
     }
+    if (typeof rotation.completed !== "boolean") {
+      throw new Error("Swirl animation requires rotation completed boolean.");
+    }
     if (this.swirlRotationAnimatedIds[rotation.id]) {
       return;
     }
@@ -26528,8 +26821,6 @@ LevelRenderer.prototype._playSwirlRotationAnimation = function (runtimeSnapshot)
     if (!Array.isArray(rotation.moves) || !rotation.moves.length) {
       throw new Error("Swirl animation requires occupied track moves.");
     }
-    this.swirlRotationAnimatedIds[rotation.id] = true;
-
     rotation.moves.forEach(function (move) {
       if (
         !move ||
@@ -26542,6 +26833,16 @@ LevelRenderer.prototype._playSwirlRotationAnimation = function (runtimeSnapshot)
       ) {
         throw new Error("Swirl animation move is invalid.");
       }
+    });
+    if (typeof rotation.centerId !== "string" && typeof rotation.centerId !== "number") {
+      throw new Error("Swirl animation requires centerId.");
+    }
+    if (rotation.completed) {
+      return;
+    }
+    this.swirlRotationAnimatedIds[rotation.id] = true;
+
+    rotation.moves.forEach(function (move) {
       var bubbleNode = this.boardBubbleNodes[move.targetCellId];
       if (!bubbleNode || !bubbleNode.isValid) {
         throw new Error("Swirl animation target bubble node missing: " + move.targetCellId);
@@ -26563,9 +26864,6 @@ LevelRenderer.prototype._playSwirlRotationAnimation = function (runtimeSnapshot)
       bubbleNode.runAction(cc.moveTo(rotation.duration, targetPosition.x, targetPosition.y));
     }, this);
 
-    if (typeof rotation.centerId !== "string" && typeof rotation.centerId !== "number") {
-      throw new Error("Swirl animation requires centerId.");
-    }
     var centerNode = this.boardBubbleNodes[String(rotation.centerId)];
     if (!centerNode || !centerNode.isValid) {
       throw new Error("Swirl animation center node missing: " + rotation.centerId);
@@ -27455,22 +27753,8 @@ LevelRenderer.prototype._renderBottomPanel = function (runtimeSnapshot) {
     snowRemovalButtonNode.active = false;
   }
   this._setBottomPanelInventoryPresentation(bombButtonNode, blastCount, "recover_inventory:blast");
-  crystalGunButtonNode.active = crystalGunCount > 0;
-  if (crystalGunButtonNode.active) {
-    var crystalGunNumBgNode = requireChildNode(crystalGunButtonNode, "num_bg", "crystal_gun_btn");
-    var crystalGunVideoNode = requireChildNode(crystalGunButtonNode, "vido_btn", "crystal_gun_btn");
-    crystalGunNumBgNode.active = true;
-    crystalGunVideoNode.active = false;
-    this._setBottomPanelCount(crystalGunButtonNode, crystalGunCount);
-  }
-  rainbowPrismBallButtonNode.active = rainbowPrismBallCount > 0;
-  if (rainbowPrismBallButtonNode.active) {
-    var rainbowPrismNumBgNode = requireChildNode(rainbowPrismBallButtonNode, "num_bg", "rainbow_prism_ball_btn");
-    var rainbowPrismVideoNode = requireChildNode(rainbowPrismBallButtonNode, "vido_btn", "rainbow_prism_ball_btn");
-    rainbowPrismNumBgNode.active = true;
-    rainbowPrismVideoNode.active = false;
-    this._setBottomPanelCount(rainbowPrismBallButtonNode, rainbowPrismBallCount);
-  }
+  this._setBottomPanelInventoryPresentation(crystalGunButtonNode, crystalGunCount, "recover_inventory:crystal_gun");
+  this._setBottomPanelInventoryPresentation(rainbowPrismBallButtonNode, rainbowPrismBallCount, "recover_inventory:rainbow_prism_ball");
   if (adRunPowerupAllowed.three_line_elimination === true) {
     this._setBottomPanelInventoryPresentation(threeLineButtonNode, threeLineCount, "recover_ad_powerup:three_line_elimination");
   } else if (threeLineButtonNode) {
@@ -27503,10 +27787,10 @@ LevelRenderer.prototype._renderBottomPanel = function (runtimeSnapshot) {
   this._setBottomPanelButtonEnabled(bombButtonNode, blastCount > 0 ? canUseBlast : !pendingRainbowColorSelection, {
     dimWhenDisabled: false
   });
-  this._setBottomPanelButtonEnabled(crystalGunButtonNode, canUseCrystalGun, {
+  this._setBottomPanelButtonEnabled(crystalGunButtonNode, crystalGunCount > 0 ? canUseCrystalGun : !pendingRainbowColorSelection, {
     dimWhenDisabled: false
   });
-  this._setBottomPanelButtonEnabled(rainbowPrismBallButtonNode, canUseRainbowPrismBall, {
+  this._setBottomPanelButtonEnabled(rainbowPrismBallButtonNode, rainbowPrismBallCount > 0 ? canUseRainbowPrismBall : !pendingRainbowColorSelection, {
     dimWhenDisabled: false
   });
   this._setBottomPanelButtonEnabled(threeLineButtonNode, threeLineCount > 0 ? canUseThreeLine : !pendingRainbowColorSelection, {
@@ -28337,6 +28621,7 @@ LevelRenderer.prototype._initializeBallScoreHud = function () {
   this.pendingBallScoreCellIds = {};
   this.pendingBallScoreCallbacks = {};
   this.playedTimeBonusAwardedEvents = [];
+  this.playedTransparentBallDestroyedEvents = [];
   this._pruneBallScoreNodePool();
 };
 
@@ -28428,6 +28713,7 @@ LevelRenderer.prototype._resetBallScoreHudBeforeHudClear = function () {
   this.playedBallScoreCellIds = {};
   this.pendingBallScoreCellIds = {};
   this.playedTimeBonusAwardedEvents = [];
+  this.playedTransparentBallDestroyedEvents = [];
 };
 
 LevelRenderer.prototype._acquireBallScoreNode = function (gameViewNode, templateNode) {
@@ -28754,6 +29040,54 @@ LevelRenderer.prototype._playTimeBonusFloatingScoreDisplay = function (runtimeSn
       }, position);
     }, this);
     this.playedTimeBonusAwardedEvents.push(event);
+  }, this);
+};
+
+LevelRenderer.prototype._playTransparentBallFloatingScoreDisplay = function (runtimeSnapshot) {
+  if (!runtimeSnapshot || !Array.isArray(runtimeSnapshot.runtimeEvents)) {
+    throw new Error("Transparent ball floating score requires runtimeEvents array.");
+  }
+  if (!Array.isArray(this.playedTransparentBallDestroyedEvents)) {
+    throw new Error("Transparent ball floating score event state must be an array.");
+  }
+
+  runtimeSnapshot.runtimeEvents.forEach(function (event) {
+    if (!event || event.type !== "transparent_ball_destroyed") {
+      return;
+    }
+    if (!Number.isInteger(event.id) || event.id <= 0) {
+      throw new Error("transparent_ball_destroyed event requires a positive integer id.");
+    }
+    if (this.playedTransparentBallDestroyedEvents.indexOf(event) >= 0) {
+      return;
+    }
+    if (!Array.isArray(event.cells) || !event.cells.length ||
+        !Array.isArray(event.cell_ids) || event.cell_ids.length !== event.cells.length ||
+        event.count !== event.cells.length || event.gained !== event.cells.length * 1000) {
+      throw new Error("transparent_ball_destroyed event score payload is inconsistent.");
+    }
+
+    var emittedCellIds = {};
+    event.cells.forEach(function (cell, index) {
+      if (!cell || typeof cell.id !== "string" || !cell.id || emittedCellIds[cell.id]) {
+        throw new Error("transparent_ball_destroyed event contains invalid cell at index " + index + ".");
+      }
+      emittedCellIds[cell.id] = true;
+      if (event.cell_ids[index] !== cell.id || cell.points !== 1000 ||
+          !cell.worldPosition || !Number.isFinite(cell.worldPosition.x) ||
+          !Number.isFinite(cell.worldPosition.y)) {
+        throw new Error("transparent_ball_destroyed cell score payload is invalid: " + cell.id + ".");
+      }
+      var position = this._convertBoardPointToGameView(
+        cell.worldPosition.x,
+        cell.worldPosition.y
+      );
+      this._spawnBallScoreDisplay({
+        cellId: "transparent_ball_" + String(event.id) + "_" + cell.id,
+        points: cell.points
+      }, position);
+    }, this);
+    this.playedTransparentBallDestroyedEvents.push(event);
   }, this);
 };
 }
@@ -30587,12 +30921,28 @@ LevelRenderer.prototype._playKeyUnlockAnimation = function (runtimeSnapshot) {
   if (!this.layers || !this.layers.board || !this.layers.board.isValid) {
     throw new Error("Key unlock animation requires board layer.");
   }
+  if (
+    !this.boardAdvancePresentationTarget ||
+    typeof this.boardAdvancePresentationTarget.notifyBoardAdvanceKeyUnlockPresentationComplete !== "function"
+  ) {
+    throw new Error("Key unlock animation requires board advance presentation target.");
+  }
 
   var boardSnapshot = runtimeSnapshot.board;
   var flyDuration = SpecialAnimationTiming.keyUnlock.flyDuration;
   var keyShrinkDuration = SpecialAnimationTiming.keyUnlock.shrinkDuration;
   var lockShakeStep = SpecialAnimationTiming.keyUnlock.lockShakeStepDuration;
   var lockShakeOffset = 8;
+  var remainingKeyAnimations = collectedKeys.length;
+  var markKeyAnimationComplete = function () {
+    remainingKeyAnimations -= 1;
+    if (remainingKeyAnimations < 0) {
+      throw new Error("Key unlock animation completion count cannot be negative.");
+    }
+    if (remainingKeyAnimations === 0) {
+      this.boardAdvancePresentationTarget.notifyBoardAdvanceKeyUnlockPresentationComplete(resolution);
+    }
+  }.bind(this);
 
   collectedKeys.forEach(function (keyCell) {
     if (!keyCell) {
@@ -30652,13 +31002,17 @@ LevelRenderer.prototype._playKeyUnlockAnimation = function (runtimeSnapshot) {
           entry.lockFx.removeFromParent(true);
         }
       });
+      markKeyAnimationComplete();
     };
 
     var shakeLocks = function () {
       var remaining = lockFxNodes.length;
       var markDone = function () {
         remaining -= 1;
-        if (remaining <= 0) {
+        if (remaining < 0) {
+          throw new Error("Key unlock lock animation completion count cannot be negative.");
+        }
+        if (remaining === 0) {
           cleanup();
         }
       };
@@ -33226,6 +33580,8 @@ module.exports = attachLevelRendererScenePowerupFeedbackMethods;
 function attachLevelRendererSceneResultPopupMethods(LevelRenderer, context) {
   var ADD_BALL_TIPS_VIEW_PROXY_ROOT_NAME = context.ADD_BALL_TIPS_VIEW_PROXY_ROOT_NAME;
   var LOSE_VIEW_PROXY_ROOT_NAME = context.LOSE_VIEW_PROXY_ROOT_NAME;
+  var LOSE_VIEW_DELAY_NODE_NAME = "LoseViewDelay";
+  var LOSE_VIEW_DELAY_SECONDS = 1.5;
   var PREFAB_PATHS = context.PREFAB_PATHS;
   var SpriteProxyLayerHelper = context.SpriteProxyLayerHelper;
   var WIN_VIEW_PROXY_ROOT_NAME = context.WIN_VIEW_PROXY_ROOT_NAME;
@@ -33409,13 +33765,38 @@ LevelRenderer.prototype._renderLoseView = function (runtimeSnapshot) {
   );
   var existing = this.layers.modal.getChildByName("LoseView");
   var wasActive = !!(existing && existing.active);
+  var delayNode = this.layers.modal.getChildByName(LOSE_VIEW_DELAY_NODE_NAME);
   if (!isLoseState) {
+    if (delayNode) {
+      delayNode.stopAllActions();
+      delayNode.removeFromParent();
+      delayNode.destroy();
+    }
     if (existing) {
       existing.active = false;
       if (wasActive) {
         this._notifyResultViewLifecycle("onLoseViewHide");
       }
     }
+    return;
+  }
+
+  if (!delayNode) {
+    delayNode = getOrCreateChild(this.layers.modal, LOSE_VIEW_DELAY_NODE_NAME);
+    delayNode.__loseViewDelayReady = false;
+    delayNode.runAction(cc.sequence(
+      cc.delayTime(LOSE_VIEW_DELAY_SECONDS),
+      cc.callFunc(function () {
+        // A revived/restarted scene owns a different timer; cancel the old presentation.
+        if (!delayNode.isValid || delayNode.parent !== this.layers.modal) {
+          return;
+        }
+        delayNode.__loseViewDelayReady = true;
+        this._renderLoseView(this.lastRuntimeSnapshot);
+      }.bind(this))
+    ));
+  }
+  if (!delayNode.__loseViewDelayReady) {
     return;
   }
 
@@ -33543,9 +33924,15 @@ function attachLevelRendererSceneScaffoldMethods(LevelRenderer, deps) {
   var BoardLayout = deps.BoardLayout;
   var PREFAB_PATHS = deps.PREFAB_PATHS;
   var requireChildNode = SceneShared.requireChildNode;
-  var GAME_ENTRY_COUNTDOWN_STEP_INTERVAL = 1;
+  var GAME_ENTRY_COUNTDOWN_TOTAL_DURATION = 3;
+  // Measured onset times in assets/audio/sound/time.mp3 (seconds from playback).
+  var GAME_ENTRY_THREE_TIME = 0.03;
+  var GAME_ENTRY_TWO_TIME = 0.52;
+  var GAME_ENTRY_ONE_TIME = 1.01;
+  var GAME_ENTRY_GO_TIME = 1.47;
   var GAME_ENTRY_GO_SCALE_DURATION = 0.3;
-  var GAME_ENTRY_GO_HOLD_DURATION = 0.2;
+  var GAME_ENTRY_GO_HOLD_DURATION =
+    GAME_ENTRY_COUNTDOWN_TOTAL_DURATION - GAME_ENTRY_GO_TIME - GAME_ENTRY_GO_SCALE_DURATION;
   var GAME_ENTRY_GO_START_SCALE = 0.2;
   var GAME_ENTRY_GO_END_SCALE = 1.2;
   var GAME_ENTRY_COUNTDOWN_MASK_NAME = "GameEntryCountdownMask";
@@ -33787,7 +34174,7 @@ LevelRenderer.prototype.playGameEntryCountdown = function () {
   this._promoteGameEntryCountdownNodes(gameViewNode, timerNode, goNode);
   gameViewNode.__gameEntryCountdownActive = true;
   var self = this;
-  timerNode.active = true;
+  timerNode.active = false;
   timerNode.opacity = 255;
   timerLabel.string = "3";
   goNode.active = false;
@@ -33796,15 +34183,19 @@ LevelRenderer.prototype.playGameEntryCountdown = function () {
 
   return new Promise(function (resolve) {
     gameViewNode.runAction(cc.sequence(
-      cc.delayTime(GAME_ENTRY_COUNTDOWN_STEP_INTERVAL),
+      cc.delayTime(GAME_ENTRY_THREE_TIME),
+      cc.callFunc(function () {
+        timerNode.active = true;
+      }),
+      cc.delayTime(GAME_ENTRY_TWO_TIME - GAME_ENTRY_THREE_TIME),
       cc.callFunc(function () {
         timerLabel.string = "2";
       }),
-      cc.delayTime(GAME_ENTRY_COUNTDOWN_STEP_INTERVAL),
+      cc.delayTime(GAME_ENTRY_ONE_TIME - GAME_ENTRY_TWO_TIME),
       cc.callFunc(function () {
         timerLabel.string = "1";
       }),
-      cc.delayTime(GAME_ENTRY_COUNTDOWN_STEP_INTERVAL),
+      cc.delayTime(GAME_ENTRY_GO_TIME - GAME_ENTRY_ONE_TIME),
       cc.callFunc(function () {
         timerNode.active = false;
         goNode.active = true;
@@ -34637,54 +35028,38 @@ function attachLevelRendererSceneShooterMethods(LevelRenderer, deps) {
     if (!heroNode || !heroNode.isValid) {
       throw new Error("Shooter hero animation requires " + SHOOTER_HERO_NODE_NAME + " node.");
     }
-    var animation = heroNode.getComponent(cc.Animation);
-    if (!animation) {
-      throw new Error("Shooter hero animation requires cc.Animation on " + SHOOTER_HERO_NODE_NAME + ".");
+    var visual = requireChildNode(heroNode, "SpineVisual", "Shooter hero");
+    var skeleton = visual.getComponent(sp.Skeleton);
+    if (!skeleton) {
+      throw new Error("Shooter hero SpineVisual requires sp.Skeleton.");
     }
-    if (typeof animation.getClips !== "function") {
-      throw new Error("Shooter hero animation requires getClips API.");
-    }
-    return animation;
-  }
-
-  function requireShooterHeroClip(animation, clipName) {
-    var clips = animation.getClips();
-    if (!Array.isArray(clips) || clips.length <= 0) {
-      throw new Error("Shooter hero animation requires clips.");
-    }
-    for (var i = 0; i < clips.length; i += 1) {
-      if (clips[i] && clips[i].name === clipName) {
-        return clips[i];
-      }
-    }
-    throw new Error("Shooter hero animation clip is missing: " + clipName + ".");
+    return skeleton;
   }
 
   function playShooterHeroClip(heroNode, clipName, onFinished) {
-    var animation = requireShooterHeroAnimation(heroNode);
-    var clip = requireShooterHeroClip(animation, clipName);
+    var skeleton = requireShooterHeroAnimation(heroNode);
+    var clip = skeleton.findAnimation(clipName);
+    if (!clip || !Number.isFinite(clip.duration) || clip.duration <= 0) {
+      throw new Error("Shooter hero Spine animation is missing or invalid: " + clipName);
+    }
     if (!onFinished && heroNode.__shooterHeroPlayingClip === clipName) {
       return clip;
     }
-
-    var previousToken = typeof heroNode.__shooterHeroAnimationToken === "number"
-      ? heroNode.__shooterHeroAnimationToken
-      : 0;
-    heroNode.__shooterHeroAnimationToken = previousToken + 1;
-    var token = heroNode.__shooterHeroAnimationToken;
+    skeleton.setCompleteListener(null);
     heroNode.__shooterHeroPlayingClip = clipName;
-
+    var entry = skeleton.setAnimation(0, clipName, !onFinished);
+    if (!entry) {
+      throw new Error("Shooter hero Spine failed to play: " + clipName);
+    }
+    heroNode.__shooterHeroTrackEntry = entry;
     if (onFinished) {
-      if (typeof animation.once !== "function") {
-        throw new Error("Shooter hero animation requires once API.");
-      }
-      animation.once("finished", function () {
-        if (heroNode.__shooterHeroAnimationToken === token) {
+      skeleton.setCompleteListener(function (completedEntry) {
+        if (completedEntry === entry && heroNode.__shooterHeroTrackEntry === entry) {
+          skeleton.setCompleteListener(null);
           onFinished();
         }
       });
     }
-    animation.play(clip.name);
     return clip;
   }
 
@@ -34692,53 +35067,34 @@ function attachLevelRendererSceneShooterMethods(LevelRenderer, deps) {
     return playShooterHeroClip(heroNode, clipName, null);
   }
 
-  function installShooterHeroClips(renderer, heroNode, spiritId) {
+  function installShooterHeroSpine(renderer, heroNode, spiritId) {
     var presentation = AssistSpiritPresentationConfig.getBySpiritId(spiritId);
-    var idleClip = renderer.assistSpiritAnimationClipCache[presentation.idleClipPath];
-    var deliverClip = renderer.assistSpiritAnimationClipCache[presentation.deliverClipPath];
-    if (!idleClip || !idleClip.isValid) {
-      throw new Error("Shooter hero idle clip was not preloaded: " + presentation.idleClipPath);
+    var data = renderer.assistSpiritSkeletonDataCache[presentation.skeletonDataPath];
+    if (!data || !data.isValid) {
+      throw new Error("Shooter hero Spine data was not preloaded: " + presentation.skeletonDataPath);
     }
-    if (!deliverClip || !deliverClip.isValid) {
-      throw new Error("Shooter hero deliver clip was not preloaded: " + presentation.deliverClipPath);
-    }
-    if (idleClip.name !== presentation.idleClipName) {
-      throw new Error("Shooter hero idle clip name mismatch: " + idleClip.name);
-    }
-    if (deliverClip.name !== presentation.deliverClipName) {
-      throw new Error("Shooter hero deliver clip name mismatch: " + deliverClip.name);
-    }
-
-    var animation = requireShooterHeroAnimation(heroNode);
-    if (
-      heroNode.__shooterHeroSpiritId === spiritId &&
-      requireShooterHeroClip(animation, presentation.idleClipName) === idleClip &&
-      requireShooterHeroClip(animation, presentation.deliverClipName) === deliverClip
-    ) {
+    var skeleton = requireShooterHeroAnimation(heroNode);
+    if (heroNode.__shooterHeroSpiritId === spiritId && skeleton.skeletonData === data) {
       return presentation;
     }
-    if (typeof animation.stop !== "function") {
-      throw new Error("Shooter hero animation requires stop API.");
+    var runtimeData = data.getRuntimeData();
+    if (!runtimeData || !runtimeData.findSkin(presentation.skinName)) {
+      throw new Error("Shooter hero Spine skin is missing: " + presentation.skinName);
     }
-    if (typeof animation.removeClip !== "function") {
-      throw new Error("Shooter hero animation requires removeClip API.");
-    }
-    if (typeof animation.addClip !== "function") {
-      throw new Error("Shooter hero animation requires addClip API.");
-    }
-    animation.stop();
-    animation.getClips().slice().forEach(function (clip) {
-      animation.removeClip(clip, true);
+    [presentation.idleClipName, presentation.deliverClipName, presentation.winClipName, presentation.loseClipName].forEach(function (name) {
+      var animation = runtimeData.findAnimation(name);
+      if (!animation || !Number.isFinite(animation.duration) || animation.duration <= 0) {
+        throw new Error("Shooter hero Spine animation is missing or invalid: " + name);
+      }
     });
-    animation.addClip(idleClip);
-    animation.addClip(deliverClip);
-    requireShooterHeroClip(animation, presentation.idleClipName);
-    requireShooterHeroClip(animation, presentation.deliverClipName);
-
+    skeleton.setCompleteListener(null);
+    heroNode.__shooterHeroTrackEntry = null;
+    skeleton.clearTracks();
+    skeleton.skeletonData = data;
+    skeleton.setSkin(presentation.skinName);
+    skeleton.setSlotsToSetupPose();
     heroNode.__shooterHeroSpiritId = spiritId;
     heroNode.__shooterHeroPlayingClip = "";
-    heroNode.__shooterHeroAnimationToken =
-      (typeof heroNode.__shooterHeroAnimationToken === "number" ? heroNode.__shooterHeroAnimationToken : 0) + 1;
     return presentation;
   }
 
@@ -34847,7 +35203,7 @@ LevelRenderer.prototype.isShooterHandoffInProgress = function () {
   return shooterPanel.__shooterHandoffInProgress === true;
 };
 
-LevelRenderer.prototype._renderShooter = function (shooterSnapshot, activeProjectile, remainingShots) {
+LevelRenderer.prototype._renderShooter = function (shooterSnapshot, activeProjectile, remainingShots, gameState) {
   var shooterPanel = this.layers.shooter.getChildByName("ShooterPanel");
   if (!shooterPanel) {
     shooterPanel = this._instantiateOrCreate(PREFAB_PATHS.shooterPanel, this.layers.shooter, "ShooterPanel");
@@ -34874,7 +35230,8 @@ LevelRenderer.prototype._renderShooter = function (shooterSnapshot, activeProjec
     layoutNodes[SHOOTER_HERO_NODE_NAME],
     shooterSnapshot,
     activeProjectile,
-    finiteRemainingShots
+    finiteRemainingShots,
+    gameState
   );
 
   var trajectory = shooterSnapshot.trajectory;
@@ -34953,6 +35310,14 @@ LevelRenderer.prototype._renderShooter = function (shooterSnapshot, activeProjec
   }
 
   var nextAnchor = layoutNodes.NextBallAnchor;
+  var HeldBallFollow = require("./ShooterHeldBallFollow");
+  var heldBallFollow = shooterPanel.getComponent(HeldBallFollow);
+  if (!heldBallFollow) {
+    heldBallFollow = shooterPanel.addComponent(HeldBallFollow);
+  }
+  heldBallFollow.bind(requireShooterHeroAnimation(layoutNodes[SHOOTER_HERO_NODE_NAME]), nextAnchor);
+  // Prefab layout refresh resets the anchor; restore the current hand pose before handoff.
+  heldBallFollow.syncPosition();
   nextAnchor.setScale(1);
   nextAnchor.opacity = 255;
   var nextBallLike = shooterSnapshot.nextBall || shooterSnapshot.nextColor;
@@ -35099,24 +35464,51 @@ LevelRenderer.prototype._syncShooterHeroAnimation = function (
   heroNode,
   shooterSnapshot,
   activeProjectile,
-  finiteRemainingShots
+  finiteRemainingShots,
+  gameState
 ) {
   if (!shooterSnapshot || typeof shooterSnapshot.assistSpiritId !== "string" || !shooterSnapshot.assistSpiritId) {
     throw new Error("Shooter hero animation requires shooterSnapshot.assistSpiritId.");
   }
-  var presentation = installShooterHeroClips(this, heroNode, shooterSnapshot.assistSpiritId);
+  var presentation = installShooterHeroSpine(this, heroNode, shooterSnapshot.assistSpiritId);
   var revision = shooterSnapshot.queueAdvanceRevision;
   if (!Number.isInteger(revision) || revision < 0) {
     throw new Error("Shooter hero animation requires a non-negative queueAdvanceRevision.");
+  }
+
+  if (revision < shooterPanel.__lastShooterHeroFireRevision) {
+    throw new Error("Shooter hero animation queueAdvanceRevision cannot move backwards.");
+  }
+
+  if (typeof gameState !== "string" || !gameState) {
+    throw new Error("Shooter hero animation requires game state.");
+  }
+  var resultClipName = null;
+  if (gameState === "won_settlement_pending" || gameState === "won") {
+    resultClipName = presentation.winClipName;
+  } else if (
+    gameState === "lost_danger" || gameState === "lost_hazard" ||
+    gameState === "lost_objective" || gameState === "out_of_shots"
+  ) {
+    resultClipName = presentation.loseClipName;
+  }
+  if (resultClipName) {
+    shooterPanel.__lastShooterHeroFireRevision = revision;
+    // Result animation owns the track; playing it clears any delivery completion callback.
+    playShooterHeroClip(heroNode, resultClipName, null);
+    return;
+  }
+  if (
+    heroNode.__shooterHeroPlayingClip === presentation.winClipName ||
+    heroNode.__shooterHeroPlayingClip === presentation.loseClipName
+  ) {
+    playShooterHeroIdle(heroNode, presentation.idleClipName);
   }
 
   if (typeof shooterPanel.__lastShooterHeroFireRevision !== "number") {
     shooterPanel.__lastShooterHeroFireRevision = revision;
     playShooterHeroIdle(heroNode, presentation.idleClipName);
     return;
-  }
-  if (revision < shooterPanel.__lastShooterHeroFireRevision) {
-    throw new Error("Shooter hero animation queueAdvanceRevision cannot move backwards.");
   }
 
   if (revision > shooterPanel.__lastShooterHeroFireRevision) {
@@ -35568,7 +35960,7 @@ LevelRenderer.prototype.renderRouteEditor = function (editorState) {
 
 module.exports = attachLevelRendererSceneShooterMethods;
 
-},{"./LevelRendererSceneShared":"LevelRendererSceneShared"}],
+},{"./LevelRendererSceneShared":"LevelRendererSceneShared","./ShooterHeldBallFollow":"ShooterHeldBallFollow"}],
 "LevelRendererSceneSpiderBoardMethods":[function(require,module,exports){
 "use strict";
 
@@ -38192,6 +38584,13 @@ function buildBottomPanelRenderKey(runtimeSnapshot) {
   if (!Number.isInteger(snowRemovalCount) || snowRemovalCount < 0) {
     throw new Error("Bottom panel render key snow_removal count must be a non-negative integer.");
   }
+  if (!Object.prototype.hasOwnProperty.call(skillInventory, "crystal_gun")) {
+    throw new Error("Bottom panel render key requires crystal_gun count.");
+  }
+  var crystalGunCount = Number(skillInventory.crystal_gun);
+  if (!Number.isInteger(crystalGunCount) || crystalGunCount < 0) {
+    throw new Error("Bottom panel render key crystal_gun count must be a non-negative integer.");
+  }
   if (!Object.prototype.hasOwnProperty.call(skillInventory, "rainbow_prism_ball")) {
     throw new Error("Bottom panel render key requires rainbow_prism_ball count.");
   }
@@ -38216,6 +38615,7 @@ function buildBottomPanelRenderKey(runtimeSnapshot) {
     runtimeSnapshot.infiniteShots ? 1 : 0,
     Math.max(0, Math.floor(Number(skillInventory.rainbow) || 0)),
     Math.max(0, Math.floor(Number(skillInventory.blast) || 0)),
+    crystalGunCount,
     rainbowPrismBallCount,
     Math.max(0, Math.floor(Number(skillInventory.swap) || 0)),
     Math.max(0, Math.floor(Number(skillInventory.barrier_hammer) || 0)),
@@ -38245,6 +38645,7 @@ function buildShooterRenderKey(runtimeSnapshot) {
     ? rainbowSelection.colors.join(",")
     : "";
   return [
+    runtimeSnapshot.state,
     runtimeSnapshot.remainingShots,
     shooter.infiniteShots ? 1 : 0,
     shooter.isAiming ? 1 : 0,
@@ -41022,6 +41423,82 @@ ShooterController.prototype.snapshot = function () {
 module.exports = ShooterController;
 
 },{"./BaseSystem":"BaseSystem","../../assets/scripts/config/BoardLayout":"BoardLayout"}],
+"ShooterHeldBallFollow":[function(require,module,exports){
+"use strict";
+
+// shou-2 is the raised hand in diqiushou; its slot is bound to bone23.
+var HAND_BONE_NAME = "bone23";
+
+module.exports = cc.Class({
+  name: "ShooterHeldBallFollow",
+  extends: cc.Component,
+
+  bind: function (skeleton, ballNode) {
+    if (!skeleton || !skeleton.isValid || !ballNode || !ballNode.isValid) {
+      throw new Error("Shooter held ball requires a live Spine and ball node.");
+    }
+    if (this.skeleton) {
+      if (this.skeleton !== skeleton || this.ballNode !== ballNode) {
+        throw new Error("Shooter held ball binding cannot change nodes.");
+      }
+      return;
+    }
+    this.skeleton = skeleton;
+    this.ballNode = ballNode;
+    var bone = this.requireUpdatedHandBone();
+    var world = ballNode.parent.convertToWorldSpaceAR(ballNode.position);
+    var point = skeleton.node.convertToNodeSpaceAR(world);
+    var determinant = bone.a * bone.d - bone.b * bone.c;
+    if (!Number.isFinite(determinant) || Math.abs(determinant) < 0.000001) {
+      throw new Error("Shooter held ball hand transform is not invertible.");
+    }
+    var dx = point.x - bone.worldX;
+    var dy = point.y - bone.worldY;
+    this.handOffset = cc.v2(
+      (dx * bone.d - dy * bone.b) / determinant,
+      (dy * bone.a - dx * bone.c) / determinant
+    );
+  },
+
+  requireUpdatedHandBone: function () {
+    var skeleton = this.skeleton;
+    if (!skeleton || !skeleton.isValid || !skeleton._skeleton) {
+      throw new Error("Shooter held ball requires a live realtime Spine skeleton.");
+    }
+    // Creator 2.4.12's public updateWorldTransform skips realtime skeletons.
+    // Refresh the runtime here, after animation update and before rendering.
+    skeleton._skeleton.updateWorldTransform();
+    var bone = skeleton.findBone(HAND_BONE_NAME);
+    if (!bone) {
+      throw new Error("Shooter held ball hand bone is missing: " + HAND_BONE_NAME);
+    }
+    return bone;
+  },
+
+  syncPosition: function () {
+    if (!this.ballNode || !this.ballNode.isValid || !this.ballNode.parent || !this.handOffset) {
+      throw new Error("Shooter held ball follower is not bound.");
+    }
+    var bone = this.requireUpdatedHandBone();
+    var offset = this.handOffset;
+    var point = cc.v2(
+      bone.worldX + bone.a * offset.x + bone.b * offset.y,
+      bone.worldY + bone.c * offset.x + bone.d * offset.y
+    );
+    var world = this.skeleton.node.convertToWorldSpaceAR(point);
+    var position = this.ballNode.parent.convertToNodeSpaceAR(world);
+    if (!Number.isFinite(position.x) || !Number.isFinite(position.y)) {
+      throw new Error("Shooter held ball position must be finite.");
+    }
+    this.ballNode.setPosition(position);
+  },
+
+  lateUpdate: function () {
+    this.syncPosition();
+  }
+});
+
+},{}],
 "SpecialAnimationTiming":[function(require,module,exports){
 "use strict";
 
@@ -41055,7 +41532,12 @@ var wormholeShift = {
 };
 
 var blackHole = {
+  projectileAbsorbDuration: 0.22,
   unsupportedDisappearDuration: 0.2
+};
+
+var topAnchorCollapse = {
+  dropDelay: 0.5
 };
 
 var windTunnel = {
@@ -41171,6 +41653,7 @@ module.exports = Object.freeze({
   swirlRotation: Object.freeze(swirlRotation),
   wormholeShift: Object.freeze(wormholeShift),
   blackHole: Object.freeze(blackHole),
+  topAnchorCollapse: Object.freeze(topAnchorCollapse),
   windTunnel: Object.freeze(windTunnel),
   vineCast: Object.freeze(vineCast),
   spiritCocoon: Object.freeze(spiritCocoon),
@@ -41432,6 +41915,77 @@ function buildPlan(origin, direction, wallPoints, hitType, hitPoint, collidedCel
   };
 }
 
+function findFirstWormholeCollisionOnPlanPath(grid, plan, collisionRadius) {
+  if (typeof grid.findWormholeCollisionOnSegment !== "function") {
+    throw new Error("Trajectory prediction requires BubbleGrid.findWormholeCollisionOnSegment.");
+  }
+  if (!plan || !plan.origin || !plan.hitPoint || !Array.isArray(plan.wallPoints)) {
+    throw new Error("Wormhole path resolution requires an authoritative shot plan.");
+  }
+
+  var physicalPathPoints = [plan.origin].concat(plan.wallPoints).concat([plan.hitPoint]);
+  for (var segmentIndex = 0; segmentIndex < physicalPathPoints.length - 1; segmentIndex += 1) {
+    var segmentStart = physicalPathPoints[segmentIndex];
+    var segmentEnd = physicalPathPoints[segmentIndex + 1];
+    if (nearlySamePoint(segmentStart, segmentEnd, 0.000001)) {
+      continue;
+    }
+    var collision = grid.findWormholeCollisionOnSegment(
+      segmentStart,
+      segmentEnd,
+      collisionRadius
+    );
+    if (!collision) {
+      continue;
+    }
+    return {
+      collision: collision,
+      wallPointsBeforeCollision: plan.wallPoints.slice(0, segmentIndex),
+      impactDirection: normalize({
+        x: segmentEnd.x - segmentStart.x,
+        y: segmentEnd.y - segmentStart.y
+      })
+    };
+  }
+  return null;
+}
+
+function isPlanTerminalAtWormhole(grid, plan) {
+  if (typeof grid.getWormholes !== "function") {
+    throw new Error("Wormhole terminal resolution requires BubbleGrid.getWormholes.");
+  }
+  if (!plan || !plan.hitPoint || !Number.isFinite(plan.hitPoint.x) || !Number.isFinite(plan.hitPoint.y)) {
+    throw new Error("Wormhole terminal resolution requires a finite shot-plan hitPoint.");
+  }
+  return grid.getWormholes().some(function (wormhole) {
+    var endpointPosition = grid.getCellPosition(wormhole.row, wormhole.col);
+    return nearlySamePoint(plan.hitPoint, endpointPosition, 0.001);
+  });
+}
+
+function buildWormholeAbsorptionPlan(normalPlan, pathCollision) {
+  var collision = pathCollision.collision;
+  var wormholePlan = buildPlan(
+    normalPlan.origin,
+    normalPlan.direction,
+    pathCollision.wallPointsBeforeCollision,
+    "wormhole",
+    collision.point,
+    collision.cell,
+    null,
+    collision.point,
+    pathCollision.impactDirection
+  );
+  wormholePlan.targetCellPosition = null;
+  wormholePlan.absorbingWormhole = {
+    id: String(collision.cell.id),
+    row: collision.cell.row,
+    col: collision.cell.col,
+    position: clone(collision.center)
+  };
+  return wormholePlan;
+}
+
 function TrajectoryPredictor() {
   BaseSystem.call(this, "TrajectoryPredictor");
   this.maxBounces = 6;
@@ -41494,7 +42048,7 @@ TrajectoryPredictor.prototype.configureLevel = function (levelConfig) {
   return this;
 };
 
-TrajectoryPredictor.prototype.predictShotPlan = function (grid, origin, direction) {
+TrajectoryPredictor.prototype._predictShotPlanIgnoringWormholes = function (grid, origin, direction) {
   if (!grid || !origin || !direction) {
     return null;
   }
@@ -41540,18 +42094,6 @@ TrajectoryPredictor.prototype.predictShotPlan = function (grid, origin, directio
       } else {
         distanceToBubble = collisionInfo.t * probeDistance;
       }
-    }
-    if (typeof grid.findWormholeCollisionOnSegment !== "function") {
-      throw new Error("Trajectory prediction requires BubbleGrid.findWormholeCollisionOnSegment.");
-    }
-    var wormholeCollision = grid.findWormholeCollisionOnSegment(
-      currentPoint,
-      probeEnd,
-      this.predictionCollisionRadius
-    );
-    var distanceToWormhole = Number.POSITIVE_INFINITY;
-    if (wormholeCollision) {
-      distanceToWormhole = wormholeCollision.t * probeDistance;
     }
     if (typeof grid.findWindTunnelEntranceCollisionOnSegment !== "function") {
       throw new Error("Trajectory prediction requires BubbleGrid.findWindTunnelEntranceCollisionOnSegment.");
@@ -41611,7 +42153,6 @@ TrajectoryPredictor.prototype.predictShotPlan = function (grid, origin, directio
     var minDistance = Math.min(
       distanceToBubble,
       distanceToBlackHole,
-      distanceToWormhole,
       distanceToWindTunnel,
       distanceToTrappedSprite,
       effectiveSlotDistance,
@@ -41648,29 +42189,6 @@ TrajectoryPredictor.prototype.predictShotPlan = function (grid, origin, directio
         position: clone(grid.getCellPosition(blackHoleCollision.cell.row, blackHoleCollision.cell.col))
       };
       return blackHolePlan;
-    }
-
-    if (distanceToWormhole <= minDistance + EPSILON && wormholeCollision) {
-      var wormholeImpactPoint = clone(wormholeCollision.point);
-      var wormholePlan = buildPlan(
-        rayOrigin,
-        rayDirection,
-        wallPoints,
-        "wormhole",
-        wormholeImpactPoint,
-        wormholeCollision.cell,
-        null,
-        wormholeImpactPoint,
-        currentDirection
-      );
-      wormholePlan.targetCellPosition = null;
-      wormholePlan.absorbingWormhole = {
-        id: String(wormholeCollision.cell.id),
-        row: wormholeCollision.cell.row,
-        col: wormholeCollision.cell.col,
-        position: clone(wormholeCollision.center)
-      };
-      return wormholePlan;
     }
 
     if (distanceToWindTunnel <= minDistance + EPSILON && windTunnelCollision) {
@@ -41955,6 +42473,25 @@ TrajectoryPredictor.prototype.predictShotPlan = function (grid, origin, directio
     throw new Error("Trapped sprite rescue trajectory did not resolve within the boundary bounce limit.");
   }
   return buildFallbackPlan(grid, rayOrigin, rayDirection);
+};
+
+TrajectoryPredictor.prototype.predictShotPlan = function (grid, origin, direction) {
+  var normalPlan = this._predictShotPlanIgnoringWormholes(grid, origin, direction);
+  if (!normalPlan) {
+    return null;
+  }
+  var pathCollision = findFirstWormholeCollisionOnPlanPath(
+    grid,
+    normalPlan,
+    this.predictionCollisionRadius
+  );
+  if (!pathCollision) {
+    return normalPlan;
+  }
+  if (normalPlan.targetCell && !isPlanTerminalAtWormhole(grid, normalPlan)) {
+    return normalPlan;
+  }
+  return buildWormholeAbsorptionPlan(normalPlan, pathCollision);
 };
 
 TrajectoryPredictor.prototype._shouldPreferSlotCandidate = function (slotInfo, distanceToSlot, distanceToBubble, epsilon) {

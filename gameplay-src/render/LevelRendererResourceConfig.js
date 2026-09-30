@@ -230,7 +230,7 @@ var POWERUP_ICON_RESOURCES = {
   rainbow: "ui/image/props/rainbow_ball",
   swap: "ui/image/props/change_ball",
   blast: "ui/image/props/blast_ball",
-  crystal_gun: "game/image/ball/crystal_gun",
+  crystal_gun: "ui/image/props/crystal_gun",
   rainbow_prism_ball: "game/image/props/rainbow_prism_ball",
   barrier_hammer: "ui/image/props/barrier_hammer",
   precise_aim: "ui/image/props/aim",

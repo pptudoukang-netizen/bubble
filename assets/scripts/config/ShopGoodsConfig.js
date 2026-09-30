@@ -114,6 +114,38 @@ module.exports = {
       enabled: true,
       sortOrder: 50,
       tags: []
+    },
+    {
+      skuId: "sku_crystal_gun_01",
+      itemId: "crystal_gun",
+      itemCount: 1,
+      displayName: "晶光炮",
+      functionText: "装填直线穿透炮弹并清除命中路径",
+      iconPath: "ui/image/props/crystal_gun",
+      price: {
+        currency: "coin",
+        amount: 300
+      },
+      dailyLimit: 0,
+      enabled: true,
+      sortOrder: 60,
+      tags: ["hot"]
+    },
+    {
+      skuId: "sku_rainbow_prism_ball_01",
+      itemId: "rainbow_prism_ball",
+      itemCount: 1,
+      displayName: "彩虹棱镜球",
+      functionText: "装填棱镜球并消除可视棋盘中的同色球",
+      iconPath: "ui/image/props/rainbow_prism_ball",
+      price: {
+        currency: "coin",
+        amount: 300
+      },
+      dailyLimit: 0,
+      enabled: true,
+      sortOrder: 70,
+      tags: []
     }
   ]
 };

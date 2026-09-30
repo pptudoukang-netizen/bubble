@@ -262,6 +262,14 @@ GameManager.prototype.update = function (dt) {
   var fallingUpdated = !!(fallingStep && fallingStep.updated);
   var collectedDrops = fallingStep && Array.isArray(fallingStep.collected) ? fallingStep.collected : [];
   var cleanupScoredDrops = fallingStep && Array.isArray(fallingStep.cleanupScored) ? fallingStep.cleanupScored : [];
+  if (
+    !fallingStep ||
+    !Number.isInteger(fallingStep.timedOutBallDisappearCount) ||
+    fallingStep.timedOutBallDisappearCount < 0
+  ) {
+    throw new Error("Falling marble update requires non-negative integer timedOutBallDisappearCount.");
+  }
+  var timedOutBallDisappearCount = fallingStep.timedOutBallDisappearCount;
   var fairyHits = fallingStep && Array.isArray(fallingStep.fairyHits) ? fallingStep.fairyHits : [];
   var poisonFairyHits = fallingStep && Array.isArray(fallingStep.poisonFairyHits) ? fallingStep.poisonFairyHits : [];
   var icicleFairyHits = fallingStep && Array.isArray(fallingStep.icicleFairyHits) ? fallingStep.icicleFairyHits : [];
@@ -294,6 +302,11 @@ GameManager.prototype.update = function (dt) {
   fairySplits.forEach(function (split) {
     this._pushRuntimeEvent("fairy_assist_split", split);
   }, this);
+  if (timedOutBallDisappearCount > 0) {
+    this._pushRuntimeEvent("falling_drop_timeout_disappeared", {
+      count: timedOutBallDisappearCount
+    });
+  }
   runtimeEvents = runtimeEvents.concat(this._drainRuntimeEvents());
 
   if (collectedDrops.length) {

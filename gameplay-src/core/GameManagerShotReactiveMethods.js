@@ -339,6 +339,24 @@ function createGameManagerShotReactiveMethods(context) {
       return removedKeys;
     },
 
+    _markKeyUnlockPresentationPendingForNewKeys: function (resolution, previousKeyCount) {
+      if (!resolution || !Array.isArray(resolution.collectedKeys)) {
+        throw new Error("Key unlock presentation pending state requires resolution.collectedKeys array.");
+      }
+      if (typeof resolution.keyUnlockPresentationComplete !== "boolean") {
+        throw new Error("Key unlock presentation pending state requires resolution.keyUnlockPresentationComplete boolean.");
+      }
+      if (!Number.isInteger(previousKeyCount) || previousKeyCount < 0) {
+        throw new Error("Key unlock presentation pending state requires non-negative previousKeyCount.");
+      }
+      if (resolution.collectedKeys.length < previousKeyCount) {
+        throw new Error("Collected key count cannot move backwards.");
+      }
+      if (resolution.collectedKeys.length > previousKeyCount) {
+        resolution.keyUnlockPresentationComplete = false;
+      }
+    },
+
     _collectRemovedKeysAndResolveUnlocks: function (removedCells, grid, resolution) {
       if (!Array.isArray(removedCells)) {
         throw new Error("Removed key collection requires removedCells array.");
@@ -349,7 +367,9 @@ function createGameManagerShotReactiveMethods(context) {
       if (!removedKeys.length) {
         return [];
       }
+      var previousKeyCount = resolution.collectedKeys.length;
       this._appendUniqueCells(resolution.collectedKeys, removedKeys);
+      this._markKeyUnlockPresentationPendingForNewKeys(resolution, previousKeyCount);
       this._resolveCollectedKeyUnlocks(grid, resolution);
       return removedKeys;
     },
@@ -553,47 +573,10 @@ function createGameManagerShotReactiveMethods(context) {
         return grid.hasCell(keyCell.row, keyCell.col);
       });
       this._appendUniqueCells(removedKeys, grid.removeCells(liveKeys));
+      var previousKeyCount = resolution.collectedKeys.length;
       this._appendUniqueCells(resolution.collectedKeys, removedKeys);
+      this._markKeyUnlockPresentationPendingForNewKeys(resolution, previousKeyCount);
       return removedKeys;
-    },
-
-    _triggerAdjacentSplitters: function (removedCells, grid, resolution, triggeredSplitterIds) {
-      if (!Array.isArray(removedCells)) {
-        throw new Error("Adjacent splitter trigger requires removedCells array.");
-      }
-      var manager = this;
-      var touched = {};
-      var triggered = [];
-      removedCells.forEach(function (cell) {
-        if (!cell) {
-          throw new Error("Adjacent splitter trigger requires removed cell.");
-        }
-        grid.getNeighborCoordinates(cell.row, cell.col).forEach(function (coord) {
-          var key = coord.row + ":" + coord.col;
-          if (touched[key]) {
-            return;
-          }
-          var splitter = grid.getCell(coord.row, coord.col);
-          if (!isSplitterBall(splitter)) {
-            return;
-          }
-          touched[key] = true;
-          if (triggeredSplitterIds[splitter.id]) {
-            return;
-          }
-          triggeredSplitterIds[splitter.id] = true;
-          if (typeof splitter.splitColor !== "string" || !splitter.splitColor) {
-            throw new Error("Splitter requires splitColor.");
-          }
-          if (typeof manager._queuePendingSplitterSpawn !== "function") {
-            throw new Error("Splitter trigger requires GameManager._queuePendingSplitterSpawn.");
-          }
-          manager._queuePendingSplitterSpawn(splitter, resolution);
-          triggered.push(splitter);
-        });
-      });
-
-      return triggered;
     },
 
     _collectAdjacentMolotovs: function (removedCells, grid, queuedMolotovIds) {
@@ -656,11 +639,9 @@ function createGameManagerShotReactiveMethods(context) {
 
       var collected = [];
       var queuedMolotovIds = {};
-      var triggeredSplitterIds = {};
 
       var removedKeys = this._triggerKeysAndResolveUnlocks(removedCells, grid, resolution);
       this._appendUniqueCells(collected, removedKeys);
-      this._triggerAdjacentSplitters(removedCells, grid, resolution, triggeredSplitterIds);
 
       var molotovs = this._collectAdjacentMolotovs(removedCells, grid, queuedMolotovIds);
       if (molotovs.length) {

@@ -6,7 +6,6 @@ function attachGameManagerBoardPhaseMethods(GameManager, context) {
   var BOARD_ADVANCE_DELAY_EPSILON = context.BOARD_ADVANCE_DELAY_EPSILON;
   var IMPACT_BOUNCE_PUSH_DISTANCE = context.IMPACT_BOUNCE_PUSH_DISTANCE;
   var IMPACT_BOUNCE_SPEED = context.IMPACT_BOUNCE_SPEED;
-  var KEY_UNLOCK_BOARD_ADVANCE_BLOCK_DELAY = context.KEY_UNLOCK_BOARD_ADVANCE_BLOCK_DELAY;
   var Logger = context.Logger;
   var WIN_SETTLEMENT_DELAY_SEC = context.WIN_SETTLEMENT_DELAY_SEC;
   var assertFiniteNumber = context.assertFiniteNumber;
@@ -132,12 +131,10 @@ GameManager.prototype._applyPostImpactBoardShiftPolicy = function (resolution) {
 
   this.pendingDeferredEnsureMinimumVisibleBoardRows = true;
   this.pendingDropIntervalBoardAdvance = false;
-  this.pendingBoardAdvanceSpecialAnimationDelay = Math.max(
-    this._resolveBoardAdvanceSpecialAnimationDelay(resolution),
-    BOARD_ADVANCE_AFTER_IMPACT_DELAY
-  );
+  this.pendingBoardAdvanceSpecialAnimationDelay = BOARD_ADVANCE_AFTER_IMPACT_DELAY;
   this.pendingBoardAdvanceDelay = 0;
   this.pendingBoardAdvanceEliminationPresentation = this._requiresBoardAdvanceEliminationPresentationWait(resolution);
+  this.pendingBoardAdvanceKeyUnlockPresentation = this._requiresBoardAdvanceKeyUnlockPresentationWait(resolution);
   this.pendingBoardAdvanceScheduledUpdateSerial = Math.floor(assertFiniteNumber(
     this.boardAdvanceUpdateSerial,
     "GameManager boardAdvanceUpdateSerial"
@@ -164,6 +161,7 @@ GameManager.prototype._isWaitingBoardAdvance = function () {
   return this.pendingBoardAdvanceSpecialAnimationDelay > 0 ||
     this.pendingBoardAdvanceDelay > 0 ||
     this.pendingBoardAdvanceEliminationPresentation === true ||
+    this.pendingBoardAdvanceKeyUnlockPresentation === true ||
     this.pendingDeferredEnsureMinimumVisibleBoardRows ||
     this.pendingDropIntervalBoardAdvance;
 };
@@ -205,23 +203,6 @@ GameManager.prototype._isBoardAdvanceScheduledThisUpdate = function () {
   return updateSerial > 0 && scheduledSerial === updateSerial;
 };
 
-GameManager.prototype._resolveBoardAdvanceSpecialAnimationDelay = function (resolution) {
-  if (!resolution || typeof resolution !== "object") {
-    throw new Error("Board advance special animation delay requires resolution.");
-  }
-  if (!Array.isArray(resolution.collectedKeys)) {
-    throw new Error("Board advance special animation delay requires resolution.collectedKeys array.");
-  }
-  if (!Array.isArray(resolution.unlockedLockedBalls)) {
-    throw new Error("Board advance special animation delay requires resolution.unlockedLockedBalls array.");
-  }
-
-  if (resolution.collectedKeys.length > 0 && resolution.unlockedLockedBalls.length > 0) {
-    return KEY_UNLOCK_BOARD_ADVANCE_BLOCK_DELAY;
-  }
-  return 0;
-};
-
 GameManager.prototype._requiresBoardAdvanceEliminationPresentationWait = function (resolution) {
   if (!resolution || typeof resolution !== "object") {
     throw new Error("Board advance elimination presentation wait requires resolution.");
@@ -230,6 +211,48 @@ GameManager.prototype._requiresBoardAdvanceEliminationPresentationWait = functio
     throw new Error("Board advance elimination presentation wait requires resolution.matched array.");
   }
   return resolution.matched.length > 0;
+};
+
+GameManager.prototype._requiresBoardAdvanceKeyUnlockPresentationWait = function (resolution) {
+  if (!resolution || typeof resolution !== "object") {
+    throw new Error("Board advance key unlock presentation wait requires resolution.");
+  }
+  if (!Array.isArray(resolution.collectedKeys)) {
+    throw new Error("Board advance key unlock presentation wait requires resolution.collectedKeys array.");
+  }
+  if (!Array.isArray(resolution.unlockedLockedBalls)) {
+    throw new Error("Board advance key unlock presentation wait requires resolution.unlockedLockedBalls array.");
+  }
+  var requiresKeyUnlockPresentation = resolution.collectedKeys.length > 0 && resolution.unlockedLockedBalls.length > 0;
+  if (!requiresKeyUnlockPresentation) {
+    return false;
+  }
+  if (typeof resolution.keyUnlockPresentationComplete !== "boolean") {
+    throw new Error("Board advance key unlock presentation wait requires resolution.keyUnlockPresentationComplete boolean.");
+  }
+  return !resolution.keyUnlockPresentationComplete;
+};
+
+GameManager.prototype.notifyBoardAdvanceKeyUnlockPresentationComplete = function (resolution) {
+  if (typeof this.pendingBoardAdvanceKeyUnlockPresentation !== "boolean") {
+    throw new Error("GameManager pendingBoardAdvanceKeyUnlockPresentation must be boolean.");
+  }
+  if (!resolution || typeof resolution !== "object" || Array.isArray(resolution)) {
+    throw new Error("Key unlock presentation completion requires resolution.");
+  }
+  if (!Array.isArray(resolution.collectedKeys) || resolution.collectedKeys.length < 1) {
+    throw new Error("Key unlock presentation completion requires collected keys.");
+  }
+  if (!Array.isArray(resolution.unlockedLockedBalls) || resolution.unlockedLockedBalls.length < 1) {
+    throw new Error("Key unlock presentation completion requires unlocked locked balls.");
+  }
+  if (resolution.keyUnlockPresentationComplete !== false) {
+    throw new Error("Key unlock presentation completion requires an incomplete presentation.");
+  }
+  resolution.keyUnlockPresentationComplete = true;
+  if (resolution === this.lastResolution) {
+    this.pendingBoardAdvanceKeyUnlockPresentation = false;
+  }
 };
 
 GameManager.prototype.notifyBoardAdvanceEliminationPresentationComplete = function (resolution) {
@@ -433,6 +456,9 @@ GameManager.prototype._updatePendingBoardAdvance = function (dt) {
     return false;
   }
   if (this.pendingBoardAdvanceEliminationPresentation === true) {
+    return false;
+  }
+  if (this.pendingBoardAdvanceKeyUnlockPresentation === true) {
     return false;
   }
 

@@ -154,11 +154,13 @@ LevelRenderer.prototype.setFallingMarbleSystem = function (fallingMarbleSystem, 
     boardAdvancePresentationTarget !== undefined &&
     (
       !boardAdvancePresentationTarget ||
-      typeof boardAdvancePresentationTarget.notifyBoardAdvanceEliminationPresentationComplete !== "function"
+      typeof boardAdvancePresentationTarget.notifyBoardAdvanceEliminationPresentationComplete !== "function" ||
+      typeof boardAdvancePresentationTarget.notifyBoardAdvanceKeyUnlockPresentationComplete !== "function"
     )
   ) {
     throw new Error("LevelRenderer.setFallingMarbleSystem requires board advance presentation target when provided.");
   }
+  this.boardAdvancePresentationTarget = boardAdvancePresentationTarget;
   this.bubbleShatterRenderer.setPresentationCompleteHandler(function (resolution) {
     fallingMarbleSystem.requestEliminationPresentationDropRelease();
     if (boardAdvancePresentationTarget) {

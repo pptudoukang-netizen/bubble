@@ -1677,7 +1677,7 @@
     "friendGiftCloudEnvId": "cloud1-d7gqettx3e9249ca1",
     "enablePlayerCloudProfile": true,
     "playerProfileCloudEnvId": "cloud1-d7gqettx3e9249ca1",
-    "playerProfileCloudFunctionName": "playerProfile",
+    "playerProfileCloudFunctionName": "playerProfileV2",
     "playerProfileCloudSyncDebounceMs": 5000,
     "worldLeaderboardCloudEnvId": "cloud1-d7gqettx3e9249ca1",
     "worldLeaderboardCloudFunctionName": "worldLeaderboard",

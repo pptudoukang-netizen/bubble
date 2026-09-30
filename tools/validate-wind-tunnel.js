@@ -706,6 +706,11 @@ function validateWindTunnelAmbientAudioLifecycle() {
         }
       },
       audioManager: {
+        playSfx: function (key) {
+          assert(key === "gameEntryCountdown", "Countdown must use its configured SFX key.");
+          countdownOrder.push("countdown_sfx");
+          return Promise.resolve(7);
+        },
         preloadPaths: function (paths) {
           countdownOrder.push("preload:" + paths.join(","));
           return Promise.resolve(paths.map(function (audioPath) {

@@ -7,7 +7,7 @@ var SpiritShopStore = require("../utils/SpiritShopStore");
 var ShopStateStore = require("../utils/ShopStateStore");
 
 var PROFILE_VERSION = 1;
-var EXPECTED_DEPLOYMENT_MARKER = "playerProfile_v20260814_profile_size_caps_v6";
+var EXPECTED_DEPLOYMENT_MARKER = "playerProfileV2_v20260824_profile_size_caps_v6";
 var SYNC_SOURCE_CLOUD = "cloud";
 var SYNC_SOURCE_LOCAL = "local";
 var LEVEL_ATTEMPT_STATS_STORAGE_KEY = LevelAttemptStatsStore.STORAGE_KEY;
@@ -245,7 +245,7 @@ function normalizeCloudFunctionResponse(response, functionName) {
     throw new Error(
       functionName + " cloud function deployment mismatch. Expected `" +
       EXPECTED_DEPLOYMENT_MARKER + "`, received `" +
-      String(result.deploymentMarker) + "`. Redeploy the playerProfile cloud function."
+      String(result.deploymentMarker) + "`. Redeploy the `" + functionName + "` cloud function."
     );
   }
   return result;

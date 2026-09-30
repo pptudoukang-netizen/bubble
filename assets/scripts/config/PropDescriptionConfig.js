@@ -5,7 +5,9 @@ var SPECIAL_ORDER = [
   "black_hole",
   "ice",
   "splitter",
+  "breeder",
   "bud",
+  "spirit_cocoon",
   "mine",
   "transparent_ball",
   "swirl",
@@ -54,6 +56,14 @@ var SPECIAL_DEFINITIONS = {
     effectDescription: "利用分裂球扩展同色区域，能更快打通棋盘结构。",
     iconPath: "ui/image/preview_balls/split_red_ball"
   },
+  breeder: {
+    title: "繁殖球",
+    description: "每次发射结算后，会在六邻接空位中随机生成一颗当前棋盘颜色的普通球。",
+    summary: "繁殖球会持续占据周围空位；如果本回合相邻位置发生消除，则暂停一次繁殖。",
+    effectTitle: "繁殖规则",
+    effectDescription: "周围没有空位时不会生成新球；可通过普通掉落或特殊清除移除繁殖球本体。",
+    iconPath: "ui/image/preview_balls/breeder_ball"
+  },
   bud: {
     title: "花苞球",
     description: "邻接消除命中后先破碎，再在原格孵化普通球，并把周围普通球染成同色。",
@@ -61,6 +71,14 @@ var SPECIAL_DEFINITIONS = {
     effectTitle: "孵化染色",
     effectDescription: "周围普通球越多，越容易制造大面积同色结构；范围爆炸可以直接移除花苞球本体。",
     iconPath: "ui/image/preview_balls/bud"
+  },
+  spirit_cocoon: {
+    title: "精灵茧",
+    description: "普通消除或悬空掉落发生在相邻格时开启；破茧完成后固定增加 1000 分。",
+    summary: "本地首次开启必定出现贪吃精灵；后续会随机出现迷雾、贪吃或彩虹精灵。",
+    effectTitle: "精灵效果",
+    effectDescription: "迷雾精灵遮挡相邻普通球；贪吃精灵逐球吞掉同行目标；彩虹精灵逐球改变同行普通球颜色。",
+    iconPath: "game/image/ball/cocoon_1"
   },
   mine: {
     title: "地雷",
@@ -75,7 +93,7 @@ var SPECIAL_DEFINITIONS = {
     description: "发射球会穿过并破坏透明球；撞到后方实体球后，会吸附在透明球原来的槽位。",
     summary: "穿过透明球可直接将其破坏并获得 1000 分，透明球后方必须存在合法碰撞终点。",
     effectTitle: "穿透规则",
-    effectDescription: "即使没有形成普通三连，破坏透明球仍会检查悬空掉落并延续连击。",
+    effectDescription: "穿透销毁时立即飘出 +1000；即使没有普通三连，仍会检查悬空掉落并延续连击。",
     iconPath: "ui/image/preview_balls/transparent_ball"
   },
   swirl: {
@@ -148,7 +166,7 @@ var SPECIAL_DEFINITIONS = {
     summary: "最多向前扫描 5 行，射线路径穿过的球全部清除；空格会跳过并继续。",
     effectTitle: "直线穿透",
     effectDescription: "反弹后沿最后一段飞行方向继续，不检查颜色或三连；到达棋盘顶部或射出侧边界时提前停止。",
-    iconPath: "game/image/ball/crystal_gun"
+    iconPath: "ui/image/props/crystal_gun"
   },
   stone: {
     title: "石头",
@@ -172,7 +190,9 @@ var SPECIAL_KEY_BY_ENTITY_TYPE = {
   black_hole: "black_hole",
   ice: "ice",
   splitter: "splitter",
+  breeder: "breeder",
   bud: "bud",
+  spirit_cocoon: "spirit_cocoon",
   mine: "mine",
   transparent_ball: "transparent_ball",
   swirl: "swirl",
@@ -225,7 +245,13 @@ var POWERUP_DEFINITIONS = [
     key: "crystal_gun",
     title: "晶光炮",
     description: "将当前发射球替换为晶光炮，从命中点沿实际射击直线向前穿透，最多扫描 5 行并清除路径穿过的全部球；炮弹到达最后一个消除终点后才消失。",
-    iconPath: "game/image/ball/crystal_gun"
+    iconPath: "ui/image/props/crystal_gun"
+  },
+  {
+    key: "rainbow_prism_ball",
+    title: "彩虹棱镜球",
+    description: "将当前发射球替换为彩虹棱镜球；首次接触普通球时逐行消除当前可视棋盘全部同色球，接触非普通球时随机选取一种可视普通颜色。",
+    iconPath: "ui/image/props/rainbow_prism_ball"
   },
   {
     key: "swap_ball",

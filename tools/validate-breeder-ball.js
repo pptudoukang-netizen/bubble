@@ -6,6 +6,8 @@ var path = require("path");
 var BoardLayout = require("../assets/scripts/config/BoardLayout");
 var LevelConfigLoader = require("../assets/scripts/config/LevelConfigLoader");
 var LevelPackCompactCodec = require("../assets/scripts/config/LevelPackCompactCodec");
+var PropDescriptionConfig = require("../assets/scripts/config/PropDescriptionConfig");
+var GameBootstrapSpecialIntroduceFlowMethods = require("../assets/scripts/bootstrap/GameBootstrapSpecialIntroduceFlowMethods");
 var GameManager = require("../gameplay-src/core/GameManager");
 var BubbleGrid = require("../gameplay-src/systems/BubbleGrid");
 var BoardViewportSystem = require("../gameplay-src/systems/BoardViewportSystem");
@@ -41,6 +43,10 @@ function replaceCharacter(text, index, replacement) {
 function createBreederResolution(matched) {
   return {
     matched: matched || [],
+    collected: (matched || []).slice(),
+    reactiveTriggered: [],
+    spawnedBySplitters: [],
+    splitterResolved: false,
     breederResolved: false,
     breederSpawns: [],
     mineCountdownResolved: false,
@@ -163,6 +169,82 @@ function validateConfigAndCompactCodec() {
     rejectedBlockedBreeder = error.message.indexOf("breeder requires at least one initial empty neighbor") >= 0;
   }
   assert(rejectedBlockedBreeder, "Config must reject a breeder with no initial empty neighbor.");
+}
+
+function validateSpecialIntroduction() {
+  var levelConfig = LevelConfigLoader.normalizeLevelConfig(
+    readJson(path.resolve(__dirname, "../assets/map/config/levels/level_breeder_ball_test.json")),
+    "level_breeder_ball_test"
+  );
+  assert(
+    PropDescriptionConfig.SPECIAL_KEY_BY_ENTITY_TYPE.breeder === "breeder",
+    "Breeder entity type must resolve to its special introduction key."
+  );
+  assert(
+    PropDescriptionConfig.SPECIAL_DEFINITIONS.breeder &&
+      PropDescriptionConfig.SPECIAL_DEFINITIONS.breeder.iconPath === "ui/image/preview_balls/breeder_ball",
+    "Breeder introduction must use the UI-owned breeder preview image."
+  );
+
+  var introduceHost = {
+    currentLevelConfig: levelConfig,
+    specialIntroduceStore: {
+      hasViewed: function () { return false; },
+      markViewed: function () {}
+    },
+    _specialIntroduceQueue: [],
+    _specialIntroduceQueuedKeys: {},
+    _specialIntroduceCurrentKey: "",
+    _showNextSpecialIntroduceView: function () { return Promise.resolve(false); }
+  };
+  var appended = GameBootstrapSpecialIntroduceFlowMethods._syncSpecialIntroduceForRuntimeSnapshot.call(
+    introduceHost,
+    {
+      state: "running",
+      timedLevel: false,
+      objectives: null,
+      board: {
+        cells: [{ entityType: "breeder" }]
+      }
+    }
+  );
+  assert(appended === true, "First breeder appearance must queue an introduction.");
+  assert(
+    introduceHost._specialIntroduceQueue.length === 1 &&
+      introduceHost._specialIntroduceQueue[0] === "breeder",
+    "Breeder introduction queue must contain exactly breeder."
+  );
+
+  var campaignPack = LevelPackCompactCodec.expandPack(
+    readJson(path.resolve(__dirname, "../remote-level-packs/levels_pack_301_400.json"))
+  );
+  var level351 = LevelConfigLoader.normalizeLevelConfig(campaignPack.levels.level_351, "level_351");
+  var campaignIntroduceHost = {
+    currentLevelConfig: level351,
+    specialIntroduceStore: {
+      hasViewed: function () { return false; },
+      markViewed: function () {}
+    },
+    _specialIntroduceQueue: [],
+    _specialIntroduceQueuedKeys: {},
+    _specialIntroduceCurrentKey: "",
+    _showNextSpecialIntroduceView: function () { return Promise.resolve(false); }
+  };
+  GameBootstrapSpecialIntroduceFlowMethods._syncSpecialIntroduceForRuntimeSnapshot.call(
+    campaignIntroduceHost,
+    {
+      state: "running",
+      timedLevel: false,
+      objectives: null,
+      board: {
+        cells: level351.level.specialEntities
+      }
+    }
+  );
+  assert(
+    campaignIntroduceHost._specialIntroduceQueue.indexOf("breeder") >= 0,
+    "Campaign level 351 must queue the breeder introduction without rejecting its runtime entity type."
+  );
 }
 
 function validateSpawnAndBoardShiftOrder() {
@@ -344,9 +426,10 @@ function validateRemovalAndRendering() {
 }
 
 validateConfigAndCompactCodec();
+validateSpecialIntroduction();
 validateSpawnAndBoardShiftOrder();
 validateAdjacentExplosionAndFullNeighbors();
 validateSharedNarrowGrowth();
 validateRemovalAndRendering();
 
-console.log("[OK] breeder_ball", "config, growth, birth flight, explosion skip, shared space, removal, rendering and board-shift order validated");
+console.log("[OK] breeder_ball", "config, level-351 introduction, growth, birth flight, explosion skip, shared space, removal, rendering and board-shift order validated");

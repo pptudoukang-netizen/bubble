@@ -914,6 +914,60 @@ function testJarCollectionRequiresFullBallInsideMouth() {
   assert.strictEqual(forcedOutsideDrop.inJar, false);
 }
 
+function testTimedOutBallDisappearUsesJarCollectionAudio() {
+  var systems = createSystemsWithJarColors(10, ["R"]);
+  var zone = systems.falling.jarZones[0];
+  var timedOutDrop = buildJarProbeDrop(
+    "timed_out_outside_jar",
+    zone.x + zone.collectHalfWidth + 1,
+    zone.mouthY + BoardLayout.bubbleRadius
+  );
+  timedOutDrop.lifeTime = systems.falling.maxDropLifeTime;
+  systems.falling.activeDrops = [timedOutDrop];
+
+  var timeoutUpdate = systems.falling.update(0.01);
+  assert.strictEqual(timeoutUpdate.collected.length, 0, "Timed-out outside-jar ball must not become a real collection.");
+  assert.strictEqual(timeoutUpdate.cleanupScored.length, 1, "Timed-out outside-jar ball must keep cleanup score settlement.");
+  assert.strictEqual(timeoutUpdate.timedOutBallDisappearCount, 1, "Timed-out disappearing ball must request one audio event.");
+
+  var collectedAtTimeout = buildJarProbeDrop("timed_out_inside_jar", zone.x, zone.mouthY);
+  collectedAtTimeout.inJar = true;
+  collectedAtTimeout.jarIndex = zone.index;
+  collectedAtTimeout.lifeTime = systems.falling.maxDropLifeTime;
+  systems.falling.activeDrops = [collectedAtTimeout];
+  var collectedUpdate = systems.falling.update(0.01);
+  assert.strictEqual(collectedUpdate.collected.length, 1, "Timed-out ball already inside a jar must remain a real collection.");
+  assert.strictEqual(collectedUpdate.timedOutBallDisappearCount, 0, "Real jar collection must not request duplicate timeout audio.");
+
+  var playedSfx = [];
+  GameBootstrapAudioMethods._playRuntimeAudioEvents.call({
+    _trackRuntimeTelemetryEvent: function () {},
+    _playSfx: function (name) {
+      playedSfx.push(name);
+    }
+  }, {
+    runtimeEvents: [{ type: "falling_drop_timeout_disappeared", count: 1 }]
+  });
+  assert.deepStrictEqual(playedSfx, ["jarCollectBottom"], "Timed-out disappearing ball must reuse the jar collection SFX.");
+  assert.throws(function () {
+    GameBootstrapAudioMethods._playRuntimeAudioEvents.call({
+      _trackRuntimeTelemetryEvent: function () {},
+      _playSfx: function () {}
+    }, {
+      runtimeEvents: [{ type: "falling_drop_timeout_disappeared", count: 0 }]
+    });
+  }, /requires positive integer count/);
+
+  var gameManagerUpdateSource = fs.readFileSync(
+    path.join(__dirname, "../gameplay-src/core/GameManagerUpdateMethods.js"),
+    "utf8"
+  );
+  assert(
+    gameManagerUpdateSource.indexOf('this._pushRuntimeEvent("falling_drop_timeout_disappeared"') >= 0,
+    "GameManager must forward timed-out ball disappearance into the runtime audio event chain."
+  );
+}
+
 function testJarCollisionPartitionsCoverWallsAndInterJarSpace() {
   var systems = createSystemsWithJarColors(10, ["R", "G", "B", "Y", "P"]);
   var zones = systems.falling.jarZones;
@@ -1730,6 +1784,7 @@ testDeferredVictoryDropActivationKeepsHorizontalSpeed();
 testVictoryBoardDropHitsFairyAndBounces();
 testVictoryBoardDropRimBounces();
 testJarCollectionRequiresFullBallInsideMouth();
+testTimedOutBallDisappearUsesJarCollectionAudio();
 testJarCollisionPartitionsCoverWallsAndInterJarSpace();
 testJarRimBounceSpeedIsAngleInvariant();
 testFinalJarRimContactRedirectsWithoutPrematureCollection();

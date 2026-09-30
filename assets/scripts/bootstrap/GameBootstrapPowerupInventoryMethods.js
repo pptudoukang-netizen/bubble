@@ -33,11 +33,13 @@ var START_GAME_POWERUP_UNLOCK_LEVEL_BY_ITEM_ID = {
   blast_ball: 15,
   barrier_hammer: 20,
   snow_removal: 16,
+  crystal_gun: 25,
+  rainbow_prism_ball: 30,
   three_line_elimination: 1,
   plus_three_balls: 1,
   precise_aim: 1
 };
-var START_GAME_PERSISTENT_POWERUP_ITEM_IDS = ["precise_aim", "swap_ball", "rainbow_ball", "blast_ball", "barrier_hammer", "snow_removal"];
+var START_GAME_PERSISTENT_POWERUP_ITEM_IDS = ["precise_aim", "swap_ball", "rainbow_ball", "blast_ball", "barrier_hammer", "snow_removal", "crystal_gun", "rainbow_prism_ball"];
 var START_GAME_TEMPORARY_POWERUP_CONFIG_BY_ITEM_ID = {
   three_line_elimination: {
     displayName: "消三行",
@@ -1042,9 +1044,6 @@ module.exports = {
         reason: reason
       });
       this._setStatusWithTip("skill_inventory_empty", null, "该道具库存不足");
-      if (entityType === "crystal_gun" || entityType === "rainbow_prism_ball") {
-        return;
-      }
       this._tryRecoverInventoryByAd(entityType);
       return;
     }

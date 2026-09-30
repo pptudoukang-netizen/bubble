@@ -70,7 +70,15 @@ FallingMarbleSystem.prototype.update = function (dt) {
 
     drop.lifeTime = (drop.lifeTime || 0) + dt;
     if (drop.lifeTime >= this.maxDropLifeTime) {
-      this._consumeDropInteraction(result, this._forceDropResolution(drop, true));
+      var timeoutInteraction = this._forceDropResolution(drop, true);
+      if (
+        !timeoutInteraction.collected &&
+        drop.dropKind !== "poison_droplet" &&
+        drop.dropKind !== "icicle"
+      ) {
+        result.timedOutBallDisappearCount += 1;
+      }
+      this._consumeDropInteraction(result, timeoutInteraction);
       activeDropCount -= 1;
       continue;
     }

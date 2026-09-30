@@ -1,0 +1,676 @@
+{
+  "level": {
+    "levelId": 321,
+    "code": "L321_GROWTH_AND_KEYS",
+    "difficulty": "hard",
+    "colorCount": 5,
+    "colors": [
+      "Y",
+      "P",
+      "O",
+      "K",
+      "W"
+    ],
+    "shotLimit": 46,
+    "targetScore": 18400,
+    "starThresholds": {
+      "star1": 8832,
+      "star2": 12512,
+      "star3": 15824
+    },
+    "dropInterval": 5,
+    "jarCount": 5,
+    "jarColors": [
+      "R",
+      "G",
+      "B",
+      "Y",
+      "P"
+    ],
+    "spawnWeights": {
+      "Y": 2.4,
+      "P": 1.12,
+      "O": 1.24,
+      "K": 1,
+      "W": 1.12
+    },
+    "initialShotBalls": [
+      "Y",
+      "Y"
+    ],
+    "jarRules": {
+      "rimBounce": 0.7504704704704706,
+      "collectZoneScale": 1.01991991991992,
+      "sameColorBonus": 1.7562562562562563
+    },
+    "winConditions": [
+      {
+        "type": "collect_color",
+        "color": "Y",
+        "value": 38
+      },
+      {
+        "type": "collect_ice_snowball",
+        "value": 19
+      }
+    ],
+    "bonusObjectives": [
+      {
+        "type": "single_turn_drop_count",
+        "value": 9
+      }
+    ],
+    "clearRewardItems": [
+      {
+        "id": "coin",
+        "count": 130
+      }
+    ],
+    "layout": [
+      "POOYKKKWWYY",
+      "PPY....WW.",
+      "W.Y.....Y..",
+      "WYO...YYY.",
+      "W.OO..PPP..",
+      "YKK.P.PO..",
+      "Y.PP...OO..",
+      "YYWWW.KK..",
+      "...........",
+      "YYY.K.WK..",
+      "YYYY...WW..",
+      "OKKY..YYW.",
+      "OOOK...YPP.",
+      "YYYY..OOPP",
+      "YYYY...OKKK"
+    ],
+    "difficultyScore": 55,
+    "specialEntities": [
+      {
+        "id": "ice_001",
+        "entityCategory": "obstacle_ball",
+        "entityType": "ice",
+        "row": 4,
+        "col": 5,
+        "innerColor": "P"
+      },
+      {
+        "id": "ice_002",
+        "entityCategory": "obstacle_ball",
+        "entityType": "ice",
+        "row": 11,
+        "col": 5,
+        "innerColor": "O"
+      },
+      {
+        "id": "ice_003",
+        "entityCategory": "obstacle_ball",
+        "entityType": "ice",
+        "row": 10,
+        "col": 6,
+        "innerColor": "K"
+      },
+      {
+        "id": "ice_004",
+        "entityCategory": "obstacle_ball",
+        "entityType": "ice",
+        "row": 2,
+        "col": 5,
+        "innerColor": "W"
+      },
+      {
+        "id": "ice_005",
+        "entityCategory": "obstacle_ball",
+        "entityType": "ice",
+        "row": 1,
+        "col": 3,
+        "innerColor": "Y"
+      },
+      {
+        "id": "ice_006",
+        "entityCategory": "obstacle_ball",
+        "entityType": "ice",
+        "row": 5,
+        "col": 3,
+        "innerColor": "P"
+      },
+      {
+        "id": "ice_007",
+        "entityCategory": "obstacle_ball",
+        "entityType": "ice",
+        "row": 1,
+        "col": 5,
+        "innerColor": "O"
+      },
+      {
+        "id": "ice_008",
+        "entityCategory": "obstacle_ball",
+        "entityType": "ice",
+        "row": 7,
+        "col": 5,
+        "innerColor": "K"
+      },
+      {
+        "id": "ice_009",
+        "entityCategory": "obstacle_ball",
+        "entityType": "ice",
+        "row": 3,
+        "col": 3,
+        "innerColor": "W"
+      },
+      {
+        "id": "ice_010",
+        "entityCategory": "obstacle_ball",
+        "entityType": "ice",
+        "row": 9,
+        "col": 3,
+        "innerColor": "Y"
+      },
+      {
+        "id": "ice_011",
+        "entityCategory": "obstacle_ball",
+        "entityType": "ice",
+        "row": 2,
+        "col": 6,
+        "innerColor": "P"
+      },
+      {
+        "id": "ice_012",
+        "entityCategory": "obstacle_ball",
+        "entityType": "ice",
+        "row": 12,
+        "col": 4,
+        "innerColor": "O"
+      },
+      {
+        "id": "ice_013",
+        "entityCategory": "obstacle_ball",
+        "entityType": "ice",
+        "row": 2,
+        "col": 4,
+        "innerColor": "K"
+      },
+      {
+        "id": "ice_014",
+        "entityCategory": "obstacle_ball",
+        "entityType": "ice",
+        "row": 5,
+        "col": 5,
+        "innerColor": "W"
+      },
+      {
+        "id": "ice_015",
+        "entityCategory": "obstacle_ball",
+        "entityType": "ice",
+        "row": 6,
+        "col": 6,
+        "innerColor": "Y"
+      },
+      {
+        "id": "ice_016",
+        "entityCategory": "obstacle_ball",
+        "entityType": "ice",
+        "row": 9,
+        "col": 5,
+        "innerColor": "P"
+      },
+      {
+        "id": "ice_017",
+        "entityCategory": "obstacle_ball",
+        "entityType": "ice",
+        "row": 6,
+        "col": 4,
+        "innerColor": "O"
+      },
+      {
+        "id": "ice_018",
+        "entityCategory": "obstacle_ball",
+        "entityType": "ice",
+        "row": 4,
+        "col": 4,
+        "innerColor": "K"
+      },
+      {
+        "id": "ice_019",
+        "entityCategory": "obstacle_ball",
+        "entityType": "ice",
+        "row": 2,
+        "col": 3,
+        "innerColor": "W"
+      },
+      {
+        "id": "splitter_020",
+        "entityCategory": "reactive_ball",
+        "entityType": "splitter",
+        "row": 10,
+        "col": 4,
+        "splitColor": "Y"
+      },
+      {
+        "id": "key_021",
+        "entityCategory": "key_ball",
+        "entityType": "key",
+        "row": 8,
+        "col": 7
+      },
+      {
+        "id": "locked_022",
+        "entityCategory": "locked_ball",
+        "entityType": "locked",
+        "row": 8,
+        "col": 0,
+        "lockedColor": "O"
+      },
+      {
+        "id": "locked_023",
+        "entityCategory": "locked_ball",
+        "entityType": "locked",
+        "row": 8,
+        "col": 1,
+        "lockedColor": "K"
+      },
+      {
+        "id": "locked_024",
+        "entityCategory": "locked_ball",
+        "entityType": "locked",
+        "row": 8,
+        "col": 2,
+        "lockedColor": "W"
+      },
+      {
+        "id": "locked_025",
+        "entityCategory": "locked_ball",
+        "entityType": "locked",
+        "row": 8,
+        "col": 3,
+        "lockedColor": "Y"
+      },
+      {
+        "id": "locked_026",
+        "entityCategory": "locked_ball",
+        "entityType": "locked",
+        "row": 8,
+        "col": 4,
+        "lockedColor": "P"
+      },
+      {
+        "id": "locked_027",
+        "entityCategory": "locked_ball",
+        "entityType": "locked",
+        "row": 8,
+        "col": 5,
+        "lockedColor": "O"
+      },
+      {
+        "id": "locked_028",
+        "entityCategory": "locked_ball",
+        "entityType": "locked",
+        "row": 8,
+        "col": 6,
+        "lockedColor": "K"
+      },
+      {
+        "id": "locked_029",
+        "entityCategory": "locked_ball",
+        "entityType": "locked",
+        "row": 8,
+        "col": 8,
+        "lockedColor": "W"
+      },
+      {
+        "id": "locked_030",
+        "entityCategory": "locked_ball",
+        "entityType": "locked",
+        "row": 8,
+        "col": 9,
+        "lockedColor": "Y"
+      },
+      {
+        "id": "locked_031",
+        "entityCategory": "locked_ball",
+        "entityType": "locked",
+        "row": 8,
+        "col": 10,
+        "lockedColor": "P"
+      },
+      {
+        "id": "spirit_cocoon_032",
+        "entityCategory": "reactive_ball",
+        "entityType": "spirit_cocoon",
+        "row": 6,
+        "col": 5
+      }
+    ],
+    "levelType": "normal",
+    "playMode": "shot_limited",
+    "initialDropSpaceRows": 8,
+    "adPowerupRules": {
+      "allowed": [
+        "three_line_elimination",
+        "plus_three_balls"
+      ]
+    },
+    "boardOcclusionPlan": {
+      "generatorVersion": 1,
+      "mode": "per_attempt_no_repeat",
+      "variants": [
+        {
+          "id": "variant_1",
+          "zones": [
+            {
+              "id": "zone_1",
+              "visualType": "leaves",
+              "cells": [
+                {
+                  "row": 2,
+                  "col": 8
+                },
+                {
+                  "row": 3,
+                  "col": 7
+                },
+                {
+                  "row": 3,
+                  "col": 8
+                },
+                {
+                  "row": 3,
+                  "col": 6
+                },
+                {
+                  "row": 4,
+                  "col": 7
+                },
+                {
+                  "row": 4,
+                  "col": 8
+                }
+              ],
+              "clearRule": {
+                "kind": "item_or_shots",
+                "shots": 4
+              }
+            },
+            {
+              "id": "zone_2",
+              "visualType": "cloud",
+              "cells": [
+                {
+                  "row": 4,
+                  "col": 3
+                },
+                {
+                  "row": 3,
+                  "col": 2
+                },
+                {
+                  "row": 4,
+                  "col": 2
+                },
+                {
+                  "row": 5,
+                  "col": 2
+                },
+                {
+                  "row": 2,
+                  "col": 2
+                },
+                {
+                  "row": 3,
+                  "col": 1
+                }
+              ],
+              "clearRule": {
+                "kind": "item_or_shots",
+                "shots": 5
+              }
+            }
+          ]
+        },
+        {
+          "id": "variant_2",
+          "zones": [
+            {
+              "id": "zone_1",
+              "visualType": "leaves",
+              "cells": [
+                {
+                  "row": 4,
+                  "col": 8
+                },
+                {
+                  "row": 3,
+                  "col": 7
+                },
+                {
+                  "row": 3,
+                  "col": 8
+                },
+                {
+                  "row": 4,
+                  "col": 7
+                },
+                {
+                  "row": 5,
+                  "col": 7
+                },
+                {
+                  "row": 2,
+                  "col": 8
+                }
+              ],
+              "clearRule": {
+                "kind": "item_or_shots",
+                "shots": 4
+              }
+            },
+            {
+              "id": "zone_2",
+              "visualType": "cloud",
+              "cells": [
+                {
+                  "row": 9,
+                  "col": 0
+                },
+                {
+                  "row": 9,
+                  "col": 1
+                },
+                {
+                  "row": 10,
+                  "col": 0
+                },
+                {
+                  "row": 10,
+                  "col": 1
+                },
+                {
+                  "row": 9,
+                  "col": 2
+                },
+                {
+                  "row": 10,
+                  "col": 2
+                }
+              ],
+              "clearRule": {
+                "kind": "item_or_shots",
+                "shots": 5
+              }
+            }
+          ]
+        },
+        {
+          "id": "variant_3",
+          "zones": [
+            {
+              "id": "zone_1",
+              "visualType": "leaves",
+              "cells": [
+                {
+                  "row": 6,
+                  "col": 2
+                },
+                {
+                  "row": 5,
+                  "col": 1
+                },
+                {
+                  "row": 5,
+                  "col": 2
+                },
+                {
+                  "row": 6,
+                  "col": 3
+                },
+                {
+                  "row": 7,
+                  "col": 1
+                },
+                {
+                  "row": 7,
+                  "col": 2
+                }
+              ],
+              "clearRule": {
+                "kind": "item_or_shots",
+                "shots": 4
+              }
+            },
+            {
+              "id": "zone_2",
+              "visualType": "cloud",
+              "cells": [
+                {
+                  "row": 9,
+                  "col": 6
+                },
+                {
+                  "row": 9,
+                  "col": 7
+                },
+                {
+                  "row": 10,
+                  "col": 7
+                },
+                {
+                  "row": 10,
+                  "col": 8
+                },
+                {
+                  "row": 11,
+                  "col": 6
+                },
+                {
+                  "row": 11,
+                  "col": 7
+                }
+              ],
+              "clearRule": {
+                "kind": "item_or_shots",
+                "shots": 5
+              }
+            }
+          ]
+        },
+        {
+          "id": "variant_4",
+          "zones": [
+            {
+              "id": "zone_1",
+              "visualType": "leaves",
+              "cells": [
+                {
+                  "row": 7,
+                  "col": 3
+                },
+                {
+                  "row": 6,
+                  "col": 3
+                },
+                {
+                  "row": 7,
+                  "col": 2
+                },
+                {
+                  "row": 7,
+                  "col": 4
+                },
+                {
+                  "row": 5,
+                  "col": 2
+                },
+                {
+                  "row": 6,
+                  "col": 2
+                }
+              ],
+              "clearRule": {
+                "kind": "item_or_shots",
+                "shots": 4
+              }
+            },
+            {
+              "id": "zone_2",
+              "visualType": "cloud",
+              "cells": [
+                {
+                  "row": 10,
+                  "col": 2
+                },
+                {
+                  "row": 9,
+                  "col": 1
+                },
+                {
+                  "row": 9,
+                  "col": 2
+                },
+                {
+                  "row": 10,
+                  "col": 1
+                },
+                {
+                  "row": 10,
+                  "col": 3
+                },
+                {
+                  "row": 11,
+                  "col": 1
+                }
+              ],
+              "clearRule": {
+                "kind": "item_or_shots",
+                "shots": 5
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "schemaVersion": 1,
+  "coordinateSystem": "odd-r-hex",
+  "sharedDefaults": {
+    "collectMode": "any_with_same_color_bonus",
+    "loseConditions": [
+      {
+        "type": "reach_danger_line",
+        "value": 1
+      },
+      {
+        "type": "run_out_of_shots",
+        "value": 1
+      }
+    ],
+    "fallingRules": {
+      "maxDynamicMarbles": 10,
+      "maxBounces": 2,
+      "enableMarbleMarbleCollision": true,
+      "gravity": 900,
+      "initialSpeedY": 120,
+      "horizontalSpeed": 165,
+      "maxDropLifeTime": 6,
+      "bounceDamping": 0.82
+    }
+  }
+}

@@ -5,6 +5,8 @@ var path = require("path");
 var BoardLayout = require("../assets/scripts/config/BoardLayout");
 var LevelConfigLoader = require("../assets/scripts/config/LevelConfigLoader");
 var LevelPackCompactCodec = require("../assets/scripts/config/LevelPackCompactCodec");
+var PropDescriptionConfig = require("../assets/scripts/config/PropDescriptionConfig");
+var GameBootstrapSpecialIntroduceFlowMethods = require("../assets/scripts/bootstrap/GameBootstrapSpecialIntroduceFlowMethods");
 var SpiritCocoonTriggerStore = require("../assets/scripts/utils/SpiritCocoonTriggerStore");
 var SpecialAnimationTiming = require("../gameplay-src/config/SpecialAnimationTiming");
 var GameManager = require("../gameplay-src/core/GameManager");
@@ -105,6 +107,72 @@ function validateConfigAndCodec() {
     }),
     "Expanded compact config must restore spirit cocoon."
   );
+
+  var descriptionKeys = PropDescriptionConfig.collectSpecialKeysForLevel(levelConfig);
+  assert(descriptionKeys.indexOf("spirit_cocoon") >= 0, "Spirit cocoon level description must include spirit_cocoon.");
+  assert(
+    PropDescriptionConfig.SPECIAL_DEFINITIONS.spirit_cocoon.iconPath === "game/image/ball/cocoon_1",
+    "Spirit cocoon introduction must use the first cocoon frame."
+  );
+
+  var introduceHost = {
+    currentLevelConfig: levelConfig,
+    specialIntroduceStore: {
+      hasViewed: function () { return false; },
+      markViewed: function () {}
+    },
+    _specialIntroduceQueue: [],
+    _specialIntroduceQueuedKeys: {},
+    _specialIntroduceCurrentKey: "",
+    _showNextSpecialIntroduceView: function () { return Promise.resolve(false); }
+  };
+  var appended = GameBootstrapSpecialIntroduceFlowMethods._syncSpecialIntroduceForRuntimeSnapshot.call(
+    introduceHost,
+    {
+      state: "running",
+      timedLevel: false,
+      objectives: null,
+      board: {
+        cells: [{ entityType: "spirit_cocoon" }]
+      }
+    }
+  );
+  assert(appended === true, "First spirit cocoon appearance must queue an introduction.");
+  assert(
+    introduceHost._specialIntroduceQueue.length === 1 &&
+      introduceHost._specialIntroduceQueue[0] === "spirit_cocoon",
+    "Spirit cocoon introduction queue must contain exactly spirit_cocoon."
+  );
+}
+
+function validatePendingTraversalTargetsRemainAuthoritative() {
+  var pack = LevelPackCompactCodec.expandPack(
+    readJson(path.resolve(__dirname, "../remote-level-packs/levels_pack_301_400.json"))
+  );
+  var level321 = LevelConfigLoader.normalizeLevelConfig(pack.levels.level_321, "level_321");
+  var grid = buildGrid(level321);
+  var manager = createManager(grid, true, [0.1]);
+  var cocoons = level321.level.specialEntities.filter(function (entity) {
+    return entity.entityType === "spirit_cocoon";
+  });
+  assert(cocoons.length === 1, "Level 321 must contain exactly one spirit cocoon.");
+  var cocoon = cocoons[0];
+  var triggerCell = grid.getNeighborCells(cocoon.row, cocoon.col).filter(function (cell) {
+    return cell && cell.entityCategory === "normal_ball";
+  })[0];
+  assert(triggerCell, "Level 321 spirit cocoon must retain an adjacent ordinary trigger cell.");
+  var queued = manager._queueSpiritCocoonsAdjacentToCells([triggerCell], manager.lastResolution);
+  assert(queued.length === 1, "Level 321 must queue its spirit cocoon.");
+  assert(queued[0].outcome === "gluttony", "Level 321 first spirit cocoon must use gluttony.");
+  assert(queued[0].gluttonyTraversal.length > 0, "Level 321 gluttony traversal must lock at least one authored target.");
+  var traversalTarget = queued[0].gluttonyTraversal[0];
+  var traversalCell = grid.getCell(traversalTarget.row, traversalTarget.col);
+  assert(
+    traversalCell && traversalCell.id === traversalTarget.id,
+    "Level 321 gluttony traversal target must resolve to its authoritative runtime cell."
+  );
+  var removable = manager._filterFloatingSpiritCocoons([traversalCell], manager.lastResolution);
+  assert(removable.length === 0, "Pending spirit cocoon traversal target must not drop before sprite arrival.");
 }
 
 function validateVisualAssetContract() {
@@ -258,6 +326,7 @@ function validatePersistentFirstTriggerStore() {
 }
 
 validateConfigAndCodec();
+validatePendingTraversalTargetsRemainAuthoritative();
 validateVisualAssetContract();
 validateFirstTriggerGluttony();
 validateMistTraversalAndExpiry();

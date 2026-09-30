@@ -1,10 +1,10 @@
 "use strict";
 
 var BoardLayout = require("../assets/scripts/config/BoardLayout");
-var BoardOcclusionConfig = require("../assets/scripts/config/BoardOcclusionConfig");
 var LevelBoardSupportValidator = require("../assets/scripts/config/LevelBoardSupportValidator");
 var AssistSpiritRescueConfig = require("../assets/scripts/config/AssistSpiritRescueConfig");
 var SpecialMechanismSchedule = require("./campaign-special-mechanism-schedule");
+var CampaignMechanismDeploymentPlan = require("./campaign-mechanism-deployment-plan");
 
 var TARGET_LEVEL_COUNT = 1000;
 var TIMED_LEVEL_INTERVAL = 10;
@@ -339,70 +339,10 @@ function applyClearanceRebalanceShotLimit(levelId, generatedShotLimit) {
 
 function getReactiveSpecialCounts(levelId) {
   assertLevelId(levelId);
-  if (levelId < REACTIVE_SPECIAL_INTRO_LEVELS.swirl) {
-    return {
-      swirl: 0,
-      vine_spirit: 0,
-      wormholePairs: 0,
-      wormhole: 0
-    };
-  }
-  var phase = ((levelId - 1) % 10) + 1;
-  var swirl = 0;
-  var vineSpirit = 0;
-  var wormholePairs = 0;
-
-  if (levelId < REACTIVE_SPECIAL_INTRO_LEVELS.vine_spirit) {
-    swirl = phase === 1 || phase === 4 || phase === 7 || phase === 10 ? 1 : 0;
-  } else if (levelId < REACTIVE_SPECIAL_INTRO_LEVELS.wormhole) {
-    swirl = phase === 2 || phase === 6 || phase === 9 || phase === 10 ? 1 : 0;
-    vineSpirit = phase === 3 || phase === 6 || phase === 8 || phase === 9 || phase === 10 ? 1 : 0;
-  } else {
-    var activePhase = levelId < 81
-      ? phase === 2 || phase === 3 || phase === 4 || phase === 6 || phase === 9 || phase === 10
-      : phase !== 1 && phase !== 5;
-    if (activePhase) {
-      swirl = phase === 2 || phase === 6 || phase === 7 || phase === 9 || phase === 10 ? 1 : 0;
-      vineSpirit = phase === 3 || phase === 6 || phase === 8 || phase === 9 || phase === 10 ? 1 : 0;
-      wormholePairs = phase === 4 || phase === 7 || phase === 8 || phase === 9 || phase === 10 ? 1 : 0;
-    }
-  }
-  if (levelId === REACTIVE_SPECIAL_INTRO_LEVELS.vine_spirit) {
-    vineSpirit = 1;
-  }
-  if (levelId === REACTIVE_SPECIAL_INTRO_LEVELS.wormhole) {
-    wormholePairs = 1;
-  }
-
-  var stageMaximum;
-  if (levelId <= 80) {
-    stageMaximum = { swirl: 1, vine_spirit: 1, wormholePairs: 1 };
-  } else if (levelId <= 200) {
-    stageMaximum = { swirl: 2, vine_spirit: 2, wormholePairs: 1 };
-  } else if (levelId <= 400) {
-    stageMaximum = { swirl: 2, vine_spirit: 2, wormholePairs: 2 };
-  } else if (levelId <= 600) {
-    stageMaximum = { swirl: 3, vine_spirit: 2, wormholePairs: 2 };
-  } else if (levelId <= 850) {
-    stageMaximum = { swirl: 3, vine_spirit: 3, wormholePairs: 2 };
-  } else {
-    stageMaximum = { swirl: 3, vine_spirit: 3, wormholePairs: 3 };
-  }
-  if (phase === 9 || phase === 10) {
-    swirl *= stageMaximum.swirl;
-    vineSpirit *= stageMaximum.vine_spirit;
-    wormholePairs *= stageMaximum.wormholePairs;
-  } else if (phase === 6 && levelId >= 201) {
-    swirl *= Math.min(2, stageMaximum.swirl);
-    vineSpirit *= Math.min(2, stageMaximum.vine_spirit);
-  } else if ((phase === 7 || phase === 8) && levelId >= 401) {
-    swirl *= Math.min(2, stageMaximum.swirl);
-    vineSpirit *= Math.min(2, stageMaximum.vine_spirit);
-    wormholePairs *= Math.min(2, stageMaximum.wormholePairs);
-  }
-  if (isTrappedSpriteRescueLevelId(levelId)) {
-    wormholePairs = 0;
-  }
+  var mechanismIds = CampaignMechanismDeploymentPlan.getCampaignLevelPlan(levelId).mechanismIds;
+  var swirl = mechanismIds.indexOf("swirl") >= 0 ? 1 : 0;
+  var vineSpirit = mechanismIds.indexOf("vine_spirit") >= 0 ? 1 : 0;
+  var wormholePairs = mechanismIds.indexOf("wormhole") >= 0 ? 1 : 0;
   return {
     swirl: swirl,
     vine_spirit: vineSpirit,
@@ -522,6 +462,46 @@ function getIceBallCount(levelId, boardCapacity) {
   return ratio === 0 ? 0 : Math.max(3, Math.round(boardCapacity * ratio));
 }
 
+function buildBaseSpecialCounts(levelId, rowCount, targetColor) {
+  assertLevelId(levelId);
+  requirePositiveInteger(rowCount, "Campaign base special rowCount");
+  if (BASE_SPECIAL_COLORS.indexOf(targetColor) < 0) {
+    throw new Error("Campaign base special target color is unsupported at level " + levelId + ": " + targetColor + ".");
+  }
+  var mechanismIds = CampaignMechanismDeploymentPlan.getCampaignLevelPlan(levelId).mechanismIds;
+  var splitterCounts = {};
+  BASE_SPECIAL_COLORS.forEach(function (color) {
+    splitterCounts[color] = 0;
+  });
+  var counts = {
+    stone: mechanismIds.indexOf("stone") >= 0 ? 1 : 0,
+    ice: 0,
+    blast: mechanismIds.indexOf("blast") >= 0 ? 1 : 0,
+    rainbow: mechanismIds.indexOf("rainbow") >= 0 ? 1 : 0,
+    molotov: mechanismIds.indexOf("molotov") >= 0 ? 1 : 0,
+    splitters: splitterCounts,
+    key: mechanismIds.indexOf("lock_chain") >= 0 ? 1 : 0,
+    locked: 0
+  };
+  if (mechanismIds.indexOf("ice") >= 0) {
+    var boardCapacity = 0;
+    for (var rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
+      boardCapacity += BoardLayout.getRowColumnCount(rowIndex, BoardLayout.defaultColumns);
+    }
+    counts.ice = getIceBallCount(levelId, boardCapacity);
+    if (counts.ice < 3) {
+      throw new Error("Campaign ice mechanism requires at least three ice balls at level " + levelId + ".");
+    }
+  }
+  if (mechanismIds.indexOf("splitter") >= 0) {
+    counts.splitters[targetColor] = 1;
+  }
+  if (counts.key > 0) {
+    counts.locked = getLockChainLockedCount(levelId, rowCount, counts.key);
+  }
+  return counts;
+}
+
 function getScoreDesignBeat(levelId) {
   assertLevelId(levelId);
   if (isTrappedSpriteRescueLevelId(levelId) || SpecialMechanismSchedule.getPlan(levelId).multiRescueTargets > 0) {
@@ -634,11 +614,33 @@ function getLevelPlan(levelId) {
   assertLevelId(levelId);
   var rescue = isTrappedSpriteRescueLevelId(levelId);
   var timed = isTimedLevelId(levelId);
+  var deploymentPlan = CampaignMechanismDeploymentPlan.getCampaignLevelPlan(levelId);
+  var mechanismIds = deploymentPlan.mechanismIds;
   var additionalMechanismPlan = SpecialMechanismSchedule.getPlan(levelId);
   var multiRescue = additionalMechanismPlan.multiRescueTargets > 0;
   if ((rescue && timed) || (multiRescue && timed) || (rescue && multiRescue)) {
     throw new Error("Campaign level modes overlap at level " + levelId + ".");
   }
+  if ((mechanismIds.indexOf("timed_mode") >= 0) !== timed) {
+    throw new Error("Campaign mechanism plan timed mode differs from the fixed schedule at level " + levelId + ".");
+  }
+  if ((mechanismIds.indexOf("single_rescue") >= 0) !== rescue) {
+    throw new Error("Campaign mechanism plan single rescue differs from the fixed schedule at level " + levelId + ".");
+  }
+  if ((mechanismIds.indexOf("multi_rescue") >= 0) !== multiRescue) {
+    throw new Error("Campaign mechanism plan multi rescue differs from the special schedule at level " + levelId + ".");
+  }
+  SpecialMechanismSchedule.INTRODUCTIONS.forEach(function (definition) {
+    var mechanismId = CampaignMechanismDeploymentPlan.SCHEDULE_KEY_TO_MECHANISM_ID[definition.key];
+    if (typeof mechanismId !== "string" || !mechanismId) {
+      throw new Error("Campaign mechanism plan is missing schedule mapping for " + definition.key + ".");
+    }
+    if ((mechanismIds.indexOf(mechanismId) >= 0) !== (additionalMechanismPlan[definition.key] > 0)) {
+      throw new Error(
+        "Campaign mechanism plan differs from special schedule for " + definition.key + " at level " + levelId + "."
+      );
+    }
+  });
   var reactiveSpecialCounts = getReactiveSpecialCounts(levelId);
   if (rescue && reactiveSpecialCounts.wormhole) {
     throw new Error("Trapped sprite rescue level cannot contain wormhole placements: " + levelId);
@@ -656,7 +658,7 @@ function getLevelPlan(levelId) {
   if (reactiveSpecialCounts.wormhole) {
     teaches.push("wormhole");
   }
-  var boardOcclusionEnabled = levelId >= BoardOcclusionConfig.ENABLED_FROM_LEVEL && !rescue && !multiRescue;
+  var boardOcclusionEnabled = mechanismIds.indexOf("board_occlusion") >= 0;
   if (boardOcclusionEnabled) {
     teaches.push("board_occlusion");
   }
@@ -689,6 +691,9 @@ function getLevelPlan(levelId) {
     trappedSpriteRescue: rescue,
     multiTrappedSpiritRescue: multiRescue,
     additionalMechanismPlan: additionalMechanismPlan,
+    campaignMechanismIds: mechanismIds,
+    campaignPlanSource: deploymentPlan.source,
+    campaignPlanStage: deploymentPlan.stage,
     teaches: teaches
   };
 }
@@ -795,6 +800,7 @@ module.exports = Object.freeze({
   buildReactiveSpecialEntities: buildReactiveSpecialEntities,
   getIceRatio: getIceRatio,
   getIceBallCount: getIceBallCount,
+  buildBaseSpecialCounts: buildBaseSpecialCounts,
   buildTrappedSpriteRescueBaseSpecialCounts: buildTrappedSpriteRescueBaseSpecialCounts,
   buildTrappedSpriteRescueShotLimit: buildTrappedSpriteRescueShotLimit,
   getScoreDesignBeat: getScoreDesignBeat,

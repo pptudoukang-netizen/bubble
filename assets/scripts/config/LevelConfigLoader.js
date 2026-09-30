@@ -30,6 +30,8 @@ var ALLOWED_INNER_COLORS = ALLOWED_COLORS.slice();
 var ALLOWED_SPLITTER_COLORS = ["R", "G", "B", "Y", "P"];
 var ALLOWED_CLEAR_REWARD_ITEM_IDS = ["coin", "stamina"];
 var TOP_BOARD_ROW_INDEX = 0;
+var MULTI_RESCUE_MIN_TARGET_ROW_INDEX = 1;
+var MULTI_RESCUE_MAX_TARGET_ROW_INDEX = 5;
 var WORMHOLE_MOVE_DIRECTIONS = ["left", "right"];
 var POISON_PARTICLE_COUNT = 3;
 var DEFAULT_MINE_INITIAL_LIFE = 6;
@@ -545,12 +547,13 @@ function normalizeMultiTrappedSpiritRescue(levelConfig, levelKey) {
     if (
       !Number.isInteger(target.row) ||
       !Number.isInteger(target.col) ||
-      target.row <= TOP_BOARD_ROW_INDEX ||
+      target.row < MULTI_RESCUE_MIN_TARGET_ROW_INDEX ||
+      target.row > MULTI_RESCUE_MAX_TARGET_ROW_INDEX ||
       target.row >= levelConfig.layout.length ||
       target.col < 0 ||
       target.col >= BoardLayout.getRowColumnCount(target.row, BoardLayout.defaultColumns)
     ) {
-      throw new Error("level.multiTrappedSpiritRescue.targets[" + index + "] must be a non-top-row board coordinate: " + levelKey);
+      throw new Error("level.multiTrappedSpiritRescue.targets[" + index + "] must be within top rows 2-6 (row indexes 1-5): " + levelKey);
     }
     var coordinateKey = target.row + ":" + target.col;
     if (targetCoordinates[coordinateKey]) {
@@ -791,6 +794,7 @@ function resolveExpectedLevelId(rawConfig, levelKey) {
     levelKey === "level_trapped_sprite_test" ||
     levelKey === "level_black_hole_test" ||
     levelKey === "level_spirit_cocoon_test" ||
+    levelKey === "level_campaign_321_test" ||
     levelKey === "level_multi_trapped_spirit_test" ||
     levelKey === "level_transparent_ball_test" ||
     levelKey === "level_breeder_ball_test" ||
@@ -1558,5 +1562,7 @@ LevelConfigLoader.prototype.loadLevelByKey = function (levelKey) {
 };
 
 LevelConfigLoader.normalizeLevelConfig = normalizeLevelConfig;
+LevelConfigLoader.MULTI_RESCUE_MIN_TARGET_ROW_INDEX = MULTI_RESCUE_MIN_TARGET_ROW_INDEX;
+LevelConfigLoader.MULTI_RESCUE_MAX_TARGET_ROW_INDEX = MULTI_RESCUE_MAX_TARGET_ROW_INDEX;
 
 module.exports = LevelConfigLoader;

@@ -64,7 +64,8 @@ LevelRenderer.prototype.warmupPreparedGameplayAssets = function (assistSpiritId)
   if (!this._sharedWarmupPromise) {
     this._sharedWarmupPromise = Promise.all([
       this.prefabFactory.preload(this._collectInitialRenderPrefabPaths()),
-      this._preloadSprites(this._collectInitialCommonSpritePaths())
+      this._preloadSprites(this._collectInitialCommonSpritePaths()),
+      this.bubbleShatterRenderer.preload()
     ]).catch(function (error) {
       this._sharedWarmupPromise = null;
       throw error;
@@ -73,7 +74,7 @@ LevelRenderer.prototype.warmupPreparedGameplayAssets = function (assistSpiritId)
 
   return Promise.all([
     this._sharedWarmupPromise,
-    this._preloadAssistSpiritAnimationClips(assistSpiritId)
+    this._preloadAssistSpiritSkeletonData(assistSpiritId)
   ]).then(function () {
     return null;
   });
@@ -138,8 +139,7 @@ LevelRenderer.prototype.warmupGameplayInteractionAssets = function () {
     this._preloadExplodeAnimationClip(),
     this._preloadFireworksPrefab(),
     this.prefabFactory.preload(this._collectInteractionPrefabPaths()),
-    this._preloadSprites(this._collectInteractionSpritePaths()),
-    this.bubbleShatterRenderer.preload()
+    this._preloadSprites(this._collectInteractionSpritePaths())
   ]).catch(function (error) {
     this._interactionWarmupPromise = null;
     throw error;
@@ -475,11 +475,11 @@ LevelRenderer.prototype.releaseAfterGameplayBundleUnload = function () {
   this.fireworksPrefabLoadPromise = null;
   this.explodeAnimationClip = null;
   this.explodeAnimationClipPromise = null;
-  if (Object.keys(this.assistSpiritAnimationClipLoadPromises).length > 0) {
-    throw new Error("Cannot unload gameplay bundle while assist spirit animation clips are loading.");
+  if (Object.keys(this.assistSpiritSkeletonDataLoadPromises).length > 0) {
+    throw new Error("Cannot unload gameplay bundle while assist spirit Spine data is loading.");
   }
-  this.assistSpiritAnimationClipCache = {};
-  this.assistSpiritAnimationClipLoadPromises = {};
+  this.assistSpiritSkeletonDataCache = {};
+  this.assistSpiritSkeletonDataLoadPromises = {};
   this._sharedWarmupPromise = null;
   this._interactionWarmupPromise = null;
   if (this.timeBonusBitmapFontLoadPromise) {
@@ -570,7 +570,8 @@ LevelRenderer.prototype._collectInitialCommonSpritePaths = function () {
     POWERUP_ICON_RESOURCES.precise_aim,
     POWERUP_ICON_RESOURCES.snow_removal,
     POWERUP_ICON_RESOURCES.three_line_elimination,
-    POWERUP_ICON_RESOURCES.plus_three_balls
+    POWERUP_ICON_RESOURCES.plus_three_balls,
+    BALL_RESOURCES.BUBBLE_SHIELD
   ];
   return paths.filter(function (path, index, list) {
     return list.indexOf(path) === index;
@@ -590,7 +591,6 @@ LevelRenderer.prototype._collectInteractionCommonSpritePaths = function () {
     BALL_RESOURCES.POISON_OVERLAY,
     BALL_RESOURCES.POISON_DROPLET,
     BALL_RESOURCES.ICE_CRYSTAL_ATTACHMENT,
-    BALL_RESOURCES.BUBBLE_SHIELD,
     BALL_RESOURCES.SPIDER,
     BALL_RESOURCES.COBWEB,
     BALL_RESOURCES.SPIDER_COCOON_01,
@@ -779,53 +779,40 @@ LevelRenderer.prototype._preloadExplodeAnimationClip = function () {
   return this.explodeAnimationClipPromise;
 };
 
-LevelRenderer.prototype._preloadAssistSpiritAnimationClips = function (spiritId) {
+LevelRenderer.prototype._preloadAssistSpiritSkeletonData = function (spiritId) {
   var presentation = AssistSpiritPresentationConfig.getBySpiritId(spiritId);
-  var clipPaths = [presentation.idleClipPath, presentation.deliverClipPath];
-  return Promise.all(clipPaths.map(function (path) {
-    var cachedClip = this.assistSpiritAnimationClipCache[path];
-    if (cachedClip) {
-      if (!cachedClip.isValid) {
-        throw new Error("Cached assist spirit animation clip is invalid: " + path);
+  var path = presentation.skeletonDataPath;
+  if (this.assistSpiritSkeletonDataCache[path]) {
+    if (!this.assistSpiritSkeletonDataCache[path].isValid) {
+      throw new Error("Cached assist spirit Spine data is invalid: " + path);
+    }
+    return Promise.resolve(this.assistSpiritSkeletonDataCache[path]);
+  }
+  if (this.assistSpiritSkeletonDataLoadPromises[path]) {
+    return this.assistSpiritSkeletonDataLoadPromises[path];
+  }
+  if (typeof sp === "undefined" || !sp.SkeletonData) {
+    throw new Error("Assist spirit preload requires Spine SkeletonData runtime.");
+  }
+  this.assistSpiritSkeletonDataLoadPromises[path] = new Promise(function (resolve, reject) {
+    BundleLoader.loadRes(path, sp.SkeletonData, function (error, data) {
+      if (error) {
+        reject(new Error("Load assist spirit Spine data failed: " + path + ": " + error.message));
+        return;
       }
-      return Promise.resolve(cachedClip);
-    }
-    if (this.assistSpiritAnimationClipLoadPromises[path]) {
-      return this.assistSpiritAnimationClipLoadPromises[path];
-    }
-
-    this.assistSpiritAnimationClipLoadPromises[path] = new Promise(function (resolve, reject) {
-      BundleLoader.loadRes(path, cc.AnimationClip, function (error, clip) {
-        if (error) {
-          reject(new Error("Load assist spirit animation clip failed `" + path + "`: " + error.message));
-          return;
-        }
-        if (!clip || !clip.isValid) {
-          reject(new Error("Load assist spirit animation clip returned invalid asset: " + path));
-          return;
-        }
-        var expectedClipName = path.slice(path.lastIndexOf("/") + 1);
-        if (clip.name !== expectedClipName) {
-          reject(new Error(
-            "Assist spirit animation clip name mismatch `" + path + "`: expected `" +
-            expectedClipName + "`, received `" + clip.name + "`."
-          ));
-          return;
-        }
-        if (typeof clip.duration !== "number" || !isFinite(clip.duration) || clip.duration <= 0) {
-          reject(new Error("Assist spirit animation clip duration is invalid: " + path));
-          return;
-        }
-        this.assistSpiritAnimationClipCache[path] = clip;
-        delete this.assistSpiritAnimationClipLoadPromises[path];
-        resolve(clip);
-      }.bind(this));
-    }.bind(this)).catch(function (error) {
-      delete this.assistSpiritAnimationClipLoadPromises[path];
-      throw error;
+      if (!data || !data.isValid) {
+        reject(new Error("Load assist spirit Spine data returned invalid asset: " + path));
+        return;
+      }
+      this.assistSpiritSkeletonDataCache[path] = data;
+      delete this.assistSpiritSkeletonDataLoadPromises[path];
+      resolve(data);
     }.bind(this));
-    return this.assistSpiritAnimationClipLoadPromises[path];
-  }, this));
+  }.bind(this)).catch(function (error) {
+    delete this.assistSpiritSkeletonDataLoadPromises[path];
+    throw error;
+  }.bind(this));
+  return this.assistSpiritSkeletonDataLoadPromises[path];
 };
 
 LevelRenderer.prototype._preloadFireworksPrefab = function () {

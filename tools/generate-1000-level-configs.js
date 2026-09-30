@@ -876,6 +876,11 @@ function validateTableTargets(tableRow) {
       throw new Error("Level " + tableRow.levelId + " `" + definition.column + "` differs from the authoritative schedule.");
     }
   });
+  SpecialMechanismSchedule.DISABLED_CAMPAIGN_MECHANISMS.forEach(function (definition) {
+    if (tableRow.additionalCounts[definition.key] !== 0 || gameplayPlan.additionalMechanismPlan[definition.key] !== 0) {
+      throw new Error("Level " + tableRow.levelId + " `" + definition.column + "` is a normal inventory powerup and must remain zero in campaign configs.");
+    }
+  });
   if (tableRow.levelType !== gameplayPlan.levelType || tableRow.playMode !== gameplayPlan.playMode) {
     throw new Error("Level " + tableRow.levelId + " mode columns differ from the authoritative schedule.");
   }
@@ -2015,14 +2020,16 @@ function buildAdditionalLevelFeatures(rows, specialEntities, tableRow, activeCol
     var targets = [];
     var spiritIds = CampaignLevelGenerationConfig.TRAPPED_SPRITE_SPIRIT_IDS;
     emptyCells.filter(function (cell) {
-      return cell.row > 0 && getHexNeighborCoordinates(cell.row, cell.col).some(function (neighbor) {
+      return cell.row >= LevelConfigLoader.MULTI_RESCUE_MIN_TARGET_ROW_INDEX &&
+        cell.row <= LevelConfigLoader.MULTI_RESCUE_MAX_TARGET_ROW_INDEX &&
+        getHexNeighborCoordinates(cell.row, cell.col).some(function (neighbor) {
         return neighbor.row >= 0 && neighbor.row < rows.length &&
           neighbor.col >= 0 && neighbor.col < rows[neighbor.row].length &&
           rows[neighbor.row].charAt(neighbor.col) !== "." &&
           !specialByCoordinate[neighbor.row + ":" + neighbor.col];
       });
     }).sort(function (left, right) {
-      return right.row - left.row || left.col - right.col;
+      return left.row - right.row || left.col - right.col;
     }).forEach(function (cell) {
       if (targets.length >= counts.multiRescueTargets) {
         return;
@@ -2086,7 +2093,8 @@ function makeLevel(levelId, placementVariant) {
   var firstHundredSpec = levelId <= FirstHundredLevelDesign.LAST_LEVEL_ID
     ? FirstHundredLevelDesign.buildLevelSpec(levelId)
     : null;
-  var referenceLayout = levelId <= FirstHundredLevelDesign.REFERENCE_TARGET_LAST_LEVEL_ID
+  var referenceLayout = levelId <= FirstHundredLevelDesign.REFERENCE_TARGET_LAST_LEVEL_ID &&
+    (firstHundredSpec !== null || gameplayPlan.campaignMechanismIds.length > 0)
     ? FirstHundredLevelDesign.buildReferenceLayoutDescriptor(levelId)
     : null;
   if (firstHundredSpec) {
@@ -2165,9 +2173,12 @@ function makeLevel(levelId, placementVariant) {
   }
   ensureBreederInitialEmptyNeighbors(rows, specialEntities, levelId, placementVariant);
   var additionalFeatures = buildAdditionalLevelFeatures(rows, specialEntities, tableRow, colors);
-  var mechanics = getMechanics(levelId).concat(gameplayPlan.teaches).filter(function (mechanic, index, allMechanics) {
+  var mechanics = gameplayPlan.teaches.filter(function (mechanic, index, allMechanics) {
     return allMechanics.indexOf(mechanic) === index;
   });
+  if (mechanics.length === 0) {
+    mechanics.push("color_cluster", "support_drop");
+  }
   var jarColors = firstHundredSpec
     ? firstHundredSpec.jarColors.slice()
     : resolveJarColors(colors, tableRow.target1);
@@ -2323,7 +2334,10 @@ function makeLevel(levelId, placementVariant) {
     },
     difficultyScaleMax: 100
   };
-  config.level.boardOcclusionPlan = BoardOcclusionConfig.buildCampaignPlan(config.level);
+  config.level.boardOcclusionPlan = BoardOcclusionConfig.buildCampaignPlan(
+    config.level,
+    gameplayPlan.boardOcclusionEnabled
+  );
   var generatedBoardMetrics = LevelBoardSupportValidator.assertGeneratedBoardRules(
     config.level,
     "level_" + padLevelId(levelId)

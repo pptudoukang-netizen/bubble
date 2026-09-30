@@ -908,11 +908,11 @@ function validateRuntimeWiring() {
   });
 
   var clientCloud = readText("assets/scripts/services/PlayerCloudProfileService.js");
-  var serverCloud = readText("cloudfunctions/playerProfile/index.js");
-  var templateCloud = readText("build-templates/wechatgame/cloudfunctions/playerProfile/index.js");
+  var serverCloud = readText("cloudfunctions/playerProfileV2/index.js");
+  var templateCloud = readText("build-templates/wechatgame/cloudfunctions/playerProfileV2/index.js");
   requireContains(clientCloud, "bubble_assist_spirit_state_v1", "Client assist-spirit cloud storage entry");
   requireContains(serverCloud, "bubble_assist_spirit_state_v1", "Cloud function assist-spirit storage entry");
-  var markerPattern = /playerProfile_v20260814_profile_size_caps_v6/;
+  var markerPattern = /playerProfileV2_v20260824_profile_size_caps_v6/;
   if (!markerPattern.test(clientCloud) || !markerPattern.test(serverCloud) || !markerPattern.test(templateCloud)) {
     fail("Player profile client/server/template deployment markers must match assist-spirit unlock schema.");
   }

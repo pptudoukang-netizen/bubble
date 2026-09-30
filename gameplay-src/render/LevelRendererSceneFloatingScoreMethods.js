@@ -71,6 +71,7 @@ LevelRenderer.prototype._initializeBallScoreHud = function () {
   this.pendingBallScoreCellIds = {};
   this.pendingBallScoreCallbacks = {};
   this.playedTimeBonusAwardedEvents = [];
+  this.playedTransparentBallDestroyedEvents = [];
   this._pruneBallScoreNodePool();
 };
 
@@ -162,6 +163,7 @@ LevelRenderer.prototype._resetBallScoreHudBeforeHudClear = function () {
   this.playedBallScoreCellIds = {};
   this.pendingBallScoreCellIds = {};
   this.playedTimeBonusAwardedEvents = [];
+  this.playedTransparentBallDestroyedEvents = [];
 };
 
 LevelRenderer.prototype._acquireBallScoreNode = function (gameViewNode, templateNode) {
@@ -488,6 +490,54 @@ LevelRenderer.prototype._playTimeBonusFloatingScoreDisplay = function (runtimeSn
       }, position);
     }, this);
     this.playedTimeBonusAwardedEvents.push(event);
+  }, this);
+};
+
+LevelRenderer.prototype._playTransparentBallFloatingScoreDisplay = function (runtimeSnapshot) {
+  if (!runtimeSnapshot || !Array.isArray(runtimeSnapshot.runtimeEvents)) {
+    throw new Error("Transparent ball floating score requires runtimeEvents array.");
+  }
+  if (!Array.isArray(this.playedTransparentBallDestroyedEvents)) {
+    throw new Error("Transparent ball floating score event state must be an array.");
+  }
+
+  runtimeSnapshot.runtimeEvents.forEach(function (event) {
+    if (!event || event.type !== "transparent_ball_destroyed") {
+      return;
+    }
+    if (!Number.isInteger(event.id) || event.id <= 0) {
+      throw new Error("transparent_ball_destroyed event requires a positive integer id.");
+    }
+    if (this.playedTransparentBallDestroyedEvents.indexOf(event) >= 0) {
+      return;
+    }
+    if (!Array.isArray(event.cells) || !event.cells.length ||
+        !Array.isArray(event.cell_ids) || event.cell_ids.length !== event.cells.length ||
+        event.count !== event.cells.length || event.gained !== event.cells.length * 1000) {
+      throw new Error("transparent_ball_destroyed event score payload is inconsistent.");
+    }
+
+    var emittedCellIds = {};
+    event.cells.forEach(function (cell, index) {
+      if (!cell || typeof cell.id !== "string" || !cell.id || emittedCellIds[cell.id]) {
+        throw new Error("transparent_ball_destroyed event contains invalid cell at index " + index + ".");
+      }
+      emittedCellIds[cell.id] = true;
+      if (event.cell_ids[index] !== cell.id || cell.points !== 1000 ||
+          !cell.worldPosition || !Number.isFinite(cell.worldPosition.x) ||
+          !Number.isFinite(cell.worldPosition.y)) {
+        throw new Error("transparent_ball_destroyed cell score payload is invalid: " + cell.id + ".");
+      }
+      var position = this._convertBoardPointToGameView(
+        cell.worldPosition.x,
+        cell.worldPosition.y
+      );
+      this._spawnBallScoreDisplay({
+        cellId: "transparent_ball_" + String(event.id) + "_" + cell.id,
+        points: cell.points
+      }, position);
+    }, this);
+    this.playedTransparentBallDestroyedEvents.push(event);
   }, this);
 };
 }

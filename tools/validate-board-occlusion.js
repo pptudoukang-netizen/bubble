@@ -60,6 +60,12 @@ function loadBoardOcclusionTestLevel() {
   return LevelConfigLoader.normalizeLevelConfig(raw, "level_board_occlusion_test");
 }
 
+function enableCampaignOcclusion(levelConfig, sourceKey) {
+  var enabledConfig = JSON.parse(JSON.stringify(levelConfig));
+  enabledConfig.level.boardOcclusionPlan = BoardOcclusionConfig.buildCampaignPlan(enabledConfig.level, true);
+  return LevelConfigLoader.normalizeLevelConfig(enabledConfig, sourceKey);
+}
+
 function createSystem(levelConfig) {
   var system = new BoardOcclusionSystem();
   system.initialize({});
@@ -88,6 +94,13 @@ function validateNoRepeat(levelConfig) {
   }
   assert(new Set(ids.slice(0, 4)).size === 4, "First four campaign attempts must cover four distinct variants.");
   assert(ids[0] === ids[4], "Campaign occlusion variants must cycle deterministically.");
+}
+
+function validateDisabledCampaignLevel(levelConfig) {
+  var system = createSystem(levelConfig);
+  var snapshot = startAttempt(system, levelConfig.level.levelId, 1);
+  assert(snapshot.variantId === null, "Disabled campaign occlusion must not select a variant.");
+  assert(snapshot.activeZones.length === 0, "Disabled campaign occlusion must not create active zones.");
 }
 
 function validateVariantContract(levelConfig) {
@@ -565,9 +578,11 @@ function validateHiddenTestEntryIntegration() {
 }
 
 function main() {
-  var timedCampaignLevelConfig = loadCampaignLevel(80);
-  var shotCampaignLevelConfig = loadCampaignLevel(81);
+  var timedCampaignLevelConfig = enableCampaignOcclusion(loadCampaignLevel(80), "level_080");
+  var shotCampaignLevelConfig = loadCampaignLevel(31);
+  var disabledCampaignLevelConfig = loadCampaignLevel(81);
   var testLevelConfig = loadBoardOcclusionTestLevel();
+  validateDisabledCampaignLevel(disabledCampaignLevelConfig);
   validateNoRepeat(shotCampaignLevelConfig);
   validateVariantContract(shotCampaignLevelConfig);
   validateDedicatedTestLevel(testLevelConfig);

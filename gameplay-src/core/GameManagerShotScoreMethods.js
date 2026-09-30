@@ -31,6 +31,38 @@ function createGameManagerShotScoreMethods(context) {
       return baseScore + this.comboStreak * COMBO_BONUS_PER_HIT;
     },
 
+    _emitTransparentBallDestroyedEvent: function (removedTransparentBalls, grid) {
+      if (!Array.isArray(removedTransparentBalls) || !removedTransparentBalls.length) {
+        throw new Error("Transparent ball destroyed event requires removed balls.");
+      }
+      if (!grid || typeof grid.getCellPosition !== "function") {
+        throw new Error("Transparent ball destroyed event requires BubbleGrid positions.");
+      }
+      var scorePerBall = this._getScoreRule("transparentBallBreak");
+      if (!Number.isInteger(scorePerBall) || scorePerBall !== 1000) {
+        throw new Error("Transparent ball break score must be exactly 1000.");
+      }
+      var cells = removedTransparentBalls.map(function (cell, index) {
+        if (!cell || typeof cell.id !== "string" || !cell.id ||
+            !Number.isInteger(cell.row) || !Number.isInteger(cell.col)) {
+          throw new Error("Transparent ball destroyed event requires valid cell at index " + index + ".");
+        }
+        return {
+          id: cell.id,
+          row: cell.row,
+          col: cell.col,
+          worldPosition: grid.getCellPosition(cell.row, cell.col),
+          points: scorePerBall
+        };
+      });
+      this._pushRuntimeEvent("transparent_ball_destroyed", {
+        count: cells.length,
+        gained: cells.length * scorePerBall,
+        cell_ids: cells.map(function (cell) { return cell.id; }),
+        cells: cells
+      });
+    },
+
     _resolveComboAttachAnchor: function (resolution) {
       if (!resolution) {
         throw new Error("Combo attach anchor requires resolution.");

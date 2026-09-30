@@ -468,100 +468,148 @@ function collectOrderedActionSpriteFrameUuids(spiritId, actionName) {
 }
 
 function validateShooterAssistSpiritAnimations() {
-  var configuredSpiritIds = AssistSpiritConfig.getCatalog().map(function (spirit) {
-    return spirit.id;
+  var ids = AssistSpiritConfig.getCatalog().map(function (spirit) { return spirit.id; });
+  assert(JSON.stringify(AssistSpiritPresentationConfig.getSpiritIds()) === JSON.stringify(ids), "Spine roster must match Spirit Hall.");
+  var prefab = readJson("assets/game/prefabs/game/ShooterPanel.prefab");
+  var heroPrefab = prefab.find(function (node) { return node._name === "handler_milu"; });
+  assert(heroPrefab._components.length === 0, "Hero anchor must not render old Sprite/Animation.");
+  var visualPrefab = prefab[heroPrefab._children[0].__id__];
+  var spinePrefab = prefab[visualPrefab._components[0].__id__];
+  var meta = readJson("assets/game/spine/diqiushou.skel.meta");
+  assert(visualPrefab._name === "SpineVisual" && spinePrefab.__type__ === "sp.Skeleton", "Hero requires authored SpineVisual.");
+  assert(spinePrefab["_N$skeletonData"].__uuid__ === meta.uuid, "Hero must reference diqiushou Spine.");
+  assert(spinePrefab._cacheMode === 0, "Spine must use realtime track completion callbacks.");
+  ids.forEach(function (id) {
+    var config = AssistSpiritPresentationConfig.getBySpiritId(id);
+    assert(config.skinName === id && config.skeletonDataPath === "game/spine/diqiushou", "Wrong Spine skin/resource for " + id);
+    assert(config.idleClipName === "idle" && config.deliverClipName === "passball", "Wrong Spine animation names.");
   });
-  var miluClipsByAction = {
-    idle: readJson("assets/game/animation/milu_idle.anim"),
-    pao: readJson("assets/game/animation/milu_pao.anim")
+
+  var savedColor = cc.color;
+  var savedSp = global.sp;
+  cc.color = function () { return {}; };
+  global.sp = { Skeleton: function () {} };
+  function Renderer() {}
+  require("../gameplay-src/render/LevelRendererSceneShooterMethods")(Renderer, {
+    AssistSpiritPresentationConfig: AssistSpiritPresentationConfig
+  });
+  var data = {
+    isValid: true,
+    getRuntimeData: function () {
+      return {
+        findSkin: function (id) { return ids.indexOf(id) >= 0; },
+        findAnimation: function (name) { return { name: name, duration: 1 }; }
+      };
+    }
   };
-  var presentationSpiritIds = AssistSpiritPresentationConfig.getSpiritIds();
-  assert(
-    JSON.stringify(presentationSpiritIds) === JSON.stringify(configuredSpiritIds),
-    "Shooter animation roster must exactly match Spirit Hall roster."
-  );
-  assert(
-    AssistSpiritPresentationConfig.getAllClipPaths().length === configuredSpiritIds.length * 2,
-    "Every assist spirit requires idle and deliver clips."
-  );
-
-  configuredSpiritIds.forEach(function (spiritId) {
-    var presentation = AssistSpiritPresentationConfig.getBySpiritId(spiritId);
-    var allowedSpriteFrameUuids = collectSpiritSpriteFrameUuids(spiritId);
-    [
-      {
-        actionName: "idle",
-        path: presentation.idleClipPath,
-        name: presentation.idleClipName
-      },
-      {
-        actionName: "pao",
-        path: presentation.deliverClipPath,
-        name: presentation.deliverClipName
-      }
-    ].forEach(function (expected) {
-      var relativePath = "assets/" + expected.path + ".anim";
-      var clip = readJson(relativePath);
-      assert(clip.__type__ === "cc.AnimationClip", relativePath + " must be cc.AnimationClip.");
-      assert(clip._name === expected.name, relativePath + " clip name must be " + expected.name + ".");
-      assert(Number.isInteger(clip.wrapMode) && clip.wrapMode > 0, relativePath + " wrapMode is invalid.");
-      assert(Number.isFinite(clip._duration) && clip._duration > 0, relativePath + " duration must be positive.");
-      var miluClip = miluClipsByAction[expected.actionName];
-      assert(clip._duration === miluClip._duration, relativePath + " duration must match milu_" + expected.actionName + ".");
-      assert(clip.sample === miluClip.sample, relativePath + " sample must match milu_" + expected.actionName + ".");
-      assert(clip.speed === miluClip.speed, relativePath + " speed must match milu_" + expected.actionName + ".");
-      var spriteFrames = clip.curveData &&
-        clip.curveData.comps &&
-        clip.curveData.comps["cc.Sprite"] &&
-        clip.curveData.comps["cc.Sprite"].spriteFrame;
-      assert(Array.isArray(spriteFrames) && spriteFrames.length > 0, relativePath + " requires SpriteFrame keys.");
-      spriteFrames.forEach(function (frame) {
-        var frameUuid = frame && frame.value && frame.value.__uuid__;
-        assert(
-          typeof frameUuid === "string" && allowedSpriteFrameUuids[frameUuid] === true,
-          relativePath + " references a SpriteFrame outside " + spiritId + " animation frames."
-        );
-      });
-      if (spiritId !== "milu") {
-        var expectedFrameUuids = collectOrderedActionSpriteFrameUuids(spiritId, expected.actionName);
-        var previousSequenceIndex = -1;
-        var previousFrameTime = -1;
-        spriteFrames.forEach(function (frame) {
-          var frameUuid = frame.value.__uuid__;
-          var sequenceIndex = expectedFrameUuids.indexOf(frameUuid);
-          assert(
-            sequenceIndex >= 0,
-            relativePath + " must reference SpriteFrames from its " + expected.actionName + " sequence directory."
-          );
-          assert(
-            sequenceIndex > previousSequenceIndex,
-            relativePath + " SpriteFrame keys must preserve filename order without duplicates."
-          );
-          assert(
-            Number.isFinite(frame.frame) && frame.frame >= 0 && frame.frame < clip._duration,
-            relativePath + " SpriteFrame key time must be within the clip duration."
-          );
-          assert(
-            frame.frame > previousFrameTime,
-            relativePath + " SpriteFrame key times must be strictly increasing."
-          );
-          previousSequenceIndex = sequenceIndex;
-          previousFrameTime = frame.frame;
-        });
-      }
-    });
+  var plays = [];
+  var listener = null;
+  var skeleton = {
+    skeletonData: data,
+    findAnimation: function (name) { return data.getRuntimeData().findAnimation(name); },
+    clearTracks: function () {},
+    setSkin: function (name) { this.skin = name; },
+    setSlotsToSetupPose: function () {},
+    setCompleteListener: function (callback) { listener = callback; },
+    setAnimation: function (track, name, loop) {
+      var entry = { name: name, loop: loop };
+      plays.push(entry);
+      return entry;
+    }
+  };
+  var visual = { isValid: true, getComponent: function () { return skeleton; } };
+  var hero = { isValid: true, getChildByName: function (name) { return name === "SpineVisual" ? visual : null; } };
+  var renderer = new Renderer();
+  renderer.assistSpiritSkeletonDataCache = { "game/spine/diqiushou": data };
+  var panel = {};
+  var snapshot = { assistSpiritId: "milu", queueAdvanceRevision: 0 };
+  var gameState = "running";
+  var sync = function (remaining, projectile) { renderer._syncShooterHeroAnimation(panel, hero, snapshot, projectile, remaining, gameState); };
+  sync(10, null);
+  assert(plays.length === 1 && plays[0].name === "idle" && plays[0].loop, "Entry must loop idle.");
+  sync(10, null);
+  assert(plays.length === 1, "Repeated render must not restart idle.");
+  snapshot.queueAdvanceRevision = 1;
+  sync(9, {});
+  var delivered = plays[1];
+  var completed = listener;
+  assert(delivered.name === "passball" && !delivered.loop, "Shot must play passball once.");
+  sync(9, {});
+  assert(plays.length === 2, "Repeated render must not restart passball.");
+  completed({});
+  assert(plays.length === 2, "Unrelated completion must not end delivery.");
+  completed(delivered);
+  assert(plays.length === 3 && plays[2].name === "idle" && listener === null, "Completion must restore idle and clear listener.");
+  snapshot.queueAdvanceRevision = 2;
+  sync(8, {});
+  var interruptedComplete = listener;
+  var interruptedEntry = plays[plays.length - 1];
+  ids.forEach(function (id) {
+    snapshot.assistSpiritId = id;
+    sync(8, null);
+    assert(skeleton.skin === id, "Equipped spirit must select matching skin: " + id);
   });
-
-  var runtimeSource = fs.readFileSync(
-    path.join(projectRoot, "gameplay-src/render/LevelRendererSceneShooterMethods.js"),
-    "utf8"
-  );
-  assert(
-    runtimeSource.indexOf("shooterSnapshot.assistSpiritId") >= 0 &&
-    runtimeSource.indexOf("presentation.deliverClipName") >= 0 &&
-    runtimeSource.indexOf("presentation.idleClipName") >= 0,
-    "Shooter renderer must select idle and deliver clips from equipped assist spirit id."
-  );
+  assert(listener === null && plays[plays.length - 1].name === "idle", "Skin switch must cancel pending completion and restore idle.");
+  var afterSwitch = plays.length;
+  interruptedComplete(interruptedEntry);
+  assert(plays.length === afterSwitch, "Interrupted delivery must not affect new skin animation.");
+  snapshot.queueAdvanceRevision = 3;
+  var before = plays.length;
+  sync(0, {});
+  assert(plays.length === before, "Last shot must not deliver another ball.");
+  snapshot.queueAdvanceRevision = 4;
+  sync(5, {});
+  var deliveryBeforeResult = plays[plays.length - 1];
+  var deliveryCallbackBeforeResult = listener;
+  ["won_pending", "won_surplus_shots_pending", "board_clear_score_recheck_surplus_shots_pending"].forEach(function (state) {
+    gameState = state;
+    sync(0, null);
+    assert(plays[plays.length - 1] === deliveryBeforeResult, "Must not celebrate before remaining balls settle: " + state);
+  });
+  gameState = "won_settlement_pending";
+  sync(0, null);
+  var winEntry = plays[plays.length - 1];
+  assert(winEntry.name === "win" && winEntry.loop && listener === null, "Settled surplus balls must switch to win.");
+  deliveryCallbackBeforeResult(deliveryBeforeResult);
+  assert(plays[plays.length - 1] === winEntry, "Old delivery completion must not overwrite win.");
+  gameState = "won";
+  sync(0, null);
+  assert(plays[plays.length - 1] === winEntry, "Final win must not restart the celebration.");
+  ["lost_danger", "lost_hazard", "lost_objective", "out_of_shots"].forEach(function (state) {
+    gameState = state;
+    sync(0, null);
+    var failEntry = plays[plays.length - 1];
+    assert(failEntry.name === "fail" && failEntry.loop && listener === null, "Failure must switch to sadness: " + state);
+    sync(0, null);
+    assert(plays[plays.length - 1] === failEntry, "Repeated failure render must not restart sadness.");
+    gameState = "running";
+    sync(5, null);
+    assert(plays[plays.length - 1].name === "idle", "Revive must restore idle.");
+  });
+  ["out_of_shots_pending", "out_of_shots_add_ball_prompt"].forEach(function (state) {
+    gameState = state;
+    sync(0, null);
+    assert(plays[plays.length - 1].name === "idle", "Unresolved last shot/add-ball prompt must not show failure.");
+  });
+  var selectorContext = {
+    module: { exports: {} },
+    require: function (name) {
+      assert(name === "./LevelRendererResourceConfig", "Unexpected selector dependency: " + name);
+      return {};
+    }
+  };
+  require("vm").runInNewContext(fs.readFileSync(path.join(projectRoot, "gameplay-src/render/LevelRendererStateSelectors.js"), "utf8"), selectorContext);
+  var buildKey = selectorContext.module.exports.buildShooterRenderKey;
+  var pendingKey = buildKey({ state: "won_surplus_shots_pending", shooter: snapshot, remainingShots: 0 });
+  var winKey = buildKey({ state: "won_settlement_pending", shooter: snapshot, remainingShots: 0 });
+  var failKey = buildKey({ state: "lost_objective", shooter: snapshot, remainingShots: 0 });
+  assert(pendingKey !== winKey && pendingKey !== failKey, "State-only transitions must invalidate shooter render cache.");
+  snapshot.assistSpiritId = "unknown";
+  var failed = false;
+  try { sync(1, null); } catch (error) { failed = true; }
+  assert(failed, "Unknown spirit must fail fast.");
+  cc.color = savedColor;
+  global.sp = savedSp;
 }
 
 function validateVisibilityConfig() {
@@ -1148,6 +1196,10 @@ function validateLumiProducedBallProbability() {
   );
 }
 
+if (process.argv.indexOf("--shooter-animation-only") >= 0) {
+  validateShooterAssistSpiritAnimations();
+  console.log("[OK] Shooter Spine skins, delivery, settlement win, failure, revive and state refresh");
+} else {
 validateResourcesAndPrefab();
 validateSkillAudio();
 validateShooterAssistSpiritAnimations();
@@ -1163,3 +1215,4 @@ validateLightningThenTornadoPriority();
 validateGlobalSkillLevelGrowth();
 
 console.log("[OK] ShooterPanel assist spirits: equipped animations, skills, effects and resolved audio");
+}

@@ -135,6 +135,7 @@ function createEmptyResolution() {
     budHatches: [],
     budHatchedCells: [],
     budRecolors: [],
+    splitterResolved: false,
     breederResolved: false,
     breederSpawns: [],
     mineCountdownResolved: false,
@@ -153,6 +154,7 @@ function createEmptyResolution() {
     witheredVines: [],
     collectedKeys: [],
     unlockedLockedBalls: [],
+    keyUnlockPresentationComplete: false,
     poisonReleases: [],
     icicleReleases: [],
     bubbleShieldsRemoved: [],
@@ -283,7 +285,6 @@ var BOARD_ADVANCE_AFTER_IMPACT_DELAY = assertPositiveNumber(
   "Board advance after impact delay"
 );
 var BOARD_ADVANCE_DELAY_EPSILON = 0.000001;
-var KEY_UNLOCK_BOARD_ADVANCE_BLOCK_DELAY = SpecialAnimationTiming.keyUnlock.totalDuration;
 if (
   !SpecialAnimationTiming.swirlRotation ||
   typeof SpecialAnimationTiming.swirlRotation.duration !== "number" ||
@@ -843,6 +844,7 @@ function GameManager(options) {
   this.pendingBoardAdvanceSpecialAnimationDelay = 0;
   this.pendingBoardAdvanceDelay = 0;
   this.pendingBoardAdvanceEliminationPresentation = false;
+  this.pendingBoardAdvanceKeyUnlockPresentation = false;
   this.pendingDeferredEnsureMinimumVisibleBoardRows = false;
   this.pendingDropIntervalBoardAdvance = false;
   this.boardAdvancedThisFrame = false;
@@ -950,7 +952,6 @@ var GAME_MANAGER_METHOD_CONTEXT = {
   FallingMarbleSystem: FallingMarbleSystem,
   IMPACT_BOUNCE_PUSH_DISTANCE: IMPACT_BOUNCE_PUSH_DISTANCE,
   IMPACT_BOUNCE_SPEED: IMPACT_BOUNCE_SPEED,
-  KEY_UNLOCK_BOARD_ADVANCE_BLOCK_DELAY: KEY_UNLOCK_BOARD_ADVANCE_BLOCK_DELAY,
   Logger: Logger,
   PLUS_THREE_BALLS_AMOUNT: PLUS_THREE_BALLS_AMOUNT,
   SNOW_REMOVAL_CLEAR_COUNT: SNOW_REMOVAL_CLEAR_COUNT,
@@ -981,6 +982,7 @@ var GAME_MANAGER_METHOD_CONTEXT = {
   isIceBall: isIceBall,
   isPowerupShotBall: isPowerupShotBall,
   isStoneBall: isStoneBall,
+  isSplitterBall: isSplitterBall,
   isSwirlBall: isSwirlBall,
   isWormholeBall: isWormholeBall,
   lerpPoint: lerpPoint,

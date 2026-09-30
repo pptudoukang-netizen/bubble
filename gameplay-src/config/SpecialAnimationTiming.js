@@ -30,7 +30,12 @@ var wormholeShift = {
 };
 
 var blackHole = {
+  projectileAbsorbDuration: 0.22,
   unsupportedDisappearDuration: 0.2
+};
+
+var topAnchorCollapse = {
+  dropDelay: 0.5
 };
 
 var windTunnel = {
@@ -146,6 +151,7 @@ module.exports = Object.freeze({
   swirlRotation: Object.freeze(swirlRotation),
   wormholeShift: Object.freeze(wormholeShift),
   blackHole: Object.freeze(blackHole),
+  topAnchorCollapse: Object.freeze(topAnchorCollapse),
   windTunnel: Object.freeze(windTunnel),
   vineCast: Object.freeze(vineCast),
   spiritCocoon: Object.freeze(spiritCocoon),

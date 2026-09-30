@@ -90,15 +90,7 @@ function createGameManagerShotFinalizeMethods(context) {
         throw new Error("Transparent ball flight destruction did not remove every reached ball.");
       }
       Array.prototype.push.apply(projectile.destroyedTransparentBalls, removed);
-      if (typeof this._pushRuntimeEvent === "function") {
-        this._pushRuntimeEvent("transparent_ball_destroyed", {
-          count: removed.length,
-          gained: removed.length * 1000,
-          cell_ids: removed.map(function (cell) {
-            return cell.id;
-          })
-        });
-      }
+      this._emitTransparentBallDestroyedEvent(removed, grid);
       return removed;
     },
 
@@ -169,14 +161,8 @@ function createGameManagerShotFinalizeMethods(context) {
       if (removed.length !== liveTransparentBalls.length) {
         throw new Error("Transparent ball penetration did not remove every planned ball.");
       }
-      if (removed.length && typeof this._pushRuntimeEvent === "function") {
-        this._pushRuntimeEvent("transparent_ball_destroyed", {
-          count: removed.length,
-          gained: removed.length * 1000,
-          cell_ids: removed.map(function (cell) {
-            return cell.id;
-          })
-        });
+      if (removed.length) {
+        this._emitTransparentBallDestroyedEvent(removed, grid);
       }
       removed.forEach(function (cell) {
         destroyedById[cell.id] = cell;
@@ -227,18 +213,6 @@ function createGameManagerShotFinalizeMethods(context) {
         throw new Error("Transparent ball break score must be exactly 1000.");
       }
       var gained = removedTransparentBalls.length * scorePerBall;
-      removedTransparentBalls.forEach(function (cell) {
-        var worldPosition = grid.getCellPosition(cell.row, cell.col);
-        resolution.scoreEvents.push({
-          cellId: cell.id,
-          row: cell.row,
-          col: cell.col,
-          worldPosition: worldPosition,
-          points: scorePerBall,
-          delayMs: 0,
-          scoreKind: "transparent_ball_break"
-        });
-      });
       this.score += gained;
       resolution.scoreDelta += gained;
       resolution.boardCleared = this._isBoardCleared(grid);
@@ -590,12 +564,27 @@ function createGameManagerShotFinalizeMethods(context) {
       }
       var absorptionTarget = projectile.shotPlan.absorbingBlackHole;
       if (!absorptionTarget || typeof absorptionTarget.id !== "string" || !absorptionTarget.id ||
-          !Number.isInteger(absorptionTarget.row) || !Number.isInteger(absorptionTarget.col)) {
+          !Number.isInteger(absorptionTarget.row) || !Number.isInteger(absorptionTarget.col) ||
+          !absorptionTarget.position ||
+          !Number.isFinite(absorptionTarget.position.x) ||
+          !Number.isFinite(absorptionTarget.position.y)) {
         throw new Error("Black hole projectile absorption requires a valid absorbingBlackHole target.");
+      }
+      if (!projectile.shotPlan.hitPoint ||
+          !Number.isFinite(projectile.shotPlan.hitPoint.x) ||
+          !Number.isFinite(projectile.shotPlan.hitPoint.y)) {
+        throw new Error("Black hole projectile absorption requires a finite hitPoint.");
       }
       var liveBlackHole = grid.getCell(absorptionTarget.row, absorptionTarget.col);
       if (!isBlackHoleBall(liveBlackHole) || String(liveBlackHole.id) !== absorptionTarget.id) {
         throw new Error("Black hole projectile absorption target is not live: " + absorptionTarget.id);
+      }
+      var targetPosition = grid.getCellPosition(absorptionTarget.row, absorptionTarget.col);
+      if (
+        Math.abs(targetPosition.x - absorptionTarget.position.x) > 0.001 ||
+        Math.abs(targetPosition.y - absorptionTarget.position.y) > 0.001
+      ) {
+        throw new Error("Black hole projectile absorption target position changed before finalization.");
       }
 
       var resolution = createEmptyResolution();
@@ -608,6 +597,9 @@ function createGameManagerShotFinalizeMethods(context) {
         capacityBefore: consumption.capacityBefore,
         capacityAfter: consumption.capacityAfter,
         destroyed: consumption.destroyed,
+        startPosition: clone(projectile.shotPlan.hitPoint),
+        targetPosition: clone(targetPosition),
+        duration: SpecialAnimationTiming.blackHole.projectileAbsorbDuration,
         ball: clone(projectile.ball)
       });
       this.lastResolution = resolution;
@@ -833,7 +825,10 @@ function createGameManagerShotFinalizeMethods(context) {
       var mineFailureTriggered = false;
       if (!postShotSpecialStarted && !this.molotovResolutionPending && !this.lastResolution.multiTrappedSpiritRescueCompleted) {
         mineFailureTriggered = this._resolveMineCountdownPhase(this.lastResolution);
-        if (!mineFailureTriggered) { this._resolveBreederPhase(this.lastResolution); }
+        if (!mineFailureTriggered) {
+          this._resolveBreederPhase(this.lastResolution);
+          this._resolveSplitterPhase(this.lastResolution);
+        }
       }
       var deferredBoardShift = this.lastResolution.multiTrappedSpiritRescueCompleted
         ? false

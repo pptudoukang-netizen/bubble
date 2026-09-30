@@ -12,6 +12,7 @@ function attachGameManagerSpecialPhaseMethods(GameManager, context) {
   var WORMHOLE_SHIFT_DURATION = context.WORMHOLE_SHIFT_DURATION;
   var assertFiniteNumber = context.assertFiniteNumber;
   var isBreederBall = context.isBreederBall;
+  var isSplitterBall = context.isSplitterBall;
   var isSwirlBall = context.isSwirlBall;
   var isWormholeBall = context.isWormholeBall;
 
@@ -43,6 +44,12 @@ function findRotatableSwirlCenters(grid) {
     if (track.some(function (coordinate) {
       var cell = grid.getCell(coordinate.row, coordinate.col);
       return !!cell && cell.spiderLocked === true;
+    })) {
+      return false;
+    }
+    if (track.some(function (coordinate) {
+      var cell = grid.getCell(coordinate.row, coordinate.col);
+      return !!cell && typeof cell.vineOwnerId === "string" && !!cell.vineOwnerId;
     })) {
       return false;
     }
@@ -191,6 +198,88 @@ GameManager.prototype._resolveBreederPhase = function (resolution) {
   return resolution.breederSpawns.slice();
 };
 
+GameManager.prototype._resolveSplitterPhase = function (resolution) {
+  if (!resolution || typeof resolution !== "object" || Array.isArray(resolution)) {
+    throw new Error("Splitter phase requires resolution.");
+  }
+  if (typeof resolution.splitterResolved !== "boolean") {
+    throw new Error("Splitter phase requires resolution.splitterResolved boolean.");
+  }
+  if (!Array.isArray(resolution.collected)) {
+    throw new Error("Splitter phase requires resolution.collected array.");
+  }
+  if (!Array.isArray(resolution.reactiveTriggered) || !Array.isArray(resolution.spawnedBySplitters)) {
+    throw new Error("Splitter phase requires splitter resolution arrays.");
+  }
+  if (resolution.splitterResolved) {
+    throw new Error("Splitter phase cannot resolve the same shot twice.");
+  }
+  if (!Number.isInteger(this.shotsFired) || this.shotsFired <= 0) {
+    throw new Error("Splitter phase requires positive shotsFired.");
+  }
+  if (!Array.isArray(this.pendingSplitterSpawns)) {
+    throw new Error("Splitter phase requires pendingSplitterSpawns array.");
+  }
+  if (this.pendingSplitterSpawns.length) {
+    throw new Error("Splitter phase cannot start while a previous splitter spawn is pending.");
+  }
+
+  var grid = this.systems.bubbleGrid;
+  if (!grid || typeof grid.getSpecialEntities !== "function") {
+    throw new Error("Splitter phase requires BubbleGrid.getSpecialEntities.");
+  }
+
+  resolution.splitterResolved = true;
+  var removedCellKeys = {};
+  resolution.collected.forEach(function (cell, index) {
+    if (!cell || !Number.isInteger(cell.row) || !Number.isInteger(cell.col)) {
+      throw new Error("Splitter phase collected cell requires integer coordinates at index " + index + ".");
+    }
+    removedCellKeys[cell.row + ":" + cell.col] = true;
+  });
+
+  var splitters = grid.getSpecialEntities().filter(isSplitterBall).sort(function (left, right) {
+    if (typeof left.id !== "string" || !left.id || typeof right.id !== "string" || !right.id) {
+      throw new Error("Splitter phase requires non-empty splitter ids.");
+    }
+    return left.id < right.id ? -1 : (left.id > right.id ? 1 : 0);
+  });
+  if (!splitters.length) {
+    return [];
+  }
+  if (
+    typeof grid.getNeighborCoordinates !== "function" ||
+    typeof grid.getCell !== "function" ||
+    typeof grid.findSplitterSpawnCell !== "function" ||
+    typeof grid.isSplitterSpawnCellAvailable !== "function"
+  ) {
+    throw new Error("Splitter phase requires BubbleGrid splitter neighbor queries.");
+  }
+  var reservedTargetKeys = {};
+  splitters.forEach(function (splitter) {
+    var liveSplitter = grid.getCell(splitter.row, splitter.col);
+    if (!isSplitterBall(liveSplitter) || liveSplitter.id !== splitter.id) {
+      throw new Error("Splitter phase lost live splitter: " + splitter.id + ".");
+    }
+    var neighborCoordinates = grid.getNeighborCoordinates(liveSplitter.row, liveSplitter.col);
+    var adjacentRemoval = neighborCoordinates.some(function (coordinate) {
+      return removedCellKeys[coordinate.row + ":" + coordinate.col] === true;
+    });
+    if (adjacentRemoval) {
+      return;
+    }
+
+    var target = grid.findSplitterSpawnCell(liveSplitter, reservedTargetKeys);
+    if (!target) {
+      return;
+    }
+    reservedTargetKeys[target.row + ":" + target.col] = true;
+    this._queuePendingSplitterSpawn(liveSplitter, resolution, target);
+  }, this);
+
+  return this.pendingSplitterSpawns.slice();
+};
+
 GameManager.prototype._resolveMineCountdownPhase = function (resolution) {
   if (!resolution || typeof resolution !== "object" || Array.isArray(resolution)) {
     throw new Error("Mine countdown phase requires resolution.");
@@ -256,6 +345,9 @@ GameManager.prototype._beginVineCastForResolution = function (resolution) {
   if (!Array.isArray(resolution.vineCasts)) {
     throw new Error("Vine cast requires resolution.vineCasts array.");
   }
+  if (!Array.isArray(resolution.releasedVines)) {
+    throw new Error("Vine cast requires resolution.releasedVines array.");
+  }
   if (this._hasPendingVineCast() || this.pendingVineCastResolution !== null) {
     throw new Error("Vine cast cannot start while another cast is pending.");
   }
@@ -266,6 +358,15 @@ GameManager.prototype._beginVineCastForResolution = function (resolution) {
   if (!Number.isInteger(this.shotsFired) || this.shotsFired <= 0) {
     throw new Error("Vine cast evaluation requires positive shotsFired.");
   }
+  var releasedAdjacentVine = resolution.releasedVines.some(function (entry) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      throw new Error("Vine cast requires valid released vine entries.");
+    }
+    return entry.sourceType === "adjacent_elimination";
+  });
+  if (releasedAdjacentVine) {
+    return false;
+  }
   if (this.shotsFired % VINE_CAST_SHOT_INTERVAL !== 0) {
     return false;
   }
@@ -274,7 +375,7 @@ GameManager.prototype._beginVineCastForResolution = function (resolution) {
   if (!grid || typeof grid.getVineSpirits !== "function") {
     throw new Error("Vine cast requires BubbleGrid.getVineSpirits.");
   }
-  if (typeof grid.findNearestNormalCellForVine !== "function" || typeof grid.beginVinePreview !== "function") {
+  if (typeof grid.findAdjacentNormalCellForVine !== "function" || typeof grid.beginVinePreview !== "function") {
     throw new Error("Vine cast requires BubbleGrid vine target and preview methods.");
   }
   var spirits = grid.getVineSpirits();
@@ -284,7 +385,7 @@ GameManager.prototype._beginVineCastForResolution = function (resolution) {
 
   var reservedCellKeys = {};
   spirits.forEach(function (spirit) {
-    var target = grid.findNearestNormalCellForVine(spirit, reservedCellKeys);
+    var target = grid.findAdjacentNormalCellForVine(spirit, reservedCellKeys);
     if (!target) {
       return;
     }
@@ -382,6 +483,7 @@ GameManager.prototype._startPendingSwirlRotation = function (resolution) {
       centerCol: center.col,
       duration: SWIRL_ROTATION_DURATION,
       angleDegrees: SpecialAnimationTiming.swirlRotation.angleDegrees,
+      completed: false,
       moves: moves
     });
   }, this);
@@ -504,6 +606,7 @@ GameManager.prototype._continueAfterVineCast = function (resolution) {
     return;
   }
   this._resolveBreederPhase(resolution);
+  this._resolveSplitterPhase(resolution);
   if (resolution.boardCleared) {
     this._resolveBoardClearedOutcome();
     return;
@@ -600,6 +703,15 @@ GameManager.prototype._updatePendingSwirlRotation = function (dt) {
   if (resolution !== this.lastResolution) {
     throw new Error("Pending swirl rotation resolution must remain lastResolution.");
   }
+  if (!Array.isArray(resolution.swirlRotations) || !resolution.swirlRotations.length) {
+    throw new Error("Pending swirl rotation requires non-empty resolution.swirlRotations.");
+  }
+  resolution.swirlRotations.forEach(function (rotation) {
+    if (!rotation || rotation.completed !== false) {
+      throw new Error("Pending swirl rotation entry must be incomplete.");
+    }
+    rotation.completed = true;
+  });
   var grid = this.systems.bubbleGrid;
   var newlyFloating = [];
   while (true) {
@@ -673,7 +785,7 @@ GameManager.prototype._updatePendingWormholeShift = function (dt) {
   return true;
 };
 
-GameManager.prototype._queuePendingSplitterSpawn = function (splitterCell, resolution) {
+GameManager.prototype._queuePendingSplitterSpawn = function (splitterCell, resolution, targetCell) {
   if (!splitterCell || !Number.isInteger(splitterCell.row) || !Number.isInteger(splitterCell.col)) {
     throw new Error("Pending splitter spawn requires splitter cell coordinates.");
   }
@@ -685,6 +797,9 @@ GameManager.prototype._queuePendingSplitterSpawn = function (splitterCell, resol
   }
   if (!Array.isArray(resolution.reactiveTriggered)) {
     throw new Error("Pending splitter spawn requires resolution.reactiveTriggered.");
+  }
+  if (!targetCell || !Number.isInteger(targetCell.row) || !Number.isInteger(targetCell.col)) {
+    throw new Error("Pending splitter spawn requires target cell coordinates.");
   }
 
   var pendingId = splitterCell.id;
@@ -701,6 +816,8 @@ GameManager.prototype._queuePendingSplitterSpawn = function (splitterCell, resol
     id: pendingId,
     row: splitterCell.row,
     col: splitterCell.col,
+    targetRow: targetCell.row,
+    targetCol: targetCell.col,
     splitColor: splitterCell.splitColor,
     remainingDelay: SPLITTER_SPAWN_DELAY_SEC
   });
@@ -766,9 +883,25 @@ GameManager.prototype._updatePendingSplitterSpawns = function (dt) {
       continue;
     }
 
-    var spawnCell = grid.findSplitterSpawnCell(pending);
-    if (!spawnCell) {
-      throw new Error("Pending splitter spawn requires an available spawn cell.");
+    if (!Number.isInteger(pending.targetRow) || !Number.isInteger(pending.targetCol)) {
+      throw new Error("Pending splitter spawn entry requires target coordinates.");
+    }
+    var liveSplitter = grid.getCell(pending.row, pending.col);
+    if (!isSplitterBall(liveSplitter) || liveSplitter.id !== pending.id) {
+      throw new Error("Pending splitter spawn lost source splitter: " + pending.id + ".");
+    }
+    var targetIsNeighbor = grid.getNeighborCoordinates(liveSplitter.row, liveSplitter.col).some(function (coordinate) {
+      return coordinate.row === pending.targetRow && coordinate.col === pending.targetCol;
+    });
+    if (!targetIsNeighbor) {
+      throw new Error("Pending splitter spawn target must remain adjacent to its source splitter.");
+    }
+    var spawnCell = {
+      row: pending.targetRow,
+      col: pending.targetCol
+    };
+    if (!grid.isSplitterSpawnCellAvailable(spawnCell.row, spawnCell.col, {})) {
+      throw new Error("Pending splitter spawn target is no longer an available six-neighbor cell.");
     }
     var spawnedCell = grid.addBubble(spawnCell, pending.splitColor);
     if (!spawnedCell) {

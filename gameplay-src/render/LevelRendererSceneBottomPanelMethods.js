@@ -459,22 +459,8 @@ LevelRenderer.prototype._renderBottomPanel = function (runtimeSnapshot) {
     snowRemovalButtonNode.active = false;
   }
   this._setBottomPanelInventoryPresentation(bombButtonNode, blastCount, "recover_inventory:blast");
-  crystalGunButtonNode.active = crystalGunCount > 0;
-  if (crystalGunButtonNode.active) {
-    var crystalGunNumBgNode = requireChildNode(crystalGunButtonNode, "num_bg", "crystal_gun_btn");
-    var crystalGunVideoNode = requireChildNode(crystalGunButtonNode, "vido_btn", "crystal_gun_btn");
-    crystalGunNumBgNode.active = true;
-    crystalGunVideoNode.active = false;
-    this._setBottomPanelCount(crystalGunButtonNode, crystalGunCount);
-  }
-  rainbowPrismBallButtonNode.active = rainbowPrismBallCount > 0;
-  if (rainbowPrismBallButtonNode.active) {
-    var rainbowPrismNumBgNode = requireChildNode(rainbowPrismBallButtonNode, "num_bg", "rainbow_prism_ball_btn");
-    var rainbowPrismVideoNode = requireChildNode(rainbowPrismBallButtonNode, "vido_btn", "rainbow_prism_ball_btn");
-    rainbowPrismNumBgNode.active = true;
-    rainbowPrismVideoNode.active = false;
-    this._setBottomPanelCount(rainbowPrismBallButtonNode, rainbowPrismBallCount);
-  }
+  this._setBottomPanelInventoryPresentation(crystalGunButtonNode, crystalGunCount, "recover_inventory:crystal_gun");
+  this._setBottomPanelInventoryPresentation(rainbowPrismBallButtonNode, rainbowPrismBallCount, "recover_inventory:rainbow_prism_ball");
   if (adRunPowerupAllowed.three_line_elimination === true) {
     this._setBottomPanelInventoryPresentation(threeLineButtonNode, threeLineCount, "recover_ad_powerup:three_line_elimination");
   } else if (threeLineButtonNode) {
@@ -507,10 +493,10 @@ LevelRenderer.prototype._renderBottomPanel = function (runtimeSnapshot) {
   this._setBottomPanelButtonEnabled(bombButtonNode, blastCount > 0 ? canUseBlast : !pendingRainbowColorSelection, {
     dimWhenDisabled: false
   });
-  this._setBottomPanelButtonEnabled(crystalGunButtonNode, canUseCrystalGun, {
+  this._setBottomPanelButtonEnabled(crystalGunButtonNode, crystalGunCount > 0 ? canUseCrystalGun : !pendingRainbowColorSelection, {
     dimWhenDisabled: false
   });
-  this._setBottomPanelButtonEnabled(rainbowPrismBallButtonNode, canUseRainbowPrismBall, {
+  this._setBottomPanelButtonEnabled(rainbowPrismBallButtonNode, rainbowPrismBallCount > 0 ? canUseRainbowPrismBall : !pendingRainbowColorSelection, {
     dimWhenDisabled: false
   });
   this._setBottomPanelButtonEnabled(threeLineButtonNode, threeLineCount > 0 ? canUseThreeLine : !pendingRainbowColorSelection, {

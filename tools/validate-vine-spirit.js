@@ -400,6 +400,10 @@ function validateThirdShotPreviewAndCast() {
   assert(manager._beginVineCastForResolution(resolution), "Third fired shot must start vine preview.");
   assert(resolution.vineCasts.length === 1, "One live spirit must schedule one vine cast.");
   var cast = resolution.vineCasts[0];
+  var targetIsAdjacent = grid.getNeighborCoordinates(cast.spiritRow, cast.spiritCol).some(function (coordinate) {
+    return coordinate.row === cast.targetRow && coordinate.col === cast.targetCol;
+  });
+  assert(targetIsAdjacent, "Vine spirit must target only one of its six neighboring cells.");
   var previewCell = grid.getCell(cast.targetRow, cast.targetCol);
   assert(previewCell.vinePreviewOwnerId === "vine_spirit_validation", "Vine target must expose preview ownership.");
   assert(!previewCell.vineOwnerId, "Preview target must not be active before the warning completes.");
@@ -436,6 +440,54 @@ function validateThirdShotPreviewAndCast() {
   assert(!manager._beginVineCastForResolution(nonThirdResolution), "Non-third shots must not start a vine cast.");
 }
 
+function validateVineCastRequiresAdjacentTarget() {
+  var grid = buildGrid([
+    "R.........",
+    ".........",
+    "..........",
+    ".........",
+    "..........",
+    ".........",
+    "..........",
+    "........."
+  ], 1, 2);
+  var manager = new GameManager();
+  manager.systems.bubbleGrid = grid;
+  manager.shotsFired = 3;
+  var resolution = createVineResolution();
+
+  assert(!manager._beginVineCastForResolution(resolution), "Vine spirit must not cast when all six neighboring cells lack eligible balls.");
+  assert(resolution.vineCastEvaluated === true, "Missing adjacent targets must still complete this resolution's vine evaluation.");
+  assert(resolution.vineCasts.length === 0, "Vine spirit must not reach across the board to entangle a non-adjacent ball.");
+  assert(!grid.getCell(0, 0).vinePreviewOwnerId, "Non-adjacent balls must not receive a vine preview owner.");
+}
+
+function validateReleasedVineSkipsSameResolutionCast() {
+  var grid = buildGrid([
+    "R.........",
+    "RR.......",
+    "..R.......",
+    ".........",
+    "..........",
+    ".........",
+    "..........",
+    "........."
+  ], 1, 2);
+  previewAndEntangle(grid, 2, 2);
+  var manager = new GameManager();
+  manager.systems.bubbleGrid = grid;
+  manager.shotsFired = 3;
+  var resolution = createVineResolution();
+  var removed = grid.removeCells([grid.getCell(1, 1)]);
+
+  manager._resolveVinesAfterRemoval(removed, grid, resolution);
+  assert(resolution.releasedVines.length === 1, "Fixture must release one vine through adjacent elimination.");
+  assert(!manager._beginVineCastForResolution(resolution), "A resolution that released an adjacent vine must skip its vine cast.");
+  assert(resolution.vineCastEvaluated === true, "Released-vine suppression must finish this resolution's vine evaluation.");
+  assert(resolution.vineCasts.length === 0, "Released-vine suppression must not schedule a replacement cast.");
+  assert(!grid.getCell(2, 2).vineOwnerId && !grid.getCell(2, 2).vinePreviewOwnerId, "A just-released adjacent ball must remain unbound for the rest of the resolution.");
+}
+
 function validateVineEntanglementAudioRouting() {
   var audioConfig = GameBootstrapAudioMethods._buildAudioConfig.call({
     _getGameplayBgmPath: function () {
@@ -468,5 +520,7 @@ validateDamageReleaseAndDeathCleanup();
 validateExplosionInteractions();
 validateTopAnchorCollapseDropsVineEntities();
 validateThirdShotPreviewAndCast();
+validateVineCastRequiresAdjacentTarget();
+validateReleasedVineSkipsSameResolutionCast();
 validateVineEntanglementAudioRouting();
-console.log("[OK] vine_spirit config, codec, health, adjacent-only vine release, direct/explosion spirit damage, unsupported and top-collapse drops, third-shot preview, entanglement audio and death cleanup");
+console.log("[OK] vine_spirit config, codec, health, six-neighbor cast targeting, same-resolution release suppression, adjacent-only vine release, direct/explosion spirit damage, unsupported and top-collapse drops, third-shot preview, entanglement audio and death cleanup");

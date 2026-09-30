@@ -91,6 +91,7 @@ GameManager.prototype.startLevel = function (levelConfig, startContext) {
   this.pendingBoardAdvanceSpecialAnimationDelay = 0;
   this.pendingBoardAdvanceDelay = 0;
   this.pendingBoardAdvanceEliminationPresentation = false;
+  this.pendingBoardAdvanceKeyUnlockPresentation = false;
   this.pendingDeferredEnsureMinimumVisibleBoardRows = false;
   this.pendingDropIntervalBoardAdvance = false;
   this.boardAdvancedThisFrame = false;

@@ -1640,6 +1640,7 @@ function bindFeatureTestButtons(levelView, onFeatureTestLevel, showTestLevelButt
   [
     { key: "black_hole", nodeName: "black_hole_test_btn", label: "黑洞" },
     { key: "spirit_cocoon", nodeName: "spirit_cocoon_test_btn", label: "精灵茧" },
+    { key: "campaign_321", nodeName: "campaign_321_test_btn", label: "321" },
     { key: "multi_trapped_spirit", nodeName: "multi_trapped_spirit_test_btn", label: "多救援" },
     { key: "transparent_ball", nodeName: "transparent_ball_test_btn", label: "透明球" },
     { key: "breeder_ball", nodeName: "breeder_ball_test_btn", label: "繁殖球" },
@@ -1911,6 +1912,7 @@ function renderLevelSelectContent(options) {
   var floatingMapResult = FloatingMap.render({
     mapHostNode: mapHostNode,
     assets: floatingMapAssets,
+    equippedSpiritId: options.equippedSpiritId,
     highestUnlocked: highestUnlocked,
     focusLevelId: highlightedLevelId,
     backToCurrentLevelButtonNode: backToCurrentLevelButtonNode,

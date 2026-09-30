@@ -15,10 +15,12 @@ var PRESENTATION_BY_SPIRIT_ID = {};
 SPIRIT_IDS.forEach(function (spiritId) {
   PRESENTATION_BY_SPIRIT_ID[spiritId] = {
     spiritId: spiritId,
-    idleClipPath: "game/animation/" + spiritId + "_idle",
-    idleClipName: spiritId + "_idle",
-    deliverClipPath: "game/animation/" + spiritId + "_pao",
-    deliverClipName: spiritId + "_pao"
+    skeletonDataPath: "game/spine/diqiushou",
+    skinName: spiritId,
+    idleClipName: "idle",
+    deliverClipName: "passball",
+    winClipName: "win",
+    loseClipName: "fail"
   };
 });
 
@@ -43,13 +45,5 @@ module.exports = {
   },
   getBySpiritId: function (spiritId) {
     return clone(requirePresentation(spiritId));
-  },
-  getAllClipPaths: function () {
-    var paths = [];
-    SPIRIT_IDS.forEach(function (spiritId) {
-      var presentation = requirePresentation(spiritId);
-      paths.push(presentation.idleClipPath, presentation.deliverClipPath);
-    });
-    return paths;
   }
 };

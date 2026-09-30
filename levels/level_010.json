@@ -45,7 +45,6 @@
         "code": "L010_LEGACY_SKILL_INTRO",
         "difficulty": "expert",
         "teaches": [
-            "legacy_skill_ball",
             "timed_infinite_shots",
             "flower_theme",
             "kxppm_layout_010_pattern",
@@ -74,11 +73,11 @@
                 "bonusSeconds": 5
             }
         ],
-        "targetScore": 8500,
+        "targetScore": 8400,
         "starThresholds": {
-            "star1": 4420,
-            "star2": 6120,
-            "star3": 7650
+            "star1": 4368,
+            "star2": 6048,
+            "star3": 7560
         },
         "dropInterval": 6,
         "jarCount": 5,
@@ -128,27 +127,19 @@
             }
         ],
         "layout": [
-            "BBGGBBGGRRR",
-            "BY..BB..RR",
-            "..GRBBGG...",
-            "BYGRRYYGRR",
-            "BYG......RR",
-            "BYGRR.YGRR",
-            "...RRYYG...",
-            ".YG.....R.",
-            "BYYRRYYRRRR"
+            "GGBBGGBBRRR",
+            "GY..GG..RR",
+            "..BRGGBB...",
+            "GYBRRGYBRR",
+            "GYB......RR",
+            "GYBRRYYBRR",
+            "...RRYYB...",
+            ".YB.....R.",
+            "GYYRRYYRRRR"
         ],
         "designNotes": "Gameplay is generated from the current LEVEL_CONFIG_TABLE_1_1000.csv rules; only the occupancy silhouette is projected from E:\\kxppm\\decrypted_config\\all_levels.json level 10 into current level 10 on the current 11/10-column board.",
         "difficultyScore": 50,
-        "specialEntities": [
-            {
-                "id": "stone_01",
-                "entityCategory": "obstacle_ball",
-                "entityType": "stone",
-                "row": 5,
-                "col": 5
-            }
-        ],
+        "specialEntities": [],
         "levelType": "special_floating_island",
         "playMode": "timed_infinite_shots",
         "initialDropSpaceRows": 8,

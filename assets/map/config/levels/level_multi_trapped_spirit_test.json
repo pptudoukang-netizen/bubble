@@ -115,7 +115,7 @@
       "RBRBRBRBRBR",
       "BRBRBRBRBR"
     ],
-    "designNotes": "Targets occupy empty non-top-row cells and each has adjacent normal bubbles that can be eliminated.",
+    "designNotes": "Targets occupy empty cells within visible top rows 2-6 and each has adjacent normal bubbles that can be eliminated.",
     "difficultyScore": 30,
     "specialEntities": [],
     "levelType": "multi_trapped_spirit_rescue",

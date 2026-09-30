@@ -10,6 +10,12 @@ var TAG_SPRITE_PATHS = {
 };
 var SHOP_ICON_WIDTH = 110;
 var SHOP_ITEM_TEMPLATE_NAME = "shop_item";
+var SHOP_ITEM_COLUMN_COUNT = 4;
+var SHOP_ITEM_PADDING_LEFT = 20;
+var SHOP_ITEM_PADDING_TOP = 20;
+var SHOP_ITEM_PADDING_BOTTOM = 0;
+var SHOP_ITEM_SPACING_X = 10;
+var SHOP_ITEM_SPACING_Y = 20;
 var SHOP_RENDER_PROXY_ROOT_NAME = "shop_render_proxy_root";
 var SHOP_RENDER_PROXY_LAYER_NAMES = {
   itemBackground: "shop_proxy_item_background_layer",
@@ -159,12 +165,34 @@ function bindTapWithoutScaleOnce(node, key, onTap) {
 }
 
 function bindShopItemTap(itemNode, controller) {
-  bindTapOnce(itemNode, "__shopItemTapBound", function () {
+  var key = "__shopItemTapBound";
+  var onTap = function () {
     var skuId = itemNode.__shopItemSkuId;
     if (typeof skuId !== "string" || skuId.length === 0) {
       throw new Error("ShopView shop item tap requires skuId on node: " + itemNode.name);
     }
     controller.onSelectGoods(skuId);
+  };
+  if (itemNode[key] === true) {
+    itemNode[key + "Handler"] = onTap;
+    return;
+  }
+
+  itemNode[key] = true;
+  itemNode[key + "Handler"] = onTap;
+  itemNode.on(cc.Node.EventType.TOUCH_START, function () {
+    itemNode.scale = 0.96;
+  });
+  itemNode.on(cc.Node.EventType.TOUCH_CANCEL, function () {
+    itemNode.scale = 1;
+  });
+  itemNode.on(cc.Node.EventType.TOUCH_END, function () {
+    itemNode.scale = 1;
+    var handler = itemNode[key + "Handler"];
+    if (typeof handler !== "function") {
+      throw new Error("ShopView shop item tap handler is missing: " + itemNode.name);
+    }
+    handler();
   });
 }
 
@@ -224,22 +252,45 @@ ShopViewController.prototype._resolveNodes = function () {
   }
   var panel = requireChild(this.node, "Panel");
   var shopList = requireChild(panel, "shop_list");
-  var shopItemTemplate = shopList.getChildByName(SHOP_ITEM_TEMPLATE_NAME);
+  var shopView = shopList.getChildByName("view");
+  if (!shopView || !shopView.isValid) {
+    throw new Error("ShopView prefab missing node: shop_list/view");
+  }
+  if (!shopView.getComponent(cc.Mask)) {
+    throw new Error("ShopView shop_list/view requires cc.Mask.");
+  }
+  var shopContent = shopView.getChildByName("content");
+  if (!shopContent || !shopContent.isValid) {
+    throw new Error("ShopView prefab missing node: shop_list/view/content");
+  }
+  var scrollView = shopList.getComponent(cc.ScrollView);
+  if (!scrollView) {
+    throw new Error("ShopView shop_list requires cc.ScrollView.");
+  }
+  if (scrollView.content !== shopContent) {
+    throw new Error("ShopView shop_list ScrollView.content must be shop_list/view/content.");
+  }
+  if (scrollView.horizontal || !scrollView.vertical) {
+    throw new Error("ShopView shop_list must scroll vertically only.");
+  }
+  if (scrollView.cancelInnerEvents !== true) {
+    throw new Error("ShopView shop_list requires cancelInnerEvents to prevent purchases while dragging.");
+  }
+  var shopItemTemplate = shopContent.getChildByName(SHOP_ITEM_TEMPLATE_NAME);
   if (!shopItemTemplate || !shopItemTemplate.isValid) {
-    throw new Error("ShopView prefab missing node: " + SHOP_ITEM_TEMPLATE_NAME);
+    throw new Error("ShopView prefab missing node: shop_list/view/content/" + SHOP_ITEM_TEMPLATE_NAME);
   }
   var nodes = {
     mask: requireChild(this.node, "mask"),
     panel: panel,
     closeButton: requireChild(panel, "btn_close"),
     shopList: shopList,
+    shopView: shopView,
+    shopContent: shopContent,
+    shopScrollView: scrollView,
     shopItemTemplate: shopItemTemplate,
     refreshTips: requireChild(panel, "refresh_tips")
   };
-  var layout = nodes.shopList.getComponent(cc.Layout);
-  if (layout) {
-    layout.cellSize = cc.size(nodes.shopItemTemplate.width, nodes.shopItemTemplate.height);
-  }
   return nodes;
 };
 
@@ -253,10 +304,9 @@ ShopViewController.prototype._ensureRenderProxyLayers = function () {
     return;
   }
 
-  var shopListZIndex = Number.isFinite(this._nodes.shopList.zIndex) ? this._nodes.shopList.zIndex : 0;
-  var root = SpriteProxyLayerHelper.createProxyRoot(this._nodes.panel, {
+  var root = SpriteProxyLayerHelper.createProxyRoot(this._nodes.shopContent, {
     name: SHOP_RENDER_PROXY_ROOT_NAME,
-    zIndex: shopListZIndex - 1
+    zIndex: -1
   });
 
   this._renderProxyRoot = root;
@@ -395,7 +445,7 @@ ShopViewController.prototype._ensureShopItemNodes = function (itemCount) {
       throw new Error("ShopView shop item node init failed at index " + index + ".");
     }
     if (index > 0) {
-      itemNode.parent = this._nodes.shopList;
+      itemNode.parent = this._nodes.shopContent;
     }
     itemNode.active = true;
     itemNode.scale = 1;
@@ -404,6 +454,67 @@ ShopViewController.prototype._ensureShopItemNodes = function (itemCount) {
     this._shopItemNodes.push(itemNode);
   }
   this._shopItemNodeCount = itemCount;
+};
+
+ShopViewController.prototype._layoutShopItemNodes = function () {
+  var contentNode = this._nodes.shopContent;
+  var viewNode = this._nodes.shopView;
+  var templateNode = this._nodes.shopItemTemplate;
+  var viewSize = viewNode.getContentSize();
+  var itemSize = templateNode.getContentSize();
+  var contentAnchor = contentNode.getAnchorPoint();
+  var itemAnchor = templateNode.getAnchorPoint();
+  if (!viewSize || !Number.isFinite(viewSize.width) || viewSize.width <= 0 ||
+      !Number.isFinite(viewSize.height) || viewSize.height <= 0) {
+    throw new Error("ShopView shop_list/view size must be valid.");
+  }
+  if (!itemSize || !Number.isFinite(itemSize.width) || itemSize.width <= 0 ||
+      !Number.isFinite(itemSize.height) || itemSize.height <= 0) {
+    throw new Error("ShopView shop item size must be valid.");
+  }
+  if (!contentAnchor || contentAnchor.x !== 0.5 || contentAnchor.y !== 1) {
+    throw new Error("ShopView shop_list/view/content anchor must be (0.5, 1).");
+  }
+  if (!itemAnchor || itemAnchor.x !== 0.5 || itemAnchor.y !== 0.5) {
+    throw new Error("ShopView shop item anchor must be (0.5, 0.5).");
+  }
+  if (this._shopItemNodes.length === 0) {
+    throw new Error("ShopView shop item layout requires initialized items.");
+  }
+
+  var rowCount = Math.ceil(this._shopItemNodes.length / SHOP_ITEM_COLUMN_COUNT);
+  var contentHeight = Math.max(
+    viewSize.height,
+    SHOP_ITEM_PADDING_TOP + SHOP_ITEM_PADDING_BOTTOM +
+      rowCount * itemSize.height + (rowCount - 1) * SHOP_ITEM_SPACING_Y
+  );
+  contentNode.setContentSize(viewSize.width, contentHeight);
+  if (this._renderProxyRoot && this._renderProxyRoot.isValid) {
+    this._renderProxyRoot.setContentSize(viewSize.width, contentHeight);
+  }
+
+  this._shopItemNodes.forEach(function (itemNode, index) {
+    var column = index % SHOP_ITEM_COLUMN_COUNT;
+    var row = Math.floor(index / SHOP_ITEM_COLUMN_COUNT);
+    var x = -viewSize.width * contentAnchor.x + SHOP_ITEM_PADDING_LEFT +
+      itemSize.width * itemAnchor.x + column * (itemSize.width + SHOP_ITEM_SPACING_X);
+    var y = -SHOP_ITEM_PADDING_TOP - itemSize.height * (1 - itemAnchor.y) -
+      row * (itemSize.height + SHOP_ITEM_SPACING_Y);
+    itemNode.setPosition(x, y);
+  });
+};
+
+ShopViewController.prototype._resetShopListScrollPosition = function () {
+  var scrollView = this._nodes.shopScrollView;
+  if (!scrollView || scrollView.content !== this._nodes.shopContent) {
+    throw new Error("ShopView shop_list ScrollView.content is invalid.");
+  }
+  if (typeof scrollView.stopAutoScroll !== "function" || typeof scrollView.scrollToTop !== "function") {
+    throw new Error("ShopView shop_list requires vertical scroll APIs.");
+  }
+  scrollView.stopAutoScroll();
+  scrollView.scrollToTop(0);
+  this._syncRenderProxies();
 };
 
 ShopViewController.prototype._updateShopItemNode = function (itemNode, goods, purchaseState) {
@@ -465,16 +576,17 @@ ShopViewController.prototype.render = function (options) {
     if (renderGeneration !== this._renderGeneration) {
       return null;
     }
+    var shouldResetScrollPosition = this._shopItemNodeCount !== options.goodsList.length ||
+      this._shopItemNodes.length !== options.goodsList.length;
     this._ensureShopItemNodes(options.goodsList.length);
     options.goodsList.forEach(function (goods, index) {
       this._updateShopItemNode(this._shopItemNodes[index], goods, options.purchaseState);
     }, this);
-    var layout = this._nodes.shopList.getComponent(cc.Layout);
-    if (!layout) {
-      throw new Error("ShopView shop_list requires cc.Layout.");
-    }
-    layout.updateLayout();
+    this._layoutShopItemNodes();
     this._rebuildRenderProxies();
+    if (shouldResetScrollPosition) {
+      this._resetShopListScrollPosition();
+    }
     return null;
   }.bind(this)).catch(function (error) {
     Logger.error("ShopView render failed", error && error.stack ? error.stack : error);

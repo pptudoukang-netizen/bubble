@@ -1121,7 +1121,13 @@ function validateCampaignMechanicPlan(level, normalizedLayoutRows, expectedLevel
   var boardCapacity = normalizedLayoutRows.reduce(function (sum, row) {
     return sum + row.length;
   }, 0);
-  var expectedIce = CampaignLevelGenerationConfig.getIceBallCount(expectedLevelId, boardCapacity);
+  var mechanismIds = CampaignLevelGenerationConfig.getLevelPlan(expectedLevelId).campaignMechanismIds;
+  if (!Array.isArray(mechanismIds)) {
+    throw new Error("Campaign level plan must expose campaignMechanismIds for level " + expectedLevelId + ".");
+  }
+  var expectedIce = mechanismIds.indexOf("ice") >= 0
+    ? CampaignLevelGenerationConfig.getIceBallCount(expectedLevelId, boardCapacity)
+    : 0;
   if (actual.ice !== expectedIce) {
     issues.push("ice count does not match campaign plan: expected " + expectedIce + ", got " + actual.ice);
   }

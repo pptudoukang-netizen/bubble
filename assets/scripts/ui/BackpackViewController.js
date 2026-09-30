@@ -33,6 +33,16 @@ var ITEM_DEFINITIONS = [
     itemId: "snow_removal",
     displayName: "除雪剂",
     iconPath: "ui/image/props/snow_removal"
+  },
+  {
+    itemId: "crystal_gun",
+    displayName: "晶光炮",
+    iconPath: "ui/image/props/crystal_gun"
+  },
+  {
+    itemId: "rainbow_prism_ball",
+    displayName: "彩虹棱镜球",
+    iconPath: "ui/image/props/rainbow_prism_ball"
   }
 ];
 

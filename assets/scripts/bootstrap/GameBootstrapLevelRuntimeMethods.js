@@ -50,6 +50,7 @@ module.exports = {
       if (
         this._currentRunContext.testSource === "black_hole" ||
         this._currentRunContext.testSource === "spirit_cocoon" ||
+        this._currentRunContext.testSource === "campaign_321" ||
         this._currentRunContext.testSource === "multi_trapped_spirit" ||
         this._currentRunContext.testSource === "transparent_ball" ||
         this._currentRunContext.testSource === "breeder_ball" ||

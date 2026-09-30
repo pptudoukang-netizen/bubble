@@ -89,12 +89,20 @@ function applyTraversableAttachmentTarget(shotPlan, traversedCells, grid) {
 
 function createGameManagerShotPlanningMethods(context) {
   var BoardViewportSystem = context.BoardViewportSystem;
+  var SpecialAnimationTiming = context.SpecialAnimationTiming;
   var buildProjectilePathFromShotPlan = context.buildProjectilePathFromShotPlan;
   var createGameManagerShotPlanningMethods = context.createGameManagerShotPlanningMethods;
   var isBlastBall = context.isBlastBall;
   var isRainbowBall = context.isRainbowBall;
   var measurePathDistance = context.measurePathDistance;
   var quantize = context.quantize;
+
+  if (
+    !SpecialAnimationTiming.topAnchorCollapse ||
+    SpecialAnimationTiming.topAnchorCollapse.dropDelay !== 0.5
+  ) {
+    throw new Error("SpecialAnimationTiming.topAnchorCollapse.dropDelay must be exactly 0.5 seconds.");
+  }
 
   return {
     _scheduleBoardViewportSettle: function (resolution) {
@@ -185,7 +193,8 @@ function createGameManagerShotPlanningMethods(context) {
         this._appendUniqueCells(this.lastResolution.floating, removedCells);
       }
       this._registerResolutionDrops(removedCells, grid, this.lastResolution, {
-        dropKind: "victory_board_drop"
+        dropKind: "victory_board_drop",
+        startDelay: SpecialAnimationTiming.topAnchorCollapse.dropDelay
       }, {
         skipEliminationPresentationHold: true
       });

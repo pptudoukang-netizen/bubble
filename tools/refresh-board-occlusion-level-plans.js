@@ -6,6 +6,7 @@ var path = require("path");
 
 var BoardOcclusionConfig = require("../assets/scripts/config/BoardOcclusionConfig");
 var LevelPackCompactCodec = require("../assets/scripts/config/LevelPackCompactCodec");
+var CampaignLevelGenerationConfig = require("./campaign-level-generation-config");
 
 var PROJECT_ROOT = path.resolve(__dirname, "..");
 var RESOURCE_LEVEL_DIR = path.join(PROJECT_ROOT, "assets/map/config/levels");
@@ -47,7 +48,10 @@ function refreshLocalLevels() {
     if (!config.level || typeof config.level !== "object" || Array.isArray(config.level)) {
       throw new Error("Local level config.level must be an object: " + sourcePath);
     }
-    config.level.boardOcclusionPlan = BoardOcclusionConfig.buildCampaignPlan(config.level);
+    config.level.boardOcclusionPlan = BoardOcclusionConfig.buildCampaignPlan(
+      config.level,
+      CampaignLevelGenerationConfig.getLevelPlan(config.level.levelId).boardOcclusionEnabled
+    );
     var text = prettyText(config);
     fs.writeFileSync(sourcePath, text, "utf8");
     fs.writeFileSync(path.join(MIRROR_LEVEL_DIR, name), text, "utf8");
@@ -72,7 +76,10 @@ function refreshRemotePacks() {
       if (!config.level || typeof config.level !== "object" || Array.isArray(config.level)) {
         throw new Error("Remote level config.level must be an object: " + levelKey);
       }
-      config.level.boardOcclusionPlan = BoardOcclusionConfig.buildCampaignPlan(config.level);
+      config.level.boardOcclusionPlan = BoardOcclusionConfig.buildCampaignPlan(
+        config.level,
+        CampaignLevelGenerationConfig.getLevelPlan(config.level.levelId).boardOcclusionEnabled
+      );
     });
     var refreshedCompactPack = LevelPackCompactCodec.compactPack(expandedPack);
     var text = compactText(refreshedCompactPack);

@@ -4,10 +4,12 @@ var StrictStorage = require("./StrictStorage");
 
 var STORAGE_KEY = "bubble_player_inventory_v1";
 var NAMESPACE = "InventoryStore";
-var STORAGE_VERSION = 3;
+var STORAGE_VERSION = 5;
 var LEGACY_VERSION_1_ITEM_IDS = ["swap_ball", "rainbow_ball", "blast_ball", "barrier_hammer"];
 var VERSION_2_ITEM_IDS = ["swap_ball", "rainbow_ball", "blast_ball", "barrier_hammer", "snow_removal"];
-var SUPPORTED_ITEM_IDS = ["precise_aim", "swap_ball", "rainbow_ball", "blast_ball", "barrier_hammer", "snow_removal"];
+var VERSION_3_ITEM_IDS = ["precise_aim", "swap_ball", "rainbow_ball", "blast_ball", "barrier_hammer", "snow_removal"];
+var VERSION_4_ITEM_IDS = ["precise_aim", "swap_ball", "rainbow_ball", "blast_ball", "barrier_hammer", "snow_removal", "crystal_gun"];
+var SUPPORTED_ITEM_IDS = ["precise_aim", "swap_ball", "rainbow_ball", "blast_ball", "barrier_hammer", "snow_removal", "crystal_gun", "rainbow_prism_ball"];
 
 function clone(data) {
   return JSON.parse(JSON.stringify(data));
@@ -51,7 +53,9 @@ function createDefaultItems() {
     rainbow_ball: 0,
     blast_ball: 0,
     barrier_hammer: 0,
-    snow_removal: 0
+    snow_removal: 0,
+    crystal_gun: 0,
+    rainbow_prism_ball: 0
   };
 }
 
@@ -84,6 +88,8 @@ function migrateVersion1Inventory(raw) {
   var legacyItems = normalizeInventoryItems(raw.items, LEGACY_VERSION_1_ITEM_IDS, "Inventory v1");
   legacyItems.precise_aim = 0;
   legacyItems.snow_removal = 0;
+  legacyItems.crystal_gun = 0;
+  legacyItems.rainbow_prism_ball = 0;
   return {
     version: STORAGE_VERSION,
     items: legacyItems
@@ -93,9 +99,30 @@ function migrateVersion1Inventory(raw) {
 function migrateVersion2Inventory(raw) {
   var version2Items = normalizeInventoryItems(raw.items, VERSION_2_ITEM_IDS, "Inventory v2");
   version2Items.precise_aim = 0;
+  version2Items.crystal_gun = 0;
+  version2Items.rainbow_prism_ball = 0;
   return {
     version: STORAGE_VERSION,
     items: version2Items
+  };
+}
+
+function migrateVersion3Inventory(raw) {
+  var version3Items = normalizeInventoryItems(raw.items, VERSION_3_ITEM_IDS, "Inventory v3");
+  version3Items.crystal_gun = 0;
+  version3Items.rainbow_prism_ball = 0;
+  return {
+    version: STORAGE_VERSION,
+    items: version3Items
+  };
+}
+
+function migrateVersion4Inventory(raw) {
+  var version4Items = normalizeInventoryItems(raw.items, VERSION_4_ITEM_IDS, "Inventory v4");
+  version4Items.rainbow_prism_ball = 0;
+  return {
+    version: STORAGE_VERSION,
+    items: version4Items
   };
 }
 
@@ -106,6 +133,12 @@ function normalizeInventory(raw) {
   }
   if (raw.version === 2) {
     return migrateVersion2Inventory(raw);
+  }
+  if (raw.version === 3) {
+    return migrateVersion3Inventory(raw);
+  }
+  if (raw.version === 4) {
+    return migrateVersion4Inventory(raw);
   }
   if (raw.version !== STORAGE_VERSION) {
     throw new Error("Inventory version must be " + STORAGE_VERSION + ".");

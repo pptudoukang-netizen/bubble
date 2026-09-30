@@ -257,54 +257,38 @@ function attachLevelRendererSceneShooterMethods(LevelRenderer, deps) {
     if (!heroNode || !heroNode.isValid) {
       throw new Error("Shooter hero animation requires " + SHOOTER_HERO_NODE_NAME + " node.");
     }
-    var animation = heroNode.getComponent(cc.Animation);
-    if (!animation) {
-      throw new Error("Shooter hero animation requires cc.Animation on " + SHOOTER_HERO_NODE_NAME + ".");
+    var visual = requireChildNode(heroNode, "SpineVisual", "Shooter hero");
+    var skeleton = visual.getComponent(sp.Skeleton);
+    if (!skeleton) {
+      throw new Error("Shooter hero SpineVisual requires sp.Skeleton.");
     }
-    if (typeof animation.getClips !== "function") {
-      throw new Error("Shooter hero animation requires getClips API.");
-    }
-    return animation;
-  }
-
-  function requireShooterHeroClip(animation, clipName) {
-    var clips = animation.getClips();
-    if (!Array.isArray(clips) || clips.length <= 0) {
-      throw new Error("Shooter hero animation requires clips.");
-    }
-    for (var i = 0; i < clips.length; i += 1) {
-      if (clips[i] && clips[i].name === clipName) {
-        return clips[i];
-      }
-    }
-    throw new Error("Shooter hero animation clip is missing: " + clipName + ".");
+    return skeleton;
   }
 
   function playShooterHeroClip(heroNode, clipName, onFinished) {
-    var animation = requireShooterHeroAnimation(heroNode);
-    var clip = requireShooterHeroClip(animation, clipName);
+    var skeleton = requireShooterHeroAnimation(heroNode);
+    var clip = skeleton.findAnimation(clipName);
+    if (!clip || !Number.isFinite(clip.duration) || clip.duration <= 0) {
+      throw new Error("Shooter hero Spine animation is missing or invalid: " + clipName);
+    }
     if (!onFinished && heroNode.__shooterHeroPlayingClip === clipName) {
       return clip;
     }
-
-    var previousToken = typeof heroNode.__shooterHeroAnimationToken === "number"
-      ? heroNode.__shooterHeroAnimationToken
-      : 0;
-    heroNode.__shooterHeroAnimationToken = previousToken + 1;
-    var token = heroNode.__shooterHeroAnimationToken;
+    skeleton.setCompleteListener(null);
     heroNode.__shooterHeroPlayingClip = clipName;
-
+    var entry = skeleton.setAnimation(0, clipName, !onFinished);
+    if (!entry) {
+      throw new Error("Shooter hero Spine failed to play: " + clipName);
+    }
+    heroNode.__shooterHeroTrackEntry = entry;
     if (onFinished) {
-      if (typeof animation.once !== "function") {
-        throw new Error("Shooter hero animation requires once API.");
-      }
-      animation.once("finished", function () {
-        if (heroNode.__shooterHeroAnimationToken === token) {
+      skeleton.setCompleteListener(function (completedEntry) {
+        if (completedEntry === entry && heroNode.__shooterHeroTrackEntry === entry) {
+          skeleton.setCompleteListener(null);
           onFinished();
         }
       });
     }
-    animation.play(clip.name);
     return clip;
   }
 
@@ -312,53 +296,34 @@ function attachLevelRendererSceneShooterMethods(LevelRenderer, deps) {
     return playShooterHeroClip(heroNode, clipName, null);
   }
 
-  function installShooterHeroClips(renderer, heroNode, spiritId) {
+  function installShooterHeroSpine(renderer, heroNode, spiritId) {
     var presentation = AssistSpiritPresentationConfig.getBySpiritId(spiritId);
-    var idleClip = renderer.assistSpiritAnimationClipCache[presentation.idleClipPath];
-    var deliverClip = renderer.assistSpiritAnimationClipCache[presentation.deliverClipPath];
-    if (!idleClip || !idleClip.isValid) {
-      throw new Error("Shooter hero idle clip was not preloaded: " + presentation.idleClipPath);
+    var data = renderer.assistSpiritSkeletonDataCache[presentation.skeletonDataPath];
+    if (!data || !data.isValid) {
+      throw new Error("Shooter hero Spine data was not preloaded: " + presentation.skeletonDataPath);
     }
-    if (!deliverClip || !deliverClip.isValid) {
-      throw new Error("Shooter hero deliver clip was not preloaded: " + presentation.deliverClipPath);
-    }
-    if (idleClip.name !== presentation.idleClipName) {
-      throw new Error("Shooter hero idle clip name mismatch: " + idleClip.name);
-    }
-    if (deliverClip.name !== presentation.deliverClipName) {
-      throw new Error("Shooter hero deliver clip name mismatch: " + deliverClip.name);
-    }
-
-    var animation = requireShooterHeroAnimation(heroNode);
-    if (
-      heroNode.__shooterHeroSpiritId === spiritId &&
-      requireShooterHeroClip(animation, presentation.idleClipName) === idleClip &&
-      requireShooterHeroClip(animation, presentation.deliverClipName) === deliverClip
-    ) {
+    var skeleton = requireShooterHeroAnimation(heroNode);
+    if (heroNode.__shooterHeroSpiritId === spiritId && skeleton.skeletonData === data) {
       return presentation;
     }
-    if (typeof animation.stop !== "function") {
-      throw new Error("Shooter hero animation requires stop API.");
+    var runtimeData = data.getRuntimeData();
+    if (!runtimeData || !runtimeData.findSkin(presentation.skinName)) {
+      throw new Error("Shooter hero Spine skin is missing: " + presentation.skinName);
     }
-    if (typeof animation.removeClip !== "function") {
-      throw new Error("Shooter hero animation requires removeClip API.");
-    }
-    if (typeof animation.addClip !== "function") {
-      throw new Error("Shooter hero animation requires addClip API.");
-    }
-    animation.stop();
-    animation.getClips().slice().forEach(function (clip) {
-      animation.removeClip(clip, true);
+    [presentation.idleClipName, presentation.deliverClipName, presentation.winClipName, presentation.loseClipName].forEach(function (name) {
+      var animation = runtimeData.findAnimation(name);
+      if (!animation || !Number.isFinite(animation.duration) || animation.duration <= 0) {
+        throw new Error("Shooter hero Spine animation is missing or invalid: " + name);
+      }
     });
-    animation.addClip(idleClip);
-    animation.addClip(deliverClip);
-    requireShooterHeroClip(animation, presentation.idleClipName);
-    requireShooterHeroClip(animation, presentation.deliverClipName);
-
+    skeleton.setCompleteListener(null);
+    heroNode.__shooterHeroTrackEntry = null;
+    skeleton.clearTracks();
+    skeleton.skeletonData = data;
+    skeleton.setSkin(presentation.skinName);
+    skeleton.setSlotsToSetupPose();
     heroNode.__shooterHeroSpiritId = spiritId;
     heroNode.__shooterHeroPlayingClip = "";
-    heroNode.__shooterHeroAnimationToken =
-      (typeof heroNode.__shooterHeroAnimationToken === "number" ? heroNode.__shooterHeroAnimationToken : 0) + 1;
     return presentation;
   }
 
@@ -467,7 +432,7 @@ LevelRenderer.prototype.isShooterHandoffInProgress = function () {
   return shooterPanel.__shooterHandoffInProgress === true;
 };
 
-LevelRenderer.prototype._renderShooter = function (shooterSnapshot, activeProjectile, remainingShots) {
+LevelRenderer.prototype._renderShooter = function (shooterSnapshot, activeProjectile, remainingShots, gameState) {
   var shooterPanel = this.layers.shooter.getChildByName("ShooterPanel");
   if (!shooterPanel) {
     shooterPanel = this._instantiateOrCreate(PREFAB_PATHS.shooterPanel, this.layers.shooter, "ShooterPanel");
@@ -494,7 +459,8 @@ LevelRenderer.prototype._renderShooter = function (shooterSnapshot, activeProjec
     layoutNodes[SHOOTER_HERO_NODE_NAME],
     shooterSnapshot,
     activeProjectile,
-    finiteRemainingShots
+    finiteRemainingShots,
+    gameState
   );
 
   var trajectory = shooterSnapshot.trajectory;
@@ -573,6 +539,14 @@ LevelRenderer.prototype._renderShooter = function (shooterSnapshot, activeProjec
   }
 
   var nextAnchor = layoutNodes.NextBallAnchor;
+  var HeldBallFollow = require("./ShooterHeldBallFollow");
+  var heldBallFollow = shooterPanel.getComponent(HeldBallFollow);
+  if (!heldBallFollow) {
+    heldBallFollow = shooterPanel.addComponent(HeldBallFollow);
+  }
+  heldBallFollow.bind(requireShooterHeroAnimation(layoutNodes[SHOOTER_HERO_NODE_NAME]), nextAnchor);
+  // Prefab layout refresh resets the anchor; restore the current hand pose before handoff.
+  heldBallFollow.syncPosition();
   nextAnchor.setScale(1);
   nextAnchor.opacity = 255;
   var nextBallLike = shooterSnapshot.nextBall || shooterSnapshot.nextColor;
@@ -719,24 +693,51 @@ LevelRenderer.prototype._syncShooterHeroAnimation = function (
   heroNode,
   shooterSnapshot,
   activeProjectile,
-  finiteRemainingShots
+  finiteRemainingShots,
+  gameState
 ) {
   if (!shooterSnapshot || typeof shooterSnapshot.assistSpiritId !== "string" || !shooterSnapshot.assistSpiritId) {
     throw new Error("Shooter hero animation requires shooterSnapshot.assistSpiritId.");
   }
-  var presentation = installShooterHeroClips(this, heroNode, shooterSnapshot.assistSpiritId);
+  var presentation = installShooterHeroSpine(this, heroNode, shooterSnapshot.assistSpiritId);
   var revision = shooterSnapshot.queueAdvanceRevision;
   if (!Number.isInteger(revision) || revision < 0) {
     throw new Error("Shooter hero animation requires a non-negative queueAdvanceRevision.");
+  }
+
+  if (revision < shooterPanel.__lastShooterHeroFireRevision) {
+    throw new Error("Shooter hero animation queueAdvanceRevision cannot move backwards.");
+  }
+
+  if (typeof gameState !== "string" || !gameState) {
+    throw new Error("Shooter hero animation requires game state.");
+  }
+  var resultClipName = null;
+  if (gameState === "won_settlement_pending" || gameState === "won") {
+    resultClipName = presentation.winClipName;
+  } else if (
+    gameState === "lost_danger" || gameState === "lost_hazard" ||
+    gameState === "lost_objective" || gameState === "out_of_shots"
+  ) {
+    resultClipName = presentation.loseClipName;
+  }
+  if (resultClipName) {
+    shooterPanel.__lastShooterHeroFireRevision = revision;
+    // Result animation owns the track; playing it clears any delivery completion callback.
+    playShooterHeroClip(heroNode, resultClipName, null);
+    return;
+  }
+  if (
+    heroNode.__shooterHeroPlayingClip === presentation.winClipName ||
+    heroNode.__shooterHeroPlayingClip === presentation.loseClipName
+  ) {
+    playShooterHeroIdle(heroNode, presentation.idleClipName);
   }
 
   if (typeof shooterPanel.__lastShooterHeroFireRevision !== "number") {
     shooterPanel.__lastShooterHeroFireRevision = revision;
     playShooterHeroIdle(heroNode, presentation.idleClipName);
     return;
-  }
-  if (revision < shooterPanel.__lastShooterHeroFireRevision) {
-    throw new Error("Shooter hero animation queueAdvanceRevision cannot move backwards.");
   }
 
   if (revision > shooterPanel.__lastShooterHeroFireRevision) {

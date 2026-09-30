@@ -374,6 +374,9 @@ module.exports = {
     this.assistSpiritState = this.assistSpiritStore.save(
       this.assistSpiritStore.buildEquip(this.assistSpiritState, spirit.id)
     );
+    require("./LevelSelectFloatingMap").refreshProtagonist(
+      this._levelSelectNode.getChildByName("map"), this.assistSpiritState.equippedSpiritId
+    );
     if (this._spiritHallViewController) {
       this._renderSpiritHallView();
     }

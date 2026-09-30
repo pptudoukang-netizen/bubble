@@ -3,6 +3,8 @@
 function attachLevelRendererSceneResultPopupMethods(LevelRenderer, context) {
   var ADD_BALL_TIPS_VIEW_PROXY_ROOT_NAME = context.ADD_BALL_TIPS_VIEW_PROXY_ROOT_NAME;
   var LOSE_VIEW_PROXY_ROOT_NAME = context.LOSE_VIEW_PROXY_ROOT_NAME;
+  var LOSE_VIEW_DELAY_NODE_NAME = "LoseViewDelay";
+  var LOSE_VIEW_DELAY_SECONDS = 1.5;
   var PREFAB_PATHS = context.PREFAB_PATHS;
   var SpriteProxyLayerHelper = context.SpriteProxyLayerHelper;
   var WIN_VIEW_PROXY_ROOT_NAME = context.WIN_VIEW_PROXY_ROOT_NAME;
@@ -186,13 +188,38 @@ LevelRenderer.prototype._renderLoseView = function (runtimeSnapshot) {
   );
   var existing = this.layers.modal.getChildByName("LoseView");
   var wasActive = !!(existing && existing.active);
+  var delayNode = this.layers.modal.getChildByName(LOSE_VIEW_DELAY_NODE_NAME);
   if (!isLoseState) {
+    if (delayNode) {
+      delayNode.stopAllActions();
+      delayNode.removeFromParent();
+      delayNode.destroy();
+    }
     if (existing) {
       existing.active = false;
       if (wasActive) {
         this._notifyResultViewLifecycle("onLoseViewHide");
       }
     }
+    return;
+  }
+
+  if (!delayNode) {
+    delayNode = getOrCreateChild(this.layers.modal, LOSE_VIEW_DELAY_NODE_NAME);
+    delayNode.__loseViewDelayReady = false;
+    delayNode.runAction(cc.sequence(
+      cc.delayTime(LOSE_VIEW_DELAY_SECONDS),
+      cc.callFunc(function () {
+        // A revived/restarted scene owns a different timer; cancel the old presentation.
+        if (!delayNode.isValid || delayNode.parent !== this.layers.modal) {
+          return;
+        }
+        delayNode.__loseViewDelayReady = true;
+        this._renderLoseView(this.lastRuntimeSnapshot);
+      }.bind(this))
+    ));
+  }
+  if (!delayNode.__loseViewDelayReady) {
     return;
   }
 

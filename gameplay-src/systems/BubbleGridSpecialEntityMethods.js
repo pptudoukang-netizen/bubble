@@ -190,7 +190,7 @@ BubbleGrid.prototype.getVineSpirits = function () {
   });
 };
 
-BubbleGrid.prototype.findNearestNormalCellForVine = function (spiritCell, reservedCellKeys) {
+BubbleGrid.prototype.findAdjacentNormalCellForVine = function (spiritCell, reservedCellKeys) {
   if (!isVineSpiritCell(spiritCell)) {
     throw new Error("Vine target selection requires a vine spirit cell.");
   }
@@ -203,8 +203,12 @@ BubbleGrid.prototype.findNearestNormalCellForVine = function (spiritCell, reserv
     }
   });
 
-  var spiritPosition = this.getCellPosition(spiritCell.row, spiritCell.col);
-  var candidates = this.getCells().filter(function (cell) {
+  var candidates = this.getNeighborCoordinates(spiritCell.row, spiritCell.col).map(function (coordinate) {
+    return this.getCell(coordinate.row, coordinate.col);
+  }, this).filter(function (cell) {
+    if (!cell) {
+      return false;
+    }
     if (cell.entityCategory !== "normal_ball" || typeof cell.color !== "string" || !cell.color) {
       return false;
     }
@@ -215,28 +219,17 @@ BubbleGrid.prototype.findNearestNormalCellForVine = function (spiritCell, reserv
       return false;
     }
     return reservedCellKeys[keyFor(cell.row, cell.col)] !== true;
-  }).map(function (cell) {
-    var position = this.getCellPosition(cell.row, cell.col);
-    var dx = position.x - spiritPosition.x;
-    var dy = position.y - spiritPosition.y;
-    return {
-      cell: cell,
-      distanceSq: dx * dx + dy * dy
-    };
-  }, this).sort(function (left, right) {
-    if (left.distanceSq !== right.distanceSq) {
-      return left.distanceSq - right.distanceSq;
+  }).sort(function (left, right) {
+    if (left.row !== right.row) {
+      return left.row - right.row;
     }
-    if (left.cell.row !== right.cell.row) {
-      return left.cell.row - right.cell.row;
+    if (left.col !== right.col) {
+      return left.col - right.col;
     }
-    if (left.cell.col !== right.cell.col) {
-      return left.cell.col - right.cell.col;
-    }
-    return String(left.cell.id).localeCompare(String(right.cell.id));
+    return String(left.id).localeCompare(String(right.id));
   });
 
-  return candidates.length ? clone(candidates[0].cell) : null;
+  return candidates.length ? clone(candidates[0]) : null;
 };
 
 BubbleGrid.prototype.beginVinePreview = function (spiritId, targetCell) {
@@ -459,6 +452,11 @@ BubbleGrid.prototype.rotateSwirlNeighborsClockwise = function (swirlCell) {
     if (cell.spiderLocked === true) {
       throw new Error(
         "BubbleGrid swirl rotation cannot move a spider-locked track cell at " + coordinate.row + ":" + coordinate.col + "."
+      );
+    }
+    if (typeof cell.vineOwnerId === "string" && cell.vineOwnerId) {
+      throw new Error(
+        "BubbleGrid swirl rotation cannot move a vine-entangled track cell at " + coordinate.row + ":" + coordinate.col + "."
       );
     }
     if (cell.entityCategory !== "normal_ball" || typeof cell.color !== "string" || !cell.color) {

@@ -14,12 +14,19 @@ var SPIRIT_SHOP_STORE_PATH = path.join(PROJECT_ROOT, "assets/scripts/utils/Spiri
 var SHOP_STATE_STORE_PATH = path.join(PROJECT_ROOT, "assets/scripts/utils/ShopStateStore.js");
 var SHOP_STATE_SERVICE_PATH = path.join(PROJECT_ROOT, "assets/scripts/services/ShopStateService.js");
 var PLAYER_CLOUD_PROFILE_SERVICE_PATH = path.join(PROJECT_ROOT, "assets/scripts/services/PlayerCloudProfileService.js");
-var PLAYER_PROFILE_CLOUD_PATH = path.join(PROJECT_ROOT, "cloudfunctions/playerProfile/index.js");
+var PLAYER_PROFILE_BASE_CLOUD_PATH = path.join(PROJECT_ROOT, "cloudfunctions/playerProfile/index.js");
+var PLAYER_PROFILE_CLOUD_PATH = path.join(PROJECT_ROOT, "cloudfunctions/playerProfileV2/index.js");
 var PLAYER_PROFILE_CLOUD_TEMPLATE_PATH = path.join(
   PROJECT_ROOT,
-  "build-templates/wechatgame/cloudfunctions/playerProfile/index.js"
+  "build-templates/wechatgame/cloudfunctions/playerProfileV2/index.js"
+);
+var PLAYER_PROFILE_CLOUD_PACKAGE_PATH = path.join(PROJECT_ROOT, "cloudfunctions/playerProfileV2/package.json");
+var PLAYER_PROFILE_CLOUD_TEMPLATE_PACKAGE_PATH = path.join(
+  PROJECT_ROOT,
+  "build-templates/wechatgame/cloudfunctions/playerProfileV2/package.json"
 );
 var BOOTSTRAP_PATH = path.join(PROJECT_ROOT, "assets/scripts/bootstrap/GameBootstrap.js");
+var GAME_SCENE_PATH = path.join(PROJECT_ROOT, "assets/scens/game.fire");
 var BOOTSTRAP_COMPOSITION_PATH = path.join(PROJECT_ROOT, "assets/scripts/bootstrap/GameBootstrapCompositionMethods.js");
 var STATUS_RESOURCE_FLOW_PATH = path.join(PROJECT_ROOT, "assets/scripts/bootstrap/GameBootstrapStatusResourceFlowMethods.js");
 var LEVEL_SELECT_FLOW_PATH = path.join(PROJECT_ROOT, "assets/scripts/bootstrap/GameBootstrapLevelSelectFlowMethods.js");
@@ -767,7 +774,34 @@ function assertPlayerProfileSizeCaps() {
   );
   assert(
     readText(PLAYER_PROFILE_CLOUD_PATH) === readText(PLAYER_PROFILE_CLOUD_TEMPLATE_PATH),
-    "playerProfile cloud source and WeChat build template must match."
+    "playerProfileV2 cloud source and WeChat build template must match."
+  );
+  assert(
+    readText(PLAYER_PROFILE_CLOUD_PACKAGE_PATH) === readText(PLAYER_PROFILE_CLOUD_TEMPLATE_PACKAGE_PATH),
+    "playerProfileV2 cloud package and WeChat build template package must match."
+  );
+  var baseCloudSource = readText(PLAYER_PROFILE_BASE_CLOUD_PATH);
+  var sourceMarkerLine = 'var DEPLOYMENT_MARKER = "playerProfile_v20260814_profile_size_caps_v6";';
+  var v2MarkerLine = 'var DEPLOYMENT_MARKER = "playerProfileV2_v20260824_profile_size_caps_v6";';
+  assert(
+    baseCloudSource.indexOf(sourceMarkerLine) >= 0,
+    "playerProfile base cloud source must expose the source deployment marker."
+  );
+  assert(
+    readText(PLAYER_PROFILE_CLOUD_PATH) === baseCloudSource.replace(sourceMarkerLine, v2MarkerLine),
+    "playerProfileV2 must differ from playerProfile only by its deployment marker."
+  );
+  assert(
+    readText(PLAYER_CLOUD_PROFILE_SERVICE_PATH).indexOf(v2MarkerLine.slice(29, -2)) >= 0,
+    "Player cloud profile client must expect the playerProfileV2 deployment marker."
+  );
+  assert(
+    readText(BOOTSTRAP_PATH).indexOf('default: "playerProfileV2"') >= 0,
+    "GameBootstrap must default player profile sync to playerProfileV2."
+  );
+  assert(
+    readText(GAME_SCENE_PATH).indexOf('"playerProfileCloudFunctionName": "playerProfileV2"') >= 0,
+    "Game scene must serialize playerProfileV2 as the player profile cloud function."
   );
 }
 
@@ -800,7 +834,7 @@ function createCloudProfilePlatform(PlayerCloudProfileService, cloudProfile) {
     cloud: {
       init: function () {},
       callFunction: function (request) {
-        assert(request.name === "playerProfile", "Player cloud profile sync must call playerProfile.");
+        assert(request.name === "playerProfileV2", "Player cloud profile sync must call playerProfileV2.");
         assert(request.data.action === "get", "Player cloud profile sync test expects get action.");
         return Promise.resolve({
           result: {
@@ -841,7 +875,7 @@ function assertCloudProfileSyncDefersGameplayApply() {
   var service = new PlayerCloudProfileService({
     platform: createCloudProfilePlatform(PlayerCloudProfileService, cloudProfile),
     cloudEnvId: "cloud-test",
-    functionName: "playerProfile",
+    functionName: "playerProfileV2",
     syncDebounceMs: 1,
     logger: null
   });

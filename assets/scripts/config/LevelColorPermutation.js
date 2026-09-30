@@ -175,6 +175,25 @@ function mapSpecialEntities(specialEntities, colorMap) {
   });
 }
 
+function mapColorClouds(colorClouds, colorMap) {
+  if (colorClouds === undefined) {
+    return undefined;
+  }
+  if (!Array.isArray(colorClouds)) {
+    throw new Error("Level color permutation colorClouds must be array.");
+  }
+  return colorClouds.map(function (cloud, index) {
+    if (!cloud || typeof cloud !== "object" || Array.isArray(cloud)) {
+      throw new Error("Level color permutation colorClouds[" + index + "] must be object.");
+    }
+    var mappedCloud = Object.assign({}, cloud);
+    if (cloud.color !== "RAINBOW") {
+      mappedCloud.color = mapColor(cloud.color, colorMap, "level.colorClouds[" + index + "].color");
+    }
+    return mappedCloud;
+  });
+}
+
 function apply(levelConfig) {
   assertLevelConfig(levelConfig);
   var level = levelConfig.level;
@@ -221,6 +240,11 @@ function apply(levelConfig) {
   var mappedSpecialEntities = mapSpecialEntities(level.specialEntities, colorMap);
   if (mappedSpecialEntities !== undefined) {
     level.specialEntities = mappedSpecialEntities;
+  }
+
+  var mappedColorClouds = mapColorClouds(level.colorClouds, colorMap);
+  if (mappedColorClouds !== undefined) {
+    level.colorClouds = mappedColorClouds;
   }
 
   if (!levelConfig.meta || typeof levelConfig.meta !== "object" || Array.isArray(levelConfig.meta)) {
